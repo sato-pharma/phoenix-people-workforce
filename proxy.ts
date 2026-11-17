@@ -342,7 +342,17 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // often with no Origin or Referer and a sandboxed frame's with `Origin: null`. The route reads no
       // session and writes no database (it counts a directive, an origin and a page shape in memory),
       // so there is nothing for a cross-site request to forge.
-      request.nextUrl.pathname === "/api/security/csp-report"
+      request.nextUrl.pathname === "/api/security/csp-report" ||
+      // The ChatGPT data connector (17 Nov 2026): ChatGPT's servers POST these with no Origin and no
+      // cookie. /api/mcp is authorised by a connector bearer token re-checked live against the account
+      // on every call; register, token and revoke are the OAuth endpoints a public client must reach
+      // cross-origin (RFC 6749/7591/7009), each rate-limited per address inside the route. None reads a
+      // cookie, so there is nothing for a cross-site request to forge. The "Allow" button
+      // (/api/connector/oauth/approve) is NOT exempt: it is the signed-in person's same-origin POST.
+      request.nextUrl.pathname === "/api/mcp" ||
+      request.nextUrl.pathname === "/api/connector/oauth/register" ||
+      request.nextUrl.pathname === "/api/connector/oauth/token" ||
+      request.nextUrl.pathname === "/api/connector/oauth/revoke"
     )
   ) {
     return null;

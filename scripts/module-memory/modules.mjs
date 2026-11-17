@@ -1667,13 +1667,18 @@ export const MODULES = [
   {
     id: "platform-access",
     title: "Platform — passwords and access control",
-    scope: "A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, and the retired seats.",
+    scope: "A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, the retired seats, and the ChatGPT data connector that reads Phoenix as the owner or the CEO.",
     globs: [
       "src/lib/auth/{permissions,password-strength,leaked-password,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
       "app/api/auth/{change-password,password-reset,password-setup}/**",
       "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,leaked-password,seat-fence,signed-out}*",
+      "src/lib/chatgpt-connector/**",
+      "app/api/mcp/**",
+      "app/api/connector/**",
+      "app/connector/**",
+      "tests/chatgpt-connector-*",
     ],
-    keywords: ["password", "password reset", "reset code", "weak password", "leaked password", "permission matrix", "seat fence", "signed out", "retired seat"],
+    keywords: ["chatgpt connector", "connector token", "password", "password reset", "reset code", "weak password", "leaked password", "permission matrix", "seat fence", "signed out", "retired seat"],
     tables: ["role_permission_overrides", "app_auth_users"],
   },
   // 🔴 SPLIT 2026-10-31, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 31
