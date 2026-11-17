@@ -14,6 +14,7 @@ import { STAGING_ORIGIN } from "../scripts/phoenix-inspect/lib/fence.mjs";
 import { RUN_BOUNDS } from "../scripts/phoenix-inspect/lib/safety.mjs";
 import { configFromEnv, startHttpServer } from "../scripts/phoenix-inspect/mcp-http.mjs";
 import { MAX_IMAGES_PER_RESULT, PREVIEW } from "../scripts/phoenix-inspect/mcp-server.mjs";
+import { WIDGET_MIME, WIDGET_TOOLS, WIDGET_URI } from "../scripts/phoenix-inspect/widget.mjs";
 
 type Content = { type: string; text?: string; data?: string; mimeType?: string };
 type Result = { isError?: boolean; content: Content[]; structuredContent?: unknown };
@@ -218,6 +219,26 @@ export async function runPhoenixInspectMcpHttpTests() {
     try {
       const viaClient = await client.listTools();
       assert.deepEqual(viaClient.tools.map((tool) => tool.name).sort(), [...TOOLS].sort());
+      // ChatGPT shows a tool's picture only through an MCP Apps view: the capture tools name it, the others do not.
+      for (const tool of viaClient.tools) {
+        const meta = (tool._meta ?? {}) as { ui?: { resourceUri?: string }; "openai/outputTemplate"?: string };
+        if (WIDGET_TOOLS.includes(tool.name)) {
+          assert.equal(meta.ui?.resourceUri, WIDGET_URI, `${tool.name} names the screenshot viewer`);
+          assert.equal(meta["openai/outputTemplate"], WIDGET_URI, `${tool.name} names it under ChatGPT's older key too`);
+        } else {
+          assert.equal(meta.ui, undefined, `${tool.name} returns no capture, so it names no viewer`);
+        }
+      }
+      const listed = await client.listResources();
+      assert.deepEqual(listed.resources.map((resource) => [resource.uri, resource.mimeType]), [[WIDGET_URI, WIDGET_MIME]], "the viewer is the only resource");
+      const viewer = await client.readResource({ uri: WIDGET_URI });
+      const page = viewer.contents[0] as { uri: string; mimeType: string; text: string };
+      assert.equal(page.mimeType, "text/html;profile=mcp-app");
+      assert.match(page.text, /^<!DOCTYPE html>/);
+      assert.match(page.text, /ui\/initialize/, "the viewer speaks the MCP Apps bridge");
+      assert.doesNotMatch(page.text, /<script[^>]+src=|<link[^>]+href=|https?:\/\//i, "the viewer loads nothing from anywhere: the host's default CSP is all it needs");
+      assert.doesNotMatch(page.text, /innerHTML|insertAdjacentHTML|document\.write/, "text from a result is never parsed as HTML");
+      await assert.rejects(client.readResource({ uri: "ui://phoenix-inspect/../../etc/passwd" }), /unknown resource/, "any other resource is refused");
       const captured = (await client.callTool({ name: "phoenix_capture_page", arguments: { module: "kpi-reports", persona: "dm", states: ["summary"], viewports: ["desktop"] } })) as unknown as Result;
       assert.ok(!captured.isError, JSON.stringify(captured.content?.[0]));
       const images = captured.content.filter((item) => item.type === "image");
