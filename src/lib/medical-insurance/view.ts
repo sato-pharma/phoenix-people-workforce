@@ -111,6 +111,9 @@ export const MEDICAL_INSURANCE_DOCUMENT_WORDS: Record<MedicalInsuranceDocumentKi
   policy: "Policy",
 };
 
+/** The reason an exclusion is saved with unless another is typed: medical insurance is optional (owner, 2026-11-17). */
+export const DECLINED_REASON = "Does not want medical insurance";
+
 export const MEMBER_TYPE_WORDS: Record<MedicalInsuranceMemberType, string> = {
   child: "Child",
   employee: "Employee",

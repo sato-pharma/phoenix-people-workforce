@@ -23,6 +23,7 @@ import {
   buildMedicalInsuranceActions,
   buildPolicyYearCost,
   employeeCoverWindow,
+  planFamilyMove,
   plannedLinesTotal,
   type EmployeeFacts,
   type MedicalInsuranceAction,
@@ -226,6 +227,42 @@ function testFamilyFollowTheirEmployee() {
   assert.equal(row.memberType, "spouse");
 }
 
+/** Someone with no record of their own, and their family, are put under an employee as family. */
+function testSomeoneIsPutUnderAnEmployeeWithTheirFamily() {
+  const head = member({ hrId: "T-1", id: "m-1", name: "Test Head" });
+  const noRecord = member({ hrId: null, id: "m-9", name: "Test Relative" });
+  const relativesSpouse = member({ hrId: null, id: "m-10", memberType: "spouse", name: "Test Relative Spouse", principalMemberId: "m-9" });
+  const relativesChild = member({ hrId: null, id: "m-11", memberType: "child", name: "Test Relative Child", principalMemberId: "m-9" });
+  const register = [head, noRecord, relativesSpouse, relativesChild];
+
+  const moved = planFamilyMove(noRecord, head, "child", register);
+  assert.ok(typeof moved !== "string", "a person with no record goes under the employee");
+  assert.equal(moved.memberType, "child");
+  assert.equal(moved.principalMemberId, "m-1");
+  assert.equal(moved.hrId, "T-1", "the family row carries the employee's HR id, as one added under them does");
+  assert.deepEqual(moved.dependantIds, ["m-10", "m-11"], "their own spouse and child move with them");
+
+  const respouse = planFamilyMove(relativesSpouse, head, "spouse", register);
+  assert.ok(typeof respouse !== "string", "a family row can go to another employee");
+  assert.deepEqual(respouse.dependantIds, [], "a family row brings nobody with it");
+
+  assert.match(String(planFamilyMove(head, member({ hrId: "T-2", id: "m-2", name: "Test Other" }), "spouse", register)), /own employee record/, "an employee with a record keeps their own certificate");
+  assert.match(String(planFamilyMove(noRecord, head, "parent", register)), /spouse or a child/, "the insurer's sheet has only spouse and child");
+  assert.match(String(planFamilyMove(noRecord, relativesSpouse, "child", register)), /on cover/, "only an employee row can hold family");
+  assert.match(String(planFamilyMove(noRecord, member({ coverageEnd: "2026-11-30", hrId: "T-3", id: "m-3", name: "Test Ended" }), "child", register)), /on cover/, "nobody is put under an ended cover");
+  assert.match(String(planFamilyMove(noRecord, noRecord, "child", register)), /other than/, "nobody sits under themselves");
+  assert.match(String(planFamilyMove(relativesSpouse, noRecord, "spouse", register)), /already under/, "a move that changes nothing is said so");
+}
+
+/** Medical insurance is optional: one press excludes, and the add list stops asking (owner, 2026-11-17). */
+function testSomeoneWhoDeclinesIsExcluded() {
+  assert.equal(actionsFor([employee()], [], [{ decision: "keep_out", hrId: "T-1", id: "e", reason: "Does not want medical insurance" }]).length, 0, "an excluded employee is not asked for again");
+  const actionsSource = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-actions.tsx", "utf8"));
+  assert.match(actionsSource, /decision: "keep_out", hrId: action.hrId, reason: DECLINED_REASON/, "the Exclude press records a keep-off exception with the decline reason");
+  const membersSource = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-members.tsx", "utf8"));
+  assert.match(membersSource, /action: "end", coverageEnd: member.coverageStart, endReason: declined, keepOut: true/, "excluding someone on the register ends them from their first day and keeps them off");
+}
+
 /** The contract's age limits: over 64 for an employee or spouse, over 18 for a child, and no birth date. */
 function testTheContractsAgeLimitsAreReviewed() {
   const review = (members: MemberFacts[]) =>
@@ -408,6 +445,8 @@ export async function runMedicalInsuranceTests() {
   testTheListNamesWhoToAddAndWhoToRemove();
   testAnExceptionBeatsTheRuleEitherWay();
   testFamilyFollowTheirEmployee();
+  testSomeoneIsPutUnderAnEmployeeWithTheirFamily();
+  testSomeoneWhoDeclinesIsExcluded();
   testTheContractsAgeLimitsAreReviewed();
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
