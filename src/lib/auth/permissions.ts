@@ -321,7 +321,9 @@ export type PermissionResource =
   // run's status. The Super Admin and the CEO only — the same two the route always admitted by role
   // name; the route keeps that check and asserts this key beside it. Capped in
   // `hardBoundaryAllowedActions`, so an override can never hand it to anyone else.
-  | "marketing_roi_refresh";
+  | "marketing_roi_refresh"
+  | "medical_insurance"
+  | "medical_insurance_invoices";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -445,6 +447,8 @@ export const permissionResources: PermissionResource[] = [
   // costs on it — to every role in the company. Mechanism at the head of this array.
   "production_planning",
   "marketing_roi_refresh",
+  "medical_insurance",
+  "medical_insurance_invoices",
   // HR Reminders. Omitting this would offer the HR team's private notes — and the Super Admin's
   // view of every one of them — to every role in the company. Mechanism at the head of this array.
   "hr_reminders",
@@ -1090,6 +1094,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
     production_planning: ["read", "create", "update", "export"],
     marketing_roi_refresh: ["read", "update"],
+    // Medical insurance (owner, 2026-11-04). Members and who is in or out are shared with the HR seats
+    // (hr-functions.ts, medical_insurance_members). Invoices and every amount are this seat's alone. No
+    // `delete` on either: a member's cover is ended and an invoice is a fact about a date.
+    medical_insurance: ["read", "create", "update", "export"],
+    medical_insurance_invoices: ["read", "create", "update", "export"],
     admin: allActions,
     attendance: allActions,
     // Reads the native-visit pilot. `update` (the owner, 2026-09-14): he enters a visit FOR a chosen

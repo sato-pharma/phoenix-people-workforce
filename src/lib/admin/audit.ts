@@ -467,14 +467,17 @@ export type AuditEntityType =
   | "production_material"
   | "production_material_price"
   | "production_plan"
-  // Medical insurance — a RETIRED module (2026-11-11, the MetLife contract was cancelled). Nothing writes
-  // these any more; the keys are kept so historical audit rows still render. Never delete them.
+  // Medical insurance (owner, 2026-11-04). The member, exception, invoice and document rows are REQUIRED:
+  // who is on a policy decides who is covered and what is billed. The export row is best-effort, as every
+  // export's is, and names what left the building.
   | "medical_insurance_category_choice"
   | "medical_insurance_document"
   | "medical_insurance_exception"
   | "medical_insurance_export"
   | "medical_insurance_invoice"
   | "medical_insurance_member"
+  // The policy number and the rate card (Libano-Suisse, 2026-11-17): a rate decides every amount.
+  | "medical_insurance_policy"
   | "production_planning_access_grant"
   | "production_planning_settings"
   // A product's box packaging (units and strips per box) changed from the planner's Settings (owner, 2026-11-11).
