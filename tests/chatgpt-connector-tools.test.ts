@@ -28,12 +28,15 @@ import {
   scorePersonMatch,
 } from "../src/lib/chatgpt-connector/tools/helpers.ts";
 import {
+  TABLE_EXPORT_MAX_ROWS,
+  TABLE_PAGE_BUDGET_CHARS,
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
   isDeniedColumn,
   isDeniedTable,
   planTableRead,
   readableTables,
+  rowsThatFit,
   schemaFromOpenApi,
 } from "../src/lib/chatgpt-connector/tools/table-guard.ts";
 import { ToolRefusal } from "../src/lib/chatgpt-connector/types.ts";
@@ -43,7 +46,7 @@ import { stripComments } from "./support/comment-strip.ts";
 // the live database through the screens' own services, so this file pins what can be pinned without
 // one: name search, period words, field projection, the publication gap, the raw-table guard, and —
 // by reading the source — that every tool asks a permission, that nothing writes, and that the raw
-// table tools are the owner's alone.
+// table tools are the owner's and the CEO's.
 
 const TOOLS_DIR = path.resolve(process.cwd(), "src/lib/chatgpt-connector/tools");
 
@@ -201,10 +204,13 @@ function testMoneyAndRows() {
 }
 
 function testTableGuard() {
-  assert.deepEqual([...TABLE_TOOL_ROLES], ["Super Admin"], "the raw tables are the owner's alone — the CEO's reach is application-scoped");
+  assert.deepEqual(
+    [...TABLE_TOOL_ROLES],
+    ["Super Admin", "CEO"],
+    "the raw tables are open to the owner AND the CEO (owner, 17 Nov 2026: \"answer me or Dr. Anwar\")",
+  );
 
   for (const table of [
-    "app_sessions",
     "app_auth_credentials",
     "app_auth_second_step",
     "app_auth_second_step_recovery_codes",
@@ -215,7 +221,6 @@ function testTableGuard() {
     "connector_oauth_tokens",
     "password_reset_codes",
     "password_setup_tokens",
-    "auth_login_attempts",
     "v2_vacation_email_tokens",
     "weekly_plan_approval_tokens",
     "direct_order_report_share_links",
@@ -226,7 +231,19 @@ function testTableGuard() {
   ]) {
     assert.equal(isDeniedTable(table), true, `${table} holds sign-in or link secrets and must be denied`);
   }
-  for (const table of ["employees", "app_auth_users", "salary_records", "vacation_requests", "phoenix_crm_shared_places", "photos"]) {
+  for (const table of [
+    "employees",
+    "app_auth_users",
+    "salary_records",
+    "vacation_requests",
+    "phoenix_crm_shared_places",
+    "photos",
+    "phoenix_crm_customers",
+    "crm_contacts",
+    "activity_events",
+    "app_sessions",
+    "auth_login_attempts",
+  ]) {
     assert.equal(isDeniedTable(table), false, `${table} is ordinary business data`);
   }
 
@@ -241,17 +258,30 @@ function testTableGuard() {
     definitions: {
       employees: { properties: { hr_id: {}, full_name: {}, base_salary: {}, line_name: {} } },
       app_auth_users: { properties: { hr_id: {}, role: {}, password_hash: {} } },
-      app_sessions: { properties: { id: {}, token_hash: {} } },
+      app_sessions: { properties: { id: {}, token_hash: {}, login_id: {}, last_seen_at: {} } },
+      password_setup_tokens: { properties: { id: {}, login_id: {} } },
       "Bad-Name": { properties: { x: {} } },
       notATable: "garbage",
     },
   });
-  assert.equal(schema.size, 4, "only definitions with properties are tables");
+  assert.equal(schema.size, 5, "only definitions with properties are tables");
   assert.deepEqual(
     readableTables(schema).map((entry) => entry.table),
-    ["app_auth_users", "employees"],
+    ["app_auth_users", "app_sessions", "employees"],
     "the list drops deny-listed and malformed names",
   );
+  assert.deepEqual(
+    readableTables(schema).find((entry) => entry.table === "app_sessions")?.columns,
+    ["login_id", "last_seen_at"],
+    "the sign-in history is readable, without the session id a browser carries and without any hash",
+  );
+  refuses(() => planTableRead({ table: "app_sessions", columns: ["id"] }, schema), /security column/, "app_sessions.id is never selected");
+  refuses(
+    () => planTableRead({ table: "app_sessions", filters: [{ column: "id", op: "eq", value: "x" }] }, schema),
+    /security column/,
+    "nor filtered on",
+  );
+  assert.deepEqual(planTableRead({ table: "employees", columns: ["hr_id"] }, schema).columns, ["hr_id"], "an id column elsewhere stays readable");
   assert.deepEqual(
     readableTables(schema).find((entry) => entry.table === "app_auth_users")?.columns,
     ["hr_id", "role"],
@@ -260,7 +290,10 @@ function testTableGuard() {
 
   const plan = planTableRead({ table: "app_auth_users" }, schema);
   assert.deepEqual(plan.columns, ["hr_id", "role"], "no columns asked = every readable column, never `*`");
-  assert.equal(plan.limit, 100);
+  assert.equal(plan.limit, 200);
+  assert.equal(plan.offset, 0, "a read starts at the first row unless told otherwise");
+  assert.equal(planTableRead({ table: "employees", offset: 4000 }, schema).offset, 4000, "a later page starts at its offset");
+  assert.equal(planTableRead({ table: "employees", offset: -3 }, schema).offset, 0, "a negative offset is the first row");
 
   const full = planTableRead(
     {
@@ -276,11 +309,30 @@ function testTableGuard() {
     },
     schema,
   );
-  assert.equal(full.limit, TABLE_READ_MAX_ROWS, "the limit is capped at 500");
+  assert.equal(full.limit, TABLE_READ_MAX_ROWS, "one page is capped at 1,000 rows; offset reads the rest");
+  assert.equal(TABLE_READ_MAX_ROWS, 1000);
+  assert.equal(
+    planTableRead({ table: "employees", limit: 99_999 }, schema, TABLE_EXPORT_MAX_ROWS).limit,
+    TABLE_EXPORT_MAX_ROWS,
+    "a whole-table export takes its own ceiling",
+  );
   assert.deepEqual(full.orderBy, { column: "full_name", ascending: true });
   assert.equal(full.filters.length, 3);
 
-  refuses(() => planTableRead({ table: "app_sessions" }, schema), /never read/, "a denied table is refused even when it exists");
+  refuses(() => planTableRead({ table: "password_setup_tokens" }, schema), /never read/, "a denied table is refused even when it exists");
+
+  // Every letter: a page that would not fit in one answer is shortened to WHOLE rows, never cut.
+  const small = Array.from({ length: 50 }, (_, index) => ({ id: index, name: `Dr ${index}` }));
+  assert.equal(rowsThatFit(small), 50, "a page that fits is sent whole");
+  const wide = Array.from({ length: 100 }, (_, index) => ({ id: index, notes: "x".repeat(5_000) }));
+  const fit = rowsThatFit(wide);
+  assert.ok(fit > 0 && fit < 100, `a page too big for one answer is shortened (${fit} of 100 rows)`);
+  const written = JSON.stringify({ rows: wide.slice(0, fit) }, null, 1).length;
+  assert.ok(written <= TABLE_PAGE_BUDGET_CHARS, `the shortened page fits the budget (${written} characters)`);
+  assert.equal(rowsThatFit([{ notes: "y".repeat(400_000) }]), 1, "one row bigger than the budget is still sent, never zero rows");
+  const serverSource = readFileSync(path.resolve(process.cwd(), "src/lib/chatgpt-connector/server.ts"), "utf8");
+  const answerCap = Number(/CONNECTOR_MAX_TEXT_CHARS = ([\d_]+)/.exec(serverSource)?.[1].replace(/_/g, ""));
+  assert.ok(TABLE_PAGE_BUDGET_CHARS + 20_000 <= answerCap, "the page budget sits under the answer cap, so a page is never cut with a note");
   refuses(() => planTableRead({ table: "auth.users" }, schema), /not a table name/, "another schema cannot be named");
   refuses(() => planTableRead({ table: "employees; drop table x" }, schema), /not a table name/, "the name is a strict identifier");
   refuses(() => planTableRead({ table: "nothing_here" }, schema), /no table or view/, "an unknown table is refused before any query");
@@ -341,15 +393,19 @@ function testToolSources() {
     "orgChartTool",
     "listTablesTool",
     "readTableTool",
+    "exportTableTool",
   ]) {
     assert.ok(index.includes(tool), `${tool} is in DOMAIN_TOOLS`);
   }
   const names = [...all.matchAll(/name:\s*"([^"]+)"/g)].map((match) => match[1]).filter((name) => name.includes("_"));
-  assert.equal(names.length, 11, "eleven tools are defined");
+  assert.equal(names.length, 12, "twelve tools are defined");
   for (const name of names) assert.match(name, /^phoenix_[a-z_]+$/, `${name} is snake_case and starts with phoenix_`);
 
   const tables = source("tables.ts");
-  assert.equal((tables.match(/roles:\s*TABLE_TOOL_ROLES/g) ?? []).length, 2, "both table tools are the owner's alone");
+  assert.equal((tables.match(/roles:\s*TABLE_TOOL_ROLES/g) ?? []).length, 3, "all three table tools are the owner's and the CEO's alone");
+  assert.equal((tables.match(/planTableRead\(/g) ?? []).length, 2, "the reader and the export both run only a guarded plan");
+  assert.ok(tables.includes("rowsThatFit("), "the reader shortens a page to whole rows instead of letting the answer be cut");
+  assert.ok(tables.includes("next_offset"), "the reader tells ChatGPT where the next page starts");
   assert.ok(tables.includes("planTableRead("), "the table reader runs only a guarded plan");
   assert.ok(tables.includes("phoenix_sales_achievement"), "the table tools send ChatGPT to the closing for any sales figure");
 
