@@ -16,6 +16,7 @@ import { connectorAccessContext } from "@/lib/chatgpt-connector/identity";
 import { connectorOAuth, NO_STORE } from "@/lib/chatgpt-connector/http";
 import { bearerChallenge, bearerFrom, fingerprint } from "@/lib/chatgpt-connector/oauth";
 import { touchAccessToken } from "@/lib/chatgpt-connector/oauth-store";
+import { withKnownProtocolVersion } from "@/lib/chatgpt-connector/protocol-version";
 import { buildConnectorServer } from "@/lib/chatgpt-connector/server";
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
@@ -66,7 +67,8 @@ export async function POST(request: Request) {
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   try {
     await server.connect(transport);
-    const response = await transport.handleRequest(request);
+    // ChatGPT sends a protocol revision newer than the SDK knows (2026-07-28); see protocol-version.ts.
+    const response = await transport.handleRequest(await withKnownProtocolVersion(request));
     response.headers.set("Cache-Control", "no-store");
     return response;
   } finally {
