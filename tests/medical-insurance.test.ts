@@ -465,11 +465,11 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
   assert.equal(monthlyCoverPiastres(CARD, 12_000), monthOf(12_000), "a month is premium and tax over twelve");
 
   const members: MemberFacts[] = [
-    member({ birthDate: "1990-01-01", category: "B", hrId: "T-1", id: "e-1", name: "Family Employee" }),
-    member({ birthDate: "1992-03-01", category: "B", hrId: null, id: "s-1", memberType: "spouse", name: "Their Spouse", principalMemberId: "e-1" }),
-    member({ birthDate: "2015-05-01", category: "B", hrId: null, id: "c-1", memberType: "child", name: "Their Child", principalMemberId: "e-1" }),
-    member({ birthDate: "1985-01-01", category: "C", hrId: "T-2", id: "e-2", name: "Single Employee" }),
-    member({ birthDate: "1980-01-01", category: "C", coverageStart: "2026-12-01", hrId: "T-3", id: "e-3", name: "December Joiner" }),
+    member({ birthDate: "1990-01-01", category: "C", hrId: "T-1", id: "e-1", name: "Family Employee" }),
+    member({ birthDate: "1992-03-01", category: "C", hrId: null, id: "s-1", memberType: "spouse", name: "Their Spouse", principalMemberId: "e-1" }),
+    member({ birthDate: "2015-05-01", category: "C", hrId: null, id: "c-1", memberType: "child", name: "Their Child", principalMemberId: "e-1" }),
+    member({ birthDate: "1996-01-01", category: "C", hrId: "T-2", id: "e-2", name: "Single Employee" }),
+    member({ birthDate: "1998-01-01", category: "C", coverageStart: "2026-12-01", hrId: "T-3", id: "e-3", name: "December Joiner" }),
     member({ birthDate: "1980-01-01", category: "C", coverageEnd: "2026-11-16", hrId: "T-4", id: "e-4", name: "Already Left" }),
     member({ birthDate: "2010-01-01", category: "C", hrId: null, id: "c-9", memberType: "child", name: "Stray Child", principalMemberId: "e-4" }),
     member({ birthDate: null, category: "C", hrId: "T-5", id: "e-5", name: "No Birth Date" }),
@@ -481,8 +481,8 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
 
   const family = row("Family Employee");
   assert.ok(family);
-  const own = monthOf(rateOf("1990-01-01", "B"));
-  const relatives = monthOf(rateOf("1992-03-01", "B")) + monthOf(rateOf("2015-05-01", "B"));
+  const own = monthOf(rateOf("1990-01-01", "C"));
+  const relatives = monthOf(rateOf("1992-03-01", "C")) + monthOf(rateOf("2015-05-01", "C"));
   const company = Math.round((own * 7_000) / 10_000);
   assert.equal(family.ownMonthly, own / 100);
   assert.equal(family.companyPays, company / 100, "the company carries 70% of the employee's own cover");
