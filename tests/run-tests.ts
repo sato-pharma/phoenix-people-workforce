@@ -2713,6 +2713,7 @@ import { runVacanciesEmptySeatsTests } from "./vacancies-empty-seats.test.ts";
 import { runOrganogramTileEmployeeActionsTests } from "./organogram-tile-employee-actions.test.ts";
 import { runOrganogramAsOfMonthTests } from "./organogram-as-of-month.test.ts";
 import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test.ts";
+import { runEmployeeCvActionGateTests } from "./employee-cv-action-gate.test.ts";
 import { runEmployeeCvCarryFromRecruitmentTests } from "./employee-cv-carry-from-recruitment.test.ts";
 import { runEmployeeDirectoryCvFilterTests } from "./employee-directory-cv-filter.test.ts";
 import { runEmployeeCvBulkMatchTests } from "./employee-cv-bulk-match.test.ts";
@@ -10453,6 +10454,11 @@ await runTest(
 await runTest(
   "organogram seat CV slot (a greyed No CV on file only on a 200 with no file; a fault and a 403 stay silent)",
   runOrganogramSeatCvNoticeTests,
+);
+
+await runTest(
+  "a seat that cannot open an employee CV is never offered one (the directory and both organograms ask canDownloadEmployeeCv on the server; every default is no)",
+  runEmployeeCvActionGateTests,
 );
 
 await runTest(

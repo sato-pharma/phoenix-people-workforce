@@ -122,8 +122,8 @@ type OrgChartTreeProps = {
   canAddEmployee?: boolean;
   /**
    * Whether this viewer may read anybody's CV (`canDownloadEmployeeCv`), resolved server-side on the
-   * page and handed to the person popup, which skips its CV probe when it is false. Absent asks the
-   * CV route, as before.
+   * page and handed to the person popup, which skips its CV probe when it is false. Absent is false,
+   * so a mount that forgets the prop shows no CV rather than a refusal per person opened.
    */
   canReadEmployeeCv?: boolean;
   /**
@@ -1074,7 +1074,7 @@ function OrgChartTreeBody({
   theme = "admin",
   kpiLabels = DEFAULT_ORG_KPI_LABELS,
   canAddEmployee = false,
-  canReadEmployeeCv = true,
+  canReadEmployeeCv = false,
   asOfMonth = null,
 }: OrgChartTreeProps) {
   // Change #2 — the pressed node's row; non-null opens the employee-master popup.

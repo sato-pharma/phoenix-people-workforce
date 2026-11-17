@@ -26,7 +26,8 @@ type EmployeeOrganogramDashboardProps = {
   // popup offer "Add employee to this seat". Never inferred client-side.
   canAddEmployee?: boolean;
   // Server-decided: may this viewer read a CV (canDownloadEmployeeCv)? False keeps the person
-  // popup from probing a CV route that would refuse it. Absent asks the route, as before.
+  // popup from probing a CV route that would refuse it. Absent is false: a mount that forgets the
+  // prop shows no CV, never a refusal on every person opened.
   canReadEmployeeCv?: boolean;
   fixedLine?: string | null;
   initialError?: string | null;
@@ -62,7 +63,7 @@ const PORTAL_KPI_LABELS: OrgChartKpiLabels = {
 
 export function EmployeeOrganogramDashboard({
   canAddEmployee = false,
-  canReadEmployeeCv = true,
+  canReadEmployeeCv = false,
   fixedLine = null,
   initialError = null,
   initialReport = null,
