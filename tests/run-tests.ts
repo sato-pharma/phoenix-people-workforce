@@ -1933,6 +1933,7 @@ import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runMergedAreaAttributionTests } from "./merged-area-attribution.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
 import { runAntiInfectiveKafrElSheikh2Delta1Tests } from "./anti-infective-kafr-el-sheikh-2-delta-1.test.ts";
+import { runCnsKafrElSheikh2AlexBhrTests } from "./cns-kafr-el-sheikh-2-alex-bhr.test.ts";
 import { runPediaKafrElSheikhDelta1Tests } from "./pedia-kafr-el-sheikh-delta-1.test.ts";
 import { runAttributionStoreSplitNetTests } from "./attribution-store-split-net.test.ts";
 import { runStoreNamePrefixesTests } from "./store-name-prefixes.test.ts";
@@ -7052,6 +7053,10 @@ await runTest(
 await runTest(
   "Anti Infective Kafr El-Sheikh 2 counts to Dina Fadel the manager, never to Ragaa the rep (September still files it in Others while October files it under her Delta (1) with no rep seat and no target; and the Kafr El-Sheikh split stays 145/145 in BOTH months, so re-answering the ruling with a split exclusion — the #5926 shape — pays Ragaa the whole city and fails here)",
   runAntiInfectiveKafrElSheikh2Delta1Tests,
+);
+await runTest(
+  "CNS Kafr El-Sheikh 2 counts to Saad the manager under no rep (June still files it in Others while July files it under his Alex-BHR with no rep seat and no target; January to June never fall back to him; and the Kafr El-Sheikh split stays 145/145 in BOTH months)",
+  runCnsKafrElSheikh2AlexBhrTests,
 );
 await runTest(
   "EPDA «م - » warehouse prefix (anchored at the START only — it matches 40 customers, while the same three characters appear MID-NAME in 590, and turning it into a keyword would move 550 pharmacies)",

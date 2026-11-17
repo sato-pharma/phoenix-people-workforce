@@ -49808,6 +49808,27 @@ CREATE TABLE au.bak_20261101_pedia_sharkia_line_area_map (
 ALTER TABLE au.bak_20261101_pedia_sharkia_line_area_map OWNER TO postgres;
 
 --
+-- Name: bak_20261117_cns_kfs2_line_area_map; Type: TABLE; Schema: au; Owner: postgres
+--
+
+CREATE TABLE au.bak_20261117_cns_kfs2_line_area_map (
+    line_code text,
+    area_code text,
+    operational_region_code text,
+    area_state text,
+    dm_seat_id text,
+    rep_seat_id text,
+    other_type text,
+    staffed_in_line_code text,
+    carries_target boolean,
+    effective_from date,
+    effective_to date,
+    notes text
+);
+
+ALTER TABLE au.bak_20261117_cns_kfs2_line_area_map OWNER TO postgres;
+
+--
 -- Name: bak_move_ai0002_b177_emp_20260923; Type: TABLE; Schema: au; Owner: postgres
 --
 
@@ -91876,6 +91897,12 @@ ALTER TABLE au.bak_20261015c_aif_rollup_jul_sep ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE au.bak_20261101_pedia_sharkia_line_area_map ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bak_20261117_cns_kfs2_line_area_map; Type: ROW SECURITY; Schema: au; Owner: postgres
+--
+
+ALTER TABLE au.bak_20261117_cns_kfs2_line_area_map ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: canonical_areas; Type: ROW SECURITY; Schema: au; Owner: postgres
