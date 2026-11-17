@@ -1,4 +1,29 @@
-# The Medical Insurance module — retired 2026-11-11
+# The Medical Insurance module — retired 2026-11-11, rebuilt for Libano-Suisse 2026-11-17
+
+## Rebuilt for Libano-Suisse (2026-11-17)
+
+The owner asked on 2026-11-17 to "build the Libano-Suisse medical insurance module", from three papers: the signed and
+stamped table of benefits, the renewal offer Rev 1.3 of 5 November 2026, and the insurer's member draft (Initial
+Draft1.xlsx). The policy runs from **15 November 2026 to 14 November 2027** (his pick). The retired module was put
+back on the same pages and tables and changed where the contract differs:
+
+- **Cost** is the offer's annual premium per person, by plan (A, B, C) and five-year age band, plus 1.55% tax, EGP 30
+  a card per member and EGP 90 issue fee, priced from the age on the day cover starts. The seeded card reproduces the
+  offer's EGP 712,300 for 104 people. A joiner pays by the day to the policy's end (25% of the year from the last
+  quarter); a leaver is refunded by the day. The rates are editable on the Cost tab, and so is the policy number,
+  which Libano-Suisse has not issued yet.
+- **The member file** is Libano-Suisse's own "Output draft" sheet with its 39 headings, built for the people ticked
+  on the add/remove screen, or for everyone covered. It replaces the MetLife EDI workbook; nothing sends it.
+- **Bills** are recorded by hand (number, kind, dates, total, the file beside it) and compared with the plan; the
+  MetLife PDF reader is gone, since Libano-Suisse's layout is not known.
+- **Age limits**: anyone over 64, and a child over 18, is listed for review.
+- The register is seeded once on production from the insurer's draft (140 people), matched to employees by national
+  ID; names and IDs never enter the repo.
+
+Migration: `supabase/migrations/20261117041500_medical_insurance_libano_suisse.sql` (six tables, the private bucket
+and the Libano-Suisse policy row). Rules: `.claude/rules/medical-insurance.md`.
+
+## The MetLife module and its retirement (2026-11-11)
 
 **What it was.** A module built on 2026-11-04 for Sato Pharma's MetLife group medical policy: who should be on the
 policy, the additions-and-deletions file for the insurer, what a period should cost at the rate card, and each
