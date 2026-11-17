@@ -4,7 +4,7 @@
  *
  *   node scripts/phoenix-inspect/mcp-server.mjs [--runner spare|local]
  *
- * It gives an MCP client eight tools that LOOK at Phoenix on STAGING and read the module's
+ * It gives an MCP client nine tools that LOOK at Phoenix on STAGING and read the module's
  * documentation. It is deliberately narrow (kickoff: "Never expose an unrestricted browser/JavaScript/
  * SQL execution endpoint"):
  *
@@ -13,14 +13,17 @@
  *     validateToolInput; each tool's JSON schema also says additionalProperties: false).
  *   - The target is always staging (explore.mjs refuses production). Browsing contexts send GET only.
  *   - One capture at a time, 10 tool calls a minute, at most 40 pages and 10 minutes per call, a fresh
- *     browser per call. Images are the explorer's MASKED screenshots, never a raw page.
+ *     browser per call. Images are the explorer's MASKED screenshots, never a raw page, sent as a small
+ *     JPEG of the top of the page (PREVIEW); the full-page PNG stays in the run folder.
+ *   - A capture still running after 25 seconds (ANSWER_WITHIN_MS) answers with its run id, because
+ *     ChatGPT stops waiting for a tool at about 45 s; phoenix_get_capture collects the finished run.
  *   - Every call is written to artifacts/phoenix-inspection/mcp-audit.jsonl: tool, ids, outcome, ms.
  *
  * Runner: "spare" sends each capture to the spare laptop (on-spare.ps1), so the machine running this
  * server starts no browser; "local" runs the explorer here (for the spare itself, or any machine with
  * the credentials file). Default: spare when this is Windows and the spare scripts exist, else local.
  *
- * The same eight tools are served over Streamable HTTP, behind OAuth, by mcp-http.mjs: both doors build
+ * The same nine tools are served over Streamable HTTP, behind OAuth, by mcp-http.mjs: both doors build
  * their protocol server with `buildMcpServer` below. Remote use (ChatGPT) is NOT deployed anywhere: see
  * docs/phoenix-intelligence/CHATGPT_INTERFACE.md.
  * stdout belongs to the protocol; this file logs to stderr only.
@@ -61,12 +64,26 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 /** All the images of one result together, before base64 (which adds a third). */
 export const MAX_IMAGE_BYTES_PER_RESULT = 8 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/**
+ * ChatGPT stops waiting for a tool after about 45 seconds. Measured 17 Nov 2026 through the tunnel: a
+ * 38-second capture answered with its 1 MB full-page PNG, the picture took 39 more seconds to cross the
+ * home uplink, and ChatGPT had already answered "no screenshot was returned". So a capture still running
+ * at this mark answers at once with its run id, and phoenix_get_capture collects the result.
+ */
+export const ANSWER_WITHIN_MS = 25_000;
+/**
+ * The picture a client receives: the TOP of the masked page, scaled down and sent as a JPEG (about
+ * 150 KB instead of 1 MB for the KPIs board). A full desktop page is 7,870 px tall, which a vision model
+ * shrinks until nothing is legible anyway; the measurements cover the whole page, and the full-page PNG
+ * stays in the run folder on the laptop.
+ */
+export const PREVIEW = Object.freeze({ maxWidth: 1024, topPx: 1800, quality: 72 });
 const MAX_TEXT = 60_000;
 const CALL_MINUTES = RUN_BOUNDS.maxMinutesPerToolCall;
 
 const unique = (items) => [...new Set(items)];
 
-/** The eight tools, with JSON schemas built from the module specs (enums of ids, nothing free). */
+/** The nine tools, with JSON schemas built from the module specs (enums of ids, nothing free). */
 export function toolDefinitions() {
   const specs = Object.values(MODULES);
   const moduleId = { type: "string", enum: Object.keys(MODULES), description: "A module id from phoenix_list_portals_and_modules." };
@@ -77,6 +94,7 @@ export function toolDefinitions() {
   const read = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const look = { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   const schema = (properties, required) => ({ type: "object", properties, required, additionalProperties: false });
+  const runId = { type: "string", pattern: "^\\d{8}-\\d{6}(?:-[a-z0-9]{1,12})?$", description: "A run id, as a capture call answered it." };
   return [
     {
       name: "phoenix_list_portals_and_modules",
@@ -109,6 +127,12 @@ export function toolDefinitions() {
       annotations: look,
     },
     {
+      name: "phoenix_get_capture",
+      description: "Collects a capture that was still running when its call answered (the call gives the runId): the same summary, measurements and masked screenshots. Waits a short while for a run still going. Read-only.",
+      inputSchema: schema({ module: moduleId, runId }, ["module", "runId"]),
+      annotations: read,
+    },
+    {
       name: "phoenix_get_component_map",
       description: "Returns the module's route -> layout -> page -> component -> domain -> table map, each link marked certain or inferred.",
       inputSchema: schema({ module: moduleId }, ["module"]),
@@ -117,7 +141,7 @@ export function toolDefinitions() {
     {
       name: "phoenix_get_visual_audit",
       description: "Returns the module's visual audit and, with runId, that run's totals and per-shot measurements.",
-      inputSchema: schema({ module: moduleId, runId: { type: "string", pattern: "^\\d{8}-\\d{6}(?:-[a-z0-9]{1,12})?$" } }, ["module"]),
+      inputSchema: schema({ module: moduleId, runId }, ["module"]),
       annotations: read,
     },
     {
@@ -150,9 +174,11 @@ function insideRun(outDir, relative) {
 /**
  * A shot's MASKED picture as an MCP image block, or null. Only a shot the explorer marked "captured"
  * (its leak check passed; a failed check deletes the files and records no image), only a PNG under the
- * run's `shots/` folder, only under the per-image cap, and only when the file starts as a PNG does.
+ * run's `shots/` folder, only under the per-image cap, and only when the file starts as a PNG does. What
+ * is sent is its PREVIEW: the top of the page, scaled, as a JPEG. The masking is in the pixels, so
+ * cropping and scaling keep it. A picture that cannot be read is left out; the measurements still go.
  */
-function maskedImage(outDir, shot) {
+async function maskedImage(outDir, shot) {
   if (shot?.outcome !== "captured" || Number(shot.redaction?.leakCount) > 0) return null;
   const relative = shot.image;
   if (typeof relative !== "string" || !/^shots\/[^/\\]+\.png$/.test(relative)) return null;
@@ -160,7 +186,26 @@ function maskedImage(outDir, shot) {
   if (!full || statSync(full).size > MAX_IMAGE_BYTES) return null;
   const bytes = readFileSync(full);
   if (!bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return null;
-  return { block: { type: "image", data: bytes.toString("base64"), mimeType: "image/png" }, bytes: bytes.length };
+  try {
+    const { default: sharp } = await import("sharp");
+    const { width, height } = await sharp(bytes).metadata();
+    if (!width || !height) return null;
+    const top = Math.min(height, PREVIEW.topPx);
+    const wide = Math.min(width, PREVIEW.maxWidth);
+    const preview = await sharp(bytes)
+      .extract({ left: 0, top: 0, width, height: top })
+      .resize({ width: wide })
+      .jpeg({ quality: PREVIEW.quality, mozjpeg: true })
+      .toBuffer();
+    const part = top < height ? `the top ${top} of ${height} px` : `all ${height} px`;
+    return {
+      block: { type: "image", data: preview.toString("base64"), mimeType: "image/jpeg" },
+      bytes: preview.length,
+      label: `masked screenshot: ${relative} (${part}, ${wide} px wide, JPEG; the full-page PNG stays in the run folder)`,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function shotSummary(shot) {
@@ -185,9 +230,11 @@ function shotSummary(shot) {
  * capture, and the minutes are a HARD stop: the runner gets an AbortSignal that closes its browser (or
  * stops the spare's run), and the call answers at the limit. `maxResultBytes` caps the whole serialized
  * result: images are dropped, last first, until it fits (the tunnel's envelope is 10 MiB).
- * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null, imageLimits?: { count?: number, bytes?: number }, callLimits?: { pages?: number, minutes?: number }, maxResultBytes?: number|null }} deps
+ * `answerWithinMs` is how long a capture call waits before answering with its run id instead (ChatGPT
+ * stops waiting at about 45 s); phoenix_get_capture then collects that run.
+ * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null, imageLimits?: { count?: number, bytes?: number }, callLimits?: { pages?: number, minutes?: number }, maxResultBytes?: number|null, answerWithinMs?: number }} deps
  */
-export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile, imageLimits = {}, callLimits = {}, maxResultBytes = null } = {}) {
+export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile, imageLimits = {}, callLimits = {}, maxResultBytes = null, answerWithinMs = ANSWER_WITHIN_MS } = {}) {
   const tools = toolDefinitions();
   const maxImages = Math.min(MAX_IMAGES_PER_RESULT, imageLimits.count ?? MAX_IMAGES_PER_RESULT);
   const maxImageBytes = Math.min(MAX_IMAGE_BYTES_PER_RESULT, imageLimits.bytes ?? MAX_IMAGE_BYTES_PER_RESULT);
@@ -196,6 +243,9 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
   if (!(callMinutes > 0)) throw new Error("callLimits.minutes must be positive");
   const limiter = createRateLimiter(RUN_BOUNDS.toolCallsPerMinute, now);
   const flight = createSingleFlight();
+  /** Captures that outlived answerWithinMs, by run id, until phoenix_get_capture collects them. */
+  const pending = new Map();
+  const PENDING_KEEP_MS = 30 * 60_000;
   const auditPath = auditFile === undefined ? path.join(repoRoot, ...RUN_ROOT, "mcp-audit.jsonl") : auditFile;
 
   function audit(record) {
@@ -221,10 +271,64 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     if (plan.jobs.length > maxPages) {
       return refusal(`refused: ${plan.jobs.length} pages asked; one call captures at most ${maxPages}`);
     }
+    // ChatGPT sometimes asks for the same capture again instead of collecting the one it was told
+    // about (17 Nov 2026: a second CEO capture started 4 s after the first finished). An uncollected run
+    // of exactly these ids answers instead of a second browser.
+    const key = JSON.stringify({ module, persona, states, viewports: viewports ?? ["desktop"] });
+    for (const [id, entry] of pending) {
+      if (entry.key === key && now() - entry.startedAt <= PENDING_KEEP_MS) return collect(id, entry);
+    }
     const runId = `${cairoStamp(new Date(now())).id}-mcp`;
-    const { outDir, manifest } = await runBounded((signal) =>
+    const running = runBounded((signal) =>
       runner({ module, personas: [persona], states, viewports: viewports ?? ["desktop"], runId, maxMinutes: callMinutes, signal }),
     );
+    const finished = await settleWithin(running);
+    if (!finished) {
+      running.catch(() => {});
+      for (const [id, entry] of pending) if (now() - entry.startedAt > PENDING_KEEP_MS) pending.delete(id);
+      pending.set(runId, { module, key, running, startedAt: now() });
+      return stillCapturing(module, runId);
+    }
+    return resultOf(finished.run);
+  }
+
+  /** A waiting run: its result once finished (then forgotten), or "still capturing" again. */
+  async function collect(runId, entry) {
+    let finished;
+    try {
+      finished = await settleWithin(entry.running);
+    } catch (error) {
+      pending.delete(runId);
+      throw error;
+    }
+    if (!finished) return stillCapturing(entry.module, runId);
+    pending.delete(runId);
+    return resultOf(finished.run);
+  }
+
+  /** The run, or null when it is still going after answerWithinMs. A failure is thrown, as before. */
+  function settleWithin(running) {
+    let timer = null;
+    const late = new Promise((resolve) => {
+      timer = setTimeout(resolve, answerWithinMs, null);
+    });
+    return Promise.race([running.then((run) => ({ run })), late]).finally(() => clearTimeout(timer));
+  }
+
+  function stillCapturing(module, runId) {
+    const next = { tool: "phoenix_get_capture", arguments: { module, runId } };
+    return {
+      content: [
+        text(
+          `The capture is still running on the laptop (run ${runId}). Call phoenix_get_capture with ${JSON.stringify(next.arguments)} to collect its screenshots and measurements; that call waits up to ${Math.round(answerWithinMs / 1000)} seconds for the run to finish.`,
+        ),
+      ],
+      structuredContent: { status: "capturing", runId, module, next },
+    };
+  }
+
+  /** A finished run as a tool result: the summary as text AND structuredContent, then the previews. */
+  async function resultOf({ outDir, manifest }) {
     const shots = manifest.shots ?? [];
     // The same summary as text AND as structuredContent: ChatGPT does not guarantee that a tool's image
     // reaches the model (OpenAI support, 22 Apr 2026), so the measurements must stand without it.
@@ -243,9 +347,9 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     let bytes = 0;
     for (const shot of shots.filter((item) => item.image)) {
       if (images >= maxImages) break;
-      const image = maskedImage(outDir, shot);
+      const image = await maskedImage(outDir, shot);
       if (!image || bytes + image.bytes > maxImageBytes) continue;
-      content.push(text(`masked screenshot: ${shot.image}`), image.block);
+      content.push(text(image.label), image.block);
       images += 1;
       bytes += image.bytes;
     }
@@ -341,7 +445,7 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     phoenix_capture_page: capture,
     async phoenix_inspect_ui_state({ module, persona, state, viewport }) {
       const result = await capture({ module, persona, states: [state], viewports: [viewport ?? "desktop"] });
-      if (result.isError) return result;
+      if (result.isError || !result._manifest) return result;
       const shot = result._manifest.shots?.[0];
       if (!shot) return result;
       const aria = shot.aria ? insideRun(result._outDir, shot.aria) : null;
@@ -357,9 +461,20 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
       };
       const content = [text(detail)];
       if (aria) content.push(text(`masked accessibility snapshot:\n${clip(readFileSync(aria, "utf8"), 20_000)}`));
-      const image = maskedImage(result._outDir, shot);
-      if (image && image.bytes <= maxImageBytes) content.push(image.block);
+      const image = await maskedImage(result._outDir, shot);
+      if (image && image.bytes <= maxImageBytes) content.push(text(image.label), image.block);
       return fit({ content, structuredContent: plain(detail) });
+    },
+    async phoenix_get_capture({ module, runId }) {
+      const entry = pending.get(runId);
+      if (entry) {
+        if (entry.module !== module) return refusal(`refused: run ${runId} is a ${entry.module} capture`);
+        return collect(runId, entry);
+      }
+      const outDir = path.join(repoRoot, ...RUN_ROOT, module, runId);
+      const file = path.join(outDir, "manifest.json");
+      if (!existsSync(file)) return refusal(`run ${runId} is not on this machine`);
+      return resultOf({ outDir, manifest: JSON.parse(readFileSync(file, "utf8")) });
     },
     phoenix_get_component_map({ module }) {
       const doc = readRepoFile(repoRoot, MODULE_DOCS[module].componentMap);

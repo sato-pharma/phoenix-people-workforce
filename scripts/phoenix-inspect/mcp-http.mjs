@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Phoenix Inspect — the same eight MCP tools as mcp-server.mjs, over Streamable HTTP, behind OAuth.
+ * Phoenix Inspect — the same nine MCP tools as mcp-server.mjs, over Streamable HTTP, behind OAuth.
  *
  *   node scripts/phoenix-inspect/mcp-http.mjs [--runner spare|local] [--port 8787] [--host 127.0.0.1]
  *        [--public-url https://<host>/mcp --trust-proxy [--allow-non-loopback]]
