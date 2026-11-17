@@ -10,7 +10,7 @@ import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory } from "@/lib/medical-insurance/cost";
 import { additionCategory, type MedicalInsuranceAction, type MedicalInsuranceActionKind } from "@/lib/medical-insurance/eligibility";
-import { DECLINED_REASON, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
+import { DECLINED_REASON, employeeRecordWords, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
 import { cellClassName, downloadPosted, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
@@ -110,7 +110,9 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
       <>
         <p className="break-words text-sm font-black text-phx-ink" dir="auto">{action.name}</p>
         {action.jobTitle ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{action.jobTitle}</p> : null}
-        {action.lineName ? <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">{action.lineName}</p> : null}
+        {(action.memberType === "employee" ? employeeRecordWords(action) : action.lineName ? [action.lineName] : []).map((words) => (
+          <p className="break-words text-phx-xs font-semibold text-phx-ink-faint" key={words}>{words}</p>
+        ))}
         {action.dependants > 0 ? (
           <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
             {action.dependants === 1 ? "1 family member goes with them" : `${action.dependants} family members go with them`}

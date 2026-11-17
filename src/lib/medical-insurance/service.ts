@@ -215,6 +215,7 @@ function toEmployeeFacts(row: EmployeeDirectoryRow): EmployeeFacts {
     hrId: row.hrId,
     jobTitle: row.jobTitle,
     lineName: row.lineName,
+    areaName: row.areaName,
     name: row.displayName || row.fullName,
   };
 }
@@ -330,6 +331,11 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
   const memberNames = new Map(state.memberRows.map((row) => [row.id, row.full_name]));
   const documents = await loadDocuments(policy.id, ["communication_tool", "form"], names);
 
+  // An employee's own record places them; family and people with no record carry none.
+  const recordOf = (row: MemberDbRow) => {
+    const record = row.hr_id && row.member_type === "employee" ? state.employeeRows.get(row.hr_id) : undefined;
+    return { areaName: record?.areaName ?? null, hireDate: record?.hireDate ? record.hireDate.slice(0, 10) : null, lineName: record?.lineName ?? null };
+  };
   const memberView: MedicalInsuranceMemberRow[] = state.memberRows.map((row) => ({
     birthDate: memberBirthDate(row, state.employeeRows),
     category: row.category,
@@ -340,6 +346,7 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
     hrId: row.hr_id,
     id: row.id,
     jobTitle: row.hr_id && row.member_type === "employee" ? jobTitles.get(row.hr_id) ?? null : null,
+    ...recordOf(row),
     memberType: row.member_type,
     name: row.full_name,
     notes: row.notes,

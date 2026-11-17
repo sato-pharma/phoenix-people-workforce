@@ -9,7 +9,7 @@ import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSele
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES } from "@/lib/medical-insurance/cost";
-import { coveragePeriodWords, DECLINED_REASON, MEMBER_TYPE_WORDS, type MedicalInsuranceMemberRow, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
+import { coveragePeriodWords, DECLINED_REASON, employeeRecordWords, MEMBER_TYPE_WORDS, type MedicalInsuranceMemberRow, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
 import { cellClassName, downloadPosted, fileLinkClassName, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
@@ -27,7 +27,7 @@ const STANDINGS: Array<{ id: Standing; label: string }> = [
 function matches(member: MedicalInsuranceMemberRow, query: string): boolean {
   const wanted = query.trim().toLowerCase();
   if (!wanted) return true;
-  return [member.name, member.certificateNumber, member.staffNumber, member.jobTitle, member.principalName].some((value) => String(value ?? "").toLowerCase().includes(wanted));
+  return [member.name, member.certificateNumber, member.staffNumber, member.jobTitle, member.principalName, member.hrId, member.lineName, member.areaName].some((value) => String(value ?? "").toLowerCase().includes(wanted));
 }
 
 export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view }: Props) {
@@ -64,6 +64,9 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
       <>
         <p className="break-words text-sm font-black text-phx-ink" dir="auto">{member.name}</p>
         {member.jobTitle ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{member.jobTitle}</p> : null}
+        {member.memberType === "employee"
+          ? employeeRecordWords(member).map((words) => <p className="break-words text-phx-xs font-semibold text-phx-ink-faint" key={words}>{words}</p>)
+          : null}
         {member.memberType === "employee" ? null : (
           <p className="break-words text-phx-xs font-semibold text-phx-ink-soft" dir="auto">{MEMBER_TYPE_WORDS[member.memberType]} of {member.principalName ?? "name not on record"}</p>
         )}
