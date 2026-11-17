@@ -24,6 +24,43 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+const UNPREPARABLE_PHOTO = "This photo could not be prepared. Take the photo again, or choose a JPG or PNG.";
+
+/**
+ * A `data:` address back into its bytes, decoded in place — NEVER through `fetch()`.
+ *
+ * The app's Content-Security-Policy (next.config.ts) lists no `data:` under connect-src, so a
+ * `fetch(dataUrl)` is refused by the browser with its bare "Failed to fetch". That is what every
+ * medical rep saw on My Outstation Expenses (17 Nov 2026) the moment they picked a photo, and with
+ * two photos required no traveling claim could be sent. Loosening the policy is not the fix.
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const match = /^data:([^,]*?),([\s\S]*)$/.exec(dataUrl);
+  if (!match) throw new Error(UNPREPARABLE_PHOTO);
+  const [, header, payload] = match;
+  const parts = header.split(";");
+  const isBase64 = parts.slice(1).some((part) => part.trim().toLowerCase() === "base64");
+  const type = parts[0].trim() || "image/jpeg";
+
+  if (!isBase64) {
+    try {
+      return new Blob([decodeURIComponent(payload)], { type });
+    } catch {
+      throw new Error(UNPREPARABLE_PHOTO);
+    }
+  }
+
+  let binary: string;
+  try {
+    binary = atob(payload.replace(/\s/g, ""));
+  } catch {
+    throw new Error(UNPREPARABLE_PHOTO);
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type });
+}
+
 /**
  * One ticket or invoice, ready to send.
  *
