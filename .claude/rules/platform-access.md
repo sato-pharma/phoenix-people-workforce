@@ -3,11 +3,16 @@ paths:
   - "src/lib/auth/{permissions,password-strength,leaked-password,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts"
   - "app/api/auth/{change-password,password-reset,password-setup}/**"
   - "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,leaked-password,seat-fence,signed-out}*"
+  - "src/lib/chatgpt-connector/**"
+  - "app/api/mcp/**"
+  - "app/api/connector/**"
+  - "app/connector/**"
+  - "tests/chatgpt-connector-*"
 ---
 
 # Module memory — Platform — passwords and access control
 
-**Scope:** A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, and the retired seats.
+**Scope:** A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, the retired seats, and the ChatGPT data connector that reads Phoenix as the owner or the CEO.
 
 This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
 
@@ -42,6 +47,10 @@ This file is loaded because this session opened a file of this module (or the mo
 ### Access control — retired seats
 
 - 🔒 **A RETIRED SEAT STAYS IN `phoenixRoles` AS A DORMANT KEY — `retiredPhoenixRoles` in `src/lib/auth/permissions.ts` — and is never deleted from the union** (owner, 2026-10-08, retiring the HR Business Partner, `HR Advisory`: "no more HR business partner"; its other work "Leave it for system administrator now"). The key holds an empty matrix entry (the universal self-service floor still applies), keeps its RESTRICTIONS (salary redaction), and leaves every seat set, nav list and rank case. Every picker lists `assignablePhoenixRoles`; `upsertAccessUserCore` and `upsertRolePermissionOverride` refuse a retired key by name. Its functions move to `UNASSIGNED_HR_FUNCTIONS` (the Super Admin's), never deleted, so handing them out later is a move. Pinned by `tests/hr-advisory-module-access.test.ts`.
+
+### The ChatGPT data connector
+
+- 🔴 **THE CHATGPT CONNECTOR READS AS THE OWNER OR THE CEO ONLY, AND EVERY TOOL IS READ-ONLY** (owner, 17 Nov 2026: "Me + CEO", everything his role sees, "Phoenix makes them"). `/api/mcp` takes a connector token (`src/lib/chatgpt-connector/oauth.ts`, stored as fingerprints), re-reads the account LIVE on every call (role, `session_version`, active, employed) and builds the same access context a website session does, so each tool asserts its page's own permission and scope. Never add a tool that writes, sends, approves or publishes. Every call leaves a `chatgpt_connector` audit row without the answer. Kill switch and how to connect: `docs/phoenix-intelligence/CHATGPT_DATA_CONNECTOR.md`. Pinned by `tests/chatgpt-connector-oauth.test.ts`.
 
 <!-- module-memory:rules:end -->
 

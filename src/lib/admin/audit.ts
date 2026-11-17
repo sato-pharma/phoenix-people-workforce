@@ -188,6 +188,10 @@ export type AuditEntityType =
   // public token route stays the only anonymous address in that area.
   | "ceo_email_template"
   | "ceo_email_send"
+  // The ChatGPT data connector (17 Nov 2026): the owner or the CEO allowing ChatGPT into Phoenix, and
+  // every question ChatGPT asked on their behalf — the tool, its inputs and how long it took. The
+  // answer itself is never stored here; the person's own screens already hold that data.
+  | "chatgpt_connector"
   // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
   // session that created it and copies candidate names and phone numbers out of Phoenix, so who
   // made one — and who killed it — is recorded. The token itself is never written here: an audit

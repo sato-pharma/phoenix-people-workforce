@@ -1,0 +1,192 @@
+/**
+ * The raw-table reader's guard: which tables and columns may ever leave the server, and the one
+ * fixed query shape a read may take. Pure — no database — so tests/chatgpt-connector-tools.test.ts
+ * pins every rule here. The reader itself is tools/tables.ts.
+ *
+ * Owner seat only (`TABLE_TOOL_ROLES`): the CEO's visibility is application-scoped, never RLS-scoped
+ * (AGENTS.md §8), so a raw read would show him more than his screens do.
+ */
+import { ToolRefusal, type ConnectorRole } from "@/lib/chatgpt-connector/types";
+
+export const TABLE_TOOL_ROLES: readonly ConnectorRole[] = ["Super Admin"];
+
+export const TABLE_READ_MAX_ROWS = 500;
+export const TABLE_READ_DEFAULT_ROWS = 100;
+
+export const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * Tables that hold credentials, sessions, one-time codes, sign-in links or share/approval tokens.
+ * Never listed, never read, whatever columns are asked for.
+ */
+const DENIED_TABLE_PATTERNS: readonly RegExp[] = [
+  /^app_auth_(?!users$)/, // credentials, second step, recovery codes, trusted devices, webauthn
+  /^app_sessions$/,
+  /^auth_login_attempts$/,
+  /^connector_oauth_/,
+  /^connector_files$/,
+  /^push_subscriptions$/,
+  /^recovery$/,
+  /^api_rate_limit_buckets$/,
+  /password/,
+  /passkey/,
+  /webauthn/,
+  /secret/,
+  /token/,
+  /credential/,
+  /second_step/,
+  /trusted_device/,
+  /(^|_)otp(_|s?$)/,
+  /vault/,
+  /share_links?$/,
+  /_shares$/,
+  /preview_links?$/,
+  /calendar_links?$/,
+];
+
+/**
+ * Columns that are, or can stand in for, a credential: passwords and their hashes, secrets, tokens,
+ * one-time and recovery codes, API/private/signing keys, sealed values, nonces, cookies. Every
+ * `*hash*` column is held back too — some are only content fingerprints, but a hash is never what a
+ * business question needs.
+ */
+const DENIED_COLUMN_PATTERNS: readonly RegExp[] = [
+  /password/,
+  /passcode/,
+  /secret/,
+  /token/,
+  /hash/,
+  /(^|_)otp(_|s?$)/,
+  /recovery_code/,
+  /credential/,
+  /sealed/,
+  /nonce/,
+  /cookie/,
+  /salt$/,
+  /(^|_)(api|private|access|signing|encryption|service|session|secret)_?key/,
+  /^key$/,
+];
+
+export function isDeniedTable(table: string): boolean {
+  const name = table.trim().toLowerCase();
+  return DENIED_TABLE_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+export function isDeniedColumn(column: string): boolean {
+  const name = column.trim().toLowerCase();
+  return DENIED_COLUMN_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+/** The columns of a table that may be read: well-formed names, none on the deny list. */
+export function readableColumns(columns: readonly string[]): string[] {
+  return columns.filter((column) => TABLE_NAME_RE.test(column) && !isDeniedColumn(column));
+}
+
+/** The readable tables of a schema map (table → its columns), sorted, deny-listed ones gone. */
+export function readableTables(schema: ReadonlyMap<string, readonly string[]>): Array<{ table: string; columns: string[] }> {
+  return [...schema.entries()]
+    .filter(([table]) => TABLE_NAME_RE.test(table) && !isDeniedTable(table))
+    .map(([table, columns]) => ({ table, columns: readableColumns(columns) }))
+    .sort((left, right) => left.table.localeCompare(right.table));
+}
+
+export const TABLE_FILTER_OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "ilike", "in", "is"] as const;
+export type TableFilterOp = (typeof TABLE_FILTER_OPS)[number];
+
+export type TableScalar = string | number | boolean | null;
+
+export type TableFilterInput = { column: string; op: TableFilterOp; value?: unknown };
+
+export type TableReadInput = {
+  table: string;
+  columns?: string[];
+  filters?: TableFilterInput[];
+  orderBy?: { column: string; ascending?: boolean };
+  limit?: number;
+};
+
+export type TableReadPlan = {
+  table: string;
+  columns: string[];
+  filters: Array<{ column: string; op: TableFilterOp; value: TableScalar | TableScalar[] }>;
+  orderBy: { column: string; ascending: boolean } | null;
+  limit: number;
+};
+
+function isScalar(value: unknown): value is TableScalar {
+  return value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
+}
+
+/**
+ * Validate one read against the live schema and the deny lists, and return the only shape the
+ * reader will run: an explicit column list (never `*`), filters on readable columns only (a filter
+ * on a secret column would leak it one guess at a time), one order, a capped limit.
+ */
+export function planTableRead(input: TableReadInput, schema: ReadonlyMap<string, readonly string[]>): TableReadPlan {
+  const table = String(input.table ?? "").trim();
+  if (!TABLE_NAME_RE.test(table)) throw new ToolRefusal(`"${table}" is not a table name.`);
+  if (isDeniedTable(table)) throw new ToolRefusal(`${table} holds sign-in or security data and is never read through this connector.`);
+  const known = schema.get(table);
+  if (!known) throw new ToolRefusal(`There is no table or view called ${table}. Call phoenix_list_tables for the list.`);
+  const allowed = new Set(readableColumns(known));
+  if (allowed.size === 0) throw new ToolRefusal(`${table} has no column this connector may read.`);
+
+  const askColumn = (column: string, purpose: string): string => {
+    const name = String(column ?? "").trim();
+    if (isDeniedColumn(name)) throw new ToolRefusal(`${table}.${name} is a security column and is never read or filtered.`);
+    if (!allowed.has(name)) throw new ToolRefusal(`${table} has no readable column called ${name} (${purpose}).`);
+    return name;
+  };
+
+  const columns = input.columns && input.columns.length > 0
+    ? [...new Set(input.columns.map((column) => askColumn(column, "columns")))]
+    : [...allowed];
+
+  const filters = (input.filters ?? []).slice(0, 20).map((filter) => {
+    const column = askColumn(filter.column, "filters");
+    if (!(TABLE_FILTER_OPS as readonly string[]).includes(filter.op)) throw new ToolRefusal(`Unknown filter operator ${filter.op}.`);
+    if (filter.op === "in") {
+      const values = Array.isArray(filter.value) ? filter.value : [];
+      if (values.length === 0 || values.length > 200 || !values.every(isScalar)) {
+        throw new ToolRefusal(`The "in" filter on ${column} needs a list of 1 to 200 plain values.`);
+      }
+      return { column, op: filter.op, value: values as TableScalar[] };
+    }
+    if (filter.op === "is") {
+      if (filter.value !== null && filter.value !== true && filter.value !== false) {
+        throw new ToolRefusal(`The "is" filter on ${column} takes null, true or false.`);
+      }
+      return { column, op: filter.op, value: filter.value as TableScalar };
+    }
+    if (!isScalar(filter.value) || filter.value === null) {
+      throw new ToolRefusal(`The ${filter.op} filter on ${column} needs one plain value (use "is" for null).`);
+    }
+    if (filter.op === "ilike" && typeof filter.value !== "string") throw new ToolRefusal(`ilike on ${column} needs text.`);
+    return { column, op: filter.op, value: filter.value };
+  });
+
+  const orderBy = input.orderBy
+    ? { column: askColumn(input.orderBy.column, "orderBy"), ascending: input.orderBy.ascending !== false }
+    : null;
+
+  const requested = Number(input.limit ?? TABLE_READ_DEFAULT_ROWS);
+  const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), TABLE_READ_MAX_ROWS) : TABLE_READ_DEFAULT_ROWS;
+
+  return { table, columns, filters, orderBy, limit };
+}
+
+/**
+ * Table → column names from PostgREST's OpenAPI document (`definitions`). Anything that is not an
+ * object with `properties` is skipped.
+ */
+export function schemaFromOpenApi(document: unknown): Map<string, string[]> {
+  const schema = new Map<string, string[]>();
+  const definitions = (document as { definitions?: Record<string, unknown> } | null)?.definitions;
+  if (!definitions || typeof definitions !== "object") return schema;
+  for (const [table, definition] of Object.entries(definitions)) {
+    const properties = (definition as { properties?: Record<string, unknown> } | null)?.properties;
+    if (!properties || typeof properties !== "object") continue;
+    schema.set(table, Object.keys(properties));
+  }
+  return schema;
+}
