@@ -6,8 +6,10 @@ import {
   nearWord,
   pairKey,
   phoneKey,
+  planLineLookalikeJoins,
   planLineLookalikes,
   planLookalikeConfirm,
+  planLookalikeJoin,
   type LookalikeCustomer,
   type LookalikeInput,
 } from "../src/lib/phoenix-crm/line-lookalikes.ts";
@@ -255,9 +257,80 @@ function runSourceTests(): void {
   assert.ok(shell.includes("<LineLookalikeBoardView filters={filters} />"), "with the shared filters");
 }
 
+// ── 5. Two validated rows: the join (owner, 2026-11-17: "i want phx 2 recognize as 1") ───────────────
+
+/** A point `meters` north of Cairo's test point. */
+function north(meters: number): { lat: number; lon: number } {
+  return { lat: CAIRO.lat + meters / 111_195, lon: CAIRO.lon };
+}
+
+function runJoinTests(): void {
+  const cns = validated({ seatId: "cns-ca1", lineCode: "cns", name: "احمد صبري مشعل" });
+  const pedia = validated({ name: "احمد صبري معشل" });
+  const cnsPlace = place(cns, { accuracyMeters: 5 });
+  const pediaPlace = place(pedia, { ...north(40), accuracyMeters: 12 });
+  const input: LookalikeInput = { customers: [cns, pedia], places: [cnsPlace, pediaPlace], notSame: new Set() };
+
+  const joins = planLineLookalikeJoins(input);
+  assert.equal(joins.length, 1, "both lines validated one customer under two spellings, 40 m apart: one join to confirm");
+  assert.equal(joins[0].anchorCustomerId, cns.id, "the sharper photograph is the point that stays");
+  assert.equal(joins[0].joiningCustomerId, pedia.id, "…and Pedia's row moves onto it");
+  assert.equal(joins[0].key, pairKey(pedia.id, cns.id));
+  assert.deepEqual(joins[0].moves.map((move) => [move.placeId, move.anchorPlaceId, move.distanceMeters]), [[pediaPlace.id, cnsPlace.id, 40]]);
+  assert.equal(joins[0].confidence, "very_likely");
+  assert.deepEqual(planLineLookalikes(input), [], "a join is never put on the validate list: neither row waits");
+
+  const onePoint = planLineLookalikeJoins({ ...input, places: [cnsPlace, place(pedia, { accuracyMeters: 12 })] });
+  assert.equal(onePoint.length, 1, "already on one point: still listed, so his word makes them one");
+  assert.deepEqual(onePoint[0].moves, [], "…and nothing moves");
+  assert.equal(onePoint[0].gapMeters, 0);
+
+  assert.deepEqual(planLineLookalikeJoins({ ...input, places: [cnsPlace, place(pedia, north(200))] }), [], "200 m apart may be two clinics: never listed");
+  assert.deepEqual(
+    planLineLookalikeJoins({ ...input, customers: [cns, { ...pedia, name: cns.name }] }),
+    [],
+    "the exact same name is the three-lines rule's to join, never this list's",
+  );
+  assert.deepEqual(
+    planLineLookalikeJoins({ ...input, places: [place(cns, { pointSource: "moved" }), place(pedia, { ...north(40), pointSource: "trusted" })] }),
+    [],
+    "two points set by hand: neither moves, so nothing is listed",
+  );
+  assert.deepEqual(planLineLookalikeJoins({ ...input, notSame: new Set([pairKey(cns.id, pedia.id)]) }), [], "answered Not the same, in either order");
+  assert.deepEqual(planLineLookalikeJoins({ ...input, confirmed: new Set([pairKey(pedia.id, cns.id)]) }), [], "already joined: not listed again");
+  assert.deepEqual(
+    planLineLookalikeJoins({ ...input, customers: [cns, { ...pedia, seatId: "cns-ca9", lineCode: "cns" }] }),
+    [],
+    "two rows of one line are never joined here",
+  );
+  assert.deepEqual(planLineLookalikeJoins({ ...input, customers: [cns, { ...pedia, areaCode: "CA2" }] }), [], "another area is somebody else");
+
+  const plan = planLookalikeJoin(input, pedia.id, cns.id);
+  assert.ok(plan.ok, "his confirmation is carried out on a fresh read");
+  if (plan.ok) {
+    assert.equal(plan.anchor.id, cns.id, "the direction is decided again, whichever way the card named them");
+    assert.equal(plan.moves.length, 1);
+  }
+  assert.deepEqual(planLookalikeJoin(input, cns.id, pedia.id).ok, true, "either order");
+  assert.deepEqual(planLookalikeJoin({ ...input, customers: [cns, { ...pedia, status: "pending", validatedAt: null }] }, pedia.id, cns.id), { ok: false, refusal: "not_validated" });
+  assert.deepEqual(planLookalikeJoin({ ...input, places: [cnsPlace, place(pedia, north(200))] }, pedia.id, cns.id), { ok: false, refusal: "too_far" });
+  assert.deepEqual(planLookalikeJoin({ ...input, notSame: new Set([pairKey(pedia.id, cns.id)]) }, cns.id, pedia.id), { ok: false, refusal: "answered_not_same" });
+  assert.deepEqual(planLookalikeJoin(input, pedia.id, "gone"), { ok: false, refusal: "not_found" });
+
+  const server = read("src/lib/phoenix-crm/server/line-lookalikes.ts");
+  assert.ok(server.includes('if (body.mode === "join") return joinLineLookalike(viewer, waitingCustomerId, sourceCustomerId);'), "the answer routes a join card to the join");
+  assert.ok(/applyLineTwinMerges\(plan\.moves, viewer\.config\.settings, viewer\.hrId\)/.test(server), "the join moves through the rule's own audited move, the Super Admin as the actor");
+  assert.ok(/saveAnswer\(viewer, plan\.joining\.id, plan\.anchor\.id, "same"\)/.test(server), "and keeps his answer (joining, anchor)");
+  assert.ok(server.indexOf("applyLineTwinMerges(plan.moves") < server.indexOf('saveAnswer(viewer, plan.joining.id'), "the answer is saved only after the places moved");
+  assert.ok(server.includes("planLineLookalikeJoins(input)") && server.includes('mode: "join"'), "the board lists the joins");
+  const screen = read("src/components/phoenix-crm/line-lookalike-board.tsx");
+  assert.ok(screen.includes("mode: row.mode") && screen.includes("Same customer — join them") && screen.includes("row.joiningPlaces.map"), "the card sends its mode, says what it does and draws both photographs");
+}
+
 export function runPhoenixCrmLineLookalikesTests(): void {
   runNameTests();
   runListTests();
   runConfirmTests();
   runSourceTests();
+  runJoinTests();
 }

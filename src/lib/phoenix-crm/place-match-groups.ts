@@ -29,8 +29,18 @@
  * hold a reading he knows is somebody else's door. `splitAnswerPairs` turns his per-reading marks into
  * pairs, and a `different` answer then keeps that reading out of the place he confirmed: no join the
  * system makes on distance alone may put two readings he called different in one place.
+ *
+ * 🔴 ONE CUSTOMER IS ONE READING (owner, 2026-11-17: "if same dr different reps visit but he is in phoenix
+ * recognized as 2 bec everyone separate validate him i want phx 2 recognize as 1"). Where the three-lines
+ * rule has already joined two lines' records of one customer — the weaker moved onto the stronger's point
+ * with `LINE_TWIN_MOVE_REASON` — the board shows them as ONE reading that names every rep and line
+ * (`oneCustomerJoins`, `foldOneCustomer`). Without it each record kept its own photograph's fix, so a customer
+ * Phoenix had already joined was put to him again as two (measured 2026-11-17: 210 such pairs). A pair he
+ * confirmed as the same customer on the "Same customer, other line" list folds the same way, whatever the
+ * spelling (`confirmed`): his word is what joins two names the rule never would.
  */
 
+import { sameName } from "@/lib/phoenix-crm/customer-match-groups";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 
 export type MatchSubjectKind = "place" | "venue";
@@ -76,7 +86,162 @@ export type MatchSubject = {
   seated: number;
   /** The validation is still waiting for a decision (a held venue, a pending review). */
   waiting: boolean;
+  /** The other lines' records of this same customer, folded into this reading (`foldOneCustomer`). */
+  sameCustomer?: SameCustomerRecord[];
 };
+
+/** Another line's record of the same customer, shown on the reading it was folded into. */
+export type SameCustomerRecord = { key: string; repName: string; territory: string; line: string | null };
+
+// ── One customer, one reading ──────────────────────────────────────────────────────────────────────
+
+/** Two stored points this close are the one point the three-lines rule moved a record onto. */
+export const ONE_CUSTOMER_SAME_POINT_METERS = 1;
+
+/** One validated place, as the one-customer fold reads it. */
+export type OneCustomerCandidate = {
+  key: string;
+  customerId: string;
+  seatId: string;
+  /** The seat's line name; two records of one line are never one customer here. */
+  line: string | null;
+  listType: string;
+  /** The customer's name, folded and counted the signboard reader's way. */
+  nameWords: ReadonlyArray<string>;
+  /** The STORED point — the one the three-lines rule moves — never the photograph's fix. */
+  stored: GeoPoint | null;
+  /** This place was moved by the three-lines rule onto another line's point. */
+  movedByLineRule: boolean;
+  capturedAt: string;
+};
+
+function isPersonList(listType: string): boolean {
+  return listType === "AM" || listType === "PM";
+}
+
+/** The key of a pair of customers he confirmed as one, in either order (`oneCustomerJoins`' `confirmed`). */
+export function customerPairKey(left: string, right: string): string {
+  return left < right ? `${left}|${right}` : `${right}|${left}`;
+}
+
+/**
+ * Which records are one customer: `joined key → kept key`. A pair is joined when both sit on one stored point,
+ * they are on two different lines of one list (AM or PM), and EITHER the three-lines rule moved one of them
+ * there and their names are one name, OR he confirmed the two customers as one (`confirmed`, keys made by
+ * `customerPairKey`). The kept record is the one the others were moved onto (not itself moved), then the
+ * earliest captured.
+ */
+export function oneCustomerJoins(candidates: ReadonlyArray<OneCustomerCandidate>, confirmed: ReadonlySet<string> = new Set()): Map<string, string> {
+  const usable = candidates.filter((candidate) => candidate.stored && candidate.line && isPersonList(candidate.listType));
+  const buckets = new Map<string, OneCustomerCandidate[]>();
+  for (const candidate of usable) {
+    if (candidate.nameWords.length < 2) continue;
+    const bucket = `${candidate.listType}|${candidate.nameWords[0]} ${candidate.nameWords[1]}`;
+    const held = buckets.get(bucket);
+    if (held) held.push(candidate);
+    else buckets.set(bucket, [candidate]);
+  }
+  const parent = new Map<string, string>();
+  const linked = new Set<string>();
+  const find = (key: string): string => {
+    const up = parent.get(key) ?? key;
+    if (up === key) return key;
+    const root = find(up);
+    parent.set(key, root);
+    return root;
+  };
+  const onOnePoint = (left: OneCustomerCandidate, right: OneCustomerCandidate): boolean =>
+    left.customerId !== right.customerId &&
+    left.seatId !== right.seatId &&
+    left.line !== right.line &&
+    left.listType === right.listType &&
+    distanceMeters(left.stored as GeoPoint, right.stored as GeoPoint) <= ONE_CUSTOMER_SAME_POINT_METERS;
+  const join = (left: OneCustomerCandidate, right: OneCustomerCandidate) => {
+    linked.add(left.key);
+    linked.add(right.key);
+    const rootLeft = find(left.key);
+    const rootRight = find(right.key);
+    if (rootLeft !== rootRight) parent.set(rootLeft, rootRight);
+  };
+  for (const group of buckets.values()) {
+    for (let a = 0; a < group.length; a += 1) {
+      for (let b = a + 1; b < group.length; b += 1) {
+        const left = group[a];
+        const right = group[b];
+        if (!left.movedByLineRule && !right.movedByLineRule) continue;
+        if (!onOnePoint(left, right) || !sameName(left.nameWords, right.nameWords)) continue;
+        join(left, right);
+      }
+    }
+  }
+  // His own word: two customers he confirmed as one, whatever their names, once they share the point.
+  if (confirmed.size > 0) {
+    const byCustomer = new Map<string, OneCustomerCandidate[]>();
+    for (const candidate of usable) {
+      const held = byCustomer.get(candidate.customerId);
+      if (held) held.push(candidate);
+      else byCustomer.set(candidate.customerId, [candidate]);
+    }
+    for (const key of confirmed) {
+      const [first, second] = key.split("|");
+      for (const left of byCustomer.get(first) ?? []) {
+        for (const right of byCustomer.get(second) ?? []) if (onOnePoint(left, right)) join(left, right);
+      }
+    }
+  }
+  const components = new Map<string, OneCustomerCandidate[]>();
+  for (const candidate of usable) {
+    if (!linked.has(candidate.key)) continue;
+    const root = find(candidate.key);
+    const held = components.get(root);
+    if (held) held.push(candidate);
+    else components.set(root, [candidate]);
+  }
+  const joins = new Map<string, string>();
+  for (const members of components.values()) {
+    if (members.length < 2) continue;
+    const kept = [...members].sort(
+      (left, right) =>
+        Number(left.movedByLineRule) - Number(right.movedByLineRule) || left.capturedAt.localeCompare(right.capturedAt) || left.key.localeCompare(right.key),
+    )[0];
+    for (const member of members) if (member.key !== kept.key) joins.set(member.key, kept.key);
+  }
+  return joins;
+}
+
+/**
+ * The board's subjects with every joined record folded into the one it was joined to, and the stored answers
+ * re-keyed onto the kept record (an answer between two records of one customer says nothing and is dropped).
+ */
+export function foldOneCustomer(
+  subjects: ReadonlyArray<MatchSubject>,
+  answers: ReadonlyArray<MatchAnswerRow>,
+  joins: ReadonlyMap<string, string>,
+): { subjects: MatchSubject[]; answers: MatchAnswerRow[] } {
+  if (joins.size === 0) return { subjects: [...subjects], answers: [...answers] };
+  const present = new Set(subjects.map((subject) => subject.key));
+  const live = new Map([...joins].filter(([joined, kept]) => present.has(joined) && present.has(kept)));
+  const folded = new Map<string, SameCustomerRecord[]>();
+  for (const subject of subjects) {
+    const kept = live.get(subject.key);
+    if (!kept) continue;
+    const held = folded.get(kept) ?? [];
+    held.push({ key: subject.key, repName: subject.repName, territory: subject.territory, line: subject.line });
+    folded.set(kept, held);
+  }
+  const outSubjects = subjects
+    .filter((subject) => !live.has(subject.key))
+    .map((subject) => (folded.has(subject.key) ? { ...subject, sameCustomer: [...(subject.sameCustomer ?? []), ...(folded.get(subject.key) ?? [])] } : subject));
+  const seen = new Set<string>();
+  const outAnswers: MatchAnswerRow[] = [];
+  for (const answer of answers) {
+    const [a, b] = orderedPair(live.get(answer.a) ?? answer.a, live.get(answer.b) ?? answer.b);
+    if (a === b || seen.has(`${a}|${b}`)) continue;
+    seen.add(`${a}|${b}`);
+    outAnswers.push({ a, b, answer: answer.answer });
+  }
+  return { subjects: outSubjects, answers: outAnswers };
+}
 
 export type MatchAnswer = "same" | "different";
 export type MatchAnswerRow = { a: string; b: string; answer: MatchAnswer };
