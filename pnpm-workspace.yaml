@@ -328,10 +328,14 @@ allowBuilds:
   tesseract.js: false
   unrs-resolver: true
 
-# 🔴 THERE IS NO `auditConfig` HERE ANY MORE, AND THAT IS DELIBERATE — DO NOT ADD ONE BACK TO QUIET A
-# RED AUDIT. This file suppressed exactly one advisory, GHSA-mh99-v99m-4gvg (brace-expansion DoS via
-# unbounded glob-pattern expansion), and the suppression was RETIRED on 2026-09-30 because it had
-# stopped masking anything.
+# 🔴 `auditConfig` HOLDS EXACTLY ONE ADVISORY, GHSA-fc5q-39xc-vjpf, ACCEPTED BY THE OWNER ON 2026-11-17
+# BECAUSE NO FIXED VERSION EXISTS — NEVER ADD ANOTHER TO QUIET A RED AUDIT WITHOUT HIS WORD, AND TAKE
+# THIS ONE OUT THE DAY A FIXED picomatch IS PUBLISHED. The block and its reasons are at the foot of
+# this file; the decision is recorded in docs/security/open-dependency-alerts.md ("picomatch").
+#
+# The history below is why the bar is that high. This file suppressed exactly one advisory before,
+# GHSA-mh99-v99m-4gvg (brace-expansion DoS via unbounded glob-pattern expansion), and the suppression
+# was RETIRED on 2026-09-30 because it had stopped masking anything.
 #
 # Its justification had gone quietly out of date, which is the interesting part. The note said
 # GHSA-mh99's "only fix is the brace-expansion-5.x jump", that forcing every instance to 5.x breaks
@@ -431,3 +435,24 @@ minimumReleaseAgeExclude:
 #   recruitment path for a DoS that cannot be triggered. `--audit-level=high` does not see a
 #   moderate either way. Fix it by moving mammoth to a release that drops argparse 1.x, not by
 #   forcing the floor under it.
+
+# THE ONE ACCEPTED ADVISORY (owner, 2026-11-17: "Accept it until fixed"). GHSA-fc5q-39xc-vjpf,
+# CVE-2026-112366 — picomatch ReDoS through single-branch repeated extglobs, HIGH, every version
+# <=4.0.7. It began failing `pnpm audit --audit-level=high --prod` on 2026-11-17 (the advisory was
+# updated that day), turning every pull request red and holding every production deploy behind the
+# release gate. There was NOTHING TO RAISE A FLOOR TO: GitHub lists the patched version as "None",
+# npm's newest picomatch is 4.0.7 (24 Aug 2026), and 4.0.8 answers 404 — so the rule above ("raise the
+# override floor for its own major line first") could not be followed.
+#   Why it is safe to accept HERE: the advisory needs the ATTACKER TO SUPPLY THE GLOB PATTERN ("by
+# supplying single-branch repeated extglob patterns"). picomatch 4.0.7 reaches production only through
+# @sentry/nextjs > @rollup/plugin-commonjs (and its pluginutils / fdir), at BUILD time, matching
+# patterns written in Sentry's own code and next.config.ts. No file under app/, src/ or scripts/
+# imports picomatch, micromatch or minimatch, and no request reaches a glob.
+#   🔴 REMOVE THIS BLOCK, in the same PR as the bump, the day a fixed picomatch is published — add
+# `"picomatch@4": ^<fixed version>` to `overrides` above, run `pnpm install`, and check
+# `node scripts/ci-dependency-audit.mjs` exits 0 WITHOUT the ignore. It also stops being acceptable if
+# anything starts passing a pattern a user wrote to picomatch, tinyglobby, fdir or a glob library.
+# The ignore is by advisory id, so any NEW advisory against picomatch still fails the gate.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
