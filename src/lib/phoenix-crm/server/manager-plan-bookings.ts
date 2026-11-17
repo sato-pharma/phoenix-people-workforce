@@ -12,6 +12,8 @@ import {
   type ManagerPlannerKind,
   type ManagerPlanStatus,
   type ManagerSlotKind,
+  joinPeopleNames,
+  managerSeniorPeople,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { NO_REGION, seatRegionName } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -248,7 +250,7 @@ function halfText(slot: ManagerSlotRow, repName: string | null, names: PeopleNam
   return managerHalfDayText(
     { activityLabel: slot.kind === "admin" ? (managerAdminActivityLabel(slot.activityType) ?? "Admin") : null, areaName: slot.areaName, kind: slot.kind },
     repName,
-    slot.seniorVisit?.seniorHrId ? nameOf(names, slot.seniorVisit.seniorHrId) : null,
+    joinPeopleNames(managerSeniorPeople(slot.seniorVisit).map((person) => nameOf(names, person.hrId))) || null,
   );
 }
 
@@ -334,7 +336,7 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
     ...managerHrIds,
     ...bookings.map((booking) => booking.managerHrId),
     ...slots.map((slot) => slot.repHrId),
-    ...slots.map((slot) => slot.seniorVisit?.seniorHrId ?? null),
+    ...slots.flatMap((slot) => managerSeniorPeople(slot.seniorVisit).map((person) => person.hrId)),
     ...repSeats.map((seat) => seat.occupantHrId),
   ]);
   const repNameOf = (seatId: string | null, hrId: string | null): string | null => {

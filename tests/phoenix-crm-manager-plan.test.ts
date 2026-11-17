@@ -89,6 +89,9 @@ import {
   managerPlanConversationOpen,
   managerPlanConversationView,
   managerPlanWithYou,
+  joinPeopleNames,
+  managerSeniorPeople,
+  managerSeniorPeopleTitle,
   holdsPlannedDoctors,
   type ManagerPlanStatus,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
@@ -2386,6 +2389,49 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // Calendars name the person: the district manager's own line and the planning calendar read "With Hany Saad".
   assert.equal(managerHalfDayText({ kind: "with_senior", activityLabel: null, areaName: "Alex Center" }, null, "Hany Saad"), "With Hany Saad · Alex Center");
   assert.equal(managerHalfDayText({ kind: "with_senior", activityLabel: null, areaName: "Alex Center" }, null), "With a manager or product manager · Alex Center");
+
+  // ── With BOTH of his managers (owner, 2026-11-17: Mohamed Eleiwa goes with Hany Saad and Ali Mohamed together) ──
+  const bothParsed = withSenior({ seniorHrIds: ["pd-0001", "A-12", "PD-0001"], areaSeatIds: ["T-1"] });
+  assert.equal(bothParsed.ok, true, "a half-day with two managers parses");
+  if (bothParsed.ok) {
+    assert.deepEqual(bothParsed.value.seniorHrIds, ["PD-0001", "A-12"], "everyone he ticked, once each, as person keys");
+    assert.equal(bothParsed.value.seniorHrId, "PD-0001", "and the first of them in the place every reader of 'the manager' reads");
+  }
+  const olderPage = withSenior({ seniorHrId: "PD-0001", areaSeatIds: ["T-1"] });
+  assert.equal(olderPage.ok && olderPage.value.seniorHrIds.join(), "PD-0001", "a page that sends one person still saves him");
+  assert.equal(withSenior({ seniorHrIds: [], areaSeatIds: ["T-1"] }).ok, false, "nobody ticked is still refused");
+  const storedBoth = parseManagerSeniorVisit({
+    senior_hr_id: "PD-0001",
+    role: "manager",
+    title: "Regional sales manager",
+    people: [
+      { hr_id: "PD-0001", role: "manager", title: "Regional sales manager" },
+      { hr_id: "a-12", role: "manager", title: "National sales manager" },
+    ],
+    areas: [{ seat_id: "T-1", area_name: "Alex West", seat_ids: ["T-1"] }],
+  });
+  assert.deepEqual(
+    managerSeniorPeople(storedBoth).map((person) => [person.hrId, person.title]),
+    [["PD-0001", "Regional sales manager"], ["A-12", "National sales manager"]],
+    "the stored half-day reads back both managers, nearest first",
+  );
+  assert.deepEqual(managerSeniorPeople(seniorVisit).map((person) => person.hrId), ["B-60"], "a half-day saved before then reads as its one person");
+  const toldBoth = managerPlanWithYou("PD-0012", [{ kind: "with_senior", date: "2026-11-18", half: "AM", areaName: "Alex West", seniorVisit: storedBoth }]);
+  assert.deepEqual(toldBoth.map((entry) => entry.recipientHrId), ["PD-0001", "A-12"], "BOTH managers are told when the week is approved");
+  assert.equal(
+    managerSeniorPeopleTitle([{ name: "Hany Saad", title: "Regional sales manager" }, { name: "Ali Mohamed", title: "National sales manager" }], "Alex West"),
+    "With Hany Saad (Regional sales manager) and Ali Mohamed (National sales manager) · Alex West",
+    "the half-day names both in one line",
+  );
+  assert.equal(managerSeniorPeopleTitle([{ name: "Hany Saad", title: "Regional sales manager" }], "Nasr City"), managerSeniorVisitTitle("Hany Saad", "Regional sales manager", "Nasr City"), "one person reads as it always did");
+  assert.equal(joinPeopleNames(["Hany Saad", "Ali Mohamed", "Mai Adel"]), "Hany Saad, Ali Mohamed and Mai Adel");
+  const everyoneReportSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plan-report.ts", import.meta.url), "utf8"));
+  assert.ok(everyoneReportSource.includes("seniorPeople.every((person) => keys?.has(`sr|"), "a rep's chain visit answers the half only when it names every person he planned");
+  const everyoneSaveSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plans.ts", import.meta.url), "utf8"));
+  assert.ok(everyoneSaveSource.includes("const offer = chosen.length === askedKeys.size ? chosen[0] : undefined;"), "the save refuses the whole half when anyone ticked is not on the list");
+  assert.ok(everyoneSaveSource.includes("people: chosen.map((entry) => ({ hr_id: entry.hrId, role: entry.role, title: entry.title }))"), "and stores everyone he ticked");
+  const everyoneBoardSource = readFileSync(new URL("../src/components/phoenix-crm/manager-plan-board.tsx", import.meta.url), "utf8");
+  assert.ok(everyoneBoardSource.includes("<CrmCheck checked={draft.seniorHrIds.includes(senior.hrId)}"), "the board offers each manager as a tick box, never a one-of choice");
 
   // ── The week's conversation (owner, 2026-11-01) ───────────────────────────────────────────────
 

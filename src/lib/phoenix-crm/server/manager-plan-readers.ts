@@ -36,6 +36,7 @@ import {
   type ManagerPlannerKind,
   type ManagerPlanStatus,
   type ManagerSlotKind,
+  managerSeniorPeople,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
@@ -113,6 +114,8 @@ export type ManagerPlanHalfDay = {
    * calendar shows it and they are told). Null for every other kind.
    */
   seniorHrId: string | null;
+  /** Everyone he picked for that half-day, the first person first (owner, 2026-11-17: one or more). Empty otherwise. */
+  seniorHrIds: string[];
   note: string | null;
   /** Null when the caller asked for no customer counts (`customerCounts: false`) — never a zero it did not read. */
   customerCount: number | null;
@@ -205,6 +208,7 @@ export async function loadManagerPlanHalfDays(input: {
       activityLabel: slot.kind === "admin" ? (managerAdminActivityLabel(slot.activityType) ?? "Admin") : null,
       areaName: slot.areaName,
       seniorHrId: slot.kind === "with_senior" ? (slot.seniorVisit?.seniorHrId ?? null) : null,
+      seniorHrIds: slot.kind === "with_senior" ? managerSeniorPeople(slot.seniorVisit).map((person) => person.hrId) : [],
       note: slot.note,
       customerCount: input.customerCounts === false ? null : (countBySlot.get(slot.slotId) ?? 0),
       legacyType: managerHalfLegacyType(slot.kind, slot.activityType),
@@ -705,3 +709,6 @@ export async function loadManagerDayPlans(input: { end: string; managerHrIds: Re
 export function describeManagerOwnVisitDay(day: ManagerOwnVisitDay): string {
   return `Phoenix CRM: ${day.visits} own single visit${day.visits === 1 ? "" : "s"}`;
 }
+
+/** Names said as a sentence says them — re-exported so screens outside Phoenix CRM read the week through this file alone. */
+export { joinPeopleNames } from "@/lib/phoenix-crm/manager-plan-rules";

@@ -93,6 +93,11 @@ type Logging = {
   areaSeatId: string | null;
   /** The address already on file, so the block opens on what the system knows rather than empty. */
   address: string;
+  /**
+   * On a With my manager half-day: everyone he planned to go with — "Who went with you" opens with them ticked
+   * (owner, 2026-11-17: both of his managers). He can untick anyone who did not come. Empty otherwise.
+   */
+  withHrIds: string[];
 };
 
 function loggingOf(customer: ManagerTodayCustomer): Logging {
@@ -106,6 +111,7 @@ function loggingOf(customer: ManagerTodayCustomer): Logging {
     seatId: customer.seatId,
     areaSeatId: customer.areaSeatId,
     address: customer.knownAddress ?? "",
+    withHrIds: customer.withSeniorHrIds ?? [],
   };
 }
 
@@ -122,6 +128,7 @@ function ownLogging(customer: ManagerTodayOwnCustomer): Logging {
     seatId: customer.areaSeatId,
     areaSeatId: customer.areaSeatId,
     address: customer.address ?? "",
+    withHrIds: [],
   };
 }
 
@@ -137,6 +144,7 @@ function areaLogging(customer: AreaCustomer, areaSeatId: string | null): Logging
     // The area he chose to find the customer in — one area holds several rep seats, and the drop-list lists one.
     areaSeatId,
     address: "",
+    withHrIds: [],
   };
 }
 
@@ -494,6 +502,7 @@ function FindCustomer({
       seatId: match.seatId,
       areaSeatId: match.areaSeatId,
       address: own?.address ?? "",
+      withHrIds: [],
     });
   }
 
@@ -703,7 +712,7 @@ function LogForm({
   const idPrefix = useId();
   const [picked, setPicked] = useState<string[]>([]);
   /** Who went with him, in the order he ticked them — none when he went alone. */
-  const [companions, setCompanions] = useState<string[]>([]);
+  const [companions, setCompanions] = useState<string[]>(() => logging.withHrIds.filter((hrId) => companionOffers.some((offer) => offer.hrId === hrId)));
   const [comment, setComment] = useState("");
   const [pin, setPin] = useState<CapturedPin | null>(null);
   const [address, setAddress] = useState(logging.address);

@@ -111,6 +111,8 @@ export const MANAGER_PEER_SLOT_LABEL = "With a manager or product manager";
 
 /** The most areas one half-day with a district manager holds — the database's own limit. */
 export const MANAGER_DM_VISIT_AREA_MAX = 60;
+/** The most people one "with my manager or product manager" half-day goes with — a visit's own cap (`MOST_ON_A_VISIT`). */
+export const MANAGER_SENIOR_PEOPLE_MAX = 12;
 
 /** The most customers one half-day holds — a rep's PM day is capped at 15, so this is room, not a target. */
 export const MANAGER_SLOT_CUSTOMER_MAX = 60;
@@ -904,8 +906,13 @@ export type ManagerSlotDraft = {
   areaSeatId: string | null;
   /** With a district manager, or with his manager or product manager: the areas ticked for the half-day, one at least. Empty otherwise. */
   areaSeatIds: string[];
-  /** With my manager or product manager: the person the district manager goes with. Null otherwise. */
+  /** With my manager or product manager: the person the district manager goes with — the first of `seniorHrIds`. Null otherwise. */
   seniorHrId: string | null;
+  /**
+   * With my manager or product manager: EVERYONE he goes with, one or more (owner, 2026-11-17: Mohamed Eleiwa
+   * goes with both Hany Saad and Ali Mohamed). Empty for every other kind.
+   */
+  seniorHrIds: string[];
   /**
    * The scope this half was planned in — a regional, national or product manager's pick (owner,
    * 2026-10-17). A district manager's half-day, an Admin one and a cleared one carry none.
@@ -980,6 +987,7 @@ export function parseManagerSlotDraft(raw: unknown, options: { customersOptional
     areaSeatId: null,
     areaSeatIds: [],
     seniorHrId: null,
+    seniorHrIds: [],
     scopeDmSeatId: null,
     scopeLineCode: null,
     scopeRegionCode: null,
@@ -1017,15 +1025,19 @@ export function parseManagerSlotDraft(raw: unknown, options: { customersOptional
     return { ok: true, value: { ...draft, areaSeatIds, scopeDmSeatId, scopeLineCode } };
   }
   if (kind === "with_senior") {
-    const seniorHrId = personKey(textOf(body.seniorHrId));
-    if (!seniorHrId) return { ok: false, error: "Choose who you go with: a manager or a product manager of the line." };
+    // One or more people (owner, 2026-11-17): `seniorHrIds`, or the single `seniorHrId` an older page sends.
+    const sent: unknown[] = Array.isArray(body.seniorHrIds) ? body.seniorHrIds : [body.seniorHrId];
+    const seniorHrIds = [...new Set(sent.map((value) => personKey(textOf(value))).filter((key): key is string => Boolean(key)))];
+    if (seniorHrIds.length === 0) return { ok: false, error: "Choose who you go with: a manager or a product manager of the line." };
+    if (seniorHrIds.length > MANAGER_SENIOR_PEOPLE_MAX) return { ok: false, error: `Choose at most ${MANAGER_SENIOR_PEOPLE_MAX} people to go with.` };
+    const seniorHrId = seniorHrIds[0];
     if (areaSeatIds.length === 0) return { ok: false, error: "Tick at least one area of the district." };
     // The doctors are optional (owner, 2026-10-27: "he is not required to choose. He may choose or he may
     // press the next") and come from the ticked areas' rep lists — his own list stays a single visit's.
     if (customers.some((entry) => "managerCustomerId" in entry)) return { ok: false, error: "With a manager or product manager, the customers come from the areas' lists." };
     // A district manager's carries no scope (his own district); everyone else's names the district picked
     // first — `managerSlotScopeError` decides which one this planner owes.
-    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId, scopeDmSeatId, scopeLineCode, customers } };
+    return { ok: true, value: { ...draft, areaSeatIds, seniorHrId, seniorHrIds, scopeDmSeatId, scopeLineCode, customers } };
   }
   if (!areaSeatId) return { ok: false, error: "Choose the area." };
   if (customers.length === 0 && !options.customersOptional) return { ok: false, error: "Choose at least one customer for the single visit." };
@@ -1540,8 +1552,43 @@ export function countsAsPlannersVisitWithPeer(
   return named.has(planner) && named.has(peer);
 }
 
-/** A "with my manager or product manager" half-day's own content: who goes with the district manager, and the areas ticked. */
-export type ManagerSeniorVisit = { seniorHrId: string; role: "manager" | "product_manager"; title: string | null; areas: ManagerDmVisitArea[] };
+/** One person a "with my manager or product manager" half-day goes with, and how the picker titled them. */
+export type ManagerSeniorPerson = { hrId: string; role: "manager" | "product_manager"; title: string | null };
+
+/**
+ * A "with my manager or product manager" half-day's own content: who goes with the district manager, and the areas
+ * ticked. `seniorHrId`/`role`/`title` are the FIRST person — every reader that names "the manager" keeps working —
+ * and `people` is EVERYONE (owner, 2026-11-17: a district manager goes with his regional AND his national manager at
+ * once). A half-day saved before then has no `people`; read it through `managerSeniorPeople`, never `people` alone.
+ */
+export type ManagerSeniorVisit = {
+  seniorHrId: string;
+  role: "manager" | "product_manager";
+  title: string | null;
+  areas: ManagerDmVisitArea[];
+  people?: ManagerSeniorPerson[];
+};
+
+/** Everyone a with-my-manager half-day goes with, the first person first, each once. Empty for none. */
+export function managerSeniorPeople(visit: Pick<ManagerSeniorVisit, "seniorHrId" | "role" | "title" | "people"> | null | undefined): ManagerSeniorPerson[] {
+  if (!visit) return [];
+  const seen = new Set<string>();
+  const out: ManagerSeniorPerson[] = [];
+  for (const person of [{ hrId: visit.seniorHrId, role: visit.role, title: visit.title }, ...(visit.people ?? [])]) {
+    const key = personKey(person.hrId);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ hrId: key, role: person.role === "product_manager" ? "product_manager" : "manager", title: person.title ?? null });
+  }
+  return out;
+}
+
+/** "Hany Saad", "Hany Saad and Ali Mohamed", "A, B and C" — names said as a sentence says them. */
+export function joinPeopleNames(names: ReadonlyArray<string>): string {
+  const list = names.filter((name) => name.trim().length > 0);
+  if (list.length <= 1) return list[0] ?? "";
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
 
 /**
  * Who an approved district manager's week names as the manager or product manager he goes with, and on which
@@ -1555,11 +1602,15 @@ export function managerPlanWithYou(
   const self = personKey(managerHrId);
   const byPerson = new Map<string, Array<{ date: string; half: ManagerHalf; areaName: string | null }>>();
   for (const slot of slots) {
-    const who = slot.kind === "with_senior" ? personKey(slot.seniorVisit?.seniorHrId) : null;
-    if (!who || who === self) continue;
-    const halves = byPerson.get(who) ?? [];
-    halves.push({ date: slot.date, half: slot.half, areaName: slot.areaName });
-    byPerson.set(who, halves);
+    // Everyone he picked is told (owner, 2026-11-17: both of his managers), each once per half-day.
+    const people = slot.kind === "with_senior" ? managerSeniorPeople(slot.seniorVisit) : [];
+    for (const person of people) {
+      const who = person.hrId;
+      if (who === self) continue;
+      const halves = byPerson.get(who) ?? [];
+      halves.push({ date: slot.date, half: slot.half, areaName: slot.areaName });
+      byPerson.set(who, halves);
+    }
   }
   return [...byPerson.entries()].map(([recipientHrId, halves]) => ({
     recipientHrId,
@@ -1574,12 +1625,35 @@ export function parseManagerSeniorVisit(raw: unknown): ManagerSeniorVisit | null
   if (!body || !seniorHrId) return null;
   const areas = parseManagerDmVisit({ areas: body.areas })?.areas ?? [];
   if (areas.length === 0) return null;
-  return { seniorHrId, role: body.role === "product_manager" ? "product_manager" : "manager", title: textOf(body.title), areas };
+  const role = body.role === "product_manager" ? "product_manager" : "manager";
+  const title = textOf(body.title);
+  // Everyone he goes with (owner, 2026-11-17); a half-day saved before then names the one person alone.
+  const people = managerSeniorPeople({
+    seniorHrId,
+    role,
+    title,
+    people: (Array.isArray(body.people) ? body.people : []).flatMap((entry): ManagerSeniorPerson[] => {
+      const item = (entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {}) as Record<string, unknown>;
+      const hrId = personKey(textOf(item.hr_id));
+      return hrId ? [{ hrId, role: item.role === "product_manager" ? "product_manager" : "manager", title: textOf(item.title) }] : [];
+    }),
+  });
+  return { seniorHrId, role, title, areas, people };
 }
 
 /** "With Hany Ibrahim (Regional sales manager) · Nasr City, Heliopolis" — the half-day in a line. */
 export function managerSeniorVisitTitle(seniorName: string | null, title: string | null, areaNames: string | null): string {
   const who = `With ${seniorName ?? "your manager"}${title ? ` (${title})` : ""}`;
+  return areaNames ? `${who} · ${areaNames}` : who;
+}
+
+/**
+ * "With Hany Saad (Regional sales manager) and Ali Mohamed (National sales manager) · Alex West" — a half-day with
+ * one or more people in a line (owner, 2026-11-17). One person reads exactly as `managerSeniorVisitTitle`.
+ */
+export function managerSeniorPeopleTitle(people: ReadonlyArray<{ name: string | null; title: string | null }>, areaNames: string | null): string {
+  if (people.length <= 1) return managerSeniorVisitTitle(people[0]?.name ?? null, people[0]?.title ?? null, areaNames);
+  const who = `With ${joinPeopleNames(people.map((person) => `${person.name ?? "your manager"}${person.title ? ` (${person.title})` : ""}`))}`;
   return areaNames ? `${who} · ${areaNames}` : who;
 }
 
