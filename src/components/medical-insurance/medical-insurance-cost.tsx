@@ -9,7 +9,7 @@ import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSele
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { INVOICE_KIND_WORDS, MEDICAL_INSURANCE_INVOICE_KINDS, type MedicalInsuranceInvoiceKind } from "@/lib/medical-insurance/compare";
 import { ageBandWords, MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory, type MedicalInsuranceRateCard } from "@/lib/medical-insurance/cost";
-import type { CostLine } from "@/lib/medical-insurance/eligibility";
+import { plannedLinesTotal, type CostLine } from "@/lib/medical-insurance/eligibility";
 import { egpWords, MEDICAL_INSURANCE_OPEN_POINTS, MEMBER_TYPE_WORDS, type MedicalInsuranceInvoiceRow, type MedicalInsuranceMoneyView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +37,9 @@ export function MedicalInsuranceCostTab({ money: view, policy }: { money: Medica
         description="What the rule says is still to be done: people to put on the policy, and covers to end. Each one is priced as it would be if done on the day shown."
         empty="Nothing is waiting: the register matches the rule."
         lines={view.year.planned}
+        openingAddition={view.year.plannedOpening}
         title="Still to do"
+        total={plannedLinesTotal(view.year)}
       />
       <RateCardPanel card={view.rateCard} />
       <PolicyNumberPanel policyNumber={policy.policyNumber} />
@@ -243,8 +245,30 @@ function lineHowWords(line: CostLine): string | null {
     : `${share} refunded: premium ${money(movement.premium)}, tax ${money(movement.tax)}`;
 }
 
-function LinesPanel({ description, empty, lines, title }: { description: string; empty: string; lines: readonly CostLine[]; title: string }) {
-  const total = lines.reduce((sum, line) => sum + Math.round((line.movement?.total ?? 0) * 100), 0) / 100;
+const OPENING_ADDITION_HOW = "Laid out as the offer is: each band's premium rounded to the pound, tax 1.55% and EGP 30 a card";
+
+function openingAdditionWords(people: number): string {
+  return people === 1 ? "1 person joining from the policy's first day" : `${people} people joining from the policy's first day`;
+}
+
+function LinesPanel({
+  description,
+  empty,
+  lines,
+  openingAddition,
+  title,
+  total: givenTotal,
+}: {
+  description: string;
+  empty: string;
+  lines: readonly CostLine[];
+  /** The day-one joiners' share of the opening bill, shown as its own row and counted in the total. */
+  openingAddition?: { people: number; total: number };
+  title: string;
+  total?: number;
+}) {
+  const total = givenTotal ?? lines.reduce((sum, line) => sum + Math.round((line.movement?.total ?? 0) * 100), 0) / 100;
+  const addition = openingAddition && openingAddition.people > 0 ? openingAddition : null;
   return (
     <AdminTableShell description={description} title={title}>
       {lines.length === 0 ? (
@@ -280,6 +304,17 @@ function LinesPanel({ description, empty, lines, title }: { description: string;
                     <td className={cn(cellClassName, line.movement ? amountClassName : "break-words text-right text-phx-xs font-bold text-phx-warn")}>{lineAmountWords(line)}</td>
                   </tr>
                 ))}
+                {addition ? (
+                  <tr>
+                    <th className={cn(cellClassName, "text-left")} scope="row">
+                      <p className="break-words text-phx-xs font-black text-phx-ink">Added to the opening bill</p>
+                      <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{openingAdditionWords(addition.people)}</p>
+                    </th>
+                    <td className={cellClassName}><span className="break-words text-phx-xs font-bold text-phx-ink">From the first day</span></td>
+                    <td className={cellClassName}><span className="break-words text-phx-xs font-semibold text-phx-ink-soft">{OPENING_ADDITION_HOW}</span></td>
+                    <td className={cn(cellClassName, amountClassName)}>{signed(addition.total)}</td>
+                  </tr>
+                ) : null}
                 <tr>
                   <th className={cn(cellClassName, "text-left")} colSpan={3} scope="row"><span className="text-sm font-black text-phx-ink">Total</span></th>
                   <td className={cn(cellClassName, totalClassName)}>{signed(total)}</td>
@@ -297,6 +332,14 @@ function LinesPanel({ description, empty, lines, title }: { description: string;
                 <p className={cn("break-words text-phx-xs font-black tabular-nums", line.movement ? "text-phx-ink" : "text-phx-warn")}>{lineAmountWords(line)}</p>
               </div>
             ))}
+            {addition ? (
+              <div className="space-y-1 border border-phx-line bg-white p-3">
+                <p className="break-words text-phx-xs font-black text-phx-ink">Added to the opening bill</p>
+                <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{openingAdditionWords(addition.people)}</p>
+                <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{OPENING_ADDITION_HOW}</p>
+                <p className="break-words text-phx-xs font-black tabular-nums text-phx-ink">{signed(addition.total)}</p>
+              </div>
+            ) : null}
             <p className="text-sm font-black tabular-nums text-phx-ink">Total {signed(total)}</p>
           </div>
         </>

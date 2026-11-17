@@ -364,6 +364,11 @@ export type PolicyYearCost = {
   movements: CostLine[];
   /** What the rule says is still to be done: people to add, and covers to end. */
   planned: CostLine[];
+  /**
+   * The day-one joiners' share of the opening bill: premium per band, tax and cards (the issue fee is already
+   * counted). Those lines carry no movement, so this is the amount the "Still to do" table shows for them.
+   */
+  plannedOpening: { people: number; total: number };
   totals: {
     opening: number;
     additions: number;
@@ -378,6 +383,14 @@ export type PolicyYearCost = {
 };
 
 type Price = { age: number | null; annual: number | null; band: string | null; reason: string | null };
+
+/**
+ * What is still to be done, in money: the day-one joiners' share of the opening bill plus every planned charge
+ * and refund. The "Still to do" figure and the total under its table both read this, so they cannot disagree.
+ */
+export function plannedLinesTotal(year: Pick<PolicyYearCost, "planned" | "plannedOpening">): number {
+  return sumMoney([year.plannedOpening.total, ...year.planned.map((entry) => entry.movement?.total ?? 0)]);
+}
 
 /**
  * The year's cost under the contract: the opening bill for everyone on the policy from its first day, then
@@ -502,13 +515,14 @@ export function buildPolicyYearCost(input: {
   const recorded = sumMoney([opening.total, additions, deletions]);
   // A day-one joiner adds premium, tax and card to the opening bill; its issue fee is already counted.
   const plannedOpening = openingAdds.length > 0 ? sumMoney([addsStatement.total, opening.people > 0 ? -addsStatement.issueFee : 0]) : 0;
-  const plannedTotal = sumMoney([plannedOpening, ...planned.map((entry) => entry.movement?.total ?? 0)]);
+  const plannedTotal = plannedLinesTotal({ planned, plannedOpening: { people: openingAdds.length, total: plannedOpening } });
 
   return {
     movements,
     opening,
     openingPeople,
     planned,
+    plannedOpening: { people: openingAdds.length, total: plannedOpening },
     totals: {
       additions,
       deletions,
