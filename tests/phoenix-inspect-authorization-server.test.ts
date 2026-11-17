@@ -84,7 +84,7 @@ export async function runPhoenixInspectAuthorizationServerTests() {
     writeFileSync(clientFile, JSON.stringify({ installed: { client_id: GOOGLE.clientId, client_secret: GOOGLE.clientSecret } }));
     const asEnv = { PHOENIX_INSPECT_MCP_OWNER_SUBJECTS: OWNER, PHOENIX_INSPECT_GOOGLE_CLIENT_FILE: clientFile, PHOENIX_INSPECT_MCP_STATE_DIR: path.join(dir, "config-state"), PHOENIX_INSPECT_MCP_TUNNEL_ID: TUNNEL };
     const config = configFromEnv(asEnv, ["--runner", "local"]);
-    assert.equal(typeof config.authorization, "function", "a Google client file selects the built-in authorization server");
+    assert.ok("authorization" in config && typeof config.authorization === "function", "a Google client file selects the built-in authorization server");
     assert.deepEqual([...config.ownerSubjects], [OWNER]);
     assert.throws(() => configFromEnv({ ...asEnv, PHOENIX_INSPECT_MCP_ISSUER: "https://auth.example.test" }), /not both/);
     assert.throws(() => configFromEnv({ ...asEnv, PHOENIX_INSPECT_GOOGLE_CLIENT_FILE: path.join(dir, "absent.json") }), /does not exist/);
