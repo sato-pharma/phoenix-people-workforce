@@ -418,12 +418,28 @@ export function runMergeCooldownGuardTests(): void {
       // checks ARE green by definition — that is what distinguishes it from BLOCKED — so this is the
       // one state where green required checks are deliberately not enough.
       const gh = ghShim(dir, 2, "OPEN/UNSTABLE", "green");
+      const unstable = runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh });
       assert.equal(
-        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        unstable.decision,
         "deny",
         "UNSTABLE must be refused even with both required contexts green — the red check is non-required, " +
           "which is exactly why nothing else will show it to anyone",
       );
+      // 🔴 AND IT SAYS SO. 2026-11-17 the refusal told a session "THIS PR IS NOT GREEN YET" about #473,
+      // whose `validate` and `checks` had both passed; GitHub read UNSTABLE because a CodeQL scan that
+      // is not required was still running. A refusal that calls a green PR red sends the reader to the
+      // stand-down instead of to the one check worth waiting for.
+      assert.doesNotMatch(unstable.reason, /NOT GREEN YET/i, `UNSTABLE must not be called not green:\n${unstable.reason}`);
+      assert.match(unstable.reason, /REQUIRED CHECKS PASSED/, `UNSTABLE must say the required checks passed:\n${unstable.reason}`);
+      assert.match(unstable.reason, /NOT\s+required is red or still running/, `UNSTABLE must name the non-required check as the reason:\n${unstable.reason}`);
+      assert.match(unstable.reason, /gh pr checks 4790/, `UNSTABLE must hand back the command that names that check:\n${unstable.reason}`);
+    }
+
+    {
+      // A required check that is RED names itself as the reason — distinct from UNSTABLE and from unreadable.
+      const gh = ghShim(dir, 2, "OPEN/BLOCKED", "red");
+      const red = runGuard(dir, "gh pr merge 5125 --squash", { ghDir: gh });
+      assert.match(red.reason, /a required check on its head commit is still running or\s+failed/, `a red required check must be named as the reason:\n${red.reason}`);
     }
 
     {
