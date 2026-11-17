@@ -77,14 +77,16 @@ export function scorePersonMatch(query: string, person: PersonSearchFields): num
   // Last, the same name in another Latin spelling (owner, 17 Nov 2026: he asked for "Ibtissam" and
   // Phoenix holds "Ebtissam"). Below every real match, so a true spelling always wins, and a tie between
   // two loose matches is refused with both names, never guessed.
-  const looseQuery = queryWords.map(looseLatinWord);
-  if (looseQuery.some((word) => !word)) return 0;
+  // A word under five letters must still be spelled as it is ("Ali" is not "Alaa": both fold to "ala").
   for (const name of [person.fullName, person.displayName, person.nickname]) {
-    const looseName = normalizeSearchText(name).split(" ").map(looseLatinWord).filter(Boolean);
-    if (!looseName.length) continue;
-    const fits = looseQuery.every((word) =>
-      looseName.some((nameWord) => nameWord === word || (word.length >= 4 && nameWord.startsWith(word))),
-    );
+    const nameWords = normalizeSearchText(name).split(" ").filter(Boolean);
+    if (!nameWords.length) continue;
+    const looseName = nameWords.map(looseLatinWord);
+    const fits = queryWords.every((word) => {
+      if (nameWords.some((nameWord) => nameWord.startsWith(word))) return true;
+      const loose = word.length >= 5 ? looseLatinWord(word) : "";
+      return Boolean(loose) && looseName.some((nameWord) => Boolean(nameWord) && nameWord.startsWith(loose));
+    });
     if (fits) return 50;
   }
   return 0;

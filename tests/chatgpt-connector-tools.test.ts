@@ -85,7 +85,8 @@ function testNameSearch() {
   assert.equal(scorePersonMatch("Ebtissam", ebtissam), 80, "the real spelling still scores as a real match");
   assert.equal(scorePersonMatch("Muhammad Ibrahim", people[1]), 50, "Muhammad = Mohamed");
   assert.equal(scorePersonMatch("Ziad", ebtissam), 0, "an unrelated name still scores nothing");
-  assert.equal(scorePersonMatch("Ali", ebtissam), 0, "a short word must fold to a WHOLE word — Ali never reaches Alaa");
+  assert.equal(scorePersonMatch("Ali", ebtissam), 0, "a word under five letters is never folded — Ali never reaches Alaa");
+  assert.equal(scorePersonMatch("Ibtissam Ali", ebtissam), 0, "every word must fit, and the short one must be spelled as it is");
   assert.equal(looseLatinWord("youssef"), looseLatinWord("yousef"));
   assert.equal(looseLatinWord("إبتسام"), "", "Arabic is never folded this way");
   assert.equal(pickOnePerson([...people, ebtissam], "Ibtissam").hrId, "B-158", "a real spelling beats a loose one");
