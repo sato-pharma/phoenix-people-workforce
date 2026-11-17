@@ -14,7 +14,8 @@
  * anyone. Don't put status. She has a combo box. She type a name, a drop list appear. She choose
  * the name, the page render, only." So the page carries NO employment status for anyone.
  *
- * The source is the 30-page CamScanner scan he sent ("CamScanner 09-11-2026 22.39.pdf"). Each page
+ * The source is the 30-page CamScanner scan he sent ("CamScanner 09-11-2026 22.39.pdf"), plus pages
+ * 31–32 from his second scan ("CamScanner 11-16-2026 11.11.pdf", serial 11/2026). Each page
  * is one sheet (PV-FM-008); the scans live in `assets/pv-training-sheets/sheet-NN.jpg`, NOT in
  * `public/`, because every page carries real signatures — the server reads a page only for the
  * QPPV and only when one of its names is chosen.
@@ -60,6 +61,14 @@ const ALL_DEPARTMENTS = {
   time: "2:00 to 3:00 PM",
   title: "PV training for all departments",
   location: "Concorde El Salam Hotel",
+} as const;
+
+const PV_ORIENTATION_NOV_11 = {
+  serial: "11/2026",
+  date: "Wednesday, 11 November 2026",
+  time: "10:30 to 11:00 AM",
+  title: "Pharmacovigilance (PV) orientation",
+  location: "Geo workstation",
 } as const;
 
 export const PV_TRAINING_SHEETS: readonly PvTrainingSheet[] = [
@@ -361,6 +370,34 @@ export const PV_TRAINING_SHEETS: readonly PvTrainingSheet[] = [
       { name: "Aya Tarek", title: "Office Coordinator", hrId: "OF-0005" },
     ],
   },
+  // Serial 11/2026 — the second scan he sent ("CamScanner 11-16-2026 11.11.pdf", 2026-11-18): one
+  // sheet over two pages, rows 1–13 then 14–19. Names spelled as the master spells them where the
+  // hand is unclear ("Manor sadek" → Manar Sadek, "Aya Mandouh" → Aya Mamdouh). Row 11 is written
+  // in Arabic (احمد هلال عليوه); he is Ahmed Helal, re-hired 2026-11-01 as CN-0013 with the same
+  // national ID as B-3 — keyed B-3 so his February and November sheets read as one person.
+  { page: 31, ...PV_ORIENTATION_NOV_11, attendees: [
+    { name: "Mohamed Salah", title: MR, hrId: "CN-0011" },
+    { name: "Mahmoud Khaled", title: MR, hrId: "CN-0014" },
+    { name: "Manar Sadek", title: MR, hrId: "CN-0007" },
+    { name: "Sandy Mosheer", title: MR, hrId: "CN-0012" },
+    { name: "Snagik Ayman", title: MR, hrId: "CN-0008" },
+    { name: "Esraa Ibrahim", title: MR, hrId: "CN-0009" },
+    { name: "Toka Zaki", title: MR, hrId: "CN-0015" },
+    { name: "Rania Alaa", title: MR, hrId: "CN-0016" },
+    { name: "Ibrahim Ragab", title: MR, hrId: "PD-0038" },
+    { name: "Hosam Mohamed", title: MR, hrId: "PD-0040" },
+    { name: "Ahmed Helal", title: SMR, hrId: "B-3" },
+    { name: "Ahmed Elsayed", title: MR, hrId: "CN-0018" },
+    { name: "Ghoneim Mohamed", title: MR, hrId: "PD-0035" },
+  ] },
+  { page: 32, ...PV_ORIENTATION_NOV_11, attendees: [
+    { name: "Aya Mamdouh", title: MR, hrId: "PD-0029" },
+    { name: "Merna Youssef Wadi", title: MR, hrId: "PD-0033" },
+    { name: "Nora Kamal Srour", title: MR, hrId: "PD-0030" },
+    { name: "Hager Abu Zeid", title: MR, hrId: "PD-0036" },
+    { name: "Mariam Wagdy", title: MR, hrId: "PD-0037" },
+    { name: "Zahraa Hamdy", title: "District Manager", hrId: "PD-0031" },
+  ] },
 ];
 
 /** One person the QPPV can pick, with every sheet that carries them. */
