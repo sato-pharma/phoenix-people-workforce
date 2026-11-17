@@ -30,6 +30,8 @@ This file is loaded because this session opened a file of this module (or the mo
 - 🔴 **A RE-HIRED PERSON'S LEAVE COUNTS FROM THEIR FIRST RECORD'S HIRE DATE, THROUGH `continuous-service.ts`, NEVER BY MOVING `employees.hire_date`** (owner, 2026-11-05, Omayma Wael El Habashy: AI-0009 → PD-0039, from 17 Aug 2026). Payroll puts a person in a month by `hire_date`, and 17 Aug on PD-0039 put her in the open October run twice. The link also gives her portal the earlier record's payslips and vacations; payroll never imports it. Pinned by `tests/continuous-service.test.ts`.
 - 🔒 **THE DAY-BY-DAY REPORT'S DEDUCTION ROUTES ASSERT `deductions:approve`** (2026-11-13) — `decisions` (GET and POST) and `all-summary`, beside their Super Admin role check, which stays. Pinned by `tests/permission-checks-s01.test.ts`.
 
+- 🔒 **A LEAVE REQUEST THAT TOUCHES THE SAME PERSON'S OWN IN-FLIGHT OR APPROVED REQUEST IS REFUSED, NEVER ONLY WARNED** (owner, 2026-11-17, Ragaa audit: VAC-0647 3 Oct-7 Nov and VAC-0729 1-15 Nov were both live, each was priced alone at approval, and the second approval left the first fully unpaid). `assertNoOwnLeaveOverlap` in `service.ts` runs in the employee's submit, the returned-request resubmit (even on unchanged dates) and the admin create/edit when the written status is live; it reads the person's own and earlier records, fails closed, and lets an AM-only beside a PM-only on one day through. Returned, rejected and closed never block. Pinned by `tests/vacation-own-overlap-refusal.test.ts`.
+
 ### Production hooks (moved from AGENTS.md §2.3)
 
 

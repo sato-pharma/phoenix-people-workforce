@@ -14,7 +14,7 @@ On 2026-07-17, during the iReports360 timezone audit, my assigned worktree (`.cl
 **How to apply:**
 - Before editing files in the shared main-repo checkout, run `git -C <mainrepo> rev-parse HEAD && git -C <mainrepo> branch --show-current` and confirm it's still YOUR branch. Re-check if a batch of reads spanned time.
 - Treat a mid-session line-number drift for an unchanged file as a red flag that the checkout moved — stop and run `git reflog`.
-- Don't rely on the phantom/empty worktree; materialize a real isolated worktree for your branch: `git worktree prune && git worktree add "F:/Phoenix Workforce/_wt-<name>" <branch>`, then `npm ci` in it (needs its own node_modules; copy `.env.local` for builds; remove `.env.sentry-build-plugin` so `next build` skips sourcemap upload). Report line:file against a pinned commit.
+- Don't rely on the phantom/empty worktree; materialize a real isolated worktree for your branch: `git worktree prune && git worktree add "F:/Phoenix Workforce/_wt-<name>" <branch>`, then `npm ci` in it (needs its own node_modules; copy `.env.local` for builds). Report line:file against a pinned commit.
 - The parallel `codex/crm-single-source-module` work (commits `494b6a21`, `0357c57c`) only fixed the CRM **master table** timezone display; it did NOT touch FWC/probation/employee-360/nsm/crm-integrity/route-map — those over-shifts were fixed separately on `claude/festive-lehmann-d003ea` in `_wt-crm-tz-fix`.
 
 Related: [[feedback-parallel-session-pr-collision]] · [[parallel-session-swarm-hazard]] · [[worktree-corruption-parallel-session-2026-07-05]] · [[phantom-worktree-not-in-git-worktree-list]] · [[stale-checkout-verify-against-origin-main]]

@@ -30,7 +30,7 @@ Shipped 2026-06-19 as **PR #339** (squash `ee70b995`) — an ISOLATED branch off
 (5 files, +24/-14, no migration), deployed + smoke-green on phoenix-workforce.vercel.app.
 The rest of `codex/work-from-production` then merged as **PR #340** (`fefa105a`): offer/outstation
 "Financial Advisor executes" governance `7ae70ca1`, SFE-validate-only/Finance-step-off
-(migration 20260621130000 — APPLIED to prod), sentry next-config, @openai/agents+zod deps.
+(migration 20260621130000 — APPLIED to prod), @openai/agents+zod deps.
 #340 had a marketing-file conflict with #339; it was resolved on-branch (`eef0d741`
 Merge origin/main, keep coaching scoreTable token) and merged — main has NO conflict
 markers, the read-only fix stayed intact, validate CI green, prod deploy READY. All

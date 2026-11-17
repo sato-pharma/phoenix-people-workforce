@@ -10,7 +10,7 @@ metadata:
 
 On 2026-11-17 (~20:30 Cairo) the required `checks` job (via `static` → "Dependency audit") went red on every PR because of
 GHSA-fc5q-39xc-vjpf: picomatch `<= 4.0.7`, ReDoS through repeated extglobs, HIGH, **no patched version exists**
-(npm `latest` is 4.0.7). The only prod paths are `@sentry/nextjs > @rollup/plugin-commonjs (> @rollup/pluginutils | > fdir) > picomatch`,
+(npm `latest` is 4.0.7). The only prod paths are the error-tracking SDK (since removed) `> @rollup/plugin-commonjs (> @rollup/pluginutils | > fdir) > picomatch`,
 a build-time bundling plugin; app code never imports picomatch.
 
 First decision (~20:30, another session, MCQ): **"Wait for a fix"**. Superseded the same evening (~21:40 Cairo) when he

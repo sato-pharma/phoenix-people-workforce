@@ -29,8 +29,8 @@ On 22 Oct 2026 (about 01:40–03:00 Cairo) the leaked Railway secrets that Claud
     - GitHub's copy is "Phoenix emergency host", issued 21 Oct 19:40 Cairo. The standby workflow switches DNS with it.
     - The laptop's `.env.local` holds "Edit zone DNS", issued 10 Oct.
     - No token can roll itself (code 9109). He rolled "new" at 05:31 Cairo; a clipboard WATCHER caught it (a one-shot clipboard read raced something else on the laptop that copies Google People JSON) and put it on Railway; the old value is refused (code 1000).
-  - SENTRY_WEBHOOK_SECRET (05:08). It is the client secret of the internal integration "Phoenix Telegram alerts", which Sentry generates, and Claude cannot rotate it. The org token (`sntrys_`) has no access to the integration settings. The Chrome extension blocks reading it off the page, and the classifier refused carrying it out encrypted.
-    - What worked: he clicked "Rotate client secret" at phoenix-crm.sentry.io/settings/developer-settings/phoenix-telegram-alerts-9b8b7e/ and copied the new secret.
+  - The outside error tracker's webhook secret (05:08; the tracker, its webhook route and this secret have since been retired). It was the client secret of the internal integration "Phoenix Telegram alerts", which the tracker generated, and Claude could not rotate it. The tracker's org token had no access to the integration settings. The Chrome extension blocks reading it off the page, and the classifier refused carrying it out encrypted.
+    - What worked: he clicked "Rotate client secret" on the integration's developer-settings page (`phoenix-telegram-alerts-9b8b7e`, organisation `phoenix-crm`) and copied the new secret.
     - A script then read it from the laptop clipboard (never printed), set it on Railway and Fly, and cleared the clipboard. A signed "not-json" probe answered 400 for the new secret and 401 for the old.
   - GITHUB_ACTIONS_DISPATCH_TOKEN (05:40). Railway's copy is the fine-grained token "phoenix-synthetic-dispatch" (id 17889094), NOT "phoenix-next". It sees hmdm-android, phoenix-people-workforce and sato-anti-infective-releases, and gets a 404 on the phoenix-next repository.
     - GitHub's token pages need his passkey (sudo mode), so Claude cannot read them.
@@ -49,7 +49,7 @@ On 22 Oct 2026 (about 01:40–03:00 Cairo) the leaked Railway secrets that Claud
     - Read as plural, it also covers RECRUITMENT_EMAIL_INBOXES_JSON, the hr@ and careers@ mailbox passwords.
     - Turbify's steps (login.turbify.com/accountinfo → Security and Privacy → Change password) need his own sign-in. Claude never signs in to Turbify.
 
-  Brevo, Sentry, the WhatsApp verify token and the GitHub dispatch token were done.
+  Brevo, the WhatsApp verify token and the GitHub dispatch token were done.
 - The mailbox robots run inside the website's `/api/cron/mailbox-offboarding-sweep` route. cron-job.org calls it once a day at 08:15 Cairo. On 21 Oct its run ended with cron-job.org status 5, a timeout.
 - cron-job.org's API allows 100 calls a day. Moving a job costs 2 calls (a GET and a PATCH).
 - The per-key status is in `xlsx/railway-key-replacement-plan-2026-10-22-v11.xlsx`; always write a NEW version, never overwrite. The change log (names and fingerprints only) is in `xlsx/railway-key-rotation/replaced-keys-log.csv`.
