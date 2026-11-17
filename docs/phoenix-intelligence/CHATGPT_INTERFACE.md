@@ -25,7 +25,7 @@ in [CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md](CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md).
 
 ## 2. The tools
 
-Eight tools. Every input is an id from the module spec (`scripts/phoenix-inspect/modules/kpis.mjs`); the
+Nine tools. Every input is an id from the module spec (`scripts/phoenix-inspect/modules/kpis.mjs`); the
 schemas say `additionalProperties: false`, and `validateToolInput` refuses anything else again on the
 server side.
 
@@ -36,11 +36,23 @@ server side.
 | `phoenix_open_module` | `module`, `persona` | the landing page at desktop: masked screenshot, measurements |
 | `phoenix_capture_page` | `module`, `persona`, `states[]`, `viewports[]` | a run of up to 40 shots: per-shot outcome, measurements, source candidates; up to 4 masked images inline |
 | `phoenix_inspect_ui_state` | `module`, `persona`, `state`, `viewport` | one shot in depth: every measurement, the masked accessibility snapshot, the source files its visible text comes from, stopped writes, console errors, the image |
+| `phoenix_get_capture` | `module`, `runId` | a capture that was still running when its call answered: the same summary, measurements and masked pictures |
 | `phoenix_get_component_map` | `module` | `KPI_REPORTS_COMPONENT_MAP.md` |
 | `phoenix_get_visual_audit` | `module`, `runId?` | `KPI_REPORTS_VISUAL_AUDIT.md`, and a run's totals and measurements |
 | `phoenix_get_implementation_plan` | `module` | `KPI_REPORTS_PREMIUM_POLISH_PLAN.md` and `SECOND_STAGE_PROMPT.md` |
 
 Personas: `ceo`, `sfe`, `hrr`, `nsm`, `dm`, `rep`, `emp` ([INSPECTION_PERSONAS.md](INSPECTION_PERSONAS.md)).
+
+**Answering in time.** ChatGPT stops waiting for a tool at about 45 seconds. Measured on 17 Nov 2026
+through the Secure MCP Tunnel: the CEO's KPIs board took 38 s to capture, its 1 MB full-page PNG took
+39 s more to cross the home uplink, and ChatGPT had already answered that no screenshot came back. So:
+
+- A capture still running after 25 s (`ANSWER_WITHIN_MS`) answers at once with `status: "capturing"`,
+  its `runId` and the call to make next; `phoenix_get_capture` waits up to 25 s more and returns the
+  finished run (a run collected once is not kept; a run on disk is read from its manifest).
+- Every picture goes out as a JPEG of the top 1,800 px of the masked page, scaled to 1,024 px wide
+  (`PREVIEW`): about 150 KB instead of 1 MB. The measurements still cover the whole page, and the
+  full-page PNG stays in the run folder.
 Viewports: `desktop` 1440×900, `tablet` 768×1024, `mobile` 390×844.
 
 ## 3. Why it is safe to hand to a model
@@ -76,7 +88,7 @@ audit row of a page view). That is why the target is staging with staging-only l
 
 ChatGPT's custom MCP plugins speak Streamable HTTP over HTTPS, with OAuth.
 
-1. **Transport — built, not deployed.** `scripts/phoenix-inspect/mcp-http.mjs` serves the same eight
+1. **Transport — built, not deployed.** `scripts/phoenix-inspect/mcp-http.mjs` serves the same nine
    tools on `POST /mcp` through the MCP SDK's `StreamableHTTPServerTransport` (stateless, JSON replies),
    over one shared inspector, so one capture at a time and 10 calls a minute still hold.
 2. **Token checks — built, not deployed.** `lib/oauth.mjs` is the resource-server half of the MCP

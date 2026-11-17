@@ -7,23 +7,25 @@ import path from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import sharp from "sharp";
 
 import { INSPECT_SCOPE, createJwtVerifier, keyFromJwk } from "../scripts/phoenix-inspect/lib/oauth.mjs";
 import { STAGING_ORIGIN } from "../scripts/phoenix-inspect/lib/fence.mjs";
 import { RUN_BOUNDS } from "../scripts/phoenix-inspect/lib/safety.mjs";
 import { configFromEnv, startHttpServer } from "../scripts/phoenix-inspect/mcp-http.mjs";
-import { MAX_IMAGES_PER_RESULT } from "../scripts/phoenix-inspect/mcp-server.mjs";
+import { MAX_IMAGES_PER_RESULT, PREVIEW } from "../scripts/phoenix-inspect/mcp-server.mjs";
 
 type Content = { type: string; text?: string; data?: string; mimeType?: string };
 type Result = { isError?: boolean; content: Content[]; structuredContent?: unknown };
 type Reply = { status: number; headers: Record<string, string | string[] | undefined>; body: string; json: Record<string, unknown> | null };
 
-const EIGHT = [
+const TOOLS = [
   "phoenix_list_portals_and_modules",
   "phoenix_list_module_pages",
   "phoenix_open_module",
   "phoenix_capture_page",
   "phoenix_inspect_ui_state",
+  "phoenix_get_capture",
   "phoenix_get_component_map",
   "phoenix_get_visual_audit",
   "phoenix_get_implementation_plan",
@@ -70,7 +72,7 @@ function es256(claims: Record<string, unknown>, key: KeyObject, header: Record<s
  * Phoenix Visual Intelligence: the Streamable HTTP door of the inspector MCP server is an OAuth resource
  * server for the OWNER only. Without a token it answers 401 with the RFC 9728 metadata link; an expired,
  * wrong-audience, wrong-issuer, foreign-signed, unsigned or algorithm-confused token is 401; a valid token
- * for anyone else is 403. The owner gets exactly the eight tools, masked PNG image blocks beside
+ * for anyone else is 403. The owner gets exactly the nine tools, masked JPEG previews beside
  * structuredContent, the same ids-only refusals as stdio, one capture at a time and the rate limits. It
  * refuses to start against production, on a public interface without an https URL, or with trust-proxy
  * and no public URL; it refuses a foreign Host or Origin; and its audit log holds no token or raw subject.
@@ -89,6 +91,7 @@ export async function runPhoenixInspectMcpHttpTests() {
 
     const runs: Record<string, unknown>[] = [];
     let hold: Promise<void> | null = null;
+    const picture = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#ffffff" } }).png().toBuffer();
     const runner = async (options: Record<string, unknown>) => {
       runs.push(options);
       if (hold) await hold;
@@ -104,7 +107,7 @@ export async function runPhoenixInspectMcpHttpTests() {
       ];
       for (let i = 0; i < 6; i += 1) {
         const image = `shots/${i}.png`;
-        writeFileSync(path.join(outDir, image), Buffer.concat([PNG, Buffer.alloc(8, i)]));
+        writeFileSync(path.join(outDir, image), picture);
         shots.push({ id: `00${i}`, state: "summary", viewport: "desktop", outcome: "captured", image, writesStopped: [], console: [] });
       }
       return { outDir, manifest: { runId: options.runId, totals: { captured: 6 }, personas: ["dm"], shots, denied: [], notRun: [] } };
@@ -199,30 +202,30 @@ export async function runPhoenixInspectMcpHttpTests() {
     assert.equal(noScope.status, 403, "the data service's scope does not open the inspector");
     assert.match(String(noScope.headers["www-authenticate"] ?? ""), /error="insufficient_scope"/);
 
-    // The owner: exactly the eight tools, all read-only.
+    // The owner: exactly the nine tools, all read-only.
     const listed = await mcp(token(), "tools/list");
     assert.equal(listed.status, 200, listed.body);
     const tools = (listed.json?.result as { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] }).tools;
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      EIGHT,
+      TOOLS,
     );
     assert.ok(tools.every((tool) => tool.annotations?.readOnlyHint === true));
 
-    // A real MCP client over Streamable HTTP: list, then capture — masked PNG image blocks and structuredContent.
+    // A real MCP client over Streamable HTTP: list, then capture — masked JPEG previews and structuredContent.
     const client = new Client({ name: "phoenix-inspect-http-test", version: "0.0.0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(a.resource), { requestInit: { headers: { Authorization: `Bearer ${token()}` } } }));
     try {
       const viaClient = await client.listTools();
-      assert.deepEqual(viaClient.tools.map((tool) => tool.name).sort(), [...EIGHT].sort());
+      assert.deepEqual(viaClient.tools.map((tool) => tool.name).sort(), [...TOOLS].sort());
       const captured = (await client.callTool({ name: "phoenix_capture_page", arguments: { module: "kpi-reports", persona: "dm", states: ["summary"], viewports: ["desktop"] } })) as unknown as Result;
       assert.ok(!captured.isError, JSON.stringify(captured.content?.[0]));
       const images = captured.content.filter((item) => item.type === "image");
       assert.equal(images.length, MAX_IMAGES_PER_RESULT, "at most four images per result");
       for (const image of images) {
-        assert.equal(image.mimeType, "image/png");
+        assert.equal(image.mimeType, "image/jpeg", "a picture travels as a small JPEG preview");
         const bytes = Buffer.from(image.data ?? "", "base64");
-        assert.ok(bytes.subarray(0, PNG.length).equals(PNG), "only a file that is a PNG is sent as one");
+        assert.ok(bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])), "the preview is a JPEG");
         assert.ok(!bytes.includes("LEAKY-UNMASKED"), "a shot whose privacy check failed is never sent");
       }
       assert.deepEqual(captured.structuredContent, JSON.parse(captured.content[0].text ?? "null"), "the summary also travels as structuredContent");
@@ -286,7 +289,9 @@ export async function runPhoenixInspectMcpHttpTests() {
 
     // ── 3. Behind a trusted proxy with an https public address; a small budget; a byte cap ─────────
     const publicUrl = "https://inspect.example.test/mcp";
-    const b = await startHttpServer({ ...common, publicUrl, trustProxy: true, requestsPerMinute: 5, imageLimits: { bytes: 40 } });
+    // Every fake shot is the same small picture, so every preview is the same size: room for two and a half.
+    const previewBytes = (await sharp(picture).jpeg({ quality: PREVIEW.quality, mozjpeg: true }).toBuffer()).length;
+    const b = await startHttpServer({ ...common, publicUrl, trustProxy: true, requestsPerMinute: 5, imageLimits: { bytes: Math.floor(previewBytes * 2.5) } });
     servers.push(b);
     assert.equal(b.resource, publicUrl);
     assert.equal(b.metadataUrl, "https://inspect.example.test/.well-known/oauth-protected-resource/mcp");
@@ -304,7 +309,7 @@ export async function runPhoenixInspectMcpHttpTests() {
     assert.equal((await mcp(token(), "tools/list", {}, viaProxy, b.url)).status, 401, "a token for the loopback resource does not open the public one");
     const capped = resultOf(await mcp(publicToken, "tools/call", { name: "phoenix_capture_page", arguments: { module: "kpi-reports", persona: "dm", states: ["summary"] } }, viaProxy, b.url));
     assert.ok(!capped.isError, JSON.stringify(capped.content?.[0]));
-    assert.equal(capped.content.filter((item) => item.type === "image").length, 2, "the per-call byte cap holds (two 16-byte images under 40 bytes)");
+    assert.equal(capped.content.filter((item) => item.type === "image").length, 2, "the per-call byte cap holds (two previews fit, a third does not)");
     assert.equal((await raw(b.url, "GET", "/.well-known/oauth-protected-resource", viaProxy)).status, 200);
     const overBudget = await raw(b.url, "GET", "/.well-known/oauth-protected-resource", viaProxy);
     assert.equal(overBudget.status, 429, "the request budget answers 429");
