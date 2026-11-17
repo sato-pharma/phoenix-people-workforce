@@ -210,7 +210,7 @@ export const exportTableTool = defineTool({
   title: "Export a whole table to Excel",
   description:
     "Owner and CEO. Put a whole Phoenix table or view — every row and every readable column, optionally filtered — into one Excel workbook and return a download link only this person can open. " +
-    "Use it when the person wants all of a table (every doctor in the customer list, every employee, every request) rather than an answer about it. " +
+    "Use it when the person wants all of a table (every employee, every request) rather than an answer about it. It copies ids and codes as stored — for the CRM customer lists (doctors, pharmacies) use phoenix_export_customer_list, which gives names. " +
     "If the table is too big for one file, the answer names the offset to export the rest from. Only credential columns are left out. " +
     SALES_TRUTH_NOTE,
   roles: TABLE_TOOL_ROLES,
