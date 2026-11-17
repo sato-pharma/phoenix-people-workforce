@@ -10,6 +10,7 @@ import {
   tokenWarningDaysDue,
   type GithubWorkflowRead,
 } from "../src/lib/observability/github-workflow-watch.ts";
+import { findJobSchedule } from "../src/lib/observability/job-schedule.ts";
 
 const NOW = Date.parse("2026-11-03T12:00:00Z");
 const HOUR = 60 * 60 * 1000;
@@ -42,6 +43,39 @@ export function runGithubWorkflowWatchTests() {
     [...scheduled, "synthetic-journeys.yml"].sort(),
     "a scheduled workflow missing from the watch can stop firing with nobody told",
   );
+
+  // THE NIGHT GAP (17 Nov 2026). The synthetic journeys fire only by day, so their limit must exceed the
+  // longest gap between two dispatches, overnight included — an 8-hour limit against a 9-hour night
+  // raised a false "overdue" every morning. The gap is read from the dispatcher's own schedule.
+  const syntheticSchedule = findJobSchedule("phoenix-run-synthetic-journeys")?.schedule;
+  assert.ok(syntheticSchedule, "the synthetic journeys dispatcher must stay declared in job-schedule.ts");
+  const [minuteField, hourField, ...restFields] = syntheticSchedule.split(/\s+/);
+  assert.match(minuteField, /^\d+$/, "the gap check expects one fixed minute");
+  assert.deepEqual(restFields, ["*", "*", "*"], "the gap check expects a daily schedule");
+  const hours = hourField.split(",").map(Number).sort((a, b) => a - b);
+  assert.ok(hours.length > 0 && hours.every(Number.isInteger), `cannot read the hours of ${syntheticSchedule}`);
+  const longestGapHours = Math.max(...hours.map((hour, index) => (hours[index + 1] ?? hours[0] + 24) - hour));
+  const syntheticWatch = GITHUB_WORKFLOW_WATCHES.find((watch) => watch.file === "synthetic-journeys.yml");
+  assert.ok(syntheticWatch);
+  assert.ok(
+    syntheticWatch.maxAgeHours > longestGapHours,
+    `synthetic journeys limit ${syntheticWatch.maxAgeHours}h must exceed the ${longestGapHours}h longest gap in ${syntheticSchedule}`,
+  );
+  // The exact morning that alarmed: last success 20:19 Cairo, read at 04:21 Cairo — nothing is wrong.
+  const morningNow = Date.parse("2026-11-17T02:21:00Z");
+  const morning = assessGithubWorkflows({
+    firstSeenAt: "2026-10-01T00:00:00Z",
+    nowMs: morningNow,
+    previousDetail: null,
+    reads: GITHUB_WORKFLOW_WATCHES.map((watch) => ({
+      file: watch.file,
+      kind: "answered",
+      lastSuccessAt: new Date(watch.file === "synthetic-journeys.yml" ? Date.parse("2026-11-16T18:19:00Z") : morningNow - HOUR).toISOString(),
+      tokenExpiresAt: null,
+    })),
+    tokenSet: true,
+  });
+  assert.deepEqual(morning.overdue, [], "the overnight gap before the 05:17 Cairo dispatch is not an overdue check");
 
   const clean = assess(allFresh());
   assert.equal(clean.outcome, "success");

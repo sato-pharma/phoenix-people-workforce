@@ -46,7 +46,12 @@ export type GithubWorkflowWatch = {
  */
 export const GITHUB_WORKFLOW_WATCHES: readonly GithubWorkflowWatch[] = [
   { file: "deploy-drift-check.yml", label: "Deploy drift check", maxAgeHours: 6 },
-  { file: "synthetic-journeys.yml", label: "Synthetic journeys", maxAgeHours: 8 },
+  // Dispatched 05:17-20:17 Cairo only, so the night leaves a 9-hour gap (20:17 -> 05:17). The old 8-hour
+  // limit was shorter than that gap and raised "Synthetic journeys overdue" every morning at 04:21 with
+  // nothing wrong (17 Nov 2026). 10 hours = the longest gap plus one hour for the morning run to finish;
+  // a missed 05:17 run still alerts at 06:21. tests/github-workflow-watch.test.ts derives the gap from
+  // job-schedule.ts, so a cadence change cannot leave this limit short again.
+  { file: "synthetic-journeys.yml", label: "Synthetic journeys", maxAgeHours: 10 },
   { file: "attendance-weekly-digest.yml", label: "Attendance digest", maxAgeHours: 18 },
   { file: "migration-drift-check.yml", label: "Migration drift check", maxAgeHours: 36 },
   { file: "origin-certificate-check.yml", label: "Origin certificate check", maxAgeHours: 36 },
