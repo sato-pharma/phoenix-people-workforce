@@ -14,6 +14,7 @@
  */
 import { createAccessContext, normalizeRole, type AccessContext } from "@/lib/auth/permissions";
 import { evaluateEmployeeLifecycleGate } from "@/lib/auth/session-lifecycle";
+import { hrIdsMatch } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -47,7 +48,11 @@ export function decideLiveSubject(
   if (Number(account.session_version ?? 0) !== Number(subject.sessionVersion)) {
     return { ok: false, reason: "The password was changed or the account was signed out everywhere. Connect ChatGPT again." };
   }
-  if (String(account.hr_id ?? "") !== String(subject.hrId ?? "")) {
+  // The same person, compared the way the rest of Phoenix compares HR ids: a website session carries the
+  // CANONICAL key (createAccessContext lowercases it, "b-10"), the account row keeps the record's own
+  // spelling ("B-10"). A plain string test refused the owner's own first connection (17 Nov 2026).
+  const neitherLinked = !String(account.hr_id ?? "").trim() && !String(subject.hrId ?? "").trim();
+  if (!neitherLinked && !hrIdsMatch(account.hr_id, subject.hrId)) {
     return { ok: false, reason: "The account is linked to a different employee now. Connect ChatGPT again." };
   }
   const gate = evaluateEmployeeLifecycleGate({
