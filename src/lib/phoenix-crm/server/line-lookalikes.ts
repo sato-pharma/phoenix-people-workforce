@@ -11,6 +11,10 @@
  *     through `phoenix_crm_share_line_validation` (the three-lines rule's own door), with the Super Admin as
  *     the actor and the validated line's validator kept; "Not the same" is kept so the pair is never asked
  *     again. Both are written to `phoenix_crm_line_lookalike_answers`.
+ *   - A JOIN (owner, 2026-11-17: "i want phx 2 recognize as 1"): two rows BOTH validated under names written
+ *     differently are listed too (`planLineLookalikeJoins`), and "Same customer" moves the weaker row's photo
+ *     and pin places onto the stronger one's point through the rule's own audited move
+ *     (`applyLineTwinMerges`), with the Super Admin as the actor. The answer row is (joining, anchor).
  *
  * 🔴 THE SUPER ADMIN'S ALONE — the read and the answer. A test account never reaches it.
  * 🔴 NOTHING IS VALIDATED BY THE LIST ITSELF — only an answer validates, one pair at a time.
@@ -28,8 +32,10 @@ import {
   LOOKALIKE_NAME_TEXT,
   LOOKALIKE_REFUSAL_TEXT,
   pairKey,
+  planLineLookalikeJoins,
   planLineLookalikes,
   planLookalikeConfirm,
+  planLookalikeJoin,
   type LineLookalikeBoard,
   type LineLookalikePlace,
   type LineLookalikeRow,
@@ -39,7 +45,7 @@ import {
 import { territoryName, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { loadTwinWorld, withdrawValidateAgainNoticeQuietly, type WorldScope } from "@/lib/phoenix-crm/server/line-twins";
+import { applyLineTwinMerges, loadTwinWorld, withdrawValidateAgainNoticeQuietly, type WorldScope } from "@/lib/phoenix-crm/server/line-twins";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
@@ -127,8 +133,9 @@ async function loadInput(org: OrgIndex, scope: WorldScope, answers: ReadonlyArra
     const contact = world.contacts.get(customer.id);
     return { ...customer, phone: contact?.phone ?? null, referenceContactId: contact?.referenceContactId ?? null };
   });
-  const notSame = new Set(answers.filter((answer) => answer.answer === "not_same").map((answer) => pairKey(answer.waitingCustomerId, answer.sourceCustomerId)));
-  return { customers, places: world.places, notSame };
+  const keysOf = (kind: Answer["answer"]) =>
+    new Set(answers.filter((answer) => answer.answer === kind).map((answer) => pairKey(answer.waitingCustomerId, answer.sourceCustomerId)));
+  return { customers, places: world.places, notSame: keysOf("not_same"), confirmed: keysOf("same") };
 }
 
 export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<LineLookalikeBoard> {
@@ -136,15 +143,21 @@ export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<
   const answers = await loadAnswers();
   const input = await loadInput(viewer.org, { isTest: false, seatIds: null }, answers);
   const pairs = planLineLookalikes(input);
+  const joins = planLineLookalikeJoins(input);
 
   const customerById = new Map(input.customers.map((customer) => [customer.id, customer]));
-  // Every place a pair would copy, with its evidence — the photograph is what the Super Admin judges by.
-  const sourcePlaces = await selectByIds<Row>("phoenix_crm_places", PLACE_EVIDENCE_COLUMNS, "id", [...new Set(pairs.flatMap((pair) => pair.sourcePlaceIds))]);
+  // Every place a pair would copy or join, with its evidence — the photograph is what the Super Admin judges by.
+  const sourcePlaces = await selectByIds<Row>("phoenix_crm_places", PLACE_EVIDENCE_COLUMNS, "id", [
+    ...new Set([...pairs.flatMap((pair) => pair.sourcePlaceIds), ...joins.flatMap((join) => [...join.anchorPlaceIds, ...join.joiningPlaceIds])]),
+  ]);
   const placeById = new Map(sourcePlaces.map((row) => [String(row.id), row]));
   const [names, venues] = await Promise.all([
     loadPeopleNames([
-      ...pairs.flatMap((pair) => [customerById.get(pair.waitingCustomerId)?.seatId, customerById.get(pair.sourceCustomerId)?.seatId]).map((seatId) => (seatId ? viewer.org.seats.get(seatId)?.occupantHrId : null)),
+      ...[...pairs.flatMap((pair) => [pair.waitingCustomerId, pair.sourceCustomerId]), ...joins.flatMap((join) => [join.joiningCustomerId, join.anchorCustomerId])]
+        .map((customerId) => customerById.get(customerId)?.seatId)
+        .map((seatId) => (seatId ? viewer.org.seats.get(seatId)?.occupantHrId : null)),
       ...pairs.map((pair) => customerById.get(pair.sourceCustomerId)?.validatedByHrId),
+      ...joins.map((join) => customerById.get(join.anchorCustomerId)?.validatedByHrId),
       ...sourcePlaces.map((row) => textOf(row.created_by_hr_id)),
     ]),
     loadSharedPlaceNames(sourcePlaces.map((row) => textOf(row.shared_place_id))),
@@ -163,7 +176,50 @@ export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<
     };
   };
 
+  const evidenceOf = (placeIds: ReadonlyArray<string>) =>
+    placeIds
+      .map((placeId) => placeById.get(placeId))
+      .filter((row): row is Row => row !== undefined)
+      .map((row) => placeEvidence(row, names, venueNames));
+  const reasonsOf = (pair: { samePhone: boolean; sameOldCrmContact: boolean; nameKind: keyof typeof LOOKALIKE_NAME_TEXT | null }) =>
+    [
+      pair.samePhone ? "The same phone number" : null,
+      pair.sameOldCrmContact ? "The same contact in the old CRM" : null,
+      pair.nameKind ? LOOKALIKE_NAME_TEXT[pair.nameKind] : null,
+    ].filter((reason): reason is string => reason !== null);
+
   const rows: LineLookalikeRow[] = [];
+  for (const join of joins) {
+    const joining = customerById.get(join.joiningCustomerId);
+    const anchor = customerById.get(join.anchorCustomerId);
+    if (!joining || !anchor) continue;
+    const seat = viewer.org.seats.get(joining.seatId);
+    const place = placeById.get(join.anchorPlaceIds[0]);
+    rows.push({
+      key: join.key,
+      mode: "join",
+      joiningPlaces: evidenceOf(join.joiningPlaceIds),
+      waitingCustomerId: join.joiningCustomerId,
+      sourceCustomerId: join.anchorCustomerId,
+      listType: join.listType,
+      confidence: join.confidence,
+      confidenceText: LOOKALIKE_CONFIDENCE_TEXT[join.confidence],
+      reasons: [...reasonsOf(join), join.gapMeters <= 1 ? "Already on one point" : `${join.gapMeters} m apart`],
+      warnings: join.specialityDiffers ? [`The specialities differ: ${joining.speciality} / ${anchor.speciality}`] : [],
+      region: seat?.regionName ?? null,
+      areaName: seat?.areaName ?? null,
+      waiting: side(joining),
+      source: {
+        ...side(anchor),
+        validatedByName: anchor.validatedByHrId ? nameOf(names, anchor.validatedByHrId, "A rep") : null,
+        validatedAtText: anchor.validatedAt ? formatPhoenixDateTime(anchor.validatedAt) : null,
+        placeCount: join.anchorPlaceIds.length,
+        brickName: typeof place?.brick_name === "string" ? place.brick_name : null,
+        address: typeof place?.address === "string" ? place.address : null,
+        places: evidenceOf(join.anchorPlaceIds),
+      },
+    });
+  }
   for (const pair of pairs) {
     const waiting = customerById.get(pair.waitingCustomerId);
     const source = customerById.get(pair.sourceCustomerId);
@@ -181,6 +237,8 @@ export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<
     ].filter((warning): warning is string => warning !== null);
     rows.push({
       key: pair.key,
+      mode: "validate",
+      joiningPlaces: [],
       waitingCustomerId: pair.waitingCustomerId,
       sourceCustomerId: pair.sourceCustomerId,
       listType: pair.listType,
@@ -253,6 +311,7 @@ export async function answerLineLookalike(viewer: PhoenixCrmViewer, raw: unknown
     await saveAnswer(viewer, waitingCustomerId, sourceCustomerId, answer);
     return { answer, validated: false };
   }
+  if (body.mode === "join") return joinLineLookalike(viewer, waitingCustomerId, sourceCustomerId);
 
   // The waiting row's area, read as it stands now: both rows must still sit in it.
   const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, is_test").eq("id", waitingCustomerId).maybeSingle();
@@ -288,4 +347,30 @@ export async function answerLineLookalike(viewer: PhoenixCrmViewer, raw: unknown
     await restampVisitLocationsQuietly({ seatId: plan.waiting.seatId, isTest: false, customerId: plan.waiting.id, actorHrId: viewer.hrId, settings, scope: "unplaced" });
   });
   return { answer, validated: true };
+}
+
+/**
+ * "Same customer" on two rows both lines validated: every guard is asked again on the area as it stands, the
+ * weaker row's photo and pin places move onto the stronger one's point through the rule's own audited move, and
+ * the answer is kept (joining, anchor) — which is what makes Place checks show the two as one reading.
+ */
+async function joinLineLookalike(viewer: PhoenixCrmViewer, firstCustomerId: string, secondCustomerId: string): Promise<LineLookalikeAnswerResult> {
+  const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, is_test").eq("id", firstCustomerId).maybeSingle();
+  throwIfError(error);
+  const firstRow = (data ?? null) as Row | null;
+  if (!firstRow || firstRow.is_test === true) throw conflictError(LOOKALIKE_REFUSAL_TEXT.not_found);
+  const areaCode = viewer.org.seats.get(String(firstRow.seat_id))?.areaCode ?? null;
+  if (!areaCode) throw conflictError(LOOKALIKE_REFUSAL_TEXT.not_comparable);
+  const seatIds = [...viewer.org.seats.values()].filter((seat) => seat.areaCode === areaCode).map((seat) => seat.seatId);
+  const answers = (await loadAnswers()).filter(
+    (held) =>
+      (held.waitingCustomerId === firstCustomerId && held.sourceCustomerId === secondCustomerId) ||
+      (held.waitingCustomerId === secondCustomerId && held.sourceCustomerId === firstCustomerId),
+  );
+  const plan = planLookalikeJoin(await loadInput(viewer.org, { isTest: false, seatIds }, answers), firstCustomerId, secondCustomerId);
+  if (!plan.ok) throw conflictError(LOOKALIKE_REFUSAL_TEXT[plan.refusal]);
+  const merged = await applyLineTwinMerges(plan.moves, viewer.config.settings, viewer.hrId);
+  if (merged.failed > 0) throw conflictError("One of the places could not be moved, so the answer was not saved. Open the card again.");
+  await saveAnswer(viewer, plan.joining.id, plan.anchor.id, "same");
+  return { answer: "same", validated: false };
 }

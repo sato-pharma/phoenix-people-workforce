@@ -23,16 +23,28 @@
  * doctor written with all three names (`waitingRefusal`). Pharmacies are never here: no line shares a
  * pharmacy's validation.
  * 🔴 TWO FACILITIES OF DIFFERENT KINDS ARE NEVER ONE — `sameFacilityKind`, the same guard the rule holds.
+ *
+ * 🔴 TWO VALIDATED ROWS JOIN ON HIS WORD TOO (owner, 2026-11-17: "if same dr different reps visit but he is in
+ * phoenix recognized as 2 … i want phx 2 recognize as 1", then "and also the pedia", then "Yes, add to 482").
+ * Where BOTH lines validated the customer under names written differently, the rule never joins them, so he
+ * stayed two. `planLineLookalikeJoins` lists such a pair (all three lines, Pedia included) when their own
+ * places sit within `AGREE_METERS`; his "Same customer" moves the weaker row's photo and pin places onto the
+ * stronger one's point (`planLookalikeJoin`, the rule's own merge), and the answer makes Place checks show
+ * them as one reading.
  */
 
-import { specialityFamily } from "@/lib/phoenix-crm/customer-match-groups";
+import { AGREE_METERS, specialityFamily } from "@/lib/phoenix-crm/customer-match-groups";
+import { distanceMeters } from "@/lib/phoenix-crm/geo";
 import {
   areLineTwins,
+  compareAnchors,
   isOwnPlace,
+  LINE_TWIN_SAME_POINT_METERS,
   pickSharePlaces,
   sameFacilityKind,
   twinNameWords,
   waitingRefusal,
+  type LineTwinMove,
   type TwinCustomer,
   type TwinPlace,
   type WaitingRefusal,
@@ -51,6 +63,8 @@ export type LookalikeInput = {
   places: ReadonlyArray<TwinPlace>;
   /** `pairKey`s the Super Admin answered "Not the same" — never asked again. */
   notSame: ReadonlySet<string>;
+  /** `pairKey`s he answered "Same customer" — a joined pair is not listed again. */
+  confirmed?: ReadonlySet<string>;
 };
 
 export type LookalikeConfidence = "certain" | "very_likely";
@@ -158,6 +172,10 @@ export type LineLookalikeSource = LineLookalikeSide & {
 
 export type LineLookalikeRow = {
   key: string;
+  /** `validate`: the first row still waits. `join`: both are validated, and "Same customer" joins them. */
+  mode: "validate" | "join";
+  /** A join: the first row's own places, which move onto the second's point. Empty for `validate`. */
+  joiningPlaces: LineLookalikePlace[];
   waitingCustomerId: string;
   sourceCustomerId: string;
   listType: "AM" | "PM";
@@ -439,7 +457,16 @@ function judge(index: Indexed, waiting: LookalikeCustomer, source: LookalikeCust
 }
 
 /** Why a waiting row is not on the list, or cannot be confirmed now. */
-export type LookalikeRefusal = WaitingRefusal | "not_found" | "source_not_validated" | "not_comparable" | "rule_pairs_them" | "answered_not_same";
+export type LookalikeRefusal =
+  | WaitingRefusal
+  | "not_found"
+  | "source_not_validated"
+  | "not_comparable"
+  | "rule_pairs_them"
+  | "answered_not_same"
+  | "not_validated"
+  | "too_far"
+  | "cannot_move";
 
 export const LOOKALIKE_REFUSAL_TEXT: Record<LookalikeRefusal, string> = {
   not_waiting: "This customer is no longer waiting — it was validated or placed meanwhile.",
@@ -452,6 +479,9 @@ export const LOOKALIKE_REFUSAL_TEXT: Record<LookalikeRefusal, string> = {
   not_comparable: "The two customers are not on two lines of one area's same list.",
   rule_pairs_them: "The three-lines rule already pairs these two; it validates the waiting row by itself.",
   answered_not_same: "These two were answered Not the same.",
+  not_validated: "One of the two customers is no longer validated with a place of its own.",
+  too_far: "Their places are more than 150 m apart — that may be two clinics, so they are not joined.",
+  cannot_move: "Both places were set by hand (moved, trusted or a polyclinic), so neither is moved.",
 };
 
 /** Every pair on the list: waiting rows a Very likely or Certain look-alike on another line validated. */
@@ -530,4 +560,141 @@ export function planLookalikeConfirm(input: LookalikeInput, waitingCustomerId: s
   const sourcePlaceIds = pickSharePlaces(index.ownPlaces.get(source.id) ?? []).map((place) => place.id);
   if (sourcePlaceIds.length === 0) return { ok: false, refusal: "source_not_validated" };
   return { ok: true, sourcePlaceIds, validatedByHrId: source.validatedByHrId, waiting, source };
+}
+
+// ── Two validated rows: the join ─────────────────────────────────────────────────────────────────────
+
+/** Two validated rows on two lines that look like one customer; his "Same customer" joins them on one point. */
+export type LineLookalikeJoin = {
+  /** `pairKey(joining, anchor)`. */
+  key: string;
+  /** The row whose places move. */
+  joiningCustomerId: string;
+  /** The row whose point they move onto. */
+  anchorCustomerId: string;
+  listType: "AM" | "PM";
+  confidence: LookalikeConfidence;
+  nameKind: LookalikeNameKind | null;
+  samePhone: boolean;
+  sameOldCrmContact: boolean;
+  specialityDiffers: boolean;
+  /** The anchor place, as the card draws it. */
+  anchorPlaceIds: string[];
+  joiningPlaceIds: string[];
+  /** The moves the join makes — empty when the two already sit on one point. */
+  moves: LineTwinMove[];
+  /** Whole metres between the two rows' closest places. */
+  gapMeters: number;
+};
+
+type JoinShape =
+  | { ok: true; joining: LookalikeCustomer; anchor: LookalikeCustomer; anchorPlace: TwinPlace; moves: LineTwinMove[]; gapMeters: number }
+  | { ok: false; refusal: LookalikeRefusal };
+
+/** Which of two validated rows moves onto which, and how; the order the two are named in does not matter. */
+function joinShape(index: Indexed, left: LookalikeCustomer, right: LookalikeCustomer): JoinShape {
+  const leftPlaces = index.ownPlaces.get(left.id) ?? [];
+  const rightPlaces = index.ownPlaces.get(right.id) ?? [];
+  let closest: { a: TwinPlace; b: TwinPlace; meters: number } | null = null;
+  for (const a of leftPlaces) {
+    for (const b of rightPlaces) {
+      const meters = distanceMeters(a, b);
+      if (!closest || meters < closest.meters) closest = { a, b, meters };
+    }
+  }
+  if (!closest) return { ok: false, refusal: "not_validated" };
+  if (closest.meters > AGREE_METERS) return { ok: false, refusal: "too_far" };
+  const pair = [closest.a, closest.b];
+  const anchorPlace = [...pair].sort((one, two) => compareAnchors(one, two, pair))[0];
+  const [anchor, joining] = anchorPlace.customerId === left.id ? [left, right] : [right, left];
+  const joiningPlaces = anchorPlace.customerId === left.id ? rightPlaces : leftPlaces;
+  const moves: LineTwinMove[] = [];
+  for (const place of joiningPlaces) {
+    const gap = distanceMeters(place, anchorPlace);
+    if (gap <= LINE_TWIN_SAME_POINT_METERS || gap > AGREE_METERS) continue;
+    if (place.pointSource !== "photo" && place.pointSource !== "pin") continue;
+    moves.push({
+      placeId: place.id,
+      customerId: joining.id,
+      seatId: place.seatId,
+      isTest: joining.isTest,
+      fromPointSource: place.pointSource,
+      anchorPlaceId: anchorPlace.id,
+      anchorCustomerId: anchor.id,
+      anchorSeatId: anchorPlace.seatId,
+      distanceMeters: Math.round(gap),
+    });
+  }
+  // Nothing can move and they are not on one point yet: both were set by hand, and a join would be a word only.
+  if (moves.length === 0 && closest.meters > LINE_TWIN_SAME_POINT_METERS) return { ok: false, refusal: "cannot_move" };
+  return { ok: true, joining, anchor, anchorPlace, moves, gapMeters: Math.round(closest.meters) };
+}
+
+function answeredEitherWay(set: ReadonlySet<string> | undefined, left: string, right: string): boolean {
+  return Boolean(set && (set.has(pairKey(left, right)) || set.has(pairKey(right, left))));
+}
+
+/** Every pair of two validated rows, on two lines of one area, that look like one customer and can be joined. */
+export function planLineLookalikeJoins(input: LookalikeInput): LineLookalikeJoin[] {
+  const index = indexLookalikes(input);
+  const byArea = new Map<string, LookalikeCustomer[]>();
+  for (const customer of index.customers) {
+    if (!customer.areaCode || !isSource(index, customer)) continue;
+    const key = `${customer.isTest ? "t" : "r"}|${customer.listType}|${customer.areaCode}`;
+    const held = byArea.get(key);
+    if (held) held.push(customer);
+    else byArea.set(key, [customer]);
+  }
+  const found: LineLookalikeJoin[] = [];
+  for (const group of byArea.values()) {
+    for (let a = 0; a < group.length; a += 1) {
+      for (let b = a + 1; b < group.length; b += 1) {
+        const left = group[a];
+        const right = group[b];
+        if (!comparable(left, right)) continue;
+        if (answeredEitherWay(input.notSame, left.id, right.id) || answeredEitherWay(input.confirmed, left.id, right.id)) continue;
+        if (areLineTwins(left, right, index.liveWords.get(left.id) ?? [], index.liveWords.get(right.id) ?? [])) continue;
+        const judged = judge(index, left, right);
+        if (!judged) continue;
+        const shape = joinShape(index, left, right);
+        if (!shape.ok) continue;
+        found.push({
+          key: pairKey(shape.joining.id, shape.anchor.id),
+          joiningCustomerId: shape.joining.id,
+          anchorCustomerId: shape.anchor.id,
+          listType: left.listType as "AM" | "PM",
+          ...judged,
+          anchorPlaceIds: [shape.anchorPlace.id],
+          joiningPlaceIds: (index.ownPlaces.get(shape.joining.id) ?? []).map((place) => place.id),
+          moves: shape.moves,
+          gapMeters: shape.gapMeters,
+        });
+      }
+    }
+  }
+  const confidenceOrder: Record<LookalikeConfidence, number> = { certain: 0, very_likely: 1 };
+  return found.sort((left, right) => confidenceOrder[left.confidence] - confidenceOrder[right.confidence] || left.key.localeCompare(right.key));
+}
+
+export type LookalikeJoinPlan =
+  | { ok: true; joining: LookalikeCustomer; anchor: LookalikeCustomer; moves: LineTwinMove[] }
+  | { ok: false; refusal: LookalikeRefusal };
+
+/**
+ * He confirmed two validated rows are one customer: every guard is asked again on a fresh read, and the moves
+ * are planned on the places as they stand. The confidence is not asked again — a person has looked.
+ */
+export function planLookalikeJoin(input: LookalikeInput, firstCustomerId: string, secondCustomerId: string): LookalikeJoinPlan {
+  const index = indexLookalikes(input);
+  const first = index.customers.find((customer) => customer.id === firstCustomerId);
+  const second = index.customers.find((customer) => customer.id === secondCustomerId);
+  if (!first || !second) return { ok: false, refusal: "not_found" };
+  if (!isSource(index, first) || !isSource(index, second)) return { ok: false, refusal: "not_validated" };
+  if (!comparable(first, second)) return { ok: false, refusal: "not_comparable" };
+  if (first.listType === "AM" && !sameFacilityKind(first.name, second.name)) return { ok: false, refusal: "not_comparable" };
+  if (answeredEitherWay(input.notSame, first.id, second.id)) return { ok: false, refusal: "answered_not_same" };
+  if (areLineTwins(first, second, index.liveWords.get(first.id) ?? [], index.liveWords.get(second.id) ?? [])) return { ok: false, refusal: "rule_pairs_them" };
+  const shape = joinShape(index, first, second);
+  if (!shape.ok) return shape;
+  return { ok: true, joining: shape.joining, anchor: shape.anchor, moves: shape.moves };
 }
