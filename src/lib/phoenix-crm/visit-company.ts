@@ -155,6 +155,42 @@ export function companyToStorage(input: {
   };
 }
 
+export const CHOOSE_MANAGER_ABOVE = "Choose the manager above you who was on the visit.";
+
+/**
+ * A MANAGER entering a chain visit with his territory's rep: he is the visit's manager, and he ticks ONE
+ * OR MORE of the managers above himself (owner, 2026-11-17: "Alewa submit that he is in a visit with Hani
+ * Saad and Ali Muhammad Ali" — a Pedia district manager with his regional AND his national manager).
+ * The nearest manager ticked takes the senior place, as every chain always had; everyone is in
+ * `companions`, the manager first, then the ones above him nearest first. The server re-checks each one
+ * against the territory's chain (scope.ts `resolveVisitParticipants`).
+ */
+export function managerChainToStorage(input: {
+  managerHrId: string;
+  above: ReadonlyArray<{ hrId: string; position: number }>;
+  picked: ReadonlyArray<string>;
+}): CompanyResult {
+  const picked = distinct(input.picked);
+  if (picked.length === 0) return { ok: false, error: CHOOSE_MANAGER_ABOVE };
+  const people = picked.map((hrId) => {
+    const key = personKey(hrId);
+    return key ? (input.above.find((person) => personKey(person.hrId) === key) ?? null) : null;
+  });
+  if (people.some((person) => person === null)) return { ok: false, error: COMPANY_NOT_OFFERED };
+  const above = (people as Array<{ hrId: string; position: number }>).sort((left, right) => left.position - right.position);
+  if (above.length + 1 > MOST_ON_A_VISIT) return { ok: false, error: TOO_MANY_ON_A_VISIT };
+  return {
+    ok: true,
+    value: {
+      kind: "chain",
+      managerHrId: input.managerHrId,
+      seniorHrId: above[0].hrId,
+      productManagerHrId: null,
+      companions: [{ hrId: input.managerHrId, side: "manager" }, ...above.map((person) => ({ hrId: person.hrId, side: "manager" as const }))],
+    },
+  };
+}
+
 /** What a stored visit reads as: the choice and the people to tick, for a form that opens on it. */
 export function companyFromStorage(visit: {
   kind: PhoenixCrmVisitKind;

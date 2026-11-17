@@ -66,6 +66,7 @@ import {
   CrmBackBar,
   CrmBlock,
   CrmButton,
+  CrmCheck,
   CrmChoice,
   CrmField,
   CrmNote,
@@ -98,7 +99,7 @@ import {
   type VoiceNoteLeaveWarning,
 } from "@/lib/phoenix-crm/unsaved-voice-note";
 import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, type VisitNextStep, type VisitObjection } from "@/lib/phoenix-crm/visit-outcome";
-import { COMPANY_MOST, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
+import { CHOOSE_MANAGER_ABOVE, COMPANY_MOST, companyToStorage, managerChainToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson } from "@/lib/phoenix-crm/view-types";
 import { isVisitRecordingRefusal } from "@/lib/phoenix-crm/visit-recording-rules";
 import { browserLocalStorage } from "@/lib/browser-storage/owner-scoped";
@@ -218,13 +219,9 @@ type Participants = {
   /** Entering as a manager: the visit's manager (the viewer). Null for a rep, who picks from `offers`. */
   manager: VisitPerson | null;
   seniorOptions: VisitPerson[];
-  senior: VisitPerson | null;
+  /** Entering as a manager on a chain: every manager above him he ticked (owner, 2026-11-17). */
+  seniors: VisitPerson[];
 };
-
-/** The chosen person, or the only one there is. */
-function pickPerson<T extends { hrId: string }>(options: ReadonlyArray<T>, hrId: string | null): T | null {
-  return options.find((person) => person.hrId === hrId) ?? (options.length === 1 ? options[0] : null);
-}
 
 /** The choice a rep made on the first row, as the shared rule reads it. A rep is never offered the product-manager kind. */
 function choiceOf(kind: PhoenixCrmVisitKind): VisitCompanyChoice {
@@ -244,7 +241,7 @@ function enteringManagerHasRep(form: VisitFormView): boolean {
  * entering is the visit's manager, goes with the territory's rep, and for a chain picks a manager above
  * themself.
  */
-function participantsOf(form: VisitFormView, seniorHrId: string | null): Participants {
+function participantsOf(form: VisitFormView, seniorHrIds: ReadonlyArray<string>): Participants {
   const people = form.managers;
   if (form.enteredAs === "manager") {
     const me = people.find((person) => person.position === form.viewerPosition) ?? null;
@@ -265,14 +262,15 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
         {
           value: "chain",
           label: "Chain visit",
-          note: !rep ? "This territory has no rep" : seniorOptions.length === 0 ? "No manager above you" : `With ${rep} and a manager above you`,
+          note: !rep ? "This territory has no rep" : seniorOptions.length === 0 ? "No manager above you" : `With ${rep} and one or more managers above you`,
           disabled: !rep || seniorOptions.length === 0,
         },
       ],
       offers: [],
       manager: me,
       seniorOptions,
-      senior: pickPerson(seniorOptions, seniorHrId),
+      // The only manager above him is ticked for him, as the one box always chose him.
+      seniors: seniorOptions.length === 1 && seniorHrIds.length === 0 ? [...seniorOptions] : seniorOptions.filter((person) => seniorHrIds.includes(person.hrId)),
     };
   }
 
@@ -300,12 +298,8 @@ function participantsOf(form: VisitFormView, seniorHrId: string | null): Partici
     offers,
     manager: null,
     seniorOptions: [],
-    senior: null,
+    seniors: [],
   };
-}
-
-function personOptions(people: ReadonlyArray<{ hrId: string; name: string; title: string }>): Array<CrmChoiceOption<string>> {
-  return people.map((person) => ({ value: person.hrId, label: person.name, note: person.title }));
 }
 
 /** One line of step 4's read-back: what was entered, never a box. Long text wraps; Arabic reads right to left. */
@@ -434,8 +428,9 @@ export function VisitLogForm({
   const [kind, setKind] = useState<PhoenixCrmVisitKind>(form.ownVisitClosed && enteringManagerHasRep(form) ? "double" : "single");
   // A rep's Double (one) and Chain (two): the people ticked from the one list, in the order ticked.
   const [picked, setPicked] = useState<string[]>([]);
-  // A manager entering a chain picks the manager above himself — his own box, unchanged.
-  const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
+  // A manager entering a chain ticks ONE OR MORE managers above himself (owner, 2026-11-17: a Pedia
+  // district manager with his regional AND his national manager on one visit).
+  const [seniorHrIds, setSeniorHrIds] = useState<string[]>([]);
   const [products, setProducts] = useState<string[]>(() => {
     const again = loggedAgainStart(retryOf)?.products ?? [];
     return again.length > 0 ? again : carriedProducts(customer);
@@ -528,16 +523,21 @@ export function VisitLogForm({
     onBack();
   }
 
-  const who = participantsOf(form, seniorHrId);
+  const who = participantsOf(form, seniorHrIds);
   // The rep's pick, filed as the visit's slots — or the sentence that says what is still missing. Null
-  // for a manager entering, whose own two boxes are checked below.
+  // for a manager entering, whose own boxes are checked below.
   const company = form.enteredAs === "rep" ? companyToStorage({ choice: choiceOf(kind), offers: who.offers, picked }) : null;
+  // A manager's chain: himself, then every manager above him he ticked (visit-company.ts).
+  const managerChain =
+    form.enteredAs === "manager" && kind === "chain" && who.manager
+      ? managerChainToStorage({ managerHrId: who.manager.hrId, above: who.seniorOptions, picked: who.seniors.map((person) => person.hrId) })
+      : null;
   const commentLength = comment.trim().length;
 
   // Each required step, answered or not — the same tests `draft` applies, in the same order, so the
   // header marks and the bar's jump agree with what Log visit would refuse.
   const reasonDone = visitType !== "out_of_plan" || unplannedReason.trim().length <= UNPLANNED_REASON_MAX;
-  const whoDone = kind === "single" || (company ? company.ok : who.manager !== null && (kind !== "chain" || who.senior !== null));
+  const whoDone = kind === "single" || (company ? company.ok : who.manager !== null && (kind !== "chain" || managerChain?.ok === true));
   const productsDone = products.length > 0;
   const commentDone = commentLength > 0;
   // The last question is asked of an AM or PM customer when the rep records his own visit, and only
@@ -684,15 +684,21 @@ export function VisitLogForm({
       slots = company.value;
     } else {
       if (kind !== "single" && !who.manager) return { ok: false, problem: "You are not a manager of this territory. Reload the page." };
-      if (kind === "chain" && !who.senior) return { ok: false, problem: "Choose the manager above you who was on the visit." };
-      slots = {
-        kind,
-        managerHrId: kind === "single" ? null : (who.manager?.hrId ?? null),
-        seniorHrId: kind === "chain" ? (who.senior?.hrId ?? null) : null,
-        productManagerHrId: null,
-        // The server builds the list from his two boxes.
-        companions: [],
-      };
+      if (kind === "chain") {
+        if (!managerChain) return { ok: false, problem: CHOOSE_MANAGER_ABOVE };
+        if (!managerChain.ok) return { ok: false, problem: managerChain.error };
+        // Everyone on it travels, so the server records each manager above him he ticked.
+        slots = managerChain.value;
+      } else {
+        slots = {
+          kind,
+          managerHrId: kind === "single" ? null : (who.manager?.hrId ?? null),
+          seniorHrId: null,
+          productManagerHrId: null,
+          // The server builds the list from his own place.
+          companions: [],
+        };
+      }
     }
     if (products.length === 0) return { ok: false, problem: "Choose the products you discussed." };
     // Required (owner, 2026-09-30): typed, or spoken — the spoken words land in the same box.
@@ -880,7 +886,7 @@ export function VisitLogForm({
   // The people, in the order they were ticked (a rep) or as the manager entering reads them.
   const whoNames = company
     ? picked.map((hrId) => who.offers.find((person) => person.hrId === hrId)?.name)
-    : [kind === "double" || kind === "chain" ? who.manager?.name : null, kind === "chain" ? who.senior?.name : null];
+    : [kind === "double" || kind === "chain" ? who.manager?.name : null, ...(kind === "chain" ? who.seniors.map((person) => person.name) : [])];
   const whoLine = [kindLabel, ...whoNames].filter(Boolean).join(" · ");
   const objectionLabel = objection ? (VISIT_OBJECTIONS.find((entry) => entry.key === objection)?.label ?? null) : null;
   const nextStepLabel = nextStep ? (VISIT_NEXT_STEPS.find((entry) => entry.key === nextStep)?.label ?? null) : null;
@@ -1062,22 +1068,38 @@ export function VisitLogForm({
             />
           ) : null}
           {form.enteredAs === "manager" && kind === "chain" ? (
-            <CrmField label="The manager above you">
+            // 🔴 One OR MORE (owner, 2026-11-17) — the same tick boxes as the plan board's "Who you go with".
+            <div className="grid min-w-0 gap-2 border border-slate-200 p-3">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-black text-slate-900">The managers above you</p>
+                {who.seniorOptions.length > 0 ? (
+                  <p className="text-xs font-semibold text-slate-500">{who.seniors.length > 0 ? `${who.seniors.length} chosen` : "Tick one or more"}</p>
+                ) : null}
+              </div>
               {who.seniorOptions.length > 0 ? (
-                <CrmChoice
-                  columns={2}
-                  label="The manager above you"
-                  onChange={(next) => {
-                    setProblem(null);
-                    setSeniorHrId(next);
-                  }}
-                  options={personOptions(who.seniorOptions).map((option) => ({ ...option, disabled: saving }))}
-                  value={who.senior?.hrId ?? null}
-                />
+                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                  {who.seniorOptions.map((person) => (
+                    <CrmCheck
+                      checked={who.seniors.some((entry) => entry.hrId === person.hrId)}
+                      disabled={saving}
+                      key={person.hrId}
+                      onChange={(on) => {
+                        setProblem(null);
+                        const others = who.seniors.map((entry) => entry.hrId).filter((hrId) => hrId !== person.hrId);
+                        setSeniorHrIds(on ? [...others, person.hrId] : others);
+                      }}
+                    >
+                      <span className="block break-words" dir="auto">
+                        {person.name}
+                      </span>
+                      <span className="block break-words text-xs font-semibold text-slate-500">{person.title}</span>
+                    </CrmCheck>
+                  ))}
+                </div>
               ) : (
                 <p className="text-sm font-semibold text-slate-500">No manager sits above you in this territory.</p>
               )}
-            </CrmField>
+            </div>
           ) : null}
         </div>
       </CrmBlock>
