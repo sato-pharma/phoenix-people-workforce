@@ -2425,13 +2425,13 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   );
   assert.equal(managerSeniorPeopleTitle([{ name: "Hany Saad", title: "Regional sales manager" }], "Nasr City"), managerSeniorVisitTitle("Hany Saad", "Regional sales manager", "Nasr City"), "one person reads as it always did");
   assert.equal(joinPeopleNames(["Hany Saad", "Ali Mohamed", "Mai Adel"]), "Hany Saad, Ali Mohamed and Mai Adel");
-  const reportSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plan-report.ts", import.meta.url), "utf8"));
-  assert.match(reportSource, /seniorPeople.every((person) => keys?.has(`sr|/, "a rep's chain visit answers the half only when it names every person he planned");
-  const saveSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plans.ts", import.meta.url), "utf8"));
-  assert.match(saveSource, /const offer = chosen.length === askedKeys.size ? chosen[0] : undefined;/, "the save refuses the whole half when anyone ticked is not on the list");
-  assert.match(saveSource, /people: chosen.map((entry) => ({ hr_id: entry.hrId, role: entry.role, title: entry.title }))/, "and stores everyone he ticked");
-  const boardSource = readFileSync(new URL("../src/components/phoenix-crm/manager-plan-board.tsx", import.meta.url), "utf8");
-  assert.match(boardSource, /<CrmCheck checked={draft.seniorHrIds.includes(senior.hrId)}/, "the board offers each manager as a tick box, never a one-of choice");
+  const everyoneReportSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plan-report.ts", import.meta.url), "utf8"));
+  assert.ok(everyoneReportSource.includes("seniorPeople.every((person) => keys?.has(`sr|"), "a rep's chain visit answers the half only when it names every person he planned");
+  const everyoneSaveSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/manager-plans.ts", import.meta.url), "utf8"));
+  assert.ok(everyoneSaveSource.includes("const offer = chosen.length === askedKeys.size ? chosen[0] : undefined;"), "the save refuses the whole half when anyone ticked is not on the list");
+  assert.ok(everyoneSaveSource.includes("people: chosen.map((entry) => ({ hr_id: entry.hrId, role: entry.role, title: entry.title }))"), "and stores everyone he ticked");
+  const everyoneBoardSource = readFileSync(new URL("../src/components/phoenix-crm/manager-plan-board.tsx", import.meta.url), "utf8");
+  assert.ok(everyoneBoardSource.includes("<CrmCheck checked={draft.seniorHrIds.includes(senior.hrId)}"), "the board offers each manager as a tick box, never a one-of choice");
 
   // ── The week's conversation (owner, 2026-11-01) ───────────────────────────────────────────────
 
