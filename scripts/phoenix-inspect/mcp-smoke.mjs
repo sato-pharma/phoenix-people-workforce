@@ -6,7 +6,7 @@
  *
  * Starts mcp-server.mjs as a child process, speaks the protocol to it with the SDK's own client, and
  * checks what any MCP client would see:
- *   1. the eight tools are listed, every schema closed (additionalProperties: false);
+ *   1. the nine tools are listed, every schema closed (additionalProperties: false);
  *   2. listing portals and the KPIs module's pages works and returns no address outside staging paths;
  *   3. a URL where an id belongs, an unknown persona and an extra key are each REFUSED;
  *   4. the component map is readable;
@@ -35,6 +35,7 @@ const EXPECTED_TOOLS = [
   "phoenix_open_module",
   "phoenix_capture_page",
   "phoenix_inspect_ui_state",
+  "phoenix_get_capture",
   "phoenix_get_component_map",
   "phoenix_get_visual_audit",
   "phoenix_get_implementation_plan",
@@ -69,7 +70,7 @@ try {
 
   const { tools } = await client.listTools();
   const names = tools.map((tool) => tool.name).sort();
-  check("eight tools, exactly the expected ones", JSON.stringify(names) === JSON.stringify([...EXPECTED_TOOLS].sort()), names.join(", "));
+  check("nine tools, exactly the expected ones", JSON.stringify(names) === JSON.stringify([...EXPECTED_TOOLS].sort()), names.join(", "));
   check(
     "every tool schema is closed (additionalProperties: false)",
     tools.every((tool) => tool.inputSchema?.additionalProperties === false),

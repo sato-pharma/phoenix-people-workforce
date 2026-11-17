@@ -162,7 +162,7 @@ Phoenix login behind it must still be active.
 
 `mcp-smoke.mjs` does not yet have `--url`; it speaks stdio only. To build: a Streamable HTTP client with
 a token from Steps 1b and 3. Expected:
-- 8 tools, all read-only;
+- 9 tools, all read-only;
 - a URL, an unknown persona, an extra key and an unknown tool refused;
 - one real capture returns `structuredContent` and a masked image.
 
