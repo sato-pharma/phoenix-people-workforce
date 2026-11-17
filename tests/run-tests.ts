@@ -2156,6 +2156,7 @@ import { runPhoenixCrmTeamTodayTests } from "./phoenix-crm-team-today.test.ts";
 import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blocked.test.ts";
 import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
 import { runPhoenixCrmTapToRetryTests } from "./phoenix-crm-tap-to-retry.test.ts";
+import { runPhoenixCrmWakeRefreshTests } from "./phoenix-crm-wake-refresh.test.ts";
 import { runRouteNavigationStallRetryTests } from "./route-navigation-stall-retry.test.ts";
 import { runPhoenixCrmFirstReadTests } from "./phoenix-crm-first-read.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
@@ -8281,6 +8282,11 @@ await runTest(
 await runTest(
   "Phoenix CRM tap to retry (owner, 2026-10-23: \"add a tap-to-retry to the Phoenix CRM pages when the connection drops\" — 1,161 rows of the browsers' own network wordings in app_error_events over 14 days, across 62 releases and all three platforms, where a READ already offered Try again and a SAVE offered a sentence and nothing to press. Only a dropped connection is retryable: a refusal is a decision that answers the same way however often the same payload arrives, and a signed-out session needs a sign-in first. The attempt is kept WHOLE — the same payload, so a visit keeps its client id and is not filed twice, and the same completion, so a retry that works actually closes the panel — and every save surface in the module is wired mechanically, because the defect was a dead sentence nobody noticed",
   runPhoenixCrmTapToRetryTests,
+);
+
+await runTest(
+  "Phoenix CRM wake-up read (System Audit, 17 Nov 2026: GET /api/phoenix-crm/overview with no answer was the board's largest failed-request class — 223 screenshots from 62 reps, 168 on Visits and 41 on the List — because the page read the overview the instant a waking phone turned its screen on, before the network was back, and warned the rep over a screen that was fine). The wake-up read waits for the network, retries a dropped connection once and never a refusal, and never puts up the refresh notice; the rep's own Try again still reports",
+  runPhoenixCrmWakeRefreshTests,
 );
 
 await runTest(
