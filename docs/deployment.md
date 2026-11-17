@@ -274,11 +274,11 @@ Railway never started the older build. `git merge-base --is-ancestor` puts it in
 the gate refused it and that is the problem case; every suite green plus a newer deployment means it
 was merely superseded and production already carries it. `verify-shipped.mjs` prints which.
 
-🔴 **AND WHAT DOES *NOT* HOLD THE GATE, measured the same night so nobody chases it:** the four
-third-party app suites — `sentry`, `claude`, `vercel`, `railway-app` — are `queued` on *every* commit
-and never report. 🔴 **Since the account move on 2026-10-27 there are THREE — `sentry`, `claude` and
+🔴 **AND WHAT DOES *NOT* HOLD THE GATE, measured the same night so nobody chases it:** the three
+third-party app suites — `claude`, `vercel`, `railway-app` — are `queued` on *every* commit
+and never report. 🔴 **Since the account move on 2026-10-27 there are TWO — `claude` and
 `railway-app`** (read live on `618a1ebda` and `1cb333435`): the Vercel app was never installed on
-`it-gawish-hr`, so its suite no longer appears. The classifiers still leave `vercel` out, harmlessly. `1825e0b45` and `b91bd8c0c` both reached deployment `success` with all four sitting
+`it-gawish-hr`, so its suite no longer appears. The classifiers still leave `vercel` out, harmlessly. `1825e0b45` and `b91bd8c0c` both reached deployment `success` with every one of them sitting
 at `queued`. So "still queued = no deploy" is misleading: an Actions suite still **running** holds the
 deploy (that is the gate working), a **failed or cancelled** one withholds it, and a third-party suite
 that never reports does neither.
@@ -651,7 +651,7 @@ service is approved and declared in `.railway/railway.ts`.
 - 🔴 **The committed authoring file had gone destructive again.** A plan from it on 23 Oct read
   **0 add / 4 change / 17 destroy**: sixteen live variables (the app's `HEADWIND_MDM_ACCESS_CLIENT_*`
   Cloudflare pass, the console's `PHX_ACCESS_*` gate, the `_4`, `_PEOPLE` and `_SALES` Resend senders,
-  `SENTRY_WEBHOOK_SECRET`, `PHOENIX_DEPLOY_NUDGE`, `ANTHROPIC_API_KEY` on both app and worker) and the
+  the retired error tracker's webhook secret, `PHOENIX_DEPLOY_NUDGE`, `ANTHROPIC_API_KEY` on both app and worker) and the
   tablet server's files disk detached (`phoenix-headwind-volume`, added 22 Oct). The variable lists were
   re-pulled and the disk declared with its mount; the re-plan read **0 add / 3 change / 0 destroy** —
   the app's window `300 → 900` plus the three default restart-policy pairs. Rule 15 of the test now
@@ -732,8 +732,8 @@ four separate reasons that stacked. Read each from its own source, never from on
   2.9 min, flat.
 - **The unit-suite step of `checks` swings 170-190 s against 220-320 s on the same GitHub-hosted
   `ubuntu-latest` runner** (runner variance, not a code change) and is most of the CI difference.
-- **The Sentry source-map plugin adds about 40 s to every FRESH Railway build** (162 s to 202 s, n=12 and
-  n=14; the upload step is about 25 s). Compare fresh builds only: a cached rebuild of one sha takes
+- **The outside error tracker's source-map plugin (since retired) added about 40 s to every FRESH Railway
+  build** (162 s to 202 s, n=12 and n=14; the upload step was about 25 s). Compare fresh builds only: a cached rebuild of one sha takes
   about 40 s and skews any all-builds median (the first comparison said +64 s and was wrong for that
   reason).
 - **A scheduled run holds a deploy.** A `schedule:` run attaches its check suite to whatever commit is
@@ -744,12 +744,13 @@ four separate reasons that stacked. Read each from its own source, never from on
   0.74-1.35 at 04:00-07:00. Whether the late start follows the new request is unproven: read the start
   times with `gh run list --workflow security-scan.yml` after a few days, and if they still fall after
   08:00 UTC, dispatch it from cron-job.org at a chosen quiet minute instead.
-- **A build that fails only when a Sentry token is present reaches production green.** PR builds carried
-  no token, so on 16 Oct 13:12-13:57 two merges never deployed (`withSentryConfig is not a function`:
-  the plugin lives at `@sentry/nextjs/config`, not the package root) and the fix took about 23 minutes.
-  `tests/sentry-production-only.test.ts` now loads `next.config.ts` through Next's own loader with a
-  dummy token, so a plugin that cannot load fails the PR instead — the one place a PR still meets it, since
-  a pull request never builds at all (owner, 2026-11-05: "Yes, skip the PR build").
+- **A build that fails only when a production-only build value is present reaches production green.**
+  PR builds carried no error-tracker build token, so on 16 Oct 13:12-13:57 two merges never deployed (the
+  tracker's build plugin was imported from its package root instead of its `config` entry, so the wrapper
+  was "not a function") and the fix took about 23 minutes. A test then loaded `next.config.ts` through
+  Next's own loader with a dummy token, so a plugin that could not load failed the PR instead; the plugin
+  and that test went with the tracker on 17 Nov 2026. A pull request never builds at all (owner,
+  2026-11-05: "Yes, skip the PR build").
 
 ## The release gate — Railway builds while CI runs
 
@@ -1000,8 +1001,6 @@ script or the `Dockerfile` builds and boots the image (nothing pushed), which al
    Railway's production variables (exactly the `Dockerfile`'s `ARG` list — pinned by the test); only if
    Railway cannot be read does it use GitHub's copies, and the run summary says so. Trimmed: the GitHub
    copy of `NEXT_PUBLIC_APP_URL` has carried a leading space.
-5. **`SENTRY_AUTH_TOKEN` is not passed**, so a fallback build uploads no source maps and spends no
-   observability credential.
 
 **The Railway side** (`scripts/fallback-image-deploy.mjs`, public GraphQL, introspected 2026-10-21):
 `serviceInstanceUpdate(source: {image}, registryCredentials)` moves a service onto the image, then the
@@ -1535,8 +1534,6 @@ jobs' heartbeats follow the split switch".
    - Healthchecks: **pause** the check `phoenix-notify-daily`, then rename its name and slug to
      `phoenix-daily-needs-you-daily-digest` (docs/observability.md, "To free a check, hand it over";
      a rename without the pause holds a stale last ping against the new job);
-   - Sentry: disable the cron monitor `phoenix-notify-daily` (the per-job slugs get monitors from their
-     own check-ins);
    - the heartbeat register then shows `phoenix-notify-daily` as an **undeclared** row (never an
      alert) — delete its `job_heartbeats` row.
 

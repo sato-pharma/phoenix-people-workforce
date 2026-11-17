@@ -110,7 +110,7 @@ All 9 stream/* branches contain only a single "chore(stream): initialize deploym
 | `origin/codex/github-audit-remediation` | 10 days stale | **Delete remote** | `git push origin --delete codex/github-audit-remediation` |
 | `origin/codex/mobile-expense-submit-polish` | 7 days stale | **Delete remote** | `git push origin --delete codex/mobile-expense-submit-polish` |
 | `origin/codex/readiness-preview-20260522-215937` | 6 days stale | **Delete remote** | `git push origin --delete codex/readiness-preview-20260522-215937` |
-| `origin/seer/chore/gitignore-sentry-test` | Tool-named (seer), 2 days | **Delete remote** | `git push origin --delete seer/chore/gitignore-sentry-test` |
+| The seer `chore/gitignore` branch for the outside error tracker's test file (tracker since retired) | Tool-named (seer), 2 days | **Delete remote** | `git push origin --delete` with that branch |
 | `origin/seer/fix/hr-specialist-portal-access` | Tool-named (seer), 27h | **Review first** -- may have useful fix | `git push origin --delete seer/fix/hr-specialist-portal-access` |
 | `origin/safety/local-snapshot-2026-05-24` | Safety snapshot | **Delete remote** after confirming | `git push origin --delete safety/local-snapshot-2026-05-24` |
 | `origin/stream/*` (9 branches) | Initialization only | **Delete remote** | `git push origin --delete stream/admin stream/attendance ...` |
@@ -152,10 +152,9 @@ The `codex/` prefix is the current branch naming convention. Future branches cou
 | `tailwind.config.ts` | Tailwind config |
 | `playwright.config.ts` | Playwright E2E config |
 | `components.json` | shadcn/ui config |
-| `instrumentation.ts` | Sentry server instrumentation |
-| `instrumentation-client.ts` | Sentry client instrumentation |
-| `sentry.server.config.ts` | Sentry server config |
-| `sentry.edge.config.ts` | Sentry edge config |
+| `instrumentation.ts` | Server instrumentation (then for the outside error tracker, since retired) |
+| `instrumentation-client.ts` | The error tracker's client instrumentation (since removed) |
+| The error tracker's server and edge config files | Its server and edge config (removed with the tracker) |
 | `.env.example` | Environment variable template |
 | `.env.github-secrets.example` | GitHub secrets template |
 | `.env.staging.rls.example` | Staging RLS env template |
@@ -381,10 +380,9 @@ postcss.config.mjs                # PostCSS config
 tailwind.config.ts                # Tailwind config
 playwright.config.ts              # Playwright config
 components.json                   # shadcn/ui config
-instrumentation.ts                # Sentry server
-instrumentation-client.ts         # Sentry client
-sentry.server.config.ts           # Sentry server config
-sentry.edge.config.ts             # Sentry edge config
+instrumentation.ts                # Server instrumentation
+instrumentation-client.ts         # Error-tracker client (since removed)
+(error-tracker server and edge config files, since removed)
 
 CLAUDE.md                         # Internal engineering reference (not visible in docs)
 AGENTS.md                         # Internal operating rules (not visible in docs)

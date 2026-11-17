@@ -94,7 +94,7 @@ No migrations, DDL, deployments, or data mutations were performed.
 
 ## 2b. Status of already-applied working-tree changes (must read before execution)
 
-During an earlier session, edits were applied to the working tree (uncommitted) and a separate Sentry/observability change set was split out into `git stash@{0}`. Relative to **this** verified plan:
+During an earlier session, edits were applied to the working tree (uncommitted) and a separate observability change set for the outside error tracker (since retired) was split out into `git stash@{0}`. Relative to **this** verified plan:
 
 - ✅ **Correct & keep:** `permissions.ts` (`isNationalSalesManager` + `support_requests` resource), the 3 NSM page fixes, `scope-badge.tsx`, the real `profile/page.tsx`, and `contact-hr-support/page.tsx` permission tightening to `support_requests:read`.
 - ⚠️ **Wrong layer — needs redo:** the nav-gating edit to `src/config/system-navigation.ts` + `src/components/layout/sidebar.tsx` gates the **admin** sidebar, **not** the employee portal (F4). It will **not** hide Marketing/Support in the portal. The real gating belongs in `src/lib/employee-portal/navigation.ts` / `buildEmployeePortalSections()`. Recommend reverting those two files and re-doing per Workstream 4.
@@ -229,7 +229,7 @@ PHOENIX_PORTAL_SHOW_BETA_NAV=true
 
 Add a **PII-safe** structured log at each catch site that currently swallows errors and renders a generic empty state. **Never log:** salary amounts, tokens, raw payloads, or sensitive personal data. **Safe to log:** route, module, role, `hrId` (safe actor id), error name/message/classification.
 
-**Logger:** search `src/lib/observability/` & `src/lib/logging/` first; if none suitable, add a small helper `logPortalFailure({ route, module, role, hrId, error })`. *(Note: a `src/lib/observability/sentry.ts` exists only inside `git stash@{0}` from the split-out Sentry effort — not on the working tree; do not assume it's present.)*
+**Logger:** search `src/lib/observability/` & `src/lib/logging/` first; if none suitable, add a small helper `logPortalFailure({ route, module, role, hrId, error })`. *(Note: an error-tracker module under `src/lib/observability/` exists only inside `git stash@{0}` from the split-out error-tracker effort — not on the working tree; do not assume it's present.)*
 
 **Catch sites to instrument [repo]-verified:** `employee-portal-server-shell.tsx:27` (highest value — the shared shell), `app/employee-portals/page.tsx`, `sales/page.tsx`, `incentive/page.tsx`, `coaching/page.tsx`, `team-performance/page.tsx`, `excuses/page.tsx`, `contact-hr-support/page.tsx`, `profile/page.tsx`, plus any other portal page with a broad `catch {}`. **User-facing UX unchanged.**
 

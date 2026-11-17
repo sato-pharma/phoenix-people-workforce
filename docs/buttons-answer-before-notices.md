@@ -6,7 +6,7 @@ and not only approve and reject, mainly 90% of buttons"*).
 
 ## What was measured
 
-Sentry's spans dataset on production, seven days, the POST routes behind the buttons (p50 unless
+The production request traces (spans), seven days, the POST routes behind the buttons (p50 unless
 noted):
 
 | Button | Before |
@@ -106,9 +106,10 @@ no call to check fails instead of passing.
   own fix.
 - **Phoenix CRM decide** (4.8 s at the median) already defers every notice, and its database work
   is small (the transition RPC averages 18 ms). The remaining time is the deferred notice itself
-  starting 0.6 to 5.3 s after the commit; whether Sentry counts `after()` work inside the request
-  or something holds the reply is NOT established. Time one real decide with `curl`'s
-  `time_total` against its Sentry trace before changing anything there.
+  starting 0.6 to 5.3 s after the commit; whether the traces counted `after()` work inside the
+  request or something holds the reply is NOT established. Time one real decide with `curl`'s
+  `time_total` before changing anything there (the request traces it was to be read against were
+  retired on 17 Nov 2026).
 
 - **Polling load.** `/api/approvals/badge-counts` (p50 1.06 s over 22 thousand calls),
   `/api/notifications/in-app` (p50 0.6 s over 43 thousand) and `/api/activity/track` (32 thousand

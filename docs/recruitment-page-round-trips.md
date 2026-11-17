@@ -1,6 +1,6 @@
 # The Recruitment page's database round trips
 
-Sentry's page survey of 16 October 2026 put the Recruitment page at 11.9 s. The queries are not slow:
+The production page survey of 16 October 2026 (a request trace of every page load) put the Recruitment page at 11.9 s. The queries are not slow:
 the page spends its time in **requests**, about 79 of them a load by static count, several of them in
 sequence, and each one waits through the process's occasional event-loop freezes. Module memory carries
 the one-line rule (`.claude/rules/recruitment.md`); this is the account.
