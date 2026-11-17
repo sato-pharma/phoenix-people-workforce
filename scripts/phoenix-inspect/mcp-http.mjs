@@ -14,6 +14,14 @@
  *   PHOENIX_INSPECT_MCP_AUDIT_KEY       optional (32+ characters): keys the subject hash in the audit log
  *   PHOENIX_INSPECT_MCP_PUBLIC_URL      the same as --public-url
  *   PHOENIX_INSPECT_TARGET_ORIGIN       optional; staging is the only value accepted (production refuses to start)
+ * The built-in sign-in (the Secure MCP Tunnel route; loopback only; connect-chatgpt.ps1 sets these):
+ *   PHOENIX_INSPECT_GOOGLE_CLIENT_FILE  a Google OAuth client JSON (Desktop app); selects the built-in
+ *                                       authorization server instead of an external issuer
+ *   PHOENIX_INSPECT_MCP_OWNER_SUBJECTS  then holds the owner's Google address(es)
+ *   PHOENIX_INSPECT_MCP_STATE_DIR       optional; clients, grants and the signing key
+ *                                       (default %LOCALAPPDATA%/PhoenixInspect/oauth)
+ *   PHOENIX_INSPECT_MCP_TUNNEL_ID       optional; a resource URL through that tunnel is also accepted
+ *   --revoke-all                        the kill switch: every token it issued stops at once
  *
  * What it is (the MCP authorization spec's RESOURCE SERVER, nothing more):
  *   - POST /mcp: the MCP SDK's StreamableHTTPServerTransport, stateless, JSON responses, a fresh protocol
@@ -39,7 +47,7 @@
  * Nothing here is deployed or exposed; docs/phoenix-intelligence/CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md.
  */
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -63,6 +71,7 @@ import {
   sameResource,
   subjectHash,
 } from "./lib/oauth.mjs";
+import { createAuthorizationServer, googleClientFromJson, parseOwnerEmails, revokeAllGrants } from "./lib/authorization-server.mjs";
 import { assertTargetOrigin } from "./lib/safety.mjs";
 import { REPO_ROOT, buildMcpServer, createInspector, localRunner, spareRunner } from "./mcp-server.mjs";
 import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
@@ -71,14 +80,36 @@ import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
 refuseUnknownFlags({
   name: "mcp-http",
   entry: import.meta.url,
-  known: ["--runner", "--port", "--host", "--public-url", "--allow-non-loopback", "--trust-proxy"],
-  hints: ["node scripts/phoenix-inspect/mcp-http.mjs [--runner spare|local] [--port 8787] [--host 127.0.0.1] [--public-url https://<host>/mcp --trust-proxy [--allow-non-loopback]]"],
+  known: ["--runner", "--port", "--host", "--public-url", "--allow-non-loopback", "--trust-proxy", "--revoke-all"],
+  hints: [
+    "node scripts/phoenix-inspect/mcp-http.mjs [--runner spare|local] [--port 8787] [--host 127.0.0.1] [--public-url https://<host>/mcp --trust-proxy [--allow-non-loopback]]",
+    "node scripts/phoenix-inspect/mcp-http.mjs --revoke-all",
+  ],
 });
 
 const LOOPBACK_BINDS = Object.freeze(["127.0.0.1", "::1", "localhost"]);
 const MAX_BODY_BYTES = 16 * 1024;
 const METADATA_PATHS = Object.freeze(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"]);
 const UNAVAILABLE = "The access token is invalid or expired";
+/** The built-in authorization server's routes (lib/authorization-server.mjs), by path. */
+const AUTH_ROUTES = Object.freeze({
+  "/.well-known/oauth-authorization-server": "oauth-metadata",
+  "/register": "register",
+  "/authorize": "authorize",
+  "/oauth/google/callback": "google-callback",
+  "/token": "token",
+  "/revoke": "revoke",
+  "/jwks": "jwks",
+});
+/**
+ * The OpenAI Secure MCP Tunnel's limits: a 120-second deadline including queue time and a 10 MiB envelope
+ * (developers.openai.com/api/docs/guides/secure-mcp-tunnels). Behind the built-in authorization server
+ * the door is for the tunnel, so one call captures ONE page, stops hard at 90 seconds, returns one
+ * screenshot, and the serialized result stays under 9 MiB.
+ */
+export const TUNNEL_CALL_LIMITS = Object.freeze({ pages: 1, minutes: 1.5 });
+export const TUNNEL_IMAGE_LIMITS = Object.freeze({ count: 1, bytes: 6 * 1024 * 1024 });
+export const TUNNEL_MAX_RESULT_BYTES = 9 * 1024 * 1024;
 
 /**
  * @typedef {{ subject: string, scopes: string[], expiresAt: number, resource?: string|URL|null, clientId?: string|null }} VerifiedToken
@@ -108,13 +139,18 @@ function hostnameOf(hostHeader) {
  * resource (the port is only known after listening).
  * @param {{
  *   runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>,
- *   verifier: TokenVerifier | ((resource: string) => TokenVerifier),
+ *   verifier?: TokenVerifier | ((resource: string) => TokenVerifier),
  *   ownerSubjects: string[] | Set<string>,
- *   authorizationServer: string,
+ *   authorizationServer?: string,
+ *   authorization?: ((context: { issuer: string, resource: string }) => ReturnType<typeof import("./lib/authorization-server.mjs").createAuthorizationServer>) | null,
  *   host?: string, port?: number, publicUrl?: string|null, allowNonLoopback?: boolean, trustProxy?: boolean,
  *   targetOrigin?: string, auditFile?: string|null, auditKey?: string, requestsPerMinute?: number, maxInflight?: number,
- *   repoRoot?: string, now?: () => number, imageLimits?: { count?: number, bytes?: number }
+ *   repoRoot?: string, now?: () => number, imageLimits?: { count?: number, bytes?: number },
+ *   callLimits?: { pages?: number, minutes?: number }, maxResultBytes?: number|null
  * }} options
+ * `authorization` builds the built-in authorization server once the port is known (issuer = this loopback
+ * origin); it replaces `verifier` and `authorizationServer`, is loopback-only, and brings the tunnel's
+ * per-call limits unless `callLimits`, `imageLimits` or `maxResultBytes` say otherwise.
  * @returns {Promise<{ url: string, port: number, resource: string, metadataUrl: string, close: () => Promise<void> }>}
  */
 export async function startHttpServer(options) {
@@ -123,6 +159,7 @@ export async function startHttpServer(options) {
     verifier,
     ownerSubjects,
     authorizationServer,
+    authorization = null,
     host = "127.0.0.1",
     port = 0,
     publicUrl = null,
@@ -135,15 +172,23 @@ export async function startHttpServer(options) {
     maxInflight = 4,
     repoRoot = REPO_ROOT,
     now = () => Date.now(),
-    imageLimits,
+    imageLimits = authorization ? TUNNEL_IMAGE_LIMITS : undefined,
+    callLimits = authorization ? TUNNEL_CALL_LIMITS : undefined,
+    maxResultBytes = authorization ? TUNNEL_MAX_RESULT_BYTES : null,
   } = options;
 
   // Staging only: the production host refuses to start (and the explorer refuses it again per run).
   assertTargetOrigin(targetOrigin);
   if (typeof runner !== "function") throw new Error("a runner is required");
-  if (!verifier || (typeof verifier !== "function" && typeof verifier.verifyAccessToken !== "function")) throw new Error("a token verifier is required");
   const owners = parseOwnerSubjects([...(ownerSubjects ?? [])].join(","));
-  httpsUrl(authorizationServer, "the authorization server");
+  if (authorization) {
+    if (typeof authorization !== "function") throw new Error("authorization must build the authorization server");
+    // The built-in authorization server's browser leg is a loopback address: it serves this laptop only.
+    if (publicUrl || trustProxy || allowNonLoopback) throw new Error("refused: the built-in authorization server is loopback-only (no --public-url, --trust-proxy or --allow-non-loopback)");
+  } else {
+    if (!verifier || (typeof verifier !== "function" && typeof verifier.verifyAccessToken !== "function")) throw new Error("a token verifier is required");
+    httpsUrl(authorizationServer, "the authorization server");
+  }
   const publicResource = publicUrl ? httpsUrl(publicUrl, "the public URL") : null;
   if (publicResource && publicResource.pathname !== "/mcp") throw new Error("refused: the public URL must end in /mcp");
   if (!LOOPBACK_BINDS.includes(host) && !(allowNonLoopback && publicResource)) {
@@ -152,7 +197,7 @@ export async function startHttpServer(options) {
   if (trustProxy && !publicResource) throw new Error("refused: --trust-proxy needs an https --public-url");
 
   const { StreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
-  const inspector = createInspector({ runner, repoRoot, now, auditFile: null, imageLimits });
+  const inspector = createInspector({ runner, repoRoot, now, auditFile: null, imageLimits, callLimits, maxResultBytes });
   const auditPath = auditFile === undefined ? path.join(repoRoot, "artifacts", "phoenix-inspection", "mcp-http-audit.jsonl") : auditFile;
   function writeAudit(record) {
     if (!auditPath) return;
@@ -169,6 +214,8 @@ export async function startHttpServer(options) {
   let metadataUrl = "";
   let metadata = {};
   let tokens = /** @type {TokenVerifier} */ ({ verifyAccessToken: async () => Promise.reject(new TokenError("not-ready")) });
+  /** @type {ReturnType<typeof import("./lib/authorization-server.mjs").createAuthorizationServer> | null} */
+  let auth = null;
   const allowedHostnames = new Set([...LOOPBACK_HOSTNAMES, ...(publicResource ? [publicResource.hostname.toLowerCase()] : [])]);
   const allowedOrigins = new Set(publicResource ? [publicResource.origin] : []);
   let windowStart = now();
@@ -178,7 +225,8 @@ export async function startHttpServer(options) {
   async function handle(req, res) {
     const started = now();
     const url = new URL(req.url ?? "/", "http://request.invalid");
-    const route = url.pathname === "/mcp" ? "mcp" : METADATA_PATHS.includes(url.pathname) ? "metadata" : url.pathname === "/healthz" ? "healthz" : "other";
+    const authRoute = auth ? (AUTH_ROUTES[url.pathname] ?? null) : null;
+    const route = url.pathname === "/mcp" ? "mcp" : METADATA_PATHS.includes(url.pathname) ? "metadata" : url.pathname === "/healthz" ? "healthz" : (authRoute ?? "other");
     /** @type {Record<string, unknown>} */
     const record = { at: cairoStamp(new Date(started)).text, transport: "http", method: req.method, route, outcome: "refused" };
     let audited = false;
@@ -231,6 +279,7 @@ export async function startHttpServer(options) {
       record.outcome = "ok";
       return send(200, metadata);
     }
+    if (authRoute && auth) return handleAuth(authRoute, req, res, url, record, send, refuse);
     if (route !== "mcp") return refuse(404, "not_found", "not-found");
     if (req.method !== "POST") return refuse(405, "method_not_allowed", "method-not-allowed", { Allow: "POST" });
 
@@ -314,6 +363,79 @@ export async function startHttpServer(options) {
     }
   }
 
+  /**
+   * The built-in authorization server's routes. The audit line holds the route and outcome only: never a
+   * code, token, secret, state, address or redirect.
+   */
+  async function handleAuth(name, req, res, url, record, send, refuse) {
+    const { OAuthError } = await import("./lib/authorization-server.mjs");
+    const page = (status, message) => {
+      res.statusCode = status;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end(message);
+    };
+    const redirect = (location) => {
+      res.statusCode = 302;
+      res.setHeader("Location", location);
+      res.end();
+    };
+    const expect = (method) => {
+      if (req.method === method) return true;
+      refuse(405, "method_not_allowed", "method-not-allowed", { Allow: method });
+      return false;
+    };
+    try {
+      if (name === "oauth-metadata" || name === "jwks") {
+        if (!expect("GET")) return;
+        record.outcome = "ok";
+        return send(200, name === "jwks" ? auth.jwks() : auth.metadata());
+      }
+      if (name === "authorize") {
+        if (!expect("GET")) return;
+        const location = auth.authorize(url.searchParams);
+        record.outcome = new URL(location).origin === "https://accounts.google.com" ? "to-google" : "returned-error";
+        return redirect(location);
+      }
+      if (name === "google-callback") {
+        if (!expect("GET")) return;
+        const { location, outcome } = await auth.googleCallback(url.searchParams);
+        record.outcome = outcome;
+        return redirect(location);
+      }
+      if (!expect("POST")) return;
+      if (name === "register") {
+        if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return refuse(415, "invalid_client_metadata", "bad-request");
+        const body = await readJsonBody(req);
+        record.outcome = "ok";
+        return send(201, auth.register(body));
+      }
+      if (!/^application\/x-www-form-urlencoded\b/i.test(String(req.headers["content-type"] ?? ""))) return refuse(415, "invalid_request", "bad-request");
+      const params = Object.fromEntries(new URLSearchParams(await readTextBody(req)));
+      if (name === "token") {
+        record.grant = params.grant_type === "refresh_token" ? "refresh_token" : params.grant_type === "authorization_code" ? "authorization_code" : "other";
+        const issued = auth.token(params);
+        record.outcome = "ok";
+        return send(200, issued, { Pragma: "no-cache" });
+      }
+      auth.revoke(params);
+      record.outcome = "ok";
+      return send(200, {});
+    } catch (error) {
+      if (error instanceof OAuthError) {
+        record.reason = error.code;
+        // A browser leg with a bad client or redirect is shown a page, never redirected anywhere.
+        if (name === "authorize" || name === "google-callback") {
+          record.outcome = "refused";
+          return page(400, "This sign-in request is not valid or has expired. Start again from ChatGPT.");
+        }
+        return refuse(error.status, error.code, "refused");
+      }
+      if (error?.status) return refuse(error.status, error.status === 413 ? "payload_too_large" : "invalid_request", "bad-request");
+      record.outcome = "error";
+      return refuse(500, "server_error", "error");
+    }
+  }
+
   const http = createServer((req, res) => {
     handle(req, res).catch(() => {
       if (!res.headersSent) {
@@ -338,8 +460,20 @@ export async function startHttpServer(options) {
   for (const loopback of ["127.0.0.1", "localhost", "[::1]"]) allowedOrigins.add(`http://${loopback}:${bound}`);
   resource = publicResource ? publicResource.href : `http://${urlHost}:${bound}/mcp`;
   metadataUrl = protectedResourceMetadataUrl(resource);
-  metadata = protectedResourceMetadata({ resource, authorizationServer });
-  tokens = typeof verifier === "function" ? verifier(resource) : verifier;
+  if (authorization) {
+    const issuer = `http://${urlHost}:${bound}`;
+    try {
+      auth = authorization({ issuer, resource });
+    } catch (error) {
+      await new Promise((resolve) => http.close(() => resolve(undefined)));
+      throw error;
+    }
+    metadata = protectedResourceMetadata({ resource, authorizationServer: issuer });
+    tokens = auth.verifier;
+  } else {
+    metadata = protectedResourceMetadata({ resource, authorizationServer });
+    tokens = typeof verifier === "function" ? verifier(resource) : verifier;
+  }
 
   return {
     url: `http://${urlHost}:${bound}`,
@@ -354,7 +488,16 @@ export async function startHttpServer(options) {
   };
 }
 
-function readJsonBody(req) {
+async function readJsonBody(req) {
+  const text = await readTextBody(req);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw Object.assign(new Error("not JSON"), { status: 400 });
+  }
+}
+
+function readTextBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -370,12 +513,7 @@ function readJsonBody(req) {
       chunks.push(chunk);
     });
     req.on("end", () => {
-      if (failed) return;
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      } catch {
-        reject(Object.assign(new Error("not JSON"), { status: 400 }));
-      }
+      if (!failed) resolve(Buffer.concat(chunks).toString("utf8"));
     });
     req.on("error", (error) => {
       if (!failed) reject(Object.assign(error, { status: 400 }));
@@ -402,6 +540,41 @@ export function configFromEnv(env, argv = []) {
   const runnerMode = askedRunner ?? (spareReady ? "spare" : "local");
   if (!["spare", "local"].includes(runnerMode)) throw new Error("--runner must be spare or local");
   const targetOrigin = assertTargetOrigin(env.PHOENIX_INSPECT_TARGET_ORIGIN || STAGING_ORIGIN);
+  const auditKey = env.PHOENIX_INSPECT_MCP_AUDIT_KEY;
+  if (auditKey !== undefined && auditKey.length < 32) throw new Error("refused: PHOENIX_INSPECT_MCP_AUDIT_KEY must be at least 32 characters");
+  const shared = {
+    runnerMode,
+    host,
+    port,
+    allowNonLoopback: argv.includes("--allow-non-loopback"),
+    trustProxy: argv.includes("--trust-proxy"),
+    targetOrigin,
+    auditKey: auditKey ?? randomBytes(32).toString("hex"),
+  };
+
+  // The built-in authorization server (the Secure MCP Tunnel path): Google proves the owner.
+  if (env.PHOENIX_INSPECT_GOOGLE_CLIENT_FILE) {
+    if (env.PHOENIX_INSPECT_MCP_ISSUER || env.PHOENIX_INSPECT_MCP_JWKS || env.PHOENIX_INSPECT_MCP_JWKS_URL) {
+      throw new Error("refused: set either PHOENIX_INSPECT_GOOGLE_CLIENT_FILE (built-in sign-in) or an external issuer, not both");
+    }
+    if (publicUrl) throw new Error("refused: the built-in authorization server is loopback-only (no --public-url)");
+    const ownerEmails = parseOwnerEmails(env.PHOENIX_INSPECT_MCP_OWNER_SUBJECTS);
+    const file = env.PHOENIX_INSPECT_GOOGLE_CLIENT_FILE;
+    if (!existsSync(file)) throw new Error("refused: the Google client file named by PHOENIX_INSPECT_GOOGLE_CLIENT_FILE does not exist");
+    const google = googleClientFromJson(readFileSync(file, "utf8"));
+    const stateDir = env.PHOENIX_INSPECT_MCP_STATE_DIR || defaultStateDir(env);
+    const tunnelId = env.PHOENIX_INSPECT_MCP_TUNNEL_ID || null;
+    if (tunnelId !== null && !/^tunnel_[a-z0-9_]{32,48}$/.test(tunnelId)) throw new Error("refused: PHOENIX_INSPECT_MCP_TUNNEL_ID is malformed");
+    return {
+      ...shared,
+      publicUrl: null,
+      ownerSubjects: ownerEmails,
+      stateDir,
+      /** @param {{ issuer: string, resource: string }} context */
+      authorization: ({ issuer, resource }) => createAuthorizationServer({ issuer, resource, stateDir, google, ownerEmails, tunnelId }),
+    };
+  }
+
   const ownerSubjects = parseOwnerSubjects(env.PHOENIX_INSPECT_MCP_OWNER_SUBJECTS);
   const issuer = env.PHOENIX_INSPECT_MCP_ISSUER;
   if (!issuer) throw new Error("refused: PHOENIX_INSPECT_MCP_ISSUER is not set");
@@ -410,28 +583,33 @@ export function configFromEnv(env, argv = []) {
   const jwksUrl = env.PHOENIX_INSPECT_MCP_JWKS_URL || null;
   if (keys.length === 0 && !jwksUrl) throw new Error("refused: set PHOENIX_INSPECT_MCP_JWKS or PHOENIX_INSPECT_MCP_JWKS_URL");
   const clientId = env.PHOENIX_INSPECT_MCP_CLIENT_ID || null;
-  const auditKey = env.PHOENIX_INSPECT_MCP_AUDIT_KEY;
-  if (auditKey !== undefined && auditKey.length < 32) throw new Error("refused: PHOENIX_INSPECT_MCP_AUDIT_KEY must be at least 32 characters");
   // Build one verifier now so a bad JWKS address refuses before the port opens.
   createJwtVerifier({ issuer, audience: "https://check.invalid/mcp", keys, jwksUrl, clientId });
   return {
-    runnerMode,
-    host,
-    port,
+    ...shared,
     publicUrl,
-    allowNonLoopback: argv.includes("--allow-non-loopback"),
-    trustProxy: argv.includes("--trust-proxy"),
-    targetOrigin,
     ownerSubjects,
     authorizationServer: issuer,
-    auditKey: auditKey ?? randomBytes(32).toString("hex"),
     /** @param {string} resource */
     verifier: (resource) => createJwtVerifier({ issuer, audience: resource, keys, jwksUrl, clientId }),
   };
 }
 
+/** Where the built-in authorization server keeps its clients, grants and signing key: outside the repository. */
+export function defaultStateDir(env) {
+  return path.join(env.LOCALAPPDATA || path.join(os.homedir(), ".local", "share"), "PhoenixInspect", "oauth");
+}
+
 async function main() {
-  const config = configFromEnv(process.env, process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.includes("--revoke-all")) {
+    // The owner's kill switch: every token the built-in authorization server issued stops at once.
+    const stateDir = process.env.PHOENIX_INSPECT_MCP_STATE_DIR || defaultStateDir(process.env);
+    const count = revokeAllGrants(stateDir);
+    console.error(`revoked ${count} live sign-in(s); ChatGPT must sign in again`);
+    return;
+  }
+  const config = configFromEnv(process.env, argv);
   const runner = config.runnerMode === "spare" ? spareRunner() : localRunner();
   const handle = await startHttpServer({ ...config, runner });
   console.error(`phoenix-inspect MCP ready (Streamable HTTP on ${handle.url}/mcp, resource ${handle.resource}, runner: ${config.runnerMode}, target: staging only)`);
