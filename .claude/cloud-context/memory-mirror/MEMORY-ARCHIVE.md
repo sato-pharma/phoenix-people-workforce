@@ -320,8 +320,8 @@ whole memory directory is now reachable by grep. Each hook is the file's own `de
 Nothing was deleted. The first group is history whose platform no longer exists — those files
 also carry a `SUPERSEDED` banner at the top of the file itself.
 
-### Dead platform — Vercel / Cloud Run / GCP / Sentry / npm era (history only, do NOT act on these)
-- [SUPERSEDED (Vercel/Cloud Run/GCP era) — Config audit + Sentry retirement — what was APPLIED 07-31, what is still owner-only, Healthchecks gate before merging PR #1514](claude-config-audit-2026-07-31.md)
+### Dead platform — Vercel / Cloud Run / GCP / npm era (history only, do NOT act on these)
+- [SUPERSEDED (Vercel/Cloud Run/GCP era) — Config audit + error-tracker retirement — what was APPLIED 07-31, what is still owner-only, Healthchecks gate before merging PR #1514](claude-config-audit-2026-07-31.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — phoenix-hr + phoenix-hr-staging Cloud Run now run as a dedicated least-privilege SA (phoenix-hr-run), split from the compute SA which stays the CI deployer/builder.](cloud-run-runtime-sa-least-privilege.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — CRON_SECRET rotation 401'd every cron for ~14 min. RESOLVED. Cloud Run was pinned to a secret version that got disabled — always use secretKeyRef latest.](cron-secret-rotation-broke-all-crons-2026-07-31.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — workflow_dispatch on deploy-cloud-run.yml silently skips unless CI has ALREADY concluded success on the current head of main](deploy-dispatch-gate-checks-ci-on-head-commit.md)
@@ -329,12 +329,11 @@ also carry a `SUPERSEDED` banner at the top of the file itself.
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Two gcloud commands print live secret values to stdout even with a restrictive --format: `run services describe --format=json` and `services api-keys create`. Both caused real exposures on 2026-07-31. Use the safe forms here.](gcloud-commands-that-leak-secrets-into-transcripts.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — 2026-07-16 GCP hardening pass — secrets to Secret Manager, min-instances=0 (near-free), budget, AR cleanup, unused APIs disabled, dual alert channel.](gcp-hardening-2026-07-16.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Full-chain perf audit (22-agent workflow) — measured causes of prod slowness + prioritized fix plan; AWAITING owner approvals](gcp-speed-audit-2026-07-17.md)
-- [SUPERSEDED (Vercel/Cloud Run/GCP era) — Healthchecks.io cron-liveness monitor is LIVE and configured (8 checks, Cairo cron, email+Telegram) — unblocks the Sentry-retirement PR](healthchecks-live-8-checks-configured.md)
+- [SUPERSEDED (Vercel/Cloud Run/GCP era) — Healthchecks.io cron-liveness monitor is LIVE and configured (8 checks, Cairo cron, email+Telegram) — unblocks the error-tracker retirement PR](healthchecks-live-8-checks-configured.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — npm→pnpm 11 migration (PR](pnpm-migration-2026-07-17.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Production Cloud Run deploy triggers on schedule + manual workflow_dispatch, NOT on push/merge — a merge is not live until the next scheduled or manual deploy](prod-deploy-scheduled-not-on-push.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — phoenix-hr prod's --min-instances was dropped from 1 to 0 for cost savings (2026-07-16), reintroducing the cold-start risk the setting was originally added to eliminate.](prod-min-instances-dropped-to-zero-2026-07-16.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Verify prod Cloud Run traffic at europe-west3, NOT us-central1 (stale standby)](prod-verify-region-europe-west3.md)
-- [SUPERSEDED (Vercel/Cloud Run/GCP era) — Removing Sentry.withMonitor left 7 server-side Sentry cron monitors alive — they now fire false "Cron failure" outage alerts. Must delete them in Sentry.](sentry-orphaned-cron-monitors-false-outage-alerts.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Staging auto-deploys from main and wipes unmerged branch previews; pin the branch revision with a durable custom Cloud Run tag for a stable URL.](staging-churn-pin-branch-with-cloud-run-tag.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Staging Cloud Run deploy failures are usually a transient Cloud Build get-requests 429 quota, not a code bug — they self-heal on retry.](staging-deploy-cloudbuild-429-transient.md)
 - [SUPERSEDED (Vercel/Cloud Run/GCP era) — Staging does NOT auto-deploy on merge — it runs daily 03:40 UTC and reuses the prod-built image; prod ships every 2h. Corrects a stale AGENTS.md claim.](staging-deploys-daily-0340-utc-from-prod-image.md)

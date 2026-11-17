@@ -1,6 +1,6 @@
 ---
-name: capturestallinsentry-is-the-web-event-loop-stall-alert
-description: "Sentry PHOENIX-WORKFORCE-6 / captureStallInSentry is the web process's event-loop freeze warning, and its count is a FLOOR — one event per 30 min per container; the true rate is in Railway's `event_loop_stall` WARN lines, ~4 an hour; their `gcExplainsStall` is false on every freeze measured 24 Oct: GC is ruled out; the 5 s one repeated every exactly 65:00 (the Master Map sheet's hourly check) and PR 6422 cut it to 1.4 s on a cold container (16:35, 24 Oct); the 1.0–1.5 s business-hours ones are still unattributed."
+name: the-web-event-loop-stall-count-is-a-floor
+description: "The web process's event-loop freeze alert (\"Server froze for N s (web process)\") counts a FLOOR, never the rate — at most one alert per culprit; the true rate is in Railway's `event_loop_stall` WARN lines, ~4 an hour; their `gcExplainsStall` is false on every freeze measured 24 Oct: GC is ruled out; the 5 s one repeated every exactly 65:00 (the Master Map sheet's hourly check) and PR 6422 cut it to 1.4 s on a cold container (16:35, 24 Oct); the 1.0–1.5 s business-hours ones are still unattributed."
 metadata:
   node_type: memory
   type: project
@@ -8,20 +8,21 @@ metadata:
   modified: 2026-10-24T13:41:46.598Z
 ---
 
-`PHOENIX-WORKFORCE-6`, titled `captureStallInSentry` (also `e.s.i` from the minified chunk), is one
+The web process's freeze alert is one
 message: **`Server froze for N s (web process) while no background job ran`** —
 `stallAlertFor()` in `src/lib/observability/process-health.ts`, raised when a minute's worst
 event-loop delay passes `EVENT_LOOP_STALL_ALERT_MS` (1 s) on a process that answers pages. The
 worker is exempt by design. It has fired continuously since the alert was added: **168 events,
 16 Oct 2026 19:24 → 23 Oct 11:18 Cairo**, every one production, every one the web role.
 
-🔴 **The Sentry count is a FLOOR, not the rate.** `STALL_SENTRY_REPEAT_AFTER_MS` is 30 minutes and
-`lastSentryAt` is per PROCESS, so one container reports at most twice an hour and a container that
-lives ten minutes may report once. Read the truth from Railway:
+🔴 **The alert count is a FLOOR, not the rate.** Until 17 Nov 2026 it repeated at most every 30 minutes per
+PROCESS; since then the first freeze of each culprit (process role and the jobs that ran) sends ONE new-error
+Telegram (`alertFirstStall` in `process-health.ts`, through `src/lib/error-monitor/new-error-alert.ts`) and every
+later one is the warning line only. Read the truth from Railway:
 `railway logs <deployment-id> -s phoenix-people-workforce -e production -d --lines 5000 | grep event_loop_stall`
 — every freeze logs its own WARN line with `stallMs`, `sinceLastStallS`, `uptimeS`, `heapUsedMb`,
 `rssMb`. Measured on the 22 Oct container (bd835566, alive 15 h): **51 freezes in 12 h 54 m, median
-gap 4 minutes** — against ~20 Sentry events for the same stretch.
+gap 4 minutes** — against ~20 alerts for the same stretch.
 
 **Shape, measured 22–23 Oct:** 41 of 51 were 1.0–2.0 s and bursty during business hours; 10 were
 4.9–5.7 s; overnight, with the container otherwise quiet, one ~5 s freeze every **~63 minutes**,
@@ -50,7 +51,7 @@ service reads p90 1.33 s, p95 1.59 s, p99 3.31 s over 6.3 K requests an hour. Re
 
 **How to apply:** when a post-deploy read reports this issue as `recurring`, it is not that merge's
 doing and never has been — it is the standing freeze. Say so with the log rate, never with the
-Sentry count alone.
+alert count alone.
 
 🔴 **14 NOV 2026 RE-READ (Railway logs, 11–13 Nov): the rate fell to ~1 freeze per 2–3 h of a container's life, and three causes cover all 12 freezes read.**
 (1) **Business Review pack hammering — the worst one. ✅ FIXED 14 Nov 2026, PR 381 (merged 03:36 Cairo): `single-flight.ts` shares one build per identical request per person, and the picker fetches the file itself, says "Preparing…" and ignores clicks until it lands.** 12 Nov 13:58–14:05 Cairo: **188 `GET /api/business-review/pack` in 5 min, ~180 of them 499 (cancelled by the browser within 0–2 s), almost all from ONE browser**, up to 9 in flight; Supabase calls 4,000–5,600 a minute (normal ~1,000) at p50 3–5 s with 34 timeouts, heap 0.5 → 2.1 GB, GC 2.5 s a minute, five freezes of 1.0–2.1 s and the 14:00 `process_health` line missing. The Download buttons in `pack-picker.client.tsx` are plain form submits whose answer is an attachment, so the page shows nothing while a slow pack builds; every click cancels the last and starts another, and `app/api/business-review/pack/route.ts` never reads `request.signal` and shares nothing between identical requests, so every cancelled one still rebuilds the whole live review. (2) **The Master Map sheet's first full check on a FRESH container** still freezes 1.6–1.7 s (11 Nov 08:55, 13 Nov 07:34, 12 Nov 14:09 Cairo — the only heavy request in the minute); with dozens of deploys a day, every new container pays it once. (3) **Single heavy page renders**: Weekly Stock (3.1 s at 12 Nov 14:33, several 8–11 s loads), SFE Command Center (29 s load, 13 Nov 12:33), KPIs coverage, Monthly Closing export — unproven per request without a CPU profile.
