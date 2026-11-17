@@ -10,6 +10,7 @@ import {
   formatEgp,
   formatRatio,
   latestCompleteQuarter,
+  looseLatinWord,
   matchPeople,
   monthLabel,
   monthsBetween,
@@ -76,6 +77,20 @@ function testNameSearch() {
   assert.ok(scorePersonMatch("hamada", people[1]) >= 80, "the nickname is searched");
   assert.equal(scorePersonMatch("Ziad", people[0]), 0, "an unrelated name scores nothing");
   assert.equal(scorePersonMatch("   ", people[0]), 0, "a blank query matches nobody");
+
+  // Another Latin spelling of the same Arabic name (owner, 17 Nov 2026: "Ibtissam" for Phoenix's "Ebtissam").
+  const ebtissam = { hrId: "PD-0013", fullName: "Ebtissam Alaa ElDin Anwar", displayName: null, nickname: "Ebtissam Alaa", nameAr: null };
+  assert.equal(scorePersonMatch("Ibtissam", ebtissam), 50, "Ibtissam finds Ebtissam, below every real spelling");
+  assert.equal(scorePersonMatch("Ebtesam Alaa", ebtissam), 50, "single letters and e/i swaps fold too");
+  assert.equal(scorePersonMatch("Ebtissam", ebtissam), 80, "the real spelling still scores as a real match");
+  assert.equal(scorePersonMatch("Muhammad Ibrahim", people[1]), 50, "Muhammad = Mohamed");
+  assert.equal(scorePersonMatch("Ziad", ebtissam), 0, "an unrelated name still scores nothing");
+  assert.equal(scorePersonMatch("Ali", ebtissam), 0, "a word under five letters is never folded — Ali never reaches Alaa");
+  assert.equal(scorePersonMatch("Ibtissam Ali", ebtissam), 0, "every word must fit, and the short one must be spelled as it is");
+  assert.equal(looseLatinWord("youssef"), looseLatinWord("yousef"));
+  assert.equal(looseLatinWord("إبتسام"), "", "Arabic is never folded this way");
+  assert.equal(pickOnePerson([...people, ebtissam], "Ibtissam").hrId, "B-158", "a real spelling beats a loose one");
+  assert.equal(pickOnePerson([people[1], ebtissam], "Ibtissam").hrId, "PD-0013", "with no real spelling, the loose one is found");
   assert.equal(normalizeSearchText("  Ibtissam—Mohamed!! "), "ibtissam mohamed", "punctuation folds to single spaces");
 
   const found = matchPeople(people, "mohamed ibrahim");

@@ -72,7 +72,38 @@ export function scorePersonMatch(query: string, person: PersonSearchFields): num
       else if (n.includes(q)) best = Math.max(best, 60);
     }
   }
-  return best;
+  if (best > 0) return best;
+
+  // Last, the same name in another Latin spelling (owner, 17 Nov 2026: he asked for "Ibtissam" and
+  // Phoenix holds "Ebtissam"). Below every real match, so a true spelling always wins, and a tie between
+  // two loose matches is refused with both names, never guessed.
+  // A word under five letters must still be spelled as it is ("Ali" is not "Alaa": both fold to "ala").
+  for (const name of [person.fullName, person.displayName, person.nickname]) {
+    const nameWords = normalizeSearchText(name).split(" ").filter(Boolean);
+    if (!nameWords.length) continue;
+    const looseName = nameWords.map(looseLatinWord);
+    const fits = queryWords.every((word) => {
+      if (nameWords.some((nameWord) => nameWord.startsWith(word))) return true;
+      const loose = word.length >= 5 ? looseLatinWord(word) : "";
+      return Boolean(loose) && looseName.some((nameWord) => Boolean(nameWord) && nameWord.startsWith(loose));
+    });
+    if (fits) return 50;
+  }
+  return 0;
+}
+
+/**
+ * One Latin word reduced to how it sounds across the usual transliterations of an Arabic name: every
+ * vowel (and y) is one sound, a doubled letter is one letter, "ph" is "f", "q" and "c" are "k".
+ * Ibtissam = Ebtissam = Ebtesam; Mohamed = Muhammad; Youssef = Yousef. Empty for a non-Latin word.
+ */
+export function looseLatinWord(word: string): string {
+  if (!/^[a-z]+$/.test(word)) return "";
+  return word
+    .replace(/ph/g, "f")
+    .replace(/[qc]/g, "k")
+    .replace(/[aeiouy]/g, "a")
+    .replace(/(.)\1+/g, "$1");
 }
 
 /** Every row that matches, best first, then by name. */
