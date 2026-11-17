@@ -11,7 +11,8 @@
 # Blank lines and `#` comments are ignored. An entry only matters in the pull request that makes the rollback;
 # delete it in the next one.
 
-# PR 6690 (2026-10-31): not a rollback. The base held two copies — 3.3.1, pinned by @next/eslint-plugin-next,
-# and 3.3.3, reached only through shadcn and @shadcn/registry. Removing shadcn removed the 3.3.3 copy; the 3.3.1
-# one was already there and nothing that used 3.3.3 is left.
-fast-glob 3.3.3 -> 3.3.1
+# PR 485 (2026-11-17): a rollback we meant. Dependabot's #458 moved playwright to 1.65.0 and left
+# @playwright/test at 1.64.1; two Playwright versions in one tree stop `playwright test` loading any test, so
+# main's login smoke test failed and the release gate held every merge after it. Back to the 1.64.1 pair.
+playwright 1.65.0 -> 1.64.1
+playwright-core 1.65.0 -> 1.64.1
