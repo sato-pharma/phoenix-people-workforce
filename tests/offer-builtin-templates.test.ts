@@ -917,14 +917,13 @@ function prestigeSkinTests(
   assert.equal((prestigeSigned.body.match(/class="offer-seal"/g) ?? []).length, 1, "the seal is drawn exactly once on the prestige letter");
   const sealRule = /\.accept \.offer-seal\{([^}]*)\}/.exec(PRESTIGE_OFFER_SKIN)?.[1];
   assert.ok(sealRule, "the prestige skin places the seal through `.accept .offer-seal`");
-  // Owner, 17 Nov 2026: "put the stamp on my signature". The signature image starts at the rule's
-  // left end and is about 16mm wide, so a 21mm seal centred on it starts within a few mm of that end
-  // and its foot dips just under the rule. Placed 22mm in, it missed the signature entirely.
+  // Owner, 17 Nov 2026: "put the stamp on my signature", then "center the signature and the stamp".
+  // The signature and the seal share the centre of the company's line; the seal's foot rests just
+  // under the rule (measured in the browser: the signature in its lower half, the label clear).
   assert.ok(/top:auto/.test(sealRule), "the seal is placed from the foot of the signatory's cell");
-  const sealLeft = Number(/left:(-?[\d.]+)mm/.exec(sealRule)?.[1]);
+  assert.ok(/left:50%/.test(sealRule) && /translateX\(-50%\)/.test(sealRule), "the seal is centred on the company's line");
   const sealBottom = Number(/bottom:(-?[\d.]+)mm/.exec(sealRule)?.[1]);
-  assert.ok(sealLeft >= -4 && sealLeft <= 4, `the seal starts at the signature, not beside it (left ${sealLeft}mm)`);
-  assert.ok(sealBottom >= -4 && sealBottom <= 2, `the seal is centred down over the signature, its foot at the rule (bottom ${sealBottom}mm)`);
+  assert.ok(sealBottom >= 3 && sealBottom <= 6, `the seal's foot rests just under the rule, clear of the label (bottom ${sealBottom}mm)`);
   assert.ok(/mix-blend-mode:multiply/.test(sealRule), "the seal is printed as ink (multiply), so the signature reads through it");
   assert.equal(Number(/width:([\d.]+)mm/.exec(sealRule)?.[1]), 21, "the prestige seal is the premium letter's 21mm");
   assert.equal(
@@ -932,9 +931,12 @@ function prestigeSkinTests(
     false,
     "the seal is placed in exactly one rule of the prestige skin",
   );
+  // The signature is centred under the seal, never enlarged: 35px is the file's own pixel height.
+  assert.ok(/\.accept \.sigcell \.sigink-box\{justify-content:center\}/.test(PRESTIGE_OFFER_SKIN), "the signature is centred on the company's line");
+  assert.ok(/\.accept \.sigcell \.sigink\{margin:0 auto\}/.test(PRESTIGE_OFFER_SKIN), "the signature drops its left offset to sit centred");
   assert.ok(
-    !PRESTIGE_OFFER_SKIN.includes("sigcell") && !PRESTIGE_OFFER_SKIN.includes("sigink"),
-    "the prestige skin never touches the signature cells or the signature ink",
+    !/\.sigink[^{]*\{[^}]*(max-height|height|width|transform)/.test(PRESTIGE_OFFER_SKIN),
+    "the prestige skin never resizes the signature ink",
   );
   assert.ok(!/\bphoenix\b/i.test(prestigeSigned.html), "no word of the prestige letter says Phoenix");
 

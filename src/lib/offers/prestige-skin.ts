@@ -188,12 +188,19 @@ strong{color:${N}}
 .accept .sub{color:${M};font-family:${SERIF};font-style:italic}
 /* Headroom on both parties' signature rows, so the four rules stay level and the company's seal
    clears the signatory's name and title above it. */
-.accept .sigrow{padding-top:11mm}
-/* The seal is stamped ON the signature (owner, 17 Nov 2026: "put the stamp on my signature"): 21mm,
-   centred over the signature image, which is about 16mm wide from the start of the rule. Multiply,
-   as ink lands on paper, so the signature still reads through the stamp. The candidate's cell never
-   carries one. */
-.accept .offer-seal{left:-1.4mm;top:auto;bottom:-1.2mm;width:21mm;height:21mm;transform:rotate(-7deg);opacity:.9;mix-blend-mode:multiply}
+.accept .sigrow{padding-top:14mm;gap:6mm}
+/* The signing lines in navy, each label centred under its line in small gold capitals. */
+.accept .sigline{border-bottom:.8pt solid ${N}}
+.accept .siglabel{margin-top:2mm;text-align:center;color:${GT};font-size:6.4pt;letter-spacing:2.2px}
+/* The signature and the stamp are CENTRED on the company's line, one over the other (owner, 17 Nov
+   2026: "put the stamp on my signature", then "center the signature and the stamp"). The signature
+   keeps its own size — 35px is the file's own pixel height, and enlarging it only blurs it. */
+.accept .sigcell .sigink-box{justify-content:center}
+.accept .sigcell .sigink{margin:0 auto}
+/* The seal: 21mm, centred over the signature, its foot resting just under the rule so the signature
+   sits in its lower half and the SIGNATURE label below stays clear. Multiply, as ink lands on paper,
+   so the signature reads through the stamp. The candidate's cell never carries one. */
+.accept .offer-seal{left:50%;top:auto;bottom:4.4mm;width:21mm;height:21mm;transform:translateX(-50%) rotate(-7deg);opacity:.9;mix-blend-mode:multiply}
 
 /* ── The closing plate: the legal footer in navy, under its own gold rule ────────────────────── */
 .foot{position:relative;break-inside:avoid;margin-top:10mm;padding:5mm 7mm;background:${N};border-top:0;align-items:center}
