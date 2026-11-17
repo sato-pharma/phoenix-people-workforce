@@ -9,7 +9,7 @@ import { isForceTestingDelivery, isProductionRuntime } from "@/config/system-set
  *    real mail in the test inboxes, while dev/preview never email real people).
  *  - An explicit PHOENIX_EMAIL_FORCE_TESTING value always wins.
  *  - No personal/external address may sit in the prod fallback list.
- *  - A redirect must never be silent (Sentry breadcrumb/warning).
+ *  - A redirect must never be silent (a warning line).
  */
 export function runEmailP0TestingTrapTests() {
   const savedForce = process.env.PHOENIX_EMAIL_FORCE_TESTING;

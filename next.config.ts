@@ -158,30 +158,11 @@ const managedPlayCsp = contentSecurityPolicy
 // fingerprints the base template literal) is unaffected.
 const milestonePreviewCsp = contentSecurityPolicy.concat("; frame-src 'self' blob:");
 
-// Sentry (sentry.io) browser reports need their ingest host in connect-src, and ONLY when this build
-// carries a DSN — the origin is read from NEXT_PUBLIC_SENTRY_DSN itself rather than written here, so the
-// region (us / de) is whatever the account's DSN says and a build without one gains no new host. Applied
-// to the site-wide header only; the derived whatsapp/hiring/play/milestone policies above stay as they are.
-const sentryIngestOrigin = (() => {
-  try {
-    const dsn = new URL(String(process.env.NEXT_PUBLIC_SENTRY_DSN ?? "").trim());
-    return dsn.protocol === "https:" && dsn.username ? dsn.origin : null;
-  } catch {
-    return null;
-  }
-})();
-const siteContentSecurityPolicy = sentryIngestOrigin
-  ? contentSecurityPolicy.replace("connect-src 'self'", `connect-src 'self' ${sentryIngestOrigin}`)
-  : contentSecurityPolicy;
-
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
-    value: siteContentSecurityPolicy,
+    value: contentSecurityPolicy,
   },
-  // The browser profiler only runs on a document served with this policy. Sent only by a build that carries a
-  // Sentry DSN, so staging, previews and local runs keep the headers they have today.
-  ...(sentryIngestOrigin ? [{ key: "Document-Policy", value: "js-profiling" }] : []),
   {
     key: "Referrer-Policy",
     value: "strict-origin-when-cross-origin",
@@ -680,54 +661,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Source maps and releases: the Sentry build plugin runs ONLY when this build carries an auth token, so every
-// build without one (local, preview, CI, staging) exports the plain config exactly as before. The token is a
-// build-time secret and is never printed; the maps are deleted after upload so none is served to a browser.
-// The four auto-instrument switches stay off — they would wrap every route handler and middleware, and the
-// app already reports through its own paths. No tunnelRoute: the browser reports straight to the ingest host
-// the CSP allows.
-function withOptionalSentry(config: NextConfig): NextConfig {
-  const authToken = String(process.env.SENTRY_AUTH_TOKEN ?? "").trim();
-  if (!authToken) return config;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only on a build that has a token; withSentryConfig lives at the /config entry, not the package root
-  const { withSentryConfig } = require("@sentry/nextjs/config") as {
-    withSentryConfig: (config: NextConfig, options: Record<string, unknown>) => NextConfig;
-  };
-  const release = String(process.env.COMMIT_SHA ?? process.env.RAILWAY_GIT_COMMIT_SHA ?? "").trim();
-  return withSentryConfig(config, {
-    // The account's organisation, project and EU host are not secrets, so they are written here, not synced.
-    org: "phoenix-crm",
-    project: "phoenix-workforce",
-    sentryUrl: "https://de.sentry.io",
-    authToken,
-    silent: true,
-    // A rejected or expired token must never stop a production deploy: the upload fails, the build goes on.
-    errorHandler: (error: Error) => console.warn(`[sentry] source-map upload skipped: ${error.message}`),
-    telemetry: false,
-    widenClientFileUpload: true,
-    sourcemaps: { deleteSourcemapsAfterUpload: true },
-    // The release is the commit sha. It is also marked as a production deploy, so Sentry shows when each release went
-    // out and which errors first appeared in it. setCommits names the repository explicitly (the Docker build has no
-    // .git to read), so it only starts working once the GitHub integration is installed in Sentry.
-    // 🔴 `shouldNotThrowOnFailure`, NEVER `ignoreMissing` (2026-11-04). The plugin runs create → setCommits →
-    // finalize → deploy in that order, and a setCommits that throws skips the last two. On plugin 11 `ignoreMissing`
-    // maps to no CLI flag at all, so with no integration installed every production build logged
-    // "source-map upload skipped: API request failed: 400 Bad Request" and no release was ever finalized or marked
-    // deployed (deployCount 0, dateReleased null). The maps themselves upload through a separate step and were fine.
-    ...(release
-      ? {
-          release: {
-            name: release,
-            deploy: { env: "production" },
-            setCommits: { repo: "sato-pharma/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true },
-          },
-        }
-      : {}),
-    autoInstrumentServerFunctions: false,
-    autoInstrumentMiddleware: false,
-    autoInstrumentAppDirectory: false,
-    automaticVercelMonitors: false,
-  });
-}
-
-export default withOptionalSentry(nextConfig);
+export default nextConfig;

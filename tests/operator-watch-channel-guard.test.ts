@@ -19,6 +19,7 @@ const ALARMS: Alarm[] = [
   { event: "scheduled_job_stranded", file: "src/lib/observability/job-heartbeat-alert.ts" },
   { event: "notification_drain_stranded", file: "src/lib/notifications/drain-health-alert.ts" },
   { event: "database_restarted", file: "src/lib/observability/database-restart-alert.ts" },
+  { event: "new_app_error", file: "src/lib/error-monitor/new-error-alert.ts" },
   { event: "database_host_low_memory", file: "src/lib/observability/db-host-alert.ts", spelledAs: "`database_host_${kind}`" },
   { event: "database_host_low_root_disk", file: "src/lib/observability/db-host-alert.ts", spelledAs: "`database_host_${kind}`" },
   { event: "cv_lifecycle_link_expiring", file: "src/lib/recruitment/cv-lifecycle-link-expiry-alert.ts" },

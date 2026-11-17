@@ -2,27 +2,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { describeThrown } from "../src/lib/error-monitor/describe-thrown.ts";
+import { newErrorAlertText, newErrorSignature, normalizeErrorMessage } from "../src/lib/error-monitor/new-error-alert-rules.ts";
 import {
-  SUPABASE_UNREACHABLE_FINGERPRINT,
   SUPABASE_UNREACHABLE_TITLE,
   classifyCloudflareGatewayPage,
   classifySupabaseUnreachable,
 } from "../src/lib/error-monitor/supabase-unreachable.ts";
-import { scrubSentryEvent, scrubSentryLog, type ScrubbableSentryEvent } from "../src/lib/observability/sentry-policy.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * A Supabase outage is ONE named issue, "Supabase unreachable" (owner, 2026-10-17).
  *
- * One database restart at 12:30 Cairo filed four Sentry issues — two of them titled with a whole Cloudflare
- * "521: Web server is down" / "525: SSL handshake failed" page, one a digest-only render error, one an
+ * One database restart at 12:30 Cairo filed four separate error reports — two of them titled with a whole
+ * Cloudflare "521: Web server is down" / "525: SSL handshake failed" page, one a digest-only render error, one an
  * unhandled heartbeat 500 — and the same markup filled `app_error_events.message`. The classifier is pure and
- * import-free, so every sink (the Sentry scrubber, the error-table writer, the heartbeat route) asks the same
+ * import-free, so every sink (the error-table writer, the new-error Telegram, the heartbeat route) asks the same
  * function and a restart reads as one incident.
  *
  * What is held here: the real Cloudflare page is recognised in all three shapes it arrives in; ONLY that page
  * matches (a browser "Failed to fetch", the client's own timeout and a PostgREST error must stay what they
- * are); an event is renamed and fingerprinted but never dropped; and the three sinks call the one function.
+ * are); every outage page is ONE new error for the Telegram, whatever its code; and the sinks call the one function.
  */
 
 function code(path: string): string {
@@ -43,11 +42,6 @@ function edgePage(status: number, words: string): string {
     '<body><div id="cf-wrapper"><h1>' + words + "</h1></div></body>",
     "</html>",
   ].join("\n");
-}
-
-/** The scrubber is generic over the event it is given; the tests read fields it adds, so they hold the wide type. */
-function scrub(event: ScrubbableSentryEvent): ScrubbableSentryEvent {
-  return scrubSentryEvent(event);
 }
 
 function classifierTests() {
@@ -134,68 +128,35 @@ function gatewayPageTests() {
   assert.equal(classifySupabaseUnreachable(wrapped), null);
 }
 
-function sentryEventTests() {
-  const fingerprint = [...SUPABASE_UNREACHABLE_FINGERPRINT];
-
-  // (a) an exception whose value is the JSON-wrapped page — the shape of the first Sentry issue.
+function newErrorAlertTests() {
+  // Every outage page is the same new error: one Telegram for a restart, whatever the code or the route.
   const wrapped = describeThrown({ message: edgePage(521, "Web server is down") });
-  const exceptionEvent = scrub({
-    exception: { values: [{ type: "Error", value: wrapped }] },
-    user: { id: "B-10" },
-  });
-  assert.deepEqual(exceptionEvent.fingerprint, fingerprint, "every outage page lands in the one issue");
-  assert.equal(exceptionEvent.exception?.values?.[0]?.type, SUPABASE_UNREACHABLE_TITLE);
-  assert.equal(exceptionEvent.exception?.values?.[0]?.value, "Cloudflare 521: Web server is down");
-  assert.equal(exceptionEvent.tags?.supabase_edge_status, "521");
-  assert.equal("user" in exceptionEvent, false, "the existing scrub still runs");
-  assert.ok(!JSON.stringify(exceptionEvent).includes("DOCTYPE"), "the page itself is replaced, not kept beside the name");
+  assert.equal(normalizeErrorMessage(wrapped), "supabase unreachable");
+  assert.equal(normalizeErrorMessage(edgePage(525, "SSL handshake failed")), "supabase unreachable");
+  assert.equal(
+    newErrorSignature({ message: edgePage(520, "Unknown error"), source: "server" }),
+    newErrorSignature({ message: wrapped, source: "server" }),
+    "a 520 and a 521 are one error",
+  );
 
-  // (b) a captureMessage whose text is the bare page — the shape of the 525 issue.
-  const messageEvent = scrub({
-    message: edgePage(525, "SSL handshake failed").replace(/\n/g, " "),
-    logentry: { message: edgePage(525, "SSL handshake failed") },
-  });
-  assert.deepEqual(messageEvent.fingerprint, fingerprint);
-  assert.equal(messageEvent.message, "Supabase unreachable: Cloudflare 525: SSL handshake failed");
-  assert.equal(messageEvent.logentry?.message, "Supabase unreachable: Cloudflare 525: SSL handshake failed");
-  assert.equal(messageEvent.tags?.supabase_edge_status, "525");
+  // The message carries the readable line, never the page.
+  const text = newErrorAlertText({ message: wrapped, route: "/api/auth/heartbeat", source: "server" });
+  assert.match(text.message, /Supabase unreachable: Cloudflare 521: Web server is down/);
+  assert.ok(!text.message.includes("DOCTYPE"), "the page itself is replaced, not kept beside the name");
 
-  // A chained error: only the entry that carries the page is renamed; the event is grouped as the outage.
-  const chained = scrub({
-    exception: {
-      values: [
-        { type: "Error", value: "could not load the session" },
-        { type: "Error", value: edgePage(520, "Unknown error") },
-      ],
-    },
-    tags: { route: "/api/auth/heartbeat" },
-  });
-  assert.equal(chained.exception?.values?.[0]?.value, "could not load the session");
-  assert.equal(chained.exception?.values?.[1]?.type, SUPABASE_UNREACHABLE_TITLE);
-  assert.deepEqual(chained.fingerprint, fingerprint);
-  assert.deepEqual(chained.tags, { route: "/api/auth/heartbeat", supabase_edge_status: "520" }, "an existing tag survives");
-
-  // Nothing else is touched: no fingerprint, no tag, no rewrite — and nothing is ever dropped.
-  const ordinary = scrub({
-    exception: { values: [{ type: "TypeError", value: "Failed to fetch" }] },
-    message: "Supabase request timed out.",
-  });
-  assert.equal("fingerprint" in ordinary, false, "an event that is not the outage page keeps Sentry's own grouping");
-  assert.equal("tags" in ordinary, false);
-  assert.equal(ordinary.exception?.values?.[0]?.value, "Failed to fetch");
-  assert.equal(ordinary.message, "Supabase request timed out.");
-  assert.deepEqual(scrub({}), {}, "an event with none of those fields is returned as it came");
-
-  // A log line carrying the page becomes the one readable line, and is still scrubbed after.
-  const log = scrubSentryLog({ message: edgePage(521, "Web server is down"), attributes: {} });
-  assert.equal(log.message, "Supabase unreachable: Cloudflare 521: Web server is down");
+  // Anything else keeps its own grouping.
+  assert.equal(normalizeErrorMessage("Supabase request timed out."), "supabase request timed out.");
+  assert.notEqual(
+    newErrorSignature({ message: "Failed to fetch", source: "client" }),
+    newErrorSignature({ message: wrapped, source: "client" }),
+  );
 }
 
 function sinkWiringTests() {
-  // The Sentry scrubber is the ONE place both runtimes go through: beforeSend stays literally the scrubber.
-  const policy = code("src/lib/observability/sentry-policy.ts");
-  assert.match(policy, /foldSupabaseUnreachable\(scrubbable\);\s*return event;/, "scrubSentryEvent renames the outage before it returns");
-  assert.match(policy, /classifySupabaseUnreachable\(log\.message\)/, "a console line carrying the page is renamed too");
+  // The new-error Telegram groups and words the outage through the same classifier.
+  const alertRules = code("src/lib/error-monitor/new-error-alert-rules.ts");
+  assert.match(alertRules, /if \(classifySupabaseUnreachable\(text\)\) return "supabase unreachable";/);
+  assert.match(alertRules, /const outage = classifySupabaseUnreachable\(report\.message\);/);
 
   // The error table stores the readable line, not the page.
   const service = code("src/lib/error-monitor/service.ts");
@@ -221,6 +182,6 @@ export async function runSupabaseUnreachableTests() {
   classifierTests();
   nonMatchTests();
   gatewayPageTests();
-  sentryEventTests();
+  newErrorAlertTests();
   sinkWiringTests();
 }

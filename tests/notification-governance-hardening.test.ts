@@ -53,7 +53,7 @@ export function runNotificationGovernanceHardeningTests() {
   );
 
   // Finding #40: fire-and-forget notification sends must never swallow their failure
-  // silently — every guarded send logs (console + Sentry) via the shared helper.
+  // silently — every guarded send logs (console + the error table) via the shared helper.
   assertContains(
     systemSource,
     /export function logNotificationSendFailure\(context: string, error: unknown\)/,
@@ -62,7 +62,7 @@ export function runNotificationGovernanceHardeningTests() {
   assertContains(
     systemSource,
     /logError\(`\[notifications\] \$\{context\} failed`,\s*\{\s*labels:\s*\{\s*event:\s*"notification_send_failed",\s*context\s*\},\s*error,?\s*\}\)/,
-    "shared failure logger must report to Sentry, not just console",
+    "shared failure logger must report through logError, not just console",
   );
   assertContains(
     systemSource,

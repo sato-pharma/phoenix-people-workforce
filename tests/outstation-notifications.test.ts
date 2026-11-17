@@ -230,7 +230,7 @@ export function runOutstationNotificationsTests() {
   );
 
   // Deeper audit finding F: the SLA reminder loop counted failures (errors++) but never
-  // reported them to Sentry — a systemic failure was only visible as a number buried in the
+  // logged them as errors — a systemic failure was only visible as a number buried in the
   // daily cron's JSON response body, with nothing that would ever alert anyone.
 
   const slaSlice = functionSlice(service, "export async function runOutstationSlaDaily");
@@ -241,7 +241,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     slaSlice,
     /catch \(error\) \{\s*logError\("Outstation SLA reminder failed for recipients", \{ labels: \{ event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", requestId: String\(row\.id\) \}, error \}\);\s*errors \+= approverHrIds\.length;\s*\}/,
-    "a failed SLA reminder send must be captured in Sentry, tagged with the affected request",
+    "a failed SLA reminder send must be logged as an error, tagged with the affected request",
   );
   assert.match(
     slaSlice,

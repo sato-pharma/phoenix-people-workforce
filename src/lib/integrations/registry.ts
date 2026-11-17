@@ -495,15 +495,6 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
 
   // ── Monitoring and backup ──────────────────────────────────────────────────────────────────────────────
   {
-    id: "sentry",
-    name: "Sentry",
-    provider: "Sentry",
-    category: "Monitoring and backup",
-    usedFor: "Collects errors from the server and from people's browsers.",
-    credential: { kind: "env", anyOf: [["SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN"]] },
-    health: { kind: "none", why: "Proved by hand on the Sentry Check page." },
-  },
-  {
     id: "nightly-backups",
     name: "Nightly backups",
     provider: "Railway service, to Google Drive",

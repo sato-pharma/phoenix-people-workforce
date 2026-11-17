@@ -232,7 +232,6 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/admin/seat-view/exit", permission: null, guard: "domain-helper" }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret in the Authorization: Bearer header ONLY, compared in constant time against BREVO_WEBHOOK_SECRET; a request carrying ?token= is refused (audit point 20, 2026-10-26)." }),
-  tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/sentry", reason: "Sentry alert webhook is protected by the HMAC-SHA256 signature in sentry-hook-signature, verified against SENTRY_WEBHOOK_SECRET; it only forwards a short error summary to the owner's Telegram." }),
   tokenApi({ authMode: "webhook-secret", methods: ["GET", "POST"], pattern: "/api/webhooks/whatsapp", reason: "GET is Meta's one-time verify-token handshake; POST is protected by the X-Hub-Signature-256 HMAC verified against WHATSAPP_APP_SECRET. Recruitment inbound CV intake." }),
   // Completes WhatsApp coexistence onboarding started on the public /whatsapp-connect page. No Phoenix
   // session exists (the owner runs it on a phone), so it needs a one-time connect link a Super Admin
@@ -355,9 +354,6 @@ export const accessRegistry = [
   // register and never touches source_of_sales_customer_map, so it cannot move sales attribution.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/pharmacy-search/save", permission: { resource: "sales", action: "import" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/logs", permission: { resource: "admin", action: "read" } }),
-  // The Sentry Check page's server half: Super Admin only (the `admin` resource is hard-locked to that seat), and on
-  // production it throws on purpose so Sentry sees a real request error. It reads and writes nothing of ours.
-  sessionApi({ methods: ["POST"], pattern: "/api/admin/sentry-check", permission: { resource: "admin", action: "read" }, csrfRequired: true }),
   // The System Error & Data Integrity Audit (/admin/system-audit), which replaced System Issues,
   // Monitoring, Error Monitor and Data Health on 23 Oct 2026. Super Admin only: every handler calls
   // assertSystemAdministratorWorkspaceAccess first — an in-route role gate rather than a permission

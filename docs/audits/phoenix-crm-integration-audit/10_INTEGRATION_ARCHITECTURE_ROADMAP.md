@@ -10,7 +10,7 @@ Some of the right patterns already exist, but only in places:
 |---|---|---|
 | One door per provider family, with failover | AI (OpenAI → Anthropic), e-mail (Resend → Brevo → Turbify) | Maps, push, messaging |
 | Deadlines on outbound calls | Most clients | Seven call sites, Zoom entirely (ISS-011) |
-| Signed inbound webhooks | Resend, WhatsApp, Telegram, scheduled routes | Brevo, Sentry replay window, machine endpoints (ISS-013, EX-47) |
+| Signed inbound webhooks | Resend, WhatsApp, Telegram, scheduled routes | Brevo, machine endpoints (ISS-013, EX-47) |
 | Heartbeats | 20 of 49 jobs outside-in; first-party heartbeat table for all | 29 jobs have no outside witness (ISS-001) |
 | Health endpoints | `/api/healthz` (revision) and `/api/readyz` (release gate, database, config) | No outside-in probe (INT-066) |
 
@@ -22,7 +22,7 @@ The direction is to make each of these patterns universal rather than to add new
 
 **Today:** the list of integrations lives in code, environment-variable names and operations notes; whether six optional integrations are live in production cannot be told from the repository (ISS-039).
 **Proposal:** a registry table — one row per integration with owner, provider, sidebar modules, data categories sent, credential name (never its value), last success, last failure and free-tier ceiling — seeded from report 02 (INT-063).
-**Module:** the registry needs a page. It is labelled `PROPOSED NEW MODULE — NOT PRESENT IN CURRENT SIDEBAR`; the natural home is the Platform group beside **Workflow Control**, **System Audit** and **Sentry Check**.
+**Module:** the registry needs a page. It is labelled `PROPOSED NEW MODULE — NOT PRESENT IN CURRENT SIDEBAR`; the natural home is the Platform group beside **Workflow Control** and **System Audit**.
 
 ### B. Standard health-check framework — HIGHLY RECOMMENDED
 
@@ -36,16 +36,16 @@ The direction is to make each of these patterns universal rather than to add new
 ### D. Centralized error handling — HIGHLY RECOMMENDED
 
 **Today:** 498 application errors in seven days with no view by cause (ISS-055); error types differ by client.
-**Proposal:** one outbound client (INT-064) that classifies every failure the same way — timeout, refused, rate-limited, authentication, provider error, bad response — and writes it with the provider name to the existing error log and to Sentry.
+**Proposal:** one outbound client (INT-064) that classifies every failure the same way — timeout, refused, rate-limited, authentication, provider error, bad response — and writes it with the provider name to the existing error log (`app_error_events`, read on the System Audit page; a new error there also sends one Telegram to the Super Admin).
 
 ### E. Integration observability — RECOMMENDED
 
-**Proposal:** a span per outbound call with provider, route, status and duration into the existing error tracker (INT-056); Core Web Vitals into the existing page-timing table (INT-052); hosted dashboards over the database metrics endpoint only if the team will read them (INT-055, CONDITIONAL).
+**Proposal:** Core Web Vitals into the existing page-timing table (INT-052); hosted dashboards over the database metrics endpoint only if the team will read them (INT-055, CONDITIONAL).
 
 ### F. Credential management — HIGHLY RECOMMENDED
 
 **Today:** the production secret set is mirrored into CI (ISS-054), a service key sits on a laptop by owner decision (ISS-046), a DNS token never expires (ISS-052), keys travel in URLs on three integrations (ISS-053).
-**Proposal:** the host is the one home for runtime secrets; CI keeps only what CI uses; encrypted secrets in the repository only through SOPS + age if they must live there (INT-074); database-side secrets in Supabase Vault (INT-076); tripwire tokens beside the real ones (INT-075); a key-redaction rule in the outbound client and the error reporter.
+**Proposal:** the host is the one home for runtime secrets; CI keeps only what CI uses; encrypted secrets in the repository only through SOPS + age if they must live there (INT-074); database-side secrets in Supabase Vault (INT-076); tripwire tokens beside the real ones (INT-075); a key-redaction rule in the outbound client and the app's own error log.
 
 ### G. Retry and fallback framework — RECOMMENDED
 
@@ -73,6 +73,6 @@ The direction is to make each of these patterns universal rather than to add new
 | 1 — Stop silent failures | Outside-in monitor, freshness alarm for every job, punch alarm, long jobs off the 30-second cut | INT-066, INT-068, INT-070, INT-061 |
 | 2 — Close exposures | Secret alert, repository visibility decision, sign-up off, second factor, redirect check on applicant links, security updates on | ISS-023, ISS-021/056, ISS-004, INT-005, ISS-015, INT-089 |
 | 3 — Recovery | Nightly encrypted database dump off-site, quarterly restore drill, standby rehearsal | INT-096, INT-097, ISS-038 |
-| 4 — One outbound client | Deadlines, retries, error classes, key redaction, usage counts | INT-064, INT-056 |
+| 4 — One outbound client | Deadlines, retries, error classes, key redaction, usage counts | INT-064 |
 | 5 — Registry and status page | Registry table, status page (proposed module), provider status feeds | INT-063 |
 | 6 — Provider changes | Business-safe tiles, standard web push, one inbound-webhook verifier, removals | INT-021, INT-041, INT-073, EX-10/24/41/45/48/49 |

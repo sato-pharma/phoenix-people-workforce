@@ -338,8 +338,8 @@ function logPortalDebug(message: string, payload?: unknown) {
  *
  * Every one of these used to go through logPortalDebug, which discards its arguments. The
  * caller then returned an empty array, so a failed payslip or sales read rendered as
- * "no payslips" / no sales — identical to the honest empty state, and invisible in logs,
- * Sentry and app_error_events alike. An employee looking at an empty Payslips tab had no way
+ * "no payslips" / no sales — identical to the honest empty state, and invisible in logs
+ * and app_error_events alike. An employee looking at an empty Payslips tab had no way
  * to tell "you have none" from "we could not read them", and neither did anyone supporting
  * them.
  *

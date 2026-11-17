@@ -84,9 +84,7 @@ async function loadFeedbackAuthUsers(): Promise<FeedbackAuthUser[] | null> {
 
 /**
  * The two role reads every probation reminder needs, shared across ONE processing run. Reading them per
- * employee made the cron's step an N+1 (Sentry PHOENIX-WORKFORCE-4: 30 identical `app_auth_users`
- * selects in one request — the page shows them as "GET [Filtered]" because Sentry hides any URL naming
- * "auth"). The copy lives only inside the run that created it. A failed read is never kept, so one
+ * employee made the cron's step an N+1 (30 identical `app_auth_users` selects in one request). The copy lives only inside the run that created it. A failed read is never kept, so one
  * blip costs the employees it hit and not every employee left in the run: an empty approver list falls
  * back to a fresh read, and a failed role read is asked again by the next employee.
  */

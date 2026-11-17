@@ -103,7 +103,7 @@ export function runApprovalsHubTests() {
   // ── Swallowed loader failures log at the RIGHT severity ──────────────────────
   // A "Forbidden: …" rejection is the permission gate working, not a fault. Logging it at
   // ERROR made a single unauthenticated GET of an approvals page emit ERROR-severity Cloud Run
-  // entries, polluting error dashboards and Sentry error-rate alerting. Every catch-and-log in
+  // entries, polluting error dashboards and error-rate alerting. Every catch-and-log in
   // this service must therefore go through logLoadFailure, which downgrades permission denials
   // to DEBUG and keeps genuine failures at ERROR.
   assert.doesNotMatch(

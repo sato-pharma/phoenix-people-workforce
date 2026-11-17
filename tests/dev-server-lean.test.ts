@@ -115,8 +115,7 @@ type WebpackHook = (config: Record<string, unknown>, context: { dev: boolean; is
 
 /**
  * The hook exactly as next.config.ts writes it, compiled and run here. Not through Next's own config
- * loader: that loader re-reads .env.local and rewrites process.env for the whole test process, and
- * with a Sentry build token in .env.local it hands back Sentry's wrapper instead of this hook.
+ * loader: that loader re-reads .env.local and rewrites process.env for the whole test process.
  */
 function loadTheHookFromNextConfig(): WebpackHook {
   const source = readFileSync(resolve("next.config.ts"), "utf8");

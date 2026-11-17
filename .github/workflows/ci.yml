@@ -516,7 +516,7 @@ jobs:
           # (src/lib/auth/ci-smoke-login.ts) needs APP_ENV to be exactly "ci" AND the flag. No real
           # deployment carries APP_ENV=ci, so a stray PHOENIX_CI_SMOKE_LOGIN can never open the
           # published a-12 password there. Side effect, intended: isProductionRuntime() is false for
-          # this run, so the production-only heartbeats, drift checks and Sentry stay off.
+          # this run, so the production-only heartbeats and drift checks stay off.
           APP_ENV: ci
           PHOENIX_CI_SMOKE_LOGIN: "true"
 

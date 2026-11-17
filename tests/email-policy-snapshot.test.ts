@@ -11,8 +11,8 @@ import { getSupabaseAdmin } from "../src/lib/supabase/server.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
- * The outbox drain used to read the whole email-policy table once per email. Sentry named it the
- * "N+1 API Call" on GET /api/notifications/process (PHOENIX-WORKFORCE-4): ten emails, ten identical
+ * The outbox drain used to read the whole email-policy table once per email — an
+ * "N+1 API Call" on GET /api/notifications/process: ten emails, ten identical
  * selects. `resolveNotificationDelivery` needs ONE type's policy and the only read available was the
  * whole table's.
  *
@@ -165,7 +165,7 @@ export async function runEmailPolicySnapshotTests() {
       inRun.policyReads,
       1,
       "five emails resolved inside one drain run must read email_notification_policies ONCE — "
-        + "one identical select per email is the N+1 Sentry reported on /api/notifications/process",
+        + "one identical select per email is the N+1 once seen on /api/notifications/process",
     );
     assert.equal(inRun.requests, 1, "and nothing else is requested while a disabled type is refused");
 

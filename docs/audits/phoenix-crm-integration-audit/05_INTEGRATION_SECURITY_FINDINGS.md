@@ -61,18 +61,17 @@ Either way, the runner guide must be corrected now (ISS-021).
 | Anthropic (EX-22) | The same prompts, as failover | Yes | No | Provider API policy — NOT VERIFIED | One server key | Console | Yes | Yes |
 | Groq (EX-23) | Dictated voice clips (one browser path) | Possibly — doctor or employee names spoken | No | NOT VERIFIED | One server key | NOT VERIFIED | NOT VERIFIED | Yes (ISS-040) |
 | Resend, Brevo, Turbify (EX-25/26/27) | E-mail recipients, subjects and bodies | Yes | No | Provider logs — NOT VERIFIED | Send-only key (Resend); mailbox passwords (Turbify) | Delivery events stored in the app | Yes | Yes |
-| Telegram (EX-29) | Notice text to 54 linked users | Yes — names and request details in notices | No | Messages stay in users' chats | Bot token server-only | None beyond the app's own log | Yes for notices | Yes |
+| Telegram (EX-29) | Notice text to 54 linked users; one scrubbed alert per new application error to the Super Admin | Yes — names and request details in notices | No | Messages stay in users' chats | Bot token server-only | None beyond the app's own log | Yes for notices | Yes |
 | Meta WhatsApp (EX-31) | Candidate messages and templates | Yes — candidates' phone numbers and names | No | Meta policy — NOT VERIFIED | Signed webhook | Meta business manager | Yes | Yes |
 | OneSignal (EX-30) | Device push identifiers and notice text | Limited | No (public app id only) | Vendor — NOT VERIFIED | REST key server-only | Vendor dashboard | Yes, with a vendor script in the worker scope | Yes |
 | Google Maps (EX-17/18) | Addresses, coordinates of pharmacies and visits | Location of field staff can be inferred | The browser map key is public by design; its referrer restriction is NOT VERIFIED | Google terms | Key restrictions — NOT VERIFIED (console not read) | Cloud console | Yes | Yes — field location data |
 | Google Drive, Sheets (EX-33/34) | CV files; report rows to managers' sheets | Yes | No | Under company Google account | OAuth / service account | Google Workspace audit | Yes | Yes |
-| Sentry (EX-32) | Error reports, traces, replays on error (text and inputs masked) | Limited — URLs, user ids | DSN only (public by design) | Per plan — NOT VERIFIED | Org membership | Sentry audit log — NOT VERIFIED | Yes (EU region) | Yes |
 | GitHub (EX-12/14) | Source code and CI secrets — no employee data found in the tree | No employee data | n/a | Under company control | Repository roles | Organisation audit log | Yes | No for code; yes for the secret mirror (ISS-054) |
 | Google Drive backup (EX-53) | Encrypted code archive | No — encrypted before it leaves | No | Company-controlled | Restore key kept off the host | Google | Yes | No |
 | OpenStreetMap tiles, Google Fonts (EX-20/45) | Reader's IP address and referrer | IP only | No | Provider | n/a | n/a | Tile policy does not cover business use (ISS-012) | Low |
 | Cloudflare (EX-46), Healthchecks.io (EX-04), cron-job.org (EX-03) | DNS queries; job pings; scheduled calls carrying a secret | No | No | Provider | Account | Provider | Yes | No |
 
-**Not sent anywhere:** first-party telemetry (EX-56), the document libraries (EX-52), headless Chromium (EX-50) and the exchange-rate lookup (EX-44) send no personal data.
+**Not sent anywhere:** first-party telemetry (EX-56 — error rows stay in the app's own `app_error_events` table; only the scrubbed new-error alert above goes out, by Telegram), the document libraries (EX-52), headless Chromium (EX-50) and the exchange-rate lookup (EX-44) send no personal data.
 
 ## 5. Rules for every new integration in this audit
 

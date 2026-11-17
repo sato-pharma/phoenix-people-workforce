@@ -255,21 +255,6 @@
     "verified_on": "2026-11-13"
   },
   {
-    "slug": "opentelemetry-js",
-    "name": "OpenTelemetry JavaScript",
-    "provider": "OpenTelemetry (CNCF)",
-    "docs_url": "https://github.com/open-telemetry/opentelemetry-js",
-    "pricing_url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-js/HEAD/LICENSE",
-    "license": "Apache-2.0",
-    "free_limits": "none for the SDK; the backend that receives the telemetry is separate",
-    "commercial_use": "allowed",
-    "hosting_required": "none (library); needs an OTLP-compatible backend or collector to send to",
-    "suggested_class": "F3 free open source",
-    "verified": true,
-    "verification_note": "LICENSE opened: Apache License 2.0; repo sidebar agrees. Docs: https://opentelemetry.io/docs/languages/js/getting-started/ (link read on repo page).",
-    "verified_on": "2026-11-13"
-  },
-  {
     "slug": "n8n",
     "name": "n8n (self-hosted Community edition)",
     "provider": "n8n GmbH",
@@ -540,21 +525,6 @@
     "verified_on": "2026-11-13"
   },
   {
-    "slug": "csp-reporting",
-    "name": "CSP violation reporting (Reporting API, report-to, report-uri)",
-    "provider": "W3C (documented on MDN)",
-    "docs_url": "https://developer.mozilla.org/en-US/docs/Web/API/Reporting_API",
-    "pricing_url": "https://raw.githubusercontent.com/mdn/browser-compat-data/main/http/headers/Content-Security-Policy.json",
-    "license": "W3C/WHATWG/IETF standard — no licence fee",
-    "free_limits": "Reporting API on MDN: 'Baseline 2026 — Newly available. Since March 2026, this feature works across the latest devices and browser versions', 'Some parts of this feature may have varying levels of support.' The `Report-To` HEADER is 'No longer part of the Reporting API but still supported by some browsers' - use `Reporting-Endpoints`. CSP `report-uri` is marked Deprecated, and 'in browsers that support report-to, the report-uri directive is ignored'; MDN: 'until report-to is broadly supported you can specify both'. Compatibility data: CSP report-to - Chrome 70, Safari 16.4, Firefox 149 (very recent); report-uri - Chrome 25, Firefox 23, Safari 7.",
-    "commercial_use": "allowed",
-    "hosting_required": "none (browser API / HTTP headers); needs an endpoint in the app to receive the reports",
-    "suggested_class": "F1 genuinely free (standards, browser APIs)",
-    "verified": true,
-    "verification_note": "Opened the MDN Reporting API page, the MDN report-uri page (https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/report-uri) and MDN's compat-data for the Content-Security-Policy header. Send both directives: Firefox only gained report-to in 149 and older browsers still need report-uri. The two report body formats differ (application/reports+json vs application/csp-report) - from memory, not read today.",
-    "verified_on": "2026-11-13"
-  },
-  {
     "slug": "icalendar",
     "name": "iCalendar (RFC 5545) and iMIP (RFC 6047)",
     "provider": "IETF",
@@ -672,21 +642,6 @@
     "suggested_class": "F1 genuinely free (standards, browser APIs)",
     "verified": true,
     "verification_note": "RFC 9116 opened: 'A File Format to Aid in Security Vulnerability Disclosure', Informational (not Standards Track), April 2022. The Expires field means the file needs renewing at least yearly.",
-    "verified_on": "2026-11-13"
-  },
-  {
-    "slug": "otlp",
-    "name": "OpenTelemetry Protocol (OTLP)",
-    "provider": "OpenTelemetry (CNCF)",
-    "docs_url": "https://opentelemetry.io/docs/specs/otlp/",
-    "pricing_url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-proto/HEAD/LICENSE",
-    "license": "Apache-2.0 (opentelemetry-proto, the protocol definitions)",
-    "free_limits": "none for the protocol. OTLP Specification 1.11.1: 'Stable for the trace, metric and log signals'; profiles still in development. Transports: OTLP/gRPC (default port 4317), OTLP/HTTP with binary Protobuf or JSON (default port 4318).",
-    "commercial_use": "allowed",
-    "hosting_required": "none (wire protocol); needs a receiving backend or collector",
-    "suggested_class": "F1 genuinely free (standards, browser APIs)",
-    "verified": true,
-    "verification_note": "Opened the OTLP specification page and the LICENSE of open-telemetry/opentelemetry-proto (Apache License 2.0).",
     "verified_on": "2026-11-13"
   },
   {

@@ -92,22 +92,6 @@ if (has("ANTHROPIC_API_KEY")) {
   await probe("T-AI-02", "Anthropic", "list models (free, read-only)", "https://api.anthropic.com/v1/models", { headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" } }, (b) => (Array.isArray(b?.data) ? `models_visible=${b.data.length}` : `error=${b?.error?.type ?? ""}`));
 } else skip("T-AI-02", "Anthropic", "models", "ANTHROPIC_API_KEY not in .env.local");
 
-// ── Sentry ──────────────────────────────────────────────────────────────────────────────────
-if (has("SENTRY_AUTH_TOKEN")) {
-  await probe("T-SE-01", "Sentry", "token is accepted; organizations and projects visible to it", "https://sentry.io/api/0/projects/", { headers: { Authorization: `Bearer ${env.SENTRY_AUTH_TOKEN}` } }, (b) =>
-    Array.isArray(b) ? `projects=${b.length} platforms=${[...new Set(b.map((p) => p.platform))].join("|")} orgs=${new Set(b.map((p) => p.organization?.slug)).size}` : `detail=${(b?.detail ?? "").slice(0, 100)}`,
-  );
-} else skip("T-SE-01", "Sentry", "projects", "SENTRY_AUTH_TOKEN not in .env.local");
-const dsn = env.SENTRY_DSN || env.NEXT_PUBLIC_SENTRY_DSN;
-if (dsn) {
-  try {
-    const parsed = new URL(dsn);
-    results.push({ id: "T-SE-02", integration: "Sentry", objective: "DSN is well-formed and names an ingest host (no event sent)", at: new Date().toISOString(), http: "n/a", ms: 0, note: `ingest_host_suffix=${parsed.host.split(".").slice(-3).join(".")} project_id_present=${parsed.pathname.length > 1}` });
-  } catch {
-    results.push({ id: "T-SE-02", integration: "Sentry", objective: "DSN is well-formed", at: new Date().toISOString(), http: "n/a", ms: 0, note: "DSN did not parse as a URL" });
-  }
-}
-
 // ── Healthchecks.io (management API, read-only listing — no ping) ───────────────────────────
 if (has("HEALTHCHECKS_API_KEY")) {
   await probe("T-HC-01", "Healthchecks.io", "list checks with status, period and grace (no ping sent)", "https://healthchecks.io/api/v3/checks/", { headers: { "X-Api-Key": env.HEALTHCHECKS_API_KEY } }, (b) => {

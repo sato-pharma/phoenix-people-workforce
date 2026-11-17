@@ -346,7 +346,7 @@ export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
 
 /**
  * The jobs that hold a Healthchecks.io check, and the ONLY jobs that ping it. Every other declared job
- * is watched in-house alone (the register above, swept every 15 minutes, plus Sentry's check-in).
+ * is watched in-house alone (the register above, swept every 15 minutes).
  *
  * 🔴 WHY A LIST, AND NOT "EVERY JOB PINGS WITH ?create=1 AND HEALTHCHECKS SORTS IT OUT". Until 12 Nov
  * 2026 all 42 wired jobs pinged, and the 15 with no check were refused with a 404 on every run - about

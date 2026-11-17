@@ -62,9 +62,9 @@ export function runFallbackImageDeployTests(): void {
     assert.deepEqual([...BUILD_VALUE_NAMES].sort(), declared, "BUILD_VALUE_NAMES must equal the Dockerfile's NEXT_PUBLIC_* ARG list");
     for (const name of REQUIRED_BUILD_VALUES) assert.ok(BUILD_VALUE_NAMES.includes(name), `${name} is required and must be a build value`);
 
-    const rendered = renderBuildValues({ NEXT_PUBLIC_APP_URL: "  https://phoenix.example ", NEXT_PUBLIC_SENTRY_DSN: "" });
+    const rendered = renderBuildValues({ NEXT_PUBLIC_APP_URL: "  https://phoenix.example ", NEXT_PUBLIC_ONESIGNAL_APP_ID: "" });
     assert.match(rendered.text, /^NEXT_PUBLIC_APP_URL='https:\/\/phoenix\.example'\n$/, "values are trimmed (a leading space has been seen) and single-quoted");
-    assert.ok(rendered.missing.includes("NEXT_PUBLIC_SENTRY_DSN"), "an empty value is reported as unset, never written empty");
+    assert.ok(rendered.missing.includes("NEXT_PUBLIC_ONESIGNAL_APP_ID"), "an empty value is reported as unset, never written empty");
     assert.equal(rendered.present, 1);
     assert.equal(shellQuote("a'b"), `'a'\\''b'`, "an embedded single quote is closed, escaped and reopened");
   }
@@ -107,7 +107,6 @@ export function runFallbackImageDeployTests(): void {
       "tools, then copy, then the build checkout",
     );
     assert.ok(!/--out build-values\.env|\. \.\/build-values\.env/.test(imageJob), "the generated values file stays out of the Docker build context");
-    assert.ok(!/SENTRY_AUTH_TOKEN/.test(workflow), "a fallback build must not depend on, or spend, the source-map upload credential");
     assert.ok(!/--no-verify|continue-on-error: true/.test(workflow), "nothing in the fallback may be made optional");
   }
 

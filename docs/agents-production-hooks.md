@@ -55,11 +55,11 @@ production-ops guidance. They stay in the index.
   and it concluded `failure` at 22:35:35Z — Railway marked the deployment SKIPPED at 22:35:40Z, five
   seconds later. So `gh run list --workflow=ci.yml` can read fully green on a withheld commit; read
   `gh api repos/<repo>/commits/<sha>/check-suites` instead. 🔴 **And read them with the right
-  expectation: `sentry`, `claude` and `railway-app` are `queued` on EVERY commit and never
-  report** (`vercel` was a fourth until the account move on 2026-10-27; its app is not installed on
+  expectation: `claude` and `railway-app` are `queued` on EVERY commit and never
+  report** (`vercel` was a third until the account move on 2026-10-27; its app is not installed on
   `it-gawish-hr`) — `1825e0b45` and `b91bd8c0c` both deployed `success` with all of them queued — so a
   *failed or cancelled* suite is the thing that withholds, a still-*running* Actions suite is the gate
-  working, and those four are neither. The two-hour timeout is
+  working, and those suites are neither. The two-hour timeout is
   the case for a suite that never finishes at all; do not wait two hours before believing a red merge
   was withheld. 🔴 **And re-running that CI GREEN afterwards does NOT resurrect the deploy** — main's
   head was green from 23:11 Cairo and production stayed on the older commit. `railway deployment list`
@@ -1035,8 +1035,8 @@ and cost every request to hold, so they live here now and the rules stay there:
   ALL green and the deploy was withheld by `deploy-drift-check.yml`'s own scheduled run, because a
   scheduled workflow attaches its check suite to whatever commit is `main` HEAD when it fires. Fixed,
   and pinned by `tests/deploy-drift-settled-ref.test.ts`.
-- **The third-party suites** — `sentry`, `claude`, `railway-app`, and `vercel` until the account move
-  on 2026-10-27 (three since: read live on `618a1ebda`) — were measured sitting at `queued` forever on
+- **The third-party suites** — `claude`, `railway-app`, and `vercel` until the account move
+  on 2026-10-27 (two since: read live on `618a1ebda`) — were measured sitting at `queued` forever on
   two commits that deployed `success`, which is why they never hold the gate and are never worth chasing.
 - **Dependabot, which is not a workflow in this repository at all**, 2026-09-30: it cannot patch a
   TRANSITIVE advisory (`allowed-updates: direct`), so it retried, failed, and attached a red suite to

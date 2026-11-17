@@ -109,7 +109,7 @@ The third WhatsApp number, used only for approval reminders, is asked as well, b
 `WHATSAPP_PHONE_NUMBER_IDS`, so a fault on it can never read as the recruitment intake being down.
 
 🔴 **What this cannot see is printed on the board and the Sunday email, as a fixed line:** Supabase invoices, Railway
-standing, GitHub billing, OneSignal, Google Maps, Sentry and cron-job.org. Production holds no key that can read the
+standing, GitHub billing, OneSignal, Google Maps and cron-job.org. Production holds no key that can read the
 first two, and putting an account-wide key in production is not proposed. **It would have caught GitHub on 2 Nov, and it
 would not have caught the Supabase banner.** The line is a constant rather than an item, so it can never block the
 all-clear for ever.

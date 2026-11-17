@@ -1245,24 +1245,24 @@ session never proposes it as the default.
 Measured on the box's own `.next/dev/server` output (phx-live, base `f72f4149c`, after compiling only
 `/login`): **108 MB** of compiled server code. **56 MB** of it was the start-up hook
 (`instrumentation.ts`): the CRM live poller, CRM housekeeping and Early Birds close scheduler chunks —
-**465 repo files** — plus a 6 MB edge copy that was almost all Sentry. Another **~20 MB** was the
-Sentry SDK's vendor chunks. The login page itself was 3 MB. None of it can run under `next dev`: the
+**465 repo files** — plus a 6 MB edge copy that was almost all the outside error tracker's SDK (since retired). Another
+**~20 MB** was that SDK's vendor chunks. The login page itself was 3 MB. None of it can run under `next dev`: the
 three schedulers refuse a non-production build (`resolveInProcessHostRefusal`), process-health returns
-on `NODE_ENV`, and Sentry is gated on `APP_ENV=production` plus a DSN.
+on `NODE_ENV`, and the error tracker was gated on `APP_ENV=production` plus a DSN.
 
 🔴 **Why the guards did not prune it.** Next replaces `process.env.NODE_ENV` and
 `process.env.NEXT_RUNTIME` with literals while it compiles, and webpack drops a dynamic `import()` only
 inside a BLOCK whose test is then a literal. Code after an early `return` is compiled anyway, and a
-runtime guard (`sentryServerStatus(...)`, `PHOENIX_LIVE_CRM_POLL`) prunes nothing. The proof was in the
+runtime guard (the error tracker's status check, `PHOENIX_LIVE_CRM_POLL`) prunes nothing. The proof was in the
 same output: the block-form `if (NEXT_RUNTIME === "nodejs") {…}` kept the schedulers out of the edge
-bundle, while `forwardRequestErrorToSentry`'s `if (NEXT_RUNTIME !== "nodejs") return;` let the whole SDK
-into it.
+bundle, while the error tracker's request-error forwarder, with `if (NEXT_RUNTIME !== "nodejs") return;`,
+let the whole SDK into it.
 
 **The fix (one PR).**
-- `instrumentation.ts`: the Sentry boot import, the three schedulers and process-health sit inside
+- `instrumentation.ts`: the error tracker's boot import, the three schedulers and process-health sit inside
   `if (process.env.NODE_ENV === "production") { … }` blocks; the request-error hook's two tests are
   nested blocks, never early returns.
-- `src/lib/observability/dead-mans-switch.ts`: `checkInSentry`'s import sits in the same block, so the
+- `src/lib/observability/dead-mans-switch.ts`: the tracker's cron check-in import sits in the same block, so the
   44 files that import the switch stop compiling the SDK in dev.
 - The portal sidebar's Phoenix CRM gate moved to `src/lib/phoenix-crm/server/sidebar-entries.ts`, which
   never imports `loadPhoenixCrmOverview` (227 files the gate never calls); `page.ts` re-exports it.
@@ -1270,20 +1270,20 @@ into it.
   strings and their owners re-export them, so the hub imports nothing from sales or vacation.
 
 Production is unchanged: it is always a production build, so every block is `if (true)` there and the
-policy checks inside still decide. Pinned by `tests/sentry-production-only.test.ts`,
+policy checks inside still decide. Pinned by the error tracker's production-only test (removed with it),
 `tests/process-health.test.ts`, `tests/phoenix-crm-portal-sidebar.test.ts` (3a) and
 `tests/org-tree-cache-invalidation.test.ts`; each new assertion was watched failing against its own
 break.
 
 **Projected, from a static import graph of the repo — NOT measured:** start-up 465 → 24 repo files and
-no Sentry SDK; the portal layout 728 → 475 files; the navigation route 675 → 422; 1,167 of 1,616
+no error-tracker SDK; the portal layout 728 → 475 files; the navigation route 675 → 422; 1,167 of 1,616
 pages, routes and layouts smaller, 14.9% fewer files summed. It was not measured on the box because
 another session restarted phx-live there at 18:33 Cairo for its own branch, and that server was not
 this work's to stop; the laptop had 1.3 GB free. The control to compare against, same six requests on
 the box before the change: peak 6,802 MB, 514 MemoryHigh hits, `/login` cold 10.7 s, the navigation
 route 23.2 s, the approvals hub 4.6 s. The proof that needs no measurement: a dev boot prints
 `[schedulers] not started: not a production build`, and production's boot log still prints its
-`[crm:live-poll]` and `[sentry]` lines.
+`[crm:live-poll]` and error-tracker start-up lines.
 
 ## A browser look at pushed code goes on the Hetzner preview box, not a local dev server
 
@@ -1409,7 +1409,7 @@ keys, the project id and ref, the Maps keys and the Google Calendar keys. It add
 `PHOENIX_APP_URL=http://localhost:3000`, `PHOENIX_EMAIL_FORCE_TESTING=true`,
 `PHOENIX_ENABLE_DEV_AUTH_HEADERS=false`, a random `PHOENIX_AUTH_SECRET` and `PHX_LIVE=1`, and prints
 key NAMES only. Never on the box: `SUPABASE_DB_URL`, Resend, `EMAIL_NOTIFICATIONS_ENABLED`, Telegram,
-OneSignal, OpenAI, the mailbox, iReports360, cron-job, Cloudflare, Action1 or the Sentry auth token.
+OneSignal, OpenAI, the mailbox, iReports360, cron-job, Cloudflare or Action1.
 `install-env-staging` builds the same file from the box's staging preview env, for testing.
 
 **Idle stop.** `/home/phx/preview-idle-reaper.sh` maps port 3100 to `/home/phx/live.log`, and stops
@@ -1428,8 +1428,8 @@ is idempotent and is what created all of this. Measured the same evening, on sta
   prints nothing (the forced command runs instead) and `ssh phxtunnel … id` answers "This account is
   currently not available".
 - **The env is only the allowlist**: 15 keys, zero matches for Resend, Telegram, OneSignal, OpenAI,
-  `SUPABASE_DB_URL`, `EMAIL_NOTIFICATIONS_ENABLED`, the mailbox, iReports360, cron-job, Cloudflare,
-  Action1 or the Sentry token. The `PHOENIX_AUTH_SECRET` hashes differently from the preview env's.
+  `SUPABASE_DB_URL`, `EMAIL_NOTIFICATIONS_ENABLED`, the mailbox, iReports360, cron-job, Cloudflare
+  or Action1. The `PHOENIX_AUTH_SECRET` hashes differently from the preview env's.
 - **`/admin/dev-preview` answers 200** through the tunnel with dev-auth headers, and renders "Dev
   Preview — Real Data"; the same request with `Host: phoenix-hr.satopharma.com` is redirected (307),
   so the loopback gate is what opens it.

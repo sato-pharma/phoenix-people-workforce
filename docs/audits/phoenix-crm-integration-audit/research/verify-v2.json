@@ -15,36 +15,6 @@
     "verified_on": "2026-11-13"
   },
   {
-    "slug": "sentry-plans",
-    "name": "Sentry Developer (free) and Team plans",
-    "provider": "Sentry (Functional Software, Inc.)",
-    "docs_url": "https://docs.sentry.io/pricing/",
-    "pricing_url": "https://sentry.io/pricing/",
-    "free_limits": "Developer (free): 1 user, 5k errors, 50 replays, 5M spans, 1 GB attachments, 5 GB logs, 1 cron monitor, 1 uptime monitor. Team: $29/month ($26/month billed annually), unlimited users, 50k errors, 50 replays, 5M spans, 1 GB attachments, 5 GB logs, 1 cron monitor, 1 uptime monitor. Extra monitors are pay-as-you-go: $0.78 per additional cron monitor and $1.00 per additional uptime monitor per month (docs: 'All Sentry plans include one cron monitor and one uptime monitor').",
-    "commercial_use": "Allowed (no non-commercial clause on the pricing page read); the binding limit on Developer is 1 user.",
-    "auth_required": "Sentry account; DSN for SDK ingestion; auth token for API.",
-    "attribution_or_license_terms": "Hosted SaaS. No attribution requirement seen. Self-hosted Sentry licence was not checked in this pass.",
-    "suggested_class": "F2 permanent free tier with limits",
-    "verified": true,
-    "verification_note": "Confirmed on sentry.io/pricing and docs.sentry.io/pricing: only ONE cron monitor and ONE uptime monitor are included on every plan including Team; extras are $0.78 (cron) and $1.00 (uptime) each from the pay-as-you-go budget. Whether a free Developer org can buy extra monitors without upgrading was not confirmed (the docs describe PAYG for Team and Business). Developer is limited to 1 user.",
-    "verified_on": "2026-11-13"
-  },
-  {
-    "slug": "sentry-csp",
-    "name": "Sentry Security Policy Reporting (CSP report-uri / report-to)",
-    "provider": "Sentry (Functional Software, Inc.)",
-    "docs_url": "https://docs.sentry.io/platforms/javascript/security-policy-reporting/",
-    "pricing_url": "https://docs.sentry.io/pricing/quotas/",
-    "free_limits": "No separate quota: CSP reports are ingested as events through the project's Security Header endpoint (https://o<orgId>.ingest.sentry.io/api/<project-id>/security/?sentry_key=<public-key>). Inbound-filtered events do not consume quota.",
-    "commercial_use": "Allowed (part of the Sentry product on every plan).",
-    "auth_required": "Only the project's public key (sentry_key) in the report URL; no secret.",
-    "attribution_or_license_terms": "None seen.",
-    "suggested_class": "F2 permanent free tier with limits",
-    "verified": false,
-    "verification_note": "PARTIAL. Confirmed by direct read: Sentry supports capturing CSP violations via report-uri and report-to (docs recommend specifying both). NOT confirmed by direct read: that CSP reports count against the error quota. The quota docs do not mention CSP. A Sentry help-centre article surfaced in search ('Are messages without errors also counted as errors?', sentry.zendesk.com) is summarised as saying event.type csp counts toward the error quota, but the article itself returned a sign-in page, so this rests on the search snippet only. The filtering docs do confirm 'Filtered events do not consume quota'. Treat as: yes, CSP reports spend error quota (5k/month on Developer) unless filtered. Expect-CT / HPKP are not mentioned on the current page. The originally cited URL docs.sentry.io/security-legal-pii/security/security-policy-reporting/ now redirects to a platform chooser.",
-    "verified_on": "2026-11-13"
-  },
-  {
     "slug": "healthchecks-io",
     "name": "Healthchecks.io",
     "provider": "SIA Monkey See Monkey Do (Healthchecks.io)",

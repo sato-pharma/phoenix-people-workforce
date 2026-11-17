@@ -3,8 +3,8 @@
  *
  * 🔴 THE HEADLINE: A LIVE MAILBOX CREDENTIAL MUST NOT REACH THE LOGS. The report reads the App
  * Passwords page at the exact moment that page is DISPLAYING the app password the robot has just
- * minted. A naive dump of its text would write a working credential into Railway's logs and into
- * Sentry, where it would sit for anyone with log access. Every assertion below exists to prove that
+ * minted. A naive dump of its text would write a working credential into Railway's logs, where it
+ * would sit for anyone with log access. Every assertion below exists to prove that
  * cannot happen — by exact match for the secrets in hand, and by shape for anything else.
  *
  * The second property: it is OFF unless the flag is exactly "true". It writes page structure into a

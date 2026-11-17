@@ -122,7 +122,7 @@ export async function runSessionUnavailableCrashScreenTests() {
   const portal = readFileSync(new URL("../app/employee-portals/error.tsx", import.meta.url), "utf8");
   assert.match(portal, /if \(isSessionVerificationUnavailableDigest\(error\)\) return;/);
 
-  // 7. Sentry's browser forwarder recognises the redacted copy in the spelling browsers really send.
+  // 7. The new-error alert recognises the redacted copy in the spelling browsers really send, and skips it.
   assert.equal(
     isRedactedServerRenderError(
       "Minified React error #441; visit https://react.dev/errors/441 for the full message or use the non-minified dev environment",

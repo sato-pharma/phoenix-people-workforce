@@ -11,8 +11,7 @@
 // Exit: 0 clean · 1 new errors · 2 too early (NOT a pass) · 3 not live · 4 not merged · 5 cannot tell.
 //
 // READ-ONLY EVERYWHERE: GitHub (the PR, the compare, the production deployments), the production health probe,
-// the production app_error_events table (service role, from .env.local), and Sentry when SENTRY_READ_TOKEN is
-// set. It writes nothing anywhere. The ship skill runs it after verify-shipped.mjs answers SHIPPED
+// the production app_error_events table (service role, from .env.local). It writes nothing anywhere. The ship skill runs it after verify-shipped.mjs answers SHIPPED
 // (.claude/skills/ship/SKILL.md, phase 7b). The decisions live in scripts/lib/post-deploy-errors.mjs.
 
 import { execFileSync } from "node:child_process";
@@ -33,7 +32,6 @@ import {
   hasProductionSuccess,
   postDeployVerdict,
   readErrorRows,
-  readSentryIssues,
 } from "./lib/post-deploy-errors.mjs";
 
 refuseUnknownFlags({
@@ -151,7 +149,7 @@ async function readOnce(classifierLoad) {
 
   // 1 · the merge
   if (shaArg) {
-    // Always the FULL sha. Releases on error rows and Sentry events are stamped with all 40
+    // Always the FULL sha. Releases on error rows are stamped with all 40
     // characters, so a short `--sha` matched none of them: the merge's own errors fell into the
     // baseline and the verdict read CLEAN (code review, 19 Oct 2026).
     const commit = gh(["api", `repos/${REPO}/commits/${shaArg}`]);
@@ -214,10 +212,7 @@ async function readOnce(classifierLoad) {
     }
   }
 
-  // 5 · Sentry, when a token that can read it exists
-  out.sentry = await readSentryIssues({ token: process.env.SENTRY_READ_TOKEN, releases: out.releases });
-
-  out.verdict = postDeployVerdict({ appRead, fresh: out.app?.fresh ?? [], sentry: out.sentry, liveMinutes: out.liveMinutes, windowMinutes });
+  out.verdict = postDeployVerdict({ appRead, fresh: out.app?.fresh ?? [], liveMinutes: out.liveMinutes, windowMinutes });
   return out;
 }
 
@@ -234,14 +229,6 @@ function render(out) {
       L.push(`       ${g.count}× · first ${cairo(g.firstAt)} · last ${cairo(g.lastAt)}${g.modules.length ? ` · ${g.modules.join(", ")}` : ""}${g.routes.length ? ` · ${g.routes.slice(0, 5).join(", ")}` : ""}`);
     }
     for (const g of out.app.recurring.slice(0, 5)) L.push(`  recurring  ${g.count}× ${g.source} · ${g.message}`);
-  }
-  if (out.sentry) {
-    if (!out.sentry.read) L.push(`  Sentry         not read: ${out.sentry.reason}`);
-    else {
-      L.push(`  Sentry         ${out.sentry.fresh.length + out.sentry.recurring.length} issue(s) in these releases: ${out.sentry.fresh.length} new, ${out.sentry.recurring.length} recurring${out.sentry.capped ? " (the first 100 by events)" : ""}`);
-      for (const i of out.sentry.fresh) L.push(`  SENTRY NEW  ${i.shortId} · ${i.title} · ${i.count} events, ${i.users} users · first ${cairo(i.firstSeen)}${i.link ? ` · ${i.link}` : ""}`);
-      for (const i of out.sentry.recurring.slice(0, 5)) L.push(`  recurring  ${i.count}× Sentry ${i.shortId} · ${i.title}`);
-    }
   }
   for (const note of out.notes) L.push(`  note           ${note}`);
   L.push(`VERDICT: ${out.verdict.label} (${out.verdict.code}): ${out.verdict.note}`);

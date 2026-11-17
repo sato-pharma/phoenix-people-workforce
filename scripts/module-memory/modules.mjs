@@ -1761,15 +1761,15 @@ export const MODULES = [
   },
   // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` measured a
   // 4,013-byte pointer against the 4,000-byte margin `tests/module-memory.test.ts` holds, the moment the
-  // audit-outbox rules landed. The cut is the OBSERVABILITY family — Sentry, `app_error_events` and what a
-  // row carries, the crash screenshot, the System Audit board and its start point, the job re-fire policy,
+  // audit-outbox rules landed. The cut is the OBSERVABILITY family — `app_error_events` and what a row carries,
+  // the new-error Telegram, the crash screenshot, the System Audit board and its start point, the job re-fire policy,
   // and the audit trail's own persistence — none of which is read while editing a login, a permission or a
   // share link. They moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so an observability file loads the
   // PAIR and nothing that used to arrive stops arriving.
   {
     id: "platform-observability",
-    title: "Platform — structured logging, Sentry and the audit trail's own persistence",
-    scope: "Structured logging and what an `app_error_events` row carries, Sentry, job failure and re-fire policy, and how the audit trail itself is persisted. The System Audit board and the error screenshots are `platform-system-audit`.",
+    title: "Platform — structured logging, the error log and the audit trail's own persistence",
+    scope: "Structured logging and what an `app_error_events` row carries, the new-error Telegram, job failure and re-fire policy, and how the audit trail itself is persisted. The System Audit board and the error screenshots are `platform-system-audit`.",
     globs: [
       "src/lib/observability/**",
       "src/lib/error-monitor/**",
@@ -1787,10 +1787,10 @@ export const MODULES = [
       "app/**/admin/integrations/**",
       "tests/integrations-registry.test.ts",
       "tests/performance-phase-3.test.ts",
-      "tests/*{error-monitor,structured-log,sentry,audit-outbox,job-refire,heartbeat}*",
+      "tests/*{error-monitor,structured-log,new-error-alert,audit-outbox,job-refire,heartbeat}*",
       "supabase/migrations/*{app_error,audit_log,heartbeat}*",
     ],
-    keywords: ["error monitor", "app_error_events", "system audit", "sentry", "structured log", "logError", "audit outbox", "audit_logs", "job failure", "integrations page", "integration registry"],
+    keywords: ["error monitor", "app_error_events", "system audit", "new error alert", "structured log", "logError", "audit outbox", "audit_logs", "job failure", "integrations page", "integration registry"],
     tables: ["app_error", "audit_log"],
   },
   {
@@ -1894,7 +1894,7 @@ export const MODULES = [
       "app/api/readyz/**",
       ".claude/skills/ship/verify-shipped.mjs",
       "tests/verify-shipped-selftest.test.ts",
-      // The ship skill's phase 7b: did the deploy bring a new error (the error table and Sentry).
+      // The ship skill's phase 7b: did the deploy bring a new error (the error table).
       "scripts/lib/post-deploy-errors.mjs",
       "tests/post-deploy-errors.test.ts",
       // 🔴 Added 2026-10-19 with the deploy NOTES moved here from `engineering` (it sat at 71,001 of its 72,000

@@ -6,8 +6,8 @@ import { classifyOutboxSkip } from "@/lib/notifications/email.ts";
 /**
  * Phase 1 — outbox engine reliability.
  *  - classifyOutboxSkip: deterministic skips are terminal (not retried-to-failure);
- *    a "no recipients" skip on a high-priority type escalates to Sentry.
- *  - Source locks: the skipped writer, deferred-delivery drain, per-terminal-row Sentry,
+ *    a "no recipients" skip on a high-priority type escalates (a warning line).
+ *  - Source locks: the skipped writer, deferred-delivery drain, the per-terminal-row warning,
  *    retention of PII, orphan-monitor removal, and the load-bearing safeguards we must NOT
  *    regress (status-guarded claim, dedupe key, Resend idempotency key).
  */
@@ -48,19 +48,19 @@ export function runEmailEngineHardeningTests() {
     assert.equal(held.terminal, true, `a ${percent}% hold must be terminal, never retried to failure`);
     if (held.terminal) {
       assert.equal(held.code, "held_for_review");
-      assert.equal(held.sentryEscalate, false, "a hold is the gate working — the held-backlog alert covers it");
+      assert.equal(held.escalate, false, "a hold is the gate working — the held-backlog alert covers it");
     }
   }
   // A hold must not escalate for a high-priority type either: it is awaiting review, not dropped.
   for (const type of ["password_reset", "offer", undefined]) {
     const r = classifyOutboxSkip("Held for Super Admin review (80% confidence).", type as never);
-    assert.equal(r.terminal && r.sentryEscalate, false, `a hold on ${type} must not escalate`);
+    assert.equal(r.terminal && r.escalate, false, `a hold on ${type} must not escalate`);
   }
 
   // Bounce/complaint suppression is deterministic AND by-design — terminal, never escalates.
   for (const t of ["password_reset", "offer", "birthday", undefined]) {
     const r = classifyOutboxSkip("All recipients are suppressed (bounce/complaint).", t as never);
-    assert.equal(r.terminal && r.sentryEscalate, false, "suppressed must never escalate");
+    assert.equal(r.terminal && r.escalate, false, "suppressed must never escalate");
   }
 
   // no_deliverable_recipient escalates ONLY for high-priority types (the in-app copy still
@@ -68,11 +68,11 @@ export function runEmailEngineHardeningTests() {
   const noMailbox = "No deliverable recipient (no real mailbox on file).";
   for (const high of ["password_reset", "user_created", "offer", "resignation", "probation", "contract_renewal"]) {
     const r = classifyOutboxSkip(noMailbox, high as never);
-    assert.equal(r.terminal && r.sentryEscalate, true, `no_deliverable_recipient on ${high} must escalate`);
+    assert.equal(r.terminal && r.escalate, true, `no_deliverable_recipient on ${high} must escalate`);
   }
   for (const low of ["birthday", "general"]) {
     const r = classifyOutboxSkip(noMailbox, low as never);
-    assert.equal(r.terminal && r.sentryEscalate, false, `no_deliverable_recipient on ${low} must NOT escalate`);
+    assert.equal(r.terminal && r.escalate, false, `no_deliverable_recipient on ${low} must NOT escalate`);
   }
 
   // Transient / unknown reasons keep retrying (NOT terminal).
@@ -80,19 +80,19 @@ export function runEmailEngineHardeningTests() {
     assert.equal(classifyOutboxSkip(reason, "offer").terminal, false, `"${reason}" must be transient`);
   }
 
-  // no_recipients escalates to Sentry ONLY for high-priority notification types.
+  // no_recipients escalates ONLY for high-priority notification types.
   const noRecipients = "Email skipped: Offer routing resolved no recipient emails.";
   for (const high of ["password_reset", "user_created", "offer", "resignation", "probation", "contract_renewal"]) {
     const r = classifyOutboxSkip(noRecipients, high as never);
-    assert.equal(r.terminal && r.sentryEscalate, true, `no_recipients on ${high} must escalate`);
+    assert.equal(r.terminal && r.escalate, true, `no_recipients on ${high} must escalate`);
   }
   for (const low of ["birthday", "general"]) {
     const r = classifyOutboxSkip(noRecipients, low as never);
-    assert.equal(r.terminal && r.sentryEscalate, false, `no_recipients on ${low} must NOT escalate`);
+    assert.equal(r.terminal && r.escalate, false, `no_recipients on ${low} must NOT escalate`);
   }
   // No notificationType => cannot be high-priority => no escalation.
   const none = classifyOutboxSkip(noRecipients, undefined);
-  assert.equal(none.terminal && none.sentryEscalate, false, "no_recipients without a type must not escalate");
+  assert.equal(none.terminal && none.escalate, false, "no_recipients without a type must not escalate");
 
   // --- Source locks: email.ts engine -----------------------------------------------
   const emailSource = readFileSync("src/lib/notifications/email.ts", "utf8");

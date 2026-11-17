@@ -3,7 +3,7 @@
 // WHY (owner, 2026-10-27). Dependabot regenerates pnpm-lock.yaml for its own PR, and pnpm re-resolves EVERY
 // entry younger than the seven-day cooldown to an older version: PRs 6486-6488 (26 Oct) and 6580-6582 (27 Oct)
 // each carried ~40 silent downgrades — puppeteer-core 25.16.0 -> 25.14.0, imapflow 2.9.1 -> 2.5.8, openai,
-// supabase, 17 @sentry/* packages. Only the puppeteer pin's two tests went red; the rest would have merged.
+// supabase, 17 packages of one error-tracking SDK. Only the puppeteer pin's two tests went red; the rest would have merged.
 // tests/lockfile-downgrade-gate.test.ts uses this to fail ANY pull request that does that, whoever opened it.
 // Account: docs/dependency-refresh.md.
 //

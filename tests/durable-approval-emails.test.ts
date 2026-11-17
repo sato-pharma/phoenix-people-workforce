@@ -270,7 +270,7 @@ function testTheDedupeKey() {
 }
 
 function testWhatARetryCanChange() {
-  assert.deepEqual(classifyDirectEmailSkip("Email template not found."), { code: "type_unsupported", sentryEscalate: false, terminal: true },
+  assert.deepEqual(classifyDirectEmailSkip("Email template not found."), { code: "type_unsupported", escalate: false, terminal: true },
     "a missing template does not come back on a retry — the leave sender falls back instead");
   assert.equal(classifyDirectEmailSkip("Email template leave_request is inactive.").terminal, true, "nor does a switched-off template");
   assert.equal(classifyDirectEmailSkip("EMAIL_NOTIFICATIONS_ENABLED is not true.").terminal, true, "email switched off is the standard terminal skip");

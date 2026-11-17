@@ -8,7 +8,7 @@ import { afterResponse } from "../src/lib/http/after-response.ts";
 // ─────────────────────────────────────────────────────────────────────────────
 // A BUTTON'S ANSWER NEVER WAITS FOR THE NOTICES IT RAISES (2026-10-23 slow-buttons audit).
 //
-// Measured on production from Sentry's traces over seven days, before the change: a vacation
+// Measured on production from request traces over seven days, before the change: a vacation
 // Approve took 6.1 s, an excuse decision 8.0 s, a direct-order decision 7.8 s (22 s at the 95th
 // percentile), a marketing decision 10.7 s — while Phoenix CRM's decide, which already sent its
 // notices after the reply, took 0.4 s. In the one vacation trace read span by span the decision

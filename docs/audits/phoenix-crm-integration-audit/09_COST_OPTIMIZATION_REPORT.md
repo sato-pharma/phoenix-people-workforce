@@ -1,6 +1,6 @@
 # 09 — Cost Optimization Report
 
-A financial reading of the 56 existing integrations. **No company spending figure is stated anywhere in this report**: the audit had no access to any invoice or billing console, so every amount below is either a provider's published list price (read on 13 Nov 2026, report 14) or a count of requests, runs or bytes measured in report 13. The four kinds of figure are kept apart, as §15 requires.
+A financial reading of the 55 existing integrations. **No company spending figure is stated anywhere in this report**: the audit had no access to any invoice or billing console, so every amount below is either a provider's published list price (read on 13 Nov 2026, report 14) or a count of requests, runs or bytes measured in report 13. The four kinds of figure are kept apart, as §15 requires.
 
 ## 1. Verified current spending
 
@@ -14,7 +14,7 @@ A financial reading of the 56 existing integrations. **No company spending figur
 | Google Maps Platform (EX-17, EX-18) | Pay-as-you-go above per-SKU monthly free caps | Provider terms; console not readable |
 | WhatsApp Business (EX-31) | Per delivered message | Provider terms; bill not readable |
 | Turbify mail (EX-27) | Paid mailbox subscription | Company mail host |
-| Resend, Sentry, Fly.io, Groq (EX-25, EX-32, EX-16, EX-23) | Plan not readable | — |
+| Resend, Fly.io, Groq (EX-25, EX-16, EX-23) | Plan not readable | — |
 
 Everything else in report 02 is on a free plan, free API, open-source software or the company's own code.
 
@@ -29,7 +29,6 @@ Everything else in report 02 is on a free plan, free API, open-source software o
 | Google Maps | Per-SKU free caps each month (Essentials 10,000, Pro 5,000, Enterprise 1,000); the old 200 USD monthly credit is gone. Dynamic map loads 7.00 USD, static maps 2.00 USD, geocoding 5.00 USD per 1,000 after the cap. Maps Embed is free with no limit |
 | WhatsApp (Egypt) | Utility, authentication and service messages 0.0036 USD each; marketing 0.0644 USD. Since 1 Oct 2026 service replies are charged above 1,000 a month per number |
 | Resend | Free 3,000 a month and 100 a day; Pro 20 USD a month for 50,000 |
-| Sentry | Developer free (1 user, 5,000 errors); Team 26–29 USD a month |
 
 ## 3. Possible savings
 
@@ -55,7 +54,7 @@ Each item states what was measured, what would change, and the assumption behind
 
 | Item | Why it is unverified |
 |---|---|
-| Railway, Supabase, Turbify, Resend, Sentry, Fly.io bills | No billing access |
+| Railway, Supabase, Turbify, Resend, Fly.io bills | No billing access |
 | Google Maps monthly spend, key quotas and restrictions | Cloud console not readable (ISS-010) |
 | WhatsApp message spend | Meta business manager not readable |
 | OpenAI and Anthropic token spend | Usage dashboards not read; the price note page could not be verified |

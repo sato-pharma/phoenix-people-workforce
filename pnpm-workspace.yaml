@@ -277,13 +277,13 @@ overrides:
   "undici": 7.30.1
   # Added 2026-11-04 for GHSA-3g3m-2fjr-6pw4 (medium, Dependabot #19): an aborted async walk keeps
   # reading directories in the background after it rejects. Advisory covers `>=9.0.0 <=14.0.1`, so the
-  # whole 13.x line is affected and the fix exists only in the 14 line. Both parents declare
-  # `^13.0.6` even at their latest releases (@sentry/bundler-plugins 11.10.0, test-exclude 8.0.0), so
-  # no parent bump can clear it. Scoped to the 13 line so glob@7.2.3 (outside the advisory) is untouched.
+  # whole 13.x line is affected and the fix exists only in the 14 line. Its parent, test-exclude 8.0.0,
+  # declares `^13.0.6` even at its latest release, so no parent bump can clear it. Scoped to the 13 line
+  # so glob@7.2.3 (outside the advisory) is untouched.
   # 14 is a drop-in, checked against the published type declarations: the only removal is the `debug`
-  # option, and everything else is additive (`normalize`, readonly arrays). BUILD- AND TEST-TIME ONLY —
-  # Sentry's source-map upload plugin and c8's coverage file walker; neither globs untrusted input.
-  # Remove once both parents declare glob ^14.
+  # option, and everything else is additive (`normalize`, readonly arrays). TEST-TIME ONLY — c8's
+  # coverage file walker, which globs no untrusted input.
+  # Remove once test-exclude declares glob ^14.
   "glob@13": ^14.0.3
   # Added 2026-11-04 for GHSA-g3hv-75wg-m249 (medium, Dependabot #22): DoS via globparts
   # amplification, `>=7.0.0 <11.0.1`, published the same afternoon the glob 14 floor above landed.
@@ -328,23 +328,11 @@ allowBuilds:
   tesseract.js: false
   unrs-resolver: true
 
-# 🔴 ONE ADVISORY IS IGNORED, ON THE OWNER'S WORD, UNTIL A FIX EXISTS — NEVER ADD A SECOND ONE TO QUIET A
-# RED AUDIT. GHSA-fc5q-39xc-vjpf: picomatch <= 4.0.7, ReDoS through repeated extglobs, HIGH. It turned
-# every pull request's audit red on 17 Nov 2026 with NO patched version published (npm `latest` was
-# 4.0.7; the advisory names 4.0.8, which did not exist). Its only production paths are
-# @sentry/nextjs > @rollup/plugin-commonjs (> @rollup/pluginutils | > fdir) > picomatch: a bundling
-# plugin that runs while the app is BUILT, on patterns written in this repository, never on input from
-# a person. The owner, 17 Nov 2026: "accept the picomatch advisory in 515".
-#
-# REMOVE THIS ENTRY the day picomatch publishes 4.0.8 or later: re-resolve it in the lockfile (the
-# parents' `^4.0.2` already allows it), delete the line below, and run the audit without it. The record
-# is docs/security/open-dependency-alerts.md, "picomatch".
-auditConfig:
-  ignoreGhsas:
-    - GHSA-fc5q-39xc-vjpf
-
-# The history below is why a suppression must leave the day its fix lands.
-# This file suppressed exactly one advisory before, GHSA-mh99-v99m-4gvg (brace-expansion DoS via
+# NO ADVISORY IS SUPPRESSED HERE. The last one, GHSA-fc5q-39xc-vjpf (picomatch, ignored on the owner's word on
+# 17 Nov 2026 while no fix existed), left the same day: its only production path went with the build plugin
+# that pulled it in, so `pnpm audit --prod` no longer walks it. The history below is why a suppression must
+# leave the day it stops masking anything.
+# Before that this file suppressed exactly one advisory, GHSA-mh99-v99m-4gvg (brace-expansion DoS via
 # unbounded glob-pattern expansion), and the suppression was RETIRED on 2026-09-30 because it had
 # stopped masking anything.
 #

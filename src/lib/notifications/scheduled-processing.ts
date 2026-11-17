@@ -55,8 +55,8 @@ const drainOverlapGuard = createExclusiveRunGuard({
 
 /**
  * Every email the outbox drain resolves reads the same email-policy table, so the whole run shares ONE
- * read of it (10 s at most — see email-policy-snapshot.ts) instead of one per email: the N+1 Sentry
- * reported on GET /api/notifications/process. Nothing outside this run ever sees the shared copy.
+ * read of it (10 s at most — see email-policy-snapshot.ts) instead of one per email: the N+1 once
+ * seen on GET /api/notifications/process. Nothing outside this run ever sees the shared copy.
  */
 export function runScheduledNotificationProcessing(limit = 10) {
   return withEmailPolicySnapshot(() => runNotificationProcessingSteps(limit));

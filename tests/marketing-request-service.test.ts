@@ -419,7 +419,7 @@ export async function runMarketingRequestServiceTests() {
   // Idempotency keys (helper + explicit submit) prevent double-sends.
   assert.match(serviceSource, /marketing-request:\$\{params\.eventType\}:/, "workflow notifications must carry a per-event idempotency key");
   assert.match(serviceSource, /marketing-request-submitted:/, "submit notification must carry an idempotency key");
-  // Notification failures surface (Sentry) but never throw into the workflow.
+  // Notification failures surface (the error log) but never throw into the workflow.
   assert.match(serviceSource, /logError/, "marketing notification failures must be surfaced, not silently swallowed");
   // Telegram delivery on the decision events too (not just request_assigned).
   for (const event of ["request_approved", "request_rejected", "request_returned"] as const) {

@@ -123,7 +123,7 @@ export async function runEmployeeDirectoryStaleBoundTests() {
 
   // ── Refresh behind (2026-10-16): a poll just past the TTL is answered, not made to wait ──
   // The sidebar polls every 30 s, which is also CACHE_TTL, so each poll found the copy one tick expired and waited
-  // out the whole multi-table load (about 2 s at the 95th percentile in Sentry). Within a bounded window past the
+  // out the whole multi-table load (about 2 s at the 95th percentile, measured). Within a bounded window past the
   // TTL the copy is served and a reload runs behind it.
   assert.equal(directoryCacheDisposition(0), "fresh");
   assert.equal(directoryCacheDisposition(CACHE_TTL_MS - 1), "fresh");

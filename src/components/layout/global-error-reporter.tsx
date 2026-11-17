@@ -13,7 +13,6 @@ import {
 } from "@/lib/error-monitor/network-failure-burst";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { installScreenCapture } from "@/lib/error-monitor/screen-capture";
-import { startSentryBrowser } from "@/lib/observability/sentry-client";
 import { isStaleDeployChunkError, isTransientRouterMountError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
 
@@ -94,7 +93,6 @@ export function GlobalErrorReporter() {
     window.addEventListener("unhandledrejection", handleRejection);
     // A burst still open as the page goes away is reported now (the report is a keepalive request).
     window.addEventListener("pagehide", networkBursts.flush);
-    startSentryBrowser();
     // The error screenshot (owner, 23 Oct 2026): a refused or failed /api/ request leaves a picture of
     // what the person saw for the System Audit. Installs once, never unwrapped on unmount — a second
     // mount finds it already there.

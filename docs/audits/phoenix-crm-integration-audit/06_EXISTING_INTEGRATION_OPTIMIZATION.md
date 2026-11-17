@@ -6,7 +6,7 @@ Every existing integration was weighed against the fourteen questions of §8: st
 
 | Verdict | Count | What it means here |
 |---|---:|---|
-| KEEP | 32 | Working, fit for purpose, no better free option worth the migration |
+| KEEP | 31 | Working, fit for purpose, no better free option worth the migration |
 | OPTIMIZE | 11 | Keep the provider; change how it is used |
 | REMOVE | 6 | Unused, retired or unowned — removal lowers risk at no feature cost |
 | INVESTIGATE FURTHER | 4 | The production state cannot be read from the repository; one read decides |
@@ -17,7 +17,7 @@ Every existing integration was weighed against the fourteen questions of §8: st
 
 - **Google Maps stays.** OpenStreetMap-based geocoding is weaker on Egyptian addresses, and the public OpenStreetMap services are not licensed for unlimited business use. The lever is fewer and cheaper Google calls (EX-17), and moving pin-only boards to an open renderer (EX-18).
 - **Railway stays.** No free host carries a 24/7 Next.js app with Chromium and a worker; the standby on Fly.io needs a rehearsal, not a replacement.
-- **Sentry and the first-party telemetry both stay.** They overlap deliberately: the first-party tables are the raw material for a status page, Sentry carries stack traces and releases.
+- **The first-party telemetry stays, and is the only error record.** Errors are kept in the app's own table `app_error_events` (the System Audit page), and a new error sends one instant Telegram to the Super Admin — production only, once per error and recipient, at most 10 in 10 minutes, scrubbed. The same tables are the raw material for a status page.
 - **Self-hosting is never treated as free.** Every self-hosted option below carries its compute and upkeep in the Limitations line.
 
 Free-tier statements are taken from the provider's own pages read on 13 Nov 2026 (report 14). Where a page was not read the text says `FREE STATUS NOT VERIFIED`.
@@ -69,7 +69,6 @@ Free-tier statements are taken from the provider's own pages read on 13 Nov 2026
 | EX-28 | Turbify admin-console robot (headless browser) | Turbify / Puppeteer | NOT VERIFIED | **KEEP** | No API exists to replace it with. |
 | EX-29 | Telegram Bot API | Telegram | HEALTHY WITH WARNINGS | **KEEP** | Free, reliable and already the alarm channel. |
 | EX-31 | WhatsApp Business Cloud API (Meta Graph) + embedded signup | Meta | HEALTHY | **KEEP** | The channel candidates actually use; signed and healthy. |
-| EX-32 | Sentry (errors, tracing, replay-on-error, cron monitors, alert webhook) | Sentry (EU region) | NOT VERIFIED | **KEEP** | Duplicates the first-party log on purpose; stack traces and release tracking are worth the overlap. |
 | EX-33 | Google Drive API (CV archive, nightly code-backup check) | Google | HEALTHY | **KEEP** | Free and already the off-platform copy of code and CVs. |
 | EX-34 | Google Sheets API + Apps Script sheet webhooks | Google | HEALTHY WITH WARNINGS | **KEEP** | The sheets are how some managers read the data today. |
 | EX-35 | Google Calendar API (Egyptian public holidays) | Google | HEALTHY | **KEEP** | Free, fast and has a fallback. |
@@ -1359,6 +1358,6 @@ Free-tier statements are taken from the provider's own pages read on 13 Nov 2026
 
 </details>
 
-## The 32 integrations marked KEEP
+## The 31 integrations marked KEEP
 
-Each was weighed against the same fourteen questions; the reason it stays is in the verdict table above and its health in report 03. Where a KEEP integration still has open findings they are in report 11: EX-01 (ISS-003); EX-05 (ISS-005, ISS-006, ISS-009, ISS-046, ISS-050, ISS-051); EX-15 (ISS-025); EX-16 (ISS-038); EX-23 (ISS-040); EX-26 (ISS-013); EX-27 (ISS-029); EX-29 (ISS-030); EX-31 (ISS-042); EX-32 (ISS-032, ISS-033); EX-33 (ISS-015); EX-52 (ISS-045); EX-56 (ISS-007, ISS-008, ISS-055).
+Each was weighed against the same fourteen questions; the reason it stays is in the verdict table above and its health in report 03. Where a KEEP integration still has open findings they are in report 11: EX-01 (ISS-003); EX-05 (ISS-005, ISS-006, ISS-009, ISS-046, ISS-050, ISS-051); EX-15 (ISS-025); EX-16 (ISS-038); EX-23 (ISS-040); EX-26 (ISS-013); EX-27 (ISS-029); EX-29 (ISS-030); EX-31 (ISS-042); EX-33 (ISS-015); EX-52 (ISS-045); EX-56 (ISS-007, ISS-008, ISS-055).

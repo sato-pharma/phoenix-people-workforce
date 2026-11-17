@@ -3245,13 +3245,6 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
-    href: "/admin/sentry-check",
-    icon: Activity,
-    label: "Sentry Check",
-    description: "Send one deliberate browser error and one server error to Sentry. Production only.",
-    roles: ["Super Admin"],
-  },
-  {
     href: "/admin/data-backup",
     icon: Download,
     label: "Data Backup",
@@ -5671,7 +5664,6 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/system-audit",
           "/admin/integrations",
           "/admin/synthetic-journeys",
-          "/admin/sentry-check",
           "/admin/activity-control",
         ],
       },

@@ -160,7 +160,7 @@ export async function runProcessHealthTests() {
   assert.match(
     health,
     /fingerprint: \["event-loop-stall", input\.role, culprit\]/,
-    "the stall's Sentry fingerprint is unchanged — the GC figures ride the log line, never open a new Sentry issue",
+    "the stall's grouping is unchanged — the GC figures ride the log line, never make a freeze a new alert",
   );
 
   const instrumentation = read("instrumentation.ts");

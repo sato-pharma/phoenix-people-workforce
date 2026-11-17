@@ -3,11 +3,10 @@ import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { recordJobHeartbeat } from "@/lib/observability/job-heartbeat";
 import { HEALTHCHECKS_CHECKED_SLUGS } from "@/lib/observability/job-schedule";
 import { logWarning } from "@/lib/observability/log";
-import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 
 // An INDEPENDENT, EXTERNAL liveness monitor (Healthchecks.io) for the 8 Cloud Scheduler jobs —
-// separate from GCP log-based alerting, on purpose, and since Sentry's retirement (2026-07-31)
-// this is the ONLY thing that detects a job that stopped running. On 2026-07-23 three
+// separate from GCP log-based alerting, on purpose, and the only EXTERNAL thing that detects a job
+// that stopped running. On 2026-07-23 three
 // scheduler jobs were paused as an emergency stop after a mass-send incident and stayed silently
 // paused for ~2 days: Cloud Scheduler showed PAUSED (a state, not an alert), the app's own
 // GCP observability never fires because a paused job never even attempts a request, and nothing
@@ -91,32 +90,12 @@ async function pingHealthchecks(jobSlug: string, outcome: HealthchecksSignal, de
 }
 
 /**
- * The third half: Sentry cron monitoring, a check-in per run. Inert unless Sentry is on (production plus a DSN),
- * and it carries the monitor's schedule from the register of scheduled jobs, so Sentry creates the monitor on
- * the job's first check-in. A job the register does not declare sends none and creates nothing. The SDK is reached by dynamic import for the same edge-safety reason as everywhere else.
- *
- * The NODE_ENV block is a compile-time gate (see instrumentation.ts): Next inlines the value, so under
- * `next dev` the branch is `if (false)` and none of the 44 routes that import this switch compiles the SDK.
- */
-async function checkInSentry(jobSlug: string, outcome: DeadMansSwitchOutcome): Promise<void> {
-  if (process.env.NODE_ENV === "production") {
-    try {
-      if (!sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN }).enabled) return;
-      const { captureCronCheckInInSentry } = await import("@/lib/observability/sentry-server");
-      captureCronCheckInInSentry(jobSlug, outcome === "success" ? "ok" : "error");
-    } catch {
-      // A monitoring outage must never become a second incident.
-    }
-  }
-}
-
-/**
- * Reports one cron job's outcome to ALL THREE monitors. Best-effort by design and contract: NEVER
+ * Reports one cron job's outcome to BOTH monitors. Best-effort by design and contract: NEVER
  * throws, never delays or masks the actual cron job's own result — a monitoring outage must not
  * itself become a second incident. No-ops entirely outside production, so this stays inert in
  * dev/staging/CI and never flaps a shared production dashboard with test traffic.
  *
- * THREE BACKENDS, ON PURPOSE, AND NONE CAN BLOCK THE OTHERS (Sentry's check-in joined them 2026-10-16).
+ * TWO BACKENDS, ON PURPOSE, AND NEITHER CAN BLOCK THE OTHER.
  *
  *  - Healthchecks.io, external. Its value is being OUTSIDE this system: it still alerts when
  *    Phoenix itself is the thing that is down. It has a CEILING, and a job past it gets no external
@@ -137,7 +116,6 @@ export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitc
   await Promise.allSettled([
     recordJobHeartbeat(jobSlug, outcome, detail),
     pingHealthchecks(jobSlug, outcome, detail),
-    checkInSentry(jobSlug, outcome),
   ]);
 }
 

@@ -198,7 +198,7 @@ function checkOnTheBoard(): void {
   // The Sunday email says what the board does not see, whatever else it says.
   const email = buildNeedsYouWeeklyEmail({ board: calm, boardUrl: "https://example.test/admin/needs-you" });
   assert.ok(email.includes(NEEDS_YOU_VENDORS_NOT_READ_LINE), "🔴 what it cannot see is printed, not implied");
-  for (const blind of ["Supabase invoices", "Railway", "GitHub billing", "OneSignal", "Maps", "Sentry", "cron-job.org"]) {
+  for (const blind of ["Supabase invoices", "Railway", "GitHub billing", "OneSignal", "Maps", "cron-job.org"]) {
     assert.ok(NEEDS_YOU_VENDORS_NOT_READ_LINE.includes(blind), `the fixed line names ${blind}`);
   }
 }

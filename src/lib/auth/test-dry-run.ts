@@ -17,7 +17,7 @@
  *   - Supabase auth, edge functions and realtime — answered "done".
  *   - Every other host — email (Resend, Brevo), Telegram, OneSignal, WhatsApp, Google, our own app —
  *     answered "done" and nothing is sent. Only hosts whose POST is a READ are let through: the AI
- *     providers, Google routes/places/maps, the Google token exchange, Sentry.
+ *     providers, Google routes/places/maps and the Google token exchange.
  *
  * 🔴 FAIL-CLOSED: resolveAccessContext lets a test account's write run only when `testDryRunFenceIsLive()`
  * proves — by a probe sent through the fetch in use — that every call still reaches this wrapper. If
@@ -35,7 +35,7 @@ const FENCE_MARK = Symbol.for("phoenix.testDryRun.fence");
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const DRY_RUN_RPC = "phx_test_dry_run_rpc";
 
-/** Hosts whose POST is a read: asking an AI, pricing a route, looking up a place, a Google token, an error report. */
+/** Hosts whose POST is a read: asking an AI, pricing a route, looking up a place, a Google token. */
 const READ_ONLY_POST_HOSTS = [
   ...AI_PROVIDER_HOSTS,
   "generativelanguage.googleapis.com",
@@ -43,7 +43,6 @@ const READ_ONLY_POST_HOSTS = [
   "places.googleapis.com",
   "maps.googleapis.com",
   "oauth2.googleapis.com",
-  "sentry.io",
 ];
 
 function hostIsReadOnlyPost(hostname: string): boolean {
