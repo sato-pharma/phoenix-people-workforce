@@ -4,7 +4,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isSupabaseBridgeRequiredForRole, updateAppSessionVersion } from "@/lib/auth/app-sessions";
 import { normalizeRole } from "@/lib/auth/permissions";
 import { LEAKED_PASSWORD_MESSAGE, checkLeakedPassword, leakedPasswordAuditValue } from "@/lib/auth/leaked-password";
-import { passwordWeakness } from "@/lib/auth/password-strength";
+import { chosenPasswordRulesApply, passwordWeakness } from "@/lib/auth/password-strength";
 import { forgetTrustedDevices } from "@/lib/auth/second-step-store";
 import { errorMessageOf } from "@/lib/http/api-errors";
 import {
@@ -101,17 +101,21 @@ export async function changeUserPassword(input: {
   const isSamePassword = await bcrypt.compare(input.newPassword, row.password_hash);
   if (isSamePassword) throw new SamePasswordError();
 
-  if (input.newPassword.length < 8) {
-    throw new Error("New password must be at least 8 characters.");
+  // A test account takes any password the Super Admin chooses (password-strength.ts); the audit row says so.
+  let leakedPasswordCheck: ReturnType<typeof leakedPasswordAuditValue> | "test_account" = "test_account";
+  if (chosenPasswordRulesApply({ isTestPersona: row.is_test_persona })) {
+    if (input.newPassword.length < 8) {
+      throw new WeakPasswordError("New password must be at least 8 characters.");
+    }
+    // And not a password every guessing list tries first (password-strength.ts).
+    const weakness = passwordWeakness(input.newPassword, [row.login_id, row.hr_id]);
+    if (weakness) throw new WeakPasswordError(weakness);
+    // And not one that already sits in a published breach (leaked-password.ts). Asked before anything is
+    // written; an unreachable service accepts the password and is named on the audit row below.
+    const leakVerdict = await checkLeakedPassword(input.newPassword);
+    if (leakVerdict.leaked === true) throw new WeakPasswordError(LEAKED_PASSWORD_MESSAGE);
+    leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
   }
-  // And not a password every guessing list tries first (password-strength.ts).
-  const weakness = passwordWeakness(input.newPassword, [row.login_id, row.hr_id]);
-  if (weakness) throw new WeakPasswordError(weakness);
-  // And not one that already sits in a published breach (leaked-password.ts). Asked before anything is
-  // written; an unreachable service accepts the password and is named on the audit row below.
-  const leakVerdict = await checkLeakedPassword(input.newPassword);
-  if (leakVerdict.leaked === true) throw new WeakPasswordError(LEAKED_PASSWORD_MESSAGE);
-  const leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
 
   const newPasswordHash = await bcrypt.hash(input.newPassword, 12);
   const currentVersion = Number.isFinite(row.session_version) ? Number(row.session_version) : 1;

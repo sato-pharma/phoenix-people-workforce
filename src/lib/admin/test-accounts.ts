@@ -8,7 +8,9 @@
  *     a `TEST-…` login id, and the role and line of the mirrored person's own account. Its first
  *     password is random and unknowable; `force_password_reset` is on, so the only way in is the
  *     one-time set-password link the Super Admin copies from the screen and opens himself. No email is
- *     ever sent, and no password ever passes through this code in the clear.
+ *     ever sent, and no password ever passes through this code in the clear. The password he chooses
+ *     there (or later on Change password) is never checked against the rules: any non-empty one is
+ *     taken (owner, 17 Nov 2026 — `chosenPasswordRulesApply` in src/lib/auth/password-strength.ts).
  *   - Pointing it at somebody else copies that person's role and line again and bumps
  *     `session_version`, so every open session of the test account ends and the next sign-in is the
  *     new person's.

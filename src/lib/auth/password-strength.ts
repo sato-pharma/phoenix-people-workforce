@@ -7,10 +7,20 @@
  * own login id. Every Phoenix sign-in is also throttled per account and per address and locks after
  * repeated failures; this closes the first guesses those limits still allow.
  *
- * Generated passwords (temporary-password.ts, the test accounts) never pass through here.
+ * Generated passwords (temporary-password.ts, the test accounts' first one) never pass through here.
+ *
+ * A TEST ACCOUNT TAKES WHATEVER PASSWORD THE SUPER ADMIN CHOOSES (owner, 17 Nov 2026: "when test account
+ * make it normally be as i want"). No length floor, no guessing-list rule, no leaked-password check — on
+ * both doors, changing it and setting it from the link. Only an empty password is still refused. Every
+ * real person's account keeps all three rules.
  */
 
 export const PASSWORD_MIN_LENGTH = 8;
+
+/** False for a test account (`app_auth_users.is_test_persona`): its password is never checked against the rules. */
+export function chosenPasswordRulesApply(account: { isTestPersona?: boolean | null }): boolean {
+  return account.isTestPersona !== true;
+}
 
 /** Well-known passwords of 8+ characters, lower case (shorter ones already fail the length rule). */
 const COMMON_PASSWORDS = new Set([

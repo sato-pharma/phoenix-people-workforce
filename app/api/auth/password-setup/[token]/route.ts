@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { completePasswordSetup } from "@/lib/auth/password-setup";
+import { completePasswordSetup, PasswordTooShortError } from "@/lib/auth/password-setup";
 import {
   isNativeFormSubmission,
   passwordSetupReturnPath,
@@ -84,10 +84,8 @@ export async function POST(
       return NextResponse.json({ error: "password_mismatch", message: "Passwords do not match." }, { status: 400 });
     }
 
-    // The same floor completePasswordSetup enforces, checked here only so a native post can name it with a
-    // fixed code; the JSON caller still gets the service's own words.
-    if (nativeForm && password.trim().length < 8) return backToScreen("too_short");
-
+    // The 8-character floor is completePasswordSetup's alone (a test account has none, and only the service
+    // knows whose link this is); a native post names it with a fixed code in the catch below.
     const result = await completePasswordSetup({ password, token });
 
     if (nativeForm) {
@@ -98,7 +96,7 @@ export async function POST(
     }
     return NextResponse.json({ success: true, warning: result.bridgeWarning });
   } catch (error) {
-    if (nativeForm && token) return backToScreen("password_setup_failed");
+    if (nativeForm && token) return backToScreen(error instanceof PasswordTooShortError ? "too_short" : "password_setup_failed");
     const message = clientSafeErrorMessage(error, "Password setup failed.");
     return NextResponse.json({ error: "password_setup_failed", message }, { status: 400 });
   }
