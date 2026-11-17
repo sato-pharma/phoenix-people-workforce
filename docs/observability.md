@@ -1613,7 +1613,10 @@ mask nothing**. Both decisions are recorded as rules in `.claude/rules/platform.
 **A web page cannot photograph itself.** There is no browser API that hands a page its own pixels,
 and the one that comes close (`getDisplayMedia`) puts a permission prompt in front of somebody whose
 screen has just broken. So `src/lib/error-monitor/capture-screenshot.ts` RASTERISES the live DOM
-through `html-to-image` and encodes it as WebP. Three things it cannot reproduce, by construction,
+through `html-to-image` and encodes it as WebP — or as JPEG where the browser cannot encode WebP
+(Safari on iPhone, iPad and Mac hands back a PNG and called it WebP: from 24 Oct to 17 Nov 2026, 821
+signed-in Safari crash reports stored no picture at all). The draw runs under the one capture lock it
+shares with the refusal picture (`docs/system-audit.md`, "What the person saw"). Three things it cannot reproduce, by construction,
 and none of them is a defect to chase: cross-origin images and fonts the page never got permission
 to read back, the inside of an `<iframe>`, and a `<canvas>` another origin's pixels have tainted.
 
@@ -1632,12 +1635,13 @@ P5-03). **Those caps are not widened to carry a picture.** The image travels on
 | --- | --- |
 | Body | 2 MB, checked on the `Content-Length` and again on the read |
 | Rate | 10 a minute per address — a third of the text report's 30 |
-| Format | WebP, sniffed from the container's own `RIFF`/`WEBP` magic bytes, never from the caller's header |
+| Format | WebP or JPEG, each sniffed from its own magic bytes (`RIFF`/`WEBP`, `FF D8 FF`), never from the caller's header |
 | Admission | A two-minute HMAC ticket (`screenshot-ticket.ts`), minted only in the response to a report that really wrote a row, naming that one row |
-| Object | `YYYY/MM/DD/<app_error_events id>.webp`, partitioned by Cairo day, upserted so a retry replaces |
+| Object | `YYYY/MM/DD/<app_error_events id>.webp` or `.jpg`, partitioned by Cairo day, upserted so a retry replaces. A file whose row is not then written (an error, or no row matched) is removed again, and a removal that fails is logged as `error_screenshot_orphan_cleanup_failed` — `remove()` reports failure in its result and never throws |
 
-That door reads no cookie and resolves no identity — the employee whose page broke is often on the
-login screen — so it is registered with `tokenApi` (`authMode: "public-token"`), **never**
+That door reads no cookie and resolves no identity — the ticket is the whole authorisation, and since
+23 Oct 2026 the report mints one only for a SIGNED-IN reporter (a guest ticket let anyone store images
+in the Super Admin's drawer), so a crash on the login screen leaves no picture — so it is registered with `tokenApi` (`authMode: "public-token"`), **never**
 `sessionApi`, whose coverage gate rightly demands a `resolveAccessContext` this route must not have.
 The ticket is domain-separated from the session and share-card signers, so it cannot be replayed as
 one of theirs, and with no `PHOENIX_AUTH_SECRET` nothing mints and nothing verifies: it fails closed.
@@ -1645,7 +1649,7 @@ one of theirs, and with no `PHOENIX_AUTH_SECRET` nothing mints and nothing verif
 ### Reading one back
 
 Nothing is masked, so the `error-screenshots` bucket is **private and stays private** (2 MB,
-`image/webp` only; migration `20261023180801`). The System Audit drawer's "What the employee saw"
+`image/webp` and `image/jpeg`; migrations `20261023180801` and `20261117044749`). The System Audit drawer's "What the employee saw"
 section asks `/api/admin/system-audit/screenshot/<eventId>` for a **five-minute signed URL**, minted
 per view against the viewer's own Super Admin session and only when someone clicks to look. The
 object path is read from the row rather than taken from the caller, so a URL can only ever be issued

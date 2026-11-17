@@ -110,6 +110,95 @@ function tableTests() {
   assert.match(table, /@min-\[760px\]:hidden/, "below 760px the rows are cards");
 }
 
+// ── No word breaks in the middle (deep audit, 17 Nov 2026) ───────────────────────────────────────
+// `break-words` stops a word overflowing, but a column narrower than its longest word still splits
+// it: at 1,140–1,250px the live headings read "ERR/OR", "(CAI/RO)", "OCCURRENC/ES". Each column must
+// hold, at the SMALLEST width its table shows, its longest heading word and the status, scope and
+// code words of its cells.
+//
+// The widths are measured, not guessed: headings are Segoe UI Bold at 12.48px (0.78rem, the admin
+// shell's `thead th`) with 0.06em tracking — the fontkit measure of "OCCURRENCES" (96.5px), "(CAIRO)"
+// (52.6px) and "ERROR" (44.3px) matched the live page's 96/53/45 — and each figure below is the worst
+// of the shell's typefaces. Cells are 12px; the code is Consolas at 6.6px a character. A column holds
+// a word when share × breakpoint ≥ word × 1.08 (room for a wider fallback face) + 17px (the cell's
+// 16px padding and its 1px border).
+const WORD_PX: Record<string, number> = {
+  "(CAIRO)": 54.9,
+  "ATTENDANCE-": 72.6,
+  ATTRIBUTION: 76.3,
+  EMPLOYEE: 70.7,
+  "EMPLOYEE)": 76.7,
+  ENCOUNTERED: 100.5,
+  ERROR: 44.3,
+  INCIDENT: 66.5,
+  INVESTIGATING: 91,
+  MODULE: 57.9,
+  OCCURRENCES: 97.5,
+  SHARED: 55.2,
+  STATUS: 52.6,
+};
+const TYPEFACE_ALLOWANCE = 1.08;
+const CELL_CHROME_PX = 17;
+
+/** Per column, the words that must never split: its heading's longest words and its cells' words. */
+const INCIDENT_COLUMN_WORDS: Array<{ breakpoint: number; variant: string; words: string[][] }> = [
+  {
+    breakpoint: 1120,
+    variant: "wide",
+    words: [
+      [],
+      ["EMPLOYEE"],
+      ["MODULE"],
+      ["ERROR", "(CAIRO)"],
+      ["ERROR", "(CAIRO)"],
+      ["ENCOUNTERED"],
+      ["INCIDENT", "ATTENDANCE-"],
+      [],
+      ["STATUS", "INVESTIGATING"],
+      ["OCCURRENCES", "EMPLOYEE)"],
+      ["SHARED", "ATTRIBUTION"],
+    ],
+  },
+  {
+    breakpoint: 760,
+    variant: "merged",
+    words: [
+      ["EMPLOYEE"],
+      ["MODULE"],
+      ["ERROR", "(CAIRO)"],
+      ["ENCOUNTERED"],
+      ["INCIDENT", "ATTENDANCE-"],
+      [],
+      ["STATUS", "INVESTIGATING", "OCCURRENCES", "ATTRIBUTION"],
+    ],
+  },
+];
+
+function noWordBreaksTests() {
+  const code = read(`${DIR}/incidents-table.tsx`);
+  const incidents = tables("incidents-table", code);
+  for (const { breakpoint, variant, words } of INCIDENT_COLUMN_WORDS) {
+    const table = incidents.find((candidate) => candidate.className.includes(`@min-[${breakpoint}px]:table`));
+    assert.ok(table, `the ${variant} Incidents table still starts at ${breakpoint}px — the arithmetic below is for that width`);
+    assert.equal(table.widths.length, words.length, `the ${variant} table has ${words.length} columns`);
+    for (const [index, columnWords] of words.entries()) {
+      const share: number = table.widths[index];
+      const columnPx: number = (share / 100) * breakpoint;
+      for (const word of columnWords) {
+        const needPx = WORD_PX[word] * TYPEFACE_ALLOWANCE + CELL_CHROME_PX;
+        assert.ok(
+          columnPx >= needPx,
+          `HEADLINE: at ${breakpoint}px the ${variant} table's column ${index + 1} (${share}%) is ${columnPx.toFixed(1)}px, and "${word}" needs ${needPx.toFixed(1)}px — it would break in the middle`,
+        );
+      }
+    }
+  }
+  // The browser will not break between a hyphen and a digit, so the code offers its own breaks.
+  assert.match(code, /-<wbr \/>/, "HEADLINE: the error code may wrap after each hyphen, never mid-token");
+  assert.equal((code.match(/<CodeAndRef row=\{row\} \/>/g) ?? []).length, 3, "the wide cell, the merged cell and the card all use it");
+  assert.doesNotMatch(code, /\{incidentCodeAndRef\(row\)\}/, "no code cell prints the code without its break points");
+}
+
 function clientBoundaryTests() {
   for (const file of FILES) {
     const raw = readFileSync(path.join(ROOT, file), "utf8");
@@ -136,6 +225,7 @@ function serverPageTests() {
 export function runSystemAuditPageDesignTests() {
   lookTests();
   tableTests();
+  noWordBreaksTests();
   clientBoundaryTests();
   serverPageTests();
 }

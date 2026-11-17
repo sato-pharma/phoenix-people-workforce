@@ -36,6 +36,9 @@ const loginErrorMessages: Record<string, string> = {
   invalid_credentials: "Invalid login or password.",
   password_setup_required: "Set your password first using “Set or reset my password” below, then sign in.",
   rate_limited: "Too many failed login attempts. Please try again later.",
+  // A no-script sign-in from a blocked address — the same sentence as BLOCKED_SIGN_IN_MESSAGE in
+  // src/lib/auth/ip-blocklist.ts (pinned by tests/system-audit-routes-access.test.ts).
+  network_blocked: "Sign-in from this network has been blocked. Ask HR to lift it.",
   temporary_password_expired: "Your temporary password has expired. Ask HR to send you a new one.",
   sign_in_unavailable: "Sign-in is temporarily unavailable. Please try again in a few minutes.",
   second_step_invalid: "That code is not right. Sign in again and enter the next code.",

@@ -15,7 +15,7 @@ import {
   writeAuthAudit,
 } from "@/lib/auth/audit";
 import { resolveAuthUserForPasswordlessLogin } from "@/lib/auth/credentials";
-import { readIpBlock } from "@/lib/auth/ip-blocklist";
+import { BLOCKED_SIGN_IN_MESSAGE, readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import {
   createSessionToken,
@@ -84,10 +84,9 @@ export async function POST(request: Request) {
       );
     }
     if (blocklist === "blocked") {
-      return NextResponse.json(
-        { error: "rate_limited", message: "Too many sign-in attempts. Please try again later." },
-        { status: 429 },
-      );
+      // The truth, with the same code and status (deep audit, 17 Nov 2026): a blocked network is
+      // told to ask HR, never to wait out a lockout that lasts 30 days.
+      return NextResponse.json({ error: "rate_limited", message: BLOCKED_SIGN_IN_MESSAGE }, { status: 429 });
     }
 
     let body: unknown;

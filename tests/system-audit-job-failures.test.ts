@@ -96,6 +96,11 @@ function testHeartbeatRows() {
   assert.equal(stranded.moduleLabel, "Background job — CRM daily digest", "A job is named in words, not by its slug");
   assert.equal(stranded.occurredAt, "2026-10-22T07:00:00.000Z", "A stranded job is dated from when it became overdue");
   assert.equal(built.occurrences[1].occurredAt, "2026-10-22T05:00:00.000Z", "A failing job is dated by its recorded failure");
+  // The verifier judges a recurrence by the LAST event (17 Nov 2026): a job still stranded tonight must
+  // carry tonight as its last event, or it would be verified as fixed while it is still stranded.
+  assert.equal(stranded.lastEventAt, NOW_ISO, "A job still stranded tonight carries tonight as its last event");
+  assert.equal(built.occurrences[2].lastEventAt, NOW_ISO, "A misdeclared job is re-found tonight, so tonight is its last event");
+  assert.equal(built.occurrences[1].lastEventAt, "2026-10-22T05:00:00.000Z", "A failure is one event, dated by itself");
   const misdeclared = built.issues[2];
   assert.equal(misdeclared.rootCauseLevel, "confirmed", "A declaration that cannot be evaluated is a confirmed cause");
 }

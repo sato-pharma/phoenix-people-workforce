@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 
 import ExcelJS from "exceljs";
@@ -23,6 +24,7 @@ import {
   incidentScope,
 } from "../src/lib/system-audit/incidents-display.ts";
 import { iterateSystemAuditExport } from "../src/lib/system-audit/repository.ts";
+import { stripComments } from "./system-audit-routes-access.test.ts";
 import {
   SILENT_DATA_MESSAGE,
   USER_MESSAGE_NOT_CAPTURED,
@@ -334,7 +336,29 @@ function displayTests() {
   assert.equal(systemAuditExportFilename("xlsx", "2026-10-22T20:00:00.000Z"), "system-audit-2026-10-22.xlsx");
 }
 
+// 3. THE EXPORT IS AUDITED BEFORE IT LEAVES (deep audit, 17 Nov 2026). The only row used to be
+//    written when the stream ended, so a process that died mid-download left no trace of a file that
+//    had already gone. A "started" row is now written and awaited before the first byte.
+function auditedBeforeTheFirstByteTests() {
+  const route = stripComments(readFileSync("app/api/admin/system-audit/export/route.ts", "utf8"));
+  const started = /await writeAuditLog\(\{[^}]*stage: "started"/.exec(route);
+  assert.ok(started, 'HEADLINE: the export writes an awaited "started" audit row');
+  const guard = route.indexOf("assertSystemAdministratorWorkspaceAccess(access");
+  const recordExportEnds = route.indexOf('stage: "finished"');
+  const csv = route.indexOf("createSystemAuditCsvStream(");
+  const workbook = route.indexOf("writeSystemAuditWorkbook(");
+  const firstResponse = route.indexOf("new Response(");
+  assert.ok(guard !== -1 && started.index > guard, "it is written only after the Super Admin guard");
+  assert.ok(recordExportEnds !== -1 && started.index > recordExportEnds, "it is its own row, not the end row");
+  assert.ok(
+    started.index < csv && started.index < workbook && started.index < firstResponse,
+    "HEADLINE: the started row is written BEFORE the CSV or the workbook starts and before any response leaves",
+  );
+  assert.match(route, /stage: "finished"/, "the end row still carries the row count");
+}
+
 export async function runSystemAuditExportTests() {
+  auditedBeforeTheFirstByteTests();
   displayTests();
   injectionTests();
   await workbookTests();

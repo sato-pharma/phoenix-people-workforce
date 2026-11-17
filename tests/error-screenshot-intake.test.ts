@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { CAPTURE_QUALITY, encodeCapture, sendErrorScreenshot } from "../src/lib/error-monitor/capture-screenshot.ts";
 import {
+  ERROR_SCREENSHOT_CONTENT_TYPES,
   ERROR_SCREENSHOT_MAX_BYTES,
   ERROR_SCREENSHOT_RATE_LIMIT,
+  errorScreenshotImageType,
   errorScreenshotObjectPath,
+  isJpegImage,
   isWebpImage,
   screenshotBodyTooLarge,
 } from "../src/lib/error-monitor/screenshot-intake.ts";
@@ -41,7 +45,7 @@ export async function runErrorScreenshotIntakeTests() {
     assert.equal(isWebpImage(webp), true, "RIFF....WEBP is a WebP");
 
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
-    assert.equal(isWebpImage(png), false, "a PNG is refused — the bucket takes one format");
+    assert.equal(isWebpImage(png), false, "a PNG is not a WebP — the PNG Safari hands back when asked for WebP never passes as one");
 
     const html = new TextEncoder().encode("<!DOCTYPE html><html><body>not an image at all</body></html>");
     assert.equal(isWebpImage(html), false, "an HTML page named .webp is refused before it reaches the bucket");
@@ -52,19 +56,36 @@ export async function runErrorScreenshotIntakeTests() {
     assert.equal(isWebpImage(riffButNotWebp), false, "a RIFF container that is not WEBP is refused — both markers are read");
     assert.equal(isWebpImage(new Uint8Array([0x52, 0x49, 0x46, 0x46])), false, "a body too short to carry both markers is refused");
 
+    // ── JPEG too: Safari cannot encode WebP (17 Nov 2026) ─────────────────────────────────────────
+    // Production, 24 Oct – 17 Nov 2026: 593 iPhone/iPad and 228 Mac Safari signed-in crash reports and
+    // not one picture, because WebKit hands back a PNG when asked for WebP and this door took WebP only.
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+    assert.deepEqual([...ERROR_SCREENSHOT_CONTENT_TYPES], ["image/webp", "image/jpeg"], "exactly two formats are accepted");
+    assert.equal(isJpegImage(jpeg), true, "FF D8 FF is a JPEG");
+    assert.equal(errorScreenshotImageType(jpeg), "image/jpeg", "a real JPEG is accepted — the Safari fallback lands");
+    assert.equal(errorScreenshotImageType(webp), "image/webp", "a real WebP is accepted as before");
+    assert.equal(errorScreenshotImageType(png), null, "a PNG is still refused, whatever header it came under");
+    assert.equal(errorScreenshotImageType(html), null, "and so is an HTML page");
+    assert.equal(errorScreenshotImageType(new Uint8Array([0xff, 0xd8])), null, "two bytes are not a JPEG");
+
     // ── the object path is keyed by the row, so a retry replaces rather than multiplies ───────────
     const eventId = "11111111-2222-3333-4444-555555555555";
-    const path = errorScreenshotObjectPath(eventId, new Date("2026-10-23T09:00:00Z"));
+    const path = errorScreenshotObjectPath(eventId, "image/webp", new Date("2026-10-23T09:00:00Z"));
     assert.equal(path, `2026/10/23/${eventId}.webp`, "partitioned by Cairo day, named for the error row");
     assert.equal(
-      errorScreenshotObjectPath(eventId, new Date("2026-10-23T09:00:00Z")),
-      errorScreenshotObjectPath(eventId, new Date("2026-10-23T09:01:00Z")),
+      errorScreenshotObjectPath(eventId, "image/jpeg", new Date("2026-10-23T09:00:00Z")),
+      `2026/10/23/${eventId}.jpg`,
+      "a JPEG is stored as .jpg, never under a .webp name",
+    );
+    assert.equal(
+      errorScreenshotObjectPath(eventId, "image/webp", new Date("2026-10-23T09:00:00Z")),
+      errorScreenshotObjectPath(eventId, "image/webp", new Date("2026-10-23T09:01:00Z")),
       "two captures for one error are one object, not two",
     );
     // 21:30 UTC is already the 24th in Cairo — Egypt is on UTC+3 until the last Thursday of October,
     // so this also pins that the formatter reads the real offset rather than a hard-coded +2.
     assert.equal(
-      errorScreenshotObjectPath(eventId, new Date("2026-10-23T21:30:00Z")).startsWith("2026/10/24/"),
+      errorScreenshotObjectPath(eventId, "image/webp", new Date("2026-10-23T21:30:00Z")).startsWith("2026/10/24/"),
       true,
       "the day boundary is Cairo's, never UTC's",
     );
@@ -144,4 +165,71 @@ export async function runErrorScreenshotIntakeTests() {
     "a page over the element cap is not drawn at all",
   );
   assert.ok(capture.includes("filter: pictureFilter(),"), "off-screen boxes are copied empty before html-to-image copies what is inside them");
+
+  // 4. The crash picture is drawn under the ONE capture lock the refusal picture shares (17 Nov 2026):
+  //    without it html-to-image's own image downloads through the wrapped fetch filed refusal pictures.
+  assert.match(
+    capture,
+    /await withCaptureLock\(\(\) => rasteriseViewport\(\), \{/,
+    "the crash picture is drawn under the shared capture lock, which gives itself back in a finally",
+  );
+  assert.ok(!capture.includes("withTimeout("), "no second, unlocked timeout path around the draw");
+
+  // 5. The route stores what the bytes ARE, and leaves no picture without a row.
+  assert.ok(upload.includes("errorScreenshotImageType(bytes)"), "the route sniffs WebP or JPEG from the bytes");
+  assert.ok(upload.includes("attachErrorScreenshot({ eventId, bytes, contentType })"), "and stores through the helper that cleans up after a failed row write");
+  assert.ok(!/\.upload\(|\.update\(/.test(upload), "no second store path in the route that would skip that clean-up");
+
+  // 6. The bucket's allow-list takes the JPEG too — the route's sniff is the first gate, this the second.
+  const migration = readFileSync(join(root, "supabase", "migrations", "20261117044749_error_screenshots_accept_jpeg.sql"), "utf8");
+  assert.match(
+    migration,
+    /update storage\.buckets\s+set allowed_mime_types = array\['image\/webp', 'image\/jpeg'\]\s+where id = 'error-screenshots';/,
+    "the error-screenshots bucket accepts image/jpeg beside image/webp",
+  );
+
+  await crashPictureEncodingTests();
+}
+
+/** A canvas that encodes like a given browser: Safari answers a WebP request with a PNG. */
+function fakeCanvas(encodes: Record<string, string | null>) {
+  const asked: Array<{ type: string | undefined; quality: number | undefined }> = [];
+  return {
+    asked,
+    toBlob(callback: (blob: Blob | null) => void, type?: string, quality?: number) {
+      asked.push({ type, quality });
+      const produced = encodes[type ?? ""];
+      callback(produced === null || produced === undefined ? null : new Blob([new Uint8Array([1, 2, 3])], { type: produced }));
+    },
+  };
+}
+
+async function crashPictureEncodingTests() {
+  // Chrome, Edge, Firefox: WebP, as before.
+  const chromium = fakeCanvas({ "image/webp": "image/webp", "image/jpeg": "image/jpeg" });
+  assert.equal((await encodeCapture(chromium))?.type, "image/webp", "a browser that encodes WebP sends WebP");
+  assert.deepEqual(chromium.asked, [{ type: "image/webp", quality: CAPTURE_QUALITY }], "and is never asked for a second encoding");
+
+  // Safari on an iPhone, an iPad or a Mac: asked for WebP, it silently hands back a PNG.
+  const safari = fakeCanvas({ "image/webp": "image/png", "image/jpeg": "image/jpeg" });
+  const fromSafari = await encodeCapture(safari);
+  assert.equal(fromSafari?.type, "image/jpeg", "a browser that cannot encode WebP falls back to JPEG — never the PNG it handed back");
+  assert.deepEqual(safari.asked[1], { type: "image/jpeg", quality: CAPTURE_QUALITY }, "at the capture's own quality");
+
+  const noWebp = fakeCanvas({ "image/webp": null, "image/jpeg": "image/jpeg" });
+  assert.equal((await encodeCapture(noWebp))?.type, "image/jpeg", "a null WebP blob falls back to JPEG too");
+  assert.equal(await encodeCapture(fakeCanvas({ "image/webp": "image/png", "image/jpeg": "image/png" })), null, "a browser that encodes neither sends nothing");
+
+  // The upload says what the picture really is.
+  const sent: Array<{ url: string; headers: Record<string, string> }> = [];
+  const send = (async (url: string, init: RequestInit) => {
+    sent.push({ url, headers: init.headers as Record<string, string> });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await sendErrorScreenshot(send, fromSafari!, "the-ticket");
+  assert.equal(sent[0]?.url, "/api/errors/client/screenshot");
+  assert.equal(sent[0]?.headers["Content-Type"], "image/jpeg", "a JPEG goes up labelled image/jpeg, never image/webp");
+  assert.equal(sent[0]?.headers["x-phoenix-screenshot-ticket"], "the-ticket", "with the ticket that admits it");
+  const failing = (() => Promise.reject(new TypeError("Load failed"))) as unknown as typeof fetch;
+  await assert.doesNotReject(sendErrorScreenshot(failing, fromSafari!, "t"), "a failed upload never becomes a second error");
 }

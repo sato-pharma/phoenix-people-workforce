@@ -12,9 +12,13 @@ import type { SystemAuditFamily, SystemAuditStatus } from "@/lib/system-audit/ty
  *
  *   RECURRENCE → NOT FIXED. An occurrence after the fix went live reopens the issue, whether it is
  *     still FIX IMPLEMENTED or was already FIXED — VERIFIED (a verified fix that recurs was not a
- *     fix). Event families compare `occurred_at`; the state families — reconciliation and record
- *     linkage, which re-find the same row every night — compare `last_event_at`, because their row's
- *     `occurred_at` is the night it was FIRST found and never moves.
+ *     fix). EVERY family compares `last_event_at`, never `occurred_at`: the ledger's upsert moves
+ *     `last_event_at` forward when a row is found again on the same dedupe key, but never moves
+ *     `occurred_at` (the first time it was seen). Judged by `occurred_at`, an error operation that
+ *     went on past the fix, or a finding re-found night after night on one key, never looked like a
+ *     recurrence, and the issue could be marked FIXED — VERIFIED while it was still happening. For an
+ *     error or a screenshot `last_event_at` is the newest event folded into the operation; for a
+ *     detector's finding it is the newest time the detector saw it.
  *   OLDER BUILD → NOT A RECURRENCE. An occurrence after the fix went live that carries a release
  *     recorded BEFORE the fix — a browser still running yesterday's bundle — is marked
  *     `pre_fix_build` and set aside. A release nobody can place (unknown, or older than the gate
@@ -25,6 +29,10 @@ import type { SystemAuditFamily, SystemAuditStatus } from "@/lib/system-audit/ty
  *         the people it hit, when it hit anyone — at least three times, from `activity_events`;
  *       - a detector's finding: the detector that found it ran cleanly on at least three nights since
  *         the fix (for an integrity check, the check itself HELD on each of those nights).
+ *     AND, for every family, the detector that would SEE a recurrence ran cleanly on at least three
+ *     nights since the fix — for an error that is the error fold, for a screenshot the screenshot
+ *     fold. Page views with that detector failing prove nothing: a recurrence would never reach the
+ *     ledger, and quiet would be read as fixed.
  *     No measurable exposure → the issue waits, and the run says why.
  *
  * Never on half the evidence: if the release table cannot be read, nothing is decided tonight.
@@ -35,9 +43,6 @@ export const QUIET_DAYS = 7;
 export const MIN_PAGE_VIEWS = 3;
 export const MIN_CLEAN_NIGHTS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Families whose rows are re-found every night, so `last_event_at` is what moves. */
-export const STATE_FAMILIES: ReadonlySet<SystemAuditFamily> = new Set(["reconciliation", "data_linkage"]);
 
 export type FixUnderReview = {
   issueId: string;
@@ -64,8 +69,11 @@ export type Exposure = { exposed: boolean; measure: string };
 export interface VerifierStore {
   /** Every issue that is FIX IMPLEMENTED or FIXED — VERIFIED, with its newest fix still standing. */
   openFixes(): Promise<FixUnderReview[]>;
-  /** Up to 50 occurrences after the fix went live, oldest first, excluding test, triaged and pre-fix rows. */
-  recurrenceCandidates(fix: FixUnderReview, byLastEvent: boolean): Promise<RecurrenceCandidate[]>;
+  /**
+   * Up to 50 occurrences whose LAST event came after the fix went live, oldest first, excluding test,
+   * triaged and pre-fix rows.
+   */
+  recurrenceCandidates(fix: FixUnderReview): Promise<RecurrenceCandidate[]>;
   /** Every released build, or null when the table does not exist (staging). Throws when unreadable. */
   releaseGates(): Promise<ReleaseGate[] | null>;
   markPreFixBuild(occurrenceIds: string[]): Promise<void>;
@@ -140,9 +148,23 @@ async function measureExposure(
   fix: FixUnderReview,
   detectorIdByFamily: Partial<Record<SystemAuditFamily, string>>,
 ): Promise<Exposure> {
+  const detector = detectorIdByFamily[fix.family];
+  if (!detector) return { exposed: false, measure: "no detector re-measures this kind of issue" };
+
   // A screenshot is an error a person saw on a page too, so its exposure is the same: did the people
   // it hit open that page again since the fix went live.
   if (fix.family === "app_error" || fix.family === "user_screen") {
+    // Page views count only while the detector that would SEE a recurrence is working. With the error
+    // fold (or the screenshot fold) failing, a recurrence never reaches the ledger, so the quiet week
+    // and the page views together would mark FIXED — VERIFIED a fault that is still happening. A runs
+    // table that cannot be read throws here, and the issue is left undecided.
+    const nights = await store.cleanNights({ detector, sinceIso: fix.fixLiveAt, checkId: null });
+    if (nights.length < MIN_CLEAN_NIGHTS) {
+      return {
+        exposed: false,
+        measure: `the detector that would see it happen again ran cleanly on ${nights.length} night(s) since the fix went live, fewer than ${MIN_CLEAN_NIGHTS}`,
+      };
+    }
     const routes = await store.pageRoutes(fix.issueId);
     if (routes.length === 0) {
       return { exposed: false, measure: "it happened on no page address that can be watched (an API call only)" };
@@ -157,12 +179,12 @@ async function measureExposure(
     const who = people.length > 0 ? `the ${people.length === 1 ? "person" : `${people.length} people`} it hit` : "anyone";
     return {
       exposed: views >= MIN_PAGE_VIEWS,
-      measure: `${views >= MIN_PAGE_VIEWS ? `at least ${MIN_PAGE_VIEWS}` : views} page view(s) of ${routes.join(", ")} by ${who} since the fix went live`,
+      measure:
+        `${views >= MIN_PAGE_VIEWS ? `at least ${MIN_PAGE_VIEWS}` : views} page view(s) of ${routes.join(", ")} by ${who} since the fix went live` +
+        `, while the detector that would see it happen again ran cleanly on ${nights.length} night(s)`,
     };
   }
 
-  const detector = detectorIdByFamily[fix.family];
-  if (!detector) return { exposed: false, measure: "no detector re-measures this kind of issue" };
   const checkId = fix.family === "reconciliation" && fix.signatureKey.startsWith("recon:") ? fix.signatureKey.slice("recon:".length) : null;
   const nights = await store.cleanNights({ detector, sinceIso: fix.fixLiveAt, checkId });
   return {
@@ -212,7 +234,7 @@ export async function runVerifier(input: {
     }
     outcome.reviewed += 1;
     try {
-      const candidates = await store.recurrenceCandidates(fix, STATE_FAMILIES.has(fix.family));
+      const candidates = await store.recurrenceCandidates(fix);
       const { recurrence, olderBuild } = judgeRecurrence(candidates, fix, gates);
       if (olderBuild.length > 0) {
         await store.markPreFixBuild(olderBuild.map((row) => row.id));
@@ -220,7 +242,8 @@ export async function runVerifier(input: {
       }
 
       if (recurrence) {
-        const when = STATE_FAMILIES.has(fix.family) ? recurrence.lastEventAt : recurrence.occurredAt;
+        // The event that happened after the fix went live is the LAST one on the row.
+        const when = recurrence.lastEventAt;
         await store.transition({
           issueId: fix.issueId,
           to: "not_fixed",
@@ -330,7 +353,11 @@ export function createDatabaseVerifierStore(override?: Client): VerifierStore {
         }];
       });
     },
-    async recurrenceCandidates(fix, byLastEvent) {
+    async recurrenceCandidates(fix) {
+      // `last_event_at` for every family — see "RECURRENCE" in the header. A row the verifier set aside
+      // as an older build (`pre_fix_build`) comes back here once a later event lands on it: the ledger's
+      // upsert clears the mark when `last_event_at` moves (migration 20261117044750), so the new event
+      // is judged on its own release instead of hiding behind the old one.
       const { data, error } = await supabase()
         .from("system_audit_occurrences")
         .select("id,occurred_at,last_event_at,release")
@@ -338,8 +365,8 @@ export function createDatabaseVerifierStore(override?: Client): VerifierStore {
         .eq("is_test", false)
         .eq("pre_fix_build", false)
         .is("triage_override", null)
-        .gt(byLastEvent ? "last_event_at" : "occurred_at", fix.fixLiveAt)
-        .order(byLastEvent ? "last_event_at" : "occurred_at", { ascending: true })
+        .gt("last_event_at", fix.fixLiveAt)
+        .order("last_event_at", { ascending: true })
         .order("id", { ascending: true })
         .limit(50);
       if (error) throw readFailure("the occurrences", error);

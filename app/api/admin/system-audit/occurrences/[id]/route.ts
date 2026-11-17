@@ -8,6 +8,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { databaseRefusal, loadOccurrenceDetail, refusalHttpStatus } from "@/lib/system-audit/occurrence-detail";
 import { auditActorId, isAuditId, isSystemAuditQueryError, parseTriage } from "@/lib/system-audit/page-query";
+import { recordSystemAuditRead } from "@/lib/system-audit/read-audit";
 import { triageOccurrence } from "@/lib/system-audit/repository";
 import { SYSTEM_AUDIT_STATUS_LABELS } from "@/lib/system-audit/types";
 
@@ -15,7 +16,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET  /api/admin/system-audit/occurrences/[id] — everything the row drawer shows.
+ * GET  /api/admin/system-audit/occurrences/[id] — everything the row drawer shows, including the
+ *      person's last page visits; one system_audit_view audit row per answer, awaited before it
+ *      leaves (the access registry declares it audited — deep audit, 17 Nov 2026). A 404 writes none.
  * POST /api/admin/system-audit/occurrences/[id] — mark THIS occurrence no defect / unknown with a
  *      reason, or clear the mark ({ override: null }). One audit_logs row per change.
  * Super Admin only.
@@ -35,6 +38,16 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!detail) {
       return NextResponse.json({ error: "not_found", message: "No occurrence has that id." }, { status: 404 });
     }
+    await recordSystemAuditRead(
+      { hrId: access.hrId ?? null, loginId: access.loginId ?? null },
+      {
+        kind: "occurrence",
+        occurrenceId: detail.occurrence.id,
+        personHrId: detail.occurrence.hrId ?? detail.occurrence.hrKey,
+        personName: detail.occurrence.employeeName,
+        pageVisits: detail.reproTrail.status === "ok" ? detail.reproTrail.entries.length : 0,
+      },
+    );
     return NextResponse.json({ detail }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     if (isForbiddenError(error)) {
