@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
+import { chosenPasswordRulesApply } from "../src/lib/auth/password-strength.ts";
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import { isReadOnlyViewer } from "../src/lib/auth/read-only-viewer.ts";
 import {
@@ -410,5 +411,39 @@ export function runTestAccountTests(): void {
     assert.ok(/\.eq\("is_test_persona", true\)/.test(directory), "only a test account can mirror anybody");
     assert.ok(/\.eq\("is_active", true\)/.test(directory), "a disabled test account is told nothing");
     assert.ok(/if \(!loginId \|\| !hrId\) continue;/.test(directory), "a row that is not a usable test account is dropped, never fallen back on");
+  }
+
+  {
+    // ── A TEST ACCOUNT TAKES ANY PASSWORD THE SUPER ADMIN CHOOSES (owner, 17 Nov 2026: "when test account
+    //    make it normally be as i want"); every real person keeps the length, guessing-list and leak rules.
+    assert.equal(chosenPasswordRulesApply({ isTestPersona: true }), false, "HEADLINE: a test account's chosen password is never checked");
+    assert.equal(chosenPasswordRulesApply({ isTestPersona: false }), true, "a real person's is");
+    assert.equal(chosenPasswordRulesApply({ isTestPersona: null }), true, "and an account with no flag is treated as a real person's");
+    assert.equal(chosenPasswordRulesApply({}), true);
+
+    // Both doors put all three rules behind the one switch, read from the account's own row.
+    const change = source("src/lib/auth/change-password.ts");
+    const changeGate = change.indexOf("if (chosenPasswordRulesApply({ isTestPersona: row.is_test_persona })) {");
+    assert.notEqual(changeGate, -1, "changing a password asks whether the rules apply");
+    for (const rule of ["input.newPassword.length < 8", "passwordWeakness(input.newPassword", "await checkLeakedPassword(input.newPassword)"]) {
+      assert.ok(change.indexOf(rule) > changeGate, `changing a password: ${rule} sits behind the switch`);
+    }
+    assert.ok(change.includes("auth_email, is_test_persona"), "the change reads the flag from the account's row");
+    const setup = source("src/lib/auth/password-setup.ts");
+    const complete = setup.slice(setup.indexOf("export async function completePasswordSetup"));
+    const setupGate = complete.indexOf("if (chosenPasswordRulesApply({ isTestPersona: tokenRow.is_test_persona })) {");
+    assert.notEqual(setupGate, -1, "setting a password from the link asks whether the rules apply");
+    for (const rule of ["password.length < 8", "passwordWeakness(password", "await checkLeakedPassword(password)"]) {
+      assert.ok(complete.indexOf(rule) > setupGate, `setting a password: ${rule} sits behind the switch`);
+    }
+    assert.ok(complete.indexOf('if (!password) throw new Error("Password is required.");') < setupGate, "an empty password is still refused, test account or not");
+    assert.ok(/is_test_persona: user\.is_test_persona === true,/.test(setup), "the link's row carries the flag from the account");
+
+    // No floor ahead of the service: the route and the form cannot tell a test account, so they never refuse on length.
+    assert.ok(!/newPassword\.length < 8/.test(source("app/api/auth/change-password/route.ts")), "the change route leaves the floor to the service");
+    assert.ok(!/next\.value\.length < 8/.test(source("src/components/auth/change-password-form.tsx")), "and so does the change form");
+    const setupRoute = source("app/api/auth/password-setup/[token]/route.ts");
+    assert.ok(!/length < 8/.test(setupRoute), "the set-password route leaves the floor to the service");
+    assert.ok(/error instanceof PasswordTooShortError \? "too_short"/.test(setupRoute), "a native post still names a real person's short password");
   }
 }

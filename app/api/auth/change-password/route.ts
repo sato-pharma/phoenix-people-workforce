@@ -94,12 +94,8 @@ export async function POST(request: Request) {
       );
     }
 
-    if (newPassword.length < 8) {
-      return NextResponse.json(
-        { error: "validation_error", message: "New password must be at least 8 characters." },
-        { status: 400 },
-      );
-    }
+    // The 8-character floor is changeUserPassword's (a WeakPasswordError, answered 400 below): a test
+    // account has none, and only the service reads whose account this is.
 
     // Server-side confirm check (client-side alone is not sufficient).
     if (typeof confirmPassword !== "string" || confirmPassword !== newPassword) {
