@@ -39,6 +39,13 @@ import {
   rowsThatFit,
   schemaFromOpenApi,
 } from "../src/lib/chatgpt-connector/tools/table-guard.ts";
+import {
+  CUSTOMER_LIST_COLUMNS,
+  CUSTOMER_LIST_TYPES,
+  cairoDay,
+  nameCustomerRows,
+  type CustomerRow,
+} from "../src/lib/chatgpt-connector/tools/customer-list.ts";
 import { ToolRefusal } from "../src/lib/chatgpt-connector/types.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -369,6 +376,60 @@ function testTableGuard() {
   );
 }
 
+function testCustomerList() {
+  const base: CustomerRow = {
+    id: "c1", seat_id: "SEAT-A", line_code: "pedia", list_type: "PM", name: "Dr Hany", full_name_held: null, speciality: "Pediatrics",
+    grade: "A", potential_grade: null, status: "pending", origin: "ireports360", phone: "01001234567", primary_pharmacy_name: null,
+    pharmacy_pin_address: null, pharmacy_pin_governorate: null, pharmacy_pin_area_name: null, pharmacy_pin_brick_name: null,
+    validated_at: null, dropped_reason: null, dropped_note: null, created_at: "2026-11-16T23:30:00Z", status_changed_at: null,
+  };
+  const seats = [
+    { seat_id: "SEAT-A", parent_seat_id: "SEAT-DM", occupant_hr_id: "s-1", line_name: "Pedia", area_name: "Cairo West", region_name: "Cairo" },
+    { seat_id: "SEAT-B", parent_seat_id: "SEAT-DM", occupant_hr_id: null, line_name: "Pedia", area_name: "Alex West", region_name: "Alex-BHR" },
+    { seat_id: "SEAT-H", parent_seat_id: "SEAT-DM", occupant_hr_id: "S-1", line_name: "CNS", area_name: "Giza", region_name: "Giza" },
+    { seat_id: "SEAT-H", parent_seat_id: "SEAT-DM", occupant_hr_id: "S-2", line_name: "CNS", area_name: "Giza", region_name: "Giza" },
+    { seat_id: "SEAT-DM", parent_seat_id: null, occupant_hr_id: "S-9", line_name: "Pedia", area_name: null, region_name: "Cairo" },
+    { seat_id: "SEAT-X", parent_seat_id: null, occupant_hr_id: "S-404", line_name: "Pedia", area_name: "Nowhere", region_name: null },
+  ];
+  const people = [
+    { hr_id: "S-1", full_name: "Mona Adel" },
+    { hr_id: "S-2", full_name: "Karim Fathy" },
+    { hr_id: "S-9", full_name: "Sahar Hani" },
+  ];
+  const rows = nameCustomerRows(
+    [
+      base,
+      { ...base, id: "c2", seat_id: "SEAT-B", name: "Dr Amal", status: "dropped" },
+      { ...base, id: "c3", seat_id: "SEAT-H", name: "Dr Omar", status: "active" },
+      { ...base, id: "c4", seat_id: "SEAT-X", name: "Dr Lina", status: "outside" },
+    ],
+    seats,
+    people,
+  );
+  const byName = new Map(rows.map((entry) => [String(entry.row.name), entry]));
+  const hany = byName.get("Dr Hany")!.row;
+  assert.equal(hany.rep, "Mona Adel", "the seat's holder is named, its HR id matched whatever its case");
+  assert.equal(hany.manager, "Sahar Hani", "the district manager is the parent seat's holder, by name");
+  assert.equal(hany.line, "Pedia", "the line is its name, not its code");
+  assert.equal(hany.area, "Cairo West");
+  assert.equal(hany.status, "Waiting to be validated", "the status is in words");
+  assert.equal(hany.added_on, "17 Nov 2026", "dates are Cairo days — 23:30 UTC is the next day in Cairo");
+  assert.equal(byName.get("Dr Amal")!.row.rep, "Vacant", "a seat with no holder reads Vacant");
+  assert.equal(byName.get("Dr Amal")!.onList, false, "a dropped customer is off the list");
+  assert.equal(byName.get("Dr Omar")!.row.rep, "Mona Adel / Karim Fathy", "a handover seat names both holders");
+  assert.equal(byName.get("Dr Lina")!.row.rep, "Unknown employee", "an HR id with no employee row never prints the id");
+  assert.equal(byName.get("Dr Lina")!.onList, true, "outside the list still counts as on the lists, not dropped");
+  const printed = rows.flatMap((entry) => Object.values(entry.row)).map(String);
+  for (const code of ["SEAT-A", "SEAT-B", "S-1", "S-9", "pedia"]) {
+    assert.equal(printed.includes(code), false, `no seat id, HR id or line code (${code}) reaches the sheet`);
+  }
+  assert.deepEqual(rows.map((entry) => entry.row.name), ["Dr Omar", "Dr Amal", "Dr Hany", "Dr Lina"], "sorted by line, region, area, then name");
+  assert.deepEqual([...CUSTOMER_LIST_TYPES.doctors], ["AM", "PM"], "doctors are the AM and PM lists");
+  assert.deepEqual([...CUSTOMER_LIST_TYPES.pharmacies], ["Pharmacy"]);
+  assert.equal(CUSTOMER_LIST_COLUMNS.find((column) => column.key === "phone")?.text, true, "a phone number stays text, so Excel never eats its leading zero");
+  assert.equal(cairoDay(null), "");
+}
+
 function testToolSources() {
   const files = readdirSync(TOOLS_DIR).filter((file) => file.endsWith(".ts"));
   const all = files.map((file) => source(file)).join("\n");
@@ -394,11 +455,12 @@ function testToolSources() {
     "listTablesTool",
     "readTableTool",
     "exportTableTool",
+    "exportCustomerListTool",
   ]) {
     assert.ok(index.includes(tool), `${tool} is in DOMAIN_TOOLS`);
   }
   const names = [...all.matchAll(/name:\s*"([^"]+)"/g)].map((match) => match[1]).filter((name) => name.includes("_"));
-  assert.equal(names.length, 12, "twelve tools are defined");
+  assert.equal(names.length, 13, "thirteen tools are defined");
   for (const name of names) assert.match(name, /^phoenix_[a-z_]+$/, `${name} is snake_case and starts with phoenix_`);
 
   const tables = source("tables.ts");
@@ -408,6 +470,11 @@ function testToolSources() {
   assert.ok(tables.includes("next_offset"), "the reader tells ChatGPT where the next page starts");
   assert.ok(tables.includes("planTableRead("), "the table reader runs only a guarded plan");
   assert.ok(tables.includes("phoenix_sales_achievement"), "the table tools send ChatGPT to the closing for any sales figure");
+  assert.ok(tables.includes("phoenix_export_customer_list"), "the raw export sends ChatGPT to the named customer-list export for doctors and pharmacies");
+  const customerList = source("customer-list.ts");
+  assert.equal((customerList.match(/roles:\s*TABLE_TOOL_ROLES/g) ?? []).length, 1, "the named customer-list export is the owner's and the CEO's alone, like the raw tables");
+  assert.ok(customerList.includes('.eq("is_test", false)'), "the customer-list export never carries a test row");
+  assert.equal((customerList.match(/fetchAllRows</g) ?? []).length, 3, "all three reads are paged to the last row, never cut at 1,000");
 
   // Each screen's own gate is asked (see each tool's mirrored page).
   const sales = source("sales.ts");
@@ -433,5 +500,6 @@ export async function runChatgptConnectorToolsTests() {
   testPublicationGate();
   testMoneyAndRows();
   testTableGuard();
+  testCustomerList();
   testToolSources();
 }
