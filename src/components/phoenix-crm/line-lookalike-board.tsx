@@ -14,6 +14,10 @@
  * kept mounted afterwards. The route refuses everyone else as well.
  *
  * 🔴 THE SHARED FILTER BAR NARROWS IT: a pair stays when either of its two rows passes.
+ *
+ * 🔴 A JOIN CARD (owner, 2026-11-17: "i want phx 2 recognize as 1"): both lines validated the customer under
+ * names written differently. Both rows' photographs are drawn, and "Same customer — join them" moves the first
+ * row's places onto the second's point, so Phoenix holds the customer once.
  */
 
 import { useMemo, useState, type ReactNode } from "react";
@@ -103,7 +107,8 @@ function PairCard({ row, onAnswered }: { row: LineLookalikeRow; onAnswered: (row
     setBusy(choice);
     setError(null);
     try {
-      const saved = await crmPost<Saved>(ROUTE, { waitingCustomerId: row.waitingCustomerId, sourceCustomerId: row.sourceCustomerId, answer: choice }, "saved");
+      const body = { waitingCustomerId: row.waitingCustomerId, sourceCustomerId: row.sourceCustomerId, answer: choice, mode: row.mode };
+      const saved = await crmPost<Saved>(ROUTE, body, "saved");
       onAnswered(row, saved);
     } catch (failure) {
       setError(messageOf(failure));
@@ -131,14 +136,21 @@ function PairCard({ row, onAnswered }: { row: LineLookalikeRow; onAnswered: (row
       </div>
       {/* A phone stacks the two sides; from md they stand side by side (the Customer matches board's way). */}
       <div className="min-w-0 space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
-        <SideCard heading={`Waiting on ${row.waiting.line ?? "another line"}`} side={row.waiting} />
+        <SideCard
+          heading={row.mode === "join" ? `Validated on ${row.waiting.line ?? "another line"} — moves onto the other point` : `Waiting on ${row.waiting.line ?? "another line"}`}
+          side={row.waiting}
+        >
+          {row.joiningPlaces.map((place) => (
+            <SourcePlace key={place.placeId} name={row.waiting.name} place={place} />
+          ))}
+        </SideCard>
         <SideCard heading={`Validated on ${row.source.line ?? "another line"}`} side={row.source}>
           <CrmFacts
             facts={[
               { label: "Validated by", value: row.source.validatedByName ?? "Not recorded" },
               { label: "When", value: row.source.validatedAtText ?? "Not recorded" },
               { label: "Brick", value: row.source.brickName ?? "Not named" },
-              { label: "Places it gives", value: countText(row.source.placeCount) },
+              row.mode === "join" ? { label: "Its point", value: "Kept — the other moves onto it" } : { label: "Places it gives", value: countText(row.source.placeCount) },
             ]}
           />
           {row.source.places.map((place) => (
@@ -149,7 +161,7 @@ function PairCard({ row, onAnswered }: { row: LineLookalikeRow; onAnswered: (row
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <CrmButton busy={busy === "same"} disabled={busy !== null} onClick={() => void answer("same")} size="sm" variant="success">
-          Same customer — validate it
+          {row.mode === "join" ? "Same customer — join them" : "Same customer — validate it"}
         </CrmButton>
         <CrmButton busy={busy === "not_same"} disabled={busy !== null} onClick={() => void answer("not_same")} size="sm" variant="secondary">
           Not the same
@@ -189,13 +201,14 @@ export function LineLookalikeBoardView({ filters }: { filters: ValidationReviewF
     if (saved.validated) setValidatedRows((current) => new Set(current).add(row.waitingCustomerId));
   };
   const confirmedNow = [...answered.values()].filter((saved) => saved.validated).length;
+  const joinedNow = [...answered.values()].filter((saved) => saved.answer === "same" && !saved.validated).length;
   const notSameNow = [...answered.values()].filter((saved) => saved.answer === "not_same").length;
   const anyFilter = filters.rep !== "" || filters.line !== "" || filters.region !== "" || filters.area !== "" || filters.list !== "" || filters.text.trim() !== "";
 
   return (
     <div className="space-y-5">
       <CrmStatGrid>
-        <CrmStat label="To confirm" note="Waiting on one line, validated on another" tone={rows.length > 0 ? "warn" : "neutral"} value={countText(rows.length)} />
+        <CrmStat label="To confirm" note="Waiting or validated on one line, validated on another" tone={rows.length > 0 ? "warn" : "neutral"} value={countText(rows.length)} />
         <CrmStat label="Certain" note="The same phone or the same old-CRM contact" value={countText(board.certain)} />
         <CrmStat label="Very likely" note="The name, written another way" value={countText(board.veryLikely)} />
         <CrmStat label="Answered" note={`${countText(board.confirmed + confirmedNow)} confirmed · ${countText(board.notSame + notSameNow)} not the same`} value={countText(board.confirmed + board.notSame + answered.size)} />
@@ -206,12 +219,14 @@ export function LineLookalikeBoardView({ filters }: { filters: ValidationReviewF
           A pair is listed when one line has validated a customer and another line of the same area, on another rep&apos;s list, still waits on a customer
           whose name is written another way — a word spelled differently, the words in another order, a middle name left out — or who shares the phone
           number or the old-CRM contact. The three-lines rule validates the exact same name by itself; these it never validates. Same customer validates the
-          waiting row now, from the other line&apos;s places and under that line&apos;s validator; Not the same is kept and never asked again. Two
-          facilities of different kinds are never listed.{anyFilter ? " The filters above narrow this tab; a pair stays when either row passes." : ""}
+          waiting row now, from the other line&apos;s places and under that line&apos;s validator; Not the same is kept and never asked again. Where
+          both lines have already validated the customer within 150 m of each other, Same customer joins them: one row&apos;s places move onto the
+          other&apos;s point and Place checks shows them as one customer. Two facilities of different kinds are never listed.{anyFilter ? " The filters above narrow this tab; a pair stays when either row passes." : ""}
         </span>
       </AdminCallout>
 
       {confirmedNow > 0 ? <CrmNote tone="good">{countText(confirmedNow)} validated from this list just now.</CrmNote> : null}
+      {joinedNow > 0 ? <CrmNote tone="good">{countText(joinedNow)} joined into one customer just now.</CrmNote> : null}
 
       <AdminTableShell
         title={`Same customer, other line (${countText(rows.length)})`}

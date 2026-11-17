@@ -25,6 +25,7 @@ import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import {
   buildPlaceMatchBoard,
+  customerPairKey,
   foldOneCustomer,
   MAX_ANSWER_PAIRS,
   oneCustomerJoins,
@@ -106,7 +107,7 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
   if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager read this.");
   const seats = placeChecksSeatScope(viewer);
 
-  const [placeRead, venueRead, answerRead] = await Promise.all([
+  const [placeRead, venueRead, answerRead, joinRead] = await Promise.all([
     readEveryPage<Row>(
       () =>
         // A copy validated from another line sits on its source's spot by design — never a "match" to judge.
@@ -130,10 +131,17 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
       () => getSupabaseAdmin().from("phoenix_crm_place_match_answers").select("subject_a, subject_b, answer").order("subject_a").order("subject_b"),
       { maxRows: 50_000, whenFull: "stop", what: "The same-place answers", uniqueBy: (row) => `${String(row.subject_a)}|${String(row.subject_b)}` },
     ),
+    // The customers he confirmed as one on "Same customer, other line" — they fold into one reading too.
+    readEveryPage<Row>(
+      () => getSupabaseAdmin().from("phoenix_crm_line_lookalike_answers").select("id, waiting_customer_id, source_customer_id").eq("answer", "same").order("id"),
+      { maxRows: 50_000, whenFull: "stop", what: "The customers confirmed as one", uniqueBy: (row) => String(row.id) },
+    ),
   ]);
   throwIfError(placeRead.error);
   throwIfError(venueRead.error);
   throwIfError(answerRead.error);
+  throwIfError(joinRead.error);
+  const confirmedCustomers = new Set(joinRead.rows.map((row) => customerPairKey(String(row.waiting_customer_id), String(row.source_customer_id))));
 
   const allPlaces = placeRead.rows;
   const places = allPlaces.filter((row) => !text(row.shared_place_id));
@@ -242,7 +250,7 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
     b: String(row.subject_b),
     answer: row.answer === "same" ? "same" : "different",
   }));
-  const folded = foldOneCustomer(subjects, answers, oneCustomerJoins(oneCustomerCandidates));
+  const folded = foldOneCustomer(subjects, answers, oneCustomerJoins(oneCustomerCandidates, confirmedCustomers));
   return {
     board: buildPlaceMatchBoard(folded),
     capped: placeRead.capped || venueRead.capped,

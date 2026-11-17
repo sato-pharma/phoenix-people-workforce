@@ -35,7 +35,9 @@
  * rule has already joined two lines' records of one customer — the weaker moved onto the stronger's point
  * with `LINE_TWIN_MOVE_REASON` — the board shows them as ONE reading that names every rep and line
  * (`oneCustomerJoins`, `foldOneCustomer`). Without it each record kept its own photograph's fix, so a customer
- * Phoenix had already joined was put to him again as two (measured 2026-11-17: 210 such pairs).
+ * Phoenix had already joined was put to him again as two (measured 2026-11-17: 210 such pairs). A pair he
+ * confirmed as the same customer on the "Same customer, other line" list folds the same way, whatever the
+ * spelling (`confirmed`): his word is what joins two names the rule never would.
  */
 
 import { sameName } from "@/lib/phoenix-crm/customer-match-groups";
@@ -117,16 +119,23 @@ function isPersonList(listType: string): boolean {
   return listType === "AM" || listType === "PM";
 }
 
+/** The key of a pair of customers he confirmed as one, in either order (`oneCustomerJoins`' `confirmed`). */
+export function customerPairKey(left: string, right: string): string {
+  return left < right ? `${left}|${right}` : `${right}|${left}`;
+}
+
 /**
- * Which records the three-lines rule has already joined as one customer: `joined key → kept key`. A pair is
- * joined when one of them carries the rule's own move, both sit on one stored point, they are on two
- * different lines of one list (AM or PM), and their names are one name. The kept record is the one the
- * others were moved onto (not itself moved), then the earliest captured.
+ * Which records are one customer: `joined key → kept key`. A pair is joined when both sit on one stored point,
+ * they are on two different lines of one list (AM or PM), and EITHER the three-lines rule moved one of them
+ * there and their names are one name, OR he confirmed the two customers as one (`confirmed`, keys made by
+ * `customerPairKey`). The kept record is the one the others were moved onto (not itself moved), then the
+ * earliest captured.
  */
-export function oneCustomerJoins(candidates: ReadonlyArray<OneCustomerCandidate>): Map<string, string> {
-  const usable = candidates.filter((candidate) => candidate.stored && candidate.line && isPersonList(candidate.listType) && candidate.nameWords.length >= 2);
+export function oneCustomerJoins(candidates: ReadonlyArray<OneCustomerCandidate>, confirmed: ReadonlySet<string> = new Set()): Map<string, string> {
+  const usable = candidates.filter((candidate) => candidate.stored && candidate.line && isPersonList(candidate.listType));
   const buckets = new Map<string, OneCustomerCandidate[]>();
   for (const candidate of usable) {
+    if (candidate.nameWords.length < 2) continue;
     const bucket = `${candidate.listType}|${candidate.nameWords[0]} ${candidate.nameWords[1]}`;
     const held = buckets.get(bucket);
     if (held) held.push(candidate);
@@ -141,20 +150,42 @@ export function oneCustomerJoins(candidates: ReadonlyArray<OneCustomerCandidate>
     parent.set(key, root);
     return root;
   };
+  const onOnePoint = (left: OneCustomerCandidate, right: OneCustomerCandidate): boolean =>
+    left.customerId !== right.customerId &&
+    left.seatId !== right.seatId &&
+    left.line !== right.line &&
+    left.listType === right.listType &&
+    distanceMeters(left.stored as GeoPoint, right.stored as GeoPoint) <= ONE_CUSTOMER_SAME_POINT_METERS;
+  const join = (left: OneCustomerCandidate, right: OneCustomerCandidate) => {
+    linked.add(left.key);
+    linked.add(right.key);
+    const rootLeft = find(left.key);
+    const rootRight = find(right.key);
+    if (rootLeft !== rootRight) parent.set(rootLeft, rootRight);
+  };
   for (const group of buckets.values()) {
     for (let a = 0; a < group.length; a += 1) {
       for (let b = a + 1; b < group.length; b += 1) {
         const left = group[a];
         const right = group[b];
         if (!left.movedByLineRule && !right.movedByLineRule) continue;
-        if (left.customerId === right.customerId || left.seatId === right.seatId || left.line === right.line) continue;
-        if (distanceMeters(left.stored as GeoPoint, right.stored as GeoPoint) > ONE_CUSTOMER_SAME_POINT_METERS) continue;
-        if (!sameName(left.nameWords, right.nameWords)) continue;
-        linked.add(left.key);
-        linked.add(right.key);
-        const rootLeft = find(left.key);
-        const rootRight = find(right.key);
-        if (rootLeft !== rootRight) parent.set(rootLeft, rootRight);
+        if (!onOnePoint(left, right) || !sameName(left.nameWords, right.nameWords)) continue;
+        join(left, right);
+      }
+    }
+  }
+  // His own word: two customers he confirmed as one, whatever their names, once they share the point.
+  if (confirmed.size > 0) {
+    const byCustomer = new Map<string, OneCustomerCandidate[]>();
+    for (const candidate of usable) {
+      const held = byCustomer.get(candidate.customerId);
+      if (held) held.push(candidate);
+      else byCustomer.set(candidate.customerId, [candidate]);
+    }
+    for (const key of confirmed) {
+      const [first, second] = key.split("|");
+      for (const left of byCustomer.get(first) ?? []) {
+        for (const right of byCustomer.get(second) ?? []) if (onOnePoint(left, right)) join(left, right);
       }
     }
   }

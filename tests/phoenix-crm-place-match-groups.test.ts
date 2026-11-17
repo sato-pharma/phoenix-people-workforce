@@ -9,6 +9,7 @@ import {
   answersEachReading,
   buildPlaceMatchBoard,
   classifyPair,
+  customerPairKey,
   foldOneCustomer,
   insightsOf,
   MAX_ANSWER_PAIRS,
@@ -568,11 +569,25 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
     const after = buildPlaceMatchBoard(foldOneCustomer([cns, ai], [], joins));
     assert.equal(after.questions.length + after.groups.length, 0, "folded, he is one doctor and nothing is asked");
     assert.equal(foldOneCustomer([cns], [], joins).subjects[0].sameCustomer, undefined, "a join whose other half is not on the board folds nothing");
+
+    // His word joins two spellings the rule never would: عصام المزين (CNS) and عصام احمد مزين (Pedia).
+    const spelledOtherwise = { ...kept, nameWords: twinNameWords("عصام المزين") };
+    const pediaRecord = candidate(pedia, { customerId: "customer-pedia", nameWords: twinNameWords("عصام احمد مزين"), movedByLineRule: true });
+    assert.equal(oneCustomerJoins([spelledOtherwise, pediaRecord]).size, 0, "two spellings on one point stay two without his word");
+    const confirmedJoin = oneCustomerJoins([spelledOtherwise, pediaRecord], new Set([customerPairKey("customer-pedia", spelledOtherwise.customerId)]));
+    assert.equal(confirmedJoin.get(pedia.key), cns.key, "confirmed on Same customer, other line: one reading");
+    assert.equal(
+      oneCustomerJoins([spelledOtherwise, { ...pediaRecord, stored: at(40) }], new Set([customerPairKey("customer-pedia", spelledOtherwise.customerId)])).size,
+      0,
+      "his word folds them only once they share the point",
+    );
+    assert.equal(customerPairKey("b", "a"), customerPairKey("a", "b"), "the confirmed key reads in either order");
   }
 
   {
     const loader = read("src/lib/phoenix-crm/server/place-match-groups.ts");
     assert.ok(loader.includes("move_reason") && loader.includes("LINE_TWIN_MOVE_REASON"), "the loader reads which records the three-lines rule moved");
+    assert.ok(loader.includes('.from("phoenix_crm_line_lookalike_answers")') && loader.includes("oneCustomerJoins(oneCustomerCandidates, confirmedCustomers)"), "the loader folds what he confirmed");
     assert.ok(/buildPlaceMatchBoard\(folded\)/.test(loader) && /foldOneCustomer\(subjects, answers, oneCustomerJoins\(/.test(loader), "and folds before it builds the board");
     const screen = read("src/components/phoenix-crm/place-match-board.tsx");
     assert.ok(screen.includes("The same customer") && screen.includes("subject.sameCustomer"), "the reading names the other lines' reps");
