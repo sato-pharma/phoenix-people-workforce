@@ -52,9 +52,9 @@ export type OfferBlockType =
  *               Arabic watermark, a Sato-only running foot and the ink rule. A FIFTH skin the owner
  *               asked for on 2026-10-13 — "for job offers create new template with the new identity"
  *               — added beside the four others and changing none of them.
- * `prestige`  — the engraved-letter look: a letterhead closed by an Oxford double rule, a serif
- *               display face for the title and the monthly figure, sections numbered in Roman
- *               capitals and the ink rule. A SIXTH skin the owner asked for on 2026-11-17 for the
+ * `prestige`  — the navy-and-gold letter: a navy cover plate with the reverse mark, the candidate's
+ *               name in serif capitals and the reference ledger, flat-gold rules and corner marks,
+ *               Roman-numbered sections, a serif voice and a navy closing plate. A SIXTH skin the owner asked for on 2026-11-17 for the
  *               Product Manager offer, added beside the five others and changing none of them.
  */
 export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house" | "premium" | "prestige";

@@ -136,7 +136,7 @@ export const OFFER_BUILTIN_TEMPLATES: OfferBuiltinTemplate[] = [
   },
   {
     blocks: prestigeOfferBlocks,
-    description: "The engraved letter — an Oxford double rule under the letterhead, a serif title and monthly figure, Roman-numbered sections, ink rule (no filled areas), a 6% zebra salary table. The Product Manager offer opens on it.",
+    description: "The navy-and-gold letter — a navy cover plate with the candidate's name in serif capitals, flat-gold rules and corner marks, Roman-numbered sections, a serif salary figure, a navy closing plate. The Product Manager offer opens on it.",
     fontFamily: OFFER_PRESTIGE_FONT,
     fontSizePt: OFFER_PRESTIGE_FONT_SIZE_PT,
     key: "prestige",

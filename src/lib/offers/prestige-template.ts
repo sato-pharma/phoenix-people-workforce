@@ -4,7 +4,7 @@ import { PREMIUM_LATIN_FONT_STACK } from "@/lib/hiring-pack/premium-identity";
 import type { OfferBlock, OfferTheme } from "@/lib/offers/types";
 
 /**
- * The SIXTH built-in offer design — "SATO Prestige Offer", the engraved-letter look.
+ * The SIXTH built-in offer design — "SATO Prestige Offer", the navy-and-gold letter.
  *
  * The owner asked for it on 17 Nov 2026 ("a offer tailored to product manager … very premium
  * polished"), and chose "both": a new design beside the five, AND the Product Manager's own wording
@@ -13,16 +13,17 @@ import type { OfferBlock, OfferTheme } from "@/lib/offers/types";
  * Prestige look reaches only a row whose `variant` is `prestige`, through `prestige-skin.ts`.
  *
  * WHAT THE DESIGN IS, in the skin's own terms (each with its reason in `prestige-skin.ts`):
- *   · A letterhead closed by an Oxford double rule — a heavy deep rule over a hairline — the way an
- *     engraved company letter is ruled, never a filled band.
- *   · A serif display face for the two things a reader looks at first: the title and the monthly
- *     figure. Everything else stays in the house sans, so the letter reads as a document, not a poster.
- *   · Sections numbered in Roman capitals (I · COMPENSATION), clause numerals as deep-blue serif
- *     figures with no tile behind them, and a double rule over the total and over the signatures.
- *   · THE INK RULE: lines and type only. The one fill is the 6% zebra on the salary table.
+ *   · A NAVY COVER PLATE built from the letterhead, reference and title blocks: the reverse mark, the
+ *     company's names, "Offer of Employment" between gold rules, the candidate's name in serif
+ *     capitals, the position in serif italic, the reporting line and the reference ledger.
+ *   · Flat Sato gold for the rules, corner marks and numerals — never a gradient or a sheen.
+ *   · A serif voice for the running text, the figures, the clause numerals and the signatories.
+ *   · Sections numbered in Roman capitals, a double rule over the total and over the signatures.
+ *   · Three fills only: the cover plate, the 6% zebra on the salary table, and the navy closing plate.
  *
- * It carries no page chrome and names no `/brand/` file, so the preview and the PDF hand it over
- * exactly as they hand over the classic letter.
+ * The first Prestige (a re-ruling of the ordinary letter) was rejected the same evening — "this is
+ * the normal templete" — which is why the plate exists. It carries no page chrome; the preview and
+ * the PDF hand it the reverse mark exactly as they hand it to the Sato letter.
  *
  * Nothing on it says Phoenix: the candidate reads a Sato Pharmaceuticals paper.
  *

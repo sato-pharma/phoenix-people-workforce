@@ -12,7 +12,7 @@ import {
   offerBuiltinTemplate,
 } from "../src/lib/offers/builtin-templates.ts";
 import { PREMIUM_OFFER_SKIN } from "../src/lib/offers/premium-skin.ts";
-import { PRESTIGE_OFFER_SKIN } from "../src/lib/offers/prestige-skin.ts";
+import { PRESTIGE_GOLD, PRESTIGE_GOLD_ON_NAVY, PRESTIGE_NAVY, PRESTIGE_OFFER_SKIN } from "../src/lib/offers/prestige-skin.ts";
 import { buildOfferTokens, offerPageFooterHtml, renderOfferDocument } from "../src/lib/offers/render.ts";
 import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
 import type { OfferBlockType, OfferFields } from "../src/lib/offers/types.ts";
@@ -843,9 +843,45 @@ function prestigeSkinTests(
   assert.equal(prestigeDoc.pageSize, "A4", "the prestige letter prints A4, portrait");
   assert.ok(!prestigeDoc.css.includes("size:letter"), "Prestige must not carry the executive skin");
   assert.equal(prestigeDoc.pageHeaderHtml, "", "Prestige prints its letterhead once, in the flow — no running header");
-  assert.ok(!prestigeDoc.body.includes("pm-mast"), "Prestige draws no premium masthead — it is the ordinary letter, re-dressed");
+  assert.ok(!prestigeDoc.body.includes("pm-mast"), "Prestige draws no premium masthead — it has its own cover plate");
 
-  // ── The words are the classic letter's, word for word ────────────────────────────────────────────
+  // ── The cover plate: ONE navy plate built from the letterhead, reference and title blocks ────────
+  // The owner rejected the first Prestige on 17 Nov 2026 ("this is the normal templete"), so the
+  // letter must open on its own plate, never on the ordinary letterhead, reference row and title.
+  assert.equal((prestigeDoc.body.match(/class="px-plate keep"/g) ?? []).length, 1, "the prestige letter opens on exactly one cover plate");
+  assert.ok(prestigeDoc.body.indexOf("px-plate") < prestigeDoc.body.search(/<p[\s>]/), "the plate comes before the first paragraph");
+  for (const ordinary of ['class="letterhead', 'class="control', 'class="title-row', 'class="rail"']) {
+    assert.ok(!prestigeDoc.body.includes(ordinary), `the plate replaces the ordinary ${ordinary} — it is not drawn as well`);
+  }
+  assert.equal((prestigeDoc.body.match(/class="px-c (tl|tr|bl|br)"/g) ?? []).length, 4, "the plate carries its four gold corner marks");
+  const plate = /<header class="px-plate keep">[\s\S]*?<\/header>/.exec(prestigeDoc.body)?.[0] ?? "";
+  const plateWords = textChunks(plate);
+  assert.ok(plateWords.includes(SAMPLE.candidateName), "the plate names the candidate");
+  assert.ok(prestigeDoc.body.includes('</header><div class="px-gild"></div>'), "a gold rule sits directly under the plate");
+  const reverseMark = "data:image/png;base64,REVERSE";
+  const withMark = renderDesign(prestige, SAMPLE, { logoReverseUrl: reverseMark, logoUrl: "data:image/png;base64,INK" }).body;
+  assert.ok(withMark.includes(`<img class="px-mark" src="${reverseMark}"`), "the plate carries the reverse (white) mark it is handed");
+  assert.ok(!withMark.includes("base64,INK"), "the ink mark is never drawn on the navy plate");
+  assert.ok(prestigeDoc.body.includes('class="logo-gap"'), "with no reverse mark the plate keeps the logo's place empty, never an ink mark on navy");
+  const reporting = renderDesign(prestige, { ...SAMPLE, reportsTo: "Group Product Manager" }).body;
+  assert.ok(
+    textChunks(/<header class="px-plate keep">[\s\S]*?<\/header>/.exec(reporting)?.[0] ?? "").includes("Reporting to the Group Product Manager"),
+    "the plate prints the reporting line the offer chose, by title",
+  );
+  const noLine = renderDesign(prestige, { ...SAMPLE, reportsTo: "" }).body;
+  assert.ok(!noLine.includes("Reporting to the"), "with no reporting line the plate prints none");
+  for (const colour of [PRESTIGE_NAVY, PRESTIGE_GOLD, PRESTIGE_GOLD_ON_NAVY]) {
+    assert.ok(PRESTIGE_OFFER_SKIN.includes(colour), `the skin prints in Sato's own ${colour}`);
+  }
+  for (const reverseCaller of ["src/lib/offers/pdf.ts", "app/api/offers/preview/route.ts"]) {
+    const source = stripComments(readFileSync(reverseCaller, "utf8"));
+    assert.ok(
+      /template\.variant === "sato" \|\| template\.variant === "prestige"\s*\?\s*\(satoLogoReverseDataUri\(\)/.test(source),
+      `${reverseCaller} hands the reverse mark to Prestige as it does to the Sato letter`,
+    );
+  }
+
+  // ── The words are the classic letter's, every one of them ────────────────────────────────────────
   const stripIds = (blocks: { id: string }[]) => JSON.stringify(blocks.map(({ id: _id, ...rest }) => rest));
   assert.equal(stripIds(prestige.blocks()), stripIds(classic.blocks()), "the prestige blocks are the classic blocks word for word");
   assert.ok(prestige.blocks().every((block) => block.id.endsWith("-x")), "prestige block ids carry their own suffix");
@@ -853,7 +889,17 @@ function prestigeSkinTests(
     OFFER_BUILTIN_TEMPLATES.filter((entry) => entry.key !== "prestige").flatMap((entry) => entry.blocks().map((block) => block.id)),
   );
   assert.ok(prestige.blocks().every((block) => !otherIds.has(block.id)), "no prestige block id collides with another design's");
-  assert.deepEqual(textChunks(prestigeDoc.body), textChunks(classicDoc.body), "Prestige prints exactly the classic letter's words, in the same order");
+  // Every run of text the classic letter prints is printed by Prestige — as many times. The plate
+  // moves the letterhead, reference and title words into one place, so the ORDER differs there.
+  const prestigeRuns = new Map<string, number>();
+  for (const chunk of textChunks(prestigeDoc.body)) prestigeRuns.set(chunk, (prestigeRuns.get(chunk) ?? 0) + 1);
+  for (const chunk of textChunks(classicDoc.body)) {
+    const left = prestigeRuns.get(chunk) ?? 0;
+    assert.ok(left > 0, `Prestige drops a word the classic letter prints: "${chunk}"`);
+    prestigeRuns.set(chunk, left - 1);
+  }
+  const bodyAfterPlate = (html: string) => textChunks(html.slice(html.search(/<p[\s>]/)));
+  assert.deepEqual(bodyAfterPlate(prestigeDoc.body), bodyAfterPlate(classicDoc.body), "after the plate, Prestige prints the classic letter's words in the same order");
   const worded = textChunks(
     renderDesign(prestige, { ...SAMPLE, reportsTo: "Group Product Manager", roleSummary: "As Product Manager, you will own {{territory}}.", territory: "Pedia" }).body,
   ).join(" ");
@@ -896,11 +942,19 @@ function prestigeSkinTests(
   assert.ok(!/\/brand\//.test(PRESTIGE_OFFER_SKIN), "the prestige skin names no /brand/ file, so the PDF needs no inlining for it");
   assert.ok(!PRESTIGE_OFFER_SKIN.includes("`"), "no backtick in the skin — it is a template literal");
 
-  // ── The ink rule: one fill — the zebra — and every base fill cleared under its own selector ──────
+  // ── Three fills — the navy cover plate, the navy closing plate, the zebra — and every other base
+  //    fill cleared under its own selector ─────────────────────────────────────────────────────────
   const skinRules = cssRules(PRESTIGE_OFFER_SKIN);
   const painted = skinRules.filter((rule) => paints(lastValue(rule.body, "background")));
-  assert.deepEqual(painted.map((rule) => rule.selectors), [[PREMIUM_ZEBRA]], "the prestige skin paints exactly one area — the salary table's zebra row");
-  assert.equal(lastValue(painted[0]?.body ?? "", "background"), "var(--tint)", "the zebra is the 6% tint");
+  assert.deepEqual(
+    painted.map((rule) => rule.selectors),
+    [[".px-plate"], [PREMIUM_ZEBRA], [".foot"]],
+    "the prestige skin paints exactly three areas — the cover plate, the salary zebra and the closing plate",
+  );
+  assert.equal(lastValue(painted[0]?.body ?? "", "background"), PRESTIGE_NAVY, "the cover plate is flat Sato navy");
+  assert.equal(lastValue(painted[1]?.body ?? "", "background"), "var(--tint)", "the zebra is the 6% tint");
+  assert.equal(lastValue(painted[2]?.body ?? "", "background"), PRESTIGE_NAVY, "the closing plate is the same flat navy");
+  const meantToPaint = new Set([".px-plate", ".foot", PREMIUM_ZEBRA]);
   const skinFinal = new Map<string, { background: string | null; display: string | null }>();
   for (const rule of skinRules) {
     for (const selector of rule.selectors) {
@@ -916,6 +970,7 @@ function prestigeSkinTests(
     if (!paints(lastValue(rule.body, "background"))) continue;
     for (const selector of rule.selectors) {
       baseFills += 1;
+      if (meantToPaint.has(selector)) continue;
       const answer = skinFinal.get(selector);
       assert.ok(
         answer !== undefined && (answer.display === "none" || !paints(answer.background)),
@@ -930,9 +985,9 @@ function prestigeSkinTests(
   assert.ok(/double/.test(PRESTIGE_OFFER_SKIN), "the double rule is drawn");
   assert.ok(/Georgia/.test(PRESTIGE_OFFER_SKIN), "the serif display face is named");
 
-  // ── The PDF and the preview hand Prestige over as they hand over the classic letter ─────────────
+  // ── The PDF path's only prestige branch is the reverse mark — no inlining, no page stamping ──────
   const pdfSource = stripComments(readFileSync("src/lib/offers/pdf.ts", "utf8"));
-  assert.ok(!/prestige/.test(pdfSource), "the PDF path has no prestige branch — the letter needs no inlining and no page stamping");
+  assert.equal((pdfSource.match(/prestige/g) ?? []).length, 1, "the PDF path names prestige once — to hand over the reverse mark — and stamps nothing");
 }
 
 /**

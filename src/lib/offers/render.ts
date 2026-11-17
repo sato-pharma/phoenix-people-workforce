@@ -25,7 +25,7 @@ import { HOUSE_COLORS, houseBandBackground, houseEngineTurnedBand } from "@/lib/
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
 import { PREMIUM_OFFER_SKIN, premiumOfferBody, premiumOfferChrome } from "@/lib/offers/premium-skin";
-import { PRESTIGE_OFFER_SKIN } from "@/lib/offers/prestige-skin";
+import { PRESTIGE_OFFER_SKIN, prestigeOfferBody } from "@/lib/offers/prestige-skin";
 import { offerRoleSummary } from "@/lib/offers/role-summary";
 import { systemLegalEntity } from "@/config/system-settings";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
@@ -613,8 +613,9 @@ table{width:100%;border-collapse:collapse}
   // offer's own rules, which strip every filled area the base draws back to the ink rule. It tiles
   // no background of its own and switches the base's tiled band off.
   if (variant === "premium") return `${base}\n${PREMIUM_OFFER_SKIN}`;
-  // The prestige skin (17 Nov 2026), appended the same way. It draws no page chrome, so its body is
-  // the blocks one after another, exactly as the classic letter's is.
+  // The prestige skin (17 Nov 2026), appended the same way: the navy cover plate that
+  // `prestigeOfferBody` builds from the letterhead, reference and title blocks, the serif voice, and
+  // the navy closing plate. It draws no page chrome (no frame, no watermark, no running foot).
   if (variant === "prestige") return `${base}\n${PRESTIGE_OFFER_SKIN}`;
   return base;
 }
@@ -1013,7 +1014,18 @@ export function renderOfferDocument(
           (block) => renderOfferBlock(block, tokens, options),
           (value) => fillOfferTokens(value, tokens),
         ) + premiumOfferChrome()
-      : template.blocks.map((block) => renderOfferBlock(block, tokens, options)).join("");
+      : variant === "prestige"
+        ? // The prestige letter folds its letterhead, reference and title into one navy cover plate,
+          // which carries the reverse (white) mark when the caller hands one over.
+          prestigeOfferBody(
+            template.blocks,
+            (block) => renderOfferBlock(block, tokens, options),
+            (value) => fillOfferTokens(value, tokens),
+            typeof options.logoReverseUrl === "string" && options.logoReverseUrl !== ""
+              ? escapeHtml(options.logoReverseUrl)
+              : "",
+          )
+        : template.blocks.map((block) => renderOfferBlock(block, tokens, options)).join("");
   const css = offerDocumentCss(
     template.theme ?? {},
     template.fontFamily || OFFER_DEFAULT_FONT,

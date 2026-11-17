@@ -12,22 +12,45 @@ He answered two questions before it was built:
 ## The design
 
 `src/lib/offers/prestige-template.ts` registers it; `src/lib/offers/prestige-skin.ts` is its look.
-It is the classic letter's blocks, word for word (ids re-keyed `-x`), re-dressed by an override sheet
-appended to the base — exactly how the house and premium designs work. What the skin does:
+It uses the classic letter's blocks, word for word (ids re-keyed `-x`).
 
-- **An Oxford double rule** closes the letterhead (a heavy deep-blue rule over a hairline), and a CSS
-  `double` border repeats it over the salary total and the acceptance block.
-- **A serif display face** (Georgia, Noto Serif on the server, Times last) for the title, the monthly
-  and annual figures, the clause numerals, the section numerals and the signatories' names. Running
-  text stays in the house sans.
-- **Sections numbered in Roman capitals** by a CSS counter, so a section a designer adds or removes
-  renumbers itself.
-- **The ink rule.** Every area the base sheet fills is switched off or cleared under its own selector.
-  The one fill left is the 6% zebra on the salary table.
+**The first version was rejected.** It re-ruled the ordinary letter (a double rule under the
+letterhead, a serif title), and he answered the same evening: "this is the normal templete i want a
+godmode premium polished one". So the letter now opens on a plate of its own.
+
+- **A navy cover plate.** `prestigeOfferBody` folds the letterhead, reference and title blocks into one
+  plate in Sato navy (`#17304d`, the navy the on-navy mark was measured against). It carries:
+  - the reverse (white) mark and the company's names;
+  - "Offer of Employment" between two gold rules;
+  - the candidate's name in large spaced serif capitals;
+  - the position in serif italic;
+  - "Reporting to the …" when the offer names a manager;
+  - the reference ledger along its foot.
+
+  Four flat-gold corner marks sit inside it, and a gold rule runs a hair below it. Editing those
+  three blocks in the designer moves the plate. The ordinary letterhead, reference row, title and
+  rail are not drawn as well.
+- **Flat gold.** `#a07a3a` on paper, `#c8a462` on navy, and a deeper `#86662d` for small gold type.
+  The gold is printed flat, like foil, never as a gradient or a sheen.
+- **A serif voice** (Georgia, Noto Serif on the server, Times last) for:
+  - the running text and the figures;
+  - the clause numerals and the section numerals;
+  - the signatories.
+
+  Labels stay in the house sans, in spaced capitals.
+- **Sections numbered in Roman capitals** in gold by a CSS counter, so a section a designer adds or
+  removes renumbers itself.
+- **The salary** is a 32 pt serif figure with the currency set small. The table has a 6% zebra and a
+  double navy rule over the total. The acceptance block opens on the same double rule.
+- **A navy closing plate.** The legal footer sits in navy under its own gold rule, so the letter
+  closes the way it opens.
+- **Three fills only:** the cover plate, the zebra and the closing plate. Every other area the base
+  sheet fills is switched off or cleared under its own selector.
 - **The seal** is placed as the Premium letter places it: 21 mm, its foot on the signatory's rule. The
   signature cell and the signature ink are the base's, untouched.
-- No page chrome, no image, no `/brand/` file, so the preview and the PDF hand it over exactly as
-  they hand over the classic letter. Square corners, no shadow, no gradient.
+- **What the PDF and preview pass.** They hand the plate the reverse mark exactly as they hand it to
+  the Sato letter. There is no page chrome, no tiled image and no `/brand/` file.
+- **Square corners, no shadow, no gradient.**
 
 The four frozen designs keep their digests and Premium is untouched; the skin reaches only a row whose
 `variant` is `prestige`.
