@@ -248,11 +248,12 @@ async function refreshRotationAndReplay() {
 
 function liveAccountDecisions() {
   const account: LiveAccount = { login_id: "owner", hr_id: "B-10", role: "Super Admin", is_active: true, session_version: 3, is_test_persona: false, name: "Owner" };
-  const active = { lookupFailed: false, row: { employment_status: "Active", last_working_date: null } };
+  type Employee = Parameters<typeof decideLiveSubject>[2];
+  const active: Employee = { lookupFailed: false, row: { employment_status: "Active", last_working_date: null } };
   const today = "2026-11-17";
   assert.deepEqual(decideLiveSubject(OWNER, account, active, today), { ok: true });
 
-  const refused = (a: LiveAccount | null, e = active, subject = OWNER) => {
+  const refused = (a: LiveAccount | null, e: Employee = active, subject = OWNER) => {
     const verdict = decideLiveSubject(subject, a, e, today);
     assert.equal(verdict.ok, false);
     return verdict.ok ? "" : verdict.reason;
@@ -313,7 +314,7 @@ async function serverPieces() {
   assert.match(timedOut.content[0].text, /took longer than/);
 
   const answering = defineTool({ name: "phoenix_test_answer", title: "Answer", description: "test", input: { hrId: z.string() }, run: async (_c, input) => ({ summary: `Found ${input.hrId}.`, data: { hrId: input.hrId } }) });
-  const answered = await runConnectorTool(ctx, answering as ConnectorTool, { hrId: "B-10" }, { audit });
+  const answered = await runConnectorTool(ctx, answering as unknown as ConnectorTool, { hrId: "B-10" }, { audit });
   assert.equal(answered.isError, undefined);
   assert.deepEqual(answered.structuredContent, { summary: "Found B-10.", data: { hrId: "B-10" } });
 
@@ -332,7 +333,7 @@ async function serverPieces() {
   assert.ok(audits.every((row) => !JSON.stringify(row).includes("Found B-10.")));
 
   // The MCP server lists the tools it was given, each marked read-only.
-  const server = buildConnectorServer(ctx, [answering as ConnectorTool, refusing as ConnectorTool]);
+  const server = buildConnectorServer(ctx, [answering as unknown as ConnectorTool, refusing as ConnectorTool]);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: "test", version: "1.0.0" });
