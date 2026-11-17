@@ -104,6 +104,9 @@ skills-lock.json
 ChatGPT*
 # ...but the Phoenix Intelligence docs about connecting ChatGPT are real, reviewed documents.
 !docs/phoenix-intelligence/CHATGPT_*.md
+# ...and so is the ChatGPT data connector's code (on Windows git ignores case, so ChatGPT* hid it).
+!src/lib/chatgpt-connector/
+!tests/chatgpt-connector-*.test.ts
 
 # OS files
 Thumbs.db

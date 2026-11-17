@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [ChatGPT data connector](the-chatgpt-data-connector-reads-as-owner-or-ceo.md) - live /api/mcp, owner + CEO only, read-only, Phoenix builds files (17 Nov 2026)
 
 
 

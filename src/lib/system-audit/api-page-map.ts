@@ -328,6 +328,8 @@ export const API_NO_UI: Readonly<Record<string, string>> = {
   "/api/integrations": "Outside integration callback",
   "/api/internal/mailbox-robot": "Robot service (called by the website, never by a page)",
   "/api/mcp-source": "Outside connector",
+  "/api/mcp": "ChatGPT data connector (called by ChatGPT, never by a page)",
+  "/api/connector": "ChatGPT data connector sign-in and the files it built (reached from ChatGPT)",
   "/api/public": "Public page (no sign-in)",
   "/api/share": "Share link",
   "/api/email": "Email link",
