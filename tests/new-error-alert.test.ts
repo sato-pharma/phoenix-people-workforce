@@ -190,6 +190,13 @@ function wiringTests() {
     "fire-and-forget, and a failed import can never become a second error",
   );
   assert.match(service, /route: redactSecretsFromRoute\(input\.route\)/, "the route it is handed is the redacted one");
+  // The browser reaches service.ts (module-locks-manager.tsx -> permissions.ts -> log.ts), and the alert's import
+  // pulls in the notification stack down to sharp, which needs `fs`: unfenced, the production build fails.
+  assert.match(
+    service,
+    /if \(process\.env\.NEXT_RUNTIME !== ""\) \{\s*if \(id\) \{[\s\S]{0,900}?void import\("@\/lib\/error-monitor\/new-error-alert"\)/,
+    'RED the alert\'s import sits inside `if (process.env.NEXT_RUNTIME !== "")`, which Next compiles out of a browser bundle',
+  );
 
   const alert = code("src/lib/error-monitor/new-error-alert.ts");
   assert.match(alert, /channels: \["telegram"\]/, "RED Telegram only — the alert never becomes an email");
