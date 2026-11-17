@@ -3732,6 +3732,30 @@ $$;
 ALTER FUNCTION public.ats_merge_screening_answer(p_candidate_id uuid, p_key text, p_value text, p_marked_by_hr_id text) OWNER TO postgres;
 
 --
+-- Name: ats_placement_is_complete(text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO ''
+    AS $$
+  select case p_role_tab
+    when 'medical_rep' then nullif(btrim(coalesce(p_region_code, '')), '') is not null
+                        and nullif(btrim(coalesce(p_area_code, '')), '') is not null
+    when 'district_manager' then nullif(btrim(coalesce(p_region_code, '')), '') is not null
+    else true
+  end
+$$;
+
+ALTER FUNCTION public.ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text) OWNER TO postgres;
+
+--
+-- Name: FUNCTION ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text) IS 'A placement is whole: Medical Rep with region and area, District Manager with region, any other tab as it is. Owner, 2026-11-15. Mirrors placementIsComplete in src/lib/recruitment/workspace/role-tabs.ts.';
+
+--
 -- Name: ats_revert_candidate_status(uuid[], text[], text[], text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -3914,12 +3938,15 @@ CREATE FUNCTION public.ats_workspace_counts(p jsonb) RETURNS jsonb
     from public.ats_candidate_placements pl
     join base_tabs b on b.id = pl.candidate_id
     where pl.role_tab = any(coalesce(array(select jsonb_array_elements_text(coalesce(p->'allowed_tabs', '[]'::jsonb))), '{}'::text[]))
+      and public.ats_placement_is_complete(pl.role_tab, pl.region_code, pl.area_code)
     group by pl.role_tab
     union all
     select 'needs_placing', count(*)
     from base_tabs b
     where 'needs_placing' = any(coalesce(array(select jsonb_array_elements_text(coalesce(p->'allowed_tabs', '[]'::jsonb))), '{}'::text[]))
-      and not exists (select 1 from public.ats_candidate_placements np where np.candidate_id = b.id)
+      and not exists (select 1 from public.ats_candidate_placements np
+                      where np.candidate_id = b.id
+                        and public.ats_placement_is_complete(np.role_tab, np.region_code, np.area_code))
   ),
   base_place as (select id from public.ats_workspace_filter(p - 'region' - 'area') as f(id)),
   place_rows as (
@@ -3934,6 +3961,7 @@ CREATE FUNCTION public.ats_workspace_counts(p jsonb) RETURNS jsonb
     from public.ats_candidate_placements pl
     join base_place b on b.id = pl.candidate_id
     where pl.role_tab = nullif(p->>'tab', '')
+      and public.ats_placement_is_complete(pl.role_tab, pl.region_code, pl.area_code)
     group by 1, 2
   ),
   base_status as (select id from public.ats_workspace_filter(p - 'statuses' - 'exclude_statuses') as f(id)),
@@ -4012,18 +4040,23 @@ CREATE FUNCTION public.ats_workspace_filter(p jsonb) RETURNS SETOF uuid
         where hp.candidate_id = c.id and hp.role_tab in ('hr_section_head', 'talent_acquisition', 'personnel')
       )
     ))
-    -- the tab
+    -- the tab: only a WHOLE placement files a CV (owner, 2026-11-15); without one it is Needs placing
     and (
       case
         when pr.tab is null then (
           exists (select 1 from public.ats_candidate_placements ap
-                  where ap.candidate_id = c.id and ap.role_tab = any(pr.allowed_tabs))
+                  where ap.candidate_id = c.id and ap.role_tab = any(pr.allowed_tabs)
+                    and public.ats_placement_is_complete(ap.role_tab, ap.region_code, ap.area_code))
           or ('needs_placing' = any(pr.allowed_tabs)
-              and not exists (select 1 from public.ats_candidate_placements np where np.candidate_id = c.id))
+              and not exists (select 1 from public.ats_candidate_placements np
+                              where np.candidate_id = c.id
+                                and public.ats_placement_is_complete(np.role_tab, np.region_code, np.area_code)))
         )
         when pr.tab = 'needs_placing' then (
           'needs_placing' = any(pr.allowed_tabs)
-          and not exists (select 1 from public.ats_candidate_placements np where np.candidate_id = c.id)
+          and not exists (select 1 from public.ats_candidate_placements np
+                          where np.candidate_id = c.id
+                            and public.ats_placement_is_complete(np.role_tab, np.region_code, np.area_code))
         )
         else (
           pr.tab = any(pr.allowed_tabs)
@@ -4031,6 +4064,7 @@ CREATE FUNCTION public.ats_workspace_filter(p jsonb) RETURNS SETOF uuid
             select 1 from public.ats_candidate_placements tp
             where tp.candidate_id = c.id
               and tp.role_tab = pr.tab
+              and public.ats_placement_is_complete(tp.role_tab, tp.region_code, tp.area_code)
               and (
                 pr.region is null
                 or (pr.region = 'unspecified' and (
@@ -10246,6 +10280,14 @@ begin
     raise exception 'phoenix_crm:shared_place_retired';
   end if;
 
+  -- 🔴 A BUILDING THE SUPER ADMIN APPROVED IS REJECTED BY THE SUPER ADMIN ALONE (owner, 2026-11-16, the same
+  -- ruling as phoenix_crm_decide_validation_review).
+  if v_decision = 'reject' and v_venue.status = 'active'
+    and public.phoenix_crm_is_super_admin(v_venue.decided_by_hr_id)
+    and not public.phoenix_crm_is_super_admin(v_actor) then
+    raise exception 'phoenix_crm:approved_by_super_admin';
+  end if;
+
   if v_decision = 'approve' then
     update public.phoenix_crm_shared_places
     set status = 'active', decided_at = now(), decided_by_hr_id = v_actor, decision_note = v_note,
@@ -10533,6 +10575,22 @@ begin
   -- phoenix_crm_restore_validation, which checks the place is still retired before it brings it back.
   if not (v_review.status = 'approved' and v_decision = 'reject') and v_review.status <> 'pending' then
     raise exception 'phoenix_crm:review_decided';
+  end if;
+
+  -- 🔴 WHAT THE SUPER ADMIN APPROVED, ONLY THE SUPER ADMIN REJECTS (owner, 2026-11-16: "when super admin
+  -- approve something sfe or whoever cannot reject it back bec its approved by admin"). The SFE Manager
+  -- refused the administrator's three trusted-point validations on 2026-11-15 for a missing signboard — a
+  -- trusted point has no photograph by design. A reject by anybody but a Super Admin is refused when the
+  -- review was approved by a Super Admin, or when the place itself is the Super Admin's own (a trusted
+  -- point, a seat he placed): both are his approval. The Super Admin himself is never blocked.
+  if v_decision = 'reject' and not public.phoenix_crm_is_super_admin(v_actor) and (
+    (v_review.status = 'approved' and public.phoenix_crm_is_super_admin(v_review.decided_by_hr_id))
+    or exists (
+      select 1 from public.phoenix_crm_places pl
+      where pl.id = v_review.place_id and public.phoenix_crm_is_super_admin(pl.created_by_hr_id)
+    )
+  ) then
+    raise exception 'phoenix_crm:approved_by_super_admin';
   end if;
 
   -- 2026-11-14 (left items): the building this place is seated in, read under a share lock and BEFORE the
@@ -12132,6 +12190,26 @@ CREATE FUNCTION public.phoenix_crm_ireports360_conversion_page(p_after uuid DEFA
 $$;
 
 ALTER FUNCTION public.phoenix_crm_ireports360_conversion_page(p_after uuid, p_limit integer) OWNER TO postgres;
+
+--
+-- Name: phoenix_crm_is_super_admin(text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_is_super_admin(p_hr_id text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select nullif(trim(coalesce(p_hr_id, '')), '') is not null and exists (
+    select 1
+    from public.app_auth_users u
+    where upper(u.hr_id) = upper(trim(p_hr_id))
+      and u.role = 'Super Admin'
+      and u.is_active is true
+      and coalesce(u.is_test_persona, false) = false
+  );
+$$;
+
+ALTER FUNCTION public.phoenix_crm_is_super_admin(p_hr_id text) OWNER TO postgres;
 
 --
 -- Name: phoenix_crm_list_only_reps(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -19658,6 +19736,21 @@ $$;
 ALTER FUNCTION public.phoenix_crm_started_team_seats() OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_super_admin_hr_ids(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_super_admin_hr_ids() RETURNS SETOF text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select distinct upper(trim(u.hr_id))
+  from public.app_auth_users u
+  where public.phoenix_crm_is_super_admin(u.hr_id);
+$$;
+
+ALTER FUNCTION public.phoenix_crm_super_admin_hr_ids() OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_take_photo(text, text, text, text, boolean); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -22566,6 +22659,35 @@ end;
 $$;
 
 ALTER FUNCTION public.phx_attendance_mark_digest_line(p_line_id bigint, p_deduct boolean, p_days numeric, p_actor_hr_id text) OWNER TO postgres;
+
+--
+-- Name: phx_attendance_raw_punch_clock_correction(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_attendance_raw_punch_clock_correction() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+begin
+  if new.device_id = 'zkteco-main'
+     and new.punch_time >= timestamptz '2026-10-30 00:00:00+02'
+     and new.punch_time <  timestamptz '2026-11-11 00:00:00+02'
+     and not (coalesce(new.raw_payload, '{}'::jsonb) ? 'clock_correction')
+  then
+    new.raw_payload := coalesce(new.raw_payload, '{}'::jsonb) || jsonb_build_object(
+      'clock_correction', jsonb_build_object(
+        'minutes', -60,
+        'original_punch_time', new.punch_time,
+        'reason', 'device clock kept summer time after it ended on 2026-10-29'
+      )
+    );
+    new.punch_time := new.punch_time - interval '1 hour';
+  end if;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.phx_attendance_raw_punch_clock_correction() OWNER TO postgres;
 
 --
 -- Name: phx_attendance_release_digest(bigint, text, date, bigint[], numeric[]); Type: FUNCTION; Schema: public; Owner: postgres
@@ -36566,6 +36688,15 @@ declare
   v_batch_status text;
   v_part1_paid_at timestamptz;
 begin
+  -- The reviewed mark on a salary flag (owner, 17 Nov 2026): allowed on any month, locked or not,
+  -- when it is the ONLY change. Compared as the whole row minus those two columns, so a column added
+  -- later is guarded without touching this function.
+  if tg_table_name = 'salary_flags'
+    and tg_op = 'UPDATE'
+    and (to_jsonb(new) - 'resolved_at' - 'resolved_by') = (to_jsonb(old) - 'resolved_at' - 'resolved_by') then
+    return new;
+  end if;
+
   if tg_op = 'DELETE' then
     v_batch_id := old.batch_id;
   else
@@ -39847,6 +39978,79 @@ ALTER FUNCTION public.phx_renew_dispute_case_decision(p_case_kind text, p_case_r
 --
 
 COMMENT ON FUNCTION public.phx_renew_dispute_case_decision(p_case_kind text, p_case_ref text, p_claim_token uuid) IS 'True and renewed when the claim is still held by this token (F-PAY-005); false when it was lost.';
+
+--
+-- Name: phx_reopen_automated_payroll_part1(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) RETURNS SETOF public.automated_payroll_runs
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_run public.automated_payroll_runs%rowtype;
+  v_withdrawn integer := 0;
+begin
+  -- The phase write first, conditioned on the claim this reopen holds and on the phase: a lost claim
+  -- refuses before a single figure is touched.
+  update public.automated_payroll_runs
+     set phase = 'part1',
+         part1_confirmed_at = null,
+         part1_confirmed_by = null,
+         updated_at = now(),
+         transition_token = null,
+         transition_action = null,
+         transition_started_at = null
+   where id = p_run_id
+     and phase = 'part2'
+     and transition_token = p_transition_token
+  returning * into v_run;
+
+  if not found then
+    raise exception 'automated_payroll_transition_claim_lost: [transition-claim-lost] Part 1 was not reopened'
+      using errcode = 'P0001';
+  end if;
+
+  update public.automated_payroll_draft_rows
+     set first_part_frozen = null,
+         settled_in_part1 = null,
+         part1_withheld = null,
+         base_for_month = null,
+         ecol_paid = null,
+         fuel_paid = null,
+         days_worked = null,
+         edited_by = p_actor_hr_id,
+         write_reason = 'part1_reopened',
+         write_step_key = null,
+         updated_at = now()
+   where run_id = p_run_id;
+
+  delete from public.automated_payroll_held_releases
+   where paying_run_id = p_run_id;
+  get diagnostics v_withdrawn = row_count;
+
+  if v_withdrawn > 0 then
+    insert into public.automated_payroll_audit (run_id, actor_hr_id, action, step_key, detail)
+    values (
+      p_run_id,
+      p_actor_hr_id,
+      'held_release_recorded',
+      null,
+      jsonb_build_object('stage', 'part1_reopened', 'released', '[]'::jsonb, 'withdrawn', v_withdrawn)
+    );
+  end if;
+
+  return next v_run;
+end;
+$$;
+
+ALTER FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) IS 'Reopens Part 1 of an Automated Payroll run in one transaction under the reopen claim: clears what confirming Part 1 stamped on every draft row, withdraws the run''s held-salary reservations, and moves the run back to part1 (payroll audit 2026-11-14, finding 3).';
 
 --
 -- Name: phx_reopen_rejected_marketing_request(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
@@ -46674,7 +46878,7 @@ begin
   with people as (
     select o.issue_id, (count(distinct o.hr_key) filter (where o.hr_key is not null))::integer as people
     from public.system_audit_occurrences o
-    where o.issue_id = any (p_issue_ids) and not o.is_test
+    where o.issue_id = any (p_issue_ids) and not o.is_test and o.triage_override is null
     group by o.issue_id
   )
   update public.system_audit_issues i
@@ -46994,6 +47198,17 @@ begin
     raise exception 'issue % not found', p_issue_id using errcode = 'P0002';
   end if;
 
+  -- The occurrence a change is recorded against (the one that reopens a fix) must be one of THIS
+  -- issue's: a foreign one would invalidate this issue's fix on another issue's evidence and leave a
+  -- history row pointing at the wrong place. The sentence reaches the System Audit page verbatim.
+  if p_occurrence_id is not null and not exists (
+    select 1 from public.system_audit_occurrences o
+     where o.id = p_occurrence_id and o.issue_id = p_issue_id
+  ) then
+    raise exception 'That occurrence is not one of this issue''s occurrences, so the change was not made.'
+      using errcode = '22023';
+  end if;
+
   -- Nobody asserts a fix by hand: FIXED — VERIFIED comes from the verifier's re-measurement, or
   -- from the reviewed historical seed carrying that re-measurement as evidence.
   if p_to = 'fixed_verified' and not (v_is_verifier or (v_is_seed and coalesce(p_evidence, '{}'::jsonb) <> '{}'::jsonb)) then
@@ -47047,7 +47262,11 @@ begin
   end if;
 
   update public.system_audit_issues
-     set status = p_to, updated_at = now()
+     set status = p_to,
+         -- What the daily message last said about the status holds only while that status stands:
+         -- once the issue leaves "not fixed", the next reopen is news again and must be told.
+         alerted_status = case when p_to = 'not_fixed' then alerted_status else null end,
+         updated_at = now()
    where id = p_issue_id;
 
   insert into public.system_audit_status_history (issue_id, occurrence_id, from_status, to_status, actor, reason, evidence)
@@ -47203,6 +47422,11 @@ begin
       technical_message = coalesce(excluded.technical_message, o.technical_message),
       evidence = case when excluded.evidence <> '{}'::jsonb then excluded.evidence else o.evidence end,
       release = coalesce(excluded.release, o.release),
+      -- A row the verifier set aside as an older build is judged again once a LATER event lands on
+      -- it: that event carries its own release, so the old build's mark no longer speaks for it.
+      -- (Every SET expression reads the row as it was, so o.last_event_at is the stored value.)
+      pre_fix_build = case when excluded.last_event_at > o.last_event_at then excluded.pre_fix_build
+                           else o.pre_fix_build end,
       -- A detector that re-judges a day (the visit lifecycle) may mint a new correlation id when the
       -- day's lost visits change; the root row follows it, so its linked rows stay one operation.
       correlation_id = coalesce(excluded.correlation_id, o.correlation_id),
@@ -55115,6 +55339,113 @@ ALTER TABLE public.company_email_aliases OWNER TO postgres;
 COMMENT ON COLUMN public.company_email_aliases.recorded_member_emails IS 'What a human last saw in the Turbify control panel. Turbify has no API, so this can never be verified from here - treat it as an attestation with an age, never as current truth.';
 
 --
+-- Name: connector_files; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.connector_files (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    login_id text NOT NULL,
+    hr_id text,
+    kind text NOT NULL,
+    title text NOT NULL,
+    file_name text NOT NULL,
+    storage_path text NOT NULL,
+    size_bytes integer NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    downloaded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT connector_files_kind_check CHECK ((kind = ANY (ARRAY['xlsx'::text, 'pdf'::text])))
+);
+
+ALTER TABLE public.connector_files OWNER TO postgres;
+
+--
+-- Name: TABLE connector_files; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.connector_files IS 'Excel and PDF files Phoenix built for a person through the ChatGPT connector, stored in the job-exports bucket. Downloadable only by the same signed-in person until expires_at. Server only: RLS on, no policy.';
+
+--
+-- Name: connector_oauth_clients; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.connector_oauth_clients (
+    client_id text NOT NULL,
+    client_name text,
+    redirect_uris text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone
+);
+
+ALTER TABLE public.connector_oauth_clients OWNER TO postgres;
+
+--
+-- Name: TABLE connector_oauth_clients; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.connector_oauth_clients IS 'ChatGPT connectors registered for the Phoenix data connector (RFC 7591). ChatGPT return addresses only; a registration opens nothing without a Phoenix sign-in by the owner or the CEO. Server only: RLS on, no policy.';
+
+--
+-- Name: connector_oauth_codes; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.connector_oauth_codes (
+    code_hash text NOT NULL,
+    client_id text NOT NULL,
+    login_id text NOT NULL,
+    hr_id text,
+    role text NOT NULL,
+    session_version integer NOT NULL,
+    redirect_uri text NOT NULL,
+    code_challenge text NOT NULL,
+    resource text NOT NULL,
+    scope text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.connector_oauth_codes OWNER TO postgres;
+
+--
+-- Name: TABLE connector_oauth_codes; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.connector_oauth_codes IS 'Two-minute authorization codes for the ChatGPT connector, as SHA-256 fingerprints, with the PKCE S256 challenge. Good once (used_at). Server only: RLS on, no policy.';
+
+--
+-- Name: connector_oauth_tokens; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.connector_oauth_tokens (
+    token_hash text NOT NULL,
+    kind text NOT NULL,
+    family_id uuid NOT NULL,
+    client_id text NOT NULL,
+    login_id text NOT NULL,
+    hr_id text,
+    role text NOT NULL,
+    session_version integer NOT NULL,
+    resource text NOT NULL,
+    scope text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    revoked_reason text,
+    last_used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT connector_oauth_tokens_kind_check CHECK ((kind = ANY (ARRAY['access'::text, 'refresh'::text])))
+);
+
+ALTER TABLE public.connector_oauth_tokens OWNER TO postgres;
+
+--
+-- Name: TABLE connector_oauth_tokens; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.connector_oauth_tokens IS 'ChatGPT connector access (1 h) and refresh (30 d) tokens as SHA-256 fingerprints, never the tokens. session_version pins the account at approval. Revoke every row to end every ChatGPT connection. Server only: RLS on, no policy.';
+
+--
 -- Name: contract_renewal_history; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -58410,6 +58741,45 @@ ALTER TABLE public.dispute_case_events OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.dispute_case_events IS 'Everything that happened to a dispute besides its messages: decisions (every one, so a reopened case keeps the earlier ruling), reopen requests and reopenings, refunds. Append-only.';
+
+--
+-- Name: dispute_explanations; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.dispute_explanations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_kind text NOT NULL,
+    case_ref text NOT NULL,
+    group_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_hr_id text NOT NULL,
+    employee_name text,
+    reason_code text NOT NULL,
+    day_part text DEFAULT 'whole'::text NOT NULL,
+    detail_text text DEFAULT ''::text NOT NULL,
+    dates date[] DEFAULT '{}'::date[] NOT NULL,
+    confirmer_hr_id text,
+    confirmer_name text,
+    confirmation_status text NOT NULL,
+    confirmation_note text,
+    confirmed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT dispute_explanations_answered_check CHECK (((confirmation_status = ANY (ARRAY['confirmed'::text, 'declined'::text])) = (confirmed_at IS NOT NULL))),
+    CONSTRAINT dispute_explanations_case_kind_check CHECK ((case_kind = ANY (ARRAY['calendar'::text, 'deduction'::text, 'daily'::text]))),
+    CONSTRAINT dispute_explanations_confirmation_check CHECK ((confirmation_status = ANY (ARRAY['not_needed'::text, 'awaiting'::text, 'confirmed'::text, 'declined'::text]))),
+    CONSTRAINT dispute_explanations_confirmer_shape_check CHECK ((((reason_code = 'other'::text) AND (confirmer_hr_id IS NULL) AND (confirmation_status = 'not_needed'::text) AND (day_part = 'whole'::text)) OR ((reason_code <> 'other'::text) AND (confirmer_hr_id IS NOT NULL) AND (confirmation_status <> 'not_needed'::text)))),
+    CONSTRAINT dispute_explanations_day_part_check CHECK ((day_part = ANY (ARRAY['whole'::text, 'am'::text, 'pm'::text]))),
+    CONSTRAINT dispute_explanations_detail_length_check CHECK ((length(detail_text) <= 1000)),
+    CONSTRAINT dispute_explanations_reason_check CHECK ((reason_code = ANY (ARRAY['training'::text, 'meeting'::text, 'double_visit'::text, 'other'::text])))
+);
+
+ALTER TABLE public.dispute_explanations OWNER TO postgres;
+
+--
+-- Name: TABLE dispute_explanations; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.dispute_explanations IS 'Why an employee says a disputed day or deduction should not count: a reason from the fixed list, the half of the day, his words, and the manager or Training Manager named to confirm it. One row per dispute case; the case''s own module keeps its decision.';
 
 --
 -- Name: dispute_refunds; Type: TABLE; Schema: public; Owner: postgres
@@ -63537,6 +63907,192 @@ ALTER TABLE public.marketing_workflow_steps ALTER COLUMN id ADD GENERATED BY DEF
 );
 
 --
+-- Name: medical_insurance_category_choices; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.medical_insurance_category_choices (
+    policy_id uuid NOT NULL,
+    hr_id text NOT NULL,
+    category text NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT medical_insurance_category_choices_category_check CHECK ((category = ANY (ARRAY['A'::text, 'B'::text, 'C'::text])))
+);
+
+ALTER TABLE public.medical_insurance_category_choices OWNER TO postgres;
+
+--
+-- Name: TABLE medical_insurance_category_choices; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.medical_insurance_category_choices IS 'The plan decided for an employee who is not on the policy yet, read by the additions file. One row per person per policy; a new decision replaces it.';
+
+--
+-- Name: medical_insurance_documents; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.medical_insurance_documents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    policy_id uuid NOT NULL,
+    kind text NOT NULL,
+    title text NOT NULL,
+    storage_bucket text DEFAULT 'medical-insurance'::text NOT NULL,
+    storage_path text,
+    file_name text,
+    content_type text,
+    size_bytes integer,
+    email_from text,
+    email_to text,
+    email_sent_on date,
+    body text,
+    note text,
+    uploaded_by_hr_id text,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    removed_at timestamp with time zone,
+    removed_by_hr_id text,
+    CONSTRAINT medical_insurance_documents_check CHECK (((storage_path IS NOT NULL) OR (length(btrim(COALESCE(body, ''::text))) > 0))),
+    CONSTRAINT medical_insurance_documents_kind_check CHECK ((kind = ANY (ARRAY['communication_tool'::text, 'form'::text, 'policy'::text, 'email'::text]))),
+    CONSTRAINT medical_insurance_documents_size_bytes_check CHECK (((size_bytes IS NULL) OR (size_bytes > 0)))
+);
+
+ALTER TABLE public.medical_insurance_documents OWNER TO postgres;
+
+--
+-- Name: TABLE medical_insurance_documents; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.medical_insurance_documents IS 'The table of benefits, forms, the policy and emails with the insurer. Private bucket; read only through the server-side file route.';
+
+--
+-- Name: medical_insurance_exceptions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.medical_insurance_exceptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    policy_id uuid NOT NULL,
+    hr_id text NOT NULL,
+    decision text NOT NULL,
+    reason text NOT NULL,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    revoked_by_hr_id text,
+    CONSTRAINT medical_insurance_exceptions_decision_check CHECK ((decision = ANY (ARRAY['keep_out'::text, 'keep_in'::text]))),
+    CONSTRAINT medical_insurance_exceptions_reason_check CHECK ((length(btrim(reason)) > 0))
+);
+
+ALTER TABLE public.medical_insurance_exceptions OWNER TO postgres;
+
+--
+-- Name: TABLE medical_insurance_exceptions; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.medical_insurance_exceptions IS 'An exception to the rule that everyone is covered from day one, with the reason and who decided it. Revoked, never deleted.';
+
+--
+-- Name: medical_insurance_invoices; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.medical_insurance_invoices (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    policy_id uuid NOT NULL,
+    invoice_number text NOT NULL,
+    kind text NOT NULL,
+    issued_on date,
+    covers_from date,
+    covers_to date,
+    total_due numeric(14,2) NOT NULL,
+    storage_bucket text DEFAULT 'medical-insurance'::text NOT NULL,
+    storage_path text,
+    file_name text,
+    content_type text,
+    size_bytes integer,
+    comparison jsonb NOT NULL,
+    compared_at timestamp with time zone DEFAULT now() NOT NULL,
+    note text,
+    recorded_by_hr_id text,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT medical_insurance_invoices_check CHECK (((covers_from IS NULL) OR (covers_to IS NULL) OR (covers_to >= covers_from))),
+    CONSTRAINT medical_insurance_invoices_kind_check CHECK ((kind = ANY (ARRAY['opening'::text, 'additions'::text, 'deletions'::text, 'other'::text]))),
+    CONSTRAINT medical_insurance_invoices_size_bytes_check CHECK (((size_bytes IS NULL) OR (size_bytes > 0)))
+);
+
+ALTER TABLE public.medical_insurance_invoices OWNER TO postgres;
+
+--
+-- Name: TABLE medical_insurance_invoices; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.medical_insurance_invoices IS 'A bill or credit note from the insurer, as recorded by hand, and how it compared with the plan. Nothing here pays anything or writes to payroll.';
+
+--
+-- Name: medical_insurance_members; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.medical_insurance_members (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    policy_id uuid NOT NULL,
+    hr_id text,
+    certificate_number text,
+    staff_number text,
+    member_type text NOT NULL,
+    principal_member_id uuid,
+    full_name text NOT NULL,
+    category text NOT NULL,
+    coverage_starts_on date NOT NULL,
+    coverage_ends_on date,
+    end_reason text,
+    birth_date date,
+    national_id text,
+    gender text,
+    phone text,
+    notes text,
+    created_by_hr_id text,
+    updated_by_hr_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT medical_insurance_members_category_check CHECK ((category = ANY (ARRAY['A'::text, 'B'::text, 'C'::text]))),
+    CONSTRAINT medical_insurance_members_check CHECK (((coverage_ends_on IS NULL) OR (coverage_ends_on >= coverage_starts_on))),
+    CONSTRAINT medical_insurance_members_check1 CHECK (((member_type = 'employee'::text) = (principal_member_id IS NULL))),
+    CONSTRAINT medical_insurance_members_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['M'::text, 'F'::text])))),
+    CONSTRAINT medical_insurance_members_member_type_check CHECK ((member_type = ANY (ARRAY['employee'::text, 'spouse'::text, 'child'::text])))
+);
+
+ALTER TABLE public.medical_insurance_members OWNER TO postgres;
+
+--
+-- Name: TABLE medical_insurance_members; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.medical_insurance_members IS 'Who is on the policy, with dates of cover and plan. A row is ended, never deleted, so the register can always say who was covered on a given day.';
+
+--
+-- Name: medical_insurance_policies; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.medical_insurance_policies (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    insurer text NOT NULL,
+    policy_number text,
+    proposal_code text,
+    starts_on date NOT NULL,
+    ends_on date NOT NULL,
+    rate_card jsonb NOT NULL,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT medical_insurance_policies_check CHECK ((ends_on > starts_on))
+);
+
+ALTER TABLE public.medical_insurance_policies OWNER TO postgres;
+
+--
+-- Name: TABLE medical_insurance_policies; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.medical_insurance_policies IS 'A group medical policy and its rate card. The rate card is data, so a re-quote or next year''s renewal is an edit or a new row, never a code change.';
+
+--
 -- Name: milestone_card_prints; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -65476,6 +66032,30 @@ ALTER TABLE public.phoenix_crm_double_visit_requests OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.phoenix_crm_double_visit_requests IS 'A rep''s request for a double visit with an AM or PM account, raised by the last question of the visit (owner, 2026-10-16): up to three field days, any number of the people offered. It can be edited (the days) and never cancelled. Each person asked answers on his own row in phoenix_crm_double_visit_request_people. The rep reads his own; every manager reads the requests of the territories in his scope, and each person asked reads his own. It never reads or writes the district manager''s own double-visit plan.';
+
+--
+-- Name: phoenix_crm_line_lookalike_answers; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_line_lookalike_answers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    waiting_customer_id uuid NOT NULL,
+    source_customer_id uuid NOT NULL,
+    answer text NOT NULL,
+    decided_by_hr_id text NOT NULL,
+    decided_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_line_lookalike_answers_answer_chk CHECK ((answer = ANY (ARRAY['same'::text, 'not_same'::text]))),
+    CONSTRAINT phoenix_crm_line_lookalike_answers_decider_chk CHECK ((length(TRIM(BOTH FROM decided_by_hr_id)) > 0)),
+    CONSTRAINT phoenix_crm_line_lookalike_answers_pair_chk CHECK ((waiting_customer_id <> source_customer_id))
+);
+
+ALTER TABLE public.phoenix_crm_line_lookalike_answers OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_line_lookalike_answers; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_line_lookalike_answers IS 'Phoenix CRM: the Super Admin''s answer to "is this waiting customer the customer another line validated?" (owner, 2026-11-16, "Fix rule + review list"). One row per (waiting, validated) pair; same = confirmed and validated through phoenix_crm_share_line_validation, not_same = never asked again. An answer about a row that is gone is inert. Nothing a rep receives reads it.';
 
 --
 -- Name: phoenix_crm_line_rollout; Type: TABLE; Schema: public; Owner: postgres
@@ -67795,8 +68375,10 @@ CREATE TABLE public.private_calendar_data_disputes (
     decided_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    day_part text DEFAULT 'whole'::text NOT NULL,
     CONSTRAINT private_calendar_data_disputes_claim_source_check CHECK ((length(TRIM(BOTH FROM claim_source_text)) > 0)),
     CONSTRAINT private_calendar_data_disputes_claim_text_check CHECK ((length(TRIM(BOTH FROM claim_text)) > 0)),
+    CONSTRAINT private_calendar_data_disputes_day_part_check CHECK ((day_part = ANY (ARRAY['whole'::text, 'am'::text, 'pm'::text]))),
     CONSTRAINT private_calendar_data_disputes_decided_fields_check CHECK ((((status = 'pending_review'::text) AND (admin_hr_id IS NULL) AND (decided_at IS NULL)) OR ((status <> 'pending_review'::text) AND (admin_hr_id IS NOT NULL) AND (decided_at IS NOT NULL)))),
     CONSTRAINT private_calendar_data_disputes_item_source_check CHECK (((item_source IS NULL) OR (item_source = ANY (ARRAY['attendance'::text, 'double_visit'::text, 'excuse'::text, 'holiday'::text, 'plan'::text, 'vacation'::text])))),
     CONSTRAINT private_calendar_data_disputes_status_check CHECK ((status = ANY (ARRAY['pending_review'::text, 'accepted'::text, 'rejected'::text])))
@@ -67809,6 +68391,12 @@ ALTER TABLE public.private_calendar_data_disputes OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.private_calendar_data_disputes IS 'Employee-flagged private-calendar data accuracy disputes. Governance/audit only — never mutates the original synced source record (CRM/fingerprint/etc); an accepted dispute is displayed as a verified-correction annotation layered on top of the original item.';
+
+--
+-- Name: COLUMN private_calendar_data_disputes.day_part; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.private_calendar_data_disputes.day_part IS 'The half of the day the request explains: whole, am (morning only) or pm (afternoon only). An accepted half clears only that half.';
 
 --
 -- Name: private_calendar_dispute_messages; Type: TABLE; Schema: public; Owner: postgres
@@ -73867,6 +74455,34 @@ ALTER TABLE ONLY public.company_email_aliases
     ADD CONSTRAINT company_email_aliases_pkey PRIMARY KEY (alias_address);
 
 --
+-- Name: connector_files connector_files_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_files
+    ADD CONSTRAINT connector_files_pkey PRIMARY KEY (id);
+
+--
+-- Name: connector_oauth_clients connector_oauth_clients_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_clients
+    ADD CONSTRAINT connector_oauth_clients_pkey PRIMARY KEY (client_id);
+
+--
+-- Name: connector_oauth_codes connector_oauth_codes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_codes
+    ADD CONSTRAINT connector_oauth_codes_pkey PRIMARY KEY (code_hash);
+
+--
+-- Name: connector_oauth_tokens connector_oauth_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_tokens
+    ADD CONSTRAINT connector_oauth_tokens_pkey PRIMARY KEY (token_hash);
+
+--
 -- Name: contract_renewal_history contract_renewal_history_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -74313,6 +74929,20 @@ ALTER TABLE ONLY public.dispute_case_decision_claims
 
 ALTER TABLE ONLY public.dispute_case_events
     ADD CONSTRAINT dispute_case_events_pkey PRIMARY KEY (id);
+
+--
+-- Name: dispute_explanations dispute_explanations_case_uidx; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.dispute_explanations
+    ADD CONSTRAINT dispute_explanations_case_uidx UNIQUE (case_kind, case_ref);
+
+--
+-- Name: dispute_explanations dispute_explanations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.dispute_explanations
+    ADD CONSTRAINT dispute_explanations_pkey PRIMARY KEY (id);
 
 --
 -- Name: dispute_refunds dispute_refunds_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -75673,6 +76303,76 @@ ALTER TABLE ONLY public.marketing_workflow_steps
     ADD CONSTRAINT marketing_workflow_steps_step_code_key UNIQUE (step_code);
 
 --
+-- Name: medical_insurance_category_choices medical_insurance_category_choices_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_category_choices
+    ADD CONSTRAINT medical_insurance_category_choices_pkey PRIMARY KEY (policy_id, hr_id);
+
+--
+-- Name: medical_insurance_documents medical_insurance_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_documents
+    ADD CONSTRAINT medical_insurance_documents_pkey PRIMARY KEY (id);
+
+--
+-- Name: medical_insurance_documents medical_insurance_documents_storage_path_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_documents
+    ADD CONSTRAINT medical_insurance_documents_storage_path_key UNIQUE (storage_path);
+
+--
+-- Name: medical_insurance_exceptions medical_insurance_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_exceptions
+    ADD CONSTRAINT medical_insurance_exceptions_pkey PRIMARY KEY (id);
+
+--
+-- Name: medical_insurance_invoices medical_insurance_invoices_invoice_number_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_invoices
+    ADD CONSTRAINT medical_insurance_invoices_invoice_number_key UNIQUE (invoice_number);
+
+--
+-- Name: medical_insurance_invoices medical_insurance_invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_invoices
+    ADD CONSTRAINT medical_insurance_invoices_pkey PRIMARY KEY (id);
+
+--
+-- Name: medical_insurance_invoices medical_insurance_invoices_storage_path_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_invoices
+    ADD CONSTRAINT medical_insurance_invoices_storage_path_key UNIQUE (storage_path);
+
+--
+-- Name: medical_insurance_members medical_insurance_members_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_members
+    ADD CONSTRAINT medical_insurance_members_pkey PRIMARY KEY (id);
+
+--
+-- Name: medical_insurance_policies medical_insurance_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_policies
+    ADD CONSTRAINT medical_insurance_policies_pkey PRIMARY KEY (id);
+
+--
+-- Name: medical_insurance_policies medical_insurance_policies_policy_number_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_policies
+    ADD CONSTRAINT medical_insurance_policies_policy_number_key UNIQUE (policy_number);
+
+--
 -- Name: milestone_card_prints milestone_card_prints_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -76216,6 +76916,13 @@ ALTER TABLE ONLY public.phoenix_crm_imported_visit_sources
 
 ALTER TABLE ONLY public.phoenix_crm_ireports360_checkin_matches
     ADD CONSTRAINT phoenix_crm_ireports360_checkin_matches_pkey PRIMARY KEY (crm_visit_id);
+
+--
+-- Name: phoenix_crm_line_lookalike_answers phoenix_crm_line_lookalike_answers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_line_lookalike_answers
+    ADD CONSTRAINT phoenix_crm_line_lookalike_answers_pkey PRIMARY KEY (id);
 
 --
 -- Name: phoenix_crm_line_rollout phoenix_crm_line_rollout_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -79633,6 +80340,42 @@ CREATE INDEX company_calendar_events_scope_line_idx ON public.company_calendar_e
 CREATE INDEX company_email_aliases_list_key_idx ON public.company_email_aliases USING btree (distribution_list_key) WHERE (distribution_list_key IS NOT NULL);
 
 --
+-- Name: connector_files_login_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_files_login_idx ON public.connector_files USING btree (login_id, created_at DESC);
+
+--
+-- Name: connector_oauth_codes_client_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_oauth_codes_client_id_fk_idx ON public.connector_oauth_codes USING btree (client_id);
+
+--
+-- Name: connector_oauth_codes_login_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_oauth_codes_login_id_fk_idx ON public.connector_oauth_codes USING btree (login_id);
+
+--
+-- Name: connector_oauth_tokens_client_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_oauth_tokens_client_id_fk_idx ON public.connector_oauth_tokens USING btree (client_id);
+
+--
+-- Name: connector_oauth_tokens_family_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_oauth_tokens_family_idx ON public.connector_oauth_tokens USING btree (family_id);
+
+--
+-- Name: connector_oauth_tokens_login_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_oauth_tokens_login_id_fk_idx ON public.connector_oauth_tokens USING btree (login_id);
+
+--
 -- Name: contract_renewal_history_employee_hr_id_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -80255,6 +80998,18 @@ CREATE INDEX dispute_attachments_message_idx ON public.dispute_attachments USING
 --
 
 CREATE INDEX dispute_case_events_case_idx ON public.dispute_case_events USING btree (case_kind, case_ref, created_at);
+
+--
+-- Name: dispute_explanations_awaiting_confirmer_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX dispute_explanations_awaiting_confirmer_idx ON public.dispute_explanations USING btree (confirmer_hr_id, created_at) WHERE (confirmation_status = 'awaiting'::text);
+
+--
+-- Name: dispute_explanations_group_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX dispute_explanations_group_idx ON public.dispute_explanations USING btree (group_id);
 
 --
 -- Name: dispute_refunds_employee_hr_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -82915,6 +83670,48 @@ CREATE INDEX marketing_roi_trend_facts_refresh_run_id_idx ON public.marketing_ro
 CREATE UNIQUE INDEX marketing_workflow_steps_active_sequence_uidx ON public.marketing_workflow_steps USING btree (sequence) WHERE (active = true);
 
 --
+-- Name: medical_insurance_documents_policy_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX medical_insurance_documents_policy_idx ON public.medical_insurance_documents USING btree (policy_id, kind, uploaded_at DESC);
+
+--
+-- Name: medical_insurance_exceptions_one_live; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX medical_insurance_exceptions_one_live ON public.medical_insurance_exceptions USING btree (policy_id, hr_id) WHERE (revoked_at IS NULL);
+
+--
+-- Name: medical_insurance_invoices_policy_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX medical_insurance_invoices_policy_idx ON public.medical_insurance_invoices USING btree (policy_id, recorded_at DESC);
+
+--
+-- Name: medical_insurance_members_hr_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX medical_insurance_members_hr_idx ON public.medical_insurance_members USING btree (hr_id) WHERE (hr_id IS NOT NULL);
+
+--
+-- Name: medical_insurance_members_one_open_employee; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX medical_insurance_members_one_open_employee ON public.medical_insurance_members USING btree (policy_id, hr_id) WHERE ((member_type = 'employee'::text) AND (hr_id IS NOT NULL) AND (coverage_ends_on IS NULL));
+
+--
+-- Name: medical_insurance_members_policy_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX medical_insurance_members_policy_idx ON public.medical_insurance_members USING btree (policy_id, coverage_starts_on);
+
+--
+-- Name: medical_insurance_members_principal_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX medical_insurance_members_principal_idx ON public.medical_insurance_members USING btree (principal_member_id) WHERE (principal_member_id IS NOT NULL);
+
+--
 -- Name: milestone_card_prints_occasion_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -83669,6 +84466,12 @@ CREATE INDEX phoenix_crm_imported_visit_sources_visit_idx ON public.phoenix_crm_
 --
 
 CREATE INDEX phoenix_crm_ireports360_checkin_matches_checkin_idx ON public.phoenix_crm_ireports360_checkin_matches USING btree (crm_checkin_id);
+
+--
+-- Name: phoenix_crm_line_lookalike_answers_pair_uidx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX phoenix_crm_line_lookalike_answers_pair_uidx ON public.phoenix_crm_line_lookalike_answers USING btree (waiting_customer_id, source_customer_id);
 
 --
 -- Name: phoenix_crm_list_events_customer_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -86251,6 +87054,12 @@ CREATE TRIGGER attendance_annual_balance_charges_immutable BEFORE DELETE OR UPDA
 CREATE TRIGGER attendance_annual_balance_charges_reversal_shape BEFORE INSERT ON public.attendance_annual_balance_charges FOR EACH ROW EXECUTE FUNCTION public.phx_attendance_balance_reversal_shape();
 
 --
+-- Name: attendance_raw_punches attendance_raw_punches_clock_correction; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER attendance_raw_punches_clock_correction BEFORE INSERT ON public.attendance_raw_punches FOR EACH ROW EXECUTE FUNCTION public.phx_attendance_raw_punch_clock_correction();
+
+--
 -- Name: attendance_settlements attendance_settlements_immutable; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -87999,6 +88808,41 @@ ALTER TABLE ONLY public.company_email_aliases
     ADD CONSTRAINT company_email_aliases_distribution_list_key_fkey FOREIGN KEY (distribution_list_key) REFERENCES public.distribution_lists(list_key) ON DELETE SET NULL;
 
 --
+-- Name: connector_files connector_files_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_files
+    ADD CONSTRAINT connector_files_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_users(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
+-- Name: connector_oauth_codes connector_oauth_codes_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_codes
+    ADD CONSTRAINT connector_oauth_codes_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.connector_oauth_clients(client_id) ON DELETE CASCADE;
+
+--
+-- Name: connector_oauth_codes connector_oauth_codes_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_codes
+    ADD CONSTRAINT connector_oauth_codes_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_users(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
+-- Name: connector_oauth_tokens connector_oauth_tokens_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_tokens
+    ADD CONSTRAINT connector_oauth_tokens_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.connector_oauth_clients(client_id) ON DELETE CASCADE;
+
+--
+-- Name: connector_oauth_tokens connector_oauth_tokens_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_oauth_tokens
+    ADD CONSTRAINT connector_oauth_tokens_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_users(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
 -- Name: contract_renewal_history contract_renewal_history_employee_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -89621,6 +90465,48 @@ ALTER TABLE ONLY public.marketing_roi_request_geo_facts
 
 ALTER TABLE ONLY public.marketing_roi_trend_facts
     ADD CONSTRAINT marketing_roi_trend_facts_refresh_run_id_fkey FOREIGN KEY (refresh_run_id) REFERENCES public.marketing_roi_refresh_runs(id);
+
+--
+-- Name: medical_insurance_category_choices medical_insurance_category_choices_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_category_choices
+    ADD CONSTRAINT medical_insurance_category_choices_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.medical_insurance_policies(id) ON DELETE RESTRICT;
+
+--
+-- Name: medical_insurance_documents medical_insurance_documents_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_documents
+    ADD CONSTRAINT medical_insurance_documents_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.medical_insurance_policies(id) ON DELETE RESTRICT;
+
+--
+-- Name: medical_insurance_exceptions medical_insurance_exceptions_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_exceptions
+    ADD CONSTRAINT medical_insurance_exceptions_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.medical_insurance_policies(id) ON DELETE RESTRICT;
+
+--
+-- Name: medical_insurance_invoices medical_insurance_invoices_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_invoices
+    ADD CONSTRAINT medical_insurance_invoices_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.medical_insurance_policies(id) ON DELETE RESTRICT;
+
+--
+-- Name: medical_insurance_members medical_insurance_members_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_members
+    ADD CONSTRAINT medical_insurance_members_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.medical_insurance_policies(id) ON DELETE RESTRICT;
+
+--
+-- Name: medical_insurance_members medical_insurance_members_principal_member_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.medical_insurance_members
+    ADD CONSTRAINT medical_insurance_members_principal_member_id_fkey FOREIGN KEY (principal_member_id) REFERENCES public.medical_insurance_members(id) ON DELETE RESTRICT;
 
 --
 -- Name: monthly_sales_run_step monthly_sales_run_step_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -92294,6 +93180,30 @@ ALTER TABLE public.company_devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.company_email_aliases ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: connector_files; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.connector_files ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: connector_oauth_clients; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.connector_oauth_clients ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: connector_oauth_codes; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.connector_oauth_codes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: connector_oauth_tokens; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.connector_oauth_tokens ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: contract_renewal_history; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -92794,6 +93704,12 @@ ALTER TABLE public.dispute_case_events ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY dispute_case_events_service_role_all ON public.dispute_case_events TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: dispute_explanations; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.dispute_explanations ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: dispute_refunds; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -94176,6 +95092,42 @@ ALTER TABLE public.marketing_workflow_steps ENABLE ROW LEVEL SECURITY;
 CREATE POLICY marketing_workflow_steps_authenticated_read ON public.marketing_workflow_steps FOR SELECT TO authenticated USING ((active = true));
 
 --
+-- Name: medical_insurance_category_choices; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.medical_insurance_category_choices ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: medical_insurance_documents; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.medical_insurance_documents ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: medical_insurance_exceptions; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.medical_insurance_exceptions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: medical_insurance_invoices; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.medical_insurance_invoices ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: medical_insurance_members; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.medical_insurance_members ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: medical_insurance_policies; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.medical_insurance_policies ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: milestone_card_prints; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -94902,6 +95854,18 @@ ALTER TABLE public.phoenix_crm_imported_visit_sources ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.phoenix_crm_ireports360_checkin_matches ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_line_lookalike_answers; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_line_lookalike_answers ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_line_lookalike_answers phoenix_crm_line_lookalike_answers_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_line_lookalike_answers_service_role ON public.phoenix_crm_line_lookalike_answers TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: phoenix_crm_line_rollout; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -98053,6 +99017,13 @@ REVOKE ALL ON FUNCTION public.ats_merge_screening_answer(p_candidate_id uuid, p_
 GRANT ALL ON FUNCTION public.ats_merge_screening_answer(p_candidate_id uuid, p_key text, p_value text, p_marked_by_hr_id text) TO service_role;
 
 --
+-- Name: FUNCTION ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ats_placement_is_complete(p_role_tab text, p_region_code text, p_area_code text) TO service_role;
+
+--
 -- Name: FUNCTION ats_revert_candidate_status(p_candidate_ids uuid[], p_statuses text[], p_notes text[], p_actor_hr_id text); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -98965,6 +99936,13 @@ REVOKE ALL ON FUNCTION public.phoenix_crm_ireports360_conversion_page(p_after uu
 GRANT ALL ON FUNCTION public.phoenix_crm_ireports360_conversion_page(p_after uuid, p_limit integer) TO service_role;
 
 --
+-- Name: FUNCTION phoenix_crm_is_super_admin(p_hr_id text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_is_super_admin(p_hr_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_is_super_admin(p_hr_id text) TO service_role;
+
+--
 -- Name: FUNCTION phoenix_crm_list_only_reps(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -99518,6 +100496,13 @@ REVOKE ALL ON FUNCTION public.phoenix_crm_started_team_seats() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_started_team_seats() TO service_role;
 
 --
+-- Name: FUNCTION phoenix_crm_super_admin_hr_ids(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_super_admin_hr_ids() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_super_admin_hr_ids() TO service_role;
+
+--
 -- Name: FUNCTION phoenix_crm_take_photo(p_path text, p_hr_id text, p_seat_id text, p_purpose text, p_is_test boolean); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -99802,6 +100787,13 @@ GRANT ALL ON FUNCTION public.phx_attendance_balance_reversal_shape() TO service_
 
 REVOKE ALL ON FUNCTION public.phx_attendance_mark_digest_line(p_line_id bigint, p_deduct boolean, p_days numeric, p_actor_hr_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_attendance_mark_digest_line(p_line_id bigint, p_deduct boolean, p_days numeric, p_actor_hr_id text) TO service_role;
+
+--
+-- Name: FUNCTION phx_attendance_raw_punch_clock_correction(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_attendance_raw_punch_clock_correction() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_attendance_raw_punch_clock_correction() TO service_role;
 
 --
 -- Name: FUNCTION phx_attendance_release_digest(p_digest_id bigint, p_actor_hr_id text, p_answer_due_on date, p_seen_line_ids bigint[], p_seen_days numeric[]); Type: ACL; Schema: public; Owner: postgres
@@ -101354,6 +102346,13 @@ GRANT ALL ON FUNCTION public.phx_remove_direct_order_offset(p_request_id uuid, p
 
 REVOKE ALL ON FUNCTION public.phx_renew_dispute_case_decision(p_case_kind text, p_case_ref text, p_claim_token uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_renew_dispute_case_decision(p_case_kind text, p_case_ref text, p_claim_token uuid) TO service_role;
+
+--
+-- Name: FUNCTION phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) TO service_role;
 
 --
 -- Name: FUNCTION phx_reopen_rejected_marketing_request(p_request_id uuid, p_reopened_by text, p_reason text, p_reopened_at timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
@@ -103493,6 +104492,30 @@ GRANT ALL ON TABLE public.company_devices TO service_role;
 GRANT ALL ON TABLE public.company_email_aliases TO service_role;
 
 --
+-- Name: TABLE connector_files; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.connector_files TO service_role;
+
+--
+-- Name: TABLE connector_oauth_clients; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.connector_oauth_clients TO service_role;
+
+--
+-- Name: TABLE connector_oauth_codes; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.connector_oauth_codes TO service_role;
+
+--
+-- Name: TABLE connector_oauth_tokens; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.connector_oauth_tokens TO service_role;
+
+--
 -- Name: TABLE contract_renewal_history; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -103948,6 +104971,12 @@ GRANT ALL ON TABLE public.dispute_case_decision_claims TO service_role;
 --
 
 GRANT ALL ON TABLE public.dispute_case_events TO service_role;
+
+--
+-- Name: TABLE dispute_explanations; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.dispute_explanations TO service_role;
 
 --
 -- Name: TABLE dispute_refunds; Type: ACL; Schema: public; Owner: postgres
@@ -105034,6 +106063,42 @@ GRANT ALL ON SEQUENCE public.marketing_workflow_steps_id_seq TO authenticated;
 GRANT ALL ON SEQUENCE public.marketing_workflow_steps_id_seq TO service_role;
 
 --
+-- Name: TABLE medical_insurance_category_choices; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.medical_insurance_category_choices TO service_role;
+
+--
+-- Name: TABLE medical_insurance_documents; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.medical_insurance_documents TO service_role;
+
+--
+-- Name: TABLE medical_insurance_exceptions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.medical_insurance_exceptions TO service_role;
+
+--
+-- Name: TABLE medical_insurance_invoices; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.medical_insurance_invoices TO service_role;
+
+--
+-- Name: TABLE medical_insurance_members; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.medical_insurance_members TO service_role;
+
+--
+-- Name: TABLE medical_insurance_policies; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.medical_insurance_policies TO service_role;
+
+--
 -- Name: TABLE milestone_card_prints; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -105395,6 +106460,12 @@ GRANT ALL ON TABLE public.phoenix_crm_double_visit_request_people TO service_rol
 GRANT ALL ON TABLE public.phoenix_crm_double_visit_requests TO service_role;
 
 --
+-- Name: TABLE phoenix_crm_line_lookalike_answers; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_line_lookalike_answers TO service_role;
+
+--
 -- Name: TABLE phoenix_crm_line_rollout; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -105638,7 +106709,7 @@ GRANT ALL ON TABLE public.phoenix_crm_settings TO service_role;
 -- Name: TABLE phoenix_crm_shared_place_timetable_marks; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.phoenix_crm_shared_place_timetable_marks TO service_role;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.phoenix_crm_shared_place_timetable_marks TO service_role;
 
 --
 -- Name: SEQUENCE phoenix_crm_shared_place_timetable_marks_id_seq; Type: ACL; Schema: public; Owner: postgres
