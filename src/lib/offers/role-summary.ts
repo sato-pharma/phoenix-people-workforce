@@ -103,6 +103,29 @@ export const OFFER_TRAINING_MANAGER_ROLE_SUMMARY =
   + "our field force’s competencies, professionalism, productivity, and overall sales performance.";
 
 /**
+ * The product-manager paragraph — the third position worded for a role that carries no territory.
+ *
+ * Written for the owner's Product Manager offer (17 Nov 2026), and grounded in what the job is at
+ * Sato Pharma: the Product Manager owns a portfolio's strategy and brand plan, and owns product and
+ * medical knowledge — training the field force on the products, the diseases they treat and the key
+ * messages, and running the product test (his locked rule of 4 Nov 2026; never the Training
+ * Manager's). It promises no territory, district plan or field team, because a Product Manager leads
+ * none of those. It names no manager: the letter's opening sentence already says "reporting to the
+ * {{reportsTo}}", which the offer chooses between the Marketing Manager and the Group Product
+ * Manager. Two paragraphs, as the Training Manager's are; the letter's HTML prints them as one.
+ */
+export const OFFER_PRODUCT_MANAGER_ROLE_SUMMARY =
+  "Throughout our selection process you demonstrated the strategic thinking, the scientific depth and "
+  + "the commercial judgement this role calls for, and we would like you to bring all three to our "
+  + "Marketing team.\n\n"
+  + "As Product Manager, you will own the strategy and the brand plan for your portfolio — building "
+  + "its positioning and key messages from real market and customer insight, partnering with key "
+  + "opinion leaders and medical experts, and serving as the field force’s authority on your products: "
+  + "training our teams on the products, the diseases they treat and the key messages, and testing "
+  + "their product knowledge. Working closely with Sales Management, you will turn each brand plan into "
+  + "growth that our people in the field can deliver.";
+
+/**
  * The paragraph a letter prints for a position, given whatever is stored against it.
  *
  * `null`, absent and whitespace all answer the same way, because the three arrive from different

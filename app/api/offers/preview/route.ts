@@ -89,8 +89,11 @@ export async function POST(request: Request) {
     const rendered = renderOfferDocument(template, fields, {
       logoUrl: logoUrl ?? satoLogoDataUri() ?? undefined,
       // The reverse (white-on-navy) mark, so the Sato corporate design's navy masthead shows its
-      // mark in the on-screen preview and not just in the PDF. Only that variant draws on navy.
-      logoReverseUrl: template.variant === "sato" ? (satoLogoReverseDataUri() ?? undefined) : undefined,
+      // mark in the on-screen preview and not just in the PDF. Sato and Prestige draw it on navy.
+      logoReverseUrl:
+        template.variant === "sato" || template.variant === "prestige"
+          ? (satoLogoReverseDataUri() ?? undefined)
+          : undefined,
       // The designer has to show the signature the PDF will actually carry. Without this the
       // preview would render an unsigned letter and the signed one would only ever appear in the
       // candidate's inbox — the one place nobody checks it before it is too late.

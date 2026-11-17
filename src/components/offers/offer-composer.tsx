@@ -64,6 +64,7 @@ import {
 } from "@/lib/offers/template-choice";
 import { cn } from "@/lib/utils";
 import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
+import { reportsToChoicesForTitle } from "@/lib/offers/reports-to-choices";
 import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
 import { offerStatusLabel } from "@/lib/offers/approval-rules";
 import {
@@ -1278,6 +1279,9 @@ export function OfferComposer({
       </div>
     );
 
+  // A Product Manager reports to the Marketing Manager or a Group Product Manager, chosen per offer.
+  const reportsToChoices = reportsToChoicesForTitle(draft.title);
+
   const text = (key: keyof Draft, label: string, placeholder?: string, hint?: string) => (
     <div key={key}>
       <label className={offerLabelClassName} htmlFor={`offer-${key}`}>{label}</label>
@@ -1591,7 +1595,43 @@ export function OfferComposer({
           </div>
 
           {text("territory", "Territory", "Delta 3")}
-          {text("reportsTo", "Reports to", "National Sales Manager")}
+          {reportsToChoices.length > 0 ? (
+            <div key="reportsTo">
+              <label className={offerLabelClassName} htmlFor="offer-reportsTo">Reports to</label>
+              {/* One press names the manager; the box below stays typeable. The letter prints the
+                  title only, never a person's name (owner, 17 Nov 2026). */}
+              <div aria-label="Choose who this position reports to" className="mb-1.5 flex flex-wrap gap-1.5" role="group">
+                {reportsToChoices.map((choice) => {
+                  const chosen = draft.reportsTo.trim().toLowerCase() === choice.toLowerCase();
+                  return (
+                    <Button
+                      aria-pressed={chosen}
+                      disabled={!canManage}
+                      key={choice}
+                      onClick={() => setDraft((current) => ({ ...current, reportsTo: choice }))}
+                      size="sm"
+                      type="button"
+                      variant={chosen ? "default" : "outline"}
+                    >
+                      {choice}
+                    </Button>
+                  );
+                })}
+              </div>
+              <input
+                className={offerInputClassName}
+                disabled={!canManage}
+                id="offer-reportsTo"
+                onChange={(event) => setDraft((current) => ({ ...current, reportsTo: event.target.value }))}
+                placeholder="Marketing Manager"
+                value={draft.reportsTo}
+              />
+              <p className={offerHintClassName}>Prints on the letter as “reporting to the {draft.reportsTo.trim() || "…"}”.</p>
+              {noteList(offerWarningsFor(warnings, "reportsTo" as OfferDraftWarning["field"]))}
+            </div>
+          ) : (
+            text("reportsTo", "Reports to", "National Sales Manager")
+          )}
           {text("contractTerm", "Contract term", "One year, renewable")}
 
           {/* The paragraph the letter opens with, prefilled from the job title and overridable for
