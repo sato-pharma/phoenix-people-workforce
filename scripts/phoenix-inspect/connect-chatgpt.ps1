@@ -44,7 +44,20 @@ if ($RevokeAll) {
 
 if ($Port -eq 8787) { throw 'Port 8787 is the Phoenix Attendance Agent; choose another port.' }
 $busy = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-if ($busy) { throw "Port $Port is already in use (process $($busy[0].OwningProcess)); pass -Port <another>." }
+if ($busy) {
+  # Running it a second time is the common case, not a fault: say the connector is already up and stop.
+  $health = $null
+  try { $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2 } catch { }
+  $runningTunnel = @(Get-Process -Name 'tunnel-client' -ErrorAction SilentlyContinue)
+  if ($health -and $health.service -eq 'phoenix-inspect-mcp') {
+    if ($runningTunnel.Count -gt 0) {
+      Write-Host "Already running: the Phoenix inspector (process $($busy[0].OwningProcess)) and its tunnel (process $($runningTunnel[0].Id)). ChatGPT can use the connector now; nothing was started."
+      exit 0
+    }
+    throw "The Phoenix inspector is running on port $Port (process $($busy[0].OwningProcess)) but its tunnel is not, so ChatGPT cannot reach it. Stop process $($busy[0].OwningProcess), then run this again."
+  }
+  throw "Port $Port is already in use by another program (process $($busy[0].OwningProcess)); pass -Port <another>."
+}
 
 $tunnelExe = Join-Path $folder 'tunnel-client\v0.0.21\tunnel-client.exe'
 $keyFile = Join-Path $folder 'tunnel-runtime-key.dpapi'
