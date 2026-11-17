@@ -265,6 +265,11 @@ function liveAccountDecisions() {
   assert.match(refused({ ...account, role: "CEO" }), /role changed/);
   assert.match(refused({ ...account, session_version: 4 }), /password was changed|signed out everywhere/);
   assert.match(refused({ ...account, hr_id: "B-11" }), /different employee/);
+  // A website session carries the canonical, lowercased key; the account row keeps "B-10". Same person —
+  // the strict string test refused the owner's own first connection on production (17 Nov 2026).
+  assert.deepEqual(decideLiveSubject({ ...OWNER, hrId: "b-10" }, account, active, today), { ok: true });
+  assert.deepEqual(decideLiveSubject({ ...OWNER, hrId: null }, { ...account, hr_id: null }, active, today), { ok: true });
+  assert.match(refused({ ...account, hr_id: null }), /different employee/);
   assert.match(refused(account, { lookupFailed: true, row: null }), /could not check/);
   assert.match(refused(account, { lookupFailed: false, row: { employment_status: "Resigned", last_working_date: "2026-10-01" } }), /no longer active/);
 }
