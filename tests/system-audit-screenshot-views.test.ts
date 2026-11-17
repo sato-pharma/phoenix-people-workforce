@@ -210,9 +210,67 @@ function registryTests() {
   }
 }
 
+// ── 5. A failed list says so (deep audit, 17 Nov 2026) ─────────────────────────────────────────────
+// The drawer's crash pictures used to come back as an empty list when the read failed, and the
+// drawer then said no screen was captured — about errors whose picture was in the bucket.
+
+const EVENT_ID = "8f6a3c1e-1b2d-4c5e-8f70-9a1b2c3d4e5f";
+
+/** app_error_events.select().in().not().order().limit() — answers `answer` at the end of the chain. */
+type ScreenshotListChain = {
+  select: () => ScreenshotListChain;
+  in: () => ScreenshotListChain;
+  not: () => ScreenshotListChain;
+  order: () => ScreenshotListChain;
+  limit: () => Promise<Lookup>;
+};
+
+function screenshotListClient(answer: Lookup | (() => never)) {
+  const chain: ScreenshotListChain = {
+    select: () => chain,
+    in: () => chain,
+    not: () => chain,
+    order: () => chain,
+    limit: () => (typeof answer === "function" ? answer() : Promise.resolve(answer)),
+  };
+  return { from: () => chain } as never;
+}
+
+async function screenshotListTests() {
+  const { loadOccurrenceScreenshots } = await import("../src/lib/system-audit/occurrence-detail.ts");
+  const occurrence = { sourceRefs: [EVENT_ID] };
+
+  const refused = await loadOccurrenceScreenshots(occurrence, screenshotListClient({ data: null, error: { message: "permission denied for table app_error_events" } }));
+  assert.equal(refused.status, "unavailable", "HEADLINE: a refused read is UNAVAILABLE, never an empty list");
+  assert.match(refused.status === "unavailable" ? refused.reason : "", /^The screenshots could not be listed: /, "with a reason the drawer shows");
+
+  const thrown = await loadOccurrenceScreenshots(occurrence, screenshotListClient(() => {
+    throw new Error("network down");
+  }));
+  assert.equal(thrown.status, "unavailable", "a read that throws is unavailable too, and never refuses the drawer");
+
+  const found = await loadOccurrenceScreenshots(
+    occurrence,
+    screenshotListClient({ data: [{ id: EVENT_ID, created_at: TAKEN_AT, route: "/employee-portals/payslips" }], error: null }),
+  );
+  assert.deepEqual(found, { status: "ok", screenshots: [{ eventId: EVENT_ID, capturedAt: TAKEN_AT, route: "/employee-portals/payslips" }] });
+
+  const none = await loadOccurrenceScreenshots({ sourceRefs: ["not-an-event"] }, screenshotListClient(() => {
+    throw new Error("no read is made when there is no event id");
+  }));
+  assert.deepEqual(none, { status: "ok", screenshots: [] }, "no event id → nothing to read, and a true empty list");
+
+  const drawer = source("src/components/admin/system-audit/incident-drawer.tsx");
+  const unavailable = drawer.indexOf('screenshots.status === "unavailable"');
+  const empty = drawer.indexOf("screenshots.screenshots.length === 0");
+  assert.ok(unavailable !== -1 && unavailable < empty, "HEADLINE: the drawer shows Unavailable before it can say no screen was captured");
+  assert.match(drawer.slice(unavailable, empty), /Unavailable — \{screenshots\.reason\}/, "with the reason");
+}
+
 export async function runSystemAuditScreenshotViewsTests() {
   rowTests();
   await recordTests();
   routeTests();
   registryTests();
+  await screenshotListTests();
 }

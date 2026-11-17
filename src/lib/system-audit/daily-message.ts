@@ -26,6 +26,14 @@ import {
  * what was said so tomorrow carries only what changed. Nothing new → NOTHING is sent: a daily "all
  * clear" is the message that trains everyone to stop reading the real one.
  *
+ * ONE EXCEPTION: a night whose checks did not all run. When the sweep sat the night out (a database
+ * restart), stopped on an unhealthy database, or any detector did not finish `ok`, a quiet board is
+ * NOT a clean night — nothing looked. The message then carries one plain line naming the checks that
+ * did not run and why, and goes out even with no issue to list. On 13 Nov 2026 the database had
+ * restarted at 20:23 Cairo the evening before, the 04:57 sweep sat out, and the morning was silent —
+ * indistinguishable from a clean one. The once-a-Cairo-day key and the never-re-asked rule apply to
+ * this message exactly as to any other.
+ *
  * Audience: the admin-editable `weekly_system_health_digest` key — the existing technical-health
  * audience, retargeted or silenced from /admin/notification-recipients with no migration.
  *
@@ -49,7 +57,85 @@ export type SystemAuditDailyMessageResult = {
   delivered: number;
   marked: number;
   reason?: string;
+  /** The line naming the checks that did not run cleanly last night, when there was one. */
+  checksNotClean?: string;
 };
+
+/**
+ * What the night's sweep did, as the message needs it. The sweep's own result (sweep.ts `SweepResult`)
+ * has this shape; it is declared here so this file does not import the sweep that imports it.
+ */
+export type SweepHealth = {
+  status: "ok" | "partial" | "skipped" | "aborted_db_unhealthy";
+  reason: string | null;
+  detectors: ReadonlyArray<{ detector: string; status: string; error: string | null }>;
+};
+
+/** Each check in the owner's words — a message names checks, never detector ids. */
+const CHECK_NAMES: Record<string, string> = {
+  app_error_fold: "errors shown to people",
+  user_screens: "screenshots of errors and blocks",
+  sync_runs: "iReports360 sync",
+  job_failures: "background jobs",
+  data_linkage: "record linkage",
+  visit_lifecycle: "visits carried through",
+  verifier: "fix verifier",
+  reconciliation: "nightly integrity check",
+};
+
+function checkName(detector: string): string {
+  return CHECK_NAMES[detector] ?? detector.replace(/[_-]+/g, " ").trim();
+}
+
+/** Errors can run to 2,000 characters; the line keeps the first sentence's worth and says where the rest is. */
+const ERROR_WORDS = 200;
+
+function errorWords(error: string | null): string | null {
+  const text = String(error ?? "").split("\n")[0].trim();
+  if (!text) return null;
+  if (text.length <= ERROR_WORDS) return text;
+  const cut = text.slice(0, ERROR_WORDS);
+  const atWord = cut.lastIndexOf(" ");
+  return `${(atWord > ERROR_WORDS / 2 ? cut.slice(0, atWord) : cut).trim()} (the full error is on the System Audit page)`;
+}
+
+function detectorWords(row: SweepHealth["detectors"][number]): string {
+  const said = errorWords(row.error);
+  switch (row.status) {
+    case "errored":
+      return `failed${said ? `: ${said}` : ""}`;
+    case "partial":
+      return `finished only in part: ${said ?? "a source it reads could not be read"}`;
+    case "aborted_db_unhealthy":
+      return "not run: the database looked unhealthy, so the sweep stopped before it";
+    case "budget_exhausted":
+      return String(row.error ?? "").startsWith("Not run")
+        ? "not run: the night's time budget ran out before it started"
+        : "stopped part-way: the night's time budget ran out";
+    case "skipped":
+      return "was skipped";
+    default:
+      return `ended as "${row.status}"`;
+  }
+}
+
+/**
+ * Pure: the one line that says last night's checks did not all run, or null when they all finished
+ * `ok`. Null too with no sweep result at all (a caller that is not the nightly sweep).
+ */
+export function sweepHealthLine(sweep: SweepHealth | null | undefined): string | null {
+  if (!sweep) return null;
+  if (sweep.status === "skipped") {
+    return `Last night's checks did not run. ${sweep.reason ?? "The sweep sat the night out."}`;
+  }
+  const notClean = sweep.detectors.filter((row) => row.status !== "ok");
+  if (notClean.length === 0) {
+    return sweep.status === "ok" ? null : `Last night's checks did not all run. ${sweep.reason ?? `The sweep ended as "${sweep.status}".`}`;
+  }
+  return `Not every check ran cleanly last night, so a short list is not a clean night — ${notClean
+    .map((row) => `${checkName(row.detector)}: ${detectorWords(row)}`)
+    .join("; ")}.`;
+}
 
 export type SystemAuditDailyMessageDeps = {
   loadCandidates: () => Promise<AlertCandidate[]>;
@@ -138,13 +224,24 @@ function whatWords(candidate: AlertCandidate, detail: AlertDetail | undefined): 
  * Pure: the title and body. Counts by reason first, then up to ten issues — WHO met it, in WHICH
  * module, WHAT they saw, how often and when — then how many more wait on the page, never a silent cut.
  * `details` comes from the ledger's occurrences; an issue without one keeps the title-only line.
+ * `checksLine` (sweepHealthLine) goes FIRST when the night's checks did not all run: it qualifies
+ * everything under it, and with no issue at all it is the whole message.
  */
 export function buildSystemAuditDailyMessage(
   candidates: readonly AlertCandidate[],
   details: ReadonlyMap<string, AlertDetail> = new Map(),
+  checksLine: string | null = null,
 ): { title: string; message: string } {
   const count = (reason: AlertCandidate["reason"]) => candidates.filter((candidate) => candidate.reason === reason).length;
   const lines: string[] = [];
+  if (checksLine) {
+    lines.push(checksLine);
+    lines.push("");
+  }
+  if (candidates.length === 0) {
+    lines.push("Nothing new on the board — with those checks missing, that is not a clean night.");
+    return { title: "System Audit — last night's checks did not all run", message: lines.join("\n") };
+  }
   lines.push(`${count("new")} new · ${count("newly_shared")} newly shared · ${count("reopened")} reopened`);
   lines.push("");
   for (const candidate of candidates.slice(0, SYSTEM_AUDIT_MESSAGE_LINES)) {
@@ -177,18 +274,24 @@ function wasTold(result: SystemNotificationResult | null): boolean {
  * The issues are marked as told ONLY when somebody was actually told. A second run the same Cairo
  * day is stopped by the idempotency key, every one of its deliveries comes back skipped, and its
  * issues stay unmarked — so they ride tomorrow's message instead of vanishing between the two.
+ *
+ * `options.sweep` is what the nightly sweep did; when its checks did not all run, the message says so
+ * and is sent even with nothing new (see the file header).
  */
 export async function sendSystemAuditDailyMessage(
   overrides: Partial<SystemAuditDailyMessageDeps> = {},
+  options: { sweep?: SweepHealth | null } = {},
 ): Promise<SystemAuditDailyMessageResult> {
   const deps = { ...defaultDeps, ...overrides };
   let candidates: AlertCandidate[] = [];
+  const checksLine = sweepHealthLine(options.sweep);
+  const withChecks = checksLine ? { checksNotClean: checksLine } : {};
   try {
     candidates = await deps.loadCandidates();
-    if (candidates.length === 0) return { sent: false, candidates: 0, delivered: 0, marked: 0, reason: "nothing new" };
+    if (candidates.length === 0 && !checksLine) return { sent: false, candidates: 0, delivered: 0, marked: 0, reason: "nothing new" };
 
     if (!(await deps.audienceEnabled())) {
-      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "audience disabled by admin" };
+      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "audience disabled by admin", ...withChecks };
     }
 
     const { recipients, warnings } = await deps.recipients();
@@ -200,10 +303,10 @@ export async function sendSystemAuditDailyMessage(
         actorLoginId: ACTOR,
         entityId: "system_audit.daily_message",
         entityType: "notification",
-        newValues: { candidates: candidates.length, failClosed: true, issueIds: issueIds.slice(0, 50), warnings },
+        newValues: { candidates: candidates.length, failClosed: true, issueIds: issueIds.slice(0, 50), warnings, checksNotClean: checksLine },
         summary: "System Audit daily message skipped — no active recipient resolved for the configured audience.",
       });
-      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "no recipients" };
+      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "no recipients", ...withChecks };
     }
 
     const day = cairoDayKey(deps.now());
@@ -221,17 +324,20 @@ export async function sendSystemAuditDailyMessage(
         actorLoginId: ACTOR,
         entityId: "system_audit.daily_message",
         entityType: "notification",
-        newValues: { candidates: candidates.length, day, delivered: 0, marked: 0, alreadyToldToday: recipients.length },
+        newValues: { candidates: candidates.length, day, delivered: 0, marked: 0, alreadyToldToday: recipients.length, checksNotClean: checksLine },
         summary: "System Audit daily message already sent today; its issues stay for the next message.",
       });
-      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "already sent today" };
+      return { sent: false, candidates: candidates.length, delivered: 0, marked: 0, reason: "already sent today", ...withChecks };
     }
 
     // A detail read that fails sends the title-only line: a plainer message beats none.
-    const details = await deps
-      .loadDetails(candidates.slice(0, SYSTEM_AUDIT_MESSAGE_LINES).map((candidate) => candidate.issueId))
-      .catch(() => new Map<string, AlertDetail>());
-    const { title, message } = buildSystemAuditDailyMessage(candidates, details);
+    const details =
+      candidates.length === 0
+        ? new Map<string, AlertDetail>()
+        : await deps
+            .loadDetails(candidates.slice(0, SYSTEM_AUDIT_MESSAGE_LINES).map((candidate) => candidate.issueId))
+            .catch(() => new Map<string, AlertDetail>());
+    const { title, message } = buildSystemAuditDailyMessage(candidates, details, checksLine);
     let delivered = 0;
     let told = false;
     await Promise.all(
@@ -249,6 +355,8 @@ export async function sendSystemAuditDailyMessage(
             // One per recipient per Cairo day: a second send that day is impossible by construction.
             idempotencyKey: systemAuditDailyKey(day, recipient.hrId),
             issueIds: issueIds.slice(0, 50),
+            sweepStatus: options.sweep?.status ?? null,
+            checksNotClean: Boolean(checksLine),
           },
           // module: "system" is the module enabled for Telegram in
           // notification_module_channel_policies — an unknown module string fails closed in
@@ -267,14 +375,15 @@ export async function sendSystemAuditDailyMessage(
       }),
     );
 
-    const marked = told ? await deps.markAlerted(issueIds) : 0;
+    // A message sent only to say the checks did not run carries no issue, so there is nothing to mark.
+    const marked = told && issueIds.length > 0 ? await deps.markAlerted(issueIds) : 0;
     await deps.audit({
       actorLoginId: ACTOR,
       entityId: "system_audit.daily_message",
       entityType: "notification",
-      newValues: { candidates: candidates.length, day, delivered, marked, warnings },
+      newValues: { candidates: candidates.length, day, delivered, marked, warnings, checksNotClean: checksLine },
       summary: told
-        ? `System Audit daily message delivered to ${delivered} recipient(s), ${marked} issue(s) marked as told.`
+        ? `System Audit daily message delivered to ${delivered} recipient(s), ${marked} issue(s) marked as told${checksLine ? "; it says last night's checks did not all run" : ""}.`
         : "System Audit daily message reached nobody (already sent today, or every channel skipped); its issues stay for the next message.",
     });
     return {
@@ -283,6 +392,7 @@ export async function sendSystemAuditDailyMessage(
       delivered,
       marked,
       ...(told ? {} : { reason: "no delivery reached anyone" }),
+      ...withChecks,
     };
   } catch (error) {
     logError("System Audit daily message failed", {
@@ -295,6 +405,7 @@ export async function sendSystemAuditDailyMessage(
       delivered: 0,
       marked: 0,
       reason: error instanceof Error ? error.message : "unknown error",
+      ...withChecks,
     };
   }
 }

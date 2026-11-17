@@ -27,6 +27,12 @@ import { cn } from "@/lib/utils";
  * Data comes in as props (loaded on the server by `loadLoginSecurityOverview`); the search box, the
  * pager and the Block / Unblock buttons talk to /api/admin/system-audit/security and
  * /api/admin/system-audit/block-ip.
+ *
+ * A suspicious address also says how many people signed in SUCCESSFULLY from it. Three accounts
+ * failing from one address is what an office or a mobile network looks like on an ordinary morning,
+ * so when two or more people got in from it, Block asks a second time, here in the panel, before
+ * anything is sent — and the server refuses the block (409) without that second press anyway
+ * (deep audit, 17 Nov 2026).
  */
 
 /** How long a block from this screen lasts. Sent explicitly so the button text and the block agree. */
@@ -67,6 +73,15 @@ function Flag({ children, tone }: { children: ReactNode; tone: "rose" | "slate" 
   );
 }
 
+/** "no one signed in successfully" / "1 person signed in successfully" / "3 people …", from it. */
+function successfulSignInsLine(count: number) {
+  if (count === 0) return "no one signed in successfully from it";
+  return `${count.toLocaleString("en-US")} ${count === 1 ? "person" : "people"} signed in successfully from it`;
+}
+
+/** The address waiting on the second press, and the count that made it wait. */
+type SharedBlock = { ip: string; people: number; reason: string | undefined };
+
 function DenseButton({
   children,
   disabled,
@@ -100,6 +115,7 @@ export function LoginSecurityPanel({ overview: initialOverview }: { overview: Lo
   const [busyIp, setBusyIp] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sharedBlock, setSharedBlock] = useState<SharedBlock | null>(null);
 
   const signals = overview.signals;
   const activity = overview.recentActivity;
@@ -128,26 +144,47 @@ export function LoginSecurityPanel({ overview: initialOverview }: { overview: Lo
     }
   }
 
-  async function manageIp(ip: string, action: "block" | "unblock", reason?: string) {
-    if (action === "block") {
-      const confirmed = window.confirm(
-        `Block ${ip} from signing in for ${BLOCK_DAYS} days? Anyone signing in from this address will be refused. It can be unblocked here at any time.`,
-      );
-      if (!confirmed) return;
+  /**
+   * The first press on Block. A shared address (2+ people got in from it) never sends from here: it
+   * opens the in-panel question, and only "Block anyway" sends, with confirmShared.
+   */
+  function requestBlock(ip: string, reason: string, successfulAccounts: number, sharedNetwork: boolean) {
+    const confirmed = window.confirm(
+      `Block ${ip} from signing in for ${BLOCK_DAYS} days? Anyone signing in from this address will be refused. It can be unblocked here at any time.`,
+    );
+    if (!confirmed) return;
+    if (sharedNetwork) {
+      setError(null);
+      setNotice(null);
+      setSharedBlock({ ip, people: successfulAccounts, reason });
+      return;
     }
+    void manageIp(ip, "block", reason);
+  }
+
+  async function manageIp(ip: string, action: "block" | "unblock", reason?: string, confirmShared = false) {
     setBusyIp(ip);
     setError(null);
     setNotice(null);
     try {
+      const blockBody = { action, days: BLOCK_DAYS, ip, reason };
       const response = await fetch("/api/admin/system-audit/block-ip", {
-        body: JSON.stringify(action === "block" ? { action, days: BLOCK_DAYS, ip, reason } : { action, ip }),
+        body: JSON.stringify(action === "block" ? (confirmShared ? { ...blockBody, confirmShared: true } : blockBody) : { action, ip }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string; message?: string; successfulAccounts?: number }
+          | null;
+        // The server counted 2+ people since this screen was read: ask the same second question.
+        if (response.status === 409 && body?.error === "shared_address" && typeof body.successfulAccounts === "number") {
+          setSharedBlock({ ip, people: body.successfulAccounts, reason });
+          return;
+        }
         throw new Error(body?.message ?? "The block list could not be updated.");
       }
+      setSharedBlock(null);
       setNotice(action === "block" ? `${ip} is blocked for ${BLOCK_DAYS} days.` : `${ip} is unblocked.`);
       await refresh(activity?.page ?? 1, activity?.search ?? "");
     } catch (caught) {
@@ -327,15 +364,20 @@ export function LoginSecurityPanel({ overview: initialOverview }: { overview: Lo
                       <p className="text-xs font-semibold text-amber-800">
                         {entry.failCount} failed attempts on {entry.distinctAccounts} accounts · last {cairoDateTime(entry.lastSeen)}
                       </p>
+                      <p className={cn("text-xs font-semibold", entry.sharedNetwork ? "text-rose-700" : "text-slate-600")}>
+                        {successfulSignInsLine(entry.successfulAccounts)}
+                        {entry.sharedNetwork ? " — probably an office or a mobile network" : ""}
+                      </p>
                     </div>
-                    {!entry.blocked && !blockedDown ? (
+                    {!entry.blocked && !blockedDown && sharedBlock?.ip !== entry.ip ? (
                       <DenseButton
                         disabled={busyIp === entry.ip}
                         onClick={() =>
-                          void manageIp(
+                          requestBlock(
                             entry.ip,
-                            "block",
                             `${entry.failCount} failed sign-ins on ${entry.distinctAccounts} accounts in ${signals.windowDays} days`,
+                            entry.successfulAccounts,
+                            entry.sharedNetwork,
                           )
                         }
                         tone="danger"
@@ -343,6 +385,30 @@ export function LoginSecurityPanel({ overview: initialOverview }: { overview: Lo
                         {busyIp === entry.ip ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                         Block for {BLOCK_DAYS} days
                       </DenseButton>
+                    ) : null}
+                    {sharedBlock?.ip === entry.ip ? (
+                      <div className="w-full border border-rose-200 bg-rose-50 px-3 py-2.5" role="alert">
+                        <p className="break-words text-sm font-semibold text-rose-800">
+                          {sharedBlock.people.toLocaleString("en-US")} {sharedBlock.people === 1 ? "person" : "people"} signed in
+                          successfully from this address — block it anyway?
+                        </p>
+                        <p className="mt-0.5 break-words text-xs text-rose-700">
+                          Everyone signing in from it would be refused for {BLOCK_DAYS} days.
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <DenseButton
+                            disabled={busyIp === entry.ip}
+                            onClick={() => void manageIp(sharedBlock.ip, "block", sharedBlock.reason, true)}
+                            tone="danger"
+                          >
+                            {busyIp === entry.ip ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            Block anyway
+                          </DenseButton>
+                          <DenseButton disabled={busyIp === entry.ip} onClick={() => setSharedBlock(null)} tone="ghost">
+                            Keep it open
+                          </DenseButton>
+                        </div>
+                      </div>
                     ) : null}
                   </li>
                 ))}

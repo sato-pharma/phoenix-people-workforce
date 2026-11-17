@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 
 import {
-  ERROR_SCREENSHOT_BUCKET,
-  ERROR_SCREENSHOT_CONTENT_TYPE,
   ERROR_SCREENSHOT_MAX_BYTES,
   ERROR_SCREENSHOT_RATE_LIMIT,
   ERROR_SCREENSHOT_RATE_WINDOW_MS,
-  errorScreenshotObjectPath,
-  isWebpImage,
+  errorScreenshotImageType,
   screenshotBodyTooLarge,
 } from "@/lib/error-monitor/screenshot-intake";
 import { readErrorScreenshotTicket } from "@/lib/error-monitor/screenshot-ticket";
+import { attachErrorScreenshot } from "@/lib/error-monitor/user-error-screens";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +24,10 @@ export const dynamic = "force-dynamic";
  *     guest ticket let anyone on the internet store images in the Super Admin's error drawer);
  *   - the ticket expires in two minutes and names ONE row, so bytes cannot be aimed anywhere else;
  *   - 2 MB hard ceiling, checked on the header AND on the read;
- *   - WebP only, sniffed from the container's own magic bytes rather than the caller's header;
+ *   - WebP or JPEG only, each sniffed from its own magic bytes rather than the caller's header, and
+ *     stored under the type the bytes proved (`.webp` or `.jpg`) — JPEG because Safari on an iPhone,
+ *     an iPad or a Mac cannot encode WebP, and no crash picture from those devices had ever landed
+ *     until 17 Nov 2026 (screenshot-intake.ts);
  *   - 10 uploads a minute per address, a third of what the text report allows.
  *
  * The answer is always bare `{ ok }` — never why something was refused. A failed upload must stay
@@ -70,32 +70,20 @@ export async function POST(request: Request) {
     if (bytes.length === 0 || bytes.length > ERROR_SCREENSHOT_MAX_BYTES) {
       return NextResponse.json({ ok: false }, { status: 413 });
     }
-    if (!isWebpImage(bytes)) {
+    // The bytes decide the format, and so the stored type and extension; the header decides nothing.
+    const contentType = errorScreenshotImageType(bytes);
+    if (!contentType) {
       return NextResponse.json({ ok: false }, { status: 415 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const objectPath = errorScreenshotObjectPath(eventId);
-
-    const upload = await supabase.storage
-      .from(ERROR_SCREENSHOT_BUCKET)
-      // `upsert` so a retry against the same error row replaces its picture rather than orphaning
-      // one — the path is keyed by that row's id, so there is only ever one per error.
-      .upload(objectPath, bytes, { contentType: ERROR_SCREENSHOT_CONTENT_TYPE, upsert: true });
-
-    if (upload.error) {
-      console.error("Failed to store error screenshot:", upload.error);
-      return NextResponse.json({ ok: false }, { status: 500 });
-    }
-
-    // Written only after the bytes are safely in the bucket, so a path on a row always resolves.
-    const { error: updateError } = await supabase
-      .from("app_error_events")
-      .update({ screenshot_path: objectPath })
-      .eq("id", eventId);
-
-    if (updateError) {
-      console.error("Failed to attach error screenshot to its row:", updateError);
+    // Bytes into the bucket first, then the path onto the row, so a path on a row always resolves; a
+    // row that cannot be written takes the file back out (user-error-screens.ts, attachErrorScreenshot).
+    const stored = await attachErrorScreenshot({ eventId, bytes, contentType });
+    if (!stored.ok) {
+      console.error(
+        stored.stage === "upload" ? "Failed to store error screenshot:" : "Failed to attach error screenshot to its row:",
+        stored.cause,
+      );
       return NextResponse.json({ ok: false }, { status: 500 });
     }
   } catch (error) {

@@ -29,6 +29,13 @@ names, live outside git in the owner's audit folder.
 page to one person must not turn "SHARED — 4 EMPLOYEES AFFECTED" into "UNIQUE". Rows with no person are
 never counted as an employee.
 
+**The table fits from 760px without breaking a heading word** (deep audit, 17 Nov 2026: at a 1,140–1,250px
+container "ERROR", "(CAIRO)" and "OCCURRENCES" broke mid-word). Each `<colgroup>` share is sized so share ×
+breakpoint ≥ the heading's widest word × 1.08 + 17px (padding and border): 6/9/8/7/7/12/9/11/11/11/9 for the
+eleven columns from 1,120px, 13/11/11/18/13/17/17 for the merged seven from 760px. An incident reference
+such as SCREEN-A58BD210 may break only after its hyphen (`<wbr>`). Pinned by
+`tests/system-audit-page-design.test.ts`.
+
 ## The ledger
 
 Two migrations: `supabase/migrations/20261023051847_system_audit_ledger.sql` (tables) and
@@ -40,7 +47,7 @@ Two migrations: `supabase/migrations/20261023051847_system_audit_ledger.sql` (ta
 | `system_audit_issue_fixes` | Each fix attempt: the 40-character commit, when it went live, verified or invalidated, and by which occurrence |
 | `system_audit_occurrences` | One row per user-level operation: person, sidebar module and how it was resolved, Cairo date (generated column), message or silent flag, technical message (≤ 1,000 chars), attempts, page loads, up to 50 source ids, release, `pre_fix_build`, correlation id, `is_test`, a unique `dedupe_key` |
 | `system_audit_status_history` | Append-only trail of every status change. UPDATE, DELETE and TRUNCATE are refused by trigger and by grant |
-| `system_audit_detector_runs` | One row per detector run: what it scanned, what it excluded as noise per class, and for the nightly reconciliation the whole report |
+| `system_audit_detector_runs` | One row per detector run: what it scanned, what it excluded as noise per class, and for the nightly reconciliation the whole report. The sweep writes its own row too (`detector = 'sweep'`), on every night including one it skipped or stopped, with the reason in `error` |
 | `system_audit_watermarks` | Each detector's cursor, and a lease so two runs never overlap |
 
 RLS is on, with one service-role policy per table; nothing is granted to `anon` or `authenticated`.
@@ -56,6 +63,14 @@ pruned** — `app_error_events` is pruned at 90 days, and the ledger is what kee
   FIX IMPLEMENTED — the last only with a commit that is a live release (`release_gates`).
 - **Only the verifier** sets FIXED — VERIFIED: 7 days with no recurrence after the fix went live, plus
   real exposure (an affected person opened that page again, or the detector held 3 nights running).
+  A recurrence is judged by an occurrence's **last** event (`last_event_at`), for every family: a
+  finding re-found nightly on the same row (a job still stranded, a state that never cleared) moves only
+  its last event, so judging by when it first happened called it fixed while it was still happening
+  (deep audit, 17 Nov 2026). Page views count only once the family's own detector has finished `ok`
+  on at least 3 nights since the fix went live — a failing detector could not have seen a recurrence,
+  so it verifies nothing. The build an occurrence is judged against is its last event's.
+- **An issue moved to any status but NOT FIXED forgets that the daily message told it** (its
+  `alerted_status` is cleared), so a second reopen is told again, not taken as already said.
 - **A recurrence on a build at or after the fix reopens the issue as NOT FIXED.** A stale tab on an
   older build (`pre_fix_build`) does not.
 - The reviewed historical seed may record a fix with its merge time and evidence.
@@ -97,7 +112,28 @@ CSV (UTF-8 with BOM) and XLSX of **every filtered row**, never the visible page.
 through `src/lib/export/spreadsheet-safe.ts`, which neutralises a leading `=`, `+`, `-`, `@`, a tab, a
 carriage return, leading whitespace and the full-width `＝＋－＠` with an apostrophe. The older per-file
 guards tested only the first character, so a leading tab or space let a formula through. Every export
-writes an `audit_logs` row.
+writes two `audit_logs` rows: one awaited before the first byte leaves (who, and the filters), and one
+when it ends, with the row count (`stage: "finished"`).
+
+## Who looked, and login security
+
+**Every read of people's data on this page writes an audit row** (deep audit, 17 Nov 2026: the access
+registry declared these reads audited, and none wrote one). The Incidents list, its person and module
+lookups, the page's own first paint, the drawer of one occurrence (a person's last page visits) and
+login security (people's sign-in addresses) each write one awaited `system_audit_view` row after the
+read succeeded and before the answer leaves (`src/lib/system-audit/read-audit.ts`). A refused or failed
+read writes nothing; a slow trail delays the read and never refuses it. The drawer says "Unavailable —
+<reason>" when an occurrence's pictures cannot be listed, never "No screen was captured".
+
+**Block for 30 days refuses what would lock out the wrong people.** `/api/admin/system-audit/block-ip`
+answers 400 for anything that is not one address (a range such as `10.0.0.0/8` used to be saved, shown
+"Blocked" and block nothing), 400 for the Super Admin's own current address, 503 when the count below
+cannot be read, and 409 when two or more different people signed in successfully from the address in
+the last 7 days — an office or a mobile network — unless the panel's second, explicit press sends
+`confirmShared: true`. The panel shows that count beside each flagged address. An address is stored and
+looked up in one spelling (trimmed, IPv6 lower-case). A blocked sign-in keeps its 429 and
+`rate_limited` code but is told the truth: "Sign-in from this network has been blocked. Ask HR to lift
+it." (a no-script form post lands on `network_blocked`, the same sentence). Unblock is unchanged.
 
 ## The detectors
 
@@ -113,7 +149,7 @@ they scanned and what they excluded as noise, per class. A source that cannot be
 | `sync_runs` | Failed iReports360 sync runs, and runs stuck "running" for over 2 hours. A failure verifies itself once a later successful run covers its dates |
 | `job_failures` | Failed background jobs (tied to the person who asked) and missed scheduled-job heartbeats. Heartbeats keep only the LAST outcome, and the coverage note says so |
 | `data_linkage` | A login with no access profile, a missing attendance device map, a vacancy whose holder disagrees — one finding per person (moved here from the retired Data Health page) |
-| `visit_lifecycle` | A saved Phoenix CRM visit that did not reach every module that should count it: saved → countable → served by the visits door → after the duplicate and departed-agent rules → Private Calendar → KPIs. The first failing stage is the root row; later modules add linked rows on one correlation id, so one lost visit counts once. Every business-rule exclusion (team not started or stopped, off-plan pending or refused, recording not approved, unvalidated customer, departed agent, repeat save, partnered visit, test rows, today) produces NO row and is counted. Four more checks, each its own row: the KPIs call rate counting MORE than the rules allow (`VISIT-S5-EXTRA`; a visit still in motion, or one an earlier stage already reported, is tolerated, never counted against it); a seat that moved teams, where the view judges by today's team (`au.seats.parent_seat_id`) and the team in the dated seat history (`au_v_seat_occupancy_all`) on the visit day decides the other way (`VISIT-S2-TEAMMOVED`, PROBABLE — a move both teams agree on is counted); a manager's own visit reaching `crm_visits_unified` — a legacy no-rep row credited to someone other than the manager (`VISIT-MGR-LEGACY`; credited to the manager it stays, as ruled), or a single visit from `phoenix_crm_manager_visits` served at all (`VISIT-MGR-PLAN`), read over the last 7 days on a cron run; and the view itself is probed once a run (`probeCrmVisitsUnifiedView`), because the read door answers `[]` for a missing view — when it does not answer, every door read is UNKNOWN, never "nobody visited" |
+| `visit_lifecycle` | A saved Phoenix CRM visit that did not reach every module that should count it: saved → countable → served by the visits door → after the duplicate and departed-agent rules → Private Calendar → KPIs. The first failing stage is the root row; later modules add linked rows on one correlation id, so one lost visit counts once. Every business-rule exclusion (team not started or stopped, off-plan pending or refused, recording not approved, unvalidated customer, departed agent, repeat save, partnered visit, test rows, today) produces NO row and is counted. Four more checks, each its own row: the KPIs call rate counting MORE than the rules allow (`VISIT-S5-EXTRA`; a visit still in motion, or one an earlier stage already reported, is tolerated, never counted against it); a seat that moved teams, where the view judges by today's team (`au.seats.parent_seat_id`) and the team in the dated seat history (`au_v_seat_occupancy_all`) on the visit day decides the other way (`VISIT-S2-TEAMMOVED`, PROBABLE — a move both teams agree on is counted); a manager's own visit reaching `crm_visits_unified` — a legacy no-rep row credited to someone other than the manager (`VISIT-MGR-LEGACY`; credited to the manager it stays, as ruled), or a single visit from `phoenix_crm_manager_visits` served at all (`VISIT-MGR-PLAN`), read over the last 7 days on a cron run; and the view itself is probed once a run (`probeCrmVisitsUnifiedView`), because the read door answers `[]` for a missing view — when it does not answer, every door read is UNKNOWN, never "nobody visited". The prediction mirrors the countable view word for word: an archived visit (`archived_visit`) and an iReports360 copy the KPIs do not count (`ireports360_copy_not_counted`) produce no row and are counted. A rep-day judged while a source could not be read waits in the cursor's re-judge queue (at most 400, overflow counted as `rejudge_queue_overflow`) and is judged again first the next night, leaving the queue only once every source answered |
 | `user_screens` | The screenshots of every error or block a person met (below), folded into one row per operation, family `user_screen` |
 | `verifier` | Sets FIXED — VERIFIED and reopens as NOT FIXED, by the rules above |
 
@@ -133,12 +169,16 @@ the refusal, the visible viewport at its scroll position is drawn with `html-to-
 0.6, at most 1.5× pixel ratio; one smaller redraw if it is over 1.2 MB) and posted to
 `/api/errors/screen` with the words the response carried (JSON `message`, else `error`, else `detail`,
 ≤ 500 characters, read from a clone). An *error screen* (a crash) is NOT photographed here: the crash screenshot
-(#6358, `/api/errors/client/screenshot`, docs/observability.md) already takes it on the error row itself,
-guests included, and the incident drawer shows it under "What the employee saw". This door covers what
-that one cannot see — a person refused or failed without a crash. The wrapper returns the caller's own promise untouched, never
+(#6358, `/api/errors/client/screenshot`, docs/observability.md) already takes it on the error row itself
+(signed-in people only, since 23 Oct 2026), and the incident drawer shows it under "What the employee saw". This door covers what
+that one cannot see — a person refused or failed without a crash. Both pictures take ONE capture lock
+(`screen-capture.ts`), so a phone never draws two full-page copies at once, and a draw that stalls on
+an image or font download gives up after 5 seconds and releases it. The wrapper returns the caller's own promise untouched, never
 retries, never delays it and never throws.
 
-**Never captured.** A hidden tab; a request the page cancelled itself; a request with NO answer whose
+**Never captured.** A hidden tab; any request sent while either picture is being drawn (`html-to-image`
+re-downloads every image through the same `fetch`, so an employee photo refused during a crash capture
+used to file a refusal nobody met); a request the page cancelled itself; a request with NO answer whose
 page was out of sight at any moment between sending and failing (`noAnswerHappenedInSight`, 31 Oct 2026:
 a locked phone kills the plan board's saves in flight, the failure reaches the page once it is back in
 sight and working, and the board's own retry then saves — five pictures of a failure nobody met; a
@@ -162,7 +202,9 @@ included, drew and sent up to 12 pictures an hour (each up to 1.6 MB) that the i
 threw away. Now an upload answered **5xx, 429 or not at all** pauses the whole browser: nothing is drawn
 or sent, before the throttle and before the page is drawn. The first pause is 5 minutes, and each
 refusal after it doubles it, up to an hour. A `Retry-After` is honoured up to that hour, so the
-intake's own 429 waits the hour. One picture stored ends it. 400, 413, 401 and 403 are about that
+intake's own 429 waits the hour. One picture stored ends it. A stored end time further off than an
+hour (a phone whose clock was wrong) is read as an hour from now and written back for every tab, and a
+pause that ended more than an hour ago is forgotten, its doubling with it. 400, 413, 401 and 403 are about that
 picture or that session and never pause. The pause is shared by every tab through localStorage
 (`phoenix:screen-upload-pause`); a tab whose storage is blocked keeps its own. Rules:
 `nextUploadPause` in `screen-capture-rules.ts`; the send: `uploadScreen` in `screen-capture.ts`.
@@ -179,7 +221,10 @@ logged.
 
 **Shown.** The nightly `user_screens` detector folds the rows into the ledger: the signature is the kind,
 the API route with record ids masked (the page, for an error screen), the status and the message's
-template; one person's screens of one signature within 10 minutes are one operation. Column 6 is the
+template — digits, quoted segments («…», “…”, ‘…’) and runs of non-Latin letters (an Arabic place or
+customer name) masked, so one refusal is ONE issue whatever place it names (owner, 17 Nov 2026: "group
+only"; the 71 keys split by a name before then stay on the board as they are; a message with no such
+text keeps its key); one person's screens of one signature within 10 minutes are one operation. Column 6 is the
 exact words captured — "Error screen shown — <message>" for an error screen, and a sentence saying the
 answer carried no words when it carried none. The module is the sidebar row of the page the person was
 on. The row drawer shows the pictures ("What the person saw"), streamed by
@@ -195,7 +240,12 @@ picture, the other the error the browser reported; that is expected.
 **Kept 90 days.** The nightly sweep — not a cron of its own — removes at most 1,000 pictures a night older
 than 90 days, never one past the detector's watermark (so each is in the ledger before it goes): the
 file through the Storage API first, its row after; a file that will not go keeps its row for the next
-night. The counts are in the `user_screens` run's report (`retention`). The ledger rows stay; the drawer
+night. **A backstop removes the files no row points at** (deep audit, 17 Nov 2026: a picture whose row
+was never written was kept for ever): inside the same step, every file in a day folder older than 91
+days, in both private buckets (`user-error-screens` `<yyyy-mm-dd>/<owner>/`, `error-screenshots`
+`YYYY/MM/DD/`), only names of each bucket's own shape, never past the detector's watermark, 100 at a
+time, within one 1,000-file cap a night shared by both. A listing that fails is reported as unknown,
+never 0, and makes the run partial. The counts are in the `user_screens` run's report (`retention`). The ledger rows stay; the drawer
 says how many of an occurrence's pictures have passed their 90 days.
 
 **A night that stops at the 1,000 cap raises an issue** (owner, 23 Oct 2026: "alert when the nightly
@@ -213,12 +263,15 @@ if it is reopened. A full batch that left nothing behind raises nothing. The run
 `/api/cron/system-audit-sweep` (heartbeat slug `phoenix-system-audit-sweep`) runs at **04:57 Cairo**,
 after the 04:40 integrity run, with a 240 s budget. Detectors run one at a time under a lease; the
 sweep stops at the first database timeout or 5xx (`aborted_db_unhealthy`) and skips the night when the
-database restarted in the last 30 minutes. It never logs a finding through `logAppError`.
+database restarted in the last 18 hours (`RESTART_QUIET_HOURS`). It never logs a finding through `logAppError`.
 
 It then sends **at most one message a Cairo day**, in-app and Telegram, to the
 `weekly_system_health_digest` audience (key kept; label now "System health alerts") — only when an
 issue is new, newly shared (its people count went from 1 to 2 or more), reopened, or a new integrity
-breach. Its button opens `/admin/system-audit`. The separate nightly breach alert and the Sunday
+breach. Its button opens `/admin/system-audit`. **A night whose checks did not all run is told even with
+nothing new** (deep audit, 17 Nov 2026: on 13 Nov the sweep sat out a database restart and the morning
+was silent, exactly like a clean one): the sweep hands its result to the message, whose first line says
+in plain words which checks did not run and why; nothing is marked as told by it. The separate nightly breach alert and the Sunday
 digest are retired; the urgent alarms on the same audience (outbox drain, stranded job, database
 restart, AI credit) stay separate and now link here.
 

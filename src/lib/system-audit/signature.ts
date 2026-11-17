@@ -173,15 +173,70 @@ function maskVariableText(text: string): string {
     .trim();
 }
 
+// ─── The names a refusal carries (block and error screens only) ──────────────────────────────────
+
+/**
+ * A letter of a script that is not Latin — in practice the Arabic name of a place or a customer
+ * ("This location is not at <name> on Google Maps"). Common and Inherited are left out on purpose:
+ * `µ` in "5 µg" is a Common-script letter, and masking it would re-key a message that carries no
+ * name at all.
+ */
+const NON_LATIN_LETTER = String.raw`(?:(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L})`;
+/** Direction marks a browser or a database may wrap round a right-to-left name; they go with it. */
+const BIDI_MARKS = String.raw`؜‎‏‪-‮⁦-⁩`;
+/** What sits INSIDE an Arabic word without being a letter: vowel marks, the tatweel, joiners, Arabic-Indic digits. */
+const INSIDE_A_WORD = String.raw`\p{M}ـ‌‍٠-٩۰-۹`;
+/**
+ * What may sit BETWEEN two words of one name — spaces (one or several: "دسوق العام  دسوق   العام" is
+ * one name), a branch number, a hyphen, a dot, a comma, a slash, brackets, an ampersand. A run only
+ * continues across them when another non-Latin word follows, so "<name> on Google Maps" keeps its
+ * English tail.
+ */
+const BETWEEN_WORDS = String.raw`\s\d\-‐-―.,،/()&${BIDI_MARKS}`;
+const NON_LATIN_WORD = `${NON_LATIN_LETTER}(?:[${INSIDE_A_WORD}]|${NON_LATIN_LETTER})*`;
+const NON_LATIN_NAME = new RegExp(`[${BIDI_MARKS}]*${NON_LATIN_WORD}(?:[${BETWEEN_WORDS}]+${NON_LATIN_WORD})*[${BIDI_MARKS}]*`, "gu");
+/**
+ * A segment in typographic quotes. Straight quotes ("…", '…', `…`) are already masked by
+ * maskVariableText; these are their curly and guillemet cousins, masked to the same `<str>` so
+ * “X” and "X" template alike.
+ */
+const TYPOGRAPHIC_QUOTED = /«[^»\n]*»|“[^”\n]*”|‘[^’\n]*’|„[^“”\n]*[“”]|‹[^›\n]*›/g;
+
+/**
+ * Masks the names a refusal names: a run of non-Latin letters (one name, however many words) and
+ * a typographically quoted segment. Owner, 17 Nov 2026 — one refusal is ONE issue whatever place
+ * or customer it names: "This location is not at <Arabic place> on Google Maps" had filed 20
+ * issues, one per place, and his "no defect" on one never reached the other 19.
+ *
+ * A message with no such text comes back character for character, which is what keeps every
+ * other block and error screen on the key it already has — so USER_SCREEN_SIGNATURE_VERSION is
+ * deliberately NOT bumped (a bump re-keys every issue, ~265 on 17 Nov 2026). A message written
+ * wholly in Arabic reduces to `<name>` and its punctuation; the route, the status and the kind
+ * still keep two such refusals apart.
+ */
+export function maskScreenNames(text: string): string {
+  return text.replace(TYPOGRAPHIC_QUOTED, "<str>").replace(NON_LATIN_NAME, "<name>");
+}
+
+export type MessageTemplateOptions = {
+  /**
+   * Mask the names a refusal carries (maskScreenNames) before templating. The `user_screens`
+   * detector sets it; `app_error_fold` never does, so no crash's signature moves.
+   */
+  maskNames?: boolean;
+};
+
 /**
  * The engine-neutral template of a message: the same failure reads the same in every browser and
  * for every person.
  */
-export function messageTemplate(rawMessage: string | null | undefined): string {
+export function messageTemplate(rawMessage: string | null | undefined, options: MessageTemplateOptions = {}): string {
   const unwrapped = unwrapJsonMessage(String(rawMessage ?? "").trim());
   // The first line is the failure; anything after it is a stack or a detail dump.
   const firstLine = (unwrapped.split(/\r?\n|\\n/)[0] ?? "").trim();
-  const message = firstLine.replace(/^(?:Uncaught\s+)?(?:TypeError|ReferenceError|RangeError|SyntaxError|Error):\s*/, "");
+  const stripped = firstLine.replace(/^(?:Uncaught\s+)?(?:TypeError|ReferenceError|RangeError|SyntaxError|Error):\s*/, "");
+  // Masked before anything reads the words, so a long name can never push the 200-character cut.
+  const message = options.maskNames ? maskScreenNames(stripped) : stripped;
   if (!message) return "empty-message";
 
   // React's server-render fallback names its cause AFTER the first line ("…errored:\n\nMinified
@@ -190,7 +245,7 @@ export function messageTemplate(rawMessage: string | null | undefined): string {
     const whole = unwrapped.match(/react\.dev\/errors\/(\d+)/) ?? unwrapped.match(/Minified React error #(\d+)/);
     if (whole) return `react-switched:${whole[1]}`;
     const cause = unwrapped.replace(/^[\s\S]*?Switched to client rendering because the server rendering errored:?/i, "").trim();
-    const inner = cause ? messageTemplate(cause) : "empty-message";
+    const inner = cause ? messageTemplate(cause, options) : "empty-message";
     return `react-switched:${inner === "empty-message" ? "unknown-cause" : inner}`;
   }
 
@@ -222,6 +277,11 @@ export function messageTemplate(rawMessage: string | null | undefined): string {
   if (notDefined) return `not-defined:${notDefined[1]}`;
 
   return maskVariableText(message).slice(0, 200) || "empty-message";
+}
+
+/** The template of what a block or error screen said — messageTemplate with the names masked. */
+export function screenMessageTemplate(rawMessage: string | null | undefined): string {
+  return messageTemplate(rawMessage, { maskNames: true });
 }
 
 // ─── Where: the component, the server frame, the third-party host, the route ──────────────────────

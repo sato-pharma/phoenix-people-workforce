@@ -9,7 +9,7 @@ import { COLLAPSE_GAP_MS, MAX_SOURCE_REFS } from "@/lib/system-audit/collapse";
 import { scanBounds } from "@/lib/system-audit/detectors/sync-runs";
 import type { PersonDirectory, PersonRecord } from "@/lib/system-audit/person-directory";
 import { resolveSidebarLabel, type SidebarLabel } from "@/lib/system-audit/sidebar-label";
-import { messageTemplate } from "@/lib/system-audit/signature";
+import { screenMessageTemplate } from "@/lib/system-audit/signature";
 import type { ScreenPruneResult } from "@/lib/system-audit/user-screens";
 import {
   emptyDetectorResult,
@@ -29,7 +29,8 @@ import {
  * Reads `user_error_screens` in `(created_at, id)` keyset pages strictly after its watermark, up to two
  * minutes ago (a picture is inserted after it is taken, so the newest rows are left to settle). Each
  * screen is signed by WHAT the person met — the kind, the API route with its record ids masked (the
- * page, for an error screen), the status and the message's engine-neutral template — and screens of
+ * page, for an error screen), the status and the message's engine-neutral template, with the place or
+ * customer name it carries masked (owner, 17 Nov 2026: one refusal, one issue) — and screens of
  * one signature by one person within ten minutes of each other are ONE operation, the same gap the
  * error fold uses (collapse.ts). The occurrence carries the screens' ids (≤ 50) in its evidence and
  * its source refs, which is how the row drawer finds the pictures.
@@ -94,11 +95,17 @@ export function userScreenWhere(row: Pick<UserScreenRow, "kind" | "api_path" | "
 
 /**
  * The key every screen of the same kind of refusal shares, whoever met it and on whichever record:
- * kind + masked route + status + the message's template (numbers, ids and quoted values masked).
- * Versioned: a rule change bumps USER_SCREEN_SIGNATURE_VERSION and the key carries it.
+ * kind + masked route + status + the message's template (numbers, ids and quoted values masked, and
+ * — owner, 17 Nov 2026 — the place or customer name it carries, a run of Arabic or other non-Latin
+ * letters, so one refusal is one issue whatever it names). The status stays its own part: a 400 and
+ * a 409 at the same place are two issues.
+ *
+ * Versioned: a rule change that moves EVERY key bumps USER_SCREEN_SIGNATURE_VERSION and the key
+ * carries it. The name masking did not bump it — it leaves a message with no such name exactly as it
+ * was, so only the issues that were split by a name get a new key (signature.ts, maskScreenNames).
  */
 export function userScreenSignature(row: Pick<UserScreenRow, "kind" | "api_path" | "page_path" | "http_status" | "message">): string {
-  const parts = [USER_SCREEN_SIGNATURE_VERSION, row.kind, userScreenWhere(row), row.http_status ?? null, messageTemplate(row.message)];
+  const parts = [USER_SCREEN_SIGNATURE_VERSION, row.kind, userScreenWhere(row), row.http_status ?? null, screenMessageTemplate(row.message)];
   const hash = createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 16);
   return `screen:v${USER_SCREEN_SIGNATURE_VERSION}:${hash}`;
 }
@@ -260,7 +267,8 @@ export function buildUserScreenFindings(input: {
       firstEventAt: first.created_at,
       lastEventAt: last.created_at,
       sourceRefs: group.rows.slice(0, MAX_SOURCE_REFS).map((row) => row.id),
-      release: first.release,
+      // The LAST picture's build: the verifier judges a recurrence by the last event.
+      release: last.release,
       evidence: {
         actor: group.actorKey,
         screenKind: first.kind,

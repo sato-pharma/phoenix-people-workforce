@@ -10,7 +10,7 @@ import {
 import { createStaticPersonDirectory } from "../src/lib/system-audit/person-directory.ts";
 import type { SidebarLabel } from "../src/lib/system-audit/sidebar-label.ts";
 import type { FindingBatch, FindingSink } from "../src/lib/system-audit/types.ts";
-import { pruneUserErrorScreens, SCREEN_PRUNE_BATCH, type ScreenPruneResult } from "../src/lib/system-audit/user-screens.ts";
+import { ORPHAN_PRUNE_BATCH, pruneUserErrorScreens, SCREEN_PRUNE_BATCH, type ScreenPruneResult } from "../src/lib/system-audit/user-screens.ts";
 
 /**
  * The nightly screenshot removal raises an issue on the System Audit board when it stops at its cap
@@ -50,10 +50,28 @@ function result(overrides: Partial<ScreenPruneResult>): ScreenPruneResult {
 
 type Call = { op: string; args: unknown[] };
 
-/** Just the calls pruneUserErrorScreens makes, answering the way PostgREST and Storage do. */
-function fakeStore(input: { oldRows: number; countAnswer: { count: number | null; error: { message: string } | null } }) {
+/**
+ * Just the calls pruneUserErrorScreens makes, answering the way PostgREST and Storage do. A bucket is
+ * a set of object paths; `list` answers like Storage — the next path segment under a prefix, a
+ * folder with `id: null`, a file with an id, name order, `limit`/`offset` — and `remove` takes the
+ * paths away, listing only the ones that existed.
+ */
+function fakeStore(input: {
+  oldRows: number;
+  countAnswer: { count: number | null; error: { message: string } | null };
+  objects?: Record<string, string[]>;
+  listFails?: Record<string, string>;
+  removeFails?: Record<string, string>;
+}) {
   const calls: Call[] = [];
   const rows = Array.from({ length: input.oldRows }, (_, index) => ({ id: `id-${index}`, storage_path: `p/${index}.webp` }));
+  const buckets = new Map<string, Set<string>>();
+  const bucket = (name: string) => {
+    if (!buckets.has(name)) buckets.set(name, new Set(input.objects?.[name] ?? []));
+    return buckets.get(name)!;
+  };
+  // The rows' own files live in the people's bucket, under a folder of no day's shape.
+  for (const row of rows) bucket("user-error-screens").add(row.storage_path);
   const client = {
     from(table: string) {
       return {
@@ -85,17 +103,32 @@ function fakeStore(input: { oldRows: number; countAnswer: { count: number | null
       };
     },
     storage: {
-      from() {
+      from(name: string) {
         return {
+          list: async (prefix: string, options: { limit: number; offset: number }) => {
+            calls.push({ op: "list", args: [name, prefix] });
+            if (input.listFails?.[name]) return { data: null, error: { message: input.listFails[name] } };
+            const entries = new Map<string, { name: string; id: string | null }>();
+            for (const path of bucket(name)) {
+              if (prefix && !path.startsWith(`${prefix}/`)) continue;
+              const rest = prefix ? path.slice(prefix.length + 1) : path;
+              const segment = rest.split("/")[0];
+              entries.set(segment, { name: segment, id: rest.includes("/") ? null : `obj:${path}` });
+            }
+            const sorted = [...entries.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+            return { data: sorted.slice(options.offset, options.offset + options.limit), error: null };
+          },
           remove: async (paths: string[]) => {
-            calls.push({ op: "remove", args: [paths.length] });
-            return { data: paths.map((name) => ({ name })), error: null };
+            calls.push({ op: "remove", args: [paths.length, name] });
+            if (input.removeFails?.[name]) return { data: null, error: { message: input.removeFails[name] } };
+            const gone = paths.filter((path) => bucket(name).delete(path));
+            return { data: gone.map((path) => ({ name: path })), error: null };
           },
         };
       },
     },
   };
-  return { client: client as never, calls };
+  return { client: client as never, calls, left: (name: string) => [...bucket(name)].sort() };
 }
 
 async function pruneTests() {
@@ -245,8 +278,149 @@ async function detectorTests() {
   }
 }
 
+// ── 4. The 91-day backstop for files no row points at ───────────────────────────────────────────
+//
+// 17 Nov 2026 audit: both removals take a file only through its row, so a file whose row never landed
+// or was deleted without it stayed in its bucket for ever — an unmasked picture of someone's screen.
+
+const SCREEN = (day: string, owner: string, n: number, ext = "webp") => `${day}/${owner}/aaaaaaaa-0000-4000-8000-${String(n).padStart(12, "0")}.${ext}`;
+const CRASH = (day: string, n: number, ext = "webp") => `${day.replaceAll("-", "/")}/bbbbbbbb-0000-4000-8000-${String(n).padStart(12, "0")}.${ext}`;
+
+async function orphanTests() {
+  const nowMs = Date.parse(NOW_ISO); // 91 days before is 01:30 on 24 Jul 2026 in Cairo.
+  const notAfter = "2026-10-22T20:00:00.000Z";
+  const quiet = { count: 0, error: null };
+
+  {
+    const store = fakeStore({
+      oldRows: 0,
+      countAnswer: quiet,
+      objects: {
+        "user-error-screens": [
+          SCREEN("2026-07-23", "B-10", 1),
+          SCREEN("2026-07-23", "unknown", 2, "jpg"),
+          SCREEN("2026-07-24", "B-10", 3),
+          "2026-06-01/B-10/notes.txt",
+          "archive/2026-01-01/B-10/aaaaaaaa-0000-4000-8000-000000000009.webp",
+        ],
+        "error-screenshots": [CRASH("2026-07-23", 1), CRASH("2025-12-31", 2, "jpg"), CRASH("2026-07-24", 3), CRASH("2026-08-01", 4), "2026/7/01/x.webp", "misc/readme.webp"],
+      },
+    });
+    const pruned = await pruneUserErrorScreens({ nowMs, notAfter }, store.client);
+    assert.deepEqual(
+      store.left("user-error-screens"),
+      ["2026-06-01/B-10/notes.txt", SCREEN("2026-07-24", "B-10", 3), "archive/2026-01-01/B-10/aaaaaaaa-0000-4000-8000-000000000009.webp"].sort(),
+      "user-error-screens: a picture in a day folder more than 91 days old is removed; a younger one, and any name not of the bucket's own shape, is left",
+    );
+    assert.deepEqual(
+      store.left("error-screenshots"),
+      [CRASH("2026-07-24", 3), CRASH("2026-08-01", 4), "2026/7/01/x.webp", "misc/readme.webp"].sort(),
+      "error-screenshots: the same 91 days over YYYY/MM/DD, across a year boundary; nothing of another shape is touched",
+    );
+    const [screens, crashes] = pruned.orphans!.buckets;
+    assert.deepEqual(screens, { bucket: "user-error-screens", before: "2026-07-24", found: 2, removed: 2, skipped: null, error: null }, "the report names the bucket, the day and what went");
+    assert.deepEqual(crashes, { bucket: "error-screenshots", before: "2026-07-24", found: 2, removed: 2, skipped: null, error: null });
+    assert.equal(pruned.orphans!.capped, false);
+    assert.equal(pruned.error, null, "a clean backstop adds no error");
+  }
+  {
+    const store = fakeStore({
+      oldRows: 0,
+      countAnswer: quiet,
+      objects: { "user-error-screens": [SCREEN("2026-07-09", "B-10", 1), SCREEN("2026-07-15", "B-10", 2)] },
+    });
+    const pruned = await pruneUserErrorScreens({ nowMs, notAfter: "2026-07-10T12:00:00.000Z" }, store.client);
+    assert.deepEqual(
+      store.left("user-error-screens"),
+      [SCREEN("2026-07-15", "B-10", 2)],
+      "a day folder the detector has not folded past is never swept, however old — a picture is in the ledger before it goes",
+    );
+    assert.equal(pruned.orphans!.buckets[0].before, "2026-07-10");
+  }
+  {
+    const store = fakeStore({
+      oldRows: 0,
+      countAnswer: quiet,
+      objects: { "user-error-screens": [SCREEN("2026-07-01", "B-10", 1)], "error-screenshots": [CRASH("2026-07-01", 1)] },
+    });
+    const pruned = await pruneUserErrorScreens({ nowMs, notAfter: null }, store.client);
+    assert.deepEqual(store.left("user-error-screens"), [SCREEN("2026-07-01", "B-10", 1)], "before the first fold no person's picture is swept");
+    assert.equal(pruned.orphans!.buckets[0].skipped, "the detector has not folded any picture yet");
+    assert.equal(pruned.orphans!.buckets[0].found, null);
+    assert.deepEqual(store.left("error-screenshots"), [], "…while the crash pictures, which no watermark guards, still are");
+  }
+  {
+    const store = fakeStore({
+      oldRows: 0,
+      countAnswer: quiet,
+      objects: {
+        "user-error-screens": [SCREEN("2026-07-01", "B-10", 1), SCREEN("2026-07-01", "B-20", 2), SCREEN("2026-07-02", "B-10", 3)],
+        "error-screenshots": [CRASH("2026-07-01", 1), CRASH("2026-07-02", 2)],
+      },
+    });
+    const pruned = await pruneUserErrorScreens({ nowMs, notAfter, orphanLimit: 4 }, store.client);
+    assert.equal(pruned.orphans!.buckets[0].removed, 3, "the people's pictures go first");
+    assert.equal(pruned.orphans!.buckets[1].found, 1, "one cap shared by both buckets: the crash pictures get what is left of it");
+    assert.deepEqual(store.left("error-screenshots"), [CRASH("2026-07-02", 2)], "oldest first, the rest wait for the next night");
+    assert.equal(pruned.orphans!.capped, true, "a night that reached the cap says so");
+    assert.equal(ORPHAN_PRUNE_BATCH, 1_000, "the cap is 1,000 a night");
+  }
+  {
+    const many = Array.from({ length: 250 }, (_, index) => SCREEN("2026-07-01", "B-10", index));
+    const store = fakeStore({ oldRows: 0, countAnswer: quiet, objects: { "user-error-screens": many } });
+    const pruned = await pruneUserErrorScreens({ nowMs, notAfter }, store.client);
+    assert.deepEqual(
+      store.calls.filter((call) => call.op === "remove" && call.args[1] === "user-error-screens").map((call) => call.args[0]),
+      [100, 100, 50],
+      "removed a hundred at a time — the paths travel in the request",
+    );
+    assert.equal(pruned.orphans!.buckets[0].removed, 250);
+  }
+  {
+    const store = fakeStore({
+      oldRows: 0,
+      countAnswer: quiet,
+      objects: { "user-error-screens": [SCREEN("2026-07-01", "B-10", 1)], "error-screenshots": [CRASH("2026-07-01", 1)] },
+      listFails: { "user-error-screens": "Request failed with status 503" },
+      removeFails: { "error-screenshots": "Object is locked" },
+    });
+    const pruned = await pruneUserErrorScreens({ nowMs, notAfter }, store.client);
+    const [screens, crashes] = pruned.orphans!.buckets;
+    assert.equal(screens.found, null, "a listing that failed is null — never 0, which would read as nothing left");
+    assert.match(String(screens.error), /listing the bucket failed: Request failed with status 503/);
+    assert.equal(crashes.found, 1, "one bucket's failure does not stop the other");
+    assert.equal(crashes.removed, 0);
+    assert.match(String(crashes.error), /Storage refused a removal: Object is locked/);
+    assert.match(
+      String(pruned.error),
+      /91-day sweep of files no row points at did not finish — user-error-screens: .*503; error-screenshots: .*Object is locked/,
+      "a failed backstop is carried in the night's error, bucket by bucket",
+    );
+  }
+  {
+    // End to end through the detector: a failed backstop makes the night partial, never clean.
+    const store = fakeStore({
+      oldRows: 0,
+      countAnswer: quiet,
+      objects: { "error-screenshots": [CRASH("2026-07-01", 1)] },
+      listFails: { "error-screenshots": "fetch failed" },
+    });
+    const now = Date.parse(NOW_ISO);
+    const detector = createUserScreensDetector({
+      source: { async readPage() { return []; } },
+      people: createStaticPersonDirectory(new Map()),
+      prune: (input) => pruneUserErrorScreens(input, store.client),
+    });
+    const run = await detector.run({ mode: "cron", deadline: now + 60_000, sink: sink().sink, runId: "run-orphans", now: () => now });
+    assert.equal(run.status, "partial", "a backstop that could not list its bucket makes the user_screens run partial");
+    const retention = run.report?.retention as ScreenPruneResult;
+    assert.equal(retention.orphans?.buckets[1].found, null, "and the run report keeps the unknown as unknown");
+  }
+}
+
 export async function runUserErrorScreensRetentionCapTests() {
   await pruneTests();
   findingTests();
   await detectorTests();
+  await orphanTests();
 }

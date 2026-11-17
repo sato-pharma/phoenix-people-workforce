@@ -598,7 +598,9 @@ export function createAppErrorFoldDetector(deps: AppErrorFoldDependencies): Audi
                 firstEventAt: occurrence.firstEventAt,
                 lastEventAt: occurrence.lastEventAt,
                 sourceRefs: occurrence.sourceRefs,
-                release: first.row.release ?? null,
+                // The LAST event's build: the verifier judges a recurrence by the last event, so the
+                // build it is set aside against must be that event's, never the first one's.
+                release: (occurrence.events[occurrence.events.length - 1] ?? first).row.release ?? null,
                 evidence: compactEvidence(occurrence, label),
                 isTest: first.isTest,
               });

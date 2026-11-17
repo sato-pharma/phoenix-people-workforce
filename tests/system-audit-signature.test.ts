@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
+import { userScreenSignature, userScreenWhere } from "../src/lib/system-audit/detectors/user-screens.ts";
 import {
   appErrorCode,
   appErrorSignatureV1,
   firstServerAppFrame,
   guestActorKey,
   isAddress,
+  maskScreenNames,
   messageTemplate,
   normaliseServerFrame,
   parseClientContext,
   pathOnly,
   routeFamily,
+  screenMessageTemplate,
   type AppErrorEventRow,
 } from "../src/lib/system-audit/signature.ts";
 
@@ -136,4 +140,105 @@ export function runSystemAuditSignatureTests() {
   // The person is not part of WHAT failed.
   assert.equal(appErrorSignatureV1(row({ hr_id: "A-1" })).key, appErrorSignatureV1(row({ hr_id: "B-2" })).key);
   assert.notEqual(appErrorSignatureV1(row({ source: "server" })).key, appErrorSignatureV1(row({ source: "client" })).key);
+
+  runScreenNameMaskingTests();
+}
+
+/**
+ * Owner, 17 Nov 2026: ONE refusal is ONE issue whatever place or customer it names. The block-screen
+ * key hashed the words the person saw, so "This location is not at <Arabic place> on Google Maps"
+ * filed 20 issues on production, one per place — his "no defect" on one never reached the other 19.
+ * The messages below are the production shapes of that day.
+ */
+function runScreenNameMaskingTests() {
+  const VALIDATE = "/api/phoenix-crm/list/validate";
+  const notAt = (place: string) =>
+    `This location is not at ${place} on Google Maps (it must be within 150 m). Stand at its entrance, then take the photo and press Capture location again.`;
+  const refusal = (message: string | null, overrides: Partial<{ kind: "refused_request" | "failed_request" | "error_screen"; api_path: string | null; page_path: string | null; http_status: number | null }> = {}) => ({
+    kind: "refused_request" as const,
+    api_path: VALIDATE,
+    page_path: "/employee-portals/field-crm",
+    http_status: 400,
+    message,
+    ...overrides,
+  });
+  // The key exactly as it was computed before the masking: the same parts, the template unmasked.
+  const keyBefore = (screen: ReturnType<typeof refusal>) =>
+    `screen:v1:${createHash("sha1")
+      .update(JSON.stringify([1, screen.kind, userScreenWhere(screen), screen.http_status ?? null, messageTemplate(screen.message)]))
+      .digest("hex")
+      .slice(0, 16)}`;
+
+  // ── One refusal, many place names: ONE key ──────────────────────────────────────────────────────
+  const places = ["مستشفي السلام", "تعاقد البريد بني سويف", "شركة", "دسوق العام  دسوق   العام", "مصانع سكر أبو قرقاص الجديدة"];
+  const placeKeys = new Set(places.map((place) => userScreenSignature(refusal(notAt(place)))));
+  assert.equal(placeKeys.size, 1, `one refusal naming ${places.length} different Arabic places must be ONE issue (got ${placeKeys.size} keys)`);
+  assert.equal(
+    screenMessageTemplate(notAt("مستشفي الجوي التخصصي")),
+    "This location is not at <name> on Google Maps (it must be within <n> m). Stand at its entrance, then take the photo and press Capture location again.",
+    "the name is masked as one run, however many words and spaces, and the English around it is kept",
+  );
+  const fullName = (name: string) => `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first, middle and last name.`;
+  assert.equal(
+    userScreenSignature(refusal(fullName("ابانوب عوض"), { api_path: "/api/phoenix-crm/plans" })),
+    userScreenSignature(refusal(fullName("عبدالرحمن عبدالرازق"), { api_path: "/api/phoenix-crm/plans" })),
+    "a customer's Arabic name at the start of a refusal does not split it either",
+  );
+
+  // ── Typographic quotes mask like straight ones ──────────────────────────────────────────────────
+  assert.equal(
+    maskScreenNames("Customer «Al Shifa» and “Dr Mona” and ‘Ali’ are archived"),
+    "Customer <str> and <str> and <str> are archived",
+    "guillemets and curly quotes mask to <str>, as straight quotes already do",
+  );
+  assert.equal(
+    screenMessageTemplate("Customer “Dr Mona” is archived."),
+    screenMessageTemplate('Customer "Dr Ahmed Ali" is archived.'),
+    "a curly-quoted name and a straight-quoted one are the same refusal",
+  );
+
+  // ── What still keeps two issues apart ───────────────────────────────────────────────────────────
+  assert.notEqual(
+    userScreenSignature(refusal(notAt("مستشفي السلام"))),
+    userScreenSignature(refusal(notAt("مستشفي السلام"), { http_status: 409 })),
+    "a 400 and a 409 at the same place stay two issues — the status is its own part of the key",
+  );
+  assert.notEqual(
+    userScreenSignature(refusal(notAt("مستشفي السلام"))),
+    userScreenSignature(refusal(fullName("مستشفي السلام"))),
+    "two different refusals naming the same place stay two issues",
+  );
+
+  // ── A message with no such name keeps the key it already has on production ─────────────────────
+  // Three production issues of 17 Nov 2026, keys read from system_audit_issues: an em dash, an
+  // apostrophe, and a request that carried no words. Masking may only ever re-key a message that
+  // names something in a non-Latin script or in typographic quotes.
+  const unchanged: Array<[string, ReturnType<typeof refusal>]> = [
+    [
+      "screen:v1:15f372e001bfa4da",
+      refusal("A test account's login starts with TEST- and then letters or numbers — for example TEST-AYA.", { api_path: "/api/admin/test-accounts", page_path: "/admin/test-accounts" }),
+    ],
+    [
+      "screen:v1:70890bb6ae9ad67a",
+      refusal("The stored signature is the system administrator's — only a Super Admin can see or change it.", { api_path: "/api/hiring-pack/signature", page_path: "/hr/hiring-pack", http_status: 403 }),
+    ],
+    ["screen:v1:12e6746f5a3da33c", refusal(null, { kind: "failed_request", api_path: "/api/messages", page_path: "/employee-portals/field-crm/visits", http_status: null })],
+  ];
+  for (const [key, screen] of unchanged) {
+    assert.equal(userScreenSignature(screen), key, `a message with no name to mask keeps its production key ${key}`);
+  }
+  // Every character a Latin-only message held on production that day (ASCII, "—", "→"), and the
+  // Latin-adjacent letters a dose or a name may carry (µ, é, ª), pass through untouched.
+  for (const text of ["Plan saved → 5 µg of Ondansétron, 1ª dose — 'twice' \"daily\" `now`", "Visit 3 of 4 was already validated."]) {
+    assert.equal(maskScreenNames(text), text, `masking leaves a message with no non-Latin name as it was: ${text}`);
+    assert.equal(userScreenSignature(refusal(text)), keyBefore(refusal(text)), `and its key is the key it had before: ${text}`);
+  }
+
+  // ── The crash signature is untouched ────────────────────────────────────────────────────────────
+  assert.notEqual(
+    appErrorSignatureV1(row({ message: `Error: ${notAt("مستشفي السلام")}` })).key,
+    appErrorSignatureV1(row({ message: `Error: ${notAt("شركة")}` })).key,
+    "app_error keys never mask names — no crash's signature moves with this change",
+  );
+  assert.ok(messageTemplate(notAt("شركة")).includes("شركة"), "messageTemplate without the option masks no name");
 }
