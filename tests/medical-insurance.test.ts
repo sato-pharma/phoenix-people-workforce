@@ -29,6 +29,8 @@ import {
   type MedicalInsuranceAction,
   type MemberFacts,
 } from "../src/lib/medical-insurance/eligibility.ts";
+import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.ts";
+import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
   buildLibanoMemberFileWorkbook,
@@ -442,6 +444,137 @@ async function testTheMemberFileIsTheInsurersOwnSheet() {
   assert.equal(sheet.getCell(2, 40).value, "14022027");
 }
 
+/**
+ * The owner's monthly rule (2026-11-17): the company carries 70% of the employee's own cover and the employee
+ * 30%; a spouse or child is the employee's in full; EGP 85 of life insurance for every person covered, on the
+ * employee's share. The month is the annual premium plus the 1.55% tax, over twelve.
+ */
+function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees() {
+  const rateOf = (birthDate: string, category: MedicalInsuranceCategory) => {
+    const rate = annualRate(CARD, { birthDate, category, coverageStart: POLICY.startsOn });
+    assert.ok(rate.priced, "the fixture's people are priced");
+    return rate.annual;
+  };
+  const monthOf = (annual: number) => Math.round((Math.round(annual * 100) * (10_000 + CARD.taxBasisPoints)) / 10_000 / 12);
+
+  // The split of a month always adds back to the month: the employee 30%, never under EGP 120 (nor above the month).
+  assert.equal(EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, 120);
+  for (const piastres of [0, 1, 99, 11_999, 30_000, 39_999, 40_000, 100_001, 123_457]) {
+    const { company, employee: own, raisedToMinimum } = splitOwnCover(piastres);
+    assert.equal(company + own, piastres, "the two shares add back to the month");
+    const thirty = piastres - Math.round(piastres * 0.7);
+    assert.equal(own, piastres === 0 ? 0 : Math.max(thirty, Math.min(piastres, 12_000)), `the employee's share of ${piastres} piastres`);
+    assert.equal(raisedToMinimum, own > thirty);
+  }
+  assert.deepEqual(splitOwnCover(30_000), { company: 18_000, employee: 12_000, raisedToMinimum: true }, "30% of EGP 300 is EGP 90, raised to EGP 120");
+  assert.deepEqual(splitOwnCover(100_000), { company: 70_000, employee: 30_000, raisedToMinimum: false }, "30% of EGP 1,000 is over the minimum");
+  assert.equal(monthlyCoverPiastres(CARD, 12_000), monthOf(12_000), "a month is premium and tax over twelve");
+
+  const members: MemberFacts[] = [
+    member({ birthDate: "1990-01-01", category: "C", hrId: "T-1", id: "e-1", name: "Family Employee" }),
+    member({ birthDate: "1992-03-01", category: "C", hrId: null, id: "s-1", memberType: "spouse", name: "Their Spouse", principalMemberId: "e-1" }),
+    member({ birthDate: "2015-05-01", category: "C", hrId: null, id: "c-1", memberType: "child", name: "Their Child", principalMemberId: "e-1" }),
+    member({ birthDate: "1996-01-01", category: "C", hrId: "T-2", id: "e-2", name: "Single Employee" }),
+    member({ birthDate: "1998-01-01", category: "C", coverageStart: "2026-12-01", hrId: "T-3", id: "e-3", name: "December Joiner" }),
+    member({ birthDate: "1980-01-01", category: "C", coverageEnd: "2026-11-16", hrId: "T-4", id: "e-4", name: "Already Left" }),
+    member({ birthDate: "2010-01-01", category: "C", hrId: null, id: "c-9", memberType: "child", name: "Stray Child", principalMemberId: "e-4" }),
+    member({ birthDate: null, category: "C", hrId: "T-5", id: "e-5", name: "No Birth Date" }),
+  ];
+  const split = buildMonthlySplit({ asOf: "2026-11-17", members, rateCard: CARD });
+  const row = (name: string) => split.rows.find((entry) => (entry.employee?.name ?? entry.family[0]?.name) === name);
+
+  assert.equal(row("Already Left"), undefined, "cover that has ended is in no month");
+
+  const family = row("Family Employee");
+  assert.ok(family);
+  const own = monthOf(rateOf("1990-01-01", "C"));
+  const relatives = monthOf(rateOf("1992-03-01", "C")) + monthOf(rateOf("2015-05-01", "C"));
+  const company = Math.round((own * 7_000) / 10_000);
+  assert.ok(own - company > 12_000, "the fixture's 30% is over the minimum");
+  assert.equal(family.ownMonthly, own / 100);
+  assert.equal(family.companyPays, company / 100, "the company carries 70% of the employee's own cover");
+  assert.equal(family.employeeOwnShare, (own - company) / 100, "the employee carries the other 30%");
+  assert.equal(family.raisedToMinimum, false);
+  assert.equal(family.familyMonthly, relatives / 100, "the family is the employee's in full");
+  assert.equal(family.people, 3);
+  assert.equal(family.lifeInsurance, 3 * LIFE_INSURANCE_PER_PERSON_MONTHLY, "EGP 85 for every person covered");
+  assert.equal(family.employeePays, (own - company + relatives + 3 * 8_500) / 100, "30%, the family and the life insurance");
+
+  const single = row("Single Employee");
+  assert.ok(single);
+  assert.equal(single.lifeInsurance, LIFE_INSURANCE_PER_PERSON_MONTHLY);
+  assert.equal(single.family.length, 0);
+
+  const joiner = row("December Joiner");
+  assert.equal(joiner?.employee?.startsOn, "2026-12-01", "cover that starts later is counted and shows its day");
+  // Plan C at 28: 30% of the month is under EGP 120, so the employee carries EGP 120 and the company the rest.
+  const joinerMonth = monthOf(rateOf("1998-01-01", "C"));
+  assert.ok(joinerMonth - Math.round((joinerMonth * 7_000) / 10_000) < 12_000, "the fixture's 30% is under the minimum");
+  assert.equal(joiner?.employeeOwnShare, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, "an employee's share is never under EGP 120");
+  assert.equal(joiner?.companyPays, (joinerMonth - 12_000) / 100, "the company carries the rest");
+  assert.equal(joiner?.raisedToMinimum, true);
+  assert.equal(joiner?.employeePays, (12_000 + 8_500) / 100);
+
+  const stray = row("Stray Child");
+  assert.ok(stray, "a family member whose employee is not on the register still stands");
+  assert.equal(stray.employee, null);
+  assert.equal(stray.companyPays, 0, "the company carries nothing of a family member");
+  assert.equal(stray.employeePays, (monthOf(rateOf("2010-01-01", "C")) + 8_500) / 100);
+
+  const unpriced = row("No Birth Date");
+  assert.equal(unpriced?.unpriced, 1, "nobody is priced at zero without a birth date");
+  assert.equal(unpriced?.employee?.unpricedReason, "No date of birth");
+  assert.equal(unpriced?.companyPays, 0);
+  assert.equal(split.unpriced, 1);
+
+  assert.equal(split.totals.employees, 4, "four employees whose cover has not ended");
+  assert.equal(split.totals.people, 7);
+  assert.equal(split.totals.lifeInsurance, 7 * LIFE_INSURANCE_PER_PERSON_MONTHLY);
+  const sum = (pick: (entry: (typeof split.rows)[number]) => number) => split.rows.reduce((total, entry) => total + Math.round(pick(entry) * 100), 0) / 100;
+  assert.equal(split.totals.companyPays, sum((entry) => entry.companyPays));
+  assert.equal(split.totals.employeesPay, sum((entry) => entry.employeePays));
+  assert.equal(split.totals.total, Math.round((split.totals.companyPays + split.totals.employeesPay) * 100) / 100);
+}
+
+/** The table of benefits is the signed one (Rev 1.3, pages 7 to 9): each plan's limit, network, room and shares. */
+function testTheTableOfBenefitsIsTheSignedOne() {
+  const find = (category: "A" | "B" | "C", section: string, benefit: string, part?: string) => {
+    const line = LIBANO_TABLE_OF_BENEFITS[category].sections.find((entry) => entry.key === section)?.lines.find((entry) => entry.benefit.en === benefit && entry.part?.en === part);
+    assert.ok(line, `plan ${category} has ${benefit}${part ? ` (${part})` : ""}`);
+    return line;
+  };
+  for (const category of ["A", "B", "C"] as const) {
+    const plan = LIBANO_TABLE_OF_BENEFITS[category];
+    assert.equal(plan.category, category);
+    assert.equal(plan.annualLimit, CARD.plans[category].annualLimit, `plan ${category}'s limit matches the rate card`);
+    const facts = Object.fromEntries(plan.facts.map((fact) => [fact.label.en, fact.value.en]));
+    assert.equal(facts["Medical network"], CARD.plans[category].network, `plan ${category}'s network matches the rate card`);
+    assert.equal(facts["Hospital room"], CARD.plans[category].room, `plan ${category}'s room matches the rate card`);
+    assert.deepEqual(plan.sections.map((section) => section.key), ["in-patient", "out-patient", "additional", "reimbursement"]);
+    for (const section of plan.sections) {
+      for (const line of section.lines) {
+        for (const text of [line.benefit, line.coverage, ...(line.part ? [line.part] : [])]) {
+          assert.ok(text.en.trim() && text.ar.trim(), "every line carries its English and the signed Arabic");
+        }
+      }
+    }
+    assert.equal(find(category, "additional", "Dental").memberShare, "20%");
+    assert.equal(find(category, "additional", "Optical").coverage.en, "Not covered");
+    assert.equal(find(category, "additional", "Pregnancy and childbirth", "Natural delivery").coverage.en, "Not covered");
+  }
+  assert.deepEqual([find("A", "out-patient", "Doctor visits").memberShare, find("B", "out-patient", "Doctor visits").memberShare, find("C", "out-patient", "Doctor visits").memberShare], ["10%", "25%", "25%"]);
+  assert.equal(find("B", "out-patient", "Prescribed medicines", "Chronic medicines").coverage.en, "Covered up to EGP 50,000");
+  assert.equal(find("C", "out-patient", "Prescribed medicines", "Chronic medicines").coverage.en, "Covered up to EGP 25,000");
+  assert.equal(find("A", "additional", "Organ transplant (the surgery only)").coverage.en, "Fully covered", "plan A covers a transplant");
+  assert.equal(find("B", "additional", "Organ transplant (the surgery only)").coverage.en, "Not covered");
+  assert.equal(find("C", "additional", "Congenital defects").coverage.en, "Not covered");
+
+  const page = readFileSync("src/components/medical-insurance/medical-insurance-page.tsx", "utf8");
+  assert.match(page, /\{tab === "benefits" \? <MedicalInsuranceBenefitsTab view=\{view\} \/> : null\}/, "the Benefits tab needs no money: every seat that opens the page sees it");
+  const benefits = readFileSync("src/lib/medical-insurance/benefits.ts", "utf8");
+  assert.doesNotMatch(benefits, /rateCard|premium|annualRate/, "the table of benefits carries no cost");
+}
+
 function testASeatNeverHoldsAnAmount() {
   const invoices = "medical_insurance_invoices";
   for (const role of ["HR Operations", "HR Administration"] as const) {
@@ -462,10 +595,13 @@ function testASeatNeverHoldsAnAmount() {
   const view = readFileSync("src/lib/medical-insurance/view.ts", "utf8");
   const seatShape = view.slice(view.indexOf("export type MedicalInsuranceView"), view.indexOf("export type MedicalInsuranceInvoiceRow"));
   assert.doesNotMatch(seatShape, /total|premium|cost|statement|egp|rate/i, "the seats' shape carries no amount");
+  assert.doesNotMatch(seatShape, /split|company|life/i, "the monthly split is never in the seats' shape");
+  const moneyShape = view.slice(view.indexOf("export type MedicalInsuranceMoneyView"));
+  assert.match(moneyShape.slice(0, moneyShape.indexOf("};")), /monthlySplit: MonthlySplit;/, "the monthly split rides only in the money view");
 }
 
 function testNothingHereSendsOrPays() {
-  for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts"]) {
+  for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts", "src/lib/medical-insurance/monthly-split.ts"]) {
     const source = readFileSync(file, "utf8");
     assert.doesNotMatch(source, /from "@\/lib\/email|sendEmail|resend|from "@\/lib\/payroll/i, `${file} must not send mail or reach payroll`);
   }
@@ -484,6 +620,8 @@ export async function runMedicalInsuranceTests() {
   testALateJoinerIsCoveredFromTheDayTheyJoin();
   testEachEmployeeShowsTheirHrNumberHireDayLineAndArea();
   testTheContractsAgeLimitsAreReviewed();
+  testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees();
+  testTheTableOfBenefitsIsTheSignedOne();
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
   testASeatNeverHoldsAnAmount();
