@@ -21,11 +21,13 @@
 // FIRST MONTH = JULY 2026. The engine is hard-floored at SALES_VS_TARGET_FLOOR
 // ("2026-07") in both TS and SQL, so the period picker never offers an earlier month.
 //
-// COVERAGE-AWARE ACHIEVEMENT. Achievement % is covered-actual ÷ target, i.e. only the
-// actual that sits on a key that HAS a target counts toward the percentage (identical
-// to VsTargetTotals/sealTotals). A rep with real sales but no target for a product
-// shows those sales with a 0 target and does not inflate the %. Figures shown as
-// "Sales" are the FULL actual (what they sold), same as the vs-target page.
+// ACHIEVEMENT IS THE CLOSING'S OWN Ach %. Every sale in a month that carried a target, ÷
+// that target — identical to VsTargetTotals/sealTotals, the Business Review, the incentive
+// tab and /sales/rankings. A sale whose own key has no target still counts when its month
+// was targeted (CNS Qena 2 rides on Qena 1's target); a month with no target grades
+// nothing. Until 2026-11-17 the boards divided only the sales sitting on a key WITH a
+// target, and so disagreed with the closing wherever such a sale existed — see
+// `gradedActualOf`. Figures shown as "Sales" are the FULL actual (what they sold).
 //
 // HEADLINE ≠ SUM OF THE LEADERBOARD. Line / team / region / company totals come from
 // ALL scoped rows (via the engine's totalRows), NOT the sum of the leaderboard. A
@@ -103,13 +105,44 @@ function normalizePeriods(requested: string | string[] | null | undefined): stri
   return out;
 }
 
+/**
+ * Sales and target per month, so a percentage can count every sale in a month that carried a target.
+ *
+ * The board divides the GRADED actual — every sale in a month where this person (or this product) had a
+ * target — by the target: the Monthly Closing's own Ach %, and what `totalRows` in vs-target.ts, the
+ * Business Review, the incentive tab and /sales/rankings all print (owner, 2026-10-25: "perfectly
+ * matching with the monthly closings"). Until 2026-11-17 it divided only the sales sitting on a key
+ * WITH a target, which dropped a sale whose own area carries none: CNS Qena 2 shares one target with
+ * Qena 1 (owner, 2026-10-13), so Amgad Ibrahim's Upper Egypt district read 83.23% on his National Sales
+ * Manager's landing for July–October 2026 against 91.35% on the Business Review and the closing —
+ * 732,613 EGP of Qena 2 sales left out, on the wrong side of the 90% payout line.
+ */
+type PeriodSums = Map<string, { actual: number; target: number }>;
+
+function addToPeriod(sums: PeriodSums, period: string, actual: number, target: number): void {
+  const entry = sums.get(period);
+  if (entry) {
+    entry.actual += actual;
+    entry.target += target;
+  } else {
+    sums.set(period, { actual, target });
+  }
+}
+
+/** Every sale in a month that carried a target. A month with no target grades nothing. */
+function gradedActualOf(sums: PeriodSums): number {
+  let graded = 0;
+  for (const { actual, target } of sums.values()) if (target > 0) graded += actual;
+  return graded;
+}
+
 /** Running accumulator for one rep or one DM, plus its per-product breakdown. */
 type MemberAgg = {
   hrId: string;
-  /** Full actual value sold — covered + uncovered. Shown as "Sales". */
+  /** Full actual value sold, every month. Shown as "Sales". */
   fullActual: number;
-  /** Actual value that sits on a key WITH a target — the only actual the % uses. */
-  coveredActual: number;
+  /** Sales and target per month — the % reads the graded actual from it (`gradedActualOf`). */
+  byPeriod: PeriodSums;
   target: number;
   units: number;
   /** For the rep grain: the DM seat this rep's rows resolved to (first seen). */
@@ -119,7 +152,7 @@ type MemberAgg = {
    * only while `dmHrId` stays null, to name that district instead of "Unassigned District".
    */
   vacantDmSeatId: string | null;
-  products: Map<string, { sales: number; coveredSales: number; target: number; units: number }>;
+  products: Map<string, { sales: number; byPeriod: PeriodSums; target: number; units: number }>;
 };
 
 type Grain = "rep" | "dm";
@@ -239,7 +272,7 @@ function aggregate(rows: AchievementRow[], grain: Grain): Map<string, MemberAgg>
       agg = {
         hrId,
         fullActual: 0,
-        coveredActual: 0,
+        byPeriod: new Map(),
         target: 0,
         units: 0,
         dmHrId: null,
@@ -252,20 +285,20 @@ function aggregate(rows: AchievementRow[], grain: Grain): Map<string, MemberAgg>
     agg.fullActual += row.actualValue;
     agg.units += row.actualUnits;
     agg.target += target;
-    if (row.hasTarget) agg.coveredActual += row.actualValue;
+    addToPeriod(agg.byPeriod, row.period, row.actualValue, target);
     if (grain === "rep" && row.dmHrId && !agg.dmHrId) agg.dmHrId = row.dmHrId;
     if (grain === "rep" && !row.dmHrId && row.dmSeatId && !agg.vacantDmSeatId) agg.vacantDmSeatId = row.dmSeatId;
 
     const productCode = row.productCode || "UNKNOWN";
     let product = agg.products.get(productCode);
     if (!product) {
-      product = { sales: 0, coveredSales: 0, target: 0, units: 0 };
+      product = { sales: 0, byPeriod: new Map(), target: 0, units: 0 };
       agg.products.set(productCode, product);
     }
     product.sales += row.actualValue;
     product.units += row.actualUnits;
     product.target += target;
-    if (row.hasTarget) product.coveredSales += row.actualValue;
+    addToPeriod(product.byPeriod, row.period, row.actualValue, target);
   }
   return map;
 }
@@ -280,7 +313,7 @@ function toMember(
   const { managerHrId, managerName, vacantManagerSeatId } = manager;
   const products: DsmTeamMemberProductData[] = Array.from(agg.products.entries())
     .map(([code, product]) => ({
-      achievementPercent: product.target > 0 ? (product.coveredSales / product.target) * 100 : 0,
+      achievementPercent: product.target > 0 ? (gradedActualOf(product.byPeriod) / product.target) * 100 : 0,
       family: "",
       product: productNames.get(code.toUpperCase()) ?? code,
       sales: product.sales,
@@ -290,7 +323,7 @@ function toMember(
     .sort((a, b) => b.sales - a.sales);
 
   return {
-    achievementPercent: agg.target > 0 ? (agg.coveredActual / agg.target) * 100 : 0,
+    achievementPercent: agg.target > 0 ? (gradedActualOf(agg.byPeriod) / agg.target) * 100 : 0,
     hrId: agg.hrId,
     name: employeeNames.get(agg.hrId) ?? "Unnamed employee",
     managerHrId,
@@ -404,7 +437,7 @@ export function dmBoardRows(rows: AchievementRow[], tenure: SeatTenure | null): 
  *
  * Each row is the SUM of the district-manager rows beneath him and nothing else: every row with a
  * seated DM whose DM seat hangs off an occupied RSM seat is folded under that RSM's occupant, by the
- * same `aggregate` that builds the DM rows. So his sales, target and covered sales are exactly those
+ * same `aggregate` that builds the DM rows. So his sales, target and graded sales are exactly those
  * DM rows added up, and his % is recomputed from the sums, as every row here is. A vacant district
  * under him (no `dmHrId`) is left out on purpose — it has no DM row either, and is the same
  * reconciliation slice it already is on the page — so his row never reads more than the districts
@@ -502,8 +535,8 @@ function dmManagerResolver(nsmHrId: string | null, nsmName: string | null): Mana
 }
 
 /**
- * Line/team/region/company HEADLINE totals from ALL given rows, coverage-aware (via the
- * engine's totalRows). NOT the sum of the leaderboard — see the file header.
+ * Line/team/region/company HEADLINE totals from ALL given rows, graded as the closing grades them (via
+ * the engine's totalRows). NOT the sum of the leaderboard — see the file header.
  */
 function headlineTotals(rows: AchievementRow[]): {
   sales: number;
@@ -774,7 +807,7 @@ export async function buildCompanyDsmPerformanceFromSos(
  * before — `isInRegion` is the directory-derived membership test the caller supplies
  * (region membership comes from the RM's own management subtree, never their coarse
  * region label). DSM positions stay line-wide, matching the previous behaviour. Region
- * totals are the coverage-aware headline over the region's DM rows.
+ * totals are the graded headline over the region's DM rows.
  */
 export async function buildRmRegionalPerformanceFromSos(
   requested: string | string[] | null | undefined,
@@ -804,7 +837,7 @@ export async function buildRmRegionalPerformanceFromSos(
     .filter((rep) => isInRegion(rep.hrId) || isInRegion(rep.managerHrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 
-  // Region totals: the coverage-aware headline over rows that belong to this RM's region.
+  // Region totals: the graded headline over rows that belong to this RM's region.
   // Place each row by its DM when it HAS one (unchanged from before — never moves a total
   // that already had a district manager), and fall back to the REP when the DM seat is
   // vacant (dmHrId null). Without that fallback a district whose DM resigned mid-month has
