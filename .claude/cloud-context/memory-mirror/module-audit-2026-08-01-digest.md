@@ -100,7 +100,7 @@ code). What is kept is the durable system map and the audit's own meta-critique.
   confirm, same validator both times), premium ExcelJS workbook builders, org/vacancy reports, the S1
   Business Review (baked seat-map snapshot, fail-closed portal scope), a Friday-cron full multi-module
   Supabase backup to Storage.
-- **ops-observability** [solid] — a self-hosted obs stack (replaces Sentry): `app_error_events` →
+- **ops-observability** [solid] — a self-hosted obs stack (replaces the old outside error tracker): `app_error_events` →
   `/admin/error-monitor` + `/admin/system-issues` (deploy-aware status, AI triage, weekly health digest);
   Healthchecks.io dead-man on every cron; a cron-control dashboard; a background-jobs queue; a
   synthetic-journeys Playwright pipeline that is complete code but shelfware (nothing schedules it).

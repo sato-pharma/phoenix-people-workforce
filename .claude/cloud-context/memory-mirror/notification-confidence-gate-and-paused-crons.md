@@ -47,7 +47,7 @@ module+eventType. (This closed the earlier "held items sit indefinitely, no noti
 ## Reusable lessons
 
 - 🔴 **A test can PIN A BROKEN string** — `email-notifications.test.ts` asserted the broken
-  `console.error(e, { tags: { cron: … } })` under the false label "errors captured in Sentry with tags", so
+  `console.error(e, { tags: { cron: … } })` under a false label saying the errors were captured, with tags, in the outside error tracker, so
   fixing the route fails the suite until the assertion is replaced (and an explanatory comment quoting that
   literal trips a `doesNotMatch` guard).
 - **The observability hole:** `/api/notifications/daily` runs ~22 sub-jobs each with its own `.catch()`, then

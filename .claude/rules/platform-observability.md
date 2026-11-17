@@ -16,13 +16,13 @@ paths:
   - "app/**/admin/integrations/**"
   - "tests/integrations-registry.test.ts"
   - "tests/performance-phase-3.test.ts"
-  - "tests/*{error-monitor,structured-log,sentry,audit-outbox,job-refire,heartbeat}*"
+  - "tests/*{error-monitor,structured-log,new-error-alert,audit-outbox,job-refire,heartbeat}*"
   - "supabase/migrations/*{app_error,audit_log,heartbeat}*"
 ---
 
-# Module memory — Platform — structured logging, Sentry and the audit trail's own persistence
+# Module memory — Platform — structured logging, the error log and the audit trail's own persistence
 
-**Scope:** Structured logging and what an `app_error_events` row carries, Sentry, job failure and re-fire policy, and how the audit trail itself is persisted. The System Audit board and the error screenshots are `platform-system-audit`.
+**Scope:** Structured logging and what an `app_error_events` row carries, the new-error Telegram, job failure and re-fire policy, and how the audit trail itself is persisted. The System Audit board and the error screenshots are `platform-system-audit`.
 
 This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
 

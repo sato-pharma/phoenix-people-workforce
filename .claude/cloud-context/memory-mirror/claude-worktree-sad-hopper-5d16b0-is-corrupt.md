@@ -12,7 +12,7 @@ Found 2026-07-31. The Claude Code worktree `F:\Phoenix Workforce\phoenix-workfor
 
 **Why: it is dangerous.** Because the folder sits *inside* the primary repo and has lost its `.git` pointer file, git walks UP the directory tree and resolves to `F:/Phoenix Workforce/phoenix-workforce/.git`. So from inside that worktree:
 - `git rev-parse --show-toplevel` → the PRIMARY checkout, not the worktree
-- `git branch --show-current` → `codex/retire-sentry` (another live session's branch, at 020600c5, with ~30 uncommitted files)
+- `git branch --show-current` → the error-tracker retirement branch (another live session's branch, at 020600c5, with ~30 uncommitted files)
 
 Any `git add`/`commit` run there would stage **another session's in-progress work**, and any file edit would land in their checkout. The session-start snapshot claimed branch `claude/sweet-mestorf-cfa28d`, clean — that was already stale/wrong, so do not trust it.
 

@@ -112,24 +112,15 @@ number in words, so the check cannot read it, and a new alert that later reaches
 taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert
 cell, but only for the same advisory and manifest. Rows read 2026-11-03 17:02 Cairo.
 
-### `picomatch` — GHSA-fc5q-39xc-vjpf · HIGH
+### `picomatch` — GHSA-fc5q-39xc-vjpf · HIGH — CLOSED, no longer reachable
 
-| | |
-| --- | --- |
-| **Decision** | **Accepted until a fix is published — ignored in the audit gate (`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`).** Recorded 2026-11-17 at the owner's instruction: "accept the picomatch advisory in 515". Earlier the same evening he had chosen to wait; he changed it once every pull request had been red for hours. |
-| Alert | none on this repository (no Dependabot alert was open when this was recorded) |
-| Scope | **`runtime`** in the root graph — this one DID turn `checks` red on every pull request, which is why it needed an ignore and not just a row |
-| Patched version | **none exists** — the advisory names 4.0.8; npm's `latest` was 4.0.7 on 17 Nov 2026 |
-| How it arrives | `picomatch@4.0.7` ← `@rollup/plugin-commonjs` (directly, and through `@rollup/pluginutils` and `fdir`) ← **`@sentry/nextjs`** |
-| What it is | Regular-expression denial of service through single-branch repeated extglobs |
-
-**Why accepting is safe enough.** `@rollup/plugin-commonjs` is the bundling plugin `@sentry/nextjs` runs while the
-app is **built**. It matches glob patterns written in this repository and its build config, never text from an
-employee, a rep or a request, and the Phoenix code imports picomatch nowhere. The worst case is a slow build.
-
-**What ends it.** The day picomatch publishes 4.0.8 or later: re-resolve it in the lockfile (the parents' `^4.0.2`
-already allows it — the Sunday dependency refresh does this), delete the `ignoreGhsas` line and this row in the same
-pull request, and see the audit pass without the ignore.
+Accepted on the owner's word on 2026-11-17 ("accept the picomatch advisory in 515") and ignored in the audit gate
+while no patched version existed. **The ignore was removed the same day:** `picomatch@4.0.7`'s only production path
+was a bundling plugin pulled in by a build-time dependency that left the project that evening, so the production tree
+`pnpm audit --prod` walks no longer holds picomatch 4 at all (measured from the regenerated lockfile: 793 → 703
+production packages, picomatch 4 and glob 14 among those gone). It remains only under development tools
+(`tinyglobby`, `fdir`), which the `--prod` filter drops. If a production dependency ever pulls picomatch 4 back
+before 4.0.8 exists, this is a new decision for the owner, not a reason to restore the ignore.
 
 ### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
 
@@ -326,23 +317,21 @@ still cost a deploy. The mechanism is recorded in `docs/agents-session-traps-clu
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `minimatch` one below. |
 | Alert | #19, opened on this repository 2026-11-04 03:02 Cairo, the same number it had on the previous repository, root `pnpm-lock.yaml` |
-| Scope | **`runtime`**, because `@sentry/nextjs` is a production dependency, but this code only runs during the build |
+| Scope | **`development`** since 2026-11-17, when its only production parent, a build-time dependency, was removed; before that `runtime`, though the code only ran during the build |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
-| Patched version | **14.0.2 only** — no 13.x release carries the fix, and `@sentry/bundler-plugins` 11.10.0, its newest, still asks for `^13.0.6` |
-| How it arrives | `glob@13.0.6` ← `@sentry/bundler-plugins` ← `@sentry/nextjs`, and the development tool `c8`. `glob@7.2.3` under `exceljs` is below the affected range |
+| Patched version | **14.0.2 only** — no 13.x release carries the fix; the `glob@13` override in `pnpm-workspace.yaml` lifts the 13 line to 14 |
+| How it arrives | Only the development tools `c8` and `test-exclude`, through the `glob@13` override. `glob@7.2.3` under `exceljs` is below the affected range |
 | What it is | A walk cancelled through `signal` keeps reading directories in the background |
 
-**The flaw needs a cancel signal, and Sentry never passes one.** The whole of its use is
-`build/cjs/core/glob.js`: `glob(patterns, { absolute: true, nodir: true, ...options })`, and its callers
-pass only `ignore` or `root`. A search of the installed package for `signal:` found none (3 Nov 2026).
-`next.config.ts` is the only file that loads `@sentry/nextjs/config`, and only on a build that holds a
-Sentry token. Nothing else outside the frozen application imports `glob`.
+**The flaw needs a cancel signal, and no caller passes one.** The one production caller, a bundling plugin's file
+walker that passed only `ignore` or `root` (no `signal:` in the installed package, 3 Nov 2026), left the project on
+2026-11-17. What remains is coverage tooling. Nothing outside the frozen application imports `glob`.
 
 **What would reverse this.** Any one of these:
 
-1. **Code in this repository calls `glob` with a `signal`**, or Sentry's build tools start to.
+1. **Code in this repository calls `glob` with a `signal`.**
 2. **The advisory is re-scored above MEDIUM**, which would let it fail the audit on a `runtime` package.
-3. **Sentry's build tools accept a patched `glob`.** Take it in the next dependency refresh.
+3. **A production dependency pulls `glob` 13 or 14 back in.** Re-read the chain then.
 
 ### `minimatch` — GHSA-g3hv-75wg-m249 · MEDIUM
 
@@ -350,7 +339,7 @@ Sentry token. Nothing else outside the frozen application imports `glob`.
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `glob` one above. |
 | Alert | #20, opened on this repository 2026-11-04 03:02 Cairo, the same number it had on the previous repository, root `pnpm-lock.yaml` |
-| Scope | **`runtime`**, because `@sentry/nextjs` and `exceljs` are production dependencies |
+| Scope | **`runtime`**, because `exceljs` is a production dependency |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
 | Patched version | **11.0.1 only** — 3.1.5, 5.1.9 and 10.2.6, the three we resolve, are each the newest of their line |
 | How it arrives | `10.2.6` ← `glob@13.0.6` above, and development tools. `3.1.5` ← `glob@7.2.3` ← `archiver-utils` ← `archiver` ← `exceljs`, and ESLint. `5.1.9` ← `readdir-glob` ← `archiver` ← `exceljs` |
@@ -359,7 +348,7 @@ Sentry token. Nothing else outside the frozen application imports `glob`.
 **Only 10.2.6 holds the flawed code, and no user reaches it.** `firstPhasePreProcess` appears in the
 installed 10.2.6 and nowhere in 3.1.5 or 5.1.9, which the advisory's `< 11.0.1` range catches by number
 alone. `glob` does run 10.2.6 at the `optimizationLevel: 2` the flaw needs, so the safety here is who
-writes the pattern: Sentry's build tools and `next.config.ts`, never a request. Nothing outside the frozen
+writes the pattern: build and development tooling, never a request. Nothing outside the frozen
 application imports `minimatch`. `exceljs` uses `archiver` only to write zip files, and never calls its
 `glob` or `directory`.
 

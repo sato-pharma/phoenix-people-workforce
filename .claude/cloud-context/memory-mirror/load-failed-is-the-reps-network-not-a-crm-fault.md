@@ -29,4 +29,4 @@ KPIs, Deductions and Organogram.
 **How to apply:** group by device and page before answering — reading `Load failed` alone makes it
 look iOS-only and CRM-only, which is [[census-client-errors-by-stack-not-message]] again. The only
 real gap is that nothing retries: the rep sees the offline sentence or a tap that does not advance.
-`browser-noise.ts` deliberately keeps these out of Sentry only; the table records every one.
+`browser-noise.ts` deliberately kept these out of the old outside error tracker only; the table records every one.

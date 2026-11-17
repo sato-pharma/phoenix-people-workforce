@@ -54,8 +54,8 @@ the row will never post: settle with `git merge-base --is-ancestor <merge> <live
   through `success` is benign.
 - 🔴 **Classify by the SUITES too: a withheld deploy whose every suite is GREEN was superseded, not
   refused.** Read `commits/<sha>/check-suites`, not only the CI run.
-- **The four third-party suites — `sentry`, `claude`, `vercel`, `railway-app` — sit at `queued` for
-  ever on every commit and do NOT hold the gate.** Never chase them; on this merge all four were
+- **The three third-party suites — `claude`, `vercel` (until 27 Oct), `railway-app` — sit at `queued` for
+  ever on every commit and do NOT hold the gate.** Never chase them; on this merge every one of them was
   queued while the deploy built and served normally.
 - In every one of these cases the recovery is to do NOTHING. **Never `railway redeploy`, never
   re-merge** — see [[a-red-main-ci-makes-railway-skip-the-deploy-for-good]] for the case that

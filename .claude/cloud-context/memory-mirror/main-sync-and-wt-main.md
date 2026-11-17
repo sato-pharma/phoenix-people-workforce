@@ -8,7 +8,7 @@ metadata:
 ---
 
 2026-06-20: Cleaned up `main` drift. Local `main` had fallen 29 commits behind
-`origin/main` (0 ahead) and was stuck in a half-merged state (stale Sentry-file
+`origin/main` (0 ahead) and was stuck in a half-merged state (stale error-tracker-file
 deletions — the same drift seen across ~10 worktrees). Fixed by `reset --hard
 origin/main` (safe: 0 unique commits; junk restored from prod).
 
@@ -23,7 +23,7 @@ Durable outcomes:
 - Synced main passed the FULL local gate: lint + typecheck + test (0 fail) + build (exit 0).
 
 **Gotcha:** `git worktree move` carries the OLD worktree's `node_modules` along. If that
-worktree predates newer deps (here `@sentry/nextjs`, `@openai/agents`, `openai`),
+worktree predates newer deps (here `@openai/agents`, `openai`),
 typecheck/test fail with ERR_MODULE_NOT_FOUND until you run `npm install` in the moved
 worktree. Always `npm install` after relocating a stale worktree onto newer code.
 
@@ -67,7 +67,7 @@ RULE: never blind-merge all branches to main; triage each (most "branches" here 
 branches are already in main (or safe on origin) — kept primary, `_wt-main`, and worktrees
 with live WIP. KEY: removing a worktree never deletes its branch (branch persists local+origin);
 only uncommitted work is at risk, so guard each removal on "no real uncommitted work (excl
-Sentry junk)". Net worktrees 25→~4 (parallel sessions keep adding/removing their own).
+error-tracker junk)". Net worktrees 25→~4 (parallel sessions keep adding/removing their own).
 
 2026-06-21 worktree state after second triage: `_wt-main` is now on `codex/portal-overview-redesign`
 (PR #444) — NOT on `main`. Main worktree is on `codex/ceo-command-center-photo` (PR #443).
