@@ -90,6 +90,25 @@ type FilterableLine = {
   employeeHrIdCompact: string;
 };
 
+/**
+ * The per-type totals of the lines the filters leave — what the "Released to employees" type chips show
+ * while a filter is on (owner, 2026-11-17: "fix the fingerprint chip so it follows the filter"). A type
+ * with nothing left is absent, so its chip disappears; each total is rounded to the piastre like every
+ * other figure on the screen.
+ */
+export function categoryTotalsOfLines<C extends string>(
+  lines: ReadonlyArray<{ category: C; amount: number }>,
+): Partial<Record<C, number>> {
+  const sums = new Map<C, number>();
+  for (const line of lines) sums.set(line.category, (sums.get(line.category) ?? 0) + Number(line.amount ?? 0));
+  const totals: Partial<Record<C, number>> = {};
+  for (const [category, sum] of sums) {
+    const rounded = Math.round(sum * 100) / 100;
+    if (rounded > 0) totals[category] = rounded;
+  }
+  return totals;
+}
+
 export function isFingerprintDeduction(line: Pick<FilterableLine, "category">): boolean {
   return line.category === FINGERPRINT_DEDUCTION_CATEGORY;
 }
