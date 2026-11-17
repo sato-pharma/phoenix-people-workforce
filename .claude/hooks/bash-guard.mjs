@@ -966,13 +966,20 @@ function recursiveGrepVerdict(segment, cwd, vars) {
   if (!recursive) return null;
   const paths = patternGiven ? operands : operands.slice(1);
   // No path walks the cwd — the same as `.`.
-  const verdicts = (paths.length ? paths : ['.']).map((path) => grepPathVerdict(path, cwd, vars));
+  const named = paths.length ? paths : ['.'];
+  const verdicts = named.map((path) => grepPathVerdict(path, cwd, vars));
   if (verdicts.includes('big')) return { verdict: 'big' };
   // A segment naming two fixable families needs both families' excludes, in family order.
   const required = [...new Set(verdicts.flatMap((verdict) => GREP_FIX_EXCLUDES[verdict] ?? []))];
   const missing = required.filter((name) => !excluded.has(name));
   if (!missing.length) return { verdict: 'ok' };
-  return { verdict: 'fix', missing };
+  // The operands that made it a root grep, as typed. The refusal names them: told only "a grep of
+  // NAMED folders needs none of this", a session dropped `.` for `src … .claude` and was refused
+  // again for the `.claude` (2026-11-17, the owner pasted both refusals).
+  const roots = named
+    .filter((_, i) => verdicts[i].startsWith('fix'))
+    .map((path) => (paths.length ? path : '. (no path given)'));
+  return { verdict: 'fix', missing, roots };
 }
 
 /**
@@ -1012,7 +1019,7 @@ function recursiveGrepVerdicts(segments, startCwd) {
     }
     const result = recursiveGrepVerdict(segment, cwd, vars);
     if (result?.verdict === 'big') return { big: true, fixes };
-    if (result?.verdict === 'fix') fixes.push({ index, missing: result.missing });
+    if (result?.verdict === 'fix') fixes.push({ index, missing: result.missing, roots: result.roots });
   }
   return { big: false, fixes };
 }
@@ -1119,17 +1126,23 @@ try {
       input.tool_name === 'Bash' && strippedForGrep === cmd ? grepWithExcludes(cmd, grepSegments, grepVerdicts.fixes) : null;
     const added = [...new Set(grepVerdicts.fixes.flatMap((fix) => fix.missing))];
     const flags = added.map((name) => `--exclude-dir=${name}`).join(' ');
+    const roots = [...new Set(grepVerdicts.fixes.flatMap((fix) => fix.roots ?? []))].map((root) => `\`${root}\``).join(', ');
     if (rewritten && commandIsReadOnly(cmd)) {
       grepRewrite = { command: rewritten, flags };
     } else {
       deny(
-        'Recursive grep of a repo or worktree root (`.`, no path), its `.claude` or ~/.claude walks the ' +
+        'Recursive grep of ' + roots + ' — a repo or worktree root (`.` or no path), the `.claude` inside ' +
+          'one, or ~/.claude, which counts even when it is one of several named folders. That walks the ' +
           'big children — node_modules, .git, the worktrees, the transcript store ' +
           '(~346k path entries, 10-40s+) — but with ' + flags + ' it takes about 3.5 s. ' +
           (rewritten
-            ? 'Run it again with them added:\n' + rewritten
+            ? 'Run exactly this; it passes:\n' + rewritten
             : 'Add those flags to each such grep and run it again.') +
-          '\nA grep of NAMED folders needs none of this, and `git grep` or the Grep tool honour .gitignore.',
+          '\nOr drop ' + roots + ' and name smaller folders instead (`src`, `docs`, `.claude/rules`, ' +
+          '`.claude/hooks`), which need no flags; `git grep` and the Grep tool honour .gitignore.' +
+          (rewritten
+            ? ' It is refused rather than fixed silently only because this command also does something that is not a read.'
+            : ''),
       );
     }
   }
