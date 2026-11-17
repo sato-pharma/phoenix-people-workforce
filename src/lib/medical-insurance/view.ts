@@ -10,6 +10,7 @@ import { formatLeftDay } from "@/lib/employees/left-flag";
 import type { InvoiceComparison, MedicalInsuranceInvoiceKind } from "./compare";
 import type { MedicalInsuranceCategory, MedicalInsuranceMemberType, MedicalInsuranceRateCard } from "./cost";
 import type { KeptException, MedicalInsuranceAction, MedicalInsuranceMovement, PolicyYearCost } from "./eligibility";
+import type { MonthlySplit } from "./monthly-split";
 
 export type MedicalInsurancePolicyView = {
   id: string;
@@ -106,6 +107,8 @@ export type MedicalInsuranceInvoiceRow = {
 export type MedicalInsuranceMoneyView = {
   rateCard: MedicalInsuranceRateCard;
   year: PolicyYearCost;
+  /** Who carries the cover each month, company or employee (owner, 2026-11-17). Super Admin only, like every amount. */
+  monthlySplit: MonthlySplit;
   invoices: MedicalInsuranceInvoiceRow[];
   documents: MedicalInsuranceDocumentRow[];
 };

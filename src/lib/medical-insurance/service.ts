@@ -39,6 +39,7 @@ import {
   removeMedicalInsuranceFile,
   uploadMedicalInsuranceFile,
 } from "./file-storage";
+import { buildMonthlySplit } from "./monthly-split";
 import type { LibanoMemberFileKind, LibanoMemberLine } from "./workbooks";
 import type {
   MedicalInsuranceDocumentKind,
@@ -421,6 +422,7 @@ export async function getMedicalInsuranceMoney(): Promise<MedicalInsuranceMoneyV
   return {
     documents: await loadDocuments(policy.id, ["policy", "email"], names),
     invoices: ((data ?? []) as InvoiceDbRow[]).map(toInvoiceRow),
+    monthlySplit: buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard }),
     rateCard: policy.rateCard,
     year: yearCost(state),
   };

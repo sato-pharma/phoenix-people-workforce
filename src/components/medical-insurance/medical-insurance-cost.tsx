@@ -10,6 +10,7 @@ import { formatLeftDay } from "@/lib/employees/left-flag";
 import { INVOICE_KIND_WORDS, MEDICAL_INSURANCE_INVOICE_KINDS, type MedicalInsuranceInvoiceKind } from "@/lib/medical-insurance/compare";
 import { ageBandWords, MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory, type MedicalInsuranceRateCard } from "@/lib/medical-insurance/cost";
 import { plannedLinesTotal, type CostLine } from "@/lib/medical-insurance/eligibility";
+import { LIFE_INSURANCE_PER_PERSON_MONTHLY, MONTHLY_SPLIT_ASSUMPTIONS, type MonthlySplit, type MonthlySplitPerson, type MonthlySplitRow } from "@/lib/medical-insurance/monthly-split";
 import { egpWords, MEDICAL_INSURANCE_OPEN_POINTS, MEMBER_TYPE_WORDS, type MedicalInsuranceInvoiceRow, type MedicalInsuranceMoneyView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ export function MedicalInsuranceCostTab({ money: view, policy }: { money: Medica
   return (
     <div className="space-y-5">
       <YearPanel view={view} />
+      <MonthlySplitPanel split={view.monthlySplit} />
       <OpeningPanel view={view} />
       <LinesPanel
         description="Joiners charged by the day to the policy's end (a quarter of the year from its last quarter on), and leavers refunded by the day from the day after their last covered day."
@@ -92,6 +94,139 @@ function YearPanel({ view }: { view: MedicalInsuranceMoneyView }) {
           {unpriced === 1 ? "1 person cannot be priced" : `${unpriced} people cannot be priced`} (no date of birth, no plan, or an age band the offer did not quote), so the figures are short by them. Each one is named below with the reason.
         </p>
       ) : null}
+    </AdminTableShell>
+  );
+}
+
+// ── Who carries the cover each month (owner, 2026-11-17) ──────────────────────────────────────
+
+function splitPersonWords(person: MonthlySplitPerson): string {
+  const parts = [person.memberType === "employee" ? `Plan ${person.category}` : `${MEMBER_TYPE_WORDS[person.memberType]}, plan ${person.category}`];
+  if (person.band) parts.push(`ages ${person.band}`);
+  if (person.startsOn) parts.push(`from ${formatLeftDay(person.startsOn)}`);
+  return parts.join(", ");
+}
+
+function splitRowName(row: MonthlySplitRow): string {
+  return row.employee?.name ?? row.family[0]?.name ?? "";
+}
+
+function familyWords(row: MonthlySplitRow): string {
+  if (row.family.length === 0) return "None";
+  return `${row.family.length === 1 ? "1 person" : `${row.family.length} people`}, ${money(row.familyMonthly)}`;
+}
+
+function SplitPeople({ row }: { row: MonthlySplitRow }) {
+  return (
+    <>
+      <p className="break-words text-phx-xs font-black text-phx-ink" dir="auto">{splitRowName(row)}</p>
+      {row.employee ? (
+        <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{[row.hrId, splitPersonWords(row.employee)].filter(Boolean).join(", ")}</p>
+      ) : (
+        <p className="break-words text-phx-xs font-bold text-phx-warn">Their employee is not on the register, so their cover is all on the family</p>
+      )}
+      {row.employee?.unpricedReason ? <p className="break-words text-phx-xs font-bold text-phx-warn">Cannot be priced: {row.employee.unpricedReason}</p> : null}
+      {row.family.map((relative) => (
+        <p className="break-words text-phx-xs font-semibold text-phx-ink-faint" dir="auto" key={relative.memberId}>
+          {row.employee ? `${relative.name}: ` : ""}
+          {splitPersonWords(relative)},{" "}
+          {relative.monthly === null ? <span className="font-bold text-phx-warn">cannot be priced: {relative.unpricedReason}</span> : `${money(relative.monthly)} a month`}
+        </p>
+      ))}
+    </>
+  );
+}
+
+function MonthlySplitPanel({ split }: { split: MonthlySplit }) {
+  const { rows, totals, unpriced } = split;
+  return (
+    <AdminTableShell
+      description={`Each month the company carries 70% of the employee's own cover and the employee 30%. A spouse or child is the employee's in full, and EGP ${LIFE_INSURANCE_PER_PERSON_MONTHLY} of life insurance is added on the employee's share for every person covered. Only you see this.`}
+      title="Who pays each month"
+    >
+      <Tiles
+        tiles={[
+          { label: "The company pays a month", value: egpWords(totals.companyPays) },
+          { label: "Employees pay a month", value: egpWords(totals.employeesPay) },
+          { label: "Of which life insurance", value: egpWords(totals.lifeInsurance) },
+          { label: "Employees", value: String(totals.employees) },
+          { label: "People covered", value: String(totals.people) },
+          { label: "Cover and life insurance a month", value: egpWords(totals.total) },
+        ]}
+      />
+      {unpriced > 0 ? (
+        <p className="break-words border-t border-phx-line p-4 text-phx-xs font-bold text-phx-warn">
+          {unpriced === 1 ? "1 person cannot be priced" : `${unpriced} people cannot be priced`}, so the figures are short by them. Each one is named below with the reason.
+        </p>
+      ) : null}
+      {rows.length === 0 ? (
+        <p className="p-4 text-sm font-semibold text-phx-ink-soft">Nobody is on the register.</p>
+      ) : (
+        <>
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
+              <colgroup>
+                <col className="w-[28%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[14%]" />
+                <col className="w-[11%]" />
+                <col className="w-[14%]" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className={headerClassName}>Employee and family</th>
+                  <th className={rightHeaderClassName}>Own cover a month</th>
+                  <th className={rightHeaderClassName}>Company 70%</th>
+                  <th className={rightHeaderClassName}>Employee 30%</th>
+                  <th className={rightHeaderClassName}>Family, all on the employee</th>
+                  <th className={rightHeaderClassName}>Life insurance</th>
+                  <th className={rightHeaderClassName}>Employee pays a month</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.key}>
+                    <td className={cellClassName}><SplitPeople row={row} /></td>
+                    <td className={cn(cellClassName, amountClassName)}>{row.employee ? money(row.ownMonthly) : ""}</td>
+                    <td className={cn(cellClassName, amountClassName)}>{row.employee ? money(row.companyPays) : ""}</td>
+                    <td className={cn(cellClassName, amountClassName)}>{row.employee ? money(row.employeeOwnShare) : ""}</td>
+                    <td className={cn(cellClassName, amountClassName)}>{familyWords(row)}</td>
+                    <td className={cn(cellClassName, amountClassName)}>{money(row.lifeInsurance)}</td>
+                    <td className={cn(cellClassName, totalClassName)}>{money(row.employeePays)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <th className={cn(cellClassName, "text-left")} colSpan={2} scope="row"><span className="text-sm font-black text-phx-ink">Total a month</span></th>
+                  <td className={cn(cellClassName, totalClassName)}>{money(totals.companyPays)}</td>
+                  <td className={cellClassName} colSpan={2} />
+                  <td className={cn(cellClassName, totalClassName)}>{money(totals.lifeInsurance)}</td>
+                  <td className={cn(cellClassName, totalClassName)}>{money(totals.employeesPay)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="space-y-3 p-4 md:hidden">
+            {rows.map((row) => (
+              <div className="space-y-1 border border-phx-line bg-white p-3" key={row.key}>
+                <SplitPeople row={row} />
+                {row.employee ? (
+                  <p className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">
+                    Own cover {money(row.ownMonthly)}: company {money(row.companyPays)}, employee {money(row.employeeOwnShare)}
+                  </p>
+                ) : null}
+                <p className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">Family {familyWords(row)}. Life insurance {money(row.lifeInsurance)}</p>
+                <p className="break-words text-phx-xs font-black tabular-nums text-phx-ink">Employee pays {money(row.employeePays)} a month</p>
+              </div>
+            ))}
+            <p className="break-words text-sm font-black tabular-nums text-phx-ink">Company {money(totals.companyPays)}, employees {money(totals.employeesPay)} a month</p>
+          </div>
+        </>
+      )}
+      <ul className="list-disc space-y-1 border-t border-phx-line p-4 pl-9">
+        {MONTHLY_SPLIT_ASSUMPTIONS.map((point) => <li className="break-words text-phx-xs font-semibold text-phx-ink-soft" key={point}>{point}</li>)}
+      </ul>
     </AdminTableShell>
   );
 }
