@@ -5,6 +5,8 @@ import { request } from "node:http";
 import os from "node:os";
 import path from "node:path";
 
+import sharp from "sharp";
+
 import { createAuthorizationServer, googleClientFromJson, isChatGptRedirect, parseOwnerEmails, revokeAllGrants } from "../scripts/phoenix-inspect/lib/authorization-server.mjs";
 import { INSPECT_SCOPE } from "../scripts/phoenix-inspect/lib/oauth.mjs";
 import { TUNNEL_CALL_LIMITS, configFromEnv, startHttpServer } from "../scripts/phoenix-inspect/mcp-http.mjs";
@@ -18,7 +20,6 @@ const STRANGER = "stranger@example.test";
 const GOOGLE = { clientId: "000000000000-test.apps.googleusercontent.com", clientSecret: "test-google-secret-not-real" };
 const TUNNEL = `tunnel_${"a".repeat(32)}`;
 const CHATGPT = "https://chatgpt.com/connector_platform_oauth_redirect";
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MCP_HEADERS = { "content-type": "application/json", accept: "application/json, text/event-stream" };
 const FORM = { "content-type": "application/x-www-form-urlencoded" };
 
@@ -57,7 +58,7 @@ const form = (params: Record<string, string>) => new URLSearchParams(params).toS
  * It proves: the metadata ChatGPT and the tunnel read; dynamic registration only for ChatGPT's redirect
  * URIs; the browser leg never forwards ChatGPT's `resource` to Google and never redirects to an
  * unregistered address; Google's identity must be verified, fresh, nonce-bound and an OWNER address;
- * codes are single-use and PKCE-bound; the access token opens exactly the eight tools; refresh rotates
+ * codes are single-use and PKCE-bound; the access token opens exactly the nine tools; refresh rotates
  * and a replayed refresh token revokes the grant; the kill switch stops every token at once; one call
  * captures one page under a hard time limit and a result-size cap; the audit log holds no code, token,
  * secret or address.
@@ -105,12 +106,14 @@ export async function runPhoenixInspectAuthorizationServerTests() {
       return { ok: true, status: 200, json: async () => ({ access_token: "google-access-not-used", id_token: idToken }) };
     };
     const runs: Record<string, unknown>[] = [];
+    // A real picture: the inspector re-encodes each one as a JPEG preview, so a file that only starts like a PNG is left out.
+    const picture = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#ffffff" } }).png().toBuffer();
     const runner = async (options: Record<string, unknown>) => {
       runs.push(options);
       const outDir = path.join(dir, "runs", String(options.runId));
       mkdirSync(path.join(outDir, "shots"), { recursive: true });
       const shots = [0, 1, 2].map((i) => {
-        writeFileSync(path.join(outDir, "shots", `${i}.png`), Buffer.concat([PNG, Buffer.alloc(8, i)]));
+        writeFileSync(path.join(outDir, "shots", `${i}.png`), picture);
         return { id: `00${i}`, state: "summary", viewport: "desktop", outcome: "captured", image: `shots/${i}.png` };
       });
       return { outDir, manifest: { runId: options.runId, totals: { captured: 3 }, personas: ["ceo"], shots, denied: [], notRun: [] } };
@@ -239,13 +242,13 @@ export async function runPhoenixInspectAuthorizationServerTests() {
     assert.equal(claims.sub, OWNER);
     assert.equal(claims.scope, INSPECT_SCOPE);
 
-    // The token opens exactly the eight tools; one call captures one page and returns one image.
+    // The token opens exactly the nine tools; one call captures one page and returns one image.
     let rpc = 0;
     const mcp = (bearer: string, method: string, params: Record<string, unknown> = {}) =>
       raw(a.url, "POST", "/mcp", { ...MCP_HEADERS, authorization: `Bearer ${bearer}` }, JSON.stringify({ jsonrpc: "2.0", id: (rpc += 1), method, params }));
     const listed = await mcp(access, "tools/list");
     assert.equal(listed.status, 200, listed.body);
-    assert.equal(((listed.json?.result as { tools: unknown[] }).tools).length, 8);
+    assert.equal(((listed.json?.result as { tools: unknown[] }).tools).length, 9);
     const opened = await mcp(access, "tools/call", { name: "phoenix_open_module", arguments: { module: "kpi-reports", persona: "ceo" } });
     const openedResult = opened.json?.result as { isError?: boolean; content: { type: string }[] };
     assert.ok(!openedResult.isError, opened.body);
@@ -319,12 +322,15 @@ export async function runPhoenixInspectAuthorizationServerTests() {
     assert.match(busy.content[0].text ?? "", /another capture is already running/, "no second capture starts while the first is still stopping");
     release();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    // Three 30 KB screenshots (about 40 KB each once base64-encoded) against a 100 KB cap: one is dropped.
+    // Three noise pictures whose JPEG previews are about 30 KB (about 40 KB each once base64-encoded)
+    // against a 100 KB cap: one is dropped. Noise, because a flat picture compresses to almost nothing.
+    const noise = () => sharp(randomBytes(260 * 260 * 3), { raw: { width: 260, height: 260, channels: 3 } }).png().toBuffer();
+    const noisy = [await noise(), await noise(), await noise()];
     const bigRunner = async (options: Record<string, unknown>) => {
       const outDir = path.join(dir, "runs", `big-${String(options.runId)}`);
       mkdirSync(path.join(outDir, "shots"), { recursive: true });
       const shots = [0, 1, 2].map((i) => {
-        writeFileSync(path.join(outDir, "shots", `${i}.png`), Buffer.concat([PNG, randomBytes(30_000)]));
+        writeFileSync(path.join(outDir, "shots", `${i}.png`), noisy[i]);
         return { id: `00${i}`, state: "summary", viewport: "desktop", outcome: "captured", image: `shots/${i}.png` };
       });
       return { outDir, manifest: { runId: options.runId, totals: { captured: 3 }, personas: ["ceo"], shots, denied: [], notRun: [] } };
