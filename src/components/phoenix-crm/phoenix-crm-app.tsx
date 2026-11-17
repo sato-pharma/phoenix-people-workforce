@@ -43,7 +43,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { announceRouteTransition } from "@/components/layout/route-transition-provider";
-import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
+import { crmGet, crmUrl, isRetryableFailure, messageOf } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
 // The leaf module, never the camera: see captured-photo.ts for why the shell must not import the camera.
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
@@ -57,6 +57,7 @@ import { PHOENIX_CRM_PORTAL_BASE, PHOENIX_CRM_TEST_TAB_LABEL, phoenixCrmModulePa
 import { allowedTabs, isTabKey, openingTab, seatOf, territoriesFor, type SeatTab, type TabKey } from "@/lib/phoenix-crm/opening-tab";
 import { showsTelegramCard } from "@/lib/phoenix-crm/telegram-card";
 import type { PhoenixCrmOverview, TerritorySummary } from "@/lib/phoenix-crm/view-types";
+import { runWakeRead, waitForNetwork, WAKE_ONLINE_WAIT_MS, WAKE_RETRY_SETTLE_MS, WAKE_SETTLE_MS, type WakeNetwork } from "@/lib/phoenix-crm/wake-refresh";
 import { cn } from "@/lib/utils";
 
 // ── Each module's screen is its own chunk (owner, 2026-10-01: "slow to transfer between page and page",
@@ -157,6 +158,21 @@ const PORTAL_BOTTOM_BAR = "calc(61px + env(safe-area-inset-bottom))";
 
 /** Coming back to the page after at least this long reads the counts and territories again. */
 const REFRESH_AFTER_MS = 60_000;
+
+/** The browser's network, as the wake-up read waits on it. */
+function browserWakeNetwork(): WakeNetwork {
+  return {
+    isOnline: () => typeof navigator === "undefined" || navigator.onLine !== false,
+    onOnline: (listener) => {
+      window.addEventListener("online", listener);
+      return () => window.removeEventListener("online", listener);
+    },
+    setTimer: (callback, ms) => {
+      const timer = window.setTimeout(callback, ms);
+      return () => window.clearTimeout(timer);
+    },
+  };
+}
 
 /** Show another territory; `tab` opens that tab too (a territory's list, from Team or the Plan). */
 type Move = { kind: "seat"; seatId: string; tab: TabKey | null };
@@ -317,16 +333,53 @@ export function PhoenixCrmApp({
     }
   }, [addParam]);
 
+  /**
+   * The read the page makes ON ITS OWN when it comes back into sight — never one the rep asked for.
+   *
+   * 🔴 IT WAITS FOR THE NETWORK, RETRIES A DROPPED CONNECTION ONCE, AND NEVER PUTS UP THE REFRESH NOTICE
+   * (System Audit, 17 Nov 2026: 223 "no answer" screenshots of this read from 62 reps, 168 on Visits, 41 on
+   * the List). It used to fire the instant a waking phone turned its screen on, before the radio was back,
+   * and the rep met a warning over a screen that was fine. The overview already on screen stays; a read that
+   * still fails is tried again at the next return. Try again, Check again and a tab's own change still go
+   * through `refreshOverview`, which reports. `src/lib/phoenix-crm/wake-refresh.ts`.
+   */
+  const refreshOverviewOnWake = useCallback(() => {
+    const run = refreshRun.current + 1;
+    refreshRun.current = run;
+    refreshedAt.current = Date.now();
+    const current = () => refreshRun.current === run && document.visibilityState === "visible";
+    const network = browserWakeNetwork();
+    void runWakeRead({
+      current,
+      read: () => crmGet<PhoenixCrmOverview>("/api/phoenix-crm/overview", "overview"),
+      retryable: isRetryableFailure,
+      wait: (attempt) => waitForNetwork(network, attempt === 0 ? WAKE_SETTLE_MS : WAKE_RETRY_SETTLE_MS, WAKE_ONLINE_WAIT_MS, () => !current()),
+    }).then((outcome) => {
+      if (outcome.kind === "landed") {
+        setOverview(outcome.value);
+        setRefreshError(null);
+        return;
+      }
+      // Not read (it failed quietly, or the page went out of sight first): the next return reads again —
+      // unless a newer read has already taken over.
+      if (refreshRun.current === run) refreshedAt.current = 0;
+    });
+  }, []);
+
   // A page left open in the background (a manager between visits) reads what waits for them again
   // when it comes back into view.
   useEffect(() => {
     refreshedAt.current = Date.now();
     function onVisibilityChange() {
-      if (document.visibilityState === "visible" && Date.now() - refreshedAt.current >= REFRESH_AFTER_MS) refreshOverview();
+      if (document.visibilityState === "visible" && Date.now() - refreshedAt.current >= REFRESH_AFTER_MS) refreshOverviewOnWake();
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [refreshOverview]);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      // A wake-up read still waiting for the network stops waiting.
+      refreshRun.current += 1;
+    };
+  }, [refreshOverviewOnWake]);
 
   /** One steady callback per tab, for the tab to say it holds work or no longer does. */
   const holdReporters = useMemo(() => {
