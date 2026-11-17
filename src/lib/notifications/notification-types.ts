@@ -367,6 +367,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "system", eventType: "database_host_low_memory", label: "The database server is low on memory", sentFrom: ["src/lib/observability/db-host-alert.ts"] },
   { module: "system", eventType: "database_host_low_root_disk", label: "The database server is low on disk space", sentFrom: ["src/lib/observability/db-host-alert.ts"] },
   { module: "system", eventType: "database_restarted", label: "The database restarted", sentFrom: ["src/lib/observability/database-restart-alert.ts"] },
+  { module: "system", eventType: "new_app_error", label: "A new error in Phoenix, the first time it appears", sentFrom: ["src/lib/error-monitor/new-error-alert.ts"] },
   { module: "system", eventType: "github_workflow_overdue", label: "A scheduled build job has not run on time", sentFrom: ["src/lib/observability/github-workflow-watch-alert.ts"] },
   { module: "system", eventType: "scheduled_job_stranded", label: "A scheduled job has stopped running", sentFrom: ["src/lib/observability/job-heartbeat-alert.ts"] },
   { module: "system", eventType: "notification_drain_stranded", label: "Notifications are stuck in the send queue", sentFrom: ["src/lib/notifications/drain-health-alert.ts"] },
@@ -427,7 +428,6 @@ export const UNTYPED_SENDS: ReadonlyArray<{ channel: "email" | "telegram"; file:
   { channel: "telegram", file: "app/api/integrations/telegram/webhook/route.ts", label: "The Telegram bot's reply to a person who messages it" },
   { channel: "telegram", file: "src/lib/auth/password-setup.ts", label: "A temporary password sent to the person's own Telegram" },
   { channel: "telegram", file: "src/lib/email/admin-telegram-mirror.ts", label: "The Super Admin's Telegram copy of every automated email" },
-  { channel: "telegram", file: "src/lib/observability/sentry-alert-webhook.ts", label: "An error alert to the Super Admin's Telegram" },
   { channel: "telegram", file: "src/lib/recruitment/inbound/whatsapp-conversation-mirror.ts", label: "A copy of a candidate's WhatsApp conversation" },
 ];
 

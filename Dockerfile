@@ -82,9 +82,6 @@ ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_ONESIGNAL_APP_ID
-# Sentry (sentry.io) browser DSN — production only. Empty on any service that does not set it, which is the OFF switch:
-# sentry-client.ts also refuses to start anywhere but the production host.
-ARG NEXT_PUBLIC_SENTRY_DSN
 # 🔴 NO `NEXT_PUBLIC_COMMIT_SHA` HERE, AND RE-ADDING ONE WOULD TAG NOTHING. It sat in this list as an inert slot — declared,
 # re-exported, and read by ZERO call sites across src/, app/ and lib/ — under a comment claiming it tagged which revision a client
 # error came from. It never did: what identifies a release is `getDeployRevision()` in src/lib/observability/deploy-identity.ts,
@@ -98,16 +95,6 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_ONESIGNAL_APP_ID=$NEXT_PUBLIC_ONESIGNAL_APP_ID
-ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
-
-# Sentry source maps and release — BUILD-TIME ONLY. next.config.ts runs the upload plugin solely when
-# SENTRY_AUTH_TOKEN is non-empty, so a service that sets none builds exactly as before. These ARGs are not
-# re-exported into the runner stage below, so the token never reaches the running image. The commit sha is what
-# names the release; Railway passes it as a build arg, and an empty value just leaves the release unnamed.
-ARG SENTRY_AUTH_TOKEN
-ARG RAILWAY_GIT_COMMIT_SHA
-ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
-ENV RAILWAY_GIT_COMMIT_SHA=$RAILWAY_GIT_COMMIT_SHA
 
 RUN pnpm run build
 

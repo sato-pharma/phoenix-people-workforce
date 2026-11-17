@@ -1,54 +1,54 @@
 {
-  "sidebarRows": 410,
-  "admin": 251,
+  "sidebarRows": 409,
+  "admin": 250,
   "hr": 72,
   "portal": 87,
-  "existing": 56,
+  "existing": 55,
   "healthClasses": {
-    "NOT VERIFIED": 24,
+    "NOT VERIFIED": 23,
     "HEALTHY": 14,
     "HEALTHY WITH WARNINGS": 12,
     "NOT APPLICABLE": 5,
     "DEGRADED": 1
   },
-  "tests": 89,
+  "tests": 86,
   "testResults": {
     "WARNING": 33,
-    "PASS": 32,
+    "PASS": 31,
     "NOT APPLICABLE": 9,
-    "FAIL": 3,
-    "NOT VERIFIED": 12
+    "NOT VERIFIED": 11,
+    "FAIL": 2
   },
-  "issues": 57,
+  "issues": 55,
   "issueSeverity": {
     "HIGH": 9,
     "MEDIUM": 21,
-    "LOW": 27
+    "LOW": 25
   },
-  "recs": 117,
+  "recs": 115,
   "recByRec": {
-    "RECOMMENDED": 44,
+    "RECOMMENDED": 42,
     "CONDITIONAL": 31,
     "HIGHLY RECOMMENDED": 23,
     "NOT RECOMMENDED CURRENTLY": 11,
     "EXPERIMENTAL": 8
   },
   "recByCls": {
-    "F3": 45,
+    "F3": 44,
     "F1": 25,
     "F4": 20,
     "F5": 13,
-    "F2": 13,
+    "F2": 12,
     "EXCLUDED": 1
   },
   "recByPri": {
     "P3": 57,
-    "P2": 31,
+    "P2": 29,
     "P1": 22,
     "P0": 7
   },
-  "expansions": 24,
-  "verifiedRecs": 106,
+  "expansions": 22,
+  "verifiedRecs": 104,
   "warnings": 6,
   "top25": [
     "INT-070 Alarm when fingerprint punches stop arriving (89)",
@@ -77,10 +77,10 @@
     "INT-001 WhatsApp utility templates for employees with no Telegram (77)",
     "INT-063 Integration registry fed by provider status feeds (77)"
   ],
-  "sources": 151,
-  "sourcesVerified": 147,
+  "sources": 146,
+  "sourcesVerified": 143,
   "verdicts": {
-    "KEEP": 32,
+    "KEEP": 31,
     "CONSOLIDATE": 1,
     "OPTIMIZE": 11,
     "INVESTIGATE FURTHER": 4,

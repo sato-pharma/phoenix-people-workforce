@@ -54,7 +54,7 @@ shape, not just its two specific symptoms.
 12. **Always give a new cron job an explicit `maxDuration`, wrap its work in `withDeadMansSwitch`
     with a new slug, and add a matching Healthchecks.io check** (Cron Expression mode,
     `Africa/Cairo` timezone, grace >= 2x the job's max runtime — see the dead-man's-switch section
-    in `docs/observability.md`; Sentry monitors no longer exist).
+    in `docs/observability.md`).
 
 ## Data lifecycle
 

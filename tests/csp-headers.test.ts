@@ -136,8 +136,7 @@ const read = (relative: string) => readFileSync(new URL(`../${relative}`, import
  *
  * The page policy must be next.config.ts's policy with ONE change — script-src's 'unsafe-inline'
  * becomes this request's nonce plus 'strict-dynamic' — so nothing else drifts: both are EVALUATED
- * here under the same environment (production or not, builder preview on or off, a Sentry DSN or
- * none) and compared whole, for the default page and every page override next.config.ts declares.
+ * here under the same environment (production or not, builder preview on or off) and compared whole, for the default page and every page override next.config.ts declares.
  */
 async function runPageCspNonceTests() {
   testThePagePolicyIsTheConfigPolicyWithANonce();
@@ -151,31 +150,33 @@ async function runPageCspNonceTests() {
 }
 
 const POLICY_ENVIRONMENTS: PagePolicyEnvironment[] = [false, true].flatMap((isProduction) =>
-  ["", "https://phoenix-hr.satopharma.com,https://builder.io"].flatMap((allowedOrigins) =>
-    ["", "https://0123456789abcdef@o1.ingest.de.sentry.io/42"].map((sentryDsn) => ({ allowedOrigins, isProduction, sentryDsn })),
-  ),
+  ["", "https://phoenix-hr.satopharma.com,https://builder.io"].map((allowedOrigins) => ({ allowedOrigins, isProduction })),
 );
 
 /**
  * next.config.ts's policies, evaluated under `env`. The config cannot be imported (it uses
- * `__dirname`), so its policy block — from `const isProduction` to `siteContentSecurityPolicy` — is
+ * `__dirname`), so its policy block — from `const isProduction` to `milestonePreviewCsp` — is
  * lifted out of the source, its types are erased, and it runs against a stand-in `process.env`.
+ * The site-wide policy is the constant `securityHeaders` serves, read from the source as well.
  */
 function configPolicies(env: PagePolicyEnvironment): Record<string, string> {
   const start = nextConfigSource.indexOf("const isProduction =");
-  const siteAt = nextConfigSource.indexOf("const siteContentSecurityPolicy =", start);
+  const lastAt = nextConfigSource.indexOf("const milestonePreviewCsp =", start);
   const statementEnd = /;\r?\n/g;
-  statementEnd.lastIndex = siteAt;
-  const end = siteAt >= 0 ? (statementEnd.exec(nextConfigSource)?.index ?? -1) : -1;
-  assert.ok(start >= 0 && siteAt > start && end > siteAt, "next.config.ts must still build its policies from `const isProduction` to `siteContentSecurityPolicy`.");
+  statementEnd.lastIndex = lastAt;
+  const end = lastAt >= 0 ? (statementEnd.exec(nextConfigSource)?.index ?? -1) : -1;
+  assert.ok(start >= 0 && lastAt > start && end > lastAt, "next.config.ts must still build its policies from `const isProduction` to `milestonePreviewCsp`.");
+  const headersAt = nextConfigSource.indexOf("const securityHeaders = [", end);
+  const siteName =
+    headersAt >= 0 ? /key: "Content-Security-Policy",\s*value: (\w+),/.exec(nextConfigSource.slice(headersAt))?.[1] : undefined;
+  assert.ok(siteName, "next.config.ts's securityHeaders must still serve a named Content-Security-Policy constant.");
   const block = stripTypeScriptTypes(nextConfigSource.slice(start, end + 1), { mode: "strip" });
   const evaluate = new Function(
     "process",
-    `${block}\nreturn { siteContentSecurityPolicy, whatsappConnectCsp, managedPlayCsp, milestonePreviewCsp };`,
+    `${block}\nreturn { siteContentSecurityPolicy: ${siteName}, whatsappConnectCsp, managedPlayCsp, milestonePreviewCsp };`,
   ) as (process: { env: Record<string, string> }) => Record<string, string>;
   return evaluate({
     env: {
-      NEXT_PUBLIC_SENTRY_DSN: env.sentryDsn,
       NODE_ENV: env.isProduction ? "production" : "development",
       PHOENIX_ALLOWED_ORIGINS: env.allowedOrigins,
     },

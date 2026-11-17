@@ -141,7 +141,7 @@ export function runContractRenewalHardeningTests() {
   assert.match(
     birthdaysRoute,
     /catch \(error\) \{\s*console\.error\(error, \{ tags: \{ cron: "birthday-notifications", employeeHrId: employee\.hrId \} \}\);/,
-    "a failed birthday send must be captured in Sentry, tagged with the affected employee",
+    "a failed birthday send must be logged as an error, tagged with the affected employee",
   );
 
   // Item A: birthday eligibility must delegate to the shared predicate (which treats
@@ -171,6 +171,6 @@ export function runContractRenewalHardeningTests() {
   assert.match(
     reminderRoute,
     /catch \(error\) \{\s*console\.error\(error, \{ tags: \{ cron: "contract-renewals", employeeHrId: row\.hr_id \} \}\);/,
-    "a failed contract-renewal send must be captured in Sentry, tagged with the affected employee",
+    "a failed contract-renewal send must be logged as an error, tagged with the affected employee",
   );
 }

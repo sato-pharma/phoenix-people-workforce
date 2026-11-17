@@ -112,7 +112,7 @@ function main() {
 
   // A merged branch is NOT automatically safe. Matching by name only says "a PR for this head
   // merged at some point" — it says nothing about commits added AFTERWARDS. That is not theoretical:
-  // codex/retire-sentry had its PR merged and then received a further commit, so a name-only check
+  // one retirement branch had its PR merged and then received a further commit, so a name-only check
   // called 131 lines of unbacked work "safe". Since separating "this is the merged content" from
   // "this postdates the merge" needs a content comparison this check deliberately does not do,
   // merged branches are DOWNGRADED, never excluded — reported with their count and the caveat.

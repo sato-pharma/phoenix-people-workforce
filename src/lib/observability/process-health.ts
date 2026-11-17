@@ -8,7 +8,8 @@
 // Since 2026-10-16 the line also names the process ROLE (web, worker or all — src/lib/platform/
 // process-role.ts) and the background JOBS that ran during the minute (running-jobs.ts), and a minute
 // whose worst stall passes EVENT_LOOP_STALL_ALERT_MS on a process that answers pages raises an
-// `event_loop_stall` warning and a Sentry issue. That day three 4.3-second freezes were found only by
+// `event_loop_stall` warning, and the first freeze of each culprit sends the new-error Telegram
+// (src/lib/error-monitor/new-error-alert.ts). That day three 4.3-second freezes were found only by
 // reading the log lines around each one; the next freeze names its own culprit and reaches Telegram.
 //
 // Since 2026-10-23 the line also carries the garbage collections of its minute (`gc`, `gcTotalMs`,
@@ -27,7 +28,6 @@ import { getHeapStatistics } from "node:v8";
 
 import { logInfo, logWarning } from "@/lib/observability/log";
 import { drainJobWindow } from "@/lib/observability/running-jobs";
-import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 import { drainTimings } from "@/lib/observability/timings";
 import { resolveProcessRole, type ProcessRole } from "@/lib/platform/process-role";
 
@@ -35,9 +35,6 @@ const REPORT_INTERVAL_MS = 60_000;
 
 /** A page server that stalls this long has made every request in flight wait a noticeable second. */
 export const EVENT_LOOP_STALL_ALERT_MS = 1_000;
-
-/** One Sentry event per culprit per this window; the issue already exists after the first. */
-export const STALL_SENTRY_REPEAT_AFTER_MS = 30 * 60_000;
 
 type HistogramLike = { max: number; percentile(percentile: number): number };
 
@@ -153,18 +150,14 @@ export function gcExplainsStall(longest: GcSummary["longest"], stallMs: number):
   return longest.ms >= stallMs / 2;
 }
 
-const lastSentryAt = new Map<string, number>();
-
-async function reportStallToSentry(alert: StallAlert): Promise<void> {
+/**
+ * The first freeze of each culprit (the fingerprint: process role and the jobs that ran) sends the new-error
+ * Telegram; every later one is the warning line only. The alert keeps its own once-per-error key and memory.
+ */
+async function alertFirstStall(alert: StallAlert): Promise<void> {
   try {
-    if (!sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN }).enabled) return;
-    const key = alert.fingerprint.join("|");
-    const now = Date.now();
-    const last = lastSentryAt.get(key);
-    if (last != null && now - last < STALL_SENTRY_REPEAT_AFTER_MS) return;
-    lastSentryAt.set(key, now);
-    const { captureStallInSentry } = await import("@/lib/observability/sentry-server");
-    captureStallInSentry(alert.message, alert.fingerprint);
+    const { alertNewError } = await import("@/lib/error-monitor/new-error-alert");
+    await alertNewError({ message: alert.message, moduleLabel: "Server health", signature: alert.fingerprint.join("|"), source: "server" });
   } catch {
     // Telemetry must never become a second incident.
   }
@@ -247,7 +240,7 @@ export function startProcessHealthReporter(): void {
             uptimeS: Math.round(process.uptime()),
           },
         });
-        void reportStallToSentry(alert);
+        void alertFirstStall(alert);
       }
       // The ended hours' page timings go to the page_timings table — one RPC per web process once an
       // hour (page-timing-flush.ts). A dynamic import keeps the Supabase client out of this module's own

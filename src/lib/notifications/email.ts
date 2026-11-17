@@ -1638,7 +1638,7 @@ export type OutboxSkipCode =
   | "held_for_review";
 
 export type OutboxSkipClass =
-  | { terminal: true; sentryEscalate: boolean; code: OutboxSkipCode }
+  | { terminal: true; escalate: boolean; code: OutboxSkipCode }
   | { terminal: false };
 
 /**
@@ -1648,7 +1648,7 @@ export type OutboxSkipClass =
  * Deterministic skips were previously routed through markNotificationOutboxFailed,
  * burning all 5 retries and polluting the failure/terminalFailed metrics. They now go
  * to a terminal `skipped` state. A `no_recipients` skip on a high-priority type ALSO
- * sets `sentryEscalate` because it means a real alert was dropped.
+ * sets `escalate` because it means a real alert was dropped.
  */
 export function classifyOutboxSkip(
   reason: string,
@@ -1657,40 +1657,40 @@ export function classifyOutboxSkip(
   const r = reason.toLowerCase();
   const high = !!notificationType && highPriorityNotificationTypes.has(notificationType);
   if (r.includes("email_notifications_enabled")) {
-    return { terminal: true, sentryEscalate: false, code: "email_disabled_globally" };
+    return { terminal: true, escalate: false, code: "email_disabled_globally" };
   }
   if (r.includes("notification_email_from")) {
-    return { terminal: true, sentryEscalate: false, code: "from_missing" };
+    return { terminal: true, escalate: false, code: "from_missing" };
   }
   if (r.includes(identityGuardFailurePrefix.toLowerCase())) {
-    return { terminal: true, sentryEscalate: true, code: "unsafe_identity" };
+    return { terminal: true, escalate: true, code: "unsafe_identity" };
   }
   if (r.includes("not approved for automatic")) {
-    return { terminal: true, sentryEscalate: false, code: "type_not_approved" };
+    return { terminal: true, escalate: false, code: "type_not_approved" };
   }
   if (r.includes("unsupported notification type")) {
-    return { terminal: true, sentryEscalate: false, code: "type_unsupported" };
+    return { terminal: true, escalate: false, code: "type_unsupported" };
   }
   if (r.includes("notifications are disabled")) {
-    return { terminal: true, sentryEscalate: false, code: "policy_disabled" };
+    return { terminal: true, escalate: false, code: "policy_disabled" };
   }
   if (r.includes("resolved no recipient")) {
-    return { terminal: true, sentryEscalate: high, code: "no_recipients" };
+    return { terminal: true, escalate: high, code: "no_recipients" };
   }
   // Bounce/complaint suppression is deterministic — retrying re-sends to the same dead
   // address. Terminal skip (not a failure); do not escalate (suppression is by-design).
   if (r.includes("suppressed")) {
-    return { terminal: true, sentryEscalate: false, code: "recipient_suppressed" };
+    return { terminal: true, escalate: false, code: "recipient_suppressed" };
   }
   // Every recipient was a synthetic/non-routable address (no real mailbox on file). Won't
   // change on retry. Terminal skip; escalate only for high-priority types (a real alert that
   // could not be emailed — the in-app copy still delivers).
   if (r.includes("no deliverable recipient")) {
-    return { terminal: true, sentryEscalate: high, code: "no_deliverable_recipient" };
+    return { terminal: true, escalate: high, code: "no_deliverable_recipient" };
   }
   // Payslip hard block. Never retries — owner rule means payslip emails never fire, period.
   if (r.includes("payslip emails are hard-blocked")) {
-    return { terminal: true, sentryEscalate: false, code: "payslip_email_blocked" };
+    return { terminal: true, escalate: false, code: "payslip_email_blocked" };
   }
   // HELD BY THE CONFIDENCE GATE — awaiting a Super Admin at /admin/notification-confidence.
   //
@@ -1705,11 +1705,11 @@ export function classifyOutboxSkip(
   // dead-man's-switch watches and hides what actually needs doing (a decision, not a fix).
   //
   // Terminal skip is the honest state: the outbox is done with it, and the review workspace is
-  // where it lives now. Release from there sends it; discarding closes it. No Sentry escalation —
+  // where it lives now. Release from there sends it; discarding closes it. No escalation —
   // a hold is the gate working as designed, and the standing held-notification alert already
   // covers a backlog that nobody reviews.
   if (r.includes("held for super admin review")) {
-    return { terminal: true, sentryEscalate: false, code: "held_for_review" };
+    return { terminal: true, escalate: false, code: "held_for_review" };
   }
   // Unknown reason (e.g. a missing/inactive template that may be republished, or
   // "already being processed") → transient: keep retrying within the attempt budget.
@@ -1725,10 +1725,10 @@ export function classifyOutboxSkip(
 export function classifyDirectEmailSkip(reason: string): OutboxSkipClass {
   const r = reason.toLowerCase();
   if (r.includes("template not found") || r.includes("is inactive") || r.includes("unsupported email template")) {
-    return { terminal: true, sentryEscalate: false, code: "type_unsupported" };
+    return { terminal: true, escalate: false, code: "type_unsupported" };
   }
   if (r.includes("no to recipients resolved")) {
-    return { terminal: true, sentryEscalate: false, code: "no_recipients" };
+    return { terminal: true, escalate: false, code: "no_recipients" };
   }
   return classifyOutboxSkip(reason);
 }
@@ -2790,7 +2790,7 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
       const classification = classifyOutboxSkip(result.reason, claimed.payload.notificationType);
       if (classification.terminal) {
         await markNotificationOutboxSkipped(claimed, result.reason, classification.code);
-        if (classification.sentryEscalate) {
+        if (classification.escalate) {
           console.log("High-priority notification dropped: no recipients resolved", {
             level: "warning",
             tags: {

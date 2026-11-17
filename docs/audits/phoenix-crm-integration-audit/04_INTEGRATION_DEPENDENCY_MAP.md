@@ -12,6 +12,7 @@ every screen          →   records, files, sign-in          →  domain service
 Workflow Control      →   nudges, digests, sweeps, drain   →  app/api/cron/* routes              →   cron-job.org (EX-03), Railway loop (EX-02), pg_cron (EX-08)
 Email Delivery        →   transactional mail               →  notification outbox + drain        →   Resend (EX-25) → Brevo (EX-26) → Turbify (EX-27)
 Telegram              →   alerts and notices               →  notification outbox + drain        →   Telegram Bot API (EX-29)
+System Audit          →   new-error alert                  →  app_error_events + error monitor   →   Telegram Bot API (EX-29)
 WhatsApp Templates    →   candidate messages               →  WhatsApp send + webhook            →   Meta WhatsApp Cloud API (EX-31)
 Place Checks, My Map  →   address search, routes, maps     →  maps domain service                →   Google Maps Platform (EX-17/18), LocationIQ (EX-19)
 Location Integrity    →   case map                         →  browser map                        →   OpenStreetMap public tiles (EX-20)
@@ -19,7 +20,6 @@ Fingerprint Report    →   punches → deductions → payroll   →  attendance
 Payroll Copilot, SoS Magic, Screening Queue …
                       →   summaries, drafting, sales AI    →  one AI door (src/lib/ai)           →   OpenAI (EX-21) → Anthropic (EX-22) / Groq (EX-23)
 CV Database           →   CV intake, archive               →  intake routes                      →   Google Drive (EX-33), Turbify IMAP (EX-27)
-Sentry Check          →   error tracking                   →  Sentry SDK                         →   Sentry EU (EX-32)
 (no sidebar)          →   deploy, CI, scanners, backups    →  GitHub Actions                     →   GitHub (EX-12/14/15), Google Drive (EX-53)
 ```
 
@@ -71,10 +71,9 @@ The full per-integration table and the count of external integrations per sideba
 | EX-26 | Brevo (backup e-mail sender + webhook) | Platform › Email Control Center; Platform › Email Delivery; Platform › Email Activity; Platform › Notification Recipients; Platform › Distribution Lists; Platform › Sato Email Composer; Platform › CEO Email Composer; Platform › Email Composer; Platform › Email Templates; Platform › Notification Confidence; Hiring › Job Offers; People › Probation Cases | server | async | No (backup) | No failover target | No | No | No | n/a | Automatic |
 | EX-27 | Turbify / Yahoo business mail (IMAP + SMTP) | Hiring › Inbound Intake Health; Platform › Mailbox Compliance; Hiring › Job Offers; Hiring › Screening Queue; People › New Hire Mailboxes; People › Mailbox Revocation | server | async | Yes — CV intake and offer sending | CVs stop arriving; offers queue | No | No | Yes for intake | WhatsApp intake; public apply form | Automatic on next poll |
 | EX-28 | Turbify admin-console robot (headless browser) | People › New Hire Mailboxes; People › Mailbox Revocation | server | async | No | Mailboxes are made and revoked by hand | No | No | No | Manual | Manual |
-| EX-29 | Telegram Bot API | Platform › Telegram; Platform › Telegram Templates; Platform › Notification Recipients; Platform › Notification Confidence; Overview › Needs You | server | async | No | Notices fall back to in-app and e-mail | No | No | No | In-app, push, e-mail | Outbox retry |
+| EX-29 | Telegram Bot API | Platform › Telegram; Platform › Telegram Templates; Platform › Notification Recipients; Platform › Notification Confidence; Platform › System Audit; Overview › Needs You | server | async | No | Notices fall back to in-app and e-mail | No | No | No | In-app, push, e-mail | Outbox retry |
 | EX-30 | OneSignal web push | Platform › Notification Recipients; Platform › Notification Confidence; Employee Portal › Overview | both | async | No | No push; in-app notices still arrive | No | No | No | In-app, Telegram, e-mail | Outbox retry |
 | EX-31 | WhatsApp Business Cloud API (Meta Graph) + embedded signup | Hiring › WhatsApp Applicants; Hiring › WhatsApp Inbox; Hiring › WhatsApp Templates; Hiring › WhatsApp Replies; Approvals Hub › Other Approvals; Platform › Users & Access | server | async | Yes — candidate intake | Candidates cannot reach HR on WhatsApp; reminders stop | No | No | Partly | E-mail intake, public apply form | Meta retries webhooks |
-| EX-32 | Sentry (errors, tracing, replay-on-error, cron monitors, alert webhook) | Platform › Sentry Check; Platform › System Audit; Overview › Needs You | both | async | No | Errors still land in the app's own error table | No | No | No | First-party error log (498 rows in 7 days) | Automatic |
 | EX-33 | Google Drive API (CV archive, nightly code-backup check) | Hiring › CV Database; Hiring › CV Sheet Links; Hiring › Recruitment; Platform › Data Backup | server | async | No | CV copies to Drive pause; backup check alarms | No | No | No | Supabase Storage holds the CV | Automatic |
 | EX-34 | Google Sheets API + Apps Script sheet webhooks | Sales › Master Database; Orders & CRM › Direct Orders; Marketing › Marketing Requests; Hiring › CV Sheet Links | server | async | No | Live sheets go stale | Stale sheet | Yes (sheet readers) | No | In-app pages | Automatic |
 | EX-35 | Google Calendar API (Egyptian public holidays) | Time & Leave › Holiday Calendar; Time & Leave › Vacation Control; Approvals Hub › Leave Approvals | server | sync | No | Falls back to the public ICS file, then to stored holidays | Possible if a moved holiday is missed | No | No | Public ICS | Automatic |
@@ -98,19 +97,18 @@ The full per-integration table and the count of external integrations per sideba
 | EX-53 | Nightly encrypted code backup to Google Drive (rclone + age) | Platform › Data Backup | server | async | No | A night without a copy; alarm after 36 h | No | No | No | GitHub itself | Automatic |
 | EX-54 | Synthetic user journeys (Playwright on GitHub Actions) | Platform › Synthetic Journeys | server | async | No | No outside-in journey proof | No | No | No | Healthchecks + heartbeat sweep | Automatic |
 | EX-55 | Local analytics stack (Metabase compose file) and RustDesk settings | INTERNAL COMPONENT — NO SIDEBAR ENTRY | server | sync | No | None | No | No | No | n/a | n/a |
-| EX-56 | First-party telemetry (page timing, session pulse, client error log, job heartbeats) | Platform › Activity Control; Platform › System Audit; Platform › Audit Logs; Platform › Workflow Control | both | async | No | Blind spots | No | No | No | Sentry | n/a |
+| EX-56 | First-party telemetry (page timing, session pulse, client error log, job heartbeats) | Platform › Activity Control; Platform › System Audit; Platform › Audit Logs; Platform › Workflow Control | both | async | No | Blind spots | No | No | No | None — the only error record | n/a |
 
 ## Sidebar modules by number of external integrations they depend on
 
 | Sidebar module | Integrations |  Count |
 |---|---|---:|
 | Orders & CRM › Phoenix CRM | EX-07, EX-17, EX-19, EX-21, EX-22, EX-23, EX-51 | 7 |
-| Platform › System Audit | EX-03, EX-04, EX-11, EX-12, EX-32, EX-56 | 6 |
+| Platform › System Audit | EX-03, EX-04, EX-11, EX-12, EX-29, EX-56 | 6 |
 | Hiring › Screening Queue | EX-21, EX-22, EX-27, EX-36, EX-43, EX-52 | 6 |
 | Platform › CEO Email Composer | EX-21, EX-22, EX-23, EX-25, EX-26 | 5 |
 | Hiring › Job Offers | EX-25, EX-26, EX-27, EX-45, EX-50 | 5 |
 | Platform › Synthetic Journeys | EX-03, EX-12, EX-13, EX-54 | 4 |
-| Overview › Needs You | EX-03, EX-13, EX-29, EX-32 | 4 |
 | Orders & CRM › Visit Recording | EX-07, EX-21, EX-22, EX-51 | 4 |
 | Platform › Email Composer | EX-21, EX-22, EX-25, EX-26 | 4 |
 | Overview › Business Review | EX-21, EX-22, EX-50, EX-52 | 4 |
@@ -119,6 +117,7 @@ The full per-integration table and the count of external integrations per sideba
 | Employee Portal › Overview | EX-01, EX-05, EX-30 | 3 |
 | Platform › Workflow Control | EX-03, EX-04, EX-56 | 3 |
 | Platform › Email Control Center | EX-03, EX-25, EX-26 | 3 |
+| Overview › Needs You | EX-03, EX-13, EX-29 | 3 |
 | Hiring › CV Database | EX-07, EX-33, EX-52 | 3 |
 | Orders & CRM › Direct Orders | EX-07, EX-34, EX-52 | 3 |
 | Orders & CRM › Pharmacy Validation | EX-07, EX-17, EX-51 | 3 |
@@ -172,7 +171,6 @@ The full per-integration table and the count of external integrations per sideba
 | Hiring › WhatsApp Templates | EX-31 | 1 |
 | Hiring › WhatsApp Replies | EX-31 | 1 |
 | Approvals Hub › Other Approvals | EX-31 | 1 |
-| Platform › Sentry Check | EX-32 | 1 |
 | Sales › Master Database | EX-34 | 1 |
 | Marketing › Marketing Requests | EX-34 | 1 |
 | Time & Leave › Holiday Calendar | EX-35 | 1 |

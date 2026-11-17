@@ -353,11 +353,11 @@ function runRailwayBlockCases() {
   // None of the website's own integrations: no mail sender, no AI, no WhatsApp, no CRM poller, and the
   // switch itself only ever lives on the WEBSITE.
   const allowed = new Set([
-    "APP_ENV", "CRON_SECRET", "HEALTHCHECKS_PING_KEY", "MAILBOX_MONITOR_SECRET", "NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SENTRY_DSN",
+    "APP_ENV", "CRON_SECRET", "HEALTHCHECKS_PING_KEY", "MAILBOX_MONITOR_SECRET", "NEXT_PUBLIC_APP_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_URL", "PHOENIX_AUTH_SECRET",
     "PHOENIX_NEW_MAILBOX_INITIAL_PASSWORD", "PHOENIX_PROCESS_ROLE", "PHOENIX_TURBIFY_ADMIN_PASSWORD", "PHOENIX_TURBIFY_ADMIN_USER",
     "PHOENIX_TURBIFY_JOINER_DRY_RUN", "PHOENIX_TURBIFY_JOINER_ENABLED", "PHOENIX_TURBIFY_REPORT_CONTROLS", "PHOENIX_TURBIFY_ROBOT_ENABLED",
-    "SENTRY_DSN", "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
   ]);
   const extra = names.filter((name) => !allowed.has(name));
   assert.deepEqual(extra, [], `the robot service carries only what the robots read — not the website's variables: ${extra.join(", ")}`);

@@ -510,7 +510,7 @@ async function legacyNoticeReads(input: {
   const { access, allowedCategories, client: supabase, employeeHrId, readLimit, today } = input;
   const selectColumns = NOTICE_SELECT_COLUMNS;
   // The two reads are independent, so they run together: the bell is polled by every open page and each
-  // round trip to the database costs 300-600 ms (Sentry, 2026-10-16), which the second one used to add on top.
+  // round trip to the database costs 300-600 ms (measured 2026-10-16), which the second one used to add on top.
   const [employeeResult, recipientResult, otherKindsResult] = await Promise.all([
     supabase
       .from("notification_events")

@@ -59,7 +59,6 @@ For each recommendation: the evidence that the need is real, the findings it ans
 | INT-053 | Performance and accessibility budget in CI | code search (see Current situation in 07) | — | — | lighthouse-ci | RECOMMENDED |
 | INT-054 | Accessibility checks inside the Playwright journeys | code search (see Current situation in 07) | — | — | axe-core | RECOMMENDED |
 | INT-055 | Hosted metrics dashboards from the database metrics endpoint | code search (see Current situation in 07) | — | — | grafana-cloud-free | CONDITIONAL |
-| INT-056 | Per-provider spans in the existing error tracker | code search (see Current situation in 07) | — | — | opentelemetry-js, otlp | RECOMMENDED |
 | INT-057 | Drive change notifications instead of polling CV folders | code search (see Current situation in 07) | — | — | official docs (price not verified) | CONDITIONAL |
 | INT-058 | Push-style mailbox intake with IMAP IDLE | code search (see Current situation in 07) | — | — | official docs (price not verified) | EXPERIMENTAL |
 | INT-059 | Sign-in gate in front of staging | T-RW-03 | — | — | official docs (price not verified) | RECOMMENDED |
@@ -95,7 +94,6 @@ For each recommendation: the evidence that the need is real, the findings it ans
 | INT-089 | Automatic security-fix pull requests | ISS-024 | ISS-024 | — | dependabot | HIGHLY RECOMMENDED |
 | INT-090 | Load tests on staging before payroll day | code search (see Current situation in 07) | — | — | k6 | CONDITIONAL |
 | INT-091 | Passive security scan of staging | code search (see Current situation in 07) | — | — | owasp-zap | RECOMMENDED |
-| INT-092 | Content-security-policy violation reports | code search (see Current situation in 07) | — | — | csp-reporting, sentry-csp | RECOMMENDED |
 | INT-093 | security.txt contact file | T-RW-07 | — | — | security-txt | HIGHLY RECOMMENDED |
 | INT-094 | Audit log of privileged database sessions | code search (see Current situation in 07) | — | — | pgaudit | RECOMMENDED |
 | INT-095 | Personal-data redaction before AI calls | code search (see Current situation in 07) | — | — | presidio | CONDITIONAL |

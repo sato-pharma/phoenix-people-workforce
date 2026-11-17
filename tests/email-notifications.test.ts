@@ -182,9 +182,9 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /runExcuseDriftCheck\(\)\.catch\(/, "daily excuse drift check must have catch boundary");
   assert.match(dailyCronRoute, /pruneExpiredRateLimitBuckets\(\)\.catch\(/, "daily rate limit prune must have catch boundary");
   // Sub-job failures must be observable. These two assertions previously pinned
-  // `console.error(e, { tags: { cron: "..." } })` under the claim "errors must be captured in
-  // Sentry with tags" — but that second argument is not a console.error parameter, no
-  // console-capture integration is registered in sentry.server.config.ts, and the label
+  // `console.error(e, { tags: { cron: "..." } })` under the claim "errors must be captured
+  // with tags" — but that second argument is not a console.error parameter, nothing captured
+  // the console, and the label
   // `event=cron_failed` that GCP log-based alerting matches on was never emitted. So 18 of the 22
   // sub-jobs failed completely silently while the route still returned `success: true`.
   // Now every sub-job routes through onJobFailure -> logError with the standard labels, matching
@@ -197,7 +197,7 @@ export function runEmailNotificationTests() {
   assert.doesNotMatch(
     dailyCronRoute,
     /console\.error\(e, \{ tags:/,
-    "must not regress to console.error with a dead `tags` argument — it emits no cron_failed label and no Sentry issue",
+    "must not regress to console.error with a dead `tags` argument — it emits no cron_failed label and no error row",
   );
   assert.match(dailyCronRoute, /onJobFailure\("daily-birthday",/, "birthday sub-job must report failures through onJobFailure");
   assert.match(dailyCronRoute, /onJobFailure\("daily-vacation-sla",/, "vacation SLA sub-job must report failures through onJobFailure");
@@ -224,8 +224,8 @@ export function runEmailNotificationTests() {
   assert.match(scheduledProcessingSource, /processNotificationOutbox\(limit\)\.catch\(/, "outbox processing must have catch boundary");
   assert.match(scheduledProcessingSource, /processDeferredDeliveryRetries\(limit\)\.catch\(/, "deferred delivery retries must have catch boundary");
   assert.match(scheduledProcessingSource, /processTelegramDeliveryRetries\(limit\)\.catch\(/, "telegram delivery retries must have catch boundary");
-  assert.match(scheduledProcessingSource, /logError\("Notification outbox processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-outbox" \},/, "outbox errors must be captured in Sentry with tags");
-  assert.match(scheduledProcessingSource, /logError\("Telegram delivery retry processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-telegram" \},/, "telegram retry errors must be captured in Sentry with tags");
+  assert.match(scheduledProcessingSource, /logError\("Notification outbox processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-outbox" \},/, "outbox errors must be logged with their labels");
+  assert.match(scheduledProcessingSource, /logError\("Telegram delivery retry processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-telegram" \},/, "telegram retry errors must be logged with their labels");
 
   // Regression (2026-08-08): the Part 2 ready + Published payroll milestone emails silently
   // vanished because their own body text said "...publish to payslips" / "...published to

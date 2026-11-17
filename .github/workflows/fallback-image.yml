@@ -194,7 +194,6 @@ jobs:
           NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}
           NEXT_PUBLIC_SMI_USE_FACT_TABLES: ${{ vars.NEXT_PUBLIC_SMI_USE_FACT_TABLES || secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }}
           NEXT_PUBLIC_ONESIGNAL_APP_ID: ${{ vars.NEXT_PUBLIC_ONESIGNAL_APP_ID || secrets.NEXT_PUBLIC_ONESIGNAL_APP_ID }}
-          NEXT_PUBLIC_SENTRY_DSN: ${{ vars.NEXT_PUBLIC_SENTRY_DSN || secrets.NEXT_PUBLIC_SENTRY_DSN || vars.SENTRY_DSN || secrets.SENTRY_DSN }}
         run: |
           set -uo pipefail
           # Browser-visible by design (they are inlined into the client bundle), so printing the NAMES is harmless
@@ -292,10 +291,7 @@ jobs:
           build_args=()
           for name in $(cut -d= -f1 "${RUNNER_TEMP}/build-values.env"); do build_args+=(--build-arg "$name"); done
           if [ -n "${BASE_CONTEXT:-}" ]; then build_args+=(--build-context "${BASE_CONTEXT}"); fi
-          # No SENTRY_AUTH_TOKEN on purpose: next.config.ts uploads source maps only when it is set, and a fallback
-          # build must not depend on, or spend, an observability credential. RAILWAY_GIT_COMMIT_SHA only names the release.
           docker build "${build_args[@]}" \
-            --build-arg "RAILWAY_GIT_COMMIT_SHA=${SHA}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${SHA}" \
             --tag "${IMAGE}:build" .

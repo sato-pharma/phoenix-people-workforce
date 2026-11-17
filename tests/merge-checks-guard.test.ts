@@ -146,7 +146,7 @@ function verdictCases(): void {
   assert.deepEqual(mergeChecksVerdict({ required: null, runs: [run("build", "completed", "failure")] }).red, ["build"]);
   assert.deepEqual(mergeChecksVerdict({ required: null, runs: [run("build", "queued", null)] }).pending, ["build"]);
   // The apps that sit at queued for ever hold nothing — but one that ran and failed still counts.
-  assert.equal(mergeChecksVerdict({ required: null, runs: [run("Sentry", "queued", null, 1, "sentry")] }).ok, true);
+  assert.equal(mergeChecksVerdict({ required: null, runs: [run("Claude", "queued", null, 1, "claude")] }).ok, true);
   assert.equal(mergeChecksVerdict({ required: null, runs: [run("Vercel", "completed", "failure", 1, "vercel")] }).ok, false);
   // Commit statuses count as well as check-runs.
   assert.deepEqual(mergeChecksVerdict({ required: null, runs: [], statuses: [{ context: "deploy", state: "pending" }] }).pending, ["deploy"]);

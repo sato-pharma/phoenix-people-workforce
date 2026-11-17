@@ -14,7 +14,7 @@
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * 🔴 THE PAGE IS DISPLAYING A FRESHLY MINTED APP PASSWORD AT THE EXACT MOMENT THIS READS IT. That is
  * the whole hazard here: a naive dump of the page's text would write a live mailbox credential into
- * the production logs, where it would sit in Railway and in Sentry for anyone with log access. So
+ * the production logs, where it would sit in Railway for anyone with log access. So
  * this module is built around REDACTION, not around collection:
  *
  *   1. every secret the caller is holding is removed by exact match, case-insensitively;

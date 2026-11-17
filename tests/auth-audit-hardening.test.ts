@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // swallowed with a bare .catch(() => undefined) — a DB blip there could silently
 // undercount the IP-based rate-limit signal isLoginRateLimited reads, with no trace
 // anywhere it happened. Behavior is unchanged (still resolves to undefined either way);
-// this only adds Sentry visibility into a failure that was previously invisible.
+// this only adds error-table visibility into a failure that was previously invisible.
 export function runAuthAuditHardeningTests() {
   const source = readFileSync("src/lib/auth/audit.ts", "utf8");
 
@@ -18,8 +18,8 @@ export function runAuthAuditHardeningTests() {
   );
 
   const failedLoginMatches = [...source.matchAll(/await recordLoginAttempt\(\{[\s\S]*?success: false,\s*\}\)\.catch\(\(error: unknown\) => \{\s*logError\("recordLoginAttempt failed to record a failed login", \{ labels: \{ event: "record_login_attempt_failed", component: "auth", context: "recordLoginAttempt\.failed" \}, error \}\);\s*\}\);/g)];
-  assert.equal(failedLoginMatches.length, 1, "the failed-login recordLoginAttempt call must capture its error to Sentry");
+  assert.equal(failedLoginMatches.length, 1, "the failed-login recordLoginAttempt call must log its error through logError");
 
   const successLoginMatches = [...source.matchAll(/await recordLoginAttempt\(\{[\s\S]*?success: true,\s*\}\)\.catch\(\(error: unknown\) => \{\s*logError\("recordLoginAttempt failed to record a successful login", \{ labels: \{ event: "record_login_attempt_failed", component: "auth", context: "recordLoginAttempt\.success" \}, error \}\);\s*\}\);/g)];
-  assert.equal(successLoginMatches.length, 1, "the successful-login recordLoginAttempt call must capture its error to Sentry");
+  assert.equal(successLoginMatches.length, 1, "the successful-login recordLoginAttempt call must log its error through logError");
 }

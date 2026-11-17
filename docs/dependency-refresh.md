@@ -57,7 +57,7 @@ window: a window there would roll back every young bump a person made on purpose
 26 Oct, and 6580, 6581 and 6582 by PR 6595 on 27 Oct. Each time Dependabot's regenerated
 `pnpm-lock.yaml` moved about forty packages **backward** against `main`: `puppeteer-core` 25.16.0 to
 25.14.0, `imapflow` 2.9.1 to 2.5.8, `nodemailer`, `openai`, `supabase`, `lucide-react`, seventeen
-`@sentry/*`. Only the `puppeteer-core` pin turned a check red (`infra/runtime-extras` must equal the
+packages of the outside error tracker's SDK (since removed). Only the `puppeteer-core` pin turned a check red (`infra/runtime-extras` must equal the
 lockfile); the rest would have merged without a sound.
 
 **The cause.** Dependabot hands its `cooldown` to pnpm as `--config.minimum-release-age`, in minutes,

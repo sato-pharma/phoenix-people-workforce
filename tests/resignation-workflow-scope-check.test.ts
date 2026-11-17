@@ -86,7 +86,7 @@ export async function runResignationWorkflowScopeCheckTests() {
   );
 
   // Deeper audit finding F: the SLA reminder loop counted failures (errors++) but never
-  // reported them to Sentry — a systemic failure was only visible as a number buried in the
+  // logged them as errors — a systemic failure was only visible as a number buried in the
   // daily cron's JSON response body, with nothing that would ever alert anyone.
 
   assert.doesNotMatch(
@@ -97,6 +97,6 @@ export async function runResignationWorkflowScopeCheckTests() {
   assert.match(
     service,
     /catch \(error\) \{\s*logError\("Resignation SLA reminder failed for recipient", \{ labels: \{ event: "resignation_sla_reminder_failed", cron: "resignation-sla-reminder", recipientHrId: hrId \}, error \}\);\s*errors\+\+;\s*\}/,
-    "a failed SLA reminder send must be captured in Sentry, tagged with the affected recipient",
+    "a failed SLA reminder send must be logged as an error, tagged with the affected recipient",
   );
 }

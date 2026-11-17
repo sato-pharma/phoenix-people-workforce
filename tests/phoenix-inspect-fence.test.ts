@@ -68,7 +68,7 @@ export function runPhoenixInspectFenceTests() {
 
   // Other origins: refused, except GET to the two font hosts over https.
   assert.deepEqual(classifyRequest({ method: "GET", url: "https://onesignal.com/sdk.js" }, policy), { allow: false, reason: "off-origin" });
-  assert.deepEqual(classifyRequest({ method: "GET", url: "https://o1.ingest.sentry.io/api/1/envelope/" }, policy), { allow: false, reason: "off-origin" });
+  assert.deepEqual(classifyRequest({ method: "GET", url: "https://o1.ingest.example.com/api/1/envelope/" }, policy), { allow: false, reason: "off-origin" });
   assert.deepEqual(classifyRequest({ method: "GET", url: "https://fonts.gstatic.com/s/inter.woff2" }, policy), { allow: true });
   assert.deepEqual(classifyRequest({ method: "GET", url: "http://fonts.gstatic.com/s/inter.woff2" }, policy), { allow: false, reason: "off-origin" }, "fonts over plain http are refused");
   assert.deepEqual(classifyRequest({ method: "POST", url: "https://fonts.googleapis.com/css" }, policy), { allow: false, reason: "write-method" });
@@ -100,7 +100,7 @@ export function runPhoenixInspectFenceTests() {
 
   // Logging: path ids masked, query keys only, other origins' paths withheld.
   assert.equal(sanitizeUrlForLog(at("/admin/kpis/call-rate/Z-9043?month=2026-08&rep=Z-9043&q=Sammy"), STAGING_ORIGIN), "/admin/kpis/call-rate/:id?month=…&q=…&rep=…");
-  assert.equal(sanitizeUrlForLog("https://o1.ingest.sentry.io/api/1/envelope/?sentry_key=k", STAGING_ORIGIN), "https://o1.ingest.sentry.io/(off-origin path withheld)");
+  assert.equal(sanitizeUrlForLog("https://o1.ingest.example.com/api/1/envelope/?key=k", STAGING_ORIGIN), "https://o1.ingest.example.com/(off-origin path withheld)");
   assert.equal(maskPathIds("/employee-portals/kpis/call-rate/12345"), "/employee-portals/kpis/call-rate/:n");
   assert.equal(maskPathIds("/x/0f8fad5b-d9cb-469f-a165-70867728950e"), "/x/:uuid");
   assert.equal(maskPathIds("/x/%D8%A3%D8%AD%D9%85%D8%AF"), "/x/:text", "an encoded name is masked");

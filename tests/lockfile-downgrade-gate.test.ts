@@ -4,7 +4,7 @@
 // seven-day cooldown as `--config.minimum-release-age`; pnpm then re-resolves EVERY lockfile entry younger than that
 // to an older version, transitive ones included. The weekly refresh (#6466, 25 Oct) had adopted versions 1-6 days old,
 // so PRs 6486-6488 (26 Oct) and 6580-6582 (27 Oct) each rolled back ~40 packages: puppeteer-core 25.16.0 -> 25.14.0,
-// imapflow 2.9.1 -> 2.5.8, nodemailer, openai, supabase, lucide-react, 17 @sentry/*. Only the puppeteer pin's two
+// imapflow 2.9.1 -> 2.5.8, nodemailer, openai, supabase, lucide-react, 17 packages of one scoped SDK. Only the puppeteer pin's two
 // tests went red (infra/runtime-extras must equal the lockfile); the rest would have merged without a sound.
 // Each time the PR was REPLACED by hand (#6493, #6595), never repaired. Account: docs/dependency-refresh.md.
 //
@@ -89,7 +89,7 @@ export function runLockfileDowngradeGateTests() {
 
   // ---- lockDowngrades: what IS a downgrade, and what is not -----------------------------------------------------
   assert.deepEqual(downgradesOf(["puppeteer-core@25.16.0"], ["puppeteer-core@25.14.0"]), ["puppeteer-core 25.16.0 -> 25.14.0"], "the incident: puppeteer-core 25.16.0 -> 25.14.0");
-  assert.deepEqual(downgradesOf(["@sentry/core@11.9.0"], ["@sentry/core@11.8.0"]), ["@sentry/core 11.9.0 -> 11.8.0"], "a scoped package is read whole, scope included");
+  assert.deepEqual(downgradesOf(["@acme/core@11.9.0"], ["@acme/core@11.8.0"]), ["@acme/core 11.9.0 -> 11.8.0"], "a scoped package is read whole, scope included");
   assert.deepEqual(downgradesOf(["foo@1.2.0"], ["foo@1.3.0"]), [], "an upgrade is not a downgrade");
   assert.deepEqual(downgradesOf(["foo@1.2.0"], ["foo@1.2.0"]), [], "no move is no downgrade");
   assert.deepEqual(downgradesOf(["foo@1.2.0"], []), [], "a package removed is not a downgrade");
@@ -126,9 +126,9 @@ export function runLockfileDowngradeGateTests() {
   // ---- the allowlist file -----------------------------------------------------------------------------------------
   assert.equal(downgradeKey({ name: "left-pad", from: "1.3.0", to: "1.2.0" }), "left-pad 1.3.0 -> 1.2.0", "the line a failure prints is the line the allowlist takes");
   const allowed = parseAllowedDowngrades(
-    ["# a comment", "", "left-pad 1.3.0 -> 1.2.0", "  @sentry/core   11.9.0  ->  11.8.0  # backed out: the 11.9.0 release breaks replay", "# commented 1.0.0 -> 0.9.0", "\r"].join("\r\n"),
+    ["# a comment", "", "left-pad 1.3.0 -> 1.2.0", "  @acme/core   11.9.0  ->  11.8.0  # backed out: the 11.9.0 release breaks replay", "# commented 1.0.0 -> 0.9.0", "\r"].join("\r\n"),
   );
-  assert.deepEqual([...allowed].sort(), ["@sentry/core 11.9.0 -> 11.8.0", "left-pad 1.3.0 -> 1.2.0"], "comments, blanks and CRLF are ignored; inner spacing and a trailing comment do not matter");
+  assert.deepEqual([...allowed].sort(), ["@acme/core 11.9.0 -> 11.8.0", "left-pad 1.3.0 -> 1.2.0"], "comments, blanks and CRLF are ignored; inner spacing and a trailing comment do not matter");
   assert.equal(parseAllowedDowngrades("").size, 0, "an empty file allows nothing");
   const shipped = read("scripts/deps-refresh/allowed-downgrades.txt");
   for (const line of parseAllowedDowngrades(shipped)) {

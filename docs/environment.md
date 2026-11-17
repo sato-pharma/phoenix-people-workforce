@@ -587,9 +587,6 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | TELEGRAM_BOT_TOKEN | Telegram Bot API token |
 | NEXT_PUBLIC_ONESIGNAL_APP_ID | OneSignal app id (client-side) |
 | ONESIGNAL_REST_API_KEY | OneSignal REST API key (server-side push) |
-| SENTRY_DSN | Sentry (sentry.io) project DSN, read at runtime by `instrumentation.ts`. Production only: ignored unless `APP_ENV=production` |
-| SENTRY_WEBHOOK_SECRET | Client secret of the Sentry internal integration that posts alerts to `/api/webhooks/sentry`. Unset means the route refuses every call; the alert only reaches the owner's Telegram |
-| NEXT_PUBLIC_SENTRY_DSN | The same DSN for the browser. Build-time (a Dockerfile `ARG`), used only when the page is served from the production host; also adds the DSN's origin to the CSP `connect-src` |
 
 ### Scheduling & agents
 | Secret | Purpose |
@@ -652,7 +649,6 @@ minutes. Pinned by `tests/ai-failure-visibility.test.ts` and `tests/ai-provider-
 |---|---|
 | RAILWAY_TOKEN | Auth for `sync-railway-production-secrets.yml`'s Railway CLI calls |
 | CLOUDFLARE_API_TOKEN | Not currently consumed by any workflow or app code — held for future Cloudflare DNS/cache automation |
-| SENTRY_AUTH_TOKEN | Build-time Sentry token for source-map upload and release creation. `next.config.ts` runs the Sentry build plugin only when it is non-empty; the Dockerfile declares it as a build argument in the build stage only. Empty means a plain build (see docs/observability.md, "Sentry") |
 
 ### CI / testing
 | Secret | Purpose |

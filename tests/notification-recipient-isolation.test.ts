@@ -513,7 +513,7 @@ export function runNotificationRecipientIsolationTests() {
   // The in-app read path must filter on the category allowlist (SQL + post-query).
   assert.match(inAppSource, /isPersonalBellCategory\(row\.category\)/, "in-app must drop non-allowlisted categories post-query");
   assert.match(inAppSource, /\.in\("category", allowedCategories\)/, "in-app SQL must restrict to allowlisted categories");
-  // The bell is polled by every open page, and each database round trip costs 300-600 ms (Sentry, 2026-10-16): its
+  // The bell is polled by every open page, and each database round trip costs 300-600 ms (measured 2026-10-16): its
   // two independent reads (the person's own rows, the rows that list them as a recipient) must run TOGETHER. The
   // Talent Acquisition seat's third read (her non-CV notices) joins that same Promise.all, never a round trip after it.
   assert.match(

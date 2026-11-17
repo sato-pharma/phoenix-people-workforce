@@ -47,10 +47,12 @@ unchanged across the cutover. No secret values appear in this document._
    plus a `warnings: []` array for non-fatal notification-config drift; HTTP 503 when a required
    dependency isn't ready). For email specifically: `/api/health/email` → 200 `healthy` (anonymously only
    `{status, timestamp}`; the full report needs the `CRON_SECRET` bearer or a Super Admin session).
-2. **Check alerts:** 🔴 **there is no alerting layer any more.** All five GCP Cloud Monitoring
+2. **Check alerts:** 🔴 **almost no alerting layer is left.** All five GCP Cloud Monitoring
    policies (5xx rate, p95 latency, uptime, scheduler failure, auth-failure spike, config drift) died
-   with the GCP shutdown and nothing has replaced them; Sentry was separately retired 2026-07-31.
-   The only thing that still pages anyone is the **Healthchecks.io** dead-man's-switch, and it only
+   with the GCP shutdown and nothing has replaced them; the outside error tracker was retired for
+   good on 17 Nov 2026. A NEW error sends one Telegram to the Super Admin (docs/observability.md,
+   "The new-error Telegram"); besides that, the only thing that still pages anyone is the
+   **Healthchecks.io** dead-man's-switch, and it only
    answers one question — did a cron job run at all. Check its dashboard for any check showing
    `DOWN`, check `/admin/system-audit` → **Incidents** tab (app-level `app_error_events`; it replaced
    System Issues on 2026-10-23 and never showed infra-level failures — use `railway logs` for those),

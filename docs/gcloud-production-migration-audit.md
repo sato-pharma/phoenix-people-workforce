@@ -24,7 +24,7 @@ _Evidence-based audit performed on the `claude/gcloud-production-migration-audit
 | Supabase | prod project `ozucdzovmcqvepbozvqf` | env |
 | Email | Resend (raw `fetch` to `api.resend.com`) | `src/lib/email/send-phoenix-email.ts` |
 | Scheduler | Google Cloud Scheduler (4 jobs) | `gcloud scheduler jobs list` |
-| Monitoring | Native GCP logging + self-hosted `app_error_events` (Sentry fully removed) | `instrumentation.ts`, no `@sentry/*` |
+| Monitoring | Native GCP logging + self-hosted `app_error_events` (the outside error tracker fully removed) | `instrumentation.ts`, no error-tracker SDK |
 
 ## 3. Changes implemented
 
@@ -34,7 +34,7 @@ _Evidence-based audit performed on the `claude/gcloud-production-migration-audit
 | --- | --- | --- | --- | --- | --- |
 | `app/api/admin/users/setup-link/route.ts` | Emailed password-setup/reset link origin taken from raw `X-Forwarded-Host` (host-header injection on the highest-value link) | Use `trustedOriginForRedirect()` (allow-list validated, canonical fallback) — same pattern as login | Prevents a forged host from poisoning reset links | New test asserts forged host → canonical; lint/typecheck/build pass | Low |
 | `src/lib/synthetic-journeys/service.ts` | `.run.app` host classified as `preview` | Classify `*.run.app` + Cloud Run host as `production` | Correct synthetic-journey environment labeling on Cloud Run | Test asserts `.run.app` recognised | Low |
-| `tests/gcloud-migration-hardening.test.ts` (+ `tests/run-tests.ts`) | No migration regression coverage | Added canonical-URL, forged-host, `APP_ENV` detection, opt-in bridge, no-Sentry-CSP, run.app-classification tests | Locks in migration invariants | 334 test files pass | Low |
+| `tests/gcloud-migration-hardening.test.ts` (+ `tests/run-tests.ts`) | No migration regression coverage | Added canonical-URL, forged-host, `APP_ENV` detection, opt-in bridge, no-error-tracker-CSP, run.app-classification tests | Locks in migration invariants | 334 test files pass | Low |
 
 ### Live infrastructure (already applied)
 
@@ -43,7 +43,7 @@ _Evidence-based audit performed on the `claude/gcloud-production-migration-audit
 | Cloud Run env `PHOENIX_APP_URL` | Set to dead `phoenix-workforce-team.vercel.app` → Telegram links broken | Set to `https://phoenix-hr.satopharma.com` (rev `00034-vxb`) | `describe` confirms; app `/login` 200 | Low, reversible |
 | Cloud Run env `NOTIFICATION_DASHBOARD_URL`, `APP_URL` | Unset → email CTA / offer / reset links depended on build-time inlining only | Set both to canonical domain | `describe` confirms | Low |
 
-_Prior-session fixes already merged to `main` and live: Cloud Scheduler dedupe (13→4 jobs), `CRON_SECRET` rotation, `SENTRY_*` env + CSP + workflow removal, `APP_ENV=production`, opt-in strict Supabase-bridge gate (PR #985), Supabase bridge `auth.users` repair (NULL tokens + `instance_id`), auto-deploy IAM (`run.admin` + `serviceAccountUser`), MCP endpoint removal (PR #984)._
+_Prior-session fixes already merged to `main` and live: Cloud Scheduler dedupe (13→4 jobs), `CRON_SECRET` rotation, error-tracker env + CSP + workflow removal, `APP_ENV=production`, opt-in strict Supabase-bridge gate (PR #985), Supabase bridge `auth.users` repair (NULL tokens + `instance_id`), auto-deploy IAM (`run.admin` + `serviceAccountUser`), MCP endpoint removal (PR #984)._
 
 ## 4. Confirmed working (evidence)
 
@@ -52,7 +52,7 @@ _Prior-session fixes already merged to `main` and live: Cloud Scheduler dedupe (
 | New URL loads | `curl -I https://phoenix-hr.satopharma.com/` | HTTP 200, `server: Google Frontend` |
 | HTTPS + HSTS | `curl -I` | valid Google cert; `Strict-Transport-Security` present |
 | HTTP→HTTPS | `curl -I http://…` | 302 → `https://phoenix-hr.satopharma.com/`, no loop |
-| CSP (no Sentry) | response header | `connect-src` has no `*.sentry.io`; self-hosted `/api/errors/client` |
+| CSP (no outside error tracker) | response header | `connect-src` has no error-tracker ingest host; self-hosted `/api/errors/client` |
 | Security headers | response header | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `COOP`, `Permissions-Policy` |
 | Login + Supabase bridge | prod `audit_logs` after real login | `Login succeeded`, `supabaseSessionAvailable=true` |
 | Session cookies | code audit | `phoenix_session` host-only (no Domain), HttpOnly, `Secure` in prod, SameSite=Lax |
@@ -107,7 +107,6 @@ _Prior-session fixes already merged to `main` and live: Cloud Scheduler dedupe (
 | `APP_URL` | Recommended | runtime | Public URL | Yes (canonical) | Yes | **FIXED** (was unset) |
 | `NEXT_PUBLIC_APP_URL` | Build | build | Public URL | Build-arg (GitHub secret) | n/a | Runtime empty; verify GitHub secret value (§6) |
 | Google Maps / Calendar keys, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `IREPORTS360_*` (iReports360 retired 6 November 2026; no longer read), `ATTENDANCE_AGENT_TOKEN` | Optional/gated | runtime | Secret/Public | Present | — | Optional; degrade gracefully |
-| `SENTRY_*`, `NEXT_PUBLIC_SENTRY_*` | No | — | — | **Removed** | — | Not read by shipping code; removed from env+CSP+workflow |
 | `PHOENIX_AGENT_SECRET`, `GEMINI_API_KEY` | No | — | — | Not used | — | Not referenced anywhere in code |
 | `VERCEL`, `VERCEL_ENV` | No | — | — | Unset (correct) | — | Vercel-only; guarded logic now inert (see §16 P3) |
 

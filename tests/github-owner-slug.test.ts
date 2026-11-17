@@ -10,7 +10,7 @@ import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/sour
 // without leaving anything here"). The repositories were transferred to a new account; the old one is kept
 // EMPTY and never deleted, so its links keep redirecting. A redirect is not a home: a push, a release
 // download or an API call that still names the old account works only until someone creates a repository
-// of the same name there, and GHCR images and the Railway, Sentry and Claude apps do not redirect at all.
+// of the same name there, and GHCR images and the Railway and Claude apps do not redirect at all.
 //
 // So the code, CI, scripts, hooks and tests must name the CURRENT owner, `GITHUB_OWNER` in
 // scripts/required-check-names.mjs, which the scripts import. Docs and memory may tell the history.
@@ -108,7 +108,7 @@ export async function runGithubOwnerSlugTests() {
 
   // The sweep must actually see the places that name the owner, or a broken pattern would pass on nothing.
   const refs = ownerReferences(files);
-  for (const mustSee of ["next.config.ts", ".railway/railway.ts", "infra/headwind-phoenix-actions/phoenix-entrypoint.sh", ".github/workflows/emergency-host.yml"]) {
+  for (const mustSee of [".railway/railway.ts", "infra/headwind-phoenix-actions/phoenix-entrypoint.sh", ".github/workflows/emergency-host.yml"]) {
     assert.ok(refs.some((ref) => ref.file === mustSee), `the sweep found no owner reference in ${mustSee}`);
   }
 

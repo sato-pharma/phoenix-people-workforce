@@ -193,9 +193,8 @@ import { runTelegramWebhookSecretTests } from "./telegram-webhook-secret.test.ts
 import { runWhatsAppConnectLinkTests } from "./whatsapp-connect-link.test.ts";
 import { runCspReportOnlyTests } from "./csp-report-only.test.ts";
 import { runPageCacheControlNoTransformTests } from "./page-cache-control-no-transform.test.ts";
-import { runSentryProductionOnlyTests } from "./sentry-production-only.test.ts";
+import { runNewErrorAlertTests } from "./new-error-alert.test.ts";
 import { runSupabaseUnreachableTests } from "./supabase-unreachable.test.ts";
-import { runSentryAccountSetupTests } from "./sentry-account-setup.test.ts";
 import { runPostDeployErrorsTests } from "./post-deploy-errors.test.ts";
 import { runPdfCanvasTraceTests } from "./pdf-canvas-trace.test.ts";
 import { runMoneyPathSilentFailureTests } from "./money-path-silent-failures.test.ts";
@@ -12230,23 +12229,19 @@ await runTest(
   runDomTranslateGuardTests,
 );
 await runTest(
-  "Sentry runs on production only, and every span, log and event is scrubbed before it leaves — the server needs APP_ENV=production AND a valid DSN (staging builds as NODE_ENV=production, so the build mode is not the gate), the browser needs the production host, a staging or look-alike host stays off even with a DSN baked in, events lose the user, cookies, bodies, query strings and session headers, the SDK is reached only by dynamic import behind the policy, tracing and replay are absent, and the CSP gets its ingest host from the build's own DSN",
-  runSentryProductionOnlyTests,
+  "a new error reaches the Super Admin's Telegram once — ids, numbers and HR ids fold into one signature while another source or other words stay apart, production only by APP_ENV (staging builds as NODE_ENV=production), browser noise and the browser's redacted copy of a server render error never send, the message is scrubbed of HR ids, addresses, bot tokens and ids in paths and cut to 300 characters, ten messages per process per ten minutes at most, and the alert rides behind the written error row, Telegram only, on the technical-health audience, once per error and recipient",
+  runNewErrorAlertTests,
 );
 await runTest(
-  "a Supabase outage is ONE named issue — the Cloudflare 52x page (521 Web server is down, 525 SSL handshake failed) is recognised bare, JSON-wrapped and flattened into a log line, only that exact page matches (Failed to fetch, the client's own timeout and a PostgREST error keep their names), the Sentry scrubber renames and fingerprints it on an exception, a message and a log entry without ever dropping an event, the error table stores the readable line instead of the markup, the heartbeat answers 503 for it, and the classifier stays import-free for the edge and browser bundles",
+  "a Supabase outage is ONE named issue — the Cloudflare 52x page (521 Web server is down, 525 SSL handshake failed) is recognised bare, JSON-wrapped and flattened into a log line, only that exact page matches (Failed to fetch, the client's own timeout and a PostgREST error keep their names), the new-error Telegram treats every outage page as one error and sends its readable line, the error table stores the readable line instead of the markup, the heartbeat answers 503 for it, and the classifier stays import-free for the edge and browser bundles",
   runSupabaseUnreachableTests,
 );
 await runTest(
-  "the Sentry account setup script (scripts/sentry-setup.mjs) is a dry run unless --apply is passed, refuses a mistyped flag, never prints or stores its token, never deletes anything, and — run against a local stand-in for Sentry — reads only on a dry run and on --apply sets just the missing scrubbing keys, creates the production-only new-error email alert, resolves only the deliberate test issue and reads the alert back",
-  runSentryAccountSetupTests,
-);
-await runTest(
-  "after a deploy, the ship skill's post-deploy check (scripts/post-deploy-errors.mjs) calls an error NEW only when no other release produced it in the week before, folds ids, timings, hashes and minified names into one error while two React error codes stay two, uses the repo's own browser-noise and locked-module rules, reads every row by the server's total even under a max-rows cap below its page size, reads Sentry through Discover and says when it could not, and never calls too early or an unread error table a pass",
+  "after a deploy, the ship skill's post-deploy check (scripts/post-deploy-errors.mjs) calls an error NEW only when no other release produced it in the week before, folds ids, timings, hashes and minified names into one error while two React error codes stay two, uses the repo's own browser-noise and locked-module rules, reads every row by the server's total even under a max-rows cap below its page size, and never calls too early or an unread error table a pass",
   runPostDeployErrorsTests,
 );
 await runTest(
-  "the page server does not freeze for work nobody is waiting on — the Sentry profiler is off while the page survey traces every request and returns by itself when it ends, PHOENIX_PROCESS_ROLE=web makes the shared host guard refuse every in-process scheduler while unset or a typo keeps today's behaviour, every poller tick, deep run, notification step, Early Birds close and housekeeping pass registers itself so a stall names its job, and a page server's minute frozen past one second raises one fingerprinted alert per culprit while the worker's stalls raise none",
+  "the page server does not freeze for work nobody is waiting on — PHOENIX_PROCESS_ROLE=web makes the shared host guard refuse every in-process scheduler while unset or a typo keeps today's behaviour, every poller tick, deep run, notification step, Early Birds close and housekeeping pass registers itself so a stall names its job, and a page server's minute frozen past one second raises one fingerprinted alert per culprit, sent to the new-error Telegram, while the worker's stalls raise none",
   runServerFreezeGuardsTests,
 );
 await runTest(

@@ -9,7 +9,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * Regression coverage for the Vercel -> Google Cloud Run migration.
  * Guards the specific behaviours a platform change can silently break:
  * canonical URL generation, forwarded-host trust, production runtime detection,
- * and the removal of Vercel/Sentry-specific assumptions.
+ * and the removal of Vercel-specific assumptions.
  */
 export function runGcloudMigrationHardeningTests() {
   const canonical = systemDeployment.productionUrl;
@@ -71,15 +71,6 @@ export function runGcloudMigrationHardeningTests() {
     appSessionsSource,
     /PHOENIX_STRICT_SUPABASE_BRIDGE === "true"/,
     "strict Supabase-bridge enforcement must remain opt-in",
-  );
-
-  // CSP must not hard-code a Sentry ingest host. (Sentry came back on 2026-10-16, production only; its browser
-  // host is read from the build's own NEXT_PUBLIC_SENTRY_DSN, so nothing is written into this file.)
-  const nextConfigSource = readFileSync("next.config.ts", "utf8");
-  assert.doesNotMatch(
-    nextConfigSource,
-    /ingest\.sentry\.io|ingest\.us\.sentry\.io|ingest\.de\.sentry\.io/,
-    "connect-src CSP must not hard-code a Sentry ingest host",
   );
 
   // Synthetic-journey environment classification must NOT recognise a Cloud Run host at all.
