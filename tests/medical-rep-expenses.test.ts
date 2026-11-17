@@ -9,6 +9,7 @@ import {
   validateMedicalRepSimpleExpenseInput,
   type MedicalRepSimpleExpenseAttachment,
 } from "../src/lib/outstation/medical-rep-expenses.ts";
+import { dataUrlToBlob } from "../src/components/outstation/prepare-ticket-attachment.ts";
 
 const attachment: MedicalRepSimpleExpenseAttachment = {
   bytes: Buffer.from("ticket"),
@@ -17,7 +18,40 @@ const attachment: MedicalRepSimpleExpenseAttachment = {
   size: 6,
 };
 
-export function runMedicalRepExpensesTests() {
+/**
+ * A PICKED PHOTO IS NEVER TURNED BACK INTO A FILE THROUGH fetch() (17 Nov 2026). The app's
+ * Content-Security-Policy has no `data:` under connect-src, so `fetch(dataUrl)` was refused with
+ * "Failed to fetch" for every rep's photo, and with two photos required no traveling claim could go.
+ */
+async function photoDecodesWithoutFetch() {
+  const jpegHeader = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+  const dataUrl = `data:image/jpeg;base64,${Buffer.from(jpegHeader).toString("base64")}`;
+  const blob = dataUrlToBlob(dataUrl);
+  assert.equal(blob.type, "image/jpeg");
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), jpegHeader);
+
+  const plain = dataUrlToBlob("data:text/plain,Hello%20Nora");
+  assert.equal(plain.type, "text/plain");
+  assert.equal(await plain.text(), "Hello Nora");
+
+  assert.equal(dataUrlToBlob(`data:;base64,${Buffer.from(jpegHeader).toString("base64")}`).type, "image/jpeg");
+  assert.throws(() => dataUrlToBlob("not a data address"), /could not be prepared/);
+  assert.throws(() => dataUrlToBlob("data:image/jpeg;base64,@@@"), /could not be prepared/);
+
+  const form = readFileSync(
+    new URL("../src/components/employee-portal/medical-rep-expenses.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    form,
+    /fetch\(\s*prepared\.dataUrl|fetch\(\s*[`"']data:/,
+    "the rep's photo must never go through fetch() of a data: address — the security policy refuses it",
+  );
+  assert.match(form, /dataUrlToBlob\(prepared\.dataUrl\)/);
+}
+
+export async function runMedicalRepExpensesTests() {
+  await photoDecodesWithoutFetch();
   const normalized = validateMedicalRepSimpleExpenseInput({
     attachments: [attachment, attachment],
     goTicketAmount: 120,
