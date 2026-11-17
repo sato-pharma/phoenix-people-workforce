@@ -189,9 +189,11 @@ strong{color:${N}}
 /* Headroom on both parties' signature rows, so the four rules stay level and the company's seal
    clears the signatory's name and title above it. */
 .accept .sigrow{padding-top:11mm}
-/* The seal: 21mm, its foot on the signatory's rule, in the left half of the cell where the signature
-   is made. The candidate's cell never carries one. */
-.accept .offer-seal{left:22mm;top:auto;bottom:4.6mm;width:21mm;height:21mm;transform:rotate(-7deg)}
+/* The seal is stamped ON the signature (owner, 17 Nov 2026: "put the stamp on my signature"): 21mm,
+   centred over the signature image, which is about 16mm wide from the start of the rule. Multiply,
+   as ink lands on paper, so the signature still reads through the stamp. The candidate's cell never
+   carries one. */
+.accept .offer-seal{left:-1.4mm;top:auto;bottom:-1.2mm;width:21mm;height:21mm;transform:rotate(-7deg);opacity:.9;mix-blend-mode:multiply}
 
 /* ── The closing plate: the legal footer in navy, under its own gold rule ────────────────────── */
 .foot{position:relative;break-inside:avoid;margin-top:10mm;padding:5mm 7mm;background:${N};border-top:0;align-items:center}

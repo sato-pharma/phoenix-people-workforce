@@ -46,8 +46,10 @@ godmode premium polished one". So the letter now opens on a plate of its own.
   closes the way it opens.
 - **Three fills only:** the cover plate, the zebra and the closing plate. Every other area the base
   sheet fills is switched off or cleared under its own selector.
-- **The seal** is placed as the Premium letter places it: 21 mm, its foot on the signatory's rule. The
-  signature cell and the signature ink are the base's, untouched.
+- **The seal is stamped on the signature** (owner, 17 Nov 2026: "put the stamp on my signature"). It is
+  21 mm, like Premium's, but centred over the signature image at the start of the company's rule,
+  with its foot just under the rule. It prints as ink (multiply), so the signature reads through it.
+  The signature cell and the signature ink are the base's, untouched.
 - **What the PDF and preview pass.** They hand the plate the reverse mark exactly as they hand it to
   the Sato letter. There is no page chrome, no tiled image and no `/brand/` file.
 - **Square corners, no shadow, no gradient.**

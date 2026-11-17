@@ -907,7 +907,7 @@ function prestigeSkinTests(
   assert.ok(worded.includes("Group Product Manager"), "the reporting line the offer chose is printed, by title");
   assert.ok(!worded.includes("{{"), "no token reaches the prestige letter unresolved");
 
-  // ── The seal: 21mm, foot on the signatory's rule — the signature cell itself untouched ───────────
+  // ── The seal: 21mm, stamped on the signature — the signature cell itself untouched ─────────────
   const signedOptions = {
     logoUrl: "data:image/png;base64,DDDD",
     sealUrl: "data:image/svg+xml;base64,SEAL",
@@ -917,7 +917,15 @@ function prestigeSkinTests(
   assert.equal((prestigeSigned.body.match(/class="offer-seal"/g) ?? []).length, 1, "the seal is drawn exactly once on the prestige letter");
   const sealRule = /\.accept \.offer-seal\{([^}]*)\}/.exec(PRESTIGE_OFFER_SKIN)?.[1];
   assert.ok(sealRule, "the prestige skin places the seal through `.accept .offer-seal`");
-  assert.ok(/bottom:[\d.]+mm/.test(sealRule) && /top:auto/.test(sealRule), "the seal's foot sits on the signatory's rule");
+  // Owner, 17 Nov 2026: "put the stamp on my signature". The signature image starts at the rule's
+  // left end and is about 16mm wide, so a 21mm seal centred on it starts within a few mm of that end
+  // and its foot dips just under the rule. Placed 22mm in, it missed the signature entirely.
+  assert.ok(/top:auto/.test(sealRule), "the seal is placed from the foot of the signatory's cell");
+  const sealLeft = Number(/left:(-?[\d.]+)mm/.exec(sealRule)?.[1]);
+  const sealBottom = Number(/bottom:(-?[\d.]+)mm/.exec(sealRule)?.[1]);
+  assert.ok(sealLeft >= -4 && sealLeft <= 4, `the seal starts at the signature, not beside it (left ${sealLeft}mm)`);
+  assert.ok(sealBottom >= -4 && sealBottom <= 2, `the seal is centred down over the signature, its foot at the rule (bottom ${sealBottom}mm)`);
+  assert.ok(/mix-blend-mode:multiply/.test(sealRule), "the seal is printed as ink (multiply), so the signature reads through it");
   assert.equal(Number(/width:([\d.]+)mm/.exec(sealRule)?.[1]), 21, "the prestige seal is the premium letter's 21mm");
   assert.equal(
     PRESTIGE_OFFER_SKIN.replace(/\.accept \.offer-seal\{[^}]*\}/, "").includes("offer-seal"),
