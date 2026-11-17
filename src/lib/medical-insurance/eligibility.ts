@@ -115,6 +115,8 @@ export type MedicalInsuranceAction = {
   dependants: number;
   /** A removal for someone who should never have been on the policy: refunded from its first day. */
   voidFromStart?: boolean;
+  /** Covered from before their first day: `effectiveOn` is the day they joined, where cover should start. */
+  lateStart?: boolean;
 };
 
 /**
@@ -257,6 +259,21 @@ export function buildMedicalInsuranceActions(input: {
         effectiveOn: window.until,
         reason: window.until <= asOf ? "Has left" : "Is leaving",
         timing: window.until <= asOf ? "now" : "soon",
+      });
+    }
+    // On the register from before their first day: a late joiner's cover starts the day they join.
+    if (window && member.coverageStart < window.from) {
+      actions.push({
+        ...base,
+        effectiveOn: window.from,
+        hrId: employee.hrId,
+        jobTitle: employee.jobTitle,
+        key: `start:${member.id}`,
+        kind: "review",
+        lateStart: true,
+        lineName: employee.lineName,
+        reason: "Covered from before their first day",
+        timing: "now",
       });
     }
   }
