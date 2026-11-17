@@ -10,7 +10,7 @@ import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory } from "@/lib/medical-insurance/cost";
 import { additionCategory, type MedicalInsuranceAction, type MedicalInsuranceActionKind } from "@/lib/medical-insurance/eligibility";
-import type { MedicalInsuranceView } from "@/lib/medical-insurance/view";
+import { DECLINED_REASON, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
 import { cellClassName, downloadPosted, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
@@ -129,11 +129,17 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
 
   function renderOpenButton(action: MedicalInsuranceAction) {
     const allowed = action.kind === "add" ? canCreate : canEdit;
-    if (!allowed) return null;
+    const excludable = canEdit && action.kind === "add" && Boolean(action.hrId);
+    if (!allowed && !excludable) return null;
     return (
-      <button className={textLinkClassName} onClick={() => setOpenKey(openKey === action.key ? null : action.key)} type="button">
-        {openKey === action.key ? "Close" : action.kind === "add" ? "Add or keep off" : "End cover or keep on"}
-      </button>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {allowed ? (
+          <button className={textLinkClassName} onClick={() => setOpenKey(openKey === action.key ? null : action.key)} type="button">
+            {openKey === action.key ? "Close" : action.kind === "add" ? "Add" : "End cover or keep on"}
+          </button>
+        ) : null}
+        {excludable ? <ExcludeButton action={action} /> : null}
+      </div>
     );
   }
 
@@ -330,7 +336,7 @@ function ActionForm({ action, onDone }: { action: MedicalInsuranceAction; onDone
   const [category, setCategory] = React.useState<MedicalInsuranceCategory | "">(action.decidedCategory ?? action.suggestedCategory ?? "");
   const [certificate, setCertificate] = React.useState("");
   const [day, setDay] = React.useState(action.effectiveOn);
-  const [reason, setReason] = React.useState(action.kind === "add" ? "" : action.reason);
+  const [reason, setReason] = React.useState(action.kind === "add" ? DECLINED_REASON : action.reason);
   const adding = action.kind === "add";
 
   function saveAdd() {
@@ -366,7 +372,7 @@ function ActionForm({ action, onDone }: { action: MedicalInsuranceAction; onDone
           </label>
         ) : null}
         <label className="block">
-          <span className={phxLabelClassName}>{adding ? "Reason, to keep them off the policy" : "Reason"}</span>
+          <span className={phxLabelClassName}>{adding ? "Reason, if you exclude them" : "Reason"}</span>
           <input className={phxFieldClassName} onChange={(event) => setReason(event.target.value)} value={reason} />
         </label>
       </div>
@@ -379,11 +385,34 @@ function ActionForm({ action, onDone }: { action: MedicalInsuranceAction; onDone
         )}
         {action.hrId ? (
           <Button className="h-10" disabled={busy} onClick={saveException} variant="secondary">
-            {adding ? "Keep off the policy" : "Keep on the policy"}
+            {adding ? "Exclude" : "Keep on the policy"}
           </Button>
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Medical insurance is optional (owner, 2026-11-17: "people like rasha sama reham salma labib doent
+ * want to be in medical insurance so make an option of exclude"). One press records that they are
+ * kept off the policy, so the add list stops asking; the exceptions list below reverses it.
+ */
+function ExcludeButton({ action }: { action: MedicalInsuranceAction }) {
+  const { busy, error, save } = useSave();
+  return (
+    <span className="inline-flex flex-col">
+      <button
+        aria-label={`Exclude ${action.name}: does not want medical insurance`}
+        className={textLinkClassName}
+        disabled={busy}
+        onClick={() => void save(() => sendJson("/api/medical-insurance/exceptions", "POST", { decision: "keep_out", hrId: action.hrId, reason: DECLINED_REASON }))}
+        type="button"
+      >
+        {busy ? "Excluding" : "Exclude"}
+      </button>
+      <SaveError error={error} />
+    </span>
   );
 }
 
@@ -404,7 +433,7 @@ function ExceptionsPanel({ canEdit, view }: { canEdit: boolean; view: MedicalIns
   }
 
   return (
-    <AdminTableShell description="An exception beats the everyone-from-day-one rule, in either direction, and keeps its reason." title="Exceptions">
+    <AdminTableShell description="Medical insurance is optional. Someone who does not want it is excluded here, and the add list stops asking for them. An exception beats the everyone-from-day-one rule in either direction and keeps its reason; removing it puts the rule back." title="Excluded and kept on">
       {view.exceptions.length === 0 ? (
         <p className="p-4 text-sm font-semibold text-phx-ink-soft">No exceptions. Everyone follows the rule.</p>
       ) : (
@@ -413,7 +442,7 @@ function ExceptionsPanel({ canEdit, view }: { canEdit: boolean; view: MedicalIns
             <li className="flex flex-wrap items-start justify-between gap-2 border-b border-phx-line p-4" key={exception.id}>
               <div className="min-w-0">
                 <p className="break-words text-sm font-black text-phx-ink" dir="auto">{exception.name}</p>
-                <p className="break-words text-phx-xs font-bold text-phx-ink-soft">{exception.decision === "keep_in" ? "Kept on the policy" : "Kept off the policy"}</p>
+                <p className="break-words text-phx-xs font-bold text-phx-ink-soft">{exception.decision === "keep_in" ? "Kept on the policy" : "Excluded"}</p>
                 <p className="break-words text-phx-xs font-semibold text-phx-ink-soft" dir="auto">{exception.reason}</p>
               </div>
               {canEdit ? (
@@ -438,7 +467,7 @@ function ExceptionsPanel({ canEdit, view }: { canEdit: boolean; view: MedicalIns
             <label className="block">
               <span className={phxLabelClassName}>Decision</span>
               <select className={phxSelectClassName} onChange={(event) => setDecision(event.target.value as "keep_in" | "keep_out")} value={decision}>
-                <option value="keep_out">Keep off the policy</option>
+                <option value="keep_out">Exclude from medical insurance</option>
                 <option value="keep_in">Keep on the policy</option>
               </select>
             </label>
