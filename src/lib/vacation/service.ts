@@ -34,6 +34,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { continuousServiceStartDate, ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
+import { earlierWaitingMessage, findEarlierWaitingRequest, loadEarlierWaitingRequest } from "@/lib/vacation/earlier-waiting";
 import type { SystemNotificationChannel } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { afterResponse } from "@/lib/http/after-response";
@@ -4415,8 +4416,11 @@ export async function getVacationDecisionConfirmationData(access: AccessContext,
   if (!pendingStep) {
     throw new Error("Forbidden: you are not an assigned pending approver for this vacation request.");
   }
+  // Read only after the caller is confirmed as a pending approver. Never throws — see earlier-waiting.ts.
+  const earlierWaiting = await loadEarlierWaitingRequest(request);
   return {
     approvalStep: pendingStep.stepKey,
+    earlierWaitingMessage: earlierWaiting ? earlierWaitingMessage(earlierWaiting) : null,
     request: {
       employeeHrId: request.employeeHrId,
       employeeName: request.employeeName,
@@ -6260,6 +6264,27 @@ export function buildVacationOverlapWarnings(input: {
         code: "employee_overlap",
         message: "Same employee has another active vacation request in this period.",
         relatedRequestIds: relatedEmployeeRows.map((other) => other.id),
+        severity: "warning",
+      });
+    }
+
+    // Approve the earlier request first (owner, 2026-11-17) — see src/lib/vacation/earlier-waiting.ts.
+    const earlierWaiting = findEarlierWaitingRequest({
+      others: ((employeeCanonical ? rowsByEmployeeCanonical.get(employeeCanonical) : undefined) ?? []).map((other) => ({
+        endDate: other.endDate,
+        id: other.id,
+        requestCode: other.requestCode || null,
+        startDate: other.startDate,
+        status: other.status,
+        vacationType: other.vacationType,
+      })),
+      request: { id: row.id, startDate: row.startDate, status: row.status, vacationType: row.vacationType },
+    });
+    if (earlierWaiting) {
+      push(row.id, {
+        code: "earlier_waiting_same_pool",
+        message: earlierWaitingMessage(earlierWaiting),
+        relatedRequestIds: [earlierWaiting.id],
         severity: "warning",
       });
     }

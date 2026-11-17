@@ -15,6 +15,7 @@ import {
 } from "@/lib/vacation/decision-form";
 import { loadWhoElseIsOff } from "@/lib/vacation/who-else-is-off";
 import { WhoElseIsOffPanel } from "@/components/approvals-hub/who-else-is-off-panel";
+import { EarlierWaitingNotice } from "@/components/approvals-hub/earlier-waiting-notice";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +115,12 @@ export default async function VacationDecisionPage({
               <dd>{data.request.vacationType}</dd>
             </div>
           </dl>
+
+          {data.earlierWaitingMessage ? (
+            <div className="mt-5">
+              <EarlierWaitingNotice message={data.earlierWaitingMessage} />
+            </div>
+          ) : null}
 
           {whoElseIsOff ? (
             <div className="mt-5">

@@ -190,6 +190,7 @@ export type VacationRequestAttachment = {
 
 export type VacationOverlapWarning = {
   code:
+    | "earlier_waiting_same_pool"
     | "employee_overlap"
     | "evidence_required"
     | "holiday_adjacent"

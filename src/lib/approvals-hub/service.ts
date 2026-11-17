@@ -22,6 +22,7 @@ import {
 } from "@/lib/vacation/service";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { loadWhoElseIsOff, shouldShowWhoElseIsOff, type WhoElseIsOff } from "@/lib/vacation/who-else-is-off";
+import { earlierWaitingMessage, loadEarlierWaitingRequest } from "@/lib/vacation/earlier-waiting";
 import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
 import { addDaysIso } from "@/lib/crm/dates";
 import {
@@ -808,6 +809,21 @@ export async function getWhoElseIsOffForApprovalDetail(
   const isOwnRequest = isViewer(record.employeeHrId, access.hrId?.trim() ?? "");
   if (!shouldShowWhoElseIsOff({ isOwnRequest, status: record.status })) return null;
   return loadWhoElseIsOff(record);
+}
+
+/**
+ * "Approve the earlier request first" for a detail the viewer may already read (owner, 2026-11-17).
+ * Its own read, like the panel above, and never throws. Shown to the deciders, never on one's own request.
+ */
+export async function getEarlierWaitingMessageForApprovalDetail(
+  access: AccessContext,
+  detail: VacationApprovalDetail,
+): Promise<string | null> {
+  const record = detail.record;
+  if (!record || detail.readOnly) return null;
+  if (isViewer(record.employeeHrId, access.hrId?.trim() ?? "")) return null;
+  const earlier = await loadEarlierWaitingRequest(record);
+  return earlier ? earlierWaitingMessage(earlier) : null;
 }
 
 export type ExcuseApprovalDetail = {
