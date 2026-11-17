@@ -75,6 +75,10 @@ const EXEMPT = new Map([
     "scripts/phoenix-inspect/lib/capture.mjs",
     "pure exports (launchBrowser, signIn, openFencedContext, captureOne, probeDenied) of the visual explorer, imported only by explore.mjs and self-check.mjs, which refuse an unknown flag themselves",
   ],
+  [
+    "scripts/phoenix-inspect/lib/authorization-server.mjs",
+    "pure exports (createAuthorizationServer, revokeAllGrants and its parsers) of the inspector's loopback sign-in, imported by mcp-http.mjs (which refuses an unknown flag itself) and lib/oauth.mjs; it writes only its own state files under PHOENIX_INSPECT_MCP_STATE_DIR",
+  ],
 ]);
 
 const WRITES =
