@@ -2545,6 +2545,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // attendance_backup_20261115.raw_punches_clock_shift (265). The file's last UPDATE gained "and not (raw_payload ?
   // 'clock_correction')" after the apply — true for all 265 rows at the time — so re-applying moves nothing.
   "20261115170525_fingerprint_clock_summer_time_correction.sql",
+  // Applied 17 Nov 2026 about 05:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the aws-1
+  // pooler), the standing route. It writes NO ledger row. It recreates, empty, the six medical_insurance_* tables the
+  // 20261111061213 retirement dropped, now for the Libano-Suisse policy, with the private `medical-insurance` bucket,
+  // the storage policy medical_insurance_service_role and one policy row; no function. Read back on BOTH
+  // cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf straight after (both read 0 tables, 0 buckets and 0 policies before):
+  // 6 pg_class tables with relrowsecurity true, 1 private bucket at 26214400 bytes, 1 storage policy,
+  // has_table_privilege('authenticated', members, 'select') false, one policy row Libano-Suisse Takaful Egypt
+  // 2026-11-15..2027-11-14, and equal on both — md5 of every public medical_insurance_* column (name, type,
+  // nullability, in order) b1407073faae0a1070654c44ad88f2b8, md5(rate_card::text) e87a5dc0b6cca4444d8be6f520c95c35.
+  // Re-applying is a no-op (`create table if not exists`, the policy row guarded by `where not exists`).
+  "20261117041500_medical_insurance_libano_suisse.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

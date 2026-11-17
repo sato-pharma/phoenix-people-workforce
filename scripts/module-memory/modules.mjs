@@ -304,6 +304,20 @@ export const MODULES = [
     tables: ["incentive"],
   },
   {
+    id: "medical-insurance",
+    title: "Medical Insurance (Libano-Suisse group policy, who is in and out, bill against plan)",
+    scope: "The Libano-Suisse group medical policy: who should be on it, the insurer's member file for additions and deletions, what the year costs at the signed rate card, each bill against that plan, and the communication tools, forms, policy and emails behind it.",
+    globs: [
+      "src/lib/medical-insurance/**",
+      "src/components/medical-insurance/**",
+      "app/**/medical-insurance/**",
+      "tests/medical-insurance*",
+      "supabase/migrations/*medical_insurance*",
+    ],
+    keywords: ["medical insurance", "libano-suisse", "libano suisse", "insurance invoice", "additions and deletions", "member number"],
+    tables: ["medical_insurance_"],
+  },
+  {
     id: "production-planning",
     title: "Production Planner (toll manufacturing — Ivyronc and Guamusin)",
     scope: "Run geometry and the buy list for two toll-manufactured products — a syrup measured in millilitres and a powder in 5 g sachets, twelve to a box — with stock per lot across three locations, the cost layer and its dollar rate, the consumption learner, and the two alarms: reorder and expiry.",

@@ -1,0 +1,407 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import ExcelJS from "exceljs";
+
+import { hrBundleGrants } from "../src/lib/auth/hr-functions.ts";
+import { permissionMatrix } from "../src/lib/auth/permissions.ts";
+import { compareInvoiceToPlan } from "../src/lib/medical-insurance/compare.ts";
+import {
+  additionCharge,
+  annualRate,
+  deletionRefund,
+  lastQuarterStart,
+  openingStatement,
+  parseRateCard,
+  withPlanRates,
+  type MedicalInsuranceCategory,
+  type MedicalInsuranceRateCard,
+  type PersonToPrice,
+} from "../src/lib/medical-insurance/cost.ts";
+import {
+  additionCategory,
+  buildMedicalInsuranceActions,
+  buildPolicyYearCost,
+  employeeCoverWindow,
+  type EmployeeFacts,
+  type MedicalInsuranceAction,
+  type MemberFacts,
+} from "../src/lib/medical-insurance/eligibility.ts";
+import {
+  buildLibanoMemberFileWorkbook,
+  libanoDay,
+  libanoMemberCells,
+  LIBANO_MEMBER_FILE_HEADERS,
+  splitLibanoName,
+} from "../src/lib/medical-insurance/workbooks.ts";
+
+const POLICY = { endsOn: "2027-11-14", startsOn: "2026-11-15" };
+const MIGRATION = "supabase/migrations/20261117041500_medical_insurance_libano_suisse.sql";
+
+/** The rate card exactly as the migration seeds it, so the test pins what production prices with. */
+function seededRateCard(): MedicalInsuranceRateCard {
+  const sql = readFileSync(MIGRATION, "utf8");
+  const start = sql.indexOf("'{\n    \"currency\"");
+  const end = sql.indexOf("}'::jsonb", start);
+  assert.ok(start > 0 && end > start, "the migration seeds the policy's rate card");
+  return parseRateCard(JSON.parse(sql.slice(start + 1, end + 1)));
+}
+
+const CARD = seededRateCard();
+
+function employee(overrides: Partial<EmployeeFacts> = {}): EmployeeFacts {
+  return {
+    active: true,
+    employmentStatus: "active",
+    exitDay: null,
+    hireDate: "2024-01-01",
+    hrId: "T-1",
+    jobTitle: "Medical Rep",
+    lineName: null,
+    name: "Test Person",
+    ...overrides,
+  };
+}
+
+function member(overrides: Partial<MemberFacts> = {}): MemberFacts {
+  return {
+    birthDate: "1990-01-01",
+    category: "C",
+    certificateNumber: "1",
+    coverageEnd: null,
+    coverageStart: POLICY.startsOn,
+    hrId: "T-1",
+    id: "m-1",
+    memberType: "employee",
+    name: "Test Person",
+    principalMemberId: null,
+    ...overrides,
+  };
+}
+
+function actionsFor(employees: EmployeeFacts[], members: MemberFacts[], exceptions: Array<{ id: string; hrId: string; decision: "keep_in" | "keep_out"; reason: string }> = [], asOf = "2026-11-17") {
+  return buildMedicalInsuranceActions({ asOf, employees, exceptions, members, policy: POLICY }).actions;
+}
+
+/**
+ * The signed renewal offer (Rev 1.3, 5 November 2026), band by band: the same 104 people at the seeded
+ * rates print the offer's own totals, to the pound.
+ */
+function testTheSignedOfferIsReproducedToThePound() {
+  // [plan, the band's first age, how many people]
+  const offer: Array<[MedicalInsuranceCategory, number, number]> = [
+    ["A", 25, 1], ["A", 40, 1], ["A", 45, 1], ["A", 50, 1], ["A", 55, 4], ["A", 60, 1],
+    ["B", 30, 12], ["B", 35, 8], ["B", 40, 2], ["B", 45, 1], ["B", 50, 2],
+    ["C", 0, 3], ["C", 18, 23], ["C", 25, 28], ["C", 30, 11], ["C", 35, 4], ["C", 50, 1],
+  ];
+  const people: PersonToPrice[] = [];
+  for (const [category, from, count] of offer) {
+    // One year into the band on the policy's first day.
+    const birthDate = `${2026 - (from + 1)}-01-01`;
+    for (let index = 0; index < count; index += 1) people.push({ birthDate, category, coverageStart: POLICY.startsOn });
+  }
+
+  const statement = openingStatement(CARD, people);
+  assert.equal(statement.people, 104);
+  assert.equal(statement.unpriced, 0);
+  assert.deepEqual(statement.plans.map((plan) => [plan.category, plan.people, plan.premium]), [["A", 9, 234_645], ["B", 25, 172_339], ["C", 70, 305_316]]);
+  const bandA55 = statement.plans[0].bands.find((band) => band.label === "55 to 59");
+  assert.equal(bandA55?.premium, 123_458, "Plan A 55 to 59 prints 123,458, not 4 x 30,865");
+  assert.equal(statement.premium, 712_300, "the offer's premium");
+  assert.equal(statement.tax, 11_040.65, "1.55% tax and supervision");
+  assert.equal(statement.cards, 3_120, "EGP 30 a member for the card");
+  assert.equal(statement.issueFee, 90, "the issue fee, once");
+  assert.equal(statement.total, 726_550.65);
+
+  const old = annualRate(CARD, { birthDate: "1960-01-01", category: "C", coverageStart: POLICY.startsOn });
+  assert.equal(old.priced, false, "a band the offer did not quote is never priced at zero");
+  assert.equal(annualRate(CARD, { birthDate: null, category: "A", coverageStart: POLICY.startsOn }).priced, false, "no birth date, no price");
+  assert.throws(() => parseRateCard({ ...CARD, taxBasisPoints: undefined }), /missing a figure/);
+  assert.equal(withPlanRates(CARD, "C", CARD.plans.C.rates.map((rate, index) => (index === 6 ? 8000 : rate))).plans.C.rates[6], 8000, "a quoted band can be filled in");
+}
+
+/** A joiner pays by the day to the policy's end; from the last quarter a quarter of the year. */
+function testAJoinerIsChargedByTheDayAndTheLastQuarterAtAQuarter() {
+  assert.equal(lastQuarterStart(POLICY), "2027-08-15");
+
+  const february = additionCharge(CARD, POLICY, 9989, "2027-02-15");
+  assert.equal(february.policyDays, 365);
+  assert.equal(february.days, 273);
+  assert.equal(february.lastQuarter, false);
+  assert.equal(february.premium, 7471.22);
+  assert.equal(february.tax, 115.8);
+  assert.equal(february.card, 30);
+  assert.equal(february.total, 7617.02);
+
+  const dayBefore = additionCharge(CARD, POLICY, 9989, "2027-08-14");
+  assert.equal(dayBefore.lastQuarter, false, "the day before the last quarter is still by the day");
+
+  const lastQuarter = additionCharge(CARD, POLICY, 9989, "2027-08-15");
+  assert.equal(lastQuarter.lastQuarter, true);
+  assert.equal(lastQuarter.premium, 2497.25, "25% of the year");
+  assert.equal(lastQuarter.tax, 38.71);
+  assert.equal(lastQuarter.total, 2565.96);
+}
+
+/** A leaver is refunded by the day from the day after they leave; the card is never refunded. */
+function testALeaverIsRefundedByTheDay() {
+  const refund = deletionRefund(CARD, POLICY, 9989, "2027-02-14");
+  assert.equal(refund.days, 273);
+  assert.equal(refund.premium, -7471.22);
+  assert.equal(refund.tax, -115.8);
+  assert.equal(refund.card, 0);
+  assert.equal(refund.total, -7587.02);
+  assert.equal(deletionRefund(CARD, POLICY, 9989, POLICY.endsOn).total, 0, "covered to the end: nothing back");
+  assert.equal(deletionRefund(CARD, POLICY, 9989, "2026-11-14").days, 365, "never on the policy: the whole year back");
+}
+
+function testEveryoneBelongsFromDayOneAndTheRecordDecidesTheEnd() {
+  assert.deepEqual(employeeCoverWindow(employee(), POLICY), { from: POLICY.startsOn, until: null }, "working before the policy: from its start");
+  assert.deepEqual(employeeCoverWindow(employee({ hireDate: "2026-11-22" }), POLICY), { from: "2026-11-22", until: null }, "a joiner: from their first day");
+  assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "declined_offer" }), POLICY), null, "a declined offer never belongs");
+  assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "placeholder" }), POLICY), null, "a placeholder is nobody");
+  assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "resigned", exitDay: "2026-10-15" }), POLICY), null, "left before the policy");
+  assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "resigned" }), POLICY), null, "left with no day on record");
+  assert.deepEqual(employeeCoverWindow(employee({ exitDay: "2026-12-15" }), POLICY), { from: POLICY.startsOn, until: "2026-12-15" }, "serving notice: covered until they go");
+}
+
+function testTheListNamesWhoToAddAndWhoToRemove() {
+  const missing = actionsFor([employee()], []);
+  assert.equal(missing.length, 1);
+  assert.equal(missing[0].kind, "add");
+  assert.equal(missing[0].timing, "now");
+  assert.equal(missing[0].memberType, "employee");
+
+  const joiner = actionsFor([employee({ hireDate: "2026-11-20" })], []);
+  assert.equal(joiner[0].timing, "soon", "a joiner inside the horizon is coming up");
+  assert.equal(actionsFor([employee({ hireDate: "2027-03-01" })], []).length, 0, "beyond the horizon is not on the list");
+
+  const left = actionsFor([employee({ active: false, employmentStatus: "resigned", exitDay: "2026-11-16" })], [member()]);
+  assert.equal(left[0].kind, "remove");
+  assert.equal(left[0].reason, "Has left");
+  assert.equal(left[0].effectiveOn, "2026-11-16");
+
+  const gone = actionsFor([employee({ active: false, employmentStatus: "resigned", exitDay: "2026-10-01" })], [member()]);
+  assert.equal(gone[0].kind, "remove", "on the policy but gone before it began");
+  assert.equal(gone[0].voidFromStart, true, "refunded from the policy's first day");
+
+  const declined = actionsFor([employee({ active: false, employmentStatus: "declined_offer" })], [member()]);
+  assert.equal(declined[0].reason, "Declined the offer and never started");
+
+  const notice = actionsFor([employee({ exitDay: "2026-11-25" })], [member()]);
+  assert.equal(notice[0].timing, "soon", "someone serving notice is still covered, and shown as coming up");
+
+  const stranger = actionsFor([], [member({ hrId: null })]);
+  assert.equal(stranger[0].kind, "review", "no Phoenix record is for a person to check");
+
+  assert.equal(actionsFor([employee()], [member()]).length, 0, "a working employee on the register is nothing to do");
+
+  const [add] = missing;
+  assert.equal(add.decidedCategory, null, "nobody has decided a joiner's plan until someone does");
+  assert.equal(additionCategory({ ...add, suggestedCategory: null }), null, "with nothing decided or suggested, the file waits for a decision");
+  assert.equal(additionCategory({ ...add, decidedCategory: "A", suggestedCategory: "C" }), "A", "a decided plan beats the suggestion");
+  assert.equal(additionCategory({ ...add, category: "B", decidedCategory: "A" }), "B", "the register's plan beats a decision made before they were on it");
+  assert.equal(additionCategory({ ...add, decidedCategory: "A" }, "C"), "C", "a plan picked for this file beats them all");
+}
+
+function testAnExceptionBeatsTheRuleEitherWay() {
+  assert.equal(actionsFor([employee()], [], [{ decision: "keep_out", hrId: "T-1", id: "e", reason: "Own cover" }]).length, 0);
+  const keptIn = actionsFor([employee({ active: false, employmentStatus: "resigned", exitDay: "2026-11-16" })], [member()], [{ decision: "keep_in", hrId: "T-1", id: "e", reason: "Agreed" }]);
+  assert.equal(keptIn.length, 0);
+}
+
+function testFamilyFollowTheirEmployee() {
+  const spouse = member({ hrId: "T-1", id: "m-2", memberType: "spouse", name: "Test Spouse", principalMemberId: "m-1" });
+  const leaving = actionsFor([employee({ active: false, employmentStatus: "resigned", exitDay: "2026-11-16" })], [member(), spouse]);
+  assert.equal(leaving.length, 1, "family leave with their employee, on the employee's line");
+  assert.equal(leaving[0].dependants, 1);
+
+  const stranded = actionsFor([employee({ active: false, employmentStatus: "resigned", exitDay: "2026-11-16" })], [member({ coverageEnd: "2026-11-16" }), spouse]);
+  const row = stranded.find((action) => action.memberId === "m-2");
+  assert.ok(row, "a family row left open under an ended cover is listed");
+  assert.equal(row.kind, "remove");
+  assert.equal(row.memberType, "spouse");
+}
+
+/** The contract's age limits: over 64 for an employee or spouse, over 18 for a child, and no birth date. */
+function testTheContractsAgeLimitsAreReviewed() {
+  const review = (members: MemberFacts[]) =>
+    buildMedicalInsuranceActions({ ageLimits: CARD.ageLimits, asOf: "2026-11-17", employees: [employee()], exceptions: [], members, policy: POLICY }).actions.filter((action) => action.key.startsWith("age:"));
+
+  assert.equal(review([member({ birthDate: "1962-01-01" })]).length, 0, "64 on the first day is inside the limit");
+  const old = review([member({ birthDate: "1961-01-01" })]);
+  assert.equal(old.length, 1);
+  assert.match(old[0].reason, /^Aged 65: over 64 needs a health statement/);
+
+  const child = review([member(), member({ birthDate: "2007-01-01", id: "m-3", memberType: "child", name: "Test Child", principalMemberId: "m-1" })]);
+  assert.equal(child.length, 1);
+  assert.match(child[0].reason, /^Aged 19: the plan covers children up to 18 \(family of Test Person\)$/);
+  assert.equal(review([member(), member({ birthDate: "2008-11-15", id: "m-3", memberType: "child", principalMemberId: "m-1" })]).length, 0, "18 is still a child");
+
+  assert.match(review([member({ birthDate: null })])[0].reason, /No date of birth/);
+  assert.equal(
+    buildMedicalInsuranceActions({ asOf: "2026-11-17", employees: [employee()], exceptions: [], members: [member({ birthDate: "1950-01-01" })], policy: POLICY }).actions.length,
+    0,
+    "without the card's limits no age is checked",
+  );
+}
+
+/** A bill against what the plan says it should be, for each kind of bill. */
+function testEachBillIsComparedWithThePlan() {
+  const members: MemberFacts[] = [
+    member({ birthDate: "1995-01-01", hrId: "T-1", id: "m-1", name: "Opening Person" }),
+    member({ birthDate: "2000-06-01", coverageStart: "2027-02-15", hrId: "T-2", id: "m-2", name: "Joiner" }),
+    member({ birthDate: "2000-06-01", coverageEnd: "2027-02-14", hrId: "T-3", id: "m-3", name: "Leaver" }),
+  ];
+  const plannedAdd = (hrId: string, name: string, effectiveOn: string): MedicalInsuranceAction => ({
+    category: null,
+    certificateNumber: null,
+    decidedCategory: "C",
+    dependants: 0,
+    effectiveOn,
+    hrId,
+    jobTitle: null,
+    key: `add:${hrId}`,
+    kind: "add",
+    lineName: null,
+    memberId: null,
+    memberType: "employee",
+    name,
+    reason: "Joined after the policy started",
+    suggestedCategory: null,
+    timing: "soon",
+  });
+  const year = buildPolicyYearCost({
+    actions: [plannedAdd("T-4", "Day One", POLICY.startsOn), plannedAdd("T-5", "March Joiner", "2027-03-01")],
+    birthDates: new Map([["T-4", "2000-06-01"], ["T-5", "2000-06-01"]]),
+    members,
+    policy: POLICY,
+    rateCard: CARD,
+  });
+
+  const opening = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: POLICY.endsOn, kind: "opening", totalDue: year.opening.total + 10 }, year);
+  assert.equal(opening.expected, year.opening.total, "an opening bill is held against the opening statement");
+  assert.equal(opening.difference, 10);
+
+  const additions = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: "2027-03-31", kind: "additions", totalDue: 0 }, year);
+  assert.deepEqual(additions.lines.map((line) => [line.name, line.planned]), [["Joiner", false], ["March Joiner", true]], "a day-one joiner belongs on the opening bill, not an endorsement");
+  const joinerCharge = additionCharge(CARD, POLICY, CARD.plans.C.rates[2] as number, "2027-02-15").total;
+  const marchCharge = additionCharge(CARD, POLICY, CARD.plans.C.rates[2] as number, "2027-03-01").total;
+  assert.equal(additions.expected, Math.round((joinerCharge + marchCharge) * 100) / 100);
+  assert.equal(additions.difference, -(additions.expected as number));
+
+  const narrow = compareInvoiceToPlan({ coversFrom: "2027-03-01", coversTo: "2027-03-31", kind: "additions", totalDue: marchCharge }, year);
+  assert.equal(narrow.lines.length, 1, "only people inside the bill's dates");
+  assert.equal(narrow.difference, 0);
+
+  const deletions = compareInvoiceToPlan({ coversFrom: "2027-02-01", coversTo: "2027-02-28", kind: "deletions", totalDue: -7000 }, year);
+  assert.deepEqual(deletions.lines.map((line) => line.name), ["Leaver"]);
+  assert.ok((deletions.expected as number) < 0, "a credit note is a negative amount");
+
+  const other = compareInvoiceToPlan({ coversFrom: null, coversTo: null, kind: "other", totalDue: 30 }, year);
+  assert.equal(other.expected, null, "the plan has nothing to say about another kind of bill");
+  assert.equal(other.difference, null);
+}
+
+/** Libano-Suisse's own sheet: their 39 headings, one text row per person. */
+async function testTheMemberFileIsTheInsurersOwnSheet() {
+  assert.equal(LIBANO_MEMBER_FILE_HEADERS.length, 39);
+  assert.match(LIBANO_MEMBER_FILE_HEADERS[0], /^1- {2}"Plan Code"/);
+  assert.match(LIBANO_MEMBER_FILE_HEADERS[6], /"DOB"[\s\S]*ddmmyyyy/);
+  assert.match(LIBANO_MEMBER_FILE_HEADERS[21], /"Staff #"/);
+  assert.match(LIBANO_MEMBER_FILE_HEADERS[38], /Beneficiary full name/);
+
+  assert.deepEqual(splitLibanoName("Ahmed Mohamed Ali Hassan"), { father: "Mohamed", first: "Ahmed", last: "Ali Hassan" });
+  assert.deepEqual(splitLibanoName("Ahmed Ali"), { father: "", first: "Ahmed", last: "Ali" });
+  assert.equal(libanoDay("2019-04-08"), "08042019");
+  assert.equal(libanoDay(null), "");
+
+  const child = {
+    adherentNumber: "900",
+    birthDate: "2019-04-08",
+    category: "C" as const,
+    day: POLICY.startsOn,
+    fullName: "Test Child Person",
+    gender: "Female",
+    memberType: "child" as const,
+    nationalId: "",
+    phone: "",
+    principalNumber: "899",
+    staffNumber: "34-1",
+  };
+  const cells = libanoMemberCells(child);
+  assert.equal(cells.length, 39);
+  assert.equal(cells[0], "C", "Plan Code");
+  assert.equal(cells[1], "Person", "Last name");
+  assert.equal(cells[2], "C", "Father Init");
+  assert.equal(cells[3], "Test", "First name");
+  assert.equal(cells[6], "08042019", "DOB as ddmmyyyy");
+  assert.equal(cells[7], "C", "Relation");
+  assert.equal(cells[9], "F", "Gender");
+  assert.equal(cells[10], "C", "Class");
+  assert.equal(cells[21], "34-1", "Staff #");
+  assert.equal(cells[22], "900", "Adherent #");
+  assert.equal(cells[26], "899", "Principal #");
+  assert.equal(libanoMemberCells({ ...child, memberType: "employee" })[7], "P");
+  assert.equal(libanoMemberCells({ ...child, memberType: "spouse" })[7], "S");
+
+  const buffer = await buildLibanoMemberFileWorkbook({ kind: "deletions", rows: [{ ...child, day: "2027-02-14" }] });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet("Output draft");
+  assert.ok(sheet, "one sheet, named as the insurer's draft");
+  assert.equal(sheet.getRow(1).cellCount, 40);
+  assert.equal(sheet.getCell(1, 40).value, "Deletion date (ddmmyyyy)");
+  assert.equal(sheet.getCell(2, 22).value, "34-1", "a staff number stays text");
+  assert.equal(sheet.getCell(2, 7).value, "08042019", "a date stays text");
+  assert.equal(sheet.getCell(2, 40).value, "14022027");
+}
+
+function testASeatNeverHoldsAnAmount() {
+  const invoices = "medical_insurance_invoices";
+  for (const role of ["HR Operations", "HR Administration"] as const) {
+    const grants = hrBundleGrants(role) as Record<string, readonly string[] | undefined>;
+    assert.deepEqual(grants.medical_insurance, ["read", "create", "update", "export"], `${role} maintains members`);
+    assert.equal(grants[invoices], undefined, `${role} must never hold the invoices`);
+    assert.equal((permissionMatrix[role] as Record<string, readonly string[] | undefined>)[invoices], undefined, `${role} in the matrix`);
+  }
+  assert.ok((permissionMatrix["Super Admin"] as Record<string, readonly string[]>)[invoices].includes("read"));
+  assert.equal((permissionMatrix["Super Admin"] as Record<string, readonly string[]>)[invoices].includes("delete"), false, "a bill is a fact about a date");
+
+  const page = readFileSync("app/(admin)/medical-insurance/page.tsx", "utf8");
+  assert.match(page, /if \(view && holdsInvoices\) money = await getMedicalInsuranceMoney\(\)/, "money is read only after the check");
+
+  const policyRoute = readFileSync("app/api/medical-insurance/policy/route.ts", "utf8");
+  assert.match(policyRoute, /assertPermission\(access, "medical_insurance_invoices", "update"\)/, "a rate decides every amount, so only the money seat changes it");
+
+  const view = readFileSync("src/lib/medical-insurance/view.ts", "utf8");
+  const seatShape = view.slice(view.indexOf("export type MedicalInsuranceView"), view.indexOf("export type MedicalInsuranceInvoiceRow"));
+  assert.doesNotMatch(seatShape, /total|premium|cost|statement|egp|rate/i, "the seats' shape carries no amount");
+}
+
+function testNothingHereSendsOrPays() {
+  for (const file of ["src/lib/medical-insurance/service.ts", "src/lib/medical-insurance/workbooks.ts", "src/lib/medical-insurance/compare.ts", "src/lib/medical-insurance/cost.ts"]) {
+    const source = readFileSync(file, "utf8");
+    assert.doesNotMatch(source, /from "@\/lib\/email|sendEmail|resend|from "@\/lib\/payroll/i, `${file} must not send mail or reach payroll`);
+  }
+}
+
+export async function runMedicalInsuranceTests() {
+  testTheSignedOfferIsReproducedToThePound();
+  testAJoinerIsChargedByTheDayAndTheLastQuarterAtAQuarter();
+  testALeaverIsRefundedByTheDay();
+  testEveryoneBelongsFromDayOneAndTheRecordDecidesTheEnd();
+  testTheListNamesWhoToAddAndWhoToRemove();
+  testAnExceptionBeatsTheRuleEitherWay();
+  testFamilyFollowTheirEmployee();
+  testTheContractsAgeLimitsAreReviewed();
+  testEachBillIsComparedWithThePlan();
+  await testTheMemberFileIsTheInsurersOwnSheet();
+  testASeatNeverHoldsAnAmount();
+  testNothingHereSendsOrPays();
+}
+
+if (process.argv[1]?.replace(/\\/g, "/").endsWith("tests/medical-insurance.test.ts")) {
+  await runMedicalInsuranceTests();
+  console.log("medical-insurance: pass");
+}
