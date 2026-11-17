@@ -9,14 +9,14 @@ import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSele
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES } from "@/lib/medical-insurance/cost";
-import { coveragePeriodWords, MEMBER_TYPE_WORDS, type MedicalInsuranceMemberRow, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
+import { coveragePeriodWords, DECLINED_REASON, MEMBER_TYPE_WORDS, type MedicalInsuranceMemberRow, type MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
 import { cellClassName, downloadPosted, fileLinkClassName, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
 
 type Props = { canCreate: boolean; canEdit: boolean; canExport: boolean; view: MedicalInsuranceView };
 type Standing = "all" | "ended" | "open";
-type Mode = "edit" | "end";
+type Mode = "edit" | "end" | "exclude" | "family";
 
 const STANDINGS: Array<{ id: Standing; label: string }> = [
   { id: "open", label: "On cover" },
@@ -50,6 +50,7 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
     }
   }
 
+  const principals = view.members.filter((row) => row.open && row.memberType === "employee").sort((a, b) => a.name.localeCompare(b.name));
   const visible = view.members
     .filter((member) => (standing === "all" || (standing === "open") === member.open) && matches(member, query))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -87,6 +88,12 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
     return (
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         <button className={textLinkClassName} onClick={() => toggle(member.id, "edit")} type="button">Edit</button>
+        {!member.coverageEnd && !(member.memberType === "employee" && member.hrId) ? (
+          <button className={textLinkClassName} onClick={() => toggle(member.id, "family")} type="button">Move under an employee</button>
+        ) : null}
+        {!member.coverageEnd && member.memberType === "employee" && member.hrId ? (
+          <button className={textLinkClassName} onClick={() => toggle(member.id, "exclude")} type="button">Exclude</button>
+        ) : null}
         {member.coverageEnd ? (
           <button
             className={textLinkClassName}
@@ -185,7 +192,7 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
                       </tr>
                       {open?.id === member.id ? (
                         <TableRowDetail colSpan={5} id={`medical-insurance-${member.id}`}>
-                          <MemberForm member={member} mode={open.mode} onDone={() => setOpen(null)} />
+                          <MemberForm member={member} mode={open.mode} onDone={() => setOpen(null)} principals={principals} />
                         </TableRowDetail>
                       ) : null}
                     </React.Fragment>
@@ -201,7 +208,7 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
                   <p className="break-words text-phx-xs font-bold text-phx-ink">Plan {member.category}, member number {member.certificateNumber ?? "not yet given"}{member.staffNumber ? `, staff ${member.staffNumber}` : ""}</p>
                   {renderCover(member)}
                   {renderActions(member)}
-                  {open?.id === member.id ? <MemberForm member={member} mode={open.mode} onDone={() => setOpen(null)} /> : null}
+                  {open?.id === member.id ? <MemberForm member={member} mode={open.mode} onDone={() => setOpen(null)} principals={principals} /> : null}
                 </div>
               ))}
             </div>
@@ -214,7 +221,7 @@ export function MedicalInsuranceMembersTab({ canCreate, canEdit, canExport, view
   );
 }
 
-function MemberForm({ member, mode, onDone }: { member: MedicalInsuranceMemberRow; mode: Mode; onDone: () => void }) {
+function MemberForm({ member, mode, onDone, principals }: { member: MedicalInsuranceMemberRow; mode: Mode; onDone: () => void; principals: MedicalInsuranceMemberRow[] }) {
   const { busy, error, save } = useSave();
   const [category, setCategory] = React.useState<string>(member.category);
   const [certificate, setCertificate] = React.useState(member.certificateNumber ?? "");
@@ -225,7 +232,58 @@ function MemberForm({ member, mode, onDone }: { member: MedicalInsuranceMemberRo
   const [end, setEnd] = React.useState("");
   const [reason, setReason] = React.useState("");
   const [keepOut, setKeepOut] = React.useState(false);
+  const [principal, setPrincipal] = React.useState(member.memberType === "employee" ? "" : member.principalMemberId ?? "");
+  const [relation, setRelation] = React.useState<"" | "child" | "spouse">(member.memberType === "employee" ? "" : member.memberType);
+  const [declined, setDeclined] = React.useState(DECLINED_REASON);
   const url = `/api/medical-insurance/members/${member.id}`;
+
+  if (mode === "family") {
+    const others = principals.filter((row) => row.id !== member.id);
+    return (
+      <div className="space-y-3">
+        <div className={phxFieldGridTwoClassName}>
+          <label className="block">
+            <span className={phxLabelClassName}>Family of</span>
+            <select aria-label={`Employee ${member.name} sits under`} className={phxSelectClassName} onChange={(event) => setPrincipal(event.target.value)} value={principal}>
+              <option value="">Choose the employee</option>
+              {others.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className={phxLabelClassName}>As their</span>
+            <select aria-label={`${member.name}'s relation`} className={phxSelectClassName} onChange={(event) => setRelation(event.target.value as "" | "child" | "spouse")} value={relation}>
+              <option value="">Choose</option>
+              <option value="spouse">Spouse</option>
+              <option value="child">Child</option>
+            </select>
+          </label>
+        </div>
+        <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
+          {member.memberType === "employee"
+            ? "Anyone on the policy under them moves with them, under the same employee, each keeping their own relation. Their plan stays as it is."
+            : "Their plan stays as it is. Change it with Edit."}
+        </p>
+        <SaveError error={error} />
+        <Button className="h-10" disabled={busy || !principal || !relation} onClick={() => void save(() => sendJson(url, "PATCH", { action: "move_under", principalMemberId: principal, relation }), onDone)}>Move under this employee</Button>
+      </div>
+    );
+  }
+
+  if (mode === "exclude") {
+    return (
+      <div className="space-y-3">
+        <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
+          Medical insurance is optional. Excluding ends {member.name}&apos;s cover on the day it started, ends their spouse and children with them, and keeps them off the policy so the add list does not ask for them again. Put back and the exceptions list reverse it.
+        </p>
+        <label className="block max-w-xl">
+          <span className={phxLabelClassName}>Reason</span>
+          <input className={phxFieldClassName} onChange={(event) => setDeclined(event.target.value)} value={declined} />
+        </label>
+        <SaveError error={error} />
+        <Button className="h-10" disabled={busy || !declined.trim()} onClick={() => void save(() => sendJson(url, "PATCH", { action: "end", coverageEnd: member.coverageStart, endReason: declined, keepOut: true }), onDone)}>Exclude from medical insurance</Button>
+      </div>
+    );
+  }
 
   if (mode === "end") {
     return (

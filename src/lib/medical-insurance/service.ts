@@ -24,6 +24,7 @@ import {
   buildMedicalInsuranceActions,
   buildMedicalInsuranceMovements,
   buildPolicyYearCost,
+  planFamilyMove,
   type EmployeeFacts,
   type ExceptionFacts,
   type KeptException,
@@ -563,6 +564,8 @@ export type UpdateMemberInput = {
   endReason?: unknown;
   notes?: unknown;
   keepOut?: unknown;
+  principalMemberId?: unknown;
+  relation?: unknown;
 };
 
 /** Change a row, end it, or put it back. Ending an employee ends the family under them on the same day. */
@@ -603,6 +606,57 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
       entityId: memberId,
       entityType: "medical_insurance_member",
       summary: `Ended ${member.full_name}'s medical insurance cover on ${endsOn}: ${reason}`,
+    });
+    return;
+  }
+
+  if (input.action === "move_under") {
+    const { data: rows, error: rowsError } = await supabase
+      .from("medical_insurance_members")
+      .select("id, hr_id, member_type, principal_member_id, full_name, coverage_ends_on")
+      .eq("policy_id", policy.id);
+    fail(rowsError);
+    const facts = ((rows ?? []) as Array<Pick<MemberDbRow, "coverage_ends_on" | "full_name" | "hr_id" | "id" | "member_type" | "principal_member_id">>).map((row) => ({
+      coverageEnd: row.coverage_ends_on,
+      hrId: row.hr_id,
+      id: row.id,
+      memberType: row.member_type,
+      name: row.full_name,
+      principalMemberId: row.principal_member_id,
+    }));
+    const self = facts.find((row) => row.id === memberId);
+    const principalId = cleanText(input.principalMemberId);
+    const principal = principalId ? facts.find((row) => row.id === principalId) : undefined;
+    if (!self) throw new MedicalInsuranceInputError("That person is no longer on the register.");
+    const plan = planFamilyMove(self, principal, input.relation, facts);
+    if (typeof plan === "string") throw new MedicalInsuranceInputError(plan);
+
+    fail(
+      (
+        await supabase
+          .from("medical_insurance_members")
+          .update({ ...stamp, hr_id: plan.hrId, member_type: plan.memberType, principal_member_id: plan.principalMemberId })
+          .eq("id", memberId)
+      ).error,
+    );
+    if (plan.dependantIds.length > 0) {
+      fail(
+        (
+          await supabase
+            .from("medical_insurance_members")
+            .update({ ...stamp, hr_id: plan.hrId, principal_member_id: plan.principalMemberId })
+            .in("id", plan.dependantIds)
+        ).error,
+      );
+    }
+    const movedWith = facts.filter((row) => plan.dependantIds.includes(row.id)).map((row) => row.name);
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: memberId,
+      entityType: "medical_insurance_member",
+      newValues: { hr_id: plan.hrId, member_type: plan.memberType, moved_with: movedWith, principal_member_id: plan.principalMemberId },
+      oldValues: { hr_id: member.hr_id, member_type: member.member_type, principal_member_id: member.principal_member_id },
+      summary: `Put ${member.full_name} under ${principal?.name ?? "an employee"} as their ${plan.memberType}${movedWith.length > 0 ? `, with ${movedWith.join(", ")}` : ""}`,
     });
     return;
   }

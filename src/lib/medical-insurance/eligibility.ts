@@ -558,3 +558,33 @@ export function buildMedicalInsuranceMovements(members: readonly MemberFacts[], 
   }
   return [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
+
+// ── Moving someone under another employee ──────────────────────────────────────────────────────
+
+/** The register facts a family move reads. */
+export type FamilyMoveRow = Pick<MemberFacts, "coverageEnd" | "hrId" | "id" | "memberType" | "name" | "principalMemberId">;
+
+export type FamilyMovePlan = {
+  memberType: "child" | "spouse";
+  principalMemberId: string;
+  /** The family row carries its employee's HR id, as one added under them does. */
+  hrId: string | null;
+  /** Anyone who sat under the person being moved goes with them, under the same employee. */
+  dependantIds: string[];
+};
+
+/**
+ * Put someone on the register under an employee as their spouse or child (owner, 2026-11-17: "add
+ * family for a certain employee example saeed and his family are family to dr anwar"). It is for a
+ * person with no employee record of their own, or a family row going to another employee. An
+ * employee with their own record keeps their own certificate. Returns the plan, or why it cannot be.
+ */
+export function planFamilyMove(member: FamilyMoveRow, principal: FamilyMoveRow | undefined, relation: unknown, members: readonly FamilyMoveRow[]): FamilyMovePlan | string {
+  if (relation !== "spouse" && relation !== "child") return "Choose whether they are a spouse or a child.";
+  if (member.memberType === "employee" && member.hrId) return `${member.name} has their own employee record, so they stay on their own certificate.`;
+  if (!principal || principal.memberType !== "employee" || principal.coverageEnd) return "Choose an employee who is on cover.";
+  if (principal.id === member.id) return `Choose an employee other than ${member.name}.`;
+  if (member.principalMemberId === principal.id && member.memberType === relation) return `${member.name} is already under ${principal.name} as their ${relation}.`;
+  const dependantIds = member.memberType === "employee" ? members.filter((row) => row.principalMemberId === member.id).map((row) => row.id) : [];
+  return { dependantIds, hrId: principal.hrId, memberType: relation, principalMemberId: principal.id };
+}
