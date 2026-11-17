@@ -17,7 +17,7 @@ import {
  *
  *  · the door is ONE HR id, A-3, matched in any case — her `Manager` role is shared with the R&D
  *    Manager (AB), who must be refused, and so must the Super Admin and a plain employee;
- *  · every one of the 30 pages has its scan, and the scans sit in `assets/`, never in `public/`,
+ *  · every one of the 32 pages has its scan, and the scans sit in `assets/`, never in `public/`,
  *    because each carries real signatures — and next.config.ts traces them into the build;
  *  · his own example works: "Nahed Hatab" brings up serial 01/2026 (and she also signed 03/2026);
  *  · the crossed-out row on serial 01/2026 is not offered as an attendee;
@@ -36,7 +36,7 @@ export function runPvTrainingEvidenceTests() {
 
   // ── Every page has its scan, and the scans are private ───────────────────────────────────────
   const pages = PV_TRAINING_SHEETS.map((sheet) => sheet.page);
-  assert.deepEqual(pages, Array.from({ length: 30 }, (_, index) => index + 1), "one entry per scanned page, 1 to 30");
+  assert.deepEqual(pages, Array.from({ length: 32 }, (_, index) => index + 1), "one entry per scanned page, 1 to 32");
   const onDisk = readdirSync("assets/pv-training-sheets").filter((name) => name.endsWith(".jpg")).sort();
   assert.deepEqual(onDisk, pages.map(pvTrainingSheetFileName).sort(), "every page has exactly one scan, and no stray file");
   assert.equal(existsSync("public/pv-training-sheets"), false, "the signed scans must never be served from public/");
@@ -52,6 +52,11 @@ export function runPvTrainingEvidenceTests() {
   assert.equal(nahed.name, "Nahed Hatab", "the name as the first sheet prints it");
   assert.deepEqual(nahed.appearances.map(({ sheet }) => sheet.serial), ["01/2026", "03/2026"]);
   assert.equal(findPvTrainingPerson("a-10")?.key, "A-10", "the key matches in any case");
+  // Serial 11/2026 (11 Nov 2026) spans pages 31–32; Ahmed Helal, re-hired under a new HR id, stays one person.
+  const zahraa = findPvTrainingPerson("PD-0031");
+  assert.deepEqual(zahraa?.appearances.map(({ sheet }) => [sheet.serial, sheet.page]), [["11/2026", 32]]);
+  assert.deepEqual(findPvTrainingPerson("B-3")?.appearances.map(({ sheet }) => sheet.serial), ["01/2026", "11/2026"]);
+  assert.equal(PV_TRAINING_SHEETS.filter((sheet) => sheet.serial === "11/2026").flatMap((sheet) => sheet.attendees).length, 19);
   assert.equal(findPvTrainingPerson("nobody"), null);
   assert.equal(findPvTrainingPerson(""), null);
 
