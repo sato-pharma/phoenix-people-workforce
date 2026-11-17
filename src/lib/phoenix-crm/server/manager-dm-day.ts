@@ -1,4 +1,4 @@
-import { isManagerPlanSent, managerAdminActivityLabel, managerPlanStatusLabel, type ManagerHalf, type ManagerPlanStatus } from "@/lib/phoenix-crm/manager-plan-rules";
+import { isManagerPlanSent, joinPeopleNames, managerAdminActivityLabel, managerPlanStatusLabel, managerSeniorPeople, type ManagerHalf, type ManagerPlanStatus } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { dedupeIds } from "@/lib/phoenix-crm/server/db";
 import {
@@ -124,14 +124,16 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
   }
   if (slot.kind === "with_senior") {
     const senior = slot.seniorVisit;
-    const who = senior?.seniorHrId ? nameOf(names, senior.seniorHrId) : null;
+    // Everyone he goes with (owner, 2026-11-17: one or more); one person keeps his title beside him.
+    const people = managerSeniorPeople(senior);
+    const who = people.length > 1 ? joinPeopleNames(people.map((person) => (person.title ? `${nameOf(names, person.hrId)} · ${person.title}` : nameOf(names, person.hrId)))) : senior?.seniorHrId ? nameOf(names, senior.seniorHrId) : null;
     return {
       half: slot.half,
       kindLabel: senior?.role === "product_manager" ? "Double visit with a product manager" : "Double visit with a manager",
       admin: false,
       repName: null,
       areaName: joinedAreas(senior?.areas) ?? slot.areaName,
-      detail: who ? (senior?.title ? `${who} · ${senior.title}` : who) : null,
+      detail: who ? (people.length <= 1 && senior?.title ? `${who} · ${senior.title}` : who) : null,
       customers: planned,
     };
   }
@@ -193,7 +195,7 @@ export async function loadDistrictManagerWeeks(input: {
   const slots = plans.length > 0 ? await loadManagerSlotRows(plans.map((plan) => plan.planId)) : [];
   const [customers, names] = await Promise.all([
     slots.length > 0 ? loadManagerSlotCustomers(slots.map((slot) => slot.slotId)) : Promise.resolve([] as ManagerSlotCustomerRow[]),
-    loadPeopleNames([...seats.map((seat) => seat.hrId), ...slots.map((slot) => slot.repHrId), ...slots.map((slot) => slot.seniorVisit?.seniorHrId)]),
+    loadPeopleNames([...seats.map((seat) => seat.hrId), ...slots.map((slot) => slot.repHrId), ...slots.flatMap((slot) => managerSeniorPeople(slot.seniorVisit).map((person) => person.hrId))]),
   ]);
   const customersBySlot = new Map<string, ManagerSlotCustomerRow[]>();
   for (const row of customers) {

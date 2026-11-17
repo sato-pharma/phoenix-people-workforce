@@ -431,7 +431,8 @@ export function managerWeekGlance(view: ManagerGlanceView): ManagerGlance {
       }
       if (slot.kind === "with_rep" && slot.repName) addPerson(reps, slot.repName, halfName);
       if (slot.kind === "with_dm" && slot.dmName) addPerson(managers, slot.dmName, halfName);
-      if (slot.kind === "with_senior" && slot.seniorName) addPerson(managers, slot.seniorName, halfName);
+      // Each person he goes with apart (owner, 2026-11-17: one or more), never "A and B" as one name.
+      if (slot.kind === "with_senior") for (const name of slot.seniorNames && slot.seniorNames.length > 0 ? slot.seniorNames : slot.seniorName ? [slot.seniorName] : []) addPerson(managers, name, halfName);
     }
   }
   const byMost = <T extends { halves: number; name: string }>(left: T, right: T) => right.halves - left.halves || left.name.localeCompare(right.name);

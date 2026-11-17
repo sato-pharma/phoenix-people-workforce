@@ -36,7 +36,7 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
-import { holdsPlannedDoctors, MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
+import { holdsPlannedDoctors, joinPeopleNames, MANAGER_CUSTOMER_ADDRESS_MAX, managerSeniorPeople, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerVisitDetailEditable, parseManagerVisitDetail } from "@/lib/phoenix-crm/manager-visit-detail-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
@@ -226,6 +226,11 @@ export type ManagerTodayCustomer = {
    * 2026-10-27: "it should count with her manager") — the visit he logs here is a visit with that manager. Null otherwise.
    */
   withSenior: string | null;
+  /**
+   * Everyone that half-day goes with, the first person first (owner, 2026-11-17: Mohamed Eleiwa with Hany Saad and Ali
+   * Mohamed) — the form starts with them ticked under "Who went with you". Empty off such a half-day.
+   */
+  withSeniorHrIds: string[];
   /** Once logged: everyone who went with him, by name and title (owner, 2026-10-27). Empty when he went alone. */
   companions: Array<{ name: string; title: string | null }>;
 };
@@ -321,11 +326,11 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
   const plan = planRows.length > 0 ? managerPlanRowOf(planRows[0]) : null;
   const slots = plan ? (await loadManagerSlotRows([plan.planId])).filter((slot) => slot.date === day && holdsPlannedDoctors(slot.kind)) : [];
   const seniorOfSlot = new Map(
-    slots.flatMap((slot) => (slot.kind === "with_senior" && slot.seniorVisit ? [[slot.slotId, slot.seniorVisit.seniorHrId] as const] : [])),
+    slots.flatMap((slot) => (slot.kind === "with_senior" && slot.seniorVisit ? [[slot.slotId, managerSeniorPeople(slot.seniorVisit).map((person) => person.hrId)] as const] : [])),
   );
   const [slotCustomers, seniorNames] = await Promise.all([
     loadManagerSlotCustomers(slots.map((slot) => slot.slotId)),
-    loadPeopleNames([...seniorOfSlot.values()]),
+    loadPeopleNames([...seniorOfSlot.values()].flat()),
   ]);
   const halfOfSlot = new Map(slots.map((slot) => [slot.slotId, slot.half]));
   const visitOf = new Map(visits.map((visit) => [visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`, visit]));
@@ -368,7 +373,8 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
         visitId: visit?.id ?? null,
         detailComment: visit?.detailComment ?? null,
         detailEditedAt: visit?.detailEditedAt ?? null,
-        withSenior: seniorOfSlot.has(row.slotId) ? nameOf(seniorNames, seniorOfSlot.get(row.slotId), "your manager") : null,
+        withSenior: seniorOfSlot.has(row.slotId) ? joinPeopleNames((seniorOfSlot.get(row.slotId) ?? []).map((hrId) => nameOf(seniorNames, hrId, "your manager"))) || "your manager" : null,
+        withSeniorHrIds: seniorOfSlot.get(row.slotId) ?? [],
         companions: companionsOf(visit),
       };
     })
@@ -401,6 +407,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
       detailComment: visit.detailComment,
       detailEditedAt: visit.detailEditedAt,
       withSenior: null,
+      withSeniorHrIds: [],
       companions: companionsOf(visit),
     };
   });

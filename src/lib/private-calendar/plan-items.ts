@@ -24,7 +24,7 @@
 // Read-only. Never mutates plan, attendance or deduction data.
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
-import { loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { joinPeopleNames, loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readAllPrivateCalendarRows, type PrivateCalendarItem, type PrivateCalendarPlanActivity } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -301,12 +301,13 @@ export function mapManagerHalfDayToPrivateCalendarItem(
 async function loadManagerPlanPrivateCalendarItems(employeeHrIds: string[], start: string, end: string): Promise<PrivateCalendarItem[]> {
   const halfDays = await loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: employeeHrIds, statuses: ["first_approved", "approved"] });
   if (halfDays.length === 0) return [];
-  const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.decidedByHrId, halfDay.seniorHrId]));
+  const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.decidedByHrId, halfDay.seniorHrId, ...halfDay.seniorHrIds]));
   return halfDays.map((halfDay) =>
     mapManagerHalfDayToPrivateCalendarItem(halfDay, {
       rep: halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null,
       approver: halfDay.decidedByHrId ? nameOf(names, halfDay.decidedByHrId, "") || null : null,
-      senior: halfDay.seniorHrId ? nameOf(names, halfDay.seniorHrId, "") || null : null,
+      // Everyone he goes with (owner, 2026-11-17: one or more).
+      senior: joinPeopleNames((halfDay.seniorHrIds.length > 0 ? halfDay.seniorHrIds : halfDay.seniorHrId ? [halfDay.seniorHrId] : []).map((hrId) => nameOf(names, hrId, ""))) || null,
     }),
   );
 }

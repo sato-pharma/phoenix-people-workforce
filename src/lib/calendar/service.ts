@@ -1,7 +1,7 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { loadManagerPlanHalfDays, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { joinPeopleNames, loadManagerPlanHalfDays, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeVacationType, vacationTypeLabel } from "@/lib/vacation/calculations";
@@ -274,15 +274,18 @@ async function loadManagerPlanItems(access: AccessContext, start: string, end: s
     const [own, picked] = await Promise.all([
       loadManagerPlanHalfDays({ from: start, to: end, managerHrIds: [String(access.hrId)], sentOnly: false }),
       loadManagerPlanHalfDays({ from: start, to: end, plannerKinds: ["dm"], customerCounts: false }).then((halfDays) =>
-        halfDays.filter((halfDay) => halfDay.seniorHrId !== null && normalizeHrId(halfDay.seniorHrId) === viewerHrId),
+        halfDays.filter((halfDay) => [halfDay.seniorHrId, ...halfDay.seniorHrIds].some((hrId) => hrId !== null && normalizeHrId(hrId) === viewerHrId)),
       ),
     ]);
     const halfDays = [...own, ...picked];
     if (halfDays.length === 0) return [];
-    const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.seniorHrId, halfDay.managerHrId]));
+    const names = await loadPeopleNames(halfDays.flatMap((halfDay) => [halfDay.repHrId, halfDay.seniorHrId, ...halfDay.seniorHrIds, halfDay.managerHrId]));
+    // Everyone he goes with, by name (owner, 2026-11-17: one or more).
+    const seniorsOf = (halfDay: (typeof halfDays)[number]) =>
+      joinPeopleNames((halfDay.seniorHrIds.length > 0 ? halfDay.seniorHrIds : halfDay.seniorHrId ? [halfDay.seniorHrId] : []).map((hrId) => nameOf(names, hrId, ""))) || null;
     const titleOf = (halfDay: (typeof halfDays)[number]) =>
       normalizeHrId(halfDay.managerHrId) === viewerHrId
-        ? managerHalfDayText(halfDay, halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null, halfDay.seniorHrId ? nameOf(names, halfDay.seniorHrId, "") || null : null)
+        ? managerHalfDayText(halfDay, halfDay.repHrId ? nameOf(names, halfDay.repHrId, "a rep") : null, seniorsOf(halfDay))
         : `With ${nameOf(names, halfDay.managerHrId, "a district manager")} (district manager) · ${halfDay.areaName ?? "the district's areas"}`;
     return halfDays.map((halfDay) => ({
       id: `crm-plan-${halfDay.slotId}`,

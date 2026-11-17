@@ -9,14 +9,14 @@ import {
 } from "@/lib/phoenix-crm/manager-visit-detail";
 import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerVisitEnteredForHim } from "@/lib/phoenix-crm/missed-records";
-import { countsAsPlannersVisitWithRep, parseManagerSeniorVisit, singleVisitHalfOfHour, type ManagerSeniorVisit } from "@/lib/phoenix-crm/manager-plan-rules";
+import { countsAsPlannersVisitWithRep, managerSeniorPeople, parseManagerSeniorVisit, singleVisitHalfOfHour, type ManagerSeniorVisit } from "@/lib/phoenix-crm/manager-plan-rules";
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { visitIsArchiveHistory } from "@/lib/phoenix-crm/unplanned-rules";
 import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
-import { loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
+import { loadManagerVisitCompanionIds, loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -238,13 +238,18 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
   if (rows.length === 0) return [];
 
   const customerIds = rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => Boolean(id));
-  const [customers, places, ownList, withSenior] = await Promise.all([
+  const [customers, places, ownList, withSenior, companionsByVisit] = await Promise.all([
     loadCustomers(customerIds),
     loadPlaces([], customerIds),
     loadOwnListCustomers(rows.map((row) => textOrNull(row.manager_customer_id)).filter((id): id is string => Boolean(id))),
     loadWithSeniorSlots(rows.map((row) => textOrNull(row.plan_slot_id)).filter((id): id is string => Boolean(id))),
+    // Who he said went with him on the visit itself (owner, 2026-10-27; 2026-11-17: both of his managers at once).
+    loadManagerVisitCompanionIds(rows.map((row) => String(row.id))),
   ]);
-  const seniorNames = await loadPeopleNames([...withSenior.values()].map((senior) => senior.seniorHrId));
+  const seniorNames = await loadPeopleNames([
+    ...[...withSenior.values()].flatMap((senior) => managerSeniorPeople(senior).map((person) => person.hrId)),
+    ...[...companionsByVisit.values()].flat(),
+  ]);
 
   const out: ManagerDayVisit[] = [];
   for (const row of rows) {
@@ -270,7 +275,23 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
     const customerListType = customer?.listType ? parseListType(customer.listType) : null;
     // Logged on a With my manager half-day: a visit with that manager, who is named beside him. Anything else is alone.
     const senior = withSenior.get(textOrNull(row.plan_slot_id) ?? "") ?? null;
-    const seniorRole = senior ? (senior.title ?? (senior.role === "product_manager" ? "Product manager" : "Manager")) : null;
+    // Everyone on it: the people the half-day planned (one or more — owner, 2026-11-17), then anyone else he ticked
+    // under "Who went with you", each once and each under the title the planner gave them.
+    const planned = managerSeniorPeople(senior);
+    const roleOf = (person: { role: "manager" | "product_manager"; title: string | null }) => person.title ?? (person.role === "product_manager" ? "Product manager" : "Manager");
+    const withPeople: ManagerDayVisit["withPeople"] = [];
+    const seenPeople = new Set<string>();
+    for (const person of planned) {
+      if (seenPeople.has(person.hrId)) continue;
+      seenPeople.add(person.hrId);
+      withPeople.push({ hrId: person.hrId, name: nameOf(seniorNames, person.hrId, "Manager"), role: roleOf(person) });
+    }
+    for (const hrId of companionsByVisit.get(String(row.id)) ?? []) {
+      const key = personKey(hrId);
+      if (!key || seenPeople.has(key)) continue;
+      seenPeople.add(key);
+      withPeople.push({ hrId: key, name: nameOf(seniorNames, key, "A colleague"), role: "Manager" });
+    }
     out.push({
       address,
       areaName,
@@ -287,7 +308,9 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       id: managerOwnVisitScreenId(String(row.id)),
       inVacantTerritory: row.in_vacant_territory === true,
       kind: senior ? "with_senior" : "single",
-      kindLabel: senior ? managerOwnVisitWithSeniorLabel(senior.role) : MANAGER_VISIT_KIND_LABELS.single,
+      // Never "Single visit, alone" beside the people who went with him; the kind stays `single`, so it still answers a
+      // single-visit half and counts as his own visit, as before.
+      kindLabel: senior ? managerOwnVisitWithSeniorLabel(senior.role) : withPeople.length > 0 ? managerOwnVisitWithSeniorLabel("manager") : MANAGER_VISIT_KIND_LABELS.single,
       listType: customerListType,
       loggedAt,
       loggedHalf,
@@ -300,7 +323,7 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       source: "own",
       speciality: customer?.speciality ?? own?.speciality ?? null,
       territoryName: customer?.seatId && input.territoryNameOf ? input.territoryNameOf(customer.seatId) : null,
-      withPeople: senior && seniorRole ? [{ hrId: senior.seniorHrId, name: nameOf(seniorNames, senior.seniorHrId, "Manager"), role: seniorRole }] : [],
+      withPeople,
     });
   }
   return sortManagerDayVisits(out);

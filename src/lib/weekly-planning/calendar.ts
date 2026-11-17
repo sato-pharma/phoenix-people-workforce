@@ -60,6 +60,8 @@ export type PlanningCalendarPlanItem = {
    * null on every other plan item.
    */
   withHrId?: string | null;
+  /** Everyone the district manager picked for that half-day (owner, 2026-11-17: one or more); `withHrId` is the first. */
+  withHrIds?: string[];
   // Rendered UI label ("Employee - Region - Area"), shown as agenda-list text
   // and a hover tooltip in planning-calendar.tsx — built from
   // employeeDisplayName (nickname-aware), not the raw employeeName.
@@ -195,7 +197,8 @@ function sameHalfDayPlan(left: PlanningCalendarPlanItem, right: PlanningCalendar
     same(left.area, right.area) &&
     same(left.lineName, right.lineName) &&
     same(left.medicalRepHrId, right.medicalRepHrId) &&
-    same(left.withHrId, right.withHrId)
+    same(left.withHrId, right.withHrId) &&
+    same((left.withHrIds ?? []).join("|"), (right.withHrIds ?? []).join("|"))
   );
 }
 

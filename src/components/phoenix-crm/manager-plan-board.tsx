@@ -128,14 +128,17 @@ type HalfDraft = {
   areaSeatId: string | null;
   /** With a district manager, or with my manager or product manager: the areas ticked for the half-day. */
   areaSeatIds: string[];
-  /** With my manager or product manager: the person a district manager goes with. */
-  seniorHrId: string | null;
+  /**
+   * With my manager or product manager: everyone a district manager goes with, one or more, in the order the list
+   * offers them (owner, 2026-11-17: Mohamed Eleiwa with Hany Saad and Ali Mohamed together).
+   */
+  seniorHrIds: string[];
   note: string;
   customers: CustomerRef[];
 };
 
 function emptyDraft(): HalfDraft {
-  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, areaSeatIds: [], seniorHrId: null, note: "", customers: [] };
+  return { kind: null, scope: null, repSeatId: null, activityType: null, areaSeatId: null, areaSeatIds: [], seniorHrIds: [], note: "", customers: [] };
 }
 
 function halfKey(date: string, half: ManagerHalf): string {
@@ -167,7 +170,7 @@ function draftFromSlot(slot: ManagerBoardSlot | undefined): HalfDraft {
     activityType: slot?.activityType ?? null,
     areaSeatId: slot?.areaSeatId ?? null,
     areaSeatIds: slot?.areaSeatIds ?? [],
-    seniorHrId: slot?.seniorHrId ?? null,
+    seniorHrIds: slot?.seniorHrIds && slot.seniorHrIds.length > 0 ? slot.seniorHrIds : slot?.seniorHrId ? [slot.seniorHrId] : [],
     note: slot?.note ?? "",
     customers: (slot?.customers ?? []).map((customer) =>
       customer.customerId
@@ -203,7 +206,7 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion: bool
   }
   if (draft.kind === "with_senior") {
     if (choosesDistrict && !draft.scope?.startsWith("dm:")) return "choose the district manager first";
-    if (!draft.seniorHrId) return "choose who you go with";
+    if (draft.seniorHrIds.length === 0) return "choose who you go with";
     if (draft.areaSeatIds.length === 0) return "tick at least one area";
   }
   if (draft.kind === "admin" && !draft.activityType) return "choose the activity";
@@ -235,7 +238,8 @@ function draftPayload(date: string, half: ManagerHalf, draft: HalfDraft, scopes:
     activityType: draft.kind === "admin" ? draft.activityType : null,
     areaSeatId: draft.kind === "single_visit" || draft.kind === "with_area" ? draft.areaSeatId : null,
     areaSeatIds: draft.kind === "with_dm" || draft.kind === "with_senior" ? draft.areaSeatIds : [],
-    seniorHrId: draft.kind === "with_senior" ? draft.seniorHrId : null,
+    seniorHrId: draft.kind === "with_senior" ? (draft.seniorHrIds[0] ?? null) : null,
+    seniorHrIds: draft.kind === "with_senior" ? draft.seniorHrIds : [],
     ...scopeFields(namesADistrict(draft.kind) ? draft.scope : null, scopes),
     note: draft.note.trim() || null,
     customers:
@@ -1709,7 +1713,12 @@ function WithSeniorPart({
       />
     );
   }
-  const options: Array<CrmChoiceOption<string>> = view.seniors.map((senior) => ({ value: senior.hrId, label: senior.name, note: senior.title, disabled: !canEdit }));
+  // Everyone he goes with, kept in the list's own order (nearest manager first) whatever order he ticks them in.
+  const toggleSenior = (hrId: string, on: boolean) => {
+    const next = new Set(draft.seniorHrIds.filter((entry) => entry !== hrId));
+    if (on) next.add(hrId);
+    onDraft({ ...draft, seniorHrIds: view.seniors.map((senior) => senior.hrId).filter((entry) => next.has(entry)) });
+  };
   const ticked = new Set(draft.areaSeatIds);
   const dropArea = (seatId: string | null) => {
     setDropAsk(null);
@@ -1753,7 +1762,23 @@ function WithSeniorPart({
     .map((entry) => ({ value: entry.seatId, label: entry.areaName, note: entry.vacant ? VACANT_AREA_NOTE : (entry.repName ?? "No rep") }));
   return (
     <div className="grid min-w-0 gap-4">
-      <CrmChoice columns={2} label="Who you go with" onChange={(seniorHrId) => onDraft({ ...draft, seniorHrId })} options={options} value={draft.seniorHrId} />
+      {/* 🔴 One OR MORE people (owner, 2026-11-17): a district manager may go with his regional AND his national manager. */}
+      <div className="grid min-w-0 gap-2 border border-slate-200 p-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-black text-slate-900">Who you go with</p>
+          <p className="text-xs font-semibold text-slate-500">{draft.seniorHrIds.length > 0 ? `${countText(draft.seniorHrIds.length)} chosen` : "Tick one or more"}</p>
+        </div>
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          {view.seniors.map((senior) => (
+            <CrmCheck checked={draft.seniorHrIds.includes(senior.hrId)} disabled={!canEdit} key={senior.hrId} onChange={(on) => toggleSenior(senior.hrId, on)}>
+              <span className="block break-words" dir="auto">
+                {senior.name}
+              </span>
+              <span className="block break-words text-xs font-semibold text-slate-500">{senior.title}</span>
+            </CrmCheck>
+          ))}
+        </div>
+      </div>
       {view.areas.length === 0 ? (
         <CrmEmpty message={ownDistrict ? "Your district has no area right now." : "This district manager has no area right now."} title="No areas" />
       ) : (
