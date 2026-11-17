@@ -4,7 +4,9 @@ import { readFileSync } from "node:fs";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 import { parseVisitDraft } from "../src/lib/phoenix-crm/entry-rules.ts";
+import { buildOrgIndex, resolveVisitParticipants, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import {
+  CHOOSE_MANAGER_ABOVE,
   CHOOSE_ONE_FOR_DOUBLE,
   CHOOSE_TWO_FOR_CHAIN,
   COMPANY_NOT_OFFERED,
@@ -13,6 +15,7 @@ import {
   companyFromStorage,
   companyHint,
   companyToStorage,
+  managerChainToStorage,
   togglePick,
   type CompanyOffer,
 } from "../src/lib/phoenix-crm/visit-company.ts";
@@ -322,6 +325,58 @@ export function runPhoenixCrmVisitCompanyTests(): void {
     assert.match(route, /version = u\.version \+ 1/, "an open card's decision sees the move");
     assert.match(migration, /revoke execute on function public\.phoenix_crm_unplanned_route_past_a_reviewer_on_the_visit\(uuid\) from public, anon, authenticated;/);
     assert.match(migration, /revoke execute on function public\.phoenix_crm_admin_edit_visit\(jsonb\) from public, anon, authenticated;/);
+  }
+
+  {
+    // 🔴 A DISTRICT MANAGER'S VISIT WITH HIS REP RECORDS EVERY MANAGER ABOVE HIM HE TICKS (owner,
+    // 2026-11-17: Mohamed Eleiwa's visit with his regional AND his national manager saved only one of them,
+    // because the form offered one box). The form's own arithmetic, then the server's check of its output.
+    const ABOVE = [
+      { hrId: "A-12", position: 3 },
+      { hrId: "R-3", position: 2 },
+    ];
+    const both = managerChainToStorage({ managerHrId: "B-12", above: ABOVE, picked: ["A-12", "R-3"] });
+    assert.equal(both.ok, true, both.ok ? "" : both.error);
+    if (both.ok) {
+      assert.deepEqual(both.value, {
+        kind: "chain",
+        managerHrId: "B-12",
+        seniorHrId: "R-3",
+        productManagerHrId: null,
+        companions: [
+          { hrId: "B-12", side: "manager" },
+          { hrId: "R-3", side: "manager" },
+          { hrId: "A-12", side: "manager" },
+        ],
+      });
+    }
+    const one = managerChainToStorage({ managerHrId: "B-12", above: ABOVE, picked: ["A-12"] });
+    assert.ok(one.ok && one.value.seniorHrId === "A-12" && one.value.companions.length === 2, "one manager above still files as the chain it always was");
+    assert.deepEqual(managerChainToStorage({ managerHrId: "B-12", above: ABOVE, picked: [] }), { ok: false, error: CHOOSE_MANAGER_ABOVE });
+    assert.deepEqual(managerChainToStorage({ managerHrId: "B-12", above: ABOVE, picked: ["R-3", "X-9"] }), { ok: false, error: COMPANY_NOT_OFFERED });
+
+    // The server takes all three: the senior place, and both managers above in who went.
+    const CEO: OrgSeat = { seatId: "S-CEO", parentSeatId: null, tier: "CEO", path: ["S-CEO"], occupantHrId: "C-1", lineCode: null, lineName: null, areaName: null, regionName: null, seatLabel: "CEO" };
+    const NSM: OrgSeat = { ...CEO, seatId: "S-NSM", parentSeatId: "S-CEO", tier: "NSM", path: ["S-CEO", "S-NSM"], occupantHrId: "A-12", lineCode: "pedia", lineName: "Pedia", seatLabel: "NSM" };
+    const RSM: OrgSeat = { ...NSM, seatId: "S-RSM", parentSeatId: "S-NSM", tier: "RSM", path: [...NSM.path, "S-RSM"], occupantHrId: "R-3", seatLabel: "RSM" };
+    const DM: OrgSeat = { ...RSM, seatId: "S-DM", parentSeatId: "S-RSM", tier: "DM", path: [...RSM.path, "S-DM"], occupantHrId: "B-12", seatLabel: "DM" };
+    const REP: OrgSeat = { ...DM, seatId: "S-REP", parentSeatId: "S-DM", tier: "REP", path: [...DM.path, "S-REP"], occupantHrId: "B-7", areaName: "Behira 2", seatLabel: "Rep" };
+    if (both.ok) {
+      const saved = resolveVisitParticipants({ index: buildOrgIndex([CEO, NSM, RSM, DM, REP]), territorySeatId: "S-REP", actorHrId: "B-12", enteredAs: "manager", ...both.value });
+      assert.equal(saved.ok, true, saved.ok ? "" : saved.error);
+      if (saved.ok) {
+        assert.equal(saved.value.repHrId, "B-7");
+        assert.deepEqual(saved.value.companions.map((entry) => entry.hrId), ["B-12", "R-3", "A-12"], "everyone he ticked is recorded");
+      }
+    }
+
+    // The form ticks, never one radio, and sends what the helper filed.
+    const form = stripComments(read("src/components/phoenix-crm/visit-log-form.tsx"));
+    assert.ok(form.includes("const [seniorHrIds, setSeniorHrIds] = useState<string[]>([])"), "the manager's picks are a list");
+    assert.ok(form.includes("managerChainToStorage({ managerHrId: who.manager.hrId, above: who.seniorOptions"), "a manager's chain is filed by the shared helper");
+    assert.ok(form.includes("slots = managerChain.value;"), "every manager ticked travels to the save");
+    assert.ok(form.includes("<CrmCheck"), "the managers above are tick boxes");
+    assert.ok(!form.includes("setSeniorHrId("), "the one-box pick is gone");
   }
 
   console.log("phoenix-crm visit company and admin edit: OK");
