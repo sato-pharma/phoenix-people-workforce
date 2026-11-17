@@ -29,6 +29,7 @@ import {
   type MedicalInsuranceAction,
   type MemberFacts,
 } from "../src/lib/medical-insurance/eligibility.ts";
+import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
   buildLibanoMemberFileWorkbook,
   libanoDay,
@@ -278,6 +279,25 @@ function testALateJoinerIsCoveredFromTheDayTheyJoin() {
   assert.equal(actionsFor([employee({ hireDate: "2020-01-01" })], [member({ coverageStart: "2026-11-15" })]).length, 0, "someone working before the policy started is covered from its first day");
 }
 
+/** Each employee on the lists carries their own HR number, hire day, line and area; family carry none of theirs. */
+function testEachEmployeeShowsTheirHrNumberHireDayLineAndArea() {
+  const joiner = employee({ areaName: "Fayoum", hireDate: "2026-11-15", hrId: "PD-0042", lineName: "Pedia" });
+  const [add] = actionsFor([joiner], []);
+  assert.equal(add.hireDate, "2026-11-15", "the add row carries the hire day");
+  assert.equal(add.areaName, "Fayoum", "the add row carries the area");
+  assert.equal(add.lineName, "Pedia");
+  assert.deepEqual(employeeRecordWords(add), ["PD-0042 · joined 15 Nov 2026", "Pedia · Fayoum"]);
+
+  const spouse = member({ hrId: "PD-0042", id: "m-2", memberType: "spouse", name: "Test Spouse", principalMemberId: "m-1" });
+  const leaving = actionsFor([{ ...joiner, active: false, employmentStatus: "resigned", exitDay: "2026-11-16" }], [member({ coverageEnd: "2026-11-16", hrId: "PD-0042" }), spouse]);
+  const family = leaving.find((action) => action.memberId === "m-2");
+  assert.ok(family);
+  assert.equal(family.hireDate, undefined, "a spouse never shows the employee's hire day as their own");
+
+  assert.deepEqual(employeeRecordWords({ hrId: "PD-0042" }), ["PD-0042"], "a missing piece is left out, never a blank");
+  assert.deepEqual(employeeRecordWords({ hrId: null }), [], "nothing on record is nothing shown");
+}
+
 function testTheContractsAgeLimitsAreReviewed() {
   const review = (members: MemberFacts[]) =>
     buildMedicalInsuranceActions({ ageLimits: CARD.ageLimits, asOf: "2026-11-17", employees: [employee()], exceptions: [], members, policy: POLICY }).actions.filter((action) => action.key.startsWith("age:"));
@@ -462,6 +482,7 @@ export async function runMedicalInsuranceTests() {
   testSomeoneIsPutUnderAnEmployeeWithTheirFamily();
   testSomeoneWhoDeclinesIsExcluded();
   testALateJoinerIsCoveredFromTheDayTheyJoin();
+  testEachEmployeeShowsTheirHrNumberHireDayLineAndArea();
   testTheContractsAgeLimitsAreReviewed();
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
