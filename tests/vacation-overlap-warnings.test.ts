@@ -99,7 +99,9 @@ export function runVacationOverlapWarningsTests() {
     const b = baseRequest({ id: "b", employeeHrId: "B-1", startDate: "2026-08-01", endDate: "2026-08-03" });
     const warnings = buildVacationOverlapWarnings({ holidays: [], rows: [a, b] });
     assert.equal(warnings.has("a"), false);
-    assert.equal(warnings.has("b"), false);
+    // No overlap — but b is later and a is still waiting in the same annual pool, so b alone is told
+    // to wait for a (approve the earlier request first, owner 2026-11-17).
+    assert.deepEqual(codesFor(warnings, "b"), ["earlier_waiting_same_pool"]);
   }
 
   // Different employees, same manager, overlapping dates -> team_overlap on both.
