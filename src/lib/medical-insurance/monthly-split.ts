@@ -4,6 +4,9 @@
 //
 // THE RULE (owner, 2026-11-17):
 //   * The company carries 70% of the EMPLOYEE'S OWN cover, and the employee the other 30%.
+//   * The employee's share of their own cover is never less than EGP 120 a month ("if the share of the rep
+//     is less than 120 … make it at least 120"); the company carries the rest of that person's cover, so the
+//     two shares still add back to the month.
 //   * A spouse or child the employee puts on the policy is the employee's in full.
 //   * EGP 85 a month of life insurance is added for EVERY PERSON COVERED (the employee and each family
 //     member), and it is on the employee's share.
@@ -15,8 +18,8 @@
 //
 // 🔴 ONLY THE SUPER ADMIN SEES THIS. It is built into `MedicalInsuranceMoneyView`, which is read only after
 // medical_insurance_invoices:read has passed (view.ts). It decides nothing and moves nothing: no payroll, no
-// deduction. Every amount is worked in whole piastres, and the employee's 30% is the month less the company's
-// 70%, so the two always add back to the month.
+// deduction. Every amount is worked in whole piastres, and the company's part is the month less the employee's
+// share, so the two always add back to the month.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { annualRate, ageBandWords, type MedicalInsuranceCategory, type MedicalInsuranceMemberType, type MedicalInsuranceRateCard } from "./cost";
@@ -25,6 +28,8 @@ import { annualRate, ageBandWords, type MedicalInsuranceCategory, type MedicalIn
 export const COMPANY_SHARE_BASIS_POINTS = 7_000;
 /** Life insurance a month for every person covered, on the employee's share (owner, 2026-11-17). */
 export const LIFE_INSURANCE_PER_PERSON_MONTHLY = 85;
+/** The least an employee carries of their own cover each month (owner, 2026-11-17). Never more than the month itself. */
+export const EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY = 120;
 
 export const MONTHLY_SPLIT_ASSUMPTIONS: readonly string[] = [
   "A month of cover is the person's annual premium plus the 1.55% tax and supervision, divided by twelve. The EGP 30 card and the EGP 90 issue fee are charged once and are in no month.",
@@ -62,10 +67,12 @@ export type MonthlySplitRow = {
   employee: MonthlySplitPerson | null;
   hrId: string | null;
   family: MonthlySplitPerson[];
-  /** The employee's own month, the company's 70% of it and the employee's 30%. */
+  /** The employee's own month, the company's part of it and the employee's 30% (at least EGP 120). */
   ownMonthly: number;
   companyPays: number;
   employeeOwnShare: number;
+  /** The employee's 30% was under EGP 120, so it was raised to EGP 120. */
+  raisedToMinimum: boolean;
   /** Every family member's month, all on the employee. */
   familyMonthly: number;
   people: number;
@@ -99,10 +106,16 @@ export function monthlyCoverPiastres(card: MedicalInsuranceRateCard, annual: num
   return Math.round((toPiastres(annual) * (10_000 + card.taxBasisPoints)) / 10_000 / 12);
 }
 
-/** The company's 70% and the employee's 30% of a month, in piastres. The two always add back to the month. */
-export function splitOwnCover(monthlyPiastres: number): { company: number; employee: number } {
-  const company = Math.round((monthlyPiastres * COMPANY_SHARE_BASIS_POINTS) / 10_000);
-  return { company, employee: monthlyPiastres - company };
+/**
+ * A month of the employee's own cover, in piastres, split: the employee's 30%, raised to EGP 120 when it is
+ * less (never above the month itself), and the company the rest. The two always add back to the month.
+ */
+export function splitOwnCover(monthlyPiastres: number): { company: number; employee: number; raisedToMinimum: boolean } {
+  if (monthlyPiastres <= 0) return { company: 0, employee: 0, raisedToMinimum: false };
+  const thirty = monthlyPiastres - Math.round((monthlyPiastres * COMPANY_SHARE_BASIS_POINTS) / 10_000);
+  const minimum = Math.min(monthlyPiastres, toPiastres(EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY));
+  const employee = Math.max(thirty, minimum);
+  return { company: monthlyPiastres - employee, employee, raisedToMinimum: employee > thirty };
 }
 
 /**
@@ -149,7 +162,7 @@ export function buildMonthlySplit(input: { asOf: string; members: readonly Month
     const own = head ? person(head) : null;
     const relatives = family.map(person);
     const ownPiastres = own?.piastres ?? 0;
-    const { company, employee } = splitOwnCover(ownPiastres);
+    const { company, employee, raisedToMinimum } = splitOwnCover(ownPiastres);
     const familyPiastres = relatives.reduce((sum, relative) => sum + (relative.piastres ?? 0), 0);
     const people = (head ? 1 : 0) + relatives.length;
     const life = lifePerPerson * people;
@@ -165,6 +178,7 @@ export function buildMonthlySplit(input: { asOf: string; members: readonly Month
       lifeInsurance: toEgp(life),
       ownMonthly: toEgp(ownPiastres),
       people,
+      raisedToMinimum,
       unpriced: [own, ...relatives].filter((entry) => entry && entry.piastres === null).length,
     };
   };

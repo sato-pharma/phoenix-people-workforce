@@ -30,7 +30,7 @@ import {
   type MemberFacts,
 } from "../src/lib/medical-insurance/eligibility.ts";
 import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.ts";
-import { buildMonthlySplit, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
+import { buildMonthlySplit, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
   buildLibanoMemberFileWorkbook,
@@ -457,12 +457,17 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
   };
   const monthOf = (annual: number) => Math.round((Math.round(annual * 100) * (10_000 + CARD.taxBasisPoints)) / 10_000 / 12);
 
-  // The split of a month always adds back to the month, and the company's part is its 70%.
-  for (const piastres of [0, 1, 99, 100_001, 123_457]) {
-    const { company, employee: own } = splitOwnCover(piastres);
+  // The split of a month always adds back to the month: the employee 30%, never under EGP 120 (nor above the month).
+  assert.equal(EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, 120);
+  for (const piastres of [0, 1, 99, 11_999, 30_000, 39_999, 40_000, 100_001, 123_457]) {
+    const { company, employee: own, raisedToMinimum } = splitOwnCover(piastres);
     assert.equal(company + own, piastres, "the two shares add back to the month");
-    assert.equal(company, Math.round(piastres * 0.7));
+    const thirty = piastres - Math.round(piastres * 0.7);
+    assert.equal(own, piastres === 0 ? 0 : Math.max(thirty, Math.min(piastres, 12_000)), `the employee's share of ${piastres} piastres`);
+    assert.equal(raisedToMinimum, own > thirty);
   }
+  assert.deepEqual(splitOwnCover(30_000), { company: 18_000, employee: 12_000, raisedToMinimum: true }, "30% of EGP 300 is EGP 90, raised to EGP 120");
+  assert.deepEqual(splitOwnCover(100_000), { company: 70_000, employee: 30_000, raisedToMinimum: false }, "30% of EGP 1,000 is over the minimum");
   assert.equal(monthlyCoverPiastres(CARD, 12_000), monthOf(12_000), "a month is premium and tax over twelve");
 
   const members: MemberFacts[] = [
@@ -485,9 +490,11 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
   const own = monthOf(rateOf("1990-01-01", "C"));
   const relatives = monthOf(rateOf("1992-03-01", "C")) + monthOf(rateOf("2015-05-01", "C"));
   const company = Math.round((own * 7_000) / 10_000);
+  assert.ok(own - company > 12_000, "the fixture's 30% is over the minimum");
   assert.equal(family.ownMonthly, own / 100);
   assert.equal(family.companyPays, company / 100, "the company carries 70% of the employee's own cover");
   assert.equal(family.employeeOwnShare, (own - company) / 100, "the employee carries the other 30%");
+  assert.equal(family.raisedToMinimum, false);
   assert.equal(family.familyMonthly, relatives / 100, "the family is the employee's in full");
   assert.equal(family.people, 3);
   assert.equal(family.lifeInsurance, 3 * LIFE_INSURANCE_PER_PERSON_MONTHLY, "EGP 85 for every person covered");
@@ -500,6 +507,13 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
 
   const joiner = row("December Joiner");
   assert.equal(joiner?.employee?.startsOn, "2026-12-01", "cover that starts later is counted and shows its day");
+  // Plan C at 28: 30% of the month is under EGP 120, so the employee carries EGP 120 and the company the rest.
+  const joinerMonth = monthOf(rateOf("1998-01-01", "C"));
+  assert.ok(joinerMonth - Math.round((joinerMonth * 7_000) / 10_000) < 12_000, "the fixture's 30% is under the minimum");
+  assert.equal(joiner?.employeeOwnShare, EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, "an employee's share is never under EGP 120");
+  assert.equal(joiner?.companyPays, (joinerMonth - 12_000) / 100, "the company carries the rest");
+  assert.equal(joiner?.raisedToMinimum, true);
+  assert.equal(joiner?.employeePays, (12_000 + 8_500) / 100);
 
   const stray = row("Stray Child");
   assert.ok(stray, "a family member whose employee is not on the register still stands");

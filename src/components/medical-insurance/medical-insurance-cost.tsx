@@ -10,7 +10,7 @@ import { formatLeftDay } from "@/lib/employees/left-flag";
 import { INVOICE_KIND_WORDS, MEDICAL_INSURANCE_INVOICE_KINDS, type MedicalInsuranceInvoiceKind } from "@/lib/medical-insurance/compare";
 import { ageBandWords, MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory, type MedicalInsuranceRateCard } from "@/lib/medical-insurance/cost";
 import { plannedLinesTotal, type CostLine } from "@/lib/medical-insurance/eligibility";
-import { LIFE_INSURANCE_PER_PERSON_MONTHLY, MONTHLY_SPLIT_ASSUMPTIONS, type MonthlySplit, type MonthlySplitPerson, type MonthlySplitRow } from "@/lib/medical-insurance/monthly-split";
+import { EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, MONTHLY_SPLIT_ASSUMPTIONS, type MonthlySplit, type MonthlySplitPerson, type MonthlySplitRow } from "@/lib/medical-insurance/monthly-split";
 import { egpWords, MEDICAL_INSURANCE_OPEN_POINTS, MEMBER_TYPE_WORDS, type MedicalInsuranceInvoiceRow, type MedicalInsuranceMoneyView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
@@ -141,7 +141,7 @@ function MonthlySplitPanel({ split }: { split: MonthlySplit }) {
   const { rows, totals, unpriced } = split;
   return (
     <AdminTableShell
-      description={`Each month the company carries 70% of the employee's own cover and the employee 30%. A spouse or child is the employee's in full, and EGP ${LIFE_INSURANCE_PER_PERSON_MONTHLY} of life insurance is added on the employee's share for every person covered. Only you see this.`}
+      description={`Each month the company carries 70% of the employee's own cover and the employee 30%, never less than EGP ${EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY} (the company carries the rest). A spouse or child is the employee's in full, and EGP ${LIFE_INSURANCE_PER_PERSON_MONTHLY} of life insurance is added on the employee's share for every person covered. Only you see this.`}
       title="Who pays each month"
     >
       <Tiles
@@ -178,8 +178,8 @@ function MonthlySplitPanel({ split }: { split: MonthlySplit }) {
                 <tr>
                   <th className={headerClassName}>Employee and family</th>
                   <th className={rightHeaderClassName}>Own cover a month</th>
-                  <th className={rightHeaderClassName}>Company 70%</th>
-                  <th className={rightHeaderClassName}>Employee 30%</th>
+                  <th className={rightHeaderClassName}>Company</th>
+                  <th className={rightHeaderClassName}>Employee 30%, at least {EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY}</th>
                   <th className={rightHeaderClassName}>Family, all on the employee</th>
                   <th className={rightHeaderClassName}>Life insurance</th>
                   <th className={rightHeaderClassName}>Employee pays a month</th>
@@ -191,7 +191,10 @@ function MonthlySplitPanel({ split }: { split: MonthlySplit }) {
                     <td className={cellClassName}><SplitPeople row={row} /></td>
                     <td className={cn(cellClassName, amountClassName)}>{row.employee ? money(row.ownMonthly) : ""}</td>
                     <td className={cn(cellClassName, amountClassName)}>{row.employee ? money(row.companyPays) : ""}</td>
-                    <td className={cn(cellClassName, amountClassName)}>{row.employee ? money(row.employeeOwnShare) : ""}</td>
+                    <td className={cn(cellClassName, amountClassName)}>
+                      {row.employee ? money(row.employeeOwnShare) : ""}
+                      {row.raisedToMinimum ? <span className="block text-phx-2xs font-semibold text-phx-ink-soft">raised to the minimum</span> : null}
+                    </td>
                     <td className={cn(cellClassName, amountClassName)}>{familyWords(row)}</td>
                     <td className={cn(cellClassName, amountClassName)}>{money(row.lifeInsurance)}</td>
                     <td className={cn(cellClassName, totalClassName)}>{money(row.employeePays)}</td>
@@ -213,7 +216,7 @@ function MonthlySplitPanel({ split }: { split: MonthlySplit }) {
                 <SplitPeople row={row} />
                 {row.employee ? (
                   <p className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">
-                    Own cover {money(row.ownMonthly)}: company {money(row.companyPays)}, employee {money(row.employeeOwnShare)}
+                    Own cover {money(row.ownMonthly)}: company {money(row.companyPays)}, employee {money(row.employeeOwnShare)}{row.raisedToMinimum ? " (raised to the minimum)" : ""}
                   </p>
                 ) : null}
                 <p className="break-words text-phx-xs font-semibold tabular-nums text-phx-ink-soft">Family {familyWords(row)}. Life insurance {money(row.lifeInsurance)}</p>
