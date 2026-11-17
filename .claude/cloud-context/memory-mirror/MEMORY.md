@@ -29,7 +29,7 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [picomatch HIGH advisory: owner said WAIT FOR A FIX](picomatch-advisory-wait-for-a-fix.md) - GHSA-fc5q-39xc-vjpf reddens every PR's audit, no patch exists; never add an ignore, never re-ask; #514 waits.
+- 🔴 [picomatch HIGH advisory: owner ACCEPTED it (was: wait)](picomatch-advisory-wait-for-a-fix.md) - GHSA-fc5q-39xc-vjpf ignored in pnpm-workspace.yaml via PR 515 until picomatch 4.0.8 exists; remove the ignore that day; never add another on its strength.
 
 
 

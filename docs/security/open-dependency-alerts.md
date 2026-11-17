@@ -112,6 +112,25 @@ number in words, so the check cannot read it, and a new alert that later reaches
 taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert
 cell, but only for the same advisory and manifest. Rows read 2026-11-03 17:02 Cairo.
 
+### `picomatch` — GHSA-fc5q-39xc-vjpf · HIGH
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted until a fix is published — ignored in the audit gate (`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`).** Recorded 2026-11-17 at the owner's instruction: "accept the picomatch advisory in 515". Earlier the same evening he had chosen to wait; he changed it once every pull request had been red for hours. |
+| Alert | none on this repository (no Dependabot alert was open when this was recorded) |
+| Scope | **`runtime`** in the root graph — this one DID turn `checks` red on every pull request, which is why it needed an ignore and not just a row |
+| Patched version | **none exists** — the advisory names 4.0.8; npm's `latest` was 4.0.7 on 17 Nov 2026 |
+| How it arrives | `picomatch@4.0.7` ← `@rollup/plugin-commonjs` (directly, and through `@rollup/pluginutils` and `fdir`) ← **`@sentry/nextjs`** |
+| What it is | Regular-expression denial of service through single-branch repeated extglobs |
+
+**Why accepting is safe enough.** `@rollup/plugin-commonjs` is the bundling plugin `@sentry/nextjs` runs while the
+app is **built**. It matches glob patterns written in this repository and its build config, never text from an
+employee, a rep or a request, and the Phoenix code imports picomatch nowhere. The worst case is a slow build.
+
+**What ends it.** The day picomatch publishes 4.0.8 or later: re-resolve it in the lockfile (the parents' `^4.0.2`
+already allows it — the Sunday dependency refresh does this), delete the `ignoreGhsas` line and this row in the same
+pull request, and see the audit pass without the ignore.
+
 ### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
 
 | | |
