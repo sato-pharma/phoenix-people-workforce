@@ -16,6 +16,16 @@ updates:
     open-pull-requests-limit: 3
     labels:
       - dependencies
+    # `playwright` (the runner behind `playwright test`) and `@playwright/test` (the test() a spec
+    # imports) must be ONE version. #458 bumped playwright alone to 1.65.0 on 17 Nov 2026: the 1.65.0
+    # runner refused 1.64.1's test() ("did not expect test() to be called here"), so main's login
+    # smoke test went red on every commit after it. Grouped, they always move in one PR.
+    # Pinned by tests/deps-refresh.test.ts.
+    groups:
+      playwright:
+        patterns:
+          - "playwright"
+          - "@playwright/test"
     ignore:
       # Major version bumps for these packages need a deliberate manual upgrade
       - dependency-name: next
