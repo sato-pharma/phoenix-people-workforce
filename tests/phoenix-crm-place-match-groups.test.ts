@@ -9,9 +9,11 @@ import {
   answersEachReading,
   buildPlaceMatchBoard,
   classifyPair,
+  foldOneCustomer,
   insightsOf,
   MAX_ANSWER_PAIRS,
   median,
+  oneCustomerJoins,
   orderedPair,
   pairId,
   pairLimits,
@@ -21,7 +23,9 @@ import {
   subjectAccuracy,
   type MatchAnswerRow,
   type MatchSubject,
+  type OneCustomerCandidate,
 } from "../src/lib/phoenix-crm/place-match-groups.ts";
+import { twinNameWords } from "../src/lib/phoenix-crm/line-twins.ts";
 
 /**
  * Phoenix CRM — the same place validated by more than one rep, side by side (owner, 2026-10-17: "a place
@@ -505,6 +509,74 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
     "🔴 the unique index is PLAIN: PostgREST's on_conflict emits column names, and a partial index would never be inferred",
   );
   assert.ok(migration.includes("enable row level security") && migration.includes("to service_role") && migration.includes("from public, anon, authenticated"), "service role only");
+
+  // ── One customer is one reading (owner, 2026-11-17) ─────────────────────────────────────────────────
+  // The live case: Mohamed Salah validated عصام السيد يوسف on CNS, Nahla on Anti Infective; the three-lines
+  // rule moved Nahla's record onto his point, but her photograph's fix sits 34 m off, so the board put the
+  // one doctor to the owner as two readings to judge.
+  {
+    const name = twinNameWords("عصام السيد يوسف");
+    const cns = subject({ meters: 0, repName: "Mohamed Salah", line: "CNS", listType: "PM", nameKey: "issam" });
+    const ai = subject({ meters: 34, repName: "Nahla", line: "Anti Infective", territory: "Dakahlia 2", listType: "PM", nameKey: "issam" });
+    const candidate = (of: MatchSubject, extra: Partial<OneCustomerCandidate> = {}): OneCustomerCandidate => ({
+      key: of.key,
+      customerId: `customer-${of.id}`,
+      seatId: of.seatId,
+      line: of.line,
+      listType: "PM",
+      nameWords: name,
+      stored: at(0),
+      movedByLineRule: false,
+      capturedAt: of.capturedAt,
+      ...extra,
+    });
+    const joined = candidate(ai, { movedByLineRule: true, capturedAt: "2026-11-10T13:04:53.000Z" });
+    const kept = candidate(cns, { capturedAt: "2026-11-15T12:12:09.000Z" });
+
+    const joins = oneCustomerJoins([joined, kept]);
+    assert.deepEqual([...joins], [[ai.key, cns.key]], "the moved record folds into the one it was moved onto, though it was captured first");
+
+    assert.equal(oneCustomerJoins([{ ...joined, movedByLineRule: false }, kept]).size, 0, "two records on one point that the rule never joined stay two");
+    assert.equal(oneCustomerJoins([{ ...joined, line: "CNS" }, kept]).size, 0, "two records of one line are never folded here");
+    assert.equal(oneCustomerJoins([{ ...joined, stored: at(2) }, kept]).size, 0, "a record 2 m off is not on the rule's one point");
+    assert.equal(oneCustomerJoins([{ ...joined, nameWords: twinNameWords("عصام علي دفيه") }, kept]).size, 0, "another name is another doctor");
+    assert.equal(oneCustomerJoins([{ ...joined, listType: "Pharmacy" }, { ...kept, listType: "Pharmacy" }]).size, 0, "a pharmacy is never folded");
+    assert.equal(oneCustomerJoins([{ ...joined, customerId: kept.customerId }, kept]).size, 0, "one customer's two places are not two lines");
+
+    const pedia = subject({ meters: 0, repName: "Pedia rep", line: "Pedia", listType: "PM", nameKey: "issam" });
+    const three = oneCustomerJoins([joined, kept, candidate(pedia, { movedByLineRule: true })]);
+    assert.equal(three.get(ai.key), cns.key, "three lines fold into one");
+    assert.equal(three.get(pedia.key), cns.key, "…onto the record nobody was moved off");
+
+    const before = board([cns, ai]);
+    assert.ok(before.questions.length + before.groups.length > 0, "unfolded, the one doctor is two readings on the board");
+
+    const elsewhere = subject({ meters: 400 });
+    const folded = foldOneCustomer(
+      [cns, ai, elsewhere],
+      [
+        { a: ai.key, b: cns.key, answer: "same" },
+        { a: ai.key, b: elsewhere.key, answer: "different" },
+      ],
+      joins,
+    );
+    assert.deepEqual(folded.subjects.map((held) => held.key), [cns.key, elsewhere.key], "her record leaves the board as a reading of its own");
+    assert.deepEqual(folded.subjects[0].sameCustomer, [{ key: ai.key, repName: "Nahla", territory: "Dakahlia 2", line: "Anti Infective" }], "and is named on his");
+    const [low, high] = orderedPair(cns.key, elsewhere.key);
+    assert.deepEqual(folded.answers, [{ a: low, b: high, answer: "different" }], "an answer about her record moves onto his; one between the two is dropped");
+
+    const after = buildPlaceMatchBoard(foldOneCustomer([cns, ai], [], joins));
+    assert.equal(after.questions.length + after.groups.length, 0, "folded, he is one doctor and nothing is asked");
+    assert.equal(foldOneCustomer([cns], [], joins).subjects[0].sameCustomer, undefined, "a join whose other half is not on the board folds nothing");
+  }
+
+  {
+    const loader = read("src/lib/phoenix-crm/server/place-match-groups.ts");
+    assert.ok(loader.includes("move_reason") && loader.includes("LINE_TWIN_MOVE_REASON"), "the loader reads which records the three-lines rule moved");
+    assert.ok(/buildPlaceMatchBoard\(folded\)/.test(loader) && /foldOneCustomer\(subjects, answers, oneCustomerJoins\(/.test(loader), "and folds before it builds the board");
+    const screen = read("src/components/phoenix-crm/place-match-board.tsx");
+    assert.ok(screen.includes("The same customer") && screen.includes("subject.sameCustomer"), "the reading names the other lines' reps");
+  }
 
   console.log("phoenix-crm place match groups: OK");
 }

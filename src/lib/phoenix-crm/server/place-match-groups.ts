@@ -25,14 +25,18 @@ import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import {
   buildPlaceMatchBoard,
+  foldOneCustomer,
   MAX_ANSWER_PAIRS,
+  oneCustomerJoins,
   orderedPair,
   type MatchAnswerRow,
   type MatchPointSource,
   type MatchSignboard,
   type MatchSubject,
+  type OneCustomerCandidate,
   type PlaceMatchBoard,
 } from "@/lib/phoenix-crm/place-match-groups";
+import { LINE_TWIN_MOVE_REASON, twinNameWords } from "@/lib/phoenix-crm/line-twins";
 import { parseSharedPlaceKind, sharedPlaceKindLabel } from "@/lib/phoenix-crm/shared-place-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -90,7 +94,7 @@ export function matchAnchorOf(row: Row): {
 
 const PLACE_COLUMNS =
   "id, seat_id, customer_id, label, address, brick_name, area_name, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, " +
-  "photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, point_source";
+  "photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, point_source, move_reason";
 
 const VENUE_COLUMNS =
   "id, seat_id, name, kind, status, address, brick_name, area_name, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, " +
@@ -151,6 +155,8 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
   const waitingPlaces = new Set(reviews.filter((row) => row.status === "pending").map((row) => String(row.place_id)));
 
   const subjects: MatchSubject[] = [];
+  // The records the three-lines rule has already joined as one customer, read off their STORED points.
+  const oneCustomerCandidates: OneCustomerCandidate[] = [];
   for (const row of places) {
     const anchor = matchAnchorOf(row);
     if (!anchor) continue;
@@ -184,6 +190,17 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
       photoPath: text(row.photo_path),
       seated: 0,
       waiting: waitingPlaces.has(String(row.id)),
+    });
+    oneCustomerCandidates.push({
+      key: `place:${String(row.id)}`,
+      customerId: String(row.customer_id),
+      seatId: String(row.seat_id),
+      line: seat?.lineName ?? null,
+      listType: String(customer.list_type ?? ""),
+      nameWords: twinNameWords(customerName),
+      stored: isUsableFix(row.lat, row.lon) ? { lat: Number(row.lat), lon: Number(row.lon) } : null,
+      movedByLineRule: row.point_source === "moved" && text(row.move_reason) === LINE_TWIN_MOVE_REASON,
+      capturedAt: String(row.created_at),
     });
   }
   for (const row of venues) {
@@ -225,8 +242,9 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
     b: String(row.subject_b),
     answer: row.answer === "same" ? "same" : "different",
   }));
+  const folded = foldOneCustomer(subjects, answers, oneCustomerJoins(oneCustomerCandidates));
   return {
-    board: buildPlaceMatchBoard({ subjects, answers }),
+    board: buildPlaceMatchBoard(folded),
     capped: placeRead.capped || venueRead.capped,
   };
 }
