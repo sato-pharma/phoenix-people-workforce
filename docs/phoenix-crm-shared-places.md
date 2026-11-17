@@ -504,6 +504,23 @@ The last clause matters: two differently named customers 50 m apart are two door
 
 Pinned by `tests/phoenix-crm-place-match-groups.test.ts` (the pair rule and the name rule, the grouping, the diameter cap, the ranking, the outlier, the questions and answers, answering reading by reading and the wall, and the source the server, route, screen, board and migration are wired from).
 
+
+### One customer on several lines is one reading — owner, 2026-11-17
+
+*"If same dr different reps visit but he is in phoenix recognized as 2 because everyone separately validates him,
+I want Phoenix to recognize him as 1."* The three-lines rule (`docs/phoenix-crm-line-twins.md`) already moves a
+second line's record of one customer onto the first line's point. This tab did not know that: it measures each
+record from its own photograph, and a moved record keeps its photo, so the one customer was put to the Super
+Admin again as two readings 34 m apart (Mohamed Salah's and Nahla's عصام السيد يوسف, Dakahlia 2). Measured on
+17 November: 192 moved records sat on the same stored point as another line's record of their customer.
+
+The loader now reads `move_reason`, and `oneCustomerJoins` joins two records when one of them carries the rule's
+own move (`LINE_TWIN_MOVE_REASON`), both stored points are within 1 m, they are on two lines of one list (AM or
+PM), and `sameName` says their names are one. `foldOneCustomer` keeps the record the others were moved onto,
+lists the others on it ("The same customer on Anti Infective: Nahla · Dakahlia 2", and a "One customer · 2 lines"
+pill), and moves any stored answer about a folded record onto the kept one. The filters find the reading by any
+of its reps or lines. Nothing is written: each line keeps its own row and its own visits.
+
 ## Same customer, several reps — owner, 2026-10-26
 
 His words, in chat: *"go deep audit between reps validation and reconsiliciation of same drs in different reps and tell me what u got"*, and after the audit his pick **"Build the check"**.
