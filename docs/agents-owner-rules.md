@@ -8886,7 +8886,7 @@ her district total carries both halves, no rep is credited with the second one, 
 `UE-2` under `SEAT-PED-DM-UE-2` with no rep seat and no target (owner, 2026-09-09). An area can sit
 in a real district, carry sales and carry no target.
 
-**Anti Infective only.** CNS and Pedia keep Kafr El-Sheikh 2 in Others. On Pedia that is a money
+**Anti Infective only** when it was written; CNS took the same shape on 2026-11-17 (next section), and Pedia keeps Kafr El-Sheikh 2 in Others. On Pedia that is a money
 fact, not tidiness: El Qema's divisor is every Pedia area the organogram does not park in Others, so
 pulling `D17` out there would take it from 39 to 40 and move every El Qema number. On Anti Infective
 nothing is divided by the Others set — `OTHERS_EXCLUDED_LINES` holds `pedia` alone — which is
@@ -8964,6 +8964,47 @@ moved with it.
 the `anti_infective` spelling this area's own `au.line_area_map` row carries matches nothing. Every
 set-level assertion passed (they called the helper with the underscore directly) while the
 end-to-end split still divided 290 packs 145/145.
+
+## CNS Kafr El-Sheikh 2 counts to Saad — owner, 2026-11-17
+
+> "KAFR EL SHEIKH 2 IN CNS LINE SHOULD BE COUNTED TO SAAD TOTAL UNDER NO REP EXACTLY AS DINA IN
+> ANTI INFECTIVE"
+
+Asked by multiple choice when it starts, he chose **July 2026, like Dina**. Saad Mohamed Saad Salama
+runs CNS Alex-BHR (`SEAT-CNS-DM-AB`): Alexandria 1–5 and Kafr El-Sheikh 1 (`D16`, rep seat
+`SEAT-CNS-REP-D16`). Kafr El-Sheikh 2 (`D17`) sat in CNS Others with no manager, so half of every
+Kafr El-Sheikh wholesaler's money (the city divides 50/50) reached nobody.
+
+### What was written
+
+`20261117143000_cns_kafr_el_sheikh_2_to_alex_bhr_from_july.sql`, the Anti Infective migration's shape:
+the open Others row is closed and re-dated `2026-01-01` → `2026-07-01`, and a new row puts `cns / D17`
+in `AB` under `SEAT-CNS-DM-AB` from `2026-07-01` with no rep seat and `area_state`
+`other_line_specific`, so `carries_target` stays false. Pre-image: `au.bak_20261117_cns_kfs2_line_area_map`
+(52 rows). Applied to staging and production on 2026-11-17; `au.f_line_area_map_asof` answers Others
+for 2025-12-31, 2026-01-31 and 2026-06-30, and Alex-BHR with no rep and no target for 2026-07-31,
+2026-10-31 and 2026-11-30. Anti Infective's `D17` stays in Delta (1) and Pedia's in Others.
+
+### What it moved, read live from `au.f_monthly_achievement` after the apply
+
+| Month | Before | Kafr El-Sheikh 2 (EGP) | After |
+| --- | --- | --- | --- |
+| July | 74.45% | 31,250.69 | 75.92% |
+| August | 120.43% | 83,623.68 | 124.37% |
+| September | 100.72% | 78,080.91 | 104.40% |
+| October | 94.48% | 65,025.42 | 97.54% |
+| **July–October** | **97.52%** | **257,980.70** | **100.56%** (8,549,970.84 / 8,502,566.27) |
+
+January to June still resolve `D17` to Others (EGP 39,951.78 to 88,040.10 a month stay there). CNS
+July to October are published; their stored closing rollups are not rebuilt, so the published
+closing sheets keep `D17` in Others until he unpublishes a month himself. The live boards (Business
+Review, Sales vs Target, the manager boards) resolve the organogram per month and read the new shape.
+
+### Pinned by
+
+`tests/cns-kafr-el-sheikh-2-alex-bhr.test.ts`, on CNS's organogram as production held it at
+2026-10-31: June in Others and July in Alex-BHR, January to June never falling back to him, the
+Kafr El-Sheikh split 145/145 in both months, and `cns` never in `OTHERS_EXCLUDED_LINES`.
 
 ## One email returns — the Administrator's decision on a recorded visit — owner, 2026-10-17 (ENDED 2026-11-06, below)
 
