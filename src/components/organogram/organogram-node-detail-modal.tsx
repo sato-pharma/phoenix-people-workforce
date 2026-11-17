@@ -43,8 +43,8 @@ type Props = {
    * Whether this viewer may read anybody's CV — `canDownloadEmployeeCv`, resolved server-side on the
    * page. False skips the person popup's `?meta=1` CV probe altogether: the CV route refuses every
    * other role, so the probe answered a 403 for each person a Training Manager opened (18 refusals in
-   * the 31 Oct 2026 System Audit digest) and the popup showed nothing either way. Absent means "ask
-   * the route", the behaviour before this prop.
+   * the 31 Oct 2026 System Audit digest) and the popup showed nothing either way. Absent is false, so a mount
+   * that forgets the prop shows no CV rather than a refusal per person opened.
    */
   canReadEmployeeCv?: boolean;
 };
@@ -126,7 +126,7 @@ function RowSummary({ row }: { row: OrganogramRow }) {
   return <SectionGrid section={{ title: "Summary", items }} />;
 }
 
-export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false, canReadEmployeeCv = true }: Props) {
+export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false, canReadEmployeeCv = false }: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
   const pathname = usePathname();
   const isVacancy = row.type === "vacancy";

@@ -39,7 +39,8 @@ import { cn } from "@/lib/utils";
 type OrganogramReportProps = {
   canAddEmployee?: boolean;
   // Server-decided: may this viewer read a CV (canDownloadEmployeeCv)? False keeps the person
-  // popup from probing a CV route that would refuse it. Absent asks the route, as before.
+  // popup from probing a CV route that would refuse it. Absent is false: a mount that forgets the
+  // prop shows no CV, never a refusal on every person opened.
   canReadEmployeeCv?: boolean;
   fixedLine?: string | null;
   initialError?: string | null;
@@ -95,7 +96,7 @@ function LineButtons({
 function OrganogramView({
   asOfMonth = null,
   canAddEmployee = false,
-  canReadEmployeeCv = true,
+  canReadEmployeeCv = false,
   rows,
   selectedLine,
 }: {
@@ -146,7 +147,7 @@ function OrganogramView({
 
 export function OrganogramReport({
   canAddEmployee = false,
-  canReadEmployeeCv = true,
+  canReadEmployeeCv = false,
   fixedLine = null,
   initialError = null,
   initialReport = null,
