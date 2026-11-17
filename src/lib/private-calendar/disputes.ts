@@ -223,8 +223,21 @@ export async function submitPrivateCalendarDataDispute(
   const disputes = ((data ?? []) as DisputeRow[])
     .map(mapDisputeRow)
     .sort((left, right) => left.disputeDate.localeCompare(right.disputeDate));
+  // A clean-up that fails would leave pending requests with no reason behind them, refusing the employee's
+  // next try for those days ("already waiting for a decision"). So it is checked, tried once more, and a
+  // second failure is logged with the request ids for the Super Admin's error board — never silent.
   const removeAll = async () => {
-    await getSupabaseAdmin().from("private_calendar_data_disputes").delete().in("id", disputes.map((dispute) => dispute.id));
+    const ids = disputes.map((dispute) => dispute.id);
+    let removeError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { error } = await getSupabaseAdmin().from("private_calendar_data_disputes").delete().in("id", ids);
+      removeError = error;
+      if (!error) return;
+    }
+    logError("Calendar review requests could not be removed after a failed save", {
+      error: removeError,
+      labels: { dispute_ids: ids.join(","), event: "private_calendar_request_cleanup_failed" },
+    });
   };
 
   // The explanation rows hang off the request ids. If they cannot be written the requests go too:
@@ -260,7 +273,13 @@ export async function submitPrivateCalendarDataDispute(
       });
       pictureCount = stored.length;
     } catch (storeError) {
-      await getSupabaseAdmin().from("dispute_explanations").delete().eq("group_id", groupId);
+      const { error: explanationsError } = await getSupabaseAdmin().from("dispute_explanations").delete().eq("group_id", groupId);
+      if (explanationsError) {
+        logError("Calendar explanation rows could not be removed after a failed save", {
+          error: explanationsError,
+          labels: { event: "private_calendar_explanation_cleanup_failed", group_id: groupId },
+        });
+      }
       await removeAll();
       throw storeError;
     }

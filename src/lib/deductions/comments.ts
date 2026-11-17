@@ -13,7 +13,7 @@ import { compactDeductionsHrId } from "./candidate-key.ts";
 import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./permissions.ts";
 import { deductionOpenForDispute } from "./dispute-open.ts";
 import type { CheckedDisputeImage } from "./comment-attachment-rules.ts";
-import { attachCommentAttachments, discardDisputeComment, storeDisputeAttachments } from "./comment-attachments.ts";
+import { attachCommentAttachments, discardDisputeComment, removeCommentPictures, storeDisputeAttachments } from "./comment-attachments.ts";
 import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
 import { picturesNotice, picturesOnlyBody, tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import { caseDates, explanationSummary } from "@/lib/dispute-center/explain-reasons.ts";
@@ -258,14 +258,6 @@ export async function addDeductionsComment(input: {
     .single();
   if (error) throw error;
 
-  await writeAuditLog({
-    actorLoginId: payload.author_login_id,
-    entityId: input.candidateId,
-    entityType: "deductions_comment",
-    newValues: { bodyLength: body.length, pictureCount: images.length },
-    summary: "Employee dispute comment added to a deduction (unified module).",
-  });
-
   const row = data as CommentRow;
   // The same order as the reply path: the pictures hang off the comment's id, and a comment whose
   // pictures could not be stored is removed again rather than reaching HR as half a message.
@@ -290,10 +282,22 @@ export async function addDeductionsComment(input: {
         ref: input.candidateId,
       });
     } catch (explainError) {
+      // The pictures stored for this comment go too, or they stay in the bucket with no comment.
+      if (attachments.length > 0) await removeCommentPictures(row.id);
       await discardDisputeComment(row.id);
       throw explainError;
     }
   }
+
+  // Written once the comment, its pictures and its explanation all stand, so the trail never names a
+  // comment that was discarded a moment later.
+  await writeAuditLog({
+    actorLoginId: payload.author_login_id,
+    entityId: input.candidateId,
+    entityType: "deductions_comment",
+    newValues: { bodyLength: body.length, pictureCount: images.length },
+    summary: "Employee dispute comment added to a deduction (unified module).",
+  });
 
   await notifyDeductionsComment({
     authorHrId: input.access.hrId ?? null,

@@ -414,10 +414,37 @@ async function newerProtocolVersion() {
   assert.equal(await withKnownProtocolVersion(known), known, "a version the SDK knows is left exactly as sent");
 }
 
+/**
+ * A refresh whose new pair cannot be written leaves the presented refresh token UNSPENT, so ChatGPT's
+ * retry refreshes normally — never read as a replay that revokes the whole connection.
+ */
+async function refreshWriteFailureIsRetried() {
+  const flow = await connected();
+  const first = await flow.oauth.token({ grant_type: "authorization_code", client_id: flow.client.client_id, redirect_uri: REDIRECT, code: flow.code, code_verifier: flow.verifier });
+  const refresh = { grant_type: "refresh_token", client_id: flow.client.client_id, refresh_token: first.refresh_token };
+  const insertTokens = flow.memory.store.insertTokens;
+  let failNext = true;
+  flow.memory.store.insertTokens = async (rows) => {
+    if (failNext) {
+      failNext = false;
+      throw new Error("a momentary database error");
+    }
+    return insertTokens(rows);
+  };
+  await assert.rejects(flow.oauth.token(refresh), /a momentary database error/);
+  assert.ok(await flow.oauth.verifyAccessToken(first.access_token), "a failed refresh revokes nothing");
+  const retried = await flow.oauth.token(refresh);
+  assert.ok(await flow.oauth.verifyAccessToken(retried.access_token), "the retry with the same refresh token works");
+  // And the token it replaced is spent now: presenting it again is a replay.
+  await expectOAuth(flow.oauth.token(refresh), "invalid_grant");
+  assert.equal(await flow.oauth.verifyAccessToken(retried.access_token), null);
+}
+
 export async function runChatgptConnectorOAuthTests() {
   await registrationAndAuthorize();
   await codeExchange();
   await refreshRotationAndReplay();
+  await refreshWriteFailureIsRetried();
   liveAccountDecisions();
   await serverPieces();
   pdfInkRule();
