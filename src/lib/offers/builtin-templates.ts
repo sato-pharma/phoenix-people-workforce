@@ -33,6 +33,13 @@ import {
   OFFER_PREMIUM_THEME,
   premiumOfferBlocks,
 } from "@/lib/offers/premium-template";
+import {
+  OFFER_PRESTIGE_FONT,
+  OFFER_PRESTIGE_FONT_SIZE_PT,
+  OFFER_PRESTIGE_TEMPLATE_NAME,
+  OFFER_PRESTIGE_THEME,
+  prestigeOfferBlocks,
+} from "@/lib/offers/prestige-template";
 import type { OfferBlock, OfferBuiltinKey, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
 
 /**
@@ -47,8 +54,8 @@ import type { OfferBlock, OfferBuiltinKey, OfferTemplateVariant, OfferTheme } fr
  * Adding a design is one entry here plus its own `*-template.ts`. Nothing else in the module
  * enumerates them — the seeder, the restore route and the designer all read this list. The third,
  * `sato`, was added beside the two frozen uploaded letters and changes neither of them; the fourth,
- * `house`, and the fifth, `premium` (13 Oct 2026), were added the same way and change none of the
- * four before them. Each new key also has to be allowed by the `offer_templates` CHECK constraints in
+ * `house`, the fifth, `premium` (13 Oct 2026), and the sixth, `prestige` (17 Nov 2026), were added
+ * the same way and change none of the designs before them. Each new key also has to be allowed by the `offer_templates` CHECK constraints in
  * the database BEFORE the code that registers it deploys — see the migration that added `premium`.
  */
 export type OfferBuiltinTemplate = {
@@ -59,6 +66,12 @@ export type OfferBuiltinTemplate = {
   fontSizePt: number;
   key: OfferBuiltinKey;
   name: string;
+  /**
+   * Job titles that open on this design. Read ONCE, when the design's row is first seeded: each named
+   * title whose own design is still unset is pointed at the new row, and a title HR has already
+   * pointed elsewhere is left alone. Matched case-insensitively on the trimmed title.
+   */
+  opensFor?: readonly string[];
   /** The one seeded as the design a new offer opens on, when neither exists yet. */
   seedAsDefault: boolean;
   theme: OfferTheme;
@@ -121,6 +134,18 @@ export const OFFER_BUILTIN_TEMPLATES: OfferBuiltinTemplate[] = [
     theme: OFFER_PREMIUM_THEME,
     variant: "premium",
   },
+  {
+    blocks: prestigeOfferBlocks,
+    description: "The navy-and-gold letter — a navy cover plate with the candidate's name in serif capitals, flat-gold rules and corner marks, Roman-numbered sections, a serif salary figure, a navy closing plate. The Product Manager offer opens on it.",
+    fontFamily: OFFER_PRESTIGE_FONT,
+    fontSizePt: OFFER_PRESTIGE_FONT_SIZE_PT,
+    key: "prestige",
+    name: OFFER_PRESTIGE_TEMPLATE_NAME,
+    opensFor: ["Product Manager"],
+    seedAsDefault: false,
+    theme: OFFER_PRESTIGE_THEME,
+    variant: "prestige",
+  },
 ];
 
 export function offerBuiltinTemplate(key: string): OfferBuiltinTemplate | null {
@@ -132,5 +157,12 @@ export function isOfferBuiltinKey(value: unknown): value is OfferBuiltinKey {
 }
 
 export function isOfferTemplateVariant(value: unknown): value is OfferTemplateVariant {
-  return value === "classic" || value === "executive" || value === "sato" || value === "house" || value === "premium";
+  return (
+    value === "classic"
+    || value === "executive"
+    || value === "sato"
+    || value === "house"
+    || value === "premium"
+    || value === "prestige"
+  );
 }

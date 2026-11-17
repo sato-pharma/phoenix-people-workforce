@@ -170,10 +170,13 @@ export async function renderOfferPdf(
   // the one image with no public URL at all.
   const rendered = renderOfferDocument(template, fields, {
     logoUrl: options.logoUrl ?? satoLogoDataUri() ?? undefined,
-    // The reverse (white-on-navy) mark, for the Sato corporate design's navy masthead only. The
+    // The reverse (white-on-navy) mark, for the Sato masthead and the Prestige cover plate. The
     // classic and executive letters draw on white paper and never receive it — passing it there
     // would append a hidden element for nothing.
-    logoReverseUrl: template.variant === "sato" ? (satoLogoReverseDataUri() ?? undefined) : undefined,
+    logoReverseUrl:
+      template.variant === "sato" || template.variant === "prestige"
+        ? (satoLogoReverseDataUri() ?? undefined)
+        : undefined,
     sealUrl: satoSealDataUri() ?? undefined,
     signatureUrl: options.signatureUrl ?? satoSignatureDataUri() ?? undefined,
   });

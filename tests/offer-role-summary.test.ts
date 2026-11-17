@@ -1,13 +1,17 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
 import { OFFER_BUILTIN_TEMPLATES } from "../src/lib/offers/builtin-templates.ts";
 import { OFFER_SEED_JOB_TITLES, defaultOfferBlocks } from "../src/lib/offers/default-template.ts";
 import { executiveOfferBlocks } from "../src/lib/offers/executive-template.ts";
 import { houseOfferBlocks } from "../src/lib/offers/house-template.ts";
 import { premiumOfferBlocks } from "../src/lib/offers/premium-template.ts";
+import { prestigeOfferBlocks } from "../src/lib/offers/prestige-template.ts";
+import { reportsToChoicesForTitle } from "../src/lib/offers/reports-to-choices.ts";
 import { satoOfferBlocks } from "../src/lib/offers/sato-template.ts";
 import {
   OFFER_FIELD_FORCE_ROLE_SUMMARY,
+  OFFER_PRODUCT_MANAGER_ROLE_SUMMARY,
   OFFER_ROLE_SUMMARY_FALLBACK,
   OFFER_TALENT_ACQUISITION_ROLE_SUMMARY,
   OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
@@ -85,6 +89,7 @@ export function runOfferRoleSummaryTests(): void {
     ["sato", satoOfferBlocks()],
     ["house", houseOfferBlocks()],
     ["premium", premiumOfferBlocks()],
+    ["prestige", prestigeOfferBlocks()],
   ];
 
   // ───────────────────────────────────── no design hard-codes what a job IS ──
@@ -234,6 +239,7 @@ export function runOfferRoleSummaryTests(): void {
     ["the standard sentence", OFFER_ROLE_SUMMARY_FALLBACK],
     ["the talent-acquisition paragraph", OFFER_TALENT_ACQUISITION_ROLE_SUMMARY],
     ["the training-manager paragraph", OFFER_TRAINING_MANAGER_ROLE_SUMMARY],
+    ["the product-manager paragraph", OFFER_PRODUCT_MANAGER_ROLE_SUMMARY],
   ] as const) {
     assert.ok(
       !/&[a-zA-Z]+;|&#\d+;/.test(text),
@@ -269,6 +275,63 @@ export function runOfferRoleSummaryTests(): void {
       trainingLetter.includes("training capabilities required to develop and strengthen our field force"),
     "a Training Manager letter prints its own paragraph",
   );
+
+  // ─────────────────────────────────────── a Product Manager's letter is about the brand ──
+  // Owner, 17 Nov 2026: "a offer tailored to product manager and can be reporting to marketing manager
+  // or group product manager as i choose". The title is seeded with its own words, and the cost of
+  // living is payroll's pair for the title (3,000 + 500 fuel), as for the Training Manager.
+  const pmSeed = OFFER_SEED_JOB_TITLES.find((seed) => seed.title === "Product Manager");
+  assert.ok(pmSeed, "the Product Manager title is seeded");
+  assert.equal(pmSeed.roleSummary, OFFER_PRODUCT_MANAGER_ROLE_SUMMARY, "the Product Manager title is seeded with its own paragraph");
+  assert.equal(pmSeed.costOfLiving, 3500, "Product Manager cost of living is payroll's pair for the title");
+  assert.equal(pmSeed.reportsTo, "Marketing Manager", "a new Product Manager letter starts on the Marketing Manager");
+  assert.equal(pmSeed.contractTerm, "One year, renewable", "the standard contract term");
+  for (const forbidden of ["this district needs", "sales performance", "district plan", "field team", "market expansion", "{{reportsto}}"]) {
+    assert.ok(
+      !OFFER_PRODUCT_MANAGER_ROLE_SUMMARY.toLowerCase().includes(forbidden),
+      `the product-manager paragraph must not say "${forbidden}" — the letter's opening already names the manager`,
+    );
+  }
+  // The locked rule of 4 Nov 2026: product and medical knowledge, and the product test, are the
+  // Product Manager's — so the paragraph says so.
+  assert.ok(
+    OFFER_PRODUCT_MANAGER_ROLE_SUMMARY.includes("training our teams on the products, the diseases they treat and the key messages")
+      && OFFER_PRODUCT_MANAGER_ROLE_SUMMARY.includes("testing their product knowledge"),
+    "the Product Manager owns product knowledge training and the product test",
+  );
+  // The migration that adds the row to production carries the same words, built with chr() for the
+  // em dash, apostrophe and line break — so the two cannot drift silently.
+  const migration = readFileSync("supabase/migrations/20261117154057_offer_prestige_design_and_product_manager.sql", "utf8");
+  const sqlBody = /set role_summary =\s*([\s\S]*?)\r?\nwhere role_summary is null/.exec(migration)?.[1] ?? "";
+  assert.ok(sqlBody.length > 200, "the migration's Product Manager paragraph was found — a parse that finds nothing proves nothing");
+  const sqlText = sqlBody
+    .split("||")
+    .map((part) => part.trim())
+    .map((part) => {
+      const chr = /^chr\((\d+)\)$/.exec(part);
+      if (chr) return String.fromCharCode(Number(chr[1]));
+      const literal = /^'([\s\S]*)'$/.exec(part);
+      assert.ok(literal, `the migration's paragraph is literals and chr() only (found: ${part.slice(0, 40)})`);
+      return (literal[1] ?? "").replace(/''/g, "'");
+    })
+    .join("");
+  assert.equal(sqlText, OFFER_PRODUCT_MANAGER_ROLE_SUMMARY, "the migration writes the Product Manager paragraph exactly as the code holds it");
+
+  // The reporting line is chosen per offer, by title only — never a person's name ("Title only").
+  assert.deepEqual([...reportsToChoicesForTitle("Product Manager")], ["Marketing Manager", "Group Product Manager"]);
+  assert.deepEqual([...reportsToChoicesForTitle("  product   MANAGER ")], ["Marketing Manager", "Group Product Manager"], "matched on the trimmed title, any case");
+  assert.deepEqual([...reportsToChoicesForTitle("Group Product Manager")], [], "a Group Product Manager is not offered a choice");
+  assert.deepEqual([...reportsToChoicesForTitle("Medical Representative")], [], "every other title keeps its one reporting line");
+  assert.deepEqual([...reportsToChoicesForTitle(null)], [], "no title, no choices");
+  const pmLetter = renderedBody(prestigeOfferBlocks(), {
+    ...FIELDS,
+    reportsTo: "Group Product Manager",
+    roleSummary: OFFER_PRODUCT_MANAGER_ROLE_SUMMARY,
+    territory: "Head Office",
+    title: "Product Manager",
+  });
+  assert.ok(pmLetter.includes("Group Product Manager"), "the chosen reporting line prints on the letter");
+  assert.ok(pmLetter.includes("own the strategy and the brand plan for your portfolio"), "a Product Manager letter prints its own paragraph");
 
   // ───────────────────────────── the premium letter takes the job title's words too ──
   // The premium design re-dresses the same blocks, so the paragraph must reach it through the whole

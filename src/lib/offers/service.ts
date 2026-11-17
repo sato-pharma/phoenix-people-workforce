@@ -205,23 +205,31 @@ export async function ensureBuiltinTemplates(): Promise<OfferTemplate[]> {
 
   for (const entry of missing) {
     const takeDefault = entry.seedAsDefault && !defaultHeld;
-    const inserted = await db.from("offer_templates").insert({
-      blocks: entry.blocks(),
-      builtin_key: entry.key,
-      created_by: "system",
-      font_family: entry.fontFamily,
-      font_size_pt: entry.fontSizePt,
-      is_default: takeDefault,
-      name: entry.name,
-      theme: entry.theme,
-      variant: entry.variant,
-    });
+    const inserted = await db
+      .from("offer_templates")
+      .insert({
+        blocks: entry.blocks(),
+        builtin_key: entry.key,
+        created_by: "system",
+        font_family: entry.fontFamily,
+        font_size_pt: entry.fontSizePt,
+        is_default: takeDefault,
+        name: entry.name,
+        theme: entry.theme,
+        variant: entry.variant,
+      })
+      .select("id")
+      .maybeSingle();
 
     if (inserted.error) {
       if (firstFailure === null) firstFailure = inserted.error.message;
       continue;
     }
     if (takeDefault) defaultHeld = true;
+    const insertedId = (inserted.data as { id?: string } | null)?.id;
+    if (insertedId && entry.opensFor && entry.opensFor.length > 0) {
+      await pointUnsetTitlesAtDesign(insertedId, entry.opensFor);
+    }
   }
 
   const after = await db.from("offer_templates").select("*").not("builtin_key", "is", null);
@@ -235,6 +243,38 @@ export async function ensureBuiltinTemplates(): Promise<OfferTemplate[]> {
     throw new Error(firstFailure);
   }
   return templates;
+}
+
+/**
+ * Point the job titles a freshly seeded design was made for at it — once, at the seed.
+ *
+ * Only a title whose own design is still UNSET moves: a title HR has already pointed at another
+ * design keeps it, and nothing re-runs this after the design's row exists, so clearing the design
+ * on the Job Titles screen later is never undone. A failed read or write is logged and left — the
+ * title then opens on the default design, which HR can change on that screen — because a missing
+ * convenience must never take the template list down with it.
+ */
+async function pointUnsetTitlesAtDesign(templateId: string, titles: readonly string[]): Promise<void> {
+  const db = getSupabaseAdmin();
+  const wanted = new Set(titles.map((title) => title.trim().toLowerCase()));
+  const read = await db.from("offer_job_titles").select("id,title,template_id");
+  if (read.error) {
+    console.warn("[offers] could not read job titles to open them on a new design", read.error.message);
+    return;
+  }
+  const rows = (read.data ?? []) as { id: string; template_id: string | null; title: string | null }[];
+  for (const row of rows) {
+    if (row.template_id) continue;
+    if (!wanted.has(String(row.title ?? "").trim().toLowerCase())) continue;
+    const written = await db
+      .from("offer_job_titles")
+      .update({ template_id: templateId })
+      .eq("id", row.id)
+      .is("template_id", null);
+    if (written.error) {
+      console.warn("[offers] could not open a job title on its new design", row.title, written.error.message);
+    }
+  }
 }
 
 /**

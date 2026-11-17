@@ -3,7 +3,11 @@ import {
   OFFER_OUTSTATION_CLAUSE_HEADING,
   OFFER_OUTSTATION_CLAUSE_TEXT,
 } from "@/lib/offers/outstation-clause";
-import { OFFER_FIELD_FORCE_ROLE_SUMMARY, OFFER_TRAINING_MANAGER_ROLE_SUMMARY } from "@/lib/offers/role-summary";
+import {
+  OFFER_FIELD_FORCE_ROLE_SUMMARY,
+  OFFER_PRODUCT_MANAGER_ROLE_SUMMARY,
+  OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
+} from "@/lib/offers/role-summary";
 
 /**
  * The SATO offer as the owner designed it — the factory default, transcribed block for block
@@ -86,6 +90,17 @@ export const OFFER_SEED_JOB_TITLES: OfferJobTitleInput[] = [
     reportsTo: "Chief Executive Officer",
     roleSummary: OFFER_TRAINING_MANAGER_ROLE_SUMMARY,
     title: "Training Manager",
+  },
+  {
+    // 3,500 is payroll's own pair for the title — 3,000 allowance plus 500 fuel
+    // (`EXTRA_COST_OF_LIVING_BY_TITLE`, `STANDARD_FUEL_ALLOWANCE`). A Product Manager reports to the
+    // Marketing Manager or to a Group Product Manager (owner, 17 Nov 2026: "as i choose"); the
+    // composer offers both, and a new letter starts on the Marketing Manager.
+    contractTerm: "One year, renewable",
+    costOfLiving: 3500,
+    reportsTo: "Marketing Manager",
+    roleSummary: OFFER_PRODUCT_MANAGER_ROLE_SUMMARY,
+    title: "Product Manager",
   },
 ];
 

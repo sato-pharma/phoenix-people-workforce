@@ -12,6 +12,7 @@ import {
   offerBuiltinTemplate,
 } from "../src/lib/offers/builtin-templates.ts";
 import { PREMIUM_OFFER_SKIN } from "../src/lib/offers/premium-skin.ts";
+import { PRESTIGE_GOLD, PRESTIGE_GOLD_ON_NAVY, PRESTIGE_NAVY, PRESTIGE_OFFER_SKIN } from "../src/lib/offers/prestige-skin.ts";
 import { buildOfferTokens, offerPageFooterHtml, renderOfferDocument } from "../src/lib/offers/render.ts";
 import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
 import type { OfferBlockType, OfferFields } from "../src/lib/offers/types.ts";
@@ -89,8 +90,8 @@ export function runOfferBuiltinTemplateTests() {
   // ------------------------------------------------------------------ the registry --
   assert.equal(
     OFFER_BUILTIN_TEMPLATES.length,
-    5,
-    "five designs ship: the classic letter, the executive one, the Sato corporate one, the HR-forms house one and the HR premium one — each added beside the last, none changed",
+    6,
+    "six designs ship: the classic letter, the executive one, the Sato corporate one, the HR-forms house one, the HR premium one and the Prestige one — each added beside the last, none changed",
   );
 
   const keys = OFFER_BUILTIN_TEMPLATES.map((entry) => entry.key);
@@ -98,7 +99,7 @@ export function runOfferBuiltinTemplateTests() {
 
   const variants = OFFER_BUILTIN_TEMPLATES.map((entry) => entry.variant);
   assert.equal(new Set(variants).size, variants.length, "two built-ins that share a skin would look identical");
-  assert.equal(new Set(variants).size, 5, "each shipped design carries its own skin — classic, executive, sato, house, premium");
+  assert.equal(new Set(variants).size, 6, "each shipped design carries its own skin — classic, executive, sato, house, premium, prestige");
 
   assert.equal(
     OFFER_BUILTIN_TEMPLATES.filter((entry) => entry.seedAsDefault).length,
@@ -113,17 +114,20 @@ export function runOfferBuiltinTemplateTests() {
       && isOfferBuiltinKey("executive")
       && isOfferBuiltinKey("sato")
       && isOfferBuiltinKey("house")
-      && isOfferBuiltinKey("premium"),
-    "all five keys are recognised",
+      && isOfferBuiltinKey("premium")
+      && isOfferBuiltinKey("prestige"),
+    "all six keys are recognised",
   );
   assert.equal(offerBuiltinTemplate("sato")?.key, "sato", "the Sato corporate design is found by key");
   assert.equal(offerBuiltinTemplate("house")?.key, "house", "the HR-forms house design is found by key");
   assert.equal(offerBuiltinTemplate("premium")?.key, "premium", "the HR premium design is found by key");
+  assert.equal(offerBuiltinTemplate("prestige")?.key, "prestige", "the Prestige design is found by key");
   assert.ok(!isOfferBuiltinKey("default"), "a plausible-looking key that does not exist must be rejected");
   assert.ok(isOfferTemplateVariant("executive"), "the executive skin is a known variant");
   assert.ok(isOfferTemplateVariant("sato"), "the Sato corporate skin is a known variant");
   assert.ok(isOfferTemplateVariant("house"), "the HR-forms house skin is a known variant");
   assert.ok(isOfferTemplateVariant("premium"), "the HR premium skin is a known variant");
+  assert.ok(isOfferTemplateVariant("prestige"), "the Prestige skin is a known variant");
   assert.ok(!isOfferTemplateVariant("galaxy"), "an unknown skin must be rejected, not passed through");
   assert.ok(!isOfferBuiltinKey("galaxy"), "an unknown built-in key must be rejected, not passed through");
 
@@ -162,7 +166,8 @@ export function runOfferBuiltinTemplateTests() {
   const sato = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "sato");
   const house = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "house");
   const premium = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "premium");
-  assert.ok(classic && executive && sato && house && premium, "all five designs must be in the registry");
+  const prestige = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "prestige");
+  assert.ok(classic && executive && sato && house && premium && prestige, "all six designs must be in the registry");
 
   const classicDoc = renderOfferDocument(
     { blocks: classic.blocks(), fontFamily: classic.fontFamily, fontSizePt: classic.fontSizePt, theme: classic.theme, variant: classic.variant },
@@ -290,7 +295,14 @@ export function runOfferBuiltinTemplateTests() {
   assert.ok(!houseDoc.body.includes("lh-reverse"), "the house design draws on white and needs no reverse mark");
   assert.ok(!/class="welcome/.test(houseDoc.body), "the house letter ends on the signature, like the HR forms — no welcome band");
 
+  const prestigeDoc = renderOfferDocument(
+    { blocks: prestige.blocks(), fontFamily: prestige.fontFamily, fontSizePt: prestige.fontSizePt, theme: prestige.theme, variant: prestige.variant },
+    SAMPLE,
+    { logoUrl: "data:image/png;base64,DDDD" },
+  );
+
   premiumSkinTests({ classic, house, premium }, { classicDoc, houseDoc, premiumDoc });
+  prestigeSkinTests({ classic, prestige }, { classicDoc, houseDoc, premiumDoc, prestigeDoc });
   frozenDesignTests();
 
   for (const [name, doc] of [
@@ -299,6 +311,7 @@ export function runOfferBuiltinTemplateTests() {
     ["sato", satoDoc],
     ["house", houseDoc],
     ["premium", premiumDoc],
+    ["prestige", prestigeDoc],
   ] as const) {
     assert.ok(doc.html.startsWith("<!doctype html>"), `${name}: the document is standalone`);
     assert.ok(doc.html.includes("SAMAA SHALABY"), `${name}: the candidate is named`);
@@ -793,6 +806,198 @@ function premiumSkinTests(
       && /premium\s*\?\s*inlineLocalAssets\(rendered\.body\)\.html\s*:\s*rendered\.body/.test(previewSource),
     "the designer's preview inlines the premium design's images, and returns every other design as it always has",
   );
+}
+
+// =====================================================================================================
+// The sixth design — Prestige, the engraved letter the Product Manager offer opens on (17 Nov 2026).
+// =====================================================================================================
+
+function prestigeSkinTests(
+  designs: { classic: BuiltinDesign; prestige: BuiltinDesign },
+  docs: { classicDoc: OfferDocument; houseDoc: OfferDocument; premiumDoc: OfferDocument; prestigeDoc: OfferDocument },
+): void {
+  const { classic, prestige } = designs;
+  const { classicDoc, houseDoc, premiumDoc, prestigeDoc } = docs;
+
+  // ── A design of its own, chosen — never the default ──────────────────────────────────────────────
+  assert.equal(prestige.variant, "prestige", "the sixth design carries its own skin");
+  assert.equal(prestige.seedAsDefault, false, "a new offer still opens on the classic letter — Prestige is never seeded as the default");
+  assert.equal(prestige.name, "SATO Prestige Offer", "the design is named for the company, never the app");
+  assert.ok(!/phoenix/i.test(`${prestige.name} ${prestige.description}`), "nothing the designer lists for the design says Phoenix");
+  assert.deepEqual(
+    [...(prestige.opensFor ?? [])],
+    ["Product Manager"],
+    "the Product Manager title opens on Prestige — the offer the owner asked for on 17 Nov 2026",
+  );
+  assert.ok(
+    OFFER_BUILTIN_TEMPLATES.filter((entry) => entry.key !== "prestige").every((entry) => !entry.opensFor?.length),
+    "no other design claims a job title, so seeding them moves no title",
+  );
+
+  // ── Its skin reaches it and nothing else ─────────────────────────────────────────────────────────
+  assert.ok(prestigeDoc.css.includes(PRESTIGE_OFFER_SKIN), "the prestige skin is appended to the base sheet, whole");
+  for (const [name, doc] of [["classic", classicDoc], ["house", houseDoc], ["premium", premiumDoc]] as const) {
+    assert.ok(!doc.css.includes(PRESTIGE_OFFER_SKIN), `the prestige skin must not reach the ${name} design`);
+  }
+  assert.ok(!prestigeDoc.css.includes(PREMIUM_OFFER_SKIN), "Prestige does not carry the premium skin");
+  assert.equal(prestigeDoc.pageSize, "A4", "the prestige letter prints A4, portrait");
+  assert.ok(!prestigeDoc.css.includes("size:letter"), "Prestige must not carry the executive skin");
+  assert.equal(prestigeDoc.pageHeaderHtml, "", "Prestige prints its letterhead once, in the flow — no running header");
+  assert.ok(!prestigeDoc.body.includes("pm-mast"), "Prestige draws no premium masthead — it has its own cover plate");
+
+  // ── The cover plate: ONE navy plate built from the letterhead, reference and title blocks ────────
+  // The owner rejected the first Prestige on 17 Nov 2026 ("this is the normal templete"), so the
+  // letter must open on its own plate, never on the ordinary letterhead, reference row and title.
+  assert.equal((prestigeDoc.body.match(/class="px-plate keep"/g) ?? []).length, 1, "the prestige letter opens on exactly one cover plate");
+  assert.ok(prestigeDoc.body.indexOf("px-plate") < prestigeDoc.body.search(/<p[\s>]/), "the plate comes before the first paragraph");
+  for (const ordinary of ['class="letterhead', 'class="control', 'class="title-row', 'class="rail"']) {
+    assert.ok(!prestigeDoc.body.includes(ordinary), `the plate replaces the ordinary ${ordinary} — it is not drawn as well`);
+  }
+  assert.equal((prestigeDoc.body.match(/class="px-c (tl|tr|bl|br)"/g) ?? []).length, 4, "the plate carries its four gold corner marks");
+  const plate = /<header class="px-plate keep">[\s\S]*?<\/header>/.exec(prestigeDoc.body)?.[0] ?? "";
+  const plateWords = textChunks(plate);
+  assert.ok(plateWords.includes(SAMPLE.candidateName), "the plate names the candidate");
+  assert.ok(prestigeDoc.body.includes('</header><div class="px-gild"></div>'), "a gold rule sits directly under the plate");
+  const reverseMark = "data:image/png;base64,REVERSE";
+  const withMark = renderDesign(prestige, SAMPLE, { logoReverseUrl: reverseMark, logoUrl: "data:image/png;base64,INK" }).body;
+  assert.ok(withMark.includes(`<img class="px-mark" src="${reverseMark}"`), "the plate carries the reverse (white) mark it is handed");
+  assert.ok(!withMark.includes("base64,INK"), "the ink mark is never drawn on the navy plate");
+  assert.ok(prestigeDoc.body.includes('class="logo-gap"'), "with no reverse mark the plate keeps the logo's place empty, never an ink mark on navy");
+  const reporting = renderDesign(prestige, { ...SAMPLE, reportsTo: "Group Product Manager" }).body;
+  assert.ok(
+    textChunks(/<header class="px-plate keep">[\s\S]*?<\/header>/.exec(reporting)?.[0] ?? "").includes("Reporting to the Group Product Manager"),
+    "the plate prints the reporting line the offer chose, by title",
+  );
+  const noLine = renderDesign(prestige, { ...SAMPLE, reportsTo: "" }).body;
+  assert.ok(!noLine.includes("Reporting to the"), "with no reporting line the plate prints none");
+  for (const colour of [PRESTIGE_NAVY, PRESTIGE_GOLD, PRESTIGE_GOLD_ON_NAVY]) {
+    assert.ok(PRESTIGE_OFFER_SKIN.includes(colour), `the skin prints in Sato's own ${colour}`);
+  }
+  for (const reverseCaller of ["src/lib/offers/pdf.ts", "app/api/offers/preview/route.ts"]) {
+    const source = stripComments(readFileSync(reverseCaller, "utf8"));
+    assert.ok(
+      /template\.variant === "sato" \|\| template\.variant === "prestige"\s*\?\s*\(satoLogoReverseDataUri\(\)/.test(source),
+      `${reverseCaller} hands the reverse mark to Prestige as it does to the Sato letter`,
+    );
+  }
+
+  // ── The words are the classic letter's, every one of them ────────────────────────────────────────
+  const stripIds = (blocks: { id: string }[]) => JSON.stringify(blocks.map(({ id: _id, ...rest }) => rest));
+  assert.equal(stripIds(prestige.blocks()), stripIds(classic.blocks()), "the prestige blocks are the classic blocks word for word");
+  assert.ok(prestige.blocks().every((block) => block.id.endsWith("-x")), "prestige block ids carry their own suffix");
+  const otherIds = new Set(
+    OFFER_BUILTIN_TEMPLATES.filter((entry) => entry.key !== "prestige").flatMap((entry) => entry.blocks().map((block) => block.id)),
+  );
+  assert.ok(prestige.blocks().every((block) => !otherIds.has(block.id)), "no prestige block id collides with another design's");
+  // Every run of text the classic letter prints is printed by Prestige — as many times. The plate
+  // moves the letterhead, reference and title words into one place, so the ORDER differs there.
+  const prestigeRuns = new Map<string, number>();
+  for (const chunk of textChunks(prestigeDoc.body)) prestigeRuns.set(chunk, (prestigeRuns.get(chunk) ?? 0) + 1);
+  for (const chunk of textChunks(classicDoc.body)) {
+    const left = prestigeRuns.get(chunk) ?? 0;
+    assert.ok(left > 0, `Prestige drops a word the classic letter prints: "${chunk}"`);
+    prestigeRuns.set(chunk, left - 1);
+  }
+  const bodyAfterPlate = (html: string) => textChunks(html.slice(html.search(/<p[\s>]/)));
+  assert.deepEqual(bodyAfterPlate(prestigeDoc.body), bodyAfterPlate(classicDoc.body), "after the plate, Prestige prints the classic letter's words in the same order");
+  const worded = textChunks(
+    renderDesign(prestige, { ...SAMPLE, reportsTo: "Group Product Manager", roleSummary: "As Product Manager, you will own {{territory}}.", territory: "Pedia" }).body,
+  ).join(" ");
+  assert.ok(worded.includes("As Product Manager, you will own Pedia."), "the prestige letter prints the job title's own {{roleSummary}}");
+  assert.ok(worded.includes("Group Product Manager"), "the reporting line the offer chose is printed, by title");
+  assert.ok(!worded.includes("{{"), "no token reaches the prestige letter unresolved");
+
+  // ── The seal: 21mm, stamped on the signature — the signature cell itself untouched ─────────────
+  const signedOptions = {
+    logoUrl: "data:image/png;base64,DDDD",
+    sealUrl: "data:image/svg+xml;base64,SEAL",
+    signatureUrl: "data:image/png;base64,BBBB",
+  };
+  const prestigeSigned = renderDesign(prestige, SAMPLE, signedOptions);
+  assert.equal((prestigeSigned.body.match(/class="offer-seal"/g) ?? []).length, 1, "the seal is drawn exactly once on the prestige letter");
+  const sealRule = /\.accept \.offer-seal\{([^}]*)\}/.exec(PRESTIGE_OFFER_SKIN)?.[1];
+  assert.ok(sealRule, "the prestige skin places the seal through `.accept .offer-seal`");
+  // Owner, 17 Nov 2026: "put the stamp on my signature", then "center the signature and the stamp".
+  // The signature and the seal share the centre of the company's line; the seal's foot rests just
+  // under the rule (measured in the browser: the signature in its lower half, the label clear).
+  assert.ok(/top:auto/.test(sealRule), "the seal is placed from the foot of the signatory's cell");
+  assert.ok(/left:50%/.test(sealRule) && /translateX\(-50%\)/.test(sealRule), "the seal is centred on the company's line");
+  const sealBottom = Number(/bottom:(-?[\d.]+)mm/.exec(sealRule)?.[1]);
+  assert.ok(sealBottom >= 3 && sealBottom <= 6, `the seal's foot rests just under the rule, clear of the label (bottom ${sealBottom}mm)`);
+  assert.ok(/mix-blend-mode:multiply/.test(sealRule), "the seal is printed as ink (multiply), so the signature reads through it");
+  assert.equal(Number(/width:([\d.]+)mm/.exec(sealRule)?.[1]), 21, "the prestige seal is the premium letter's 21mm");
+  assert.equal(
+    PRESTIGE_OFFER_SKIN.replace(/\.accept \.offer-seal\{[^}]*\}/, "").includes("offer-seal"),
+    false,
+    "the seal is placed in exactly one rule of the prestige skin",
+  );
+  // The signature is centred under the seal, never enlarged: 35px is the file's own pixel height.
+  assert.ok(/\.accept \.sigcell \.sigink-box\{justify-content:center\}/.test(PRESTIGE_OFFER_SKIN), "the signature is centred on the company's line");
+  assert.ok(/\.accept \.sigcell \.sigink\{margin:0 auto\}/.test(PRESTIGE_OFFER_SKIN), "the signature drops its left offset to sit centred");
+  assert.ok(
+    !/\.sigink[^{]*\{[^}]*(max-height|height|width|transform)/.test(PRESTIGE_OFFER_SKIN),
+    "the prestige skin never resizes the signature ink",
+  );
+  assert.ok(!/\bphoenix\b/i.test(prestigeSigned.html), "no word of the prestige letter says Phoenix");
+
+  // ── Square corners, no shadows, no gradients, no image ───────────────────────────────────────────
+  for (const [place, text] of [["css", prestigeSigned.css], ["document", prestigeSigned.html]] as const) {
+    for (const match of text.matchAll(/border-radius\s*:\s*([^;}"]+)/g)) {
+      assert.match(match[1] ?? "", /^0(px)?$/, `prestige ${place}: every corner is square (found border-radius: ${match[1]})`);
+    }
+    assert.ok(!/box-shadow|text-shadow|drop-shadow/.test(text), `prestige ${place}: no shadows`);
+    assert.ok(!/gradient\(/.test(text), `prestige ${place}: no gradients`);
+  }
+  assert.ok(!/url\(/.test(PRESTIGE_OFFER_SKIN), "the prestige skin tiles no image");
+  assert.ok(!/\/brand\//.test(PRESTIGE_OFFER_SKIN), "the prestige skin names no /brand/ file, so the PDF needs no inlining for it");
+  assert.ok(!PRESTIGE_OFFER_SKIN.includes("`"), "no backtick in the skin — it is a template literal");
+
+  // ── Three fills — the navy cover plate, the navy closing plate, the zebra — and every other base
+  //    fill cleared under its own selector ─────────────────────────────────────────────────────────
+  const skinRules = cssRules(PRESTIGE_OFFER_SKIN);
+  const painted = skinRules.filter((rule) => paints(lastValue(rule.body, "background")));
+  assert.deepEqual(
+    painted.map((rule) => rule.selectors),
+    [[".px-plate"], [PREMIUM_ZEBRA], [".foot"]],
+    "the prestige skin paints exactly three areas — the cover plate, the salary zebra and the closing plate",
+  );
+  assert.equal(lastValue(painted[0]?.body ?? "", "background"), PRESTIGE_NAVY, "the cover plate is flat Sato navy");
+  assert.equal(lastValue(painted[1]?.body ?? "", "background"), "var(--tint)", "the zebra is the 6% tint");
+  assert.equal(lastValue(painted[2]?.body ?? "", "background"), PRESTIGE_NAVY, "the closing plate is the same flat navy");
+  const meantToPaint = new Set([".px-plate", ".foot", PREMIUM_ZEBRA]);
+  const skinFinal = new Map<string, { background: string | null; display: string | null }>();
+  for (const rule of skinRules) {
+    for (const selector of rule.selectors) {
+      const earlier = skinFinal.get(selector);
+      skinFinal.set(selector, {
+        background: lastValue(rule.body, "background") ?? earlier?.background ?? null,
+        display: lastValue(rule.body, "display") ?? earlier?.display ?? null,
+      });
+    }
+  }
+  let baseFills = 0;
+  for (const rule of cssRules(classicDoc.css)) {
+    if (!paints(lastValue(rule.body, "background"))) continue;
+    for (const selector of rule.selectors) {
+      baseFills += 1;
+      if (meantToPaint.has(selector)) continue;
+      const answer = skinFinal.get(selector);
+      assert.ok(
+        answer !== undefined && (answer.display === "none" || !paints(answer.background)),
+        `the base sheet paints ${selector} and the prestige skin must switch it off or clear it`,
+      );
+    }
+  }
+  assert.ok(baseFills >= 8, `the base sheet's painted selectors were found (${baseFills}) — a sweep that finds none proves nothing`);
+
+  // ── The look it is recognised by ─────────────────────────────────────────────────────────────────
+  assert.ok(/counter\(pxsec,upper-roman\)/.test(PRESTIGE_OFFER_SKIN), "sections are numbered in Roman capitals by a counter");
+  assert.ok(/double/.test(PRESTIGE_OFFER_SKIN), "the double rule is drawn");
+  assert.ok(/Georgia/.test(PRESTIGE_OFFER_SKIN), "the serif display face is named");
+
+  // ── The PDF path's only prestige branch is the reverse mark — no inlining, no page stamping ──────
+  const pdfSource = stripComments(readFileSync("src/lib/offers/pdf.ts", "utf8"));
+  assert.equal((pdfSource.match(/prestige/g) ?? []).length, 1, "the PDF path names prestige once — to hand over the reverse mark — and stamps nothing");
 }
 
 /**
