@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [Never move a browser's Program Files folder off C](never-move-a-browser-program-folder-off-c.md) - the Brave junction to D broke its saved passwords (app-bound path check); fixed 2026-11-17.
 
 
 

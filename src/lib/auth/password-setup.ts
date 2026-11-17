@@ -24,7 +24,7 @@ import {
   temporaryPasswordExpiryLabel,
 } from "@/lib/auth/password-setup-whatsapp";
 import { LEAKED_PASSWORD_MESSAGE, checkLeakedPassword, leakedPasswordAuditValue } from "@/lib/auth/leaked-password";
-import { passwordWeakness } from "@/lib/auth/password-strength";
+import { chosenPasswordRulesApply, passwordWeakness } from "@/lib/auth/password-strength";
 import { forgetTrustedDevices } from "@/lib/auth/second-step-store";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import {
@@ -60,10 +60,19 @@ type PasswordSetupTokenRow = {
   manager_hr_id?: string | null;
   name?: string | null;
   purpose: "reset" | "setup";
+  is_test_persona?: boolean | null;
   role?: string | null;
   token_hash: string;
   used_at?: string | null;
 };
+
+/** A real person's chosen password under 8 characters. Its own class so a native form post can name it. */
+export class PasswordTooShortError extends Error {
+  constructor() {
+    super("Password must be at least 8 characters.");
+    this.name = "PasswordTooShortError";
+  }
+}
 
 export type PasswordSetupPreview = {
   expiresAt: string;
@@ -791,6 +800,7 @@ async function getPasswordSetupToken(token: string) {
     force_password_reset: Boolean(user.force_password_reset),
     hr_id: typeof user.hr_id === "string" ? user.hr_id : null,
     is_active: Boolean(user.is_active),
+    is_test_persona: user.is_test_persona === true,
     line: typeof user.line === "string" ? user.line : null,
     login_id: joined.login_id,
     manager_hr_id: typeof user.manager_hr_id === "string" ? user.manager_hr_id : null,
@@ -832,18 +842,21 @@ export async function completePasswordSetup(input: { password: string; token: st
   assertTokenUsable(tokenRow);
 
   const password = String(input.password ?? "").trim();
-  if (password.length < 8) {
-    throw new Error("Password must be at least 8 characters.");
+  if (!password) throw new Error("Password is required.");
+  // A test account takes any password the Super Admin chooses (password-strength.ts); the audit row says so.
+  let leakedPasswordCheck: ReturnType<typeof leakedPasswordAuditValue> | "test_account" = "test_account";
+  if (chosenPasswordRulesApply({ isTestPersona: tokenRow.is_test_persona })) {
+    if (password.length < 8) throw new PasswordTooShortError();
+    // And not a password every guessing list tries first (password-strength.ts).
+    const weakness = passwordWeakness(password, [tokenRow.login_id, tokenRow.hr_id]);
+    if (weakness) throw new Error(weakness);
+    // And not one that already sits in a published breach (leaked-password.ts). Asked BEFORE the link is
+    // spent, so a refused password leaves the link usable; an unreachable service accepts the password and
+    // is named on the audit row below.
+    const leakVerdict = await checkLeakedPassword(password);
+    if (leakVerdict.leaked === true) throw new Error(LEAKED_PASSWORD_MESSAGE);
+    leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
   }
-  // And not a password every guessing list tries first (password-strength.ts).
-  const weakness = passwordWeakness(password, [tokenRow.login_id, tokenRow.hr_id]);
-  if (weakness) throw new Error(weakness);
-  // And not one that already sits in a published breach (leaked-password.ts). Asked BEFORE the link is
-  // spent, so a refused password leaves the link usable; an unreachable service accepts the password and
-  // is named on the audit row below.
-  const leakVerdict = await checkLeakedPassword(password);
-  if (leakVerdict.leaked === true) throw new Error(LEAKED_PASSWORD_MESSAGE);
-  const leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
 
   const passwordHash = await bcrypt.hash(password, 12);
   const supabase = getSupabaseAdmin();
