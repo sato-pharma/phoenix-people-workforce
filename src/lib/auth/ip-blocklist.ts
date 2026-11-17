@@ -5,10 +5,11 @@
 // `readIpBlock`, which tells an unreadable blocklist apart from a block, so an outage answers
 // "temporarily unavailable" and is audited as one instead of posing as a blocked address.
 
-import { isIP } from "node:net";
-
+// No Node built-in may be imported here: this file is reachable from the browser bundle (log.ts →
+// the error-monitor service → here), and `node:net` broke the production build (17 Nov 2026).
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import { ipAddressVersion } from "@/lib/security/ip-address";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -40,7 +41,7 @@ export const SHARED_ADDRESS_MIN_ACCOUNTS = 2;
 export function normalizeIpAddress(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const address = value.trim().toLowerCase();
-  return address && isIP(address) !== 0 ? address : null;
+  return address && ipAddressVersion(address) !== 0 ? address : null;
 }
 
 /** How many different accounts signed in successfully, counted the way the security lens counts them. */
