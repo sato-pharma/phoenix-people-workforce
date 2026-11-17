@@ -775,7 +775,7 @@ async function noOrphanTests() {
   const report = parseScreenReport({ kind: "refused_request", status: 403, method: "POST", apiPath: "/api/leave-requests", image: JPEG });
   assert.ok(report.ok);
   if (!report.ok) return;
-  const owner = screenOwnerFor({ hrId: "b-21", loginId: "b-21", role: "Medical Representative", testPersona: null } as AccessContext);
+  const owner = screenOwnerFor({ hrId: "b-21", loginId: "b-21", role: "Medical Representative", testPersona: null } as unknown as AccessContext);
   const insertFails = fakeStoreClient({
     insert: async () => ({ error: { message: "insert refused", code: "23514" } }),
     remove: async () => ({ data: null, error: new Error("Storage unavailable") }),

@@ -182,8 +182,8 @@ function noWordBreaksTests() {
     assert.ok(table, `the ${variant} Incidents table still starts at ${breakpoint}px — the arithmetic below is for that width`);
     assert.equal(table.widths.length, words.length, `the ${variant} table has ${words.length} columns`);
     for (const [index, columnWords] of words.entries()) {
-      const share = table.widths[index];
-      const columnPx = (share / 100) * breakpoint;
+      const share: number = table.widths[index];
+      const columnPx: number = (share / 100) * breakpoint;
       for (const word of columnWords) {
         const needPx = WORD_PX[word] * TYPEFACE_ALLOWANCE + CELL_CHROME_PX;
         assert.ok(
