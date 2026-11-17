@@ -77,28 +77,30 @@ $env:PHOENIX_INSPECT_MCP_TUNNEL_ID = $tunnelId
 $inspector = Start-Process -FilePath 'node' -ArgumentList @("`"$server`"", '--runner', 'local', '--port', $Port) `
   -WorkingDirectory $repo -NoNewWindow -PassThru
 
-$ready = $false
-foreach ($attempt in 1..40) {
-  if ($inspector.HasExited) { throw "The inspector stopped at start (exit $($inspector.ExitCode)); its reason is printed above." }
-  try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2 | Out-Null; $ready = $true; break } catch { Start-Sleep -Milliseconds 500 }
-}
-if (-not $ready) { Stop-Process -Id $inspector.Id -Force; throw 'The inspector did not answer /healthz within 20 seconds.' }
-
-# 2. The tunnel client — the only process given the key, then the key leaves this shell.
-$secure = Get-Content -LiteralPath $keyFile -Raw | ConvertTo-SecureString
-$env:CONTROL_PLANE_API_KEY = [System.Net.NetworkCredential]::new('', $secure).Password
+$tunnel = $null
 try {
-  $tunnel = Start-Process -FilePath $tunnelExe -NoNewWindow -PassThru -ArgumentList @(
-    'run', '--profile', 'phoenix-visual-inspector',
-    '--mcp.server-url', "url=http://127.0.0.1:$Port/mcp,channel=main"
-  )
-} finally {
-  Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue
-  $secure.Dispose()
-}
+  $ready = $false
+  foreach ($attempt in 1..40) {
+    if ($inspector.HasExited) { throw "The inspector stopped at start (exit $($inspector.ExitCode)); its reason is printed above." }
+    try { Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 2 | Out-Null; $ready = $true; break } catch { Start-Sleep -Milliseconds 500 }
+  }
+  if (-not $ready) { throw 'The inspector did not answer /healthz within 20 seconds.' }
 
-Write-Host "Phoenix inspector on http://127.0.0.1:$Port/mcp (staging only), tunnel $tunnelId running. Ctrl+C stops both."
-try {
+  # 2. The tunnel client — the only process given the key, then the key leaves this shell.
+  # Set-Content wrote the encrypted key with a line ending; ConvertTo-SecureString refuses it untrimmed.
+  $secure = (Get-Content -LiteralPath $keyFile -Raw).Trim() | ConvertTo-SecureString
+  $env:CONTROL_PLANE_API_KEY = [System.Net.NetworkCredential]::new('', $secure).Password
+  try {
+    $tunnel = Start-Process -FilePath $tunnelExe -NoNewWindow -PassThru -ArgumentList @(
+      'run', '--profile', 'phoenix-visual-inspector',
+      '--mcp.server-url', "url=http://127.0.0.1:$Port/mcp,channel=main"
+    )
+  } finally {
+    Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue
+    $secure.Dispose()
+  }
+
+  Write-Host "Phoenix inspector on http://127.0.0.1:$Port/mcp (staging only), tunnel $tunnelId running. Ctrl+C stops both."
   while (-not $inspector.HasExited -and -not $tunnel.HasExited) { Start-Sleep -Seconds 1 }
 } finally {
   foreach ($child in @($tunnel, $inspector)) {
