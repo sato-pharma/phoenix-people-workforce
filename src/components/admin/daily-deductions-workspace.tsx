@@ -17,6 +17,7 @@ import {
 } from "@/lib/daily-deductions/release-state.ts";
 import {
   applyDailyDeductionViewFilters,
+  categoryTotalsOfLines,
   isAnyDailyDeductionViewFilterOn,
   writeDailyDeductionViewFilters,
   type DailyDeductionViewFilters,
@@ -342,6 +343,12 @@ export function DailyDeductionsWorkspace({
     const employees = new Set(shownReleasedLines.map((line) => line.employeeHrIdCompact));
     return { amount: sumAmount(shownReleasedLines), employeeCount: employees.size, lineCount: shownReleasedLines.length };
   }, [shownReleasedLines]);
+  // The type chips follow the filters too (owner, 2026-11-17): with a filter on they add up only the
+  // shown deductions; with none on they are the snapshot's own totals, exactly as before.
+  const releasedCategoryTotals = useMemo(
+    () => (filtersOn ? categoryTotalsOfLines(shownReleasedLines) : (active?.categoryTotals ?? {})),
+    [filtersOn, shownReleasedLines, active],
+  );
 
   const anyComputed = runs.some((run) => run.state === "done");
   const failedRuns = runs.filter((run) => run.state === "failed");
@@ -679,7 +686,7 @@ export function DailyDeductionsWorkspace({
                     {active.publishedByName ? ` by ${active.publishedByName}` : ""}
                   </p>
                 </div>
-                <CategoryTotals totals={active.categoryTotals} />
+                <CategoryTotals totals={releasedCategoryTotals} />
               </div>
 
               {canPublish && filtersOn ? (

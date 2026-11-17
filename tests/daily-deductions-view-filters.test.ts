@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { linesToRelease, indexReleasedLines } from "../src/lib/daily-deductions/release-state.ts";
 import {
   applyDailyDeductionViewFilters,
+  categoryTotalsOfLines,
   DAILY_DEDUCTION_VIEW_FILTERS_OFF,
   isAnyDailyDeductionViewFilterOn,
   parseDailyDeductionViewFilters,
@@ -134,6 +135,32 @@ export async function runDailyDeductionsViewFiltersTests(): Promise<void> {
       assert.notEqual(entry.category, "fingerprint", "no fingerprint line is released while it is hidden");
       assert.equal(HEAD_OFFICE.has(entry.employeeHrIdCompact), false, "no Head Office line is released while it is hidden");
     }
+  }
+
+  // ── the released type chips add up only what the filters leave ──────────
+  {
+    const released = [
+      line("fingerprint", "b10", "2026-11-03", 2489.77),
+      line("crm", "m22", "2026-11-04", 500),
+      line("crm", "m22", "2026-11-05", 250.01),
+      line("unpaid_vacation", "m30", "2026-11-06", 725.81),
+    ];
+    const shown = applyDailyDeductionViewFilters(released, { excludeFingerprint: true, excludeHeadOffice: false }, HEAD_OFFICE).lines;
+    assert.deepEqual(
+      categoryTotalsOfLines(shown),
+      { crm: 750.01, unpaid_vacation: 725.81 },
+      // 500 + 250.01 — the fingerprint line (2,489.77) is not in any chip
+      "with Exclude fingerprint on, the fingerprint chip is gone and the others sum only the shown lines",
+    );
+    assert.deepEqual(categoryTotalsOfLines([]), {}, "nothing shown, no chips");
+    const workspace = readFileSync(new URL("../src/components/admin/daily-deductions-workspace.tsx", import.meta.url), "utf8");
+    assert.match(
+      workspace,
+      /filtersOn \? categoryTotalsOfLines\(shownReleasedLines\) : \(active\?\.categoryTotals \?\? \{\}\)/,
+      "the chips read the filtered released lines while a filter is on",
+    );
+    assert.match(workspace, /<CategoryTotals totals=\{releasedCategoryTotals\} \/>/, "the chips render the filter-aware totals");
+    assert.doesNotMatch(workspace, /<CategoryTotals totals=\{active\.categoryTotals\} \/>/, "never the whole snapshot's totals again");
   }
 
   // ── the workspace derives every figure, tick and release from the filtered list ──
