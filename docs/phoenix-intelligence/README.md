@@ -38,6 +38,7 @@ Built on 14 Nov 2026 (Cairo), branch `codex/visual-intelligence`.
 | `lib/capture.mjs` | sign-in, the fenced context, one capture |
 | `lib/safety.mjs` | the click classifier, the origin allowlist, input checks |
 | `mcp-server.mjs` | the nine tools over stdio, for any MCP client |
+| `widget.mjs` | the screenshot viewer ChatGPT shows inside the conversation (an MCP Apps view) |
 | `on-spare.ps1` | runs everything on the spare laptop and copies the results back |
 | `self-check.mjs` | proves the machinery on a synthetic page |
 | `route-inventory.ts` | regenerates `route-inventory.json` |

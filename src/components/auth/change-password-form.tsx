@@ -24,7 +24,6 @@ export function ChangePasswordForm() {
   function clientValidate(): string | null {
     if (!current.value) return "Please enter your current password.";
     if (!next.value) return "Please enter a new password.";
-    if (next.value.length < 8) return "New password must be at least 8 characters.";
     if (next.value === current.value) return "New password must be different from your current password.";
     if (next.value !== confirm.value) return "New passwords do not match.";
     return null;
