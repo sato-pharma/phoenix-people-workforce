@@ -15,9 +15,9 @@ macOS/Linux. [PR #1435](https://github.com/it-gawish-hr/phoenix-people-workforce
 `claude/dazzling-gauss-be8ed5`, committed `e7c5d43c`.
 
 **Why:** a report of `pnpm run dev` 500ing on every Windows route (webpack failing to resolve
-`next/constants` inside `@sentry/nextjs`'s edge bundle, from `instrumentation.ts`'s unconditional
-`@sentry/nextjs` import) did NOT reproduce with a clean `pnpm install` — pointing to a corrupted
-local `node_modules` on whichever machine hit it, not a real Next 16.2.11/`@sentry/nextjs` 10.67.0
+`next/constants` inside the error-tracking SDK's edge bundle, from `instrumentation.ts`'s unconditional
+import of that SDK, since removed) did NOT reproduce with a clean `pnpm install` — pointing to a corrupted
+local `node_modules` on whichever machine hit it, not a real Next 16.2.11 / error-tracking SDK 10.67.0
 bug. That investigation surfaced a separate, more useful fact: the win32-forces-webpack fallback
 itself only existed to dodge a Turbopack chunk-loading crash on employee-portal pages under Next
 **16.2.6** (added by PR #699, `a10fae9`, 2026-07-02). Current `next` is **16.2.11** (5 patches
@@ -70,4 +70,4 @@ just revert: set `"dev"` back to `next dev --webpack`, or tell the user to run
 `pnpm run dev:no-turbopack` (kept as an explicit escape hatch, unaffected by this change). Don't
 assume a Windows dev-server error is a real code bug before ruling out a corrupted local
 `node_modules` first (`rm -rf node_modules .next && pnpm install`) — that was the actual cause
-here, not a Next/Sentry incompatibility.
+here, not a Next/SDK incompatibility.

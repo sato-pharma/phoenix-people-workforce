@@ -2863,6 +2863,95 @@ export async function balanceSettledDaysInPeriod(input: {
 const IN_FLIGHT_VACATION_STATUSES = ["needs_assignment", "pending_manager", "pending_hr"] as const;
 
 /**
+ * 🔒 ONE PERSON, ONE LIVE REQUEST PER DAY (owner, 2026-11-17, from the Ragaa audit). A request whose
+ * dates touch the same person's own in-flight or approved request is REFUSED, never merely warned
+ * about. Two live requests on the same days are each priced on their own at approval, so the days
+ * are counted twice and whichever is approved first takes the whole paid balance: VAC-0647 (3 Oct to
+ * 7 Nov) and VAC-0729 (1 to 15 Nov) overlapped on 1 to 7 Nov, and the second approval left the first
+ * fully unpaid. `returned`, `rejected` and `cancelled` are not live, so they never block. An AM-only
+ * and a PM-only request on the same single day are two halves of one day, not an overlap.
+ */
+const LIVE_VACATION_STATUSES = [...IN_FLIGHT_VACATION_STATUSES, "approved"] as const;
+
+export type OwnLeaveOverlapCandidate = {
+  dayPart: VacationDayPart;
+  endDate: string;
+  id: string;
+  requestCode: string | null;
+  startDate: string;
+  status: string;
+};
+
+export function findOwnLeaveOverlap(input: {
+  candidate: { dayPart: VacationDayPart; endDate: string; startDate: string };
+  excludeRequestId?: string | null;
+  existing: OwnLeaveOverlapCandidate[];
+}): OwnLeaveOverlapCandidate | null {
+  const live = new Set<string>(LIVE_VACATION_STATUSES);
+  const isHalf = (part: VacationDayPart) => part === "am_only" || part === "pm_only";
+  for (const row of input.existing) {
+    if (input.excludeRequestId && row.id === input.excludeRequestId) continue;
+    if (!live.has(row.status)) continue;
+    if (!dateRangesOverlap(input.candidate.startDate, input.candidate.endDate, row.startDate, row.endDate)) continue;
+    const otherHalfOfOneDay =
+      isHalf(input.candidate.dayPart) &&
+      isHalf(row.dayPart) &&
+      input.candidate.dayPart !== row.dayPart &&
+      input.candidate.startDate === input.candidate.endDate &&
+      row.startDate === row.endDate;
+    if (otherHalfOfOneDay) continue;
+    return row;
+  }
+  return null;
+}
+
+export function ownLeaveOverlapMessage(row: OwnLeaveOverlapCandidate, audience: "employee" | "admin" = "employee") {
+  const code = row.requestCode ? `${row.requestCode} ` : "";
+  return audience === "admin"
+    ? `This employee already has leave ${code}filed from ${row.startDate} to ${row.endDate}, which covers some of these dates. Change or remove that request first, or pick dates outside it.`
+    : `You already have leave ${code}filed from ${row.startDate} to ${row.endDate}, which covers some of these dates. Pick dates outside it, or ask HR to change that request instead.`;
+}
+
+async function assertNoOwnLeaveOverlap(input: {
+  audience?: "employee" | "admin";
+  dayPart: VacationDayPart;
+  employeeHrId: string;
+  endDate: string;
+  excludeRequestId?: string | null;
+  startDate: string;
+}) {
+  const hrId = input.employeeHrId.toUpperCase();
+  const ownAndEarlier = ownAndEarlierRecordHrIds(hrId);
+  const requestsForPerson = getSupabaseAdmin()
+    .from(vacationRequestsTable)
+    .select("id,request_code,start_date,end_date,day_part,status");
+  const { data, error } = await (ownAndEarlier.length > 1
+    ? requestsForPerson.in("employee_hr_id", ownAndEarlier)
+    : requestsForPerson.eq("employee_hr_id", hrId))
+    .in("status", LIVE_VACATION_STATUSES as unknown as string[])
+    .lte("start_date", input.endDate)
+    .gte("end_date", input.startDate);
+  // Fails closed: a request that cannot be checked for a double booking is not written.
+  if (error) throw new Error("Your existing leave could not be checked for overlapping dates. Please try again.");
+  const overlap = findOwnLeaveOverlap({
+    candidate: { dayPart: input.dayPart, endDate: input.endDate, startDate: input.startDate },
+    excludeRequestId: input.excludeRequestId,
+    existing: (data ?? []).map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        dayPart: (normalizeVacationDayPart(record.day_part) ?? "full_day") as VacationDayPart,
+        endDate: text(record.end_date),
+        id: text(record.id),
+        requestCode: text(record.request_code) || null,
+        startDate: text(record.start_date),
+        status: text(record.status),
+      };
+    }),
+  });
+  if (overlap) throw new Error(ownLeaveOverlapMessage(overlap, input.audience ?? "employee"));
+}
+
+/**
  * Paid days already committed by in-flight requests, for the balance a HUMAN is shown.
  *
  * DISPLAY ONLY, and deliberately a separate function from approvedPaidDaysInPeriod rather than a
@@ -3660,6 +3749,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
   const compensatoryDetails = vacationType === "compensatory" ? validateCompensatoryDetails(input) : null;
 
   const { directory, employee } = await getCurrentEmployee(access);
+  await assertNoOwnLeaveOverlap({ dayPart, employeeHrId: employee.hrId, endDate, startDate });
   const weeklyOffPolicy = await fetchWeeklyOffPolicyForTitle(employeeVacationPolicyTitle(employee));
   const durationDays = calculateVacationDurationDays({
     dayPart,
@@ -3914,6 +4004,16 @@ async function buildAdminVacationMutationPayload(input: {
   }
   if (vacationType === "other" && !notes) {
     throw new Error("Other vacation requires an explanation for HR review.");
+  }
+  if ((LIVE_VACATION_STATUSES as readonly string[]).includes(status)) {
+    await assertNoOwnLeaveOverlap({
+      audience: "admin",
+      dayPart,
+      employeeHrId: employee.hrId,
+      endDate,
+      excludeRequestId: input.existing?.id,
+      startDate,
+    });
   }
   if (vacationType === "sick" && !input.existing?.sickAttachmentObjectPath) {
     throw new Error("Manual sick vacation entries require an existing medical document. Ask the employee to submit the sick request with an attachment first.");
@@ -5142,6 +5242,9 @@ export async function resubmitVacationRequest(
   if (!dayPart) throw new Error("Vacation day part is invalid.");
   if (endDate < startDate) throw new Error("Vacation end date cannot be before the start date.");
   const datesChanged = startDate !== request.startDate || endDate !== request.endDate || dayPart !== request.dayPart;
+  // Checked even on unchanged dates: while this request sat returned, another one may have been filed
+  // for the same days, and resubmitting would make both live again.
+  await assertNoOwnLeaveOverlap({ dayPart, employeeHrId: request.employeeHrId, endDate, excludeRequestId: request.id, startDate });
 
   const update: Record<string, unknown> = { updated_at: now };
   const changedFields: string[] = [];

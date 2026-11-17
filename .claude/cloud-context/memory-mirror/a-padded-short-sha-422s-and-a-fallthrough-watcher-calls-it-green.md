@@ -37,7 +37,7 @@ absent mode and a mis-invoked one also produce identical evidence.
 assert it locally before a watcher uses it (`git cat-file -e <sha>^{commit}`). Build the wait on an
 allow-list: advance only on an explicit `completed/success` for the `github-actions` suite with no
 `queued`/`in_progress` remaining, treat an unreadable or error answer as *keep waiting*, and keep
-the four permanently-`queued` third-party suites (`sentry`, `claude`, `vercel`, `railway-app`) out
+the three permanently-`queued` third-party suites (`claude`, `vercel` until 27 Oct, `railway-app`) out
 of the decision. The same shape bites `gh api` anywhere a sha is interpolated, including
 `actions/runs?head_sha=`, which answers `total_count: 0` for a short sha and reads exactly like a
 missing run.

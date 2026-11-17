@@ -19,7 +19,7 @@ reach the URL itself (the app's own auth still applies once you're on it).
 database. Edits made through this URL never touch production data.
 
 **Deliberately does NOT have production's third-party secrets** (Resend, OpenAI, Telegram,
-Sentry, CRON_SECRET, Google server key, attendance-agent token, iReports360) — only staging
+CRON_SECRET, Google server key, attendance-agent token, iReports360) — only staging
 Supabase credentials + a freshly-generated `PHOENIX_AUTH_SECRET` + `APP_ENV=staging` (forces
 `isForceTestingDelivery()` on, so any email path that *did* fire would redirect to test
 recipients anyway). This was a deliberate scope-down after the Claude Code auto-mode

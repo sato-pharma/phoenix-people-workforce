@@ -37,9 +37,9 @@ them is safety, not space.
 `sad-hopper-5d16b0`, `vibrant-poincare-ac3e34`) were emptied but their stubs stay pinned as a live
 session's CWD. One root orphan, `_wt-vacation-hr-single-approver`, was NOT an empty skeleton — it
 held **2,095 real files (46.6 MB)**, a partial 07-04 snapshot with no `app/` dir, still carrying
-`sentry.*.config.ts` and `vercel.json`. Verified safe to delete by hashing every file with
+the old error tracker's `*.config.ts` files and `vercel.json`. Verified safe to delete by hashing every file with
 `git hash-object` and checking each blob against the object DB: **1,911 of 1,913 already in git**;
-the 2 outliers were superseded pre-Sentry-retirement versions (orphan had `console.error`/`fullName`,
+the 2 outliers were superseded versions from before the error-tracker retirement (orphan had `console.error`/`fullName`,
 primary has `logError`/`displayName`/`rpcAll`, last committed 07-28 vs the orphan's 07-04).
 `.codex-worktrees/` was deliberately left alone — it is Codex's, not Claude's.
 

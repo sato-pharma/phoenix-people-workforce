@@ -7,21 +7,21 @@ metadata:
   originSessionId: 5fc35f6d-fde7-4c5d-9ca9-18c04c141b55
 ---
 
-Around 2026-07-09 the owner migrated Phoenix Workforce hosting **from Vercel to Google Cloud Run** and switched the canonical URL to **https://phoenix-hr.satopharma.com**. Work lives on branch `codex/remove-sentry` (big branch — also bundles payroll/sales/notification work).
+Around 2026-07-09 the owner migrated Phoenix Workforce hosting **from Vercel to Google Cloud Run** and switched the canonical URL to **https://phoenix-hr.satopharma.com**. Work lives on the error-tracker removal branch (big branch — also bundles payroll/sales/notification work).
 
 **Infra facts (verified via gcloud 2026-07-11):**
 - GCP project `phoenix-workforce-498619`, region `us-central1`, Cloud Run service `phoenix-hr`, run.app URL `https://phoenix-hr-897559113412.us-central1.run.app`.
 - `gcloud` is authed locally as `phoenixx.oag@gmail.com` (owner's account).
 - Deploys are **MANUAL** (`gcloud run deploy --source .` by the owner). The `.github/workflows/deploy-cloud-run.yml` exists but relies on `WIF_PROVIDER`/`WIF_SERVICE_ACCOUNT` secrets — CI deploy is **unverified / likely not working**. Because `--source .` uploads untracked files, `app/api/mcp/route.ts`, `generate-env.js`, `scripts/test-mcp.sh` (all untracked) ARE in the deployed image.
 
-**Audit findings + resolution (2026-07-11, PR #984 on branch codex/remove-sentry → main, commit 8a685d0b):**
+**Audit findings + resolution (2026-07-11, PR #984 from that branch → main, commit 8a685d0b):**
 1. **Cloud Scheduler was a mess: 13 jobs, heavily duplicated** → notification emails fired 2–3×/day (duplicate/triple emails); iReports sync had BOTH jobs on a STALE secret (401-failing since migration). The "errors" were auth failures, not timeouts (stale token `phx_cron_2886…` vs live env `ClXZnT…`). RESOLVED: deleted 9 dupes, fixed sync secret, normalized schedules. **Canonical 4 now live:** `phoenix-notify-daily` (30 6), `phoenix-process-notifications` (*/30 ?limit=50), `phoenix-ireports360-sync` (0 9,12,19), `phoenix-reconcile-visits` (0 4 * * 0). All carry the correct Bearer CRON_SECRET.
 2. `src/lib/auth/app-sessions.ts` `shouldBlockLoginWhenSupabaseBridgeUnavailable` keyed on `VERCEL_ENV==="production"` → never true on Cloud Run → strict bridge login-gate silently relaxed. FIXED → `isProductionRuntime()`.
 3. `app/api/mcp/route.ts` (untracked) diagnostic MCP endpoint leaked env-var NAMES; `PHOENIX_AGENT_SECRET` unset in prod so it 403/500s. REMOVED (backed up to session scratchpad).
 4. `generate-env.js` (untracked) hardcoded CRON_SECRET in plaintext. REMOVED + added to .gitignore/.dockerignore. **Owner should ROTATE CRON_SECRET.**
-5. Dead Sentry remnants cleaned: CSP `sentry.io`, workflow `NEXT_PUBLIC_SENTRY_*`, `.env.example`, stale `origins.ts` comment. `productionUrl` in `system-settings.ts` correctly = custom domain.
+5. Dead remnants of the old error tracker cleaned: its CSP domain, its public workflow env vars, `.env.example`, stale `origins.ts` comment. `productionUrl` in `system-settings.ts` correctly = custom domain.
 
-**Done 2026-07-11 (live):** Cloud Run env cleaned — 6 SENTRY_* vars removed + `APP_ENV=production` added (revision phoenix-hr-00029-hhv). **CRON_SECRET ROTATED** by owner (I can't mint secrets — safety rule; owner ran a one-shot PowerShell block that generated + applied to Cloud Run env + all 4 jobs; verified via SHA-256 fingerprint match across all 5 places, new fp `0cf313c9…` ≠ old, process force-run succeeded). New revision from rotation ~phoenix-hr-00030.
+**Done 2026-07-11 (live):** Cloud Run env cleaned — the old error tracker's 6 env vars removed + `APP_ENV=production` added (revision phoenix-hr-00029-hhv). **CRON_SECRET ROTATED** by owner (I can't mint secrets — safety rule; owner ran a one-shot PowerShell block that generated + applied to Cloud Run env + all 4 jobs; verified via SHA-256 fingerprint match across all 5 places, new fp `0cf313c9…` ≠ old, process force-run succeeded). New revision from rotation ~phoenix-hr-00030.
 
 **AUTO-DEPLOY NOW WORKS (2026-07-11):** GitHub Actions `Deploy to Google Cloud Run` (push to main + workflow_dispatch) deploys to Cloud Run. Was failing on IAM PERMISSION_DENIED; fixed by granting the deploy SA `897559113412-compute@developer.gserviceaccount.com` **roles/run.admin** + **roles/iam.serviceAccountUser** (owner ran the grants). WIF pool `github-actions-pool` was already correct (bound to repo Phoenix-HR/phoenix-people-workforce). PR #984 (squash 8ca5903d) merged → auto-deployed revision phoenix-hr-00031-d5p, prod 200. Required checks on main = `validate` + `lint-typecheck` only.
 - **KNOWN CI FOLLOW-UP:** `preview-smoke` (Playwright login) FAILS — pre-existing on main, NOT required/non-blocking. Cause: `playwright.config.ts` webServer runs `npm run start` (`next start`) which is incompatible with `output: "standalone"`. Fix later: run the standalone server (`node .next/standalone/server.js` with static/public copied) or gate `output:standalone` behind a Docker-only env flag.
