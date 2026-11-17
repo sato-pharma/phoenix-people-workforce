@@ -64784,11 +64784,11 @@ CREATE TABLE public.offer_templates (
     builtin_key text,
     variant text DEFAULT 'classic'::text NOT NULL,
     CONSTRAINT offer_templates_blocks_is_array CHECK ((jsonb_typeof(blocks) = 'array'::text)),
-    CONSTRAINT offer_templates_builtin_key_known CHECK (((builtin_key IS NULL) OR (builtin_key = ANY (ARRAY['classic'::text, 'executive'::text, 'sato'::text, 'house'::text, 'premium'::text])))),
+    CONSTRAINT offer_templates_builtin_key_known CHECK (((builtin_key IS NULL) OR (builtin_key = ANY (ARRAY['classic'::text, 'executive'::text, 'sato'::text, 'house'::text, 'premium'::text, 'prestige'::text])))),
     CONSTRAINT offer_templates_font_size_sane CHECK (((font_size_pt >= (5)::numeric) AND (font_size_pt <= (24)::numeric))),
     CONSTRAINT offer_templates_name_not_blank CHECK ((btrim(name) <> ''::text)),
     CONSTRAINT offer_templates_theme_is_object CHECK ((jsonb_typeof(theme) = 'object'::text)),
-    CONSTRAINT offer_templates_variant_known CHECK ((variant = ANY (ARRAY['classic'::text, 'executive'::text, 'sato'::text, 'house'::text, 'premium'::text])))
+    CONSTRAINT offer_templates_variant_known CHECK ((variant = ANY (ARRAY['classic'::text, 'executive'::text, 'sato'::text, 'house'::text, 'premium'::text, 'prestige'::text])))
 );
 
 ALTER TABLE public.offer_templates OWNER TO postgres;
@@ -64797,13 +64797,13 @@ ALTER TABLE public.offer_templates OWNER TO postgres;
 -- Name: COLUMN offer_templates.builtin_key; Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON COLUMN public.offer_templates.builtin_key IS 'Which shipped design this row is a copy of (classic | executive | sato | house | premium), or null for a template built in the designer. Restore matches on this, never on name.';
+COMMENT ON COLUMN public.offer_templates.builtin_key IS 'Which shipped design this row is a copy of (classic | executive | sato | house | premium | prestige), or null for a template built in the designer. Restore matches on this, never on name.';
 
 --
 -- Name: COLUMN offer_templates.variant; Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON COLUMN public.offer_templates.variant IS 'The CSS skin the blocks are drawn in (classic | executive | sato | house | premium). All built-ins share one block list and one renderer; this chooses the visual identity.';
+COMMENT ON COLUMN public.offer_templates.variant IS 'The CSS skin the blocks are drawn in (classic | executive | sato | house | premium | prestige). All built-ins share one block list and one renderer; this chooses the visual identity.';
 
 --
 -- Name: offers; Type: TABLE; Schema: public; Owner: postgres

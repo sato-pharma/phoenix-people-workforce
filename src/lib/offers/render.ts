@@ -25,6 +25,7 @@ import { HOUSE_COLORS, houseBandBackground, houseEngineTurnedBand } from "@/lib/
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
 import { PREMIUM_OFFER_SKIN, premiumOfferBody, premiumOfferChrome } from "@/lib/offers/premium-skin";
+import { PRESTIGE_OFFER_SKIN } from "@/lib/offers/prestige-skin";
 import { offerRoleSummary } from "@/lib/offers/role-summary";
 import { systemLegalEntity } from "@/config/system-settings";
 import type { OfferBlock, OfferFields, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
@@ -612,6 +613,9 @@ table{width:100%;border-collapse:collapse}
   // offer's own rules, which strip every filled area the base draws back to the ink rule. It tiles
   // no background of its own and switches the base's tiled band off.
   if (variant === "premium") return `${base}\n${PREMIUM_OFFER_SKIN}`;
+  // The prestige skin (17 Nov 2026), appended the same way. It draws no page chrome, so its body is
+  // the blocks one after another, exactly as the classic letter's is.
+  if (variant === "prestige") return `${base}\n${PRESTIGE_OFFER_SKIN}`;
   return base;
 }
 
@@ -995,7 +999,9 @@ export function renderOfferDocument(
           ? "house"
           : template.variant === "premium"
             ? "premium"
-            : "classic";
+            : template.variant === "prestige"
+              ? "prestige"
+              : "classic";
   const tokens = buildOfferTokens(fields);
   // The premium letter draws its letterhead and title as ONE centred masthead and ends on the page
   // chrome (watermark, frame, running foot), appended last so it sits after every block. Every other

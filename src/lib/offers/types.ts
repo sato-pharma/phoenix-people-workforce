@@ -52,8 +52,12 @@ export type OfferBlockType =
  *               Arabic watermark, a Sato-only running foot and the ink rule. A FIFTH skin the owner
  *               asked for on 2026-10-13 — "for job offers create new template with the new identity"
  *               — added beside the four others and changing none of them.
+ * `prestige`  — the engraved-letter look: a letterhead closed by an Oxford double rule, a serif
+ *               display face for the title and the monthly figure, sections numbered in Roman
+ *               capitals and the ink rule. A SIXTH skin the owner asked for on 2026-11-17 for the
+ *               Product Manager offer, added beside the five others and changing none of them.
  */
-export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house" | "premium";
+export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house" | "premium" | "prestige";
 
 /**
  * Which shipped design a row IS a copy of, or null for one somebody built themselves.
@@ -61,7 +65,7 @@ export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house" | 
  * This is what makes "restore" survive renaming: the built-ins are regenerated from code, and the
  * row is found by this key rather than by a name the owner is free to change.
  */
-export type OfferBuiltinKey = "classic" | "executive" | "sato" | "house" | "premium";
+export type OfferBuiltinKey = "classic" | "executive" | "sato" | "house" | "premium" | "prestige";
 
 export type OfferBlock = {
   id: string;
