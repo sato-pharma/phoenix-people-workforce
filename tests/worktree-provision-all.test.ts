@@ -29,7 +29,7 @@ import { provisionDir, sweepWorktrees, wasChanged } from "../scripts/lib/provisi
 function sameFile(a: string, b: string) {
   const x = fs.statSync(a, { bigint: true });
   const y = fs.statSync(b, { bigint: true });
-  return x.ino !== 0n && x.ino === y.ino && x.dev === y.dev;
+  return x.ino !== BigInt(0) && x.ino === y.ino && x.dev === y.dev;
 }
 
 // Move a file's last-write time, so "older than the primary's" and "newer" are never a race.
