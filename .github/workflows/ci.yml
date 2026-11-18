@@ -98,11 +98,12 @@ on:
   pull_request:
   # 🔴 THE `push` TRIGGER IS THE PRODUCTION DEPLOY GATE. DO NOT REMOVE IT TO SAVE MONEY.
   #
-  # Railway's "Wait for CI" is enabled on the production service, and it waits on the Actions check
-  # SUITES attached to the pushed commit. Delete `main` from this list and there is no suite to wait
-  # for, so Railway stops waiting and every merge ships unverified again — silently, with no red
-  # check and nothing in this file to show what broke. Un-gating production would look like a
-  # tidy-up diff.
+  # The production deploy waits on THIS push run: its `release-gate` job writes the row /api/readyz waits
+  # for (next paragraph but one). Until 2026-10-20 Railway's "Wait for CI" also waited on this run's check
+  # suite; it is off on every service now. Delete `main` from this list and no row is ever written, so no
+  # merge can go live — and with the release gate switched off, every merge would ship unverified,
+  # silently, with no red check and nothing in this file to show what broke. Un-gating production
+  # would look like a tidy-up diff.
   #
   # It is a tempting deletion, which is why this comment exists. Measured 2026-09-27: `push` is
   # 32.7% of ci.yml's billable minutes (~$98 of a $300.88 month) and the jobs it runs are a repeat
@@ -113,10 +114,10 @@ on:
   # next.config.ts sets `typescript: { ignoreBuildErrors: true }` — a red main builds, deploys and
   # serves perfectly. Account: docs/deployment.md, "The deploy gate".
   #
-  # 🔴 STILL TRUE AFTER THE RELEASE GATE (2026-10-19): once Railway's Wait for CI is switched off, the gate is
+  # 🔴 STILL TRUE AFTER THE RELEASE GATE (2026-10-19): Wait for CI went off on 2026-10-20, so the gate is
   # this run's `release-gate` job rather than the suite, but it is a job of THIS push run all the same, so the
-  # same deletion would leave production with no row ever written and nothing able to go live. The two
-  # mechanisms overlap on purpose until the owner switches Wait for CI off. docs/deployment.md, "The release gate".
+  # same deletion would leave production with no row ever written and nothing able to go live.
+  # docs/deployment.md, "The release gate".
   push:
     branches:
       - main
@@ -373,9 +374,10 @@ jobs:
       # merging validate into checks (they run in parallel, so it doubles the wait).
       #
       # 🔴 THE TRADE-OFF, STATED PLAINLY BECAUSE IT IS NOT FREE: a build break or a broken
-      # login now surfaces on `main` rather than on the PR. PRODUCTION IS STILL PROTECTED — a red
-      # `main` fails the check suite, and Railway's Wait for CI then withholds the deploy, so
-      # nothing ships unverified. What is delayed is the DISCOVERY, and the cost of that is a
+      # login now surfaces on `main` rather than on the PR. PRODUCTION IS STILL PROTECTED — a build
+      # Railway cannot make never replaces the serving version, and a red `checks` on `main` writes no
+      # release-gate row, so /api/readyz holds the new container and the old version keeps serving
+      # (Railway's Wait for CI did that job until 2026-10-20). What is delayed is the DISCOVERY, and the cost of that is a
       # fix-forward on main instead of a red PR. If that ever proves too expensive, the middle
       # setting is to keep the build on PRs that touch `app/`, `src/` or `next.config.ts` and
       # skip it elsewhere — not a return to building on every PR.

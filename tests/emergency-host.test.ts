@@ -110,6 +110,12 @@ export function runEmergencyHostTests(): void {
     assert.match(workerStep, /--regions fra --ha=false/, "one worker machine, in Frankfurt — two would run every job twice");
     assert.match(workerStep, /FLY_APP="\$WORKER_APP" node scripts\/emergency-host\.mjs wait-standby --sha "\$SHA"/, "the worker's own address must report the commit");
     assert.ok(workflow.indexOf("point --to fly --sha") < workflow.indexOf("Move the background worker"), "the website goes live first, then the worker follows");
+    // Railway audit, 2026-11-18: the step defaulted to the destroyed phoenix-worker-standby and then claimed "the jobs
+    // run elsewhere", false during a full Railway outage. No default; an empty variable says no job runs.
+    assert.match(workerStep, /WORKER_APP: \$\{\{ vars\.FLY_WORKER_APP \}\}/, "the worker app comes from the repository variable alone");
+    assert.doesNotMatch(workerStep, /FLY_WORKER_APP \|\|/, "🔴 no default worker app name: the Fly worker it named was destroyed on 23 Oct 2026");
+    assert.doesNotMatch(workerStep, /run elsewhere/, "🔴 during a full Railway outage the jobs do not run elsewhere; say that no job runs");
+    assert.match(workerStep, /if \[ -z "\$\{WORKER_APP\}" \]; then[\s\S]*?exit 0/, "with no worker named, the step says so and never fails the go-live");
   }
 
   // ── The variable file `flyctl secrets import` reads ───────────────────────────────────────────────────────────────
