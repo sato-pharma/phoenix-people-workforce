@@ -129,9 +129,11 @@ export async function runPermissionMatrixColdStartTests(): Promise<void> {
     );
   }
 
-  // ── 5. A chosen password is not one every guessing list tries first ──────────────────────────
-  for (const weak of ["12345678", "password", "Password123", "P@ssw0rd123", "qwertyuiop", "aaaaaaaa", "abcdefgh", "Phoenix2026!", "Sato@1234", "satopharma1", "Welcome@2026", "87654321"]) {
-    assert.ok(passwordWeakness(weak), `HEADLINE: "${weak}" is refused`);
+  // ── 5. A chosen password: 8+ characters and not the person's own login id ────────────────────
+  // The "too common" rule is gone (owner, 18 Nov 2026: "remove this security shit" → "Just this rule"):
+  // a well-known password or a word followed by numbers is accepted here (the leak check still runs).
+  for (const common of ["12345678", "Password123", "P@ssw0rd123", "qwertyuiop", "aaaaaaaa", "Phoenix2026!", "Sato@1234", "Welcome@2026"]) {
+    assert.equal(passwordWeakness(common, ["stand.in", "T-1"]), null, `HEADLINE: "${common}" is no longer refused as too common`);
   }
   assert.ok(passwordWeakness("stand.in1", ["stand.in", "T-1"]), "the person's own login id, decorated, is refused");
   assert.ok(passwordWeakness("short1!"), "under 8 characters is still refused");

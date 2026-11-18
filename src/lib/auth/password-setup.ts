@@ -847,7 +847,7 @@ export async function completePasswordSetup(input: { password: string; token: st
   let leakedPasswordCheck: ReturnType<typeof leakedPasswordAuditValue> | "test_account" = "test_account";
   if (chosenPasswordRulesApply({ isTestPersona: tokenRow.is_test_persona })) {
     if (password.length < 8) throw new PasswordTooShortError();
-    // And not a password every guessing list tries first (password-strength.ts).
+    // And not the person's own login id (password-strength.ts).
     const weakness = passwordWeakness(password, [tokenRow.login_id, tokenRow.hr_id]);
     if (weakness) throw new Error(weakness);
     // And not one that already sits in a published breach (leaked-password.ts). Asked BEFORE the link is
