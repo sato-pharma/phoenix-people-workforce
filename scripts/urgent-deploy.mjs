@@ -46,6 +46,13 @@ import { pathToFileURL } from "node:url";
 
 import { REPO } from "./required-check-names.mjs";
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
+import {
+  describeAttempt,
+  firstErrorLine,
+  isAuthRejection,
+  railwayCliAttempts,
+  railwayCliEnv,
+} from "./lib/railway-cli-credentials.mjs";
 
 export { REPO };
 export const PRODUCTION_URL = "https://phoenix-hr.satopharma.com";
@@ -235,32 +242,26 @@ export function buildUrgentCommit({ prs, services }) {
 
 // ── Railway ──────────────────────────────────────────────────────────────────────────────────────
 
-// The repo's one Railway secret may be an ACCOUNT or a PROJECT token, and the CLI reads them from
-// different variables; scripts/sync-railway-production-secrets.mjs explains the failure that reads
-// like expiry. Try the account name first, then the project name, and remember the one that works.
-let workingTokenVar = null;
-function railwayEnv(varName) {
-  const token = process.env.RAILWAY_API_TOKEN || process.env.RAILWAY_TOKEN || "";
-  return {
-    ...process.env,
-    RAILWAY_API_TOKEN: varName === "RAILWAY_API_TOKEN" ? token : "",
-    RAILWAY_TOKEN: varName === "RAILWAY_TOKEN" ? token : "",
-  };
-}
+// The repository holds TWO Railway keys — RAILWAY_TOKEN a project key, RAILWAY_API_TOKEN a workspace key —
+// and the CLI reads each from its own variable. 🔴 Each is tried under its own name and never merged into
+// one value (2026-10-27): until the 2026-11-18 Railway audit this route read `RAILWAY_API_TOKEN ||
+// RAILWAY_TOKEN`, so with both secrets set the project key was never tried. The order lives in
+// scripts/lib/railway-cli-credentials.mjs; the attempt that works is remembered for the rest of the run.
+let workingAttempt = null;
 
 function railwayArgs(args, service) {
   return ["--yes", RAILWAY_CLI_PACKAGE, ...args, "--service", service, "--environment", RAILWAY_ENVIRONMENT, "--project", RAILWAY_PROJECT_ID];
 }
 
 function railwayStreaming(args, service) {
-  const order = workingTokenVar ? [workingTokenVar] : ["RAILWAY_API_TOKEN", "RAILWAY_TOKEN"];
+  const order = workingAttempt ? [workingAttempt] : railwayCliAttempts(process.env);
   return (async () => {
-    let last = { code: 1, output: "" };
-    for (const varName of order) {
+    let last = { code: 1, output: "no Railway key is set (RAILWAY_TOKEN or RAILWAY_API_TOKEN)" };
+    for (const attempt of order) {
       last = await new Promise((resolvePromise) => {
         let output = "";
         const child = spawn("npx", railwayArgs(args, service), {
-          env: railwayEnv(varName),
+          env: railwayCliEnv(attempt),
           shell: process.platform === "win32",
         });
         child.stdout.on("data", (d) => { output += d; process.stdout.write(d); });
@@ -268,10 +269,11 @@ function railwayStreaming(args, service) {
         child.on("close", (code) => resolvePromise({ code, output }));
       });
       if (last.code === 0) {
-        workingTokenVar = varName;
+        workingAttempt = attempt;
         return last;
       }
-      if (!/Unauthorized|Invalid RAILWAY/i.test(last.output)) return last;
+      console.error(`[urgent-deploy] ${describeAttempt(attempt)} refused: ${firstErrorLine({ stderr: last.output })}`);
+      if (!isAuthRejection({ stderr: last.output })) return last;
     }
     return last;
   })();
@@ -289,16 +291,19 @@ async function waitForLive(sha, label) {
 
 /** Write the marker, upload, and wait until production serves `sha`. */
 async function uploadAndWait({ sha, prs, services, dryRun }) {
-  writeFileSync(
-    resolve(MARKER_PATH),
-    `${JSON.stringify({ revision: sha, prs, builtAt: new Date().toISOString() }, null, 2)}\n`,
-  );
   if (dryRun) {
     const probe = await railwayStreaming(["deployment", "list", "--limit", "1", "--json"], SERVICES.web);
     if (probe.code !== 0) throw new Error("Dry run: the Railway credential could not read the production service.");
     console.log(`[urgent-deploy] DRY RUN — built ${sha.slice(0, 9)} for ${prs.map((n) => `#${n}`).join(", ")}; credential works; nothing uploaded.`);
     return 0;
   }
+  // The marker is written only for a real upload (2026-11-18 Railway audit: a dry run wrote it too). A
+  // marker left in a checkout is one `git add` from riding along in a git build; the release gate now
+  // ignores it there, but nothing should put it there.
+  writeFileSync(
+    resolve(MARKER_PATH),
+    `${JSON.stringify({ revision: sha, prs, builtAt: new Date().toISOString() }, null, 2)}\n`,
+  );
   // The worker first and detached, so the web build — the one employees wait on — is not queued
   // behind it. The worker has no URL to prove; its deploy shows in Railway.
   if (services.includes("worker")) {

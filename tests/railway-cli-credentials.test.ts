@@ -20,6 +20,14 @@ import {
 
 const CLI_SCRIPTS = ["scripts/validate-railway-production-secrets.mjs", "scripts/sync-railway-production-secrets.mjs"];
 
+// The other two scripts that start the Railway CLI. They merged the two keys until the 2026-11-18 Railway
+// audit, which this test did not see because it read only CLI_SCRIPTS. Kept out of CLI_SCRIPTS because no
+// step of the two workflows below runs them.
+const OTHER_CLI_SCRIPTS = ["scripts/urgent-deploy.mjs", "scripts/railway-iac-preapply-check.mjs"];
+
+// Both spellings of the merge: `?.trim() || process.env.RAILWAY_TOKEN` and the bare `|| process.env.RAILWAY_TOKEN`.
+const SCRIPT_MERGE = /process\.env\.RAILWAY_API_TOKEN(?:\?\.trim\(\))?\s*\|\|\s*process\.env\.RAILWAY_TOKEN/;
+
 /** Every workflow step whose `run:` calls one of the CLI scripts, as raw step text. */
 function cliSteps(file: string): string[] {
   const source = readFileSync(resolve(".github/workflows", file), "utf8");
@@ -84,16 +92,28 @@ export function runRailwayCliCredentialsTests() {
   assert.ok(isAuthRejection({ stderr: "Unauthorized. Please check that your RAILWAY_TOKEN is valid" }));
   assert.ok(!isAuthRejection({ stderr: "Project not found" }), "a bad project id is not retried under another key");
 
-  // 7. Both CLI scripts use the shared attempts and hold no merge of their own.
-  for (const script of CLI_SCRIPTS) {
+  // 7. Every script that starts the Railway CLI uses the shared attempts and holds no merge of its own.
+  for (const script of [...CLI_SCRIPTS, ...OTHER_CLI_SCRIPTS]) {
     const source = readFileSync(resolve(script), "utf8");
     assert.match(source, /railwayCliAttempts\(process\.env\)/, `🔴 ${script} no longer builds its attempts from scripts/lib/railway-cli-credentials.mjs`);
     assert.doesNotMatch(
       source,
-      /RAILWAY_API_TOKEN\?\.trim\(\)\s*\|\|\s*process\.env\.RAILWAY_TOKEN/,
+      SCRIPT_MERGE,
       `🔴 ${script} merges the two Railway secrets into one value again, so the project key is never tried`,
     );
   }
+  assert.ok(SCRIPT_MERGE.test("process.env.RAILWAY_API_TOKEN || process.env.RAILWAY_TOKEN"), "the merge pattern lost the bare spelling");
+  assert.ok(SCRIPT_MERGE.test("process.env.RAILWAY_API_TOKEN?.trim() || process.env.RAILWAY_TOKEN"), "the merge pattern lost the trimmed spelling");
+
+  // 7b. The urgent route's job hands the CLI both secrets, each under its own name.
+  const urgentWorkflow = readFileSync(resolve(".github/workflows/urgent-deploy.yml"), "utf8");
+  assert.doesNotMatch(
+    urgentWorkflow,
+    /secrets\.RAILWAY_API_TOKEN\s*\|\|\s*secrets\.RAILWAY_TOKEN/,
+    "🔴 urgent-deploy.yml merges RAILWAY_API_TOKEN || RAILWAY_TOKEN again, so the urgent route never tries the project key",
+  );
+  assert.match(urgentWorkflow, /RAILWAY_API_TOKEN:\s*\$\{\{\s*secrets\.RAILWAY_API_TOKEN\s*\}\}/, "urgent-deploy.yml lost RAILWAY_API_TOKEN");
+  assert.match(urgentWorkflow, /RAILWAY_TOKEN:\s*\$\{\{\s*secrets\.RAILWAY_TOKEN\s*\}\}/, "urgent-deploy.yml lost RAILWAY_TOKEN");
 
   // 8. Every workflow step that runs a CLI script passes the two secrets separately.
   const workflows = ["secret-drift-check.yml", "sync-railway-production-secrets.yml"];
