@@ -117,9 +117,10 @@ async function connected(check: LiveSubjectCheck = async () => ({ ok: true })) {
 
 async function registrationAndAuthorize() {
   const memory = memoryStore();
-  const oauth = createConnectorOAuth({ store: memory.store, checkSubject: async () => ({ ok: true }), origin: ORIGIN });
+  const oauth = createConnectorOAuth({ store: memory.store, checkSubject: async () => ({ ok: true }), origin: ORIGIN, callbackIds: new Set(["abc_123"]) });
 
-  // Only ChatGPT's own return addresses may register.
+  // Only ChatGPT's own return addresses may register, and a per-connector one only when its id is listed.
+  await expectOAuth(oauth.register({ redirect_uris: ["https://chatgpt.com/connector/oauth/stranger_1"] }), "invalid_redirect_uri");
   await expectOAuth(oauth.register({ redirect_uris: ["https://evil.example/cb"] }), "invalid_redirect_uri");
   await expectOAuth(oauth.register({ redirect_uris: ["https://chatgpt.com.evil.example/connector_platform_oauth_redirect"] }), "invalid_redirect_uri");
   await expectOAuth(oauth.register({ redirect_uris: [] }), "invalid_redirect_uri");

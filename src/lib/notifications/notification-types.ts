@@ -49,6 +49,7 @@ const MARKET_AWARENESS = "src/lib/market-awareness/notifications.ts";
 const MARKETING_FUNCTIONS = "src/lib/marketing-functions/notify.ts";
 const MARKETING_REQUESTS = "src/lib/marketing-requests/service.ts";
 const OFFERS_ACCEPTED = "src/lib/offers/accepted-offer-alert.ts";
+const OFFERS_NEW_JOINER = "src/lib/offers/new-joiner-announcement.ts";
 const OFFERS_APPROVAL = "src/lib/offers/approval.ts";
 const OFFERS_SEND = "src/lib/offers/send.ts";
 const OUTSTATION = "src/lib/outstation/service.ts";
@@ -208,6 +209,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "offers", eventType: "offer_joining_form_blocked", label: "A new hire's joining form needs HR", sentFrom: [OFFERS_ACCEPTED] },
   { module: "offers", eventType: "offer_letter", label: "Your job offer letter (to the candidate)", sentFrom: [OFFERS_SEND], delivery: "direct_email" },
   { module: "offers", eventType: "offer_expired", label: "Your job offer has expired (to the candidate)", sentFrom: [OFFERS_SEND], delivery: "direct_email" },
+  { module: "offers", eventType: "new_joiner_announcement", label: "A new joiner accepted their offer (to Head Office and their managers)", sentFrom: [OFFERS_NEW_JOINER], delivery: "direct_email" },
 
   // ── Outstation ──────────────────────────────────────────────────────────────────────────────
   { module: "outstation", eventType: "request_submitted", label: "An outstation request is waiting for your approval", sentFrom: [OUTSTATION] },

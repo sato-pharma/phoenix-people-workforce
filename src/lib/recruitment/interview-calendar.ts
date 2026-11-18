@@ -1570,6 +1570,9 @@ export type PrivateCalendarInterviewRow = {
   area: string | null;
   line: string | null;
   platform: InterviewPlatform;
+  /** What the interview came to, when someone recorded it — the Company Activity Report prints it beside
+   * the interview. Optional so a caller that builds a row by hand need not name it. */
+  outcome?: InterviewOutcome | null;
 };
 
 /**
@@ -1597,6 +1600,7 @@ export async function listInterviewsForPrivateCalendar(from: Date, to: Date): Pr
       leadHrId: row.interviewer_hr_id ?? null,
       line: row.interview_line ?? null,
       panelHrIds: (row.panelist_hr_ids ?? []).filter(Boolean),
+      outcome: readInterviewOutcome(row.outcome),
       platform: session ? asPlatform(session.platform) : asPlatform(row.platform),
       startsAt: row.starts_at,
     };

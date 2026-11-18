@@ -267,7 +267,9 @@ export function explanationSummary(input: {
 export function explanationVerifySource(input: { reasonCode: ExplainReasonCode; confirmerName?: string | null }): string {
   if (input.reasonCode === "other") return "The employee's own explanation";
   const name = input.confirmerName?.trim();
-  return name ? `Confirmed by ${name}` : "Named confirmer";
+  // Saved at submission, before anyone has answered, and printed later as the day's proof: it names who was ASKED,
+  // never says who confirmed.
+  return name ? `Named confirmer: ${name}` : "Named confirmer";
 }
 
 /**

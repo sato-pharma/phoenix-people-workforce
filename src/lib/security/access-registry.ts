@@ -1346,6 +1346,8 @@ export const accessRegistry = [
   // made this the Super Admin's alone. The GET audits as an export because a workbook naming a
   // territory's customers and their grades leaves the building; the POST as a mutation.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/list/template", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
+  // A whole line's customer list (owner, 2026-11-18) — the template's gate and the same two readers.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/list/line-export", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/template/import", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),

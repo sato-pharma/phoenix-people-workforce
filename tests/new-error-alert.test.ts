@@ -95,6 +95,16 @@ function signatureTests() {
     newErrorSignature({ message: "Expense not found", source: "server" }),
     "different words are a different error",
   );
+  assert.notEqual(
+    newErrorSignature({ message: "Minified React error #418; visit https://react.dev/errors/418", source: "client" }),
+    newErrorSignature({ message: "Minified React error #423; visit https://react.dev/errors/423", source: "client" }),
+    "an error code names the error: two codes are two errors",
+  );
+  assert.notEqual(
+    newErrorSignature({ message: "permission denied for table some_very_long_table_name_alpha", source: "server" }),
+    newErrorSignature({ message: "permission denied for table some_very_long_table_name_bravo", source: "server" }),
+    "a long name without a digit is not an id",
+  );
   assert.match(newErrorSignature({ message: "x", source: "server" }), /^[0-9a-f]{16}$/, "16 hex characters, for the idempotency key");
   // A caller that knows what makes two reports the same passes it: a freeze's seconds change every time.
   assert.equal(

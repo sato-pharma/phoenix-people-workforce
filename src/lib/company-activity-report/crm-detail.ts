@@ -25,7 +25,7 @@ import {
   type PhoenixVisitDetailRow,
 } from "@/lib/crm/phoenix-visit-detail";
 import { isIsoDate } from "@/lib/attendance/working-days";
-import { classifyVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { ADMIN_WORK_TYPE, classifyVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
 import type { CompanyActivityVisitDetail } from "@/lib/company-activity-report/types";
 
@@ -77,19 +77,32 @@ async function fetchCrmDetailVisits(dateFromIso: string, dateToIso: string, want
  *  That is not the same as the `none` tier, which still shows the WORK half — products, samples, the
  *  objection — because that half is the rep's own work and every admin reader sees it. With nobody
  *  named there is no reader to judge, so the cell reads exactly as it did before this change. */
+/**
+ * A Phoenix CRM Interviews day reaches the old-CRM door as Admin Work (code -20) with its comment
+ * beginning "Interviews" (migration 20261029195520) — so it names itself, never "Admin Work".
+ */
+export function isPhoenixInterviewsDay(row: Pick<CrmDetailRow, "visit_type" | "comment">): boolean {
+  return Number(row.visit_type) === ADMIN_WORK_TYPE && /^interviews\b/i.test((row.comment ?? "").trim());
+}
+
 export function buildVisitDetail(row: CrmDetailRow, sight: PhoenixDetailSight | null): CompanyActivityVisitDetail {
   const classification = classifyVisit(row.visit_type, row.comment, row.visit_type_description);
   return {
     visitType: row.visit_type,
     // The door serves every Phoenix visit as type 0, so an unplanned one would read "Regular" beside its
     // Unplanned highlight; it names itself instead. An archive-day campaign visit keeps its own label.
-    label: row.visit_kind && row.is_unplanned ? "Unplanned visit" : resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
+    label: row.visit_kind && row.is_unplanned
+      ? "Unplanned visit"
+      : isPhoenixInterviewsDay(row)
+        ? "Interviews"
+        : resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
     bucket: classification.bucket,
     isCampaign: isUnplannedFieldVisit(row),
     session: row.ampm,
     contactName: row.contact_name,
     customerName: row.customer_name,
-    comment: row.comment,
+    // The door prefixes the Interviews day's own note with the word "Interviews"; the label already says it.
+    comment: isPhoenixInterviewsDay(row) ? (row.comment ?? "").trim().replace(/^interviews\b\s*/i, "") || null : row.comment,
     attributionUncertain: !row.agent_hr_id && !row.double_hr_id,
     partner2Name: row.double2_name?.trim() || null,
     // `visit_kind` is the one column only a Phoenix row carries, so it is what tells the two feeds apart

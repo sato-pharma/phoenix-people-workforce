@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Download } from "lucide-react";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { PhoenixCrmListTemplateWorkspace } from "@/components/phoenix-crm/list-template-workspace";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board";
+import { lineCustomerListLines } from "@/lib/phoenix-crm/server/line-customer-list";
 import { listTemplateTerritories } from "@/lib/phoenix-crm/server/list-template";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export default async function PhoenixCrmListTemplatePage() {
   if (!viewer || !canReadIntegrityBoard(viewer) || !viewer.canApprove) redirect("/admin");
 
   const territories = await listTemplateTerritories(viewer);
+  const lines = lineCustomerListLines(viewer);
 
   return (
     <div className="space-y-5">
@@ -55,6 +57,37 @@ export default async function PhoenixCrmListTemplatePage() {
       </AdminCallout>
 
       <PhoenixCrmListTemplateWorkspace territories={territories} />
+
+      {/* A whole line's list in one workbook (owner, 2026-11-18): region by region, rep by rep. Plain
+          links — the file is built on the server, so there is nothing for a client component to hold. */}
+      <section className="border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="text-sm font-black uppercase tracking-wide text-slate-900">Export a whole line</h2>
+          <p className="mt-1 text-sm font-medium leading-6 text-slate-600">
+            Every customer on every rep&rsquo;s list for one line, in one Excel file: a summary by region, a sheet per region with a table per
+            rep, and one flat sheet to filter. Validated customers and those waiting to be validated are included; the Archive is not.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          {lines.length === 0 ? (
+            <span className="text-sm font-semibold text-slate-500">No line is in your scope.</span>
+          ) : (
+            lines.map((line) => (
+              <a
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-none border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 transition hover:border-slate-500"
+                href={`/api/phoenix-crm/list/line-export?line=${encodeURIComponent(line.lineCode)}`}
+                key={line.lineCode}
+              >
+                <Download aria-hidden className="h-4 w-4 shrink-0" />
+                <span className="break-words">
+                  {line.lineName} line · {line.territories} {line.territories === 1 ? "territory" : "territories"} · {line.regions}{" "}
+                  {line.regions === 1 ? "region" : "regions"}
+                </span>
+              </a>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }
