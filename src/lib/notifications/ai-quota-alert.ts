@@ -3,8 +3,15 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { shouldPersistErrorEvents } from "@/lib/error-monitor/derived-status";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { aiProviderLabel, isKeyRejectedRecord, type AiCallProvider, type AiCallRecord } from "@/lib/observability/ai-metrics";
-import { logError } from "@/lib/observability/log";
+import {
+  aiComponentLabel,
+  aiProviderLabel,
+  isKeyRejectedRecord,
+  type AiCallProvider,
+  type AiCallRecord,
+} from "@/lib/observability/ai-metrics";
+import { logError, logWarning } from "@/lib/observability/log";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * Tells a human, in-app + Telegram, the moment the AI provider says the account is OUT OF CREDIT — or, since
@@ -27,15 +34,28 @@ import { logError } from "@/lib/observability/log";
 const AUDIENCE_KEY = "weekly_system_health_digest" as const;
 const EVENT_TYPE = "ai_quota_exhausted";
 const KEY_EVENT_TYPE = "ai_key_rejected";
+// The other half of both alarms (18 Nov 2026): the account they named has answered again.
+const ANSWERING_EVENT_TYPE = "ai_account_answering";
 const ACTOR = "ai-quota-alert";
 
 const lastAlertedDay = new Map<AiCallProvider, string>();
 // A refused key is its own alarm for the day: an account can lose its key and run out of credit on one day.
 const lastKeyAlertedDay = new Map<AiCallProvider, string>();
 
-function cairoDayKey(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+function cairoDayKey(at: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(at);
 }
+
+// Server-only text (a Telegram and a bell notice), so the zone comes from Node's own data, never a browser's.
+const CAIRO_DAY_AND_TIME = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  hour: "2-digit",
+  // h23, never `hour12: false`, which some engines print as 24:05 at midnight.
+  hourCycle: "h23",
+  minute: "2-digit",
+  month: "short",
+  timeZone: "Africa/Cairo",
+});
 
 /**
  * The name the alarm gives the account that ran out — the provider the failing call was billed to.
@@ -166,6 +186,59 @@ export function buildAiKeyRejectedMessage(record: AiCallRecord): string {
   ].join("\n");
 }
 
+/** What the account's last alarm said, and when it was told. */
+export type AiAccountOutage = { kind: "out_of_credit" | "key_refused"; toldAt: string };
+
+/**
+ * The outage still waiting to be closed, read off this account's NEWEST alarm-or-answering row (newest
+ * first). An alarm newest: it was told and never closed. An answering notice newest, or no row at all:
+ * nothing is open, so an answer is ordinary and nobody is told. Pure, so the suite pins it.
+ */
+export function unclosedAiOutage(rows: readonly { created_at: string; event_type: string }[]): AiAccountOutage | null {
+  const newest = rows[0];
+  if (!newest) return null;
+  if (newest.event_type === EVENT_TYPE) return { kind: "out_of_credit", toldAt: newest.created_at };
+  if (newest.event_type === KEY_EVENT_TYPE) return { kind: "key_refused", toldAt: newest.created_at };
+  return null;
+}
+
+/** The answering notice's title, naming the account. */
+export function aiAnsweringTitle(provider: AiCallProvider): string {
+  return `${aiQuotaProviderLabel(provider)} account is answering again`;
+}
+
+/**
+ * One notice per outage and recipient, keyed on the Cairo day the outage was TOLD (its alarm's own day), so
+ * every process that sees the account answer, and every answer after the first, lands on the same key.
+ */
+export function aiAnsweringIdempotencyKey(provider: AiCallProvider, outageDay: string, hrId: string): string {
+  return `ai-account-answering:${provider}:${outageDay}:${hrId}`;
+}
+
+function accountPhrase(provider: AiCallProvider): string {
+  if (provider === "anthropic") return "The first Anthropic account";
+  if (provider === "anthropic_backup") return "The backup Anthropic account";
+  return `The ${aiQuotaProviderLabel(provider)} account`;
+}
+
+/**
+ * Pure message builder for the answering notice: which account, which feature it answered, when, and how long
+ * it had been out. Calls go back to it by themselves — the Anthropic bench clears on its first answer and the
+ * OpenAI back-off resets on one — so there is nothing to do, and the message says so.
+ */
+export function buildAiAccountAnsweringMessage(record: AiCallRecord, outage: AiAccountOutage, now: Date): string {
+  const since = CAIRO_DAY_AND_TIME.format(new Date(outage.toldAt));
+  const at = CAIRO_DAY_AND_TIME.format(now);
+  const what = outage.kind === "out_of_credit" ? "out of credit" : "refusing its key";
+  return [
+    `✅ ${aiQuotaProviderLabel(record.provider)} is answering again.`,
+    "",
+    `${accountPhrase(record.provider)} answered a call (${aiComponentLabel(record.component)}) at ${at} Cairo. It had been ${what} since ${since} Cairo.`,
+    "",
+    "Phoenix's AI calls go back to it on their own. Nothing else to do.",
+  ].join("\n");
+}
+
 /** Whether this process may page anyone: the real production app only — never staging, a laptop or the suite. */
 export function aiQuotaAlertEnabled(): boolean {
   if (process.env.PHOENIX_TEST_SUITE === "1") return false;
@@ -231,5 +304,104 @@ export async function notifyAiQuotaExhausted(record: AiCallRecord): Promise<void
     });
   } catch (error) {
     logError("AI account alert failed to dispatch", { error, labels: { event: "ai_quota_alert_failed" } });
+  }
+}
+
+/**
+ * Tells the alarm's audience that an account the alarm named has answered again (owner, 18 Nov 2026: "build
+ * both in one PR"). Called by `recordAiCall` on an account's first answer in a process, and on its first
+ * answer after the process saw it refuse — never on every answer.
+ *
+ * It reads the account's newest alarm-or-answering row (`notification_events_module_event_idx`), so a
+ * process that never saw the outage — the one Railway started after a key swap — still closes it, and the
+ * per-outage key stops a second process telling him twice. Writes the notice rows and one audit row.
+ *
+ * Best-effort — never throws. Answers false only when the check could not finish (the alarms unreadable, or
+ * a send that threw), so the next answer asks again; the key keeps a retry from sending twice.
+ */
+export async function notifyAiAccountAnswering(record: AiCallRecord, now: Date = new Date()): Promise<boolean> {
+  try {
+    if (!aiQuotaAlertEnabled()) return true;
+
+    const { data, error } = await getSupabaseAdmin()
+      .from("notification_events")
+      .select("event_type, created_at")
+      .eq("module", "system")
+      .in("event_type", [EVENT_TYPE, KEY_EVENT_TYPE, ANSWERING_EVENT_TYPE])
+      .eq("metadata->>provider", record.provider)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      logWarning("AI account answering check could not read the alarms", {
+        labels: { event: "ai_account_answering_read_failed", provider: record.provider },
+      });
+      return false;
+    }
+
+    const outage = unclosedAiOutage((data ?? []) as { created_at: string; event_type: string }[]);
+    if (!outage) return true;
+    const outageDay = cairoDayKey(new Date(outage.toldAt));
+
+    const { recipients, warnings } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, "AI account answering recipients");
+    if (recipients.length === 0) {
+      await writeAuditLog({
+        actorLoginId: ACTOR,
+        entityId: "ai.account_answering",
+        entityType: "notification",
+        newValues: { failClosed: true, provider: record.provider, warnings },
+        summary: "AI account answering-again notice skipped — no active recipient resolved for the configured audience.",
+      });
+      return true;
+    }
+
+    const message = buildAiAccountAnsweringMessage(record, outage, now);
+    await Promise.all(
+      recipients.map((recipient) =>
+        createSystemNotification({
+          actionUrl: "/admin/system-audit",
+          actorId: ACTOR,
+          channels: ["in_app", "telegram", "push"],
+          eventType: ANSWERING_EVENT_TYPE,
+          message,
+          metadata: {
+            idempotencyKey: aiAnsweringIdempotencyKey(record.provider, outageDay, recipient.hrId),
+            model: record.model,
+            outageKind: outage.kind,
+            outageToldAt: outage.toldAt,
+            provider: record.provider,
+            purpose: record.purpose,
+          },
+          module: "system",
+          priority: "normal",
+          recipientHrId: recipient.hrId,
+          recipientUserId: recipient.userId,
+          telegram: { ctaLabel: "Open the System Audit", ctaUrl: "/admin/system-audit" },
+          title: aiAnsweringTitle(record.provider),
+        }),
+      ),
+    );
+
+    await writeAuditLog({
+      actorLoginId: ACTOR,
+      entityId: "ai.account_answering",
+      entityType: "notification",
+      newValues: {
+        delivered: recipients.length,
+        outageKind: outage.kind,
+        outageToldAt: outage.toldAt,
+        provider: record.provider,
+        purpose: record.purpose,
+        warnings,
+      },
+      summary: `AI account answering-again notice delivered to ${recipients.length} recipient(s).`,
+    });
+    return true;
+  } catch (error) {
+    // A warning, not an error row: an error row pages through the new-error Telegram, and this is retried.
+    logWarning("AI account answering notice failed to dispatch", {
+      error,
+      labels: { event: "ai_account_answering_failed", provider: record.provider },
+    });
+    return false;
   }
 }

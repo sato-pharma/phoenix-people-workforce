@@ -1785,6 +1785,7 @@ import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runRailwaySecretShapeTests } from "./railway-secret-shape.test.ts";
 import { runAiFailureVisibilityTests } from "./ai-failure-visibility.test.ts";
+import { runHealthzStartedAtTests } from "./healthz-started-at.test.ts";
 import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
 import { runAutomatedPayrollNewHireNetColumnsTests } from "./automated-payroll-new-hire-net-columns.test.ts";
@@ -6683,6 +6684,7 @@ await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the ske
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
 await runTest("railway secret shape (catches the masked paste that 401'd every AI feature)", runRailwaySecretShapeTests);
 await runTest("ai failure visibility (an AI outage writes a row instead of failing silently)", runAiFailureVisibilityTests);
+await runTest("healthz names when this server process started, so a Railway variable change can be confirmed live (18 Nov 2026)", runHealthzStartedAtTests);
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
 await runTest("automated payroll new hire net columns (full month shown, the stale prorated column stays retired, and the two reconcile)", runAutomatedPayrollNewHireNetColumnsTests);

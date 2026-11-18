@@ -25,6 +25,8 @@ const OPERATOR_WATCH_EVENTS: ReadonlySet<string> = new Set([
   // System alarms. Most report a fault in the path an email would travel, or could re-enter it: the drain
   // alarm is documented as deliberately never email (docs/environment.md, AGENTS.md section 3).
   "activity_inactivity_digest",
+  // The close of the two AI account alarms (18 Nov 2026), on their audience and channels.
+  "ai_account_answering",
   "ai_key_rejected",
   // The Telegram half of the punch-feed alarm (13 Nov 2026). Its in-app half was written as never
   // email on 2026-08-08 and 2026-08-09 (attendance-alert-channel-guard.ts); this holds the same rule

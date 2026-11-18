@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildAiFailureEvent,
+  dispatchAiCall,
+  takeAnsweringCheckSlot,
+  type AiCallSinks,
+  type AiCallState,
   failureThrottleKey,
   shouldReportFailure,
   aiErrorCodeForResponse,
@@ -12,6 +17,8 @@ import {
   type AiCallRecord,
 } from "../src/lib/observability/ai-metrics.ts";
 import {
+  aiAnsweringIdempotencyKey,
+  aiAnsweringTitle,
   aiKeyAlertIdempotencyKey,
   aiKeyAlertTitle,
   aiProviderKeyVariable,
@@ -19,9 +26,13 @@ import {
   aiQuotaAlertTitle,
   aiQuotaIdempotencyKey,
   buildAiKeyRejectedMessage,
+  buildAiAccountAnsweringMessage,
   buildAiQuotaExhaustedMessage,
+  notifyAiAccountAnswering,
   takeAiQuotaAlertSlot,
+  unclosedAiOutage,
 } from "../src/lib/notifications/ai-quota-alert.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Guards the 2026-09-02 finding: AI telemetry was writing to GCP Cloud Monitoring with
 // GCP_PROJECT_ID unset on Railway, so it returned on its first line. When OPENAI_API_KEY held a
@@ -45,7 +56,7 @@ function record(over: Partial<AiCallRecord> = {}): AiCallRecord {
   };
 }
 
-export function runAiFailureVisibilityTests() {
+export async function runAiFailureVisibilityTests() {
   // --- a success is not an alarm ----------------------------------------------------------
   assert.equal(
     buildAiFailureEvent(record({ status: "success" })),
@@ -336,5 +347,169 @@ export function runAiFailureVisibilityTests() {
     aiQuotaAlertEnabled(),
     false,
     "the suite runs with production credentials — it must never page the owner",
+  );
+
+  await runAiAccountAnsweringTests();
+}
+
+/**
+ * The other half of the two alarms (18 Nov 2026). The first Anthropic account ran out of credit at 03:35 Cairo,
+ * the backup answered every call all day, and when it was topped up nothing would have said so: a success
+ * writes no row, so "mended" looked exactly like "nobody is working tonight".
+ */
+async function runAiAccountAnsweringTests() {
+  // --- when an answer asks the question ---------------------------------------------------------
+  const checked = new Set<AiCallRecord["provider"]>();
+  const refused = new Set<AiCallRecord["provider"]>();
+  const answered = (provider: AiCallRecord["provider"]) => record({ errorCode: undefined, provider, status: "success" });
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic"), checked, refused),
+    true,
+    "an account's FIRST answer in a process asks — the process Railway starts after a key swap never saw the refusals",
+  );
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic"), checked, refused),
+    false,
+    "every later answer costs nothing — no read, no import — until the account refuses again",
+  );
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic_backup"), checked, refused),
+    true,
+    "each account is asked about on its own",
+  );
+  assert.equal(
+    takeAnsweringCheckSlot(
+      record({ errorCode: AI_QUOTA_EXHAUSTED_CODE, failedOverTo: "anthropic_backup", provider: "anthropic", status: "failed_over" }),
+      checked,
+      refused,
+    ),
+    false,
+    "a refusal is never itself an answer",
+  );
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic_backup"), checked, refused),
+    false,
+    "the first account running dry does not make the backup's next answer news",
+  );
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic"), checked, refused),
+    true,
+    "the first answer after this process saw the account refuse for credit asks again",
+  );
+  takeAnsweringCheckSlot(record({ errorCode: "timeout", provider: "anthropic", status: "error" }), checked, refused);
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic"), checked, refused),
+    false,
+    "a timeout is not an outage the alarm told, so the answer after it asks nothing",
+  );
+  takeAnsweringCheckSlot(record({ errorCode: "auth_failed", provider: "anthropic", status: "error" }), checked, refused);
+  assert.equal(
+    takeAnsweringCheckSlot(answered("anthropic"), checked, refused),
+    true,
+    "a refused key is the other alarm, and an answer after it asks too",
+  );
+
+  // --- which outage is still open ---------------------------------------------------------------
+  assert.equal(unclosedAiOutage([]), null, "no alarm ever: an answer is ordinary and nobody is told");
+  assert.deepEqual(
+    unclosedAiOutage([
+      { created_at: "2026-11-18T01:35:17Z", event_type: "ai_quota_exhausted" },
+      { created_at: "2026-10-24T04:36:08Z", event_type: "ai_account_answering" },
+    ]),
+    { kind: "out_of_credit", toldAt: "2026-11-18T01:35:17Z" },
+    "an alarm newer than any answering notice is an outage told and never closed",
+  );
+  assert.deepEqual(
+    unclosedAiOutage([{ created_at: "2026-10-24T04:36:08Z", event_type: "ai_key_rejected" }]),
+    { kind: "key_refused", toldAt: "2026-10-24T04:36:08Z" },
+    "a refused-key alarm is closed the same way",
+  );
+  assert.equal(
+    unclosedAiOutage([
+      { created_at: "2026-11-18T22:10:00Z", event_type: "ai_account_answering" },
+      { created_at: "2026-11-18T01:35:17Z", event_type: "ai_quota_exhausted" },
+    ]),
+    null,
+    "an outage already closed is never told twice",
+  );
+
+  // --- what he reads ----------------------------------------------------------------------------
+  assert.equal(aiAnsweringTitle("anthropic"), "Anthropic account is answering again");
+  assert.equal(
+    aiAnsweringIdempotencyKey("anthropic", "2026-11-18", "B-10"),
+    "ai-account-answering:anthropic:2026-11-18:B-10",
+    "one notice per outage and person — every process and every later answer lands on the same key",
+  );
+  assert.notEqual(
+    aiAnsweringIdempotencyKey("anthropic", "2026-11-18", "B-10"),
+    aiAnsweringIdempotencyKey("anthropic_backup", "2026-11-18", "B-10"),
+    "each account closes its own outage",
+  );
+  const message = buildAiAccountAnsweringMessage(
+    record({ component: "phoenix_crm_signboard", errorCode: undefined, provider: "anthropic", status: "success" }),
+    { kind: "out_of_credit", toldAt: "2026-11-18T01:35:17Z" },
+    new Date("2026-11-18T22:05:00Z"),
+  );
+  assert.match(message, /The first Anthropic account answered/, "it names the account that came back");
+  assert.match(message, /reading the signboard in a place photo/, "and the feature it answered, in words");
+  assert.match(message, /19 Nov, 00:05 Cairo/, "the answer's time is Cairo's, never UTC (22:05 UTC is 00:05 the next day)");
+  assert.match(message, /out of credit since 18 Nov, 03:35 Cairo/, "and how long it had been out, from its alarm");
+  assert.match(message, /Nothing else to do/, "calls go back to it by themselves, so it asks nothing of him");
+  assert.match(
+    buildAiAccountAnsweringMessage(
+      record({ errorCode: undefined, provider: "anthropic_backup", status: "success" }),
+      { kind: "key_refused", toldAt: "2026-11-18T01:35:17Z" },
+      new Date("2026-11-18T10:00:00Z"),
+    ),
+    /The backup Anthropic account answered[\s\S]*refusing its key since/,
+    "the backup account and a refused key read as what they are",
+  );
+  assert.equal(
+    await notifyAiAccountAnswering(answered("anthropic")),
+    true,
+    "inside the suite it reads nothing and sends nothing, and says it finished so nothing retries",
+  );
+
+  // --- the recorder really asks on a success --------------------------------------------------------
+  // A success returns early (it writes no row), so the check must come BEFORE that return. Drives the real
+  // routing with fakes in place of the notices and the failure table.
+  const calls: string[] = [];
+  const sinks: AiCallSinks = {
+    askAnswering: (r) => calls.push(`ask:${r.provider}`),
+    pageAlarm: (r) => calls.push(`page:${r.provider}`),
+    writeRow: (event) => calls.push(`row:${event.route}`),
+  };
+  const state: AiCallState = { answeringChecked: new Set(), lastReportedAt: new Map(), refusedSinceCheck: new Set() };
+  dispatchAiCall(answered("anthropic"), sinks, state, 1_000);
+  assert.deepEqual(calls, ["ask:anthropic"], "an account's first answer asks, and a success still writes no row");
+  dispatchAiCall(answered("anthropic"), sinks, state, 2_000);
+  assert.deepEqual(calls, ["ask:anthropic"], "the second answer asks nothing");
+  dispatchAiCall(
+    record({ component: "phoenix_crm_signboard", errorCode: AI_QUOTA_EXHAUSTED_CODE, failedOverTo: "anthropic_backup", provider: "anthropic", purpose: "phoenix-crm-signboard", status: "failed_over" }),
+    sinks,
+    state,
+    3_000,
+  );
+  assert.deepEqual(
+    calls,
+    ["ask:anthropic", "page:anthropic", "row:/ai/phoenix_crm_signboard/phoenix-crm-signboard/failed-over"],
+    "a refusal for credit pages and writes its row, exactly as before",
+  );
+  dispatchAiCall(answered("anthropic"), sinks, state, 4_000);
+  assert.equal(calls.at(-1), "ask:anthropic", "the answer after that refusal asks whether the outage is still open");
+
+  const metrics = stripComments(readFileSync("src/lib/observability/ai-metrics.ts", "utf8"));
+  const recorder = metrics.slice(metrics.indexOf("export function recordAiCall("));
+  assert.ok(
+    recorder.includes("dispatchAiCall(record, LIVE_SINKS, LIVE_STATE)"),
+    "recordAiCall routes every call through the routing pinned above",
+  );
+  assert.ok(
+    metrics.includes(".then((alert) => alert.notifyAiAccountAnswering(record))"),
+    "the live sink hands the answer to the notice",
+  );
+  assert.ok(
+    /if \(!finished\) LIVE_STATE\.refusedSinceCheck\.add\(record\.provider\)/.test(metrics),
+    "a check that could not finish is asked again on the next answer",
   );
 }

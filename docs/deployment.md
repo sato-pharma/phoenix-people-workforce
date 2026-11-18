@@ -601,7 +601,9 @@ no variable touched, no `--confirm-destructive` needed because nothing was destr
 
 - 🔴 **An apply REDEPLOYS the service.** Deployment `8416c821` went `BUILDING` nine seconds after
   the apply and rebuilt the SAME commit, so `/api/healthz` `revision` did **not** move and is not the
-  proof; read the deployment's own status and its build log. Let any in-flight `main` deploy finish
+  proof; read the deployment's own status and its build log. Since 18 Nov 2026 `/api/healthz` also answers
+  `startedAt`, the serving process's own start to the second: a `startedAt` later than the apply or a
+  variable change is the proof the new process is answering. Let any in-flight `main` deploy finish
   first, or the two cannot be told apart. It reached `SUCCESS` and printed `Path: /api/readyz` /
   `Retry window: 5m0s` / `[1/1] Healthcheck succeeded!`; `/api/readyz` answers 200.
 - 🔴 **The restart policy is NEVER stored.** After the apply `healthcheckPath` and
