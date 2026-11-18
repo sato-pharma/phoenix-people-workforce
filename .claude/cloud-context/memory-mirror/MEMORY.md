@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [The fallback restore leaves the pull token on the website](the-fallback-restore-leaves-the-pull-token-on-the-website.md) - `restore` never clears `registryCredentials`; cleared 19 Nov 00:21 Cairo by environment patch (null), never by serviceInstanceUpdate.
 
 
 
