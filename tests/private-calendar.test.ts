@@ -276,7 +276,7 @@ export async function runPrivateCalendarTests() {
   );
   assert.equal(
     noItemsExceptions[0]?.description,
-    "Employee Two: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.",
+    "Employee Two: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation, no approved excuse and no two interviews in one half recorded for this workday. An approved weekly plan is not a record of work and never clears this day.",
     "the description must spell out exactly which sources were checked and came up empty",
   );
 

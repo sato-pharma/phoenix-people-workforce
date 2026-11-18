@@ -334,10 +334,19 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       // the worked half as uncovered. Suppressed here rather than fed into `cover` or `byPersonDay`,
       // which also feed `firstSignalByPerson` — and a person whose only record is Phoenix must stay
       // unjudged rather than become chargeable.
-      if (provenWorked.keys.has(key)) continue;
+      // 🔴 EXCEPT a day only ONE half of which his interviews cover (owner, 2026-11-18: two or more
+      // interviews in a half are that half day worked). Every full-day reader drops it, so it is
+      // judged here: the interviews account for their half and the other half is the half day.
+      const interviewHalf = provenWorked.interviewHalfOnly.get(key);
+      if (provenWorked.keys.has(key) && !interviewHalf) continue;
       // The contracted half travels with the person, not with the day, so it is merged onto
       // whatever else is on file for this day rather than stored per day.
-      const verdict = judgeHalfDay(byPersonDay.get(key), { ...(cover.get(key) ?? {}), contractHalf });
+      const verdict = judgeHalfDay(byPersonDay.get(key), {
+        ...(cover.get(key) ?? {}),
+        contractHalf,
+        interviewsAm: interviewHalf === "AM",
+        interviewsPm: interviewHalf === "PM",
+      });
       if (verdict.kind !== "half_day") continue;
       if (claimed.has(key)) {
         const category = claimingCategory.get(key);
@@ -379,7 +388,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
             : ""),
         evidence: {
           rule:
-            "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation or request in the other half. An approved weekly plan never accounts for a half (owner, 2026-10-12). Thursday (a morning-only day), Friday and national holidays are never judged.",
+            "Saturday-Wednesday working day with exactly one half accounted for, and no visit, GPS check-in, save time, approved vacation, request or two interviews in the other half. Two or more interviews in a half account for it (owner, 2026-11-18; the morning ends at 1 PM). An approved weekly plan never accounts for a half (owner, 2026-10-12). Thursday (a morning-only day), Friday and national holidays are never judged.",
           role: role === "district_manager" ? "District manager" : "Medical representative",
           missingHalf: verdict.missing,
           coveredBy: verdict.coveredBy,
@@ -390,6 +399,7 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
           creditedAsDoubleVisitPartner: evidence?.partnerVisits ?? 0,
           phoenixVisitsWithoutLocationNotCounted: evidence?.visitsWithoutLocation ?? 0,
           approvedVacation: dayCover.vacationAm ? "AM off" : dayCover.vacationPm ? "PM off" : null,
+          interviewsCoveredHalf: interviewHalf ?? null,
           deductionDays: 0.5,
           dayRateBasis: "Base salary ÷ calendar days in the month × 0.5",
           holidaysExcluded: [...holidays].filter((date) => date.startsWith(`${monthKey}-`)).sort(),
