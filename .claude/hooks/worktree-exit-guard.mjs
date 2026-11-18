@@ -53,6 +53,7 @@ import { fileURLToPath } from "node:url";
 
 import { classifyBranchPr, listBranchPrs } from "../../scripts/branch-pr-state.mjs";
 import { commitDeltaLandedOnMain } from "../../scripts/delta-landed.mjs";
+import { readHookPayload, sessionFolder } from "../../scripts/lib/session-folder.mjs";
 
 // FAIL OPEN. The settings.json command lost its `2>/dev/null || true` wrapper on 2026-09-27 (the
 // shell operators had to go so the command parses under cmd.exe and PowerShell too), and this is a
@@ -62,13 +63,18 @@ process.on("uncaughtException", () => process.exit(0));
 const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith("--")));
 const positional = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const PRE_REMOVAL = flags.has("--pre-removal");
-// CLAUDE_PROJECT_DIR is the session's OWN worktree (never the primary), which is exactly the folder
-// this hook reports on, so it outranks cwd. It used to arrive as `positional[0]` from a shell-expanded
-// `"$DIR"`; that argument is gone and nothing replaced it, leaving cwd as the only answer. When cwd
-// is not the session's worktree, `gitDir === commonDir` matches below and the hook exits silently as
-// "primary checkout — leave it alone", dropping the uncommitted-work and unpushed-commit warnings
-// that are its whole purpose. `--pre-removal` callers still pass the folder positionally.
-const cwd = positional[0] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+// The folder this hook reports on is the session's OWN worktree. It used to arrive as `positional[0]`
+// from a shell-expanded `"$DIR"`; that argument is gone. When the folder is not the session's
+// worktree, `gitDir === commonDir` matches below and the hook exits silently as "primary checkout —
+// leave it alone", dropping the uncommitted-work and unpushed-commit warnings that are its whole
+// purpose. At SessionEnd it is read from the payload (scripts/lib/session-folder.mjs): until
+// 2026-11-18 it was CLAUDE_PROJECT_DIR, which in the desktop app is the PRIMARY, so the hook stayed
+// silent at every desktop session's end — its log has no SessionEnd entry after 2026-10-02.
+// `--pre-removal` reads the removal command on stdin instead, and its callers pass the folder
+// positionally.
+const cwd =
+  positional[0] ||
+  (PRE_REMOVAL ? process.env.CLAUDE_PROJECT_DIR || process.cwd() : sessionFolder(readHookPayload()));
 
 /** git at an explicit directory, never throwing — a missing ref or deleted cwd yields null. */
 function gitAt(at, args, { timeout = 10000 } = {}) {

@@ -1,8 +1,12 @@
 /**
+ * 🔴 SWITCHED OFF (owner, 18 Nov 2026: "Remove it too"). Neither door calls checkLeakedPassword any more;
+ * the module and its tests are kept so it can be switched back on by calling it again in
+ * change-password.ts and password-setup.ts.
+ *
  * A PASSWORD THAT HAS ALREADY LEAKED IS REFUSED WHEN IT IS CHOSEN (integration audit INT-006; owner,
  * 13 Nov 2026: "Refuse it when chosen").
  *
- * password-strength.ts refuses the passwords every guessing list starts with. This closes the next ones:
+ * password-strength.ts no longer refuses well-known passwords (owner, 18 Nov 2026). This is the check that does:
  * a password that looks strong but sits in a published breach, which is the list a real attacker tries
  * second. It is asked at the two moments a person chooses a password (changing it, and setting it from a
  * link or a temporary password). Passwords already in use are not touched, and nothing is checked at

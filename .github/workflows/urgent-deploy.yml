@@ -42,7 +42,9 @@ jobs:
     timeout-minutes: 75
     env:
       GH_TOKEN: ${{ github.token }}
-      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
+      # Each Railway key under its own name, never merged (2026-10-27; this job merged them until the
+      # 2026-11-18 Railway audit): the CLI tries the project key, then the workspace key.
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}

@@ -2658,6 +2658,7 @@ import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runWorktreeProvisionAllTests } from "./worktree-provision-all.test.ts";
 import { runSyncWorktreeEnvFastPathTests } from "./sync-worktree-env-fast-path.test.ts";
+import { runSessionFolderTests } from "./session-folder.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 import { runCustomerChannelSqlRuleTests } from "./customer-channel-sql-rule.test.ts";
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
@@ -10217,6 +10218,10 @@ await runTest(
 await runTest(
   "sync-worktree-env fast paths (the primary starts no process, a worktree copies exactly the gitignored env with ONE check-ignore and no rev-parse, --sweep-only provisions siblings and never its own folder however its path is cased, --hook and --sweep-only fail open with one stderr line while the no-flag run still exits non-zero)",
   runSyncWorktreeEnvFastPathTests,
+);
+await runTest(
+  "hooks act on the session's own folder in the desktop app (CLAUDE_PROJECT_DIR is the primary there): the lock, the write guard, the exit guard and the env sync all follow the transcript's project folder, a copied lock is no lock, and a hook runner that cannot read its table says so",
+  runSessionFolderTests,
 );
 await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",

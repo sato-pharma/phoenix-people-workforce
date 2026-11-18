@@ -27,6 +27,7 @@ import { pathToFileURL } from "node:url";
 
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import { isAuthRejection, railwayCliAttempts, railwayCliEnv } from "./lib/railway-cli-credentials.mjs";
 
 // Names the Railway platform injects; they appear live but are never authored, so neither side
 // should ever treat them as drift.
@@ -103,17 +104,18 @@ function readLiveNames({ service, projectId, environment }) {
   const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
   const cliArgs = ["--yes", RAILWAY_CLI_PACKAGE, "variable", "list", "--json", "--service", service, "--environment", environment, "--project", projectId];
   let last = null;
-  for (const varName of ["RAILWAY_API_TOKEN", "RAILWAY_TOKEN"]) {
-    const token = process.env.RAILWAY_API_TOKEN?.trim() || process.env.RAILWAY_TOKEN?.trim() || "";
+  // Each secret under its own name, never `RAILWAY_API_TOKEN || RAILWAY_TOKEN` (2026-10-27; this script
+  // still merged them until the 2026-11-18 Railway audit, so with both secrets set the project key was
+  // never tried): scripts/lib/railway-cli-credentials.mjs holds the order.
+  for (const attempt of railwayCliAttempts(process.env)) {
     last = spawnSync(npmCommand, cliArgs, {
       cwd: process.cwd(),
-      env: { ...process.env, RAILWAY_API_TOKEN: varName === "RAILWAY_API_TOKEN" ? token : "", RAILWAY_TOKEN: varName === "RAILWAY_TOKEN" ? token : "" },
+      env: railwayCliEnv(attempt),
       stdio: "pipe",
       encoding: "utf8",
     });
     if (last.status === 0) break;
-    const message = `${last.stderr || ""}${last.stdout || ""}`;
-    if (!/Unauthorized|Invalid RAILWAY/i.test(message)) break;
+    if (!isAuthRejection(last)) break;
   }
   if (!last || last.status !== 0) {
     throw new Error(`railway variable list failed for ${service}: ${(last?.stderr || last?.stdout || "unknown error").trim()}`);
@@ -144,8 +146,7 @@ function main() {
   const iacFile = flag("--iac-file", ".railway/railway.ts");
 
   const projectId = process.env.RAILWAY_PROJECT_ID?.trim();
-  const token = process.env.RAILWAY_API_TOKEN?.trim() || process.env.RAILWAY_TOKEN?.trim();
-  if (!token || !projectId) {
+  if (railwayCliAttempts(process.env).length === 0 || !projectId) {
     console.error("[railway-iac-preapply-check] RAILWAY_API_TOKEN (or RAILWAY_TOKEN) and RAILWAY_PROJECT_ID are required.");
     console.error("[railway-iac-preapply-check] A gate that cannot read the live project refuses rather than waving the apply through.");
     process.exit(1);

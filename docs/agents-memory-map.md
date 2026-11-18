@@ -66,7 +66,7 @@ status, give it its own line.
 - **mcp__supabase-staging__* is PINNED to staging** — `supabase-staging-named-server-broken-2026-08-10`
 - **A Windows USER env var SHADOWS every .env.local, silently.** — `windows-env-var-shadows-every-env-local-key`
 - **ONE Supabase token wears TWO names — both `.mcp.json` entries expand the same Windows user env var** — `supabase-access-and-prod-token-are-one-token` **(inline — load-bearing)**
-- **`CLAUDE_PROJECT_DIR` is the session's OWN worktree, never the primary — the docs say otherwise and hooks break silently** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
+- **`CLAUDE_PROJECT_DIR` is the session's own worktree only in the CLI — in the desktop app it is the PRIMARY, so a hook reads the session's folder with `scripts/lib/session-folder.mjs`** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
 - **`apply-sql-file.mjs` rewrites production's URL to the aws-0 pooler, which does NOT resolve — production is aws-1-eu-central-1, staging really is aws-0** — `apply-sql-file-default-pooler-host-is-wrong-for-production` **(inline — load-bearing)**
 - **A NEW Railway service is born in `sfo` (US), not Europe, and a volume is region-pinned once created — set the region explicitly or the standing Europe rule is broken silently** — `railway-services-are-born-in-sfo-and-volumes-are-region-pinned` **(inline — load-bearing)**
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
