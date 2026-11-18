@@ -12,6 +12,7 @@ import {
   newErrorAlertText,
   newErrorSignature,
   normalizeErrorMessage,
+  releaseNewErrorAlertSlot,
   rememberNewErrorSignature,
   takeNewErrorAlertSlot,
 } from "../src/lib/error-monitor/new-error-alert-rules.ts";
@@ -207,6 +208,19 @@ function memoryAndCapTests() {
   }
   assert.equal(takeNewErrorAlertSlot(slots, start + 60_000), false, "the eleventh in ten minutes is held back");
   assert.equal(takeNewErrorAlertSlot(slots, start + NEW_ERROR_ALERT_WINDOW_MS), true, "a new window sends again");
+
+  // A message that sent nothing (already told, nobody reachable, a failed read) gives its slot back, so known errors
+  // recurring after a deploy cannot use the whole window and cap a genuinely new one.
+  const fresh = createNewErrorAlertSlots();
+  for (let index = 0; index < NEW_ERROR_ALERTS_PER_WINDOW; index += 1) takeNewErrorAlertSlot(fresh, start + index);
+  const taken = fresh.windowStartedAt;
+  assert.equal(takeNewErrorAlertSlot(fresh, start + 60_000), false, "the window is full");
+  releaseNewErrorAlertSlot(fresh, taken);
+  assert.equal(takeNewErrorAlertSlot(fresh, start + 60_000), true, "a message that sent nothing gives its slot back");
+  const rolled = fresh.sent;
+  takeNewErrorAlertSlot(fresh, start + NEW_ERROR_ALERT_WINDOW_MS + 1);
+  releaseNewErrorAlertSlot(fresh, taken);
+  assert.equal(fresh.sent, 1, `a late release never frees a slot of a newer window (was ${rolled} before the roll)`);
 }
 
 function wiringTests() {
@@ -230,6 +244,10 @@ function wiringTests() {
   );
 
   const alert = code("src/lib/error-monitor/new-error-alert.ts");
+  // A slot taken for a message that sent nothing is given back, and a held-back or failed one is tried again.
+  assert.ok((alert.match(/releaseNewErrorAlertSlot\(slots,/g) ?? []).length >= 3, "RED the slot is released when nobody is reachable, when every delivery was skipped and when the send failed");
+  assert.ok((alert.match(/seen\.delete\(signature\)/g) ?? []).length >= 2, "RED a held-back or failed error is forgotten so its next occurrence tries again");
+  assert.ok(alert.includes('delivery.status === "skipped"'), "RED the skipped-delivery case is what gives the slot back");
   assert.match(alert, /channels: \["telegram"\]/, "RED Telegram only — the alert never becomes an email");
   assert.doesNotMatch(alert, /"email"/, "no email channel anywhere in the sender");
   assert.match(alert, /const AUDIENCE_KEY = "weekly_system_health_digest" as const;/, "the technical-health audience, retargeted on the recipients screen");

@@ -19,6 +19,7 @@ import {
   newErrorAlertRefusal,
   newErrorAlertText,
   newErrorSignature,
+  releaseNewErrorAlertSlot,
   rememberNewErrorSignature,
   takeNewErrorAlertSlot,
   type NewErrorReport,
@@ -36,22 +37,31 @@ const slots = createNewErrorAlertSlots();
  * and writing a row is what calls this.
  */
 export async function alertNewError(report: NewErrorReport): Promise<void> {
+  let signature: string | null = null;
+  let takenInWindow: number | null = null;
   try {
     if (newErrorAlertRefusal({ appEnv: process.env.APP_ENV, message: report.message })) return;
-    const signature = newErrorSignature(report);
+    signature = newErrorSignature(report);
     if (!rememberNewErrorSignature(seen, signature)) return;
     if (!takeNewErrorAlertSlot(slots, Date.now())) {
+      // Forgotten again, so the next occurrence after the window gets its turn: a genuinely new error that was only
+      // held back is not lost for the life of this process. (The database key still keeps it to once, ever.)
+      seen.delete(signature);
       logWarning("New-error alert held back: too many new errors in ten minutes — read the System Audit", {
         labels: { event: "new_error_alert_capped", signature },
       });
       return;
     }
+    takenInWindow = slots.windowStartedAt;
 
     const { recipients } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, "New error alert recipients");
-    if (recipients.length === 0) return;
+    if (recipients.length === 0) {
+      releaseNewErrorAlertSlot(slots, takenInWindow);
+      return;
+    }
 
     const { message, title } = newErrorAlertText(report);
-    await Promise.all(
+    const results = await Promise.all(
       recipients.map((recipient) =>
         createSystemNotification({
           actionUrl: SCREEN_URL,
@@ -71,7 +81,16 @@ export async function alertNewError(report: NewErrorReport): Promise<void> {
         }),
       ),
     );
+    // Nothing went out when every delivery was skipped (already told for this error, or nobody reachable): the slot is
+    // given back, so ten known errors recurring after a deploy cannot use the whole window and cap a new one. The
+    // signature stays remembered — the database already knows it.
+    if (results.every((result) => result.deliveries.every((delivery) => delivery.status === "skipped"))) {
+      releaseNewErrorAlertSlot(slots, takenInWindow);
+    }
   } catch (error) {
+    // A failed read or send is retried by the next occurrence, not lost for the life of this process.
+    if (signature) seen.delete(signature);
+    if (takenInWindow !== null) releaseNewErrorAlertSlot(slots, takenInWindow);
     logWarning("New-error alert failed (the error itself is recorded on the System Audit)", {
       error,
       labels: { event: "new_error_alert_failed" },

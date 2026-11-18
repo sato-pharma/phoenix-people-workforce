@@ -132,6 +132,14 @@ export function createNewErrorAlertSlots(): NewErrorAlertSlots {
   return { sent: 0, windowStartedAt: 0 };
 }
 
+/**
+ * Gives back the slot a message took when nothing was sent (already told, nobody reachable, a failed read). The window
+ * check stops a late release from freeing a slot in a newer window.
+ */
+export function releaseNewErrorAlertSlot(slots: NewErrorAlertSlots, windowStartedAt: number): void {
+  if (slots.windowStartedAt === windowStartedAt && slots.sent > 0) slots.sent -= 1;
+}
+
 /** True when one more message fits this window (and it is now counted). */
 export function takeNewErrorAlertSlot(slots: NewErrorAlertSlots, nowMs: number): boolean {
   if (nowMs - slots.windowStartedAt >= NEW_ERROR_ALERT_WINDOW_MS) {
