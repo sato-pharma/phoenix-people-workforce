@@ -20,9 +20,13 @@ import {
   billingPage,
   includedMinutesFrom,
   allowanceIsEstimated,
+  pickActionsBudget,
+  budgetFromVariable,
+  resolveBudget,
+  publicRepositories,
 } from "../scripts/check-actions-cost.mjs";
 
-type Row = { date: string; product: string; sku: string; grossAmount: number; discountAmount: number; netAmount: number; pricePerUnit: number };
+type Row = { date: string; product: string; sku: string; grossAmount: number; discountAmount: number; netAmount: number; pricePerUnit: number; repositoryName?: string };
 
 function row(date: string, gross: number, discount = 0, product = "actions"): Row {
   return { date: `${date}T00:00:00Z`, product, sku: "actions_linux", grossAmount: gross, discountAmount: discount, netAmount: gross - Math.min(discount, gross), pricePerUnit: 0.006 };
@@ -146,8 +150,8 @@ export function runActionsCostAlarmTests() {
   }
   assert.match(describeReadFailure(new Error("socket hang up")), /the billing read failed \(socket hang up\)/);
 
-  // 9. The scheduled drift check runs it, with the budget variable and a token, and an exit 2 is a
-  //    warning, never a pass and never red.
+  // 9. The scheduled drift check runs it, with the billing token and the fallback budget variable, and
+  //    an exit 2 is a FINDING (clause 12), never a pass.
   const source = readFileSync(resolve(".github/workflows/secret-drift-check.yml"), "utf8");
   const start = source.indexOf("        id: actions_cost");
   assert.notEqual(start, -1, "🔴 secret-drift-check.yml no longer has the actions_cost step, so nothing reads the month's spend");
@@ -161,4 +165,114 @@ export function runActionsCostAlarmTests() {
   assert.doesNotMatch(stepText, /secrets\.GITHUB_TOKEN/, "GITHUB_TOKEN cannot read an account's billing; falling back to it only hides why");
   assert.match(stepText, /set \+e/, "under bash -e an exit 2 aborts the step before it is turned into a warning");
   assert.match(stepText, /"\$rc" -eq 2/);
+
+  // 10. 🔴 THE BUDGET IS GITHUB'S OWN, AND $0 IS A BUDGET (2026-11-19, owner: "Fix the cost alarm"). The
+  //     budget came only from a variable nobody set, and `budget > 0` read the organization's real $0
+  //     budget as "unset", so every daily run said CANNOT TELL on a green job. This is the endpoint's
+  //     shape as read that night: four $0 budgets, all "Stop usage".
+  const live = [
+    { budget_product_sku: "actions", budget_scope: "organization", budget_amount: 0, prevent_further_usage: true, budget_entity_name: "sato-pharma" },
+    { budget_product_sku: "packages", budget_scope: "organization", budget_amount: 0, prevent_further_usage: true, budget_entity_name: "sato-pharma" },
+    { budget_product_sku: "codespaces", budget_scope: "organization", budget_amount: 0, prevent_further_usage: true, budget_entity_name: "sato-pharma" },
+    { budget_product_sku: "git_lfs", budget_scope: "organization", budget_amount: 0, prevent_further_usage: true, budget_entity_name: "sato-pharma" },
+  ];
+  assert.deepEqual(pickActionsBudget(live, "sato-pharma"), { amount: 0, stopsUsage: true }, "🔴 the organization's $0 Actions budget was not found, or read as no budget");
+  assert.equal(pickActionsBudget([], "sato-pharma"), null);
+  assert.equal(pickActionsBudget(live.slice(1), "sato-pharma"), null, "another product's budget is not the Actions budget");
+  assert.equal(pickActionsBudget([{ ...live[0], budget_scope: "repository", budget_amount: 5 }], "sato-pharma"), null, "a repository's budget is not the account's limit");
+  assert.equal(pickActionsBudget([{ ...live[0], budget_entity_name: "someone-else" }], "sato-pharma"), null, "another account's budget is not this one's");
+  assert.deepEqual(
+    pickActionsBudget(
+      [{ ...live[0], budget_amount: 50, prevent_further_usage: false }, { ...live[0], budget_amount: 300 }, { ...live[0], budget_amount: 100 }],
+      "sato-pharma",
+    ),
+    { amount: 100, stopsUsage: true },
+    "a Stop-usage budget binds before an alerting one, and the smallest of those binds first",
+  );
+  assert.equal(budgetFromVariable({}), null);
+  assert.deepEqual(budgetFromVariable({ ACTIONS_MONTHLY_BUDGET: "0" }), { amount: 0, stopsUsage: true }, '🔴 "0" in the variable read as unset');
+  assert.deepEqual(budgetFromVariable({ ACTIONS_MONTHLY_BUDGET: " 300 " }), { amount: 300, stopsUsage: true });
+  assert.deepEqual(budgetFromVariable({ ACTIONS_MONTHLY_BUDGET: "lots" }), { invalid: true });
+  const refused = () => {
+    throw Object.assign(new Error("gh failed"), { stderr: "gh: Resource not accessible by personal access token (HTTP 403)" });
+  };
+  const fromGithub = resolveBudget({ readBudgets: () => ({ budgets: live }), env: { ACTIONS_MONTHLY_BUDGET: "300" }, owner: "sato-pharma", isOrg: true });
+  assert.equal(fromGithub.source, "github", "🔴 GitHub's own budget must win over a hand-copied variable");
+  assert.equal(fromGithub.amount, 0);
+  const fromVar = resolveBudget({ readBudgets: refused, env: { ACTIONS_MONTHLY_BUDGET: "0" }, owner: "sato-pharma", isOrg: true });
+  assert.equal(fromVar.source, "variable");
+  assert.equal(fromVar.amount, 0);
+  assert.match(String(fromVar.why), /resource owner is sato-pharma/, "the run must say why it fell back to the variable");
+  const blind = resolveBudget({ readBudgets: refused, env: {}, owner: "sato-pharma", isOrg: true });
+  assert.match(String(blind.error), /could not be read.*ACTIONS_MONTHLY_BUDGET is unset/s, "no budget anywhere must name both halves");
+  assert.match(String(resolveBudget({ readBudgets: () => ({ budgets: [] }), env: {}, owner: "sato-pharma", isOrg: true }).error), /lists no Actions budget/);
+  assert.match(String(resolveBudget({ readBudgets: refused, env: { ACTIONS_MONTHLY_BUDGET: "x" }, owner: "sato-pharma", isOrg: true }).error), /not a number/);
+
+  // 11. 🔴 A PUBLIC REPOSITORY'S MINUTES ARE FREE. The repository has been public since 7 Nov 2026, and by
+  //     18 Nov it had run 26,235 minutes with $0.00 billed. Counted as spend against the $0 budget, they
+  //     read as a budget already reached, every day. The November shape: every day discounted in full.
+  const repo = "phoenix-people-workforce";
+  const publicDay = (date: string, gross: number): Row => ({ ...row(date, gross, gross), repositoryName: repo });
+  const publicNovember = [8.2, 19.68, 11.95, 45.76, 5.87, 3.08, 3.77, 14, 13.64, 2.16, 3.13, 23.18, 4.92].map((gross, i) =>
+    publicDay(`2026-11-${String(i + 6).padStart(2, "0")}`, gross),
+  );
+  const at19 = new Date("2026-11-19T00:00:00Z");
+  const freeMonth = projectActionsCost(publicNovember, { now: at19, budget: 0, includedMinutes: 0, freeRepositories: [repo] });
+  assert.equal(freeMonth.finding, false, "🔴 free public-repository minutes were counted against the $0 budget");
+  near(freeMonth.gross, 0, "nothing billable this month");
+  near(freeMonth.freeGross, 159.34, "the free usage is still reported");
+  assert.equal(freeMonth.windowDays, 7, "🔴 an all-free account read as 'no complete day of usage yet' instead of a $0 rate");
+  near(freeMonth.dailyGross, 0, "the billable rate is $0");
+  const freeLines = describeProjection(freeMonth, { owner: "sato-pharma", now: at19 }).join("\n");
+  assert.match(freeLines, /Left out: \$159\.34 of this month's Actions ran on public repositories \(phoenix-people-workforce\)/);
+  assert.match(freeLines, /\$0 budget with "Stop usage" on means Actions stops the moment anything would be billed/);
+  //     The same rows on a PRIVATE repository: the $0 budget really is at risk, and it must say so.
+  const privateMonth = projectActionsCost(publicNovember, { now: at19, budget: 0, includedMinutes: 0 });
+  assert.ok(privateMonth.finding, "🔴 without the public-repository exclusion this is a finding — the exclusion is what clears it");
+  //     A $0 budget is met by the first cent billed, and is not met by $0.00.
+  const at11 = new Date("2026-11-11T08:00:00Z");
+  const firstCent = projectActionsCost([row("2026-11-10", 0.5)], { now: at11, budget: 0, includedMinutes: 0 });
+  assert.ok(firstCent.finding, "🔴 a cent billed against a $0 budget was not a finding");
+  assert.match(describeProjection(firstCent, { owner: "sato-pharma", now: at11 }).join("\n"), /ALREADY reached/);
+  assert.equal(projectActionsCost([], { now: at19, budget: 0, includedMinutes: 0 }).finding, false, "🔴 $0.00 billed was read as meeting a $0 budget");
+  //     With stated included minutes ($18 at the Linux price), a $0 budget stops Actions the day they run
+  //     out: $6 a day from the 1st is $18 by the end of the 3rd.
+  const included = projectActionsCost(days(1, 3, "2026-11", 6).map((r) => ({ ...r, discountAmount: 6, netAmount: 0 })), {
+    now: new Date("2026-11-04T00:00:00Z"),
+    budget: 0,
+    includedMinutes: 3000,
+  });
+  assert.ok(included.finding, "a $0 budget with the included minutes used up is a finding");
+  assert.equal(cairoDay(included.stopDate!), "Wed 4 Nov", "🔴 the stop day must be the day the included minutes run out");
+  //     A budget that only alerts must not claim Actions stops.
+  const alertOnly = describeProjection(projectActionsCost([row("2026-11-10", 0.5)], { now: at11, budget: 0, includedMinutes: 0, stopsUsage: false }), {
+    owner: "sato-pharma",
+    now: at11,
+  }).join("\n");
+  assert.match(alertOnly, /only alerts/);
+  assert.doesNotMatch(alertOnly, /GitHub has stopped Actions/, "🔴 an alerting budget was described as stopping CI");
+  //     Visibility is read, never guessed: an unreadable repository is neither free nor billed.
+  const vis = publicRepositories(["a", "b", "c"], (name: string) => {
+    if (name === "c") throw new Error("HTTP 404");
+    return name === "a" ? "public" : "private";
+  });
+  assert.deepEqual(vis, { free: ["a"], unread: ["c"] });
+
+  // 12. 🔴 AN EXIT 2 IS A FINDING, NOT A WARNING. It was `::warning::` and `exit 0`: green, nothing sent,
+  //     for every day the budget variable was unset. It still cannot fail the job (continue-on-error), but
+  //     `cost_unread` reaches the report and Telegram, worded apart from a budget about to be reached.
+  const unreadAt = stepText.indexOf('"$rc" -eq 2');
+  const unreadBranch = stepText.slice(unreadAt, stepText.indexOf("\n          fi", unreadAt));
+  assert.match(unreadBranch, /::error::/, "🔴 a blind cost alarm went back to a warning");
+  assert.match(unreadBranch, /cost_unread=true/);
+  assert.match(unreadBranch, /exit 1/, "🔴 a blind cost alarm went back to exit 0, which nothing reports");
+  assert.doesNotMatch(unreadBranch, /exit 0/);
+  const reportStart = source.indexOf("- name: Report the Actions budget projection");
+  assert.notEqual(reportStart, -1, "the cost report step is gone");
+  const report = source.slice(reportStart, source.indexOf("\n      - name: ", reportStart + 10));
+  assert.match(report, /steps\.actions_cost\.outputs\.cost_unread/, "the report must say when the cost alarm could not read");
+  const notify = source.slice(source.indexOf("- name: Notify Telegram on failure"));
+  assert.match(notify, /COST_UNREAD:\s*\$\{\{\s*steps\.actions_cost\.outputs\.cost_unread\s*\}\}/, "Telegram must be told the cost alarm could not read");
+  assert.match(notify, /\[ "\$COST_UNREAD" = "true" \]/, "Telegram must word a blind cost alarm apart from a budget about to be reached");
+  assert.match(notify, /ACTIONS COST ALARM IS BLIND/);
 }
