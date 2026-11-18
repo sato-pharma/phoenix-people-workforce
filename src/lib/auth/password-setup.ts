@@ -23,7 +23,6 @@ import {
   passwordSetupWhatsAppUrl,
   temporaryPasswordExpiryLabel,
 } from "@/lib/auth/password-setup-whatsapp";
-import { LEAKED_PASSWORD_MESSAGE, checkLeakedPassword, leakedPasswordAuditValue } from "@/lib/auth/leaked-password";
 import { chosenPasswordRulesApply, passwordWeakness } from "@/lib/auth/password-strength";
 import { forgetTrustedDevices } from "@/lib/auth/second-step-store";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
@@ -844,18 +843,14 @@ export async function completePasswordSetup(input: { password: string; token: st
   const password = String(input.password ?? "").trim();
   if (!password) throw new Error("Password is required.");
   // A test account takes any password the Super Admin chooses (password-strength.ts); the audit row says so.
-  let leakedPasswordCheck: ReturnType<typeof leakedPasswordAuditValue> | "test_account" = "test_account";
+  let leakedPasswordCheck: "switched_off" | "test_account" = "test_account";
   if (chosenPasswordRulesApply({ isTestPersona: tokenRow.is_test_persona })) {
     if (password.length < 8) throw new PasswordTooShortError();
     // And not the person's own login id (password-strength.ts).
     const weakness = passwordWeakness(password, [tokenRow.login_id, tokenRow.hr_id]);
     if (weakness) throw new Error(weakness);
-    // And not one that already sits in a published breach (leaked-password.ts). Asked BEFORE the link is
-    // spent, so a refused password leaves the link usable; an unreachable service accepts the password and
-    // is named on the audit row below.
-    const leakVerdict = await checkLeakedPassword(password);
-    if (leakVerdict.leaked === true) throw new Error(LEAKED_PASSWORD_MESSAGE);
-    leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
+    // The leaked-password check is switched off (owner, 18 Nov 2026: "Remove it too"); the audit row says so.
+    leakedPasswordCheck = "switched_off";
   }
 
   const passwordHash = await bcrypt.hash(password, 12);

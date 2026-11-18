@@ -415,7 +415,7 @@ export function runTestAccountTests(): void {
 
   {
     // ── A TEST ACCOUNT TAKES ANY PASSWORD THE SUPER ADMIN CHOOSES (owner, 17 Nov 2026: "when test account
-    //    make it normally be as i want"); every real person keeps the length, guessing-list and leak rules.
+    //    make it normally be as i want"); every real person keeps the length and own-login-id rules.
     assert.equal(chosenPasswordRulesApply({ isTestPersona: true }), false, "HEADLINE: a test account's chosen password is never checked");
     assert.equal(chosenPasswordRulesApply({ isTestPersona: false }), true, "a real person's is");
     assert.equal(chosenPasswordRulesApply({ isTestPersona: null }), true, "and an account with no flag is treated as a real person's");
@@ -425,7 +425,7 @@ export function runTestAccountTests(): void {
     const change = source("src/lib/auth/change-password.ts");
     const changeGate = change.indexOf("if (chosenPasswordRulesApply({ isTestPersona: row.is_test_persona })) {");
     assert.notEqual(changeGate, -1, "changing a password asks whether the rules apply");
-    for (const rule of ["input.newPassword.length < 8", "passwordWeakness(input.newPassword", "await checkLeakedPassword(input.newPassword)"]) {
+    for (const rule of ["input.newPassword.length < 8", "passwordWeakness(input.newPassword"]) {
       assert.ok(change.indexOf(rule) > changeGate, `changing a password: ${rule} sits behind the switch`);
     }
     assert.ok(change.includes("auth_email, is_test_persona"), "the change reads the flag from the account's row");
@@ -433,7 +433,7 @@ export function runTestAccountTests(): void {
     const complete = setup.slice(setup.indexOf("export async function completePasswordSetup"));
     const setupGate = complete.indexOf("if (chosenPasswordRulesApply({ isTestPersona: tokenRow.is_test_persona })) {");
     assert.notEqual(setupGate, -1, "setting a password from the link asks whether the rules apply");
-    for (const rule of ["password.length < 8", "passwordWeakness(password", "await checkLeakedPassword(password)"]) {
+    for (const rule of ["password.length < 8", "passwordWeakness(password"]) {
       assert.ok(complete.indexOf(rule) > setupGate, `setting a password: ${rule} sits behind the switch`);
     }
     assert.ok(complete.indexOf('if (!password) throw new Error("Password is required.");') < setupGate, "an empty password is still refused, test account or not");

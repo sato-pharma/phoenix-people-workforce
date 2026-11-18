@@ -143,6 +143,13 @@ sign-in. `docs/security/secret-rotation.md` says the same beside the secret.
 
 ## Leaked passwords
 
+> 🔴 **Switched off on 18 November 2026, by the owner** ("remove this security shit", then "Remove it
+> too"). Neither door calls `checkLeakedPassword` any more, and the audit row of a real person's password
+> change carries `leakedPasswordCheck: "switched_off"`. The same night the "too common" rule in
+> `password-strength.ts` was removed. A chosen password now needs only 8 characters and must not be the
+> person's own login id. The text below describes the check as it ran from 13 to 18 November and stays so
+> it can be switched back on.
+
 `src/lib/auth/leaked-password.ts`. When a person **chooses** a password (changing it, or setting it from a
 link or a temporary password), Phoenix asks Have I Been Pwned's range service whether that password is in a
 published leak, and refuses it if it is.

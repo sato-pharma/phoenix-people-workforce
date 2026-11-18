@@ -529,7 +529,7 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
     name: "Leaked password check",
     provider: "Have I Been Pwned range service",
     category: "Open data and assets",
-    usedFor: "When someone chooses a password, checks that it is not already in a published data leak.",
+    usedFor: "Switched off on 18 Nov 2026 by the owner: no longer asked when someone chooses a password.",
     credential: { kind: "none", why: "An open service with no key." },
     health: { kind: "none", why: NOT_LOGGED_PER_CALL },
     notes: [
