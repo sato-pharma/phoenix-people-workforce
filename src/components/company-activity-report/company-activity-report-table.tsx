@@ -181,6 +181,17 @@ function NoSignalNote({ row }: { row: CompanyActivityEmployeeSummary }) {
   return <p className="mt-0.5 text-phx-2xs font-bold text-amber-600">⚠ {missing}</p>;
 }
 
+/** The person's interviews in range, under their working days — shown only when there are any, so the
+ * table keeps its columns (fits-the-screen: merged into a cell, never a new column). */
+function InterviewNote({ row }: { row: CompanyActivityEmployeeSummary }) {
+  if (row.interviewCount <= 0) return null;
+  return (
+    <p className="mt-0.5 text-phx-2xs font-semibold text-emerald-700">
+      {row.interviewCount} {row.interviewCount === 1 ? "interview" : "interviews"}
+    </p>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Metric Card ──────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -279,6 +290,7 @@ function EmployeeSummaryCard({ href, row }: { href: string; row: CompanyActivity
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Working days</p>
           <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{row.workingDays}</p>
+          <InterviewNote row={row} />
         </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Office</p>
@@ -638,6 +650,14 @@ export function CompanyActivityReportTable({
             <MetricCard description="Days showing BOTH presence and a leave signal." label="Conflict Days" tone={totals.conflictDays > 0 ? "rose" : "emerald"} value={totals.conflictDays} />
           </div>
 
+          {report.interviewSourcesReachable ? null : (
+            <p className="rounded-sm border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-phx-xs font-medium leading-5 text-amber-900">
+              <strong className="font-bold">The interview records could not all be read</strong> for this range — the recruitment
+              interview calendar or the Phoenix CRM Interviews days. Interviews may be missing below and from the export; reload to
+              try again.
+            </p>
+          )}
+
           {report.holidayCalendarReachable ? null : (
             <p className="rounded-sm border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-phx-xs font-medium leading-5 text-amber-900">
               <strong className="font-bold">The public holiday calendar could not be read</strong> for part of this range.
@@ -763,6 +783,7 @@ export function CompanyActivityReportTable({
                           </td>
                           <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">
                             {row.workingDays}
+                            <InterviewNote row={row} />
                           </td>
                           <td className="border-r border-slate-100 px-3 py-2.5 text-center font-semibold text-slate-700">
                             {row.officePresentDays}

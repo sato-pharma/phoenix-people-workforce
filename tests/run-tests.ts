@@ -2467,6 +2467,7 @@ import { runNormalizerUnmappedAndIgnoredListsTests } from "./normalizer-unmapped
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
+import { runCompanyActivityReportInterviewTests } from "./company-activity-report-interviews.test.ts";
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 import { runOutstationArabicTextDirectionTests } from "./outstation-arabic-text-direction.test.ts";
 import { runOutstationDescriptionFormatTests } from "./outstation-description-format.test.ts";
@@ -9650,6 +9651,11 @@ await runTest(
     + "working date gets its own after_exit outcome instead of a fabricated no_entry/no_signal gap, "
     + "on/before the exit date and for active employees nothing changes)",
   runCompanyActivityReportPostExitDaysTests,
+);
+await runTest(
+  "company activity report interviews (every interview a person sat in is a daily record on its Cairo day, "
+    + "an interview-only day reads Interview never No Entry, the Interviews day names itself, the export carries it)",
+  runCompanyActivityReportInterviewTests,
 );
 await runTest("marketing finance table never labels a request with a raw customer id", runMarketingApprovedCustomerNameTests);
 await runTest(

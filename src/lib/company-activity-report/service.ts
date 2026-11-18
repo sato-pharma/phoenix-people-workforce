@@ -17,6 +17,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCompanyActivityChannels } from "@/lib/company-activity-report/channels";
 import { loadCompanyActivityCrmDetail } from "@/lib/company-activity-report/crm-detail";
 import type { PhoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
+import { loadCompanyActivityInterviews } from "@/lib/company-activity-report/interview-detail";
 import { loadCompanyActivityLeaveDetail } from "@/lib/company-activity-report/leave-detail";
 import { reconcileCompanyActivityDay } from "@/lib/company-activity-report/reconcile";
 import { summarizeCompanyActivityEmployee } from "@/lib/company-activity-report/summary";
@@ -60,18 +61,27 @@ export async function getCompanyActivityReport(input: {
   const dates = listIsoDatesInRange(startDate, endDate);
 
   if (employees.length === 0 || dates.length === 0) {
-    return { startDate, endDate, holidayCalendarReachable: true, summaries: [], days: [], unmappedCrmVisitCount: null };
+    return {
+      startDate,
+      endDate,
+      holidayCalendarReachable: true,
+      interviewSourcesReachable: true,
+      summaries: [],
+      days: [],
+      unmappedCrmVisitCount: null,
+    };
   }
 
   const employeeHrIds = employees.map((employee) => employee.hrId);
 
-  const [calendarContext, punchMap, outageDates, channels, crmResult, leaveMap] = await Promise.all([
+  const [calendarContext, punchMap, outageDates, channels, crmResult, leaveMap, interviewResult] = await Promise.all([
     buildAttendanceCalendarContext({ dateFromIso: startDate, dateToIso: endDate }),
     loadEmployeeDayPunchMinutes({ dateFromIso: startDate, dateToIso: endDate, employeeHrIds }),
     getCompanyWideOutageDates(startDate, endDate),
     loadCompanyActivityChannels(),
     loadCompanyActivityCrmDetail({ employeeHrIds, dateFromIso: startDate, dateToIso: endDate, viewer: input.viewer }),
     loadCompanyActivityLeaveDetail({ dateFromIso: startDate, dateToIso: endDate }),
+    loadCompanyActivityInterviews({ employeeHrIds, dateFromIso: startDate, dateToIso: endDate }),
   ]);
 
   const allDays: CompanyActivityDayRow[] = [];
@@ -83,6 +93,8 @@ export async function getCompanyActivityReport(input: {
     const employeeDayPunches = attendanceKey ? punchMap.get(attendanceKey) : undefined;
     const employeeCrmDays = attendanceKey ? crmResult.byEmployeeDay.get(attendanceKey) : undefined;
     const employeeLeaveDays = leaveKey ? leaveMap.get(leaveKey) : undefined;
+    // Keyed by the roster's own hrId (interview-detail.ts matches every spelling on its side).
+    const employeeInterviewDays = interviewResult.byEmployeeDay.get(employee.hrId);
     const hasAttendanceChannel = channels.hasAttendanceChannel(employee.hrId);
     const hasCrmChannel = channels.hasCrmChannel(employee.hrId);
 
@@ -95,6 +107,7 @@ export async function getCompanyActivityReport(input: {
         punches: employeeDayPunches?.get(dateIso),
         crmDay: employeeCrmDays?.get(dateIso),
         leave: employeeLeaveDays?.get(dateIso),
+        interviews: employeeInterviewDays?.get(dateIso),
         hasOutage: outageDates.has(dateIso),
         hasAttendanceChannel,
         hasCrmChannel,
@@ -114,6 +127,7 @@ export async function getCompanyActivityReport(input: {
     summaries,
     days: allDays,
     holidayCalendarReachable: calendarContext.holidayCalendarReachable,
+    interviewSourcesReachable: interviewResult.reachable,
     unmappedCrmVisitCount: crmResult.unmappedCrmVisitCount,
   };
 }

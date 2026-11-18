@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowUpRight, Clock } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Clock, UserRound } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { CompanyActivityDayOutcome, CompanyActivityDayRow, CompanyActivityEmployeeSummary } from "@/lib/company-activity-report/types";
@@ -68,7 +68,7 @@ const DAY_TYPE_BADGE_LABEL: Partial<Record<CompanyActivityDayRow["dayType"], str
   weekly_off: "Non-working",
 };
 
-/** Same 12-value vocabulary export.ts colors for the Excel sheet — kept in visual sync so the
+/** Same 13-value vocabulary export.ts colors for the Excel sheet — kept in visual sync so the
  * on-screen list and the downloaded workbook read as the same report, not two different ones. */
 const OUTCOME_STYLE: Record<CompanyActivityDayOutcome, { chip: string; label: string }> = {
   after_exit: { chip: "border-slate-300 bg-slate-100 text-slate-600", label: "No Longer Employed" },
@@ -77,6 +77,7 @@ const OUTCOME_STYLE: Record<CompanyActivityDayOutcome, { chip: string; label: st
   device_outage: { chip: "border-slate-300 bg-slate-100 text-slate-600", label: "Device Outage" },
   future: { chip: "border-slate-200 bg-white text-slate-400", label: "Future" },
   holiday: { chip: "border-slate-200 bg-slate-100 text-slate-600", label: "Holiday" },
+  interview: { chip: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "Interview" },
   leave_approved: { chip: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "Leave Approved" },
   leave_pending: { chip: "border-amber-200 bg-amber-50 text-amber-700", label: "Leave Pending" },
   no_entry: { chip: "border-rose-300 bg-rose-50 text-rose-700", label: "No Entry" },
@@ -110,6 +111,9 @@ function SummaryStrip({ summary }: { summary: CompanyActivityEmployeeSummary | n
     campaignVisitDays: 0,
     conflictDays: 0,
     crmFieldVisitDays: 0,
+    interviewCount: 0,
+    interviewDays: 0,
+    interviewOnlyDays: 0,
     leaveApprovedDays: 0,
     leavePendingDays: 0,
     noEntryDays: 0,
@@ -119,7 +123,7 @@ function SummaryStrip({ summary }: { summary: CompanyActivityEmployeeSummary | n
     workingDays: 0,
   };
   return (
-    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
       <Stat label="Working Days" tone="neutral" value={s.workingDays} />
       <Stat label="Office" tone="neutral" value={s.officePresentDays} />
       <Stat label="CRM Visits" tone="neutral" value={s.totalCrmVisits} />
@@ -128,6 +132,12 @@ function SummaryStrip({ summary }: { summary: CompanyActivityEmployeeSummary | n
         sub={s.campaignVisitDays > 0 ? `${s.campaignVisitDays} ${s.campaignVisitDays === 1 ? "day" : "days"} · ${(s.campaignVisits / s.campaignVisitDays).toFixed(1)}/day` : "0 days"}
         tone="neutral"
         value={s.campaignVisits}
+      />
+      <Stat
+        label="Interviews"
+        sub={`${s.interviewDays} ${s.interviewDays === 1 ? "day" : "days"}`}
+        tone="neutral"
+        value={s.interviewCount}
       />
       <Stat label="Leave Appr." tone="neutral" value={s.leaveApprovedDays} />
       <Stat label="Leave Pend." tone="warn" value={s.leavePendingDays} />
@@ -211,6 +221,28 @@ function DayRow({ day, hrId }: { day: CompanyActivityDayRow; hrId: string }) {
               {phoenixVisitLine(visit) ? (
                 <span className="basis-full text-phx-2xs font-semibold leading-4 text-slate-500">{phoenixVisitLine(visit)}</span>
               ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {day.interviews.length > 0 ? (
+        <ul className="mt-2.5 space-y-1.5 border-t border-slate-100 pt-2.5">
+          {day.interviews.map((interview, index) => (
+            <li key={index} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-phx-sm">
+              <span className="inline-flex items-center gap-1 font-bold text-emerald-800">
+                <UserRound className="h-3 w-3" />
+                Interview
+              </span>
+              {interview.timeLabel ? <span className="whitespace-nowrap text-phx-xs font-medium text-slate-400">{interview.timeLabel}</span> : null}
+              <span className="font-medium text-slate-700">{interview.candidateName}</span>
+              {interview.jobTitle ? <span className="text-phx-xs font-medium text-slate-500">{interview.jobTitle}</span> : null}
+              {interview.outcome ? (
+                <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.06em] text-emerald-700">{interview.outcome}</span>
+              ) : null}
+              <span className="basis-full text-phx-xs font-medium leading-4 text-slate-500">
+                {[interview.part, interview.platform, interview.where].filter(Boolean).join(" · ")}
+              </span>
             </li>
           ))}
         </ul>
