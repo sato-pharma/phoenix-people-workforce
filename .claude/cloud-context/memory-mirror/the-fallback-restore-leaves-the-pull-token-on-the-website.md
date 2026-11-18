@@ -5,16 +5,16 @@ metadata:
   node_type: memory
   type: project
   originSessionId: fb7acb22-dea4-40c6-b1bb-b67f01bff48a
-  modified: 2026-11-18T22:27:19.828Z
+  modified: 2026-11-18T22:56:25.584Z
 ---
 
 **What happened.** The 18 Nov 2026 Railway audit found a GitHub classic token in the website service's production
 `deploy.registryCredentials` (probably the fallback route's `GHCR_PULL_TOKEN`). The website builds from git, so
 Railway never used it. Cause: `scripts/fallback-image-deploy.mjs` `switch` sets `source{image}` + `registryCredentials`
 through `serviceInstanceUpdate`, while `restore` only called `serviceConnect` back to git and never removed the
-credentials. Fixed on branch `codex/fallback-restore-clears-pull-token` (19 Nov 2026, owner: "Fix it here"):
-`restore` now sends the clearing patch right after each reconnect and ends red if Railway refuses it; pinned by
-`tests/fallback-image-deploy.test.ts` section 4. Until that merges, a `switch` + `restore` still leaves the token.
+credentials. **FIXED by PR 545** (owner: "Fix it here", then "Merge 545 when green"; merged 19 Nov 2026 00:37
+Cairo as cb31e8821, live 00:40, main CI green, no new errors in 15 min): `restore` now sends the clearing patch right
+after each reconnect and ends red if Railway refuses it; pinned by `tests/fallback-image-deploy.test.ts` section 4.
 
 **Cleared 19 Nov 2026 00:21 Cairo** (owner: "Clear the token"): `railway api` mutation `environmentPatchCommit` on
 production with patch `{services:{<website id>:{deploy:{registryCredentials:null}}}}` and `skipDeploys:true`. Patch

@@ -1,11 +1,11 @@
 ---
 name: the-staging-mask-renamed-people-per-row-not-per-person
-description: "staging's mask rewrote denormalized `<x>_name` columns PER ROW, so one hr_id carried up to 11 different synthetic names — B-94 was 7 people in ats_candidates while employees said Farida Lotfy. An exposure audit passes it (every name IS synthetic); only a consistency check catches it, and it is invisible until you read two screens about one person"
+description: "HISTORY (6 Oct state; staging's employees table is unmasked again as of 19 Nov 2026 — see the-staging-mask-skipped-app-auth-users). staging's mask rewrote denormalized `<x>_name` columns PER ROW, so one hr_id carried up to 11 different synthetic names — B-94 was 7 people in ats_candidates while employees said Farida Lotfy. An exposure audit passes it (every name IS synthetic); only a consistency check catches it, and it is invisible until you read two screens about one person"
 metadata:
   node_type: memory
   type: project
   originSessionId: d633e730-6670-4001-a5e4-27b0a4fd99f4
-  modified: 2026-10-06T05:20:11.389Z
+  modified: 2026-11-18T22:57:04.604Z
 ---
 
 Found 6 Oct 2026 while building the Recruitment film for the *Inside Phoenix* series, on staging

@@ -1,27 +1,50 @@
 ---
 name: staging-is-now-mock-data-not-a-production-mirror
-description: "Staging (cifwmndunmlxjhyjugxa) is a FULL PHYSICAL CLONE of production taken 2026-08-29 - REAL production data: 161 real auth accounts WITH password hashes, real payroll, real names. NOT demo-safe, must NEVER be handed to a videographer/third party, and logging in needs PRODUCTION credentials. The 2026-08 anonymised mock is GONE (reversed then re-cloned). Storage FILES do not clone - 910 objects list but every CV/photo 404s. A branch CAN be previewed on staging with `railway up` (environment-scoped, production untouched) - NOT `railway service source connect`, which is service-level and repoints production. A blank manager keycard in staging is almost always the monthly_closing_publications gate, not broken data."
+description: "Staging (cifwmndunmlxjhyjugxa) is a FULL PHYSICAL CLONE of production taken 2026-08-29 - REAL production data: real auth accounts, real payroll, real names. NOT demo-safe, must NEVER be handed to a videographer/third party. Since 2026-11-19 a production password NO LONGER signs in there - every staging hash identical to production's (97 app logins, 103 auth.users) was replaced with a random one; after ANY re-clone re-run ~/.claude/scripts/scrub-staging-passwords.mjs. Its live employees table is NOT masked (19 Nov: 225/245 names, 244 work emails, 183 national IDs equal production); the masking pre-image schema was dropped that night. The 2026-08 anonymised mock is GONE (reversed then re-cloned). Storage FILES do not clone - 910 objects list but every CV/photo 404s. A branch CAN be previewed on staging with `railway up` (environment-scoped, production untouched) - NOT `railway service source connect`, which is service-level and repoints production. A blank manager keycard in staging is almost always the monthly_closing_publications gate, not broken data."
 metadata:
   node_type: memory
   type: project
   originSessionId: 52493c41-8681-4061-aa67-4d730444cc29
-  modified: 2026-09-25T23:17:24.180Z
+  modified: 2026-11-18T22:56:56.877Z
 ---
 
 **Staging `cifwmndunmlxjhyjugxa` is a full physical clone of production, taken 2026-08-29 ~08:00 UTC —
-REAL production data, not a demo.** It holds production's **161 real `auth.users` rows including
-password hashes**, all 179 employees, 796 salary records, 11,267 sales records and real
+REAL production data, not a demo.** It holds production's **161 real `auth.users` rows** (their
+copied password hashes were scrubbed on 19 Nov 2026 — section below), all 179 employees, 796 salary records, 11,267 sales records and real
 doctor/pharmacy/employee names. (`auth` had to be cloned: staging's own 25 accounts had zero id
 overlap with production, so without it every `employees` row would point at a missing user.)
 
 Consequences that bite:
 
-- 🔴 **Staging must NEVER be handed to a videographer or any third party in this state**, and logging
-  in there now needs **production credentials** — this is the exact opposite of the (now-dead) mock
-  posture below.
+- 🔴 **Staging must NEVER be handed to a videographer or any third party in this state** — the exact
+  opposite of the (now-dead) mock posture below. Until the 19 Nov 2026 scrub, logging in there took
+  **production credentials**; it no longer does.
 - **Treat staging figures as real** — they equal production at the clone instant. Continuously-written
   tables (`ireports360_*`, `audit_logs`, `activity_events`, sessions) drift forward from the dump
   moment; that is drift, not corruption.
+- 🔴 **Copied production passwords were scrubbed on 19 Nov 2026 (~00:50 Cairo, the owner's "Scrub
+  staging passwords").** Every staging hash IDENTICAL to production's for the same account was
+  replaced with a bcrypt hash of a random value nobody holds: **97 of 170** `public.app_auth_users`
+  (matched by login) and **103 of 167** `auth.users` (matched by id); re-matched afterwards, **0**
+  identical in either table. Production was opened read-only and only read; no hash or digest was
+  printed. Left alone on purpose: the 64 app logins and 58 auth rows whose staging hash already
+  differed (63 of the 64 changed after the clone on both sides), the 9 and 6 staging-only accounts,
+  the 4 test personas, and staging's own second-step secret (B-10's, enrolled there 14 Nov, not a
+  copy); the mailbox-password tables are empty and the recovery snapshots hold no password column.
+  A production password (B-10's included) no longer signs in on staging. The CI login smoke test is
+  unaffected (its `a-12` account is hard-coded in the login route); the dispatch-only `full-e2e` data
+  user signs in only if its staging hash was not a copy — if a dispatched run fails at data-user
+  setup, give that seat a staging-only password. **After ANY re-clone, re-run it** from the primary
+  checkout: `node ~/.claude/scripts/scrub-staging-passwords.mjs` (dry run, counts only), then
+  `--apply`; it refuses unless both env variables name the right projects.
+- 🔴 **Staging's live `employees` table is NOT masked (measured 19 Nov 2026, read-only on both
+  projects, by HR id):** 225 of 245 English names, 235 Arabic names, 244 work emails and 183 national
+  IDs equal production's. Whatever the 6 Oct mask did to that table is gone. The pre-mask backup
+  schema `masking_backup_20261006` (6,896 name rows, 163 sign-in rows) was DROPPED the same night on
+  the owner's word ("Delete masking backup", then "Drop it anyway" after the MCP drop was declined),
+  through `scripts/apply-sql-file.mjs … staging`. Other staging backup schemas still carry real names
+  (`staging_reconcile_backup_20260929`, `ops_backup.v2_vacation_requests_20260824`,
+  `deductions_governance_backup_20260830.deduction_candidates`) — not touched, not asked.
 - 🔴 **A clone overwrites `ireports360_sync_notify` with production's `true` — re-apply `false` after
   any re-clone** or a staging sync test Telegrams every Super Admin. See
   [[ireports360-sync-notify-disabled-on-staging]].

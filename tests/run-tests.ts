@@ -2837,6 +2837,7 @@ import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runDeployFailureAlertTests } from "./deploy-failure-alert.test.ts";
 import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
+import { runProtectionReadFallbackTests } from "./protection-read-fallback.test.ts";
 import { runBrowserTestReportsPrivateOnlyTests } from "./browser-test-reports-private-only.test.ts";
 import { runSyntheticTelegramAlertTests } from "./synthetic-telegram-alert.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
@@ -11203,6 +11204,11 @@ await runTest(
 await runTest(
   "the production smoke test keeps a GREEN job conclusion and reports failure to the dashboard and as an ::error:: annotation, so a real outage can never withhold the deploy carrying its own fix (a schedule run always attaches its suite to main HEAD)",
   runSyntheticJourneysNeverWithholdsTests,
+);
+
+await runTest(
+  "the daily required-check alarm reads the gate and never goes quiet when it cannot: a 403 from the protection endpoint is answered from branches/main (protected: false there is the MERGE NOTHING alarm, a branch with no list is a skip, never an invented empty list), a 404 keeps its own escalation, and a run that still cannot read the gate is an error that reaches the report and Telegram, read with the workflow's own token",
+  runProtectionReadFallbackTests,
 );
 
 await runTest(
