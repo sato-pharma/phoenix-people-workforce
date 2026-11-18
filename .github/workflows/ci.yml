@@ -553,8 +553,14 @@ jobs:
           echo "Ingesting synthetic-journey report into Supabase..."
           pnpm run synthetic:save-report
 
+      # Attached only while the repository is PRIVATE (owner, 2026-11-19: "Guard CI's reports too"). A
+      # failed login test keeps screenshots and a trace of the pages it opened, signed in, against an
+      # environment that holds real HR data; on a public repository any GitHub user can download an
+      # artifact. When GitHub cannot say the repository is private this reads false and uploads
+      # nothing. Read a failure from the run's log while public. Pinned by
+      # tests/browser-test-reports-private-only.test.ts.
       - name: Upload Playwright report on failure
-        if: github.event_name != 'pull_request' && (failure())
+        if: ${{ failure() && github.event_name != 'pull_request' && github.event.repository.private == true }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report
@@ -1359,8 +1365,10 @@ jobs:
           PLAYWRIGHT_DATA_USER_HRID: ${{ secrets.PLAYWRIGHT_DATA_USER_HRID }}
           PLAYWRIGHT_DATA_USER_PASSWORD: ${{ secrets.PLAYWRIGHT_DATA_USER_PASSWORD }}
 
+      # Private repository only, for the same reason as the login test's report above: a failed
+      # journey's trace is a signed-in recording of real data, downloadable by anyone while public.
       - name: Upload Playwright report on failure
-        if: failure()
+        if: ${{ failure() && github.event.repository.private == true }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report-full-e2e
