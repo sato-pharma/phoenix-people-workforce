@@ -64,6 +64,7 @@ env:
 jobs:
   migration-drift-check:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     # 🔴 EVERY `continue-on-error` STEP CARRIES ITS OWN `timeout-minutes`, AND THIS JOB CEILING SITS
     # WELL ABOVE THEIR SUM ON PURPOSE (2026-10-13). A JOB that hits its ceiling concludes
     # `cancelled`, and a cancelled

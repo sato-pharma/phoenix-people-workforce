@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copies the gitignored local env files (.env.local, .env.*.rls.local,
+// HARD-LINKS the gitignored local env files (.env.local, .env.*.rls.local,
 // .env.analytics, etc.) from the primary worktree into the CURRENT worktree,
 // junctions this worktree's node_modules to the primary's, and links this
 // worktree's Claude Code memory + local settings back to the primary's.
@@ -18,8 +18,17 @@
 // allow-list carries over, and it reads as a different repository entirely.
 // This script closes that gap. The two halves are NOT treated the same way,
 // on purpose:
-//   * .env files and node_modules — copy what's missing, never touch what's
-//     already there without --force. A worktree's env may legitimately differ.
+//   * .env files and node_modules — link what's missing, never replace a file
+//     that DIFFERS from the primary's without --force. A worktree's env may
+//     legitimately differ. Since 2026-11-18 (credentials audit, finding 3) an env
+//     file is a HARD LINK to the primary's, never a copy: one file on disk, so a
+//     rotation in the primary reaches every worktree and no stale production key is
+//     left behind in 18 folders. A byte-identical copy becomes a link; a link left on
+//     bytes the primary has since replaced is re-linked; a date-stamped, backup or
+//     retired file (.env.production, .env.local.production-20260921) is never handed
+//     out, and a worktree's copy of one goes while the primary keeps the same bytes.
+//     🔴 A link shares its bytes BOTH ways — editing a worktree's .env.local in place
+//     edits the primary's. Rules: scripts/lib/env-file-links.mjs.
 //   * .claude/settings.local.json — the PRIMARY is the single source of truth
 //     and this worktree's copy is refreshed from it on EVERY run, because a
 //     permission allow-list that each worktree edits on its own does not
@@ -32,8 +41,8 @@
 // secret never lands in a terminal transcript or log.
 //
 // Usage:
-//   node scripts/sync-worktree-env.mjs            # copy files that are missing here
-//   node scripts/sync-worktree-env.mjs --force     # also overwrite existing env files
+//   node scripts/sync-worktree-env.mjs            # link env files that are missing (or copies) here
+//   node scripts/sync-worktree-env.mjs --force     # also re-link env files that differ
 //   node scripts/sync-worktree-env.mjs --dry-run   # print what would happen, change nothing
 //   node scripts/sync-worktree-env.mjs --all       # ALSO sweep every OTHER worktree on the
 //                                                   # machine (node_modules junction + missing env
@@ -61,6 +70,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { envFileChanged, isStaleEnvName, provisionEnvFile, removeStaleEnvCopies } from "./lib/env-file-links.mjs";
 import { gitLayout } from "./lib/git-layout.mjs";
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
 import { readHookPayload, sessionFolder } from "./lib/session-folder.mjs";
@@ -161,6 +171,8 @@ function getEnvCandidates() {
   const names = fs
     .readdirSync(primaryRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.startsWith(".env") && !entry.name.endsWith(".example"))
+    // A date-stamped snapshot, a backup or a retired file stays in the primary only (env-file-links.mjs).
+    .filter((entry) => !isStaleEnvName(entry.name))
     .map((entry) => entry.name);
   if (names.length === 0) return [];
   let out = "";
@@ -221,7 +233,8 @@ function runSweep(candidates, skip) {
     if (!wasChanged(r)) continue;
     changed++;
     const bits = [];
-    if (r.copied.length) bits.push(`${r.copied.length} env file(s)`);
+    if (r.linked.length) bits.push(`${r.linked.length} env file(s) linked`);
+    if (r.removed.length) bits.push(`${r.removed.length} stale env copy(ies) removed`);
     if (linkedNodeModules(r.modulesStatus)) bits.push("node_modules " + r.modulesStatus);
     console.log(`  sweep ${path.basename(r.dir)}: ${bits.join(", ")}${dryRun ? " [dry-run]" : ""}`);
   }
@@ -260,32 +273,33 @@ const candidates = getEnvCandidates();
 console.log("sync-worktree-env: primary=" + primaryRoot);
 console.log("sync-worktree-env: target =" + currentRoot);
 
-let copied = 0;
+let linked = 0;
 let skipped = 0;
 if (candidates.length === 0) {
   console.log("  (no local env files found in the primary worktree)");
 } else {
   for (const name of candidates) {
     const src = path.join(primaryRoot, name);
-    const dest = path.join(currentRoot, name);
-    const exists = fs.existsSync(dest);
-
-    if (exists && !force) {
-      console.log(`  skip   ${name} (already exists here; pass --force to overwrite)`);
-      skipped++;
-      continue;
-    }
-
+    const status = provisionEnvFile(src, path.join(currentRoot, name), { force, dryRun });
+    if (status === "absent") continue;
     const size = fs.statSync(src).size;
-    if (dryRun) {
-      console.log(`  would-copy ${name} (${size} bytes)${exists ? " [overwrite]" : ""}`);
+    if (envFileChanged(status)) {
+      // "linked" | "relinked" | "copied" (no link possible here) | "would-link" | "would-relink"
+      console.log(`  ${status} ${name} (${size} bytes)`);
+      if (!dryRun) linked++;
       continue;
     }
-
-    fs.copyFileSync(src, dest);
-    console.log(`  copied ${name} (${size} bytes)${exists ? " [overwritten]" : ""}`);
-    copied++;
+    console.log(
+      status === "already-linked"
+        ? `  skip   ${name} (already the primary's file)`
+        : `  skip   ${name} (differs from the primary's and is not a link — kept; --force re-links it)`,
+    );
+    skipped++;
   }
+}
+for (const stale of removeStaleEnvCopies(primaryRoot, currentRoot, { dryRun })) {
+  if (stale.status === "kept") console.log(`  keep   ${stale.name} (stale name; no original in the primary, or written after it — kept)`);
+  else console.log(`  ${stale.status === "removed" ? "removed" : "would-remove"} ${stale.name} (stale duplicate; the primary keeps it)`);
 }
 
 // ------------------------------------------------------- node_modules junction
@@ -442,5 +456,5 @@ if (all) {
 }
 
 if (!dryRun) {
-  console.log(`sync-worktree-env: done — ${copied} copied, ${skipped} skipped.`);
+  console.log(`sync-worktree-env: done — ${linked} linked, ${skipped} skipped.`);
 }

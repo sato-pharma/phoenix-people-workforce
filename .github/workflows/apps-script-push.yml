@@ -70,6 +70,7 @@ jobs:
   push:
     name: Push live sheet scripts into Google
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

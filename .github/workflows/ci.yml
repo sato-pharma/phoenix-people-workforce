@@ -512,7 +512,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpZndtbmR1bm1seGpoeWp1Z3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzQxMzEsImV4cCI6MjA5OTM1MDEzMX0.2bWjOI1gH67H8Fj1wr2XheQjlDhM5pOQ6xPD8YLd5lc" # gitleaks:allow (public anon key, RLS-protected -- see comment above)
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
+          # A CI-only signing secret, never production's: this run signs in against STAGING with APP_ENV=ci, and
+          # `validate` runs on every branch, where no production secret may reach (credentials audit, 18 Nov 2026).
+          PHOENIX_AUTH_SECRET: ci-only-phoenix-auth-secret-for-playwright-session-signing
           PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
           # 🔴 BOTH lines switch the smoke login on, and neither works alone: isCiSmokeLoginEnabled()
           # (src/lib/auth/ci-smoke-login.ts) needs APP_ENV to be exactly "ci" AND the flag. No real
@@ -522,36 +524,9 @@ jobs:
           APP_ENV: ci
           PHOENIX_CI_SMOKE_LOGIN: "true"
 
-      # Best-effort: feed the /admin/synthetic-journeys dashboard from CI. This runs
-      # `pnpm run synthetic:save-report` (scripts/synthetic-save-report.ts →
-      # ingestSyntheticJourneyReport), which writes a run row directly to Supabase using
-      # the service-role key already provided to this job. It is a deliberate NO-OP unless
-      # a report exists at tests/synthetic/report/latest.json — the login smoke test above
-      # does NOT produce one; only a full synthetic run (`pnpm run synthetic:test` against a
-      # deployed target) does. TO ACTIVATE real ingestion: (1) add a repo secret
-      # SYNTHETIC_BASE_URL pointing at the environment to probe, and (2) add a step/job that
-      # runs `pnpm run synthetic:test` to generate the report BEFORE this step. Kept
-      # continue-on-error + guarded so a missing report or missing creds can never fail CI.
-      - name: Ingest synthetic-journey report (best-effort, never fails CI)
-        if: github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Optional/not-yet-created secret; empty is fine (script defaults baseUrl to "unknown").
-          SYNTHETIC_BASE_URL: ${{ secrets.SYNTHETIC_BASE_URL }}
-        run: |
-          if [ ! -f tests/synthetic/report/latest.json ]; then
-            echo "No synthetic report at tests/synthetic/report/latest.json — nothing to ingest, skipping."
-            exit 0
-          fi
-          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ]; then
-            echo "Supabase service credentials not configured — skipping synthetic ingest."
-            exit 0
-          fi
-          echo "Ingesting synthetic-journey report into Supabase..."
-          pnpm run synthetic:save-report
+      # The synthetic-journey report is saved by synthetic-journeys.yml, the only workflow that makes one. A
+      # best-effort ingest step here (removed 18 Nov 2026, credentials audit) never found a report, and it handed the
+      # PRODUCTION service key to a job that runs on every branch.
 
       # Attached only while the repository is PRIVATE (owner, 2026-11-19: "Guard CI's reports too"). A
       # failed login test keeps screenshots and a trace of the pages it opened, signed in, against an
@@ -1153,6 +1128,7 @@ jobs:
     needs: [checks]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 5
 
     steps:
@@ -1308,6 +1284,7 @@ jobs:
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a

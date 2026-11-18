@@ -145,6 +145,7 @@ jobs:
       actions: read
       packages: write
     runs-on: ubuntu-latest # hosted-only: builds the amd64 production image with Docker
+    environment: ${{ github.event_name != 'pull_request' && 'main-secrets' || '' }} # main-secrets for a dispatch or a call from main; none on a pull request, which also gets no Railway token below
     # A cold build of this app is ~8-12 minutes (install, `next build`, the runtime layers); the cap is generous because
     # nothing here may be cancelled half-pushed.
     timeout-minutes: 45
@@ -181,8 +182,10 @@ jobs:
 
       - name: Resolve the build-time NEXT_PUBLIC values
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # 🔴 NEVER on a pull request: a branch's run gets no Railway token (credentials audit, 18 Nov 2026), so it
+          # resolves from GitHub's public NEXT_PUBLIC copies below. A dispatch or a call from main reads Railway's own.
+          RAILWAY_API_TOKEN: ${{ github.event_name != 'pull_request' && (secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN) || '' }}
+          RAILWAY_TOKEN: ${{ github.event_name != 'pull_request' && secrets.RAILWAY_TOKEN || '' }}
           # The same values, in the same order of precedence, that sync-railway-production-secrets.yml writes to Railway.
           # They are only the FALLBACK source: the first choice is Railway's own current values (build-values below), because
           # those are literally what Railway's last build used.
@@ -342,6 +345,7 @@ jobs:
       actions: read
       packages: read
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 35
     env:
       SHA: ${{ needs.gate.outputs.sha }}
@@ -381,6 +385,7 @@ jobs:
       actions: read
       packages: read
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 60
     env:
       SHA: ${{ needs.gate.outputs.sha }}
@@ -427,6 +432,7 @@ jobs:
     needs: gate
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'restore' }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}

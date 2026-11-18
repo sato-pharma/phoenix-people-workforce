@@ -394,7 +394,10 @@
       "Bash(*supabase network-restrictions update*)",
       "PowerShell(*supabase network-restrictions update*)",
       "Bash(*supabase ssl-enforcement update*)",
-      "PowerShell(*supabase ssl-enforcement update*)"
+      "PowerShell(*supabase ssl-enforcement update*)",
+      "mcp__supabase-staging__create_project",
+      "mcp__supabase-staging__pause_project",
+      "mcp__supabase-staging__restore_project"
     ]
   }
 }

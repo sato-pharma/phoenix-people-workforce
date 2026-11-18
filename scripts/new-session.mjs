@@ -932,8 +932,8 @@ console.log("     " + claim.note);
 console.log("3/4  junctioning node_modules from the primary (never installing)");
 console.log("     " + linkModules(dir));
 
-console.log("4/4  copying the gitignored env files");
-if (!syncEnv(dir)) console.log("     env sync failed — copy .env.local by hand before using dev-auth.");
+console.log("4/4  linking the gitignored env files to the primary's (hard links, never copies)");
+if (!syncEnv(dir)) console.log("     env sync failed — run node scripts/sync-worktree-env.mjs in the worktree before using dev-auth.");
 
 const result = ready(dir);
 console.log("\n" + (result.ok ? "READY" : "INCOMPLETE") + "   " + dir);

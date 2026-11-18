@@ -50,7 +50,8 @@ const HEAVY_STEPS = [
   "Install Playwright browsers",
   "Install Playwright system dependencies",
   "Run Playwright login smoke test",
-  "Ingest synthetic-journey report (best-effort, never fails CI)",
+  // "Ingest synthetic-journey report" left `validate` on 18 Nov 2026 (credentials audit, finding 1): it never found a
+  // report, and it put the PRODUCTION service key into a job every branch runs. synthetic-journeys.yml saves the report.
   "Upload Playwright report on failure",
 ];
 
