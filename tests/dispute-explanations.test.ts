@@ -280,4 +280,14 @@ export function runDisputeExplanationsTests() {
     "spaces typed to pad the box are not counted, exactly as the server does not count them",
   );
   assert.equal(explainDetailProgress("abcd efgh ijkl mnop qrstu").enough, true, "25 characters and 4 words is enough");
+
+  // The days a send carries are the ones the picker still LISTS. Stepping to another month keeps earlier ticks in the
+  // component's state while the picker shows only that month's days, so the button counted — and the post carried —
+  // days the person could no longer see (ticked 3 and 5 Nov, moved to October: "Send for 3 days").
+  const screen = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8").replace(/\r\n/g, "\n");
+  assert.ok(
+    screen.includes("const explainExtraDatesToSend = explainExtraDates.filter((date) => date !== selectedDate && explainableDays.includes(date));"),
+    "the extras sent are only days still offered, never the selected day and never a day from a month no longer on screen",
+  );
+  assert.ok(screen.includes("explainExtraDatesToSend.length + 1"), "and the button counts exactly those");
 }

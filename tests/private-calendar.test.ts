@@ -564,6 +564,15 @@ export async function runPrivateCalendarTests() {
       3,
       "the calendar's read, the employee's own list and the already-asked check all match the HR id whatever its case",
     );
+    // The sender's name on a request comes from their own record and is the DISPLAY name (a nickname holder reads the same
+    // on the confirmer's card as on their calendar), and a failed read stops the request instead of storing no name.
+    assert.match(
+      disputesSource,
+      /\.select\("full_name, nickname, hr_id"\)\s*\.ilike\("hr_id", privateCalendarHrIdPattern\(employeeHrId\)\)/,
+      "the sender is read by their own HR id, with the nickname beside the full name",
+    );
+    assert.match(disputesSource, /if \(ownRecordError\) throw ownRecordError;/, "a failed read of the sender's record is not stored as a nameless request");
+    assert.match(disputesSource, /resolveEmployeeDisplayName\(own\.full_name, own\.nickname, own\.hr_id\)/, "named the way the calendar names them");
   }
 
   // A rep's OWN solo CRM visit proves field work exactly as a double visit does.

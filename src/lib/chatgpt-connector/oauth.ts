@@ -56,6 +56,22 @@ function configuredCallbackIds(): ReadonlySet<string> {
   );
 }
 
+/**
+ * PHOENIX_CHATGPT_CLIENT_IDS (comma separated): once it names at least one client, ONLY those registered clients
+ * may reach the Allow page. Registration cannot keep a stranger out — the stable ChatGPT callback is every
+ * ChatGPT user's, and a client registered before the callback rule still exists — so this is the owner's lock on
+ * who may be put in front of him: the id of his own connection is in the audit row written when he pressed Allow.
+ * Unset (the default) leaves every registered client able to reach Allow, as before.
+ */
+function configuredClientIds(): ReadonlySet<string> {
+  return new Set(
+    String(process.env.PHOENIX_CHATGPT_CLIENT_IDS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+}
+
 function registrableRedirect(uri: unknown, callbackIds: ReadonlySet<string>): boolean {
   if (!isChatGptRedirect(uri)) return false;
   const perConnector = /^https:\/\/chatgpt\.com\/connector\/oauth\/([A-Za-z0-9_-]{1,128})$/.exec(uri);
@@ -243,6 +259,8 @@ export function createConnectorOAuth(options: {
   now?: () => number;
   /** Per-connector callback ids a new registration may name. Default: PHOENIX_CHATGPT_CALLBACK_IDS. */
   callbackIds?: ReadonlySet<string>;
+  /** Registered clients allowed to reach the Allow page; empty means all. Default: PHOENIX_CHATGPT_CLIENT_IDS. */
+  clientIds?: ReadonlySet<string>;
 }) {
   const { store, checkSubject } = options;
   const now = options.now ?? (() => Date.now());
@@ -288,6 +306,10 @@ export function createConnectorOAuth(options: {
     const clientId = params.client_id ?? "";
     const client = clientId ? await store.getClient(clientId) : null;
     if (!client) throw new OAuthError("invalid_client", "This ChatGPT connection is not registered. Remove it in ChatGPT and add it again.");
+    const pinnedClients = options.clientIds ?? configuredClientIds();
+    if (pinnedClients.size > 0 && !pinnedClients.has(clientId)) {
+      throw new OAuthError("invalid_client", "This ChatGPT connection is not one that Phoenix has been told to accept. Ask the owner to list it in PHOENIX_CHATGPT_CLIENT_IDS, or remove it in ChatGPT and add it again.");
+    }
     const redirectUri = params.redirect_uri ?? "";
     if (!client.redirect_uris.includes(redirectUri) || !isChatGptRedirect(redirectUri)) {
       throw new OAuthError("invalid_request", "The return address does not match the registered connection.");

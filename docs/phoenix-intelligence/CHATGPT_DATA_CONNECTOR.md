@@ -75,6 +75,14 @@ variable (comma separated; ChatGPT's connector form shows the id). A stranger's 
 stranger cannot put a connection of theirs in front of the owner on the Allow page. A connection registered
 before this rule keeps working. The Allow page also prints the return address and says the name is unverified.
 
+That rule alone cannot keep a stranger out: the stable callback is every ChatGPT user's, and a connection
+registered before the rule still exists. So once the owner's own connection is made, **lock the Allow page to it**:
+the audit row written when he pressed Allow (entity type `chatgpt_connector`, summary "ChatGPT was allowed into
+Phoenix as …") carries its `clientId` and `redirectUri`. List that id in the `PHOENIX_CHATGPT_CLIENT_IDS` environment
+variable (comma separated). From then on only a listed client can reach the Allow page; any other is refused there
+and again when Allow is pressed. A connection already allowed keeps working. Unset, every registered client can
+reach Allow, as before. The same person re-adding the connector in ChatGPT gets a new client id and must list it.
+
 ## The kill switch
 
 To end every ChatGPT connection at once, run this on production:

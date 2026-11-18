@@ -141,6 +141,22 @@ async function registrationAndAuthorize() {
   const valid = await oauth.validateAuthorizeRequest({ ...base, resource: `${ORIGIN}/api/mcp/` });
   assert.equal(valid.resource, `${ORIGIN}/api/mcp`);
 
+  // The owner's lock on who may reach Allow (PHOENIX_CHATGPT_CLIENT_IDS). Registration cannot keep a stranger out —
+  // the stable callback is every ChatGPT user's — so once a client is listed, an unlisted one (a stranger's, or one
+  // registered before the callback rule) is refused at the Allow page and again at approve, which validates again.
+  const stranger = await oauth.register({ client_name: "ChatGPT", redirect_uris: [REDIRECT] });
+  const pinned = createConnectorOAuth({
+    store: memory.store,
+    checkSubject: async () => ({ ok: true }),
+    origin: ORIGIN,
+    callbackIds: new Set(["abc_123"]),
+    clientIds: new Set([ok.client_id]),
+  });
+  assert.equal((await pinned.validateAuthorizeRequest(base)).clientId, ok.client_id, "the listed client still reaches Allow");
+  await expectOAuth(pinned.validateAuthorizeRequest({ ...base, client_id: stranger.client_id }), "invalid_client");
+  const open = await oauth.validateAuthorizeRequest({ ...base, client_id: stranger.client_id });
+  assert.equal(open.clientId, stranger.client_id, "with nothing listed, every registered client reaches Allow as before");
+
   // Only the two connector seats can approve, and Cancel answers access_denied to ChatGPT.
   await expectOAuth(oauth.approve(valid, { ...OWNER, role: "HR Manager" as never }), "access_denied");
   const denied = new URL(oauth.deny({ ...valid, state: "abc" }));

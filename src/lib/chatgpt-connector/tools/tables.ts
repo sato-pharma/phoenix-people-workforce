@@ -21,6 +21,7 @@ import {
   TABLE_FILTER_OPS,
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
+  orderTiebreakers,
   planTableRead,
   readableTables,
   rowsThatFit,
@@ -102,6 +103,20 @@ export function stableOrder(plan: TableReadPlan, known: readonly string[]): { co
 
 /** One page of a guarded plan, with PostgREST's row count (exact on small tables, the planner's estimate on huge ones). */
 async function readPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number) {
+  const ties = orderTiebreakers(stableOrder(plan, known), plan, known);
+  try {
+    return await readOrderedPage(plan, known, offset, size, ties);
+  } catch (error) {
+    // A json, xml or point column has no ordering operator, so ordering by it fails the whole read. Fall back to
+    // the asked order alone for such a table: a read that answers beats one that cannot.
+    if (!known.includes("id") && ties.length > 0 && error instanceof ToolRefusal && error.message.includes("ordering operator")) {
+      return readOrderedPage(plan, known, offset, size, []);
+    }
+    throw error;
+  }
+}
+
+async function readOrderedPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number, ties: readonly string[]) {
   let query = getSupabaseAdmin().from(plan.table).select(plan.columns.join(","), { count: "estimated" });
   for (const filter of plan.filters) {
     switch (filter.op) {
@@ -137,8 +152,8 @@ async function readPage(plan: TableReadPlan, known: readonly string[], offset: n
   const order = stableOrder(plan, known);
   query = query.order(order.column, { ascending: order.ascending });
   // Rows that tie on the asked column must keep one order from page to page, or offset paging repeats some and
-  // skips others while the answer says every row was read: `id` breaks the tie where the table has one.
-  if (order.column !== "id" && known.includes("id")) query = query.order("id", { ascending: true });
+  // skips others while the answer says every row was read (see orderTiebreakers).
+  for (const column of ties) query = query.order(column, { ascending: true });
   const { data, error, count } = await query.range(offset, offset + size - 1);
   if (error) throw new ToolRefusal(`The read of ${plan.table} failed: ${error.message}`);
   return { rows: (data ?? []) as unknown as Record<string, unknown>[], count: typeof count === "number" ? count : null };

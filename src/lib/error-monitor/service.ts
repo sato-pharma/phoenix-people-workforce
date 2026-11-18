@@ -150,8 +150,9 @@ export type LogAppErrorInput = {
   clientContext?: string | null;
   /**
    * False keeps the row but sends no new-error Telegram. /api/errors/client takes reports from anyone, so it
-   * passes false unless the reporter is signed in: an anonymous caller must not write the Super Admin's alert
-   * text or use up the per-process alert cap. Every trusted in-process caller leaves it unset.
+   * passes true only for a server error carrying the proof instrumentation.ts signs (server-forward-proof.ts)
+   * or a browser crash from a signed-in reporter: nobody else may write the Super Admin's alert text or use up
+   * the per-process alert cap. Every trusted in-process caller leaves it unset.
    */
   alert?: boolean;
 };

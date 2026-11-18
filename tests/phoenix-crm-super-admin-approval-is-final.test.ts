@@ -96,6 +96,29 @@ function checkDatabase(): void {
   for (const fn of ["phoenix_crm_decide_validation_review(jsonb)", "phoenix_crm_decide_shared_place(jsonb)"]) {
     assert.ok(sql.includes(`revoke execute on function public.${fn} from public, anon, authenticated;`), `${fn} stays closed to the browser roles`);
   }
+
+  // "Keep it" (and a bulk Approve) runs the approve branch again. The reject lock above reads decided_by_hr_id,
+  // so that branch must leave a Super Admin's decision whole — name, time and note TOGETHER — when somebody who is
+  // not one approves an active building he approved. Last replacer of the function: the follow-up migration.
+  const keepIt = readSql("supabase/migrations/20261118191500_phoenix_crm_keep_it_keeps_the_super_admin_decision.sql");
+  const approve = /create or replace function public\.phoenix_crm_decide_shared_place\(p jsonb\)[\s\S]*?\n\$\$;/.exec(keepIt);
+  assert.ok(approve, "the Keep-it migration redefines phoenix_crm_decide_shared_place");
+  assert.match(
+    approve[0],
+    /v_keeps_decision := coalesce\(\s*v_venue\.status = 'active'\s*and public\.phoenix_crm_is_super_admin\(v_venue\.decided_by_hr_id\)\s*and not public\.phoenix_crm_is_super_admin\(v_actor\),\s*false\s*\);/,
+    "a Super Admin's decision is kept only for an active building he approved, approved again by someone who is not one",
+  );
+  for (const [column, kept, fresh] of [
+    ["decided_at", "v_venue.decided_at", "now()"],
+    ["decided_by_hr_id", "v_venue.decided_by_hr_id", "v_actor"],
+    ["decision_note", "v_venue.decision_note", "v_note"],
+  ] as const) {
+    assert.ok(
+      approve[0].includes(`${column} = case when v_keeps_decision then ${kept} else ${fresh} end`),
+      `Keep it leaves his ${column} alone — the name alone staying put printed his name beside the SFE Manager's click time and note`,
+    );
+  }
+  assert.ok(approve[0].includes("revoke execute on function") === false && keepIt.includes("revoke execute on function public.phoenix_crm_decide_shared_place(jsonb) from public, anon, authenticated;"), "and the function stays closed to the browser roles");
 }
 
 function checkService(): void {
