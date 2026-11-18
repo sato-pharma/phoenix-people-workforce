@@ -2833,6 +2833,7 @@ import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runDeployFailureAlertTests } from "./deploy-failure-alert.test.ts";
 import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
+import { runBrowserTestReportsPrivateOnlyTests } from "./browser-test-reports-private-only.test.ts";
 import { runSyntheticTelegramAlertTests } from "./synthetic-telegram-alert.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
@@ -11183,6 +11184,11 @@ await runTest(
 await runTest(
   "the production smoke test keeps a GREEN job conclusion and reports failure to the dashboard and as an ::error:: annotation, so a real outage can never withhold the deploy carrying its own fix (a schedule run always attaches its suite to main HEAD)",
   runSyntheticJourneysNeverWithholdsTests,
+);
+
+await runTest(
+  "no browser-test report is published while the repository is public: every artifact upload of a Playwright report, trace or screenshot in any workflow (CI's login test and full suite, the production smoke test) carries github.event.repository.private == true in its if:, and the scan still finds the three it was written for",
+  runBrowserTestReportsPrivateOnlyTests,
 );
 
 await runTest(
