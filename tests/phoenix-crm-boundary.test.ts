@@ -153,6 +153,9 @@ const ROUTE_GATES: RouteGate[] = [
   // through the integrity board's own two-reader predicate.
   exportGet("list/template", "approve"),
   post("list/template/import", "approve"),
+  // A whole line's customer list, by region and rep (owner, 2026-11-18): the template's gate and the
+  // same two readers, narrowed in the service through the same predicate.
+  exportGet("list/line-export", "approve"),
   post("list/validate", "create"),
   // The name and speciality, corrected after validating (owner, 2026-09-22): the rep's own write.
   post("list/rename", "create"),

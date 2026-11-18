@@ -413,6 +413,9 @@ export type AuditEntityType =
   // territory, is the row. No migration — audit_logs has no CHECK on entity_type.
   | "phoenix_crm_list_template"
   | "phoenix_crm_list_template_import"
+  // A whole line's customer list, by region and rep, with the line as the entity id (2026-11-18). It
+  // carries every customer of the line and their grades out of the building. No migration.
+  | "phoenix_crm_line_customer_list"
   // Who pulled the shared Planning Calendar to XLSX, for which month. Gated to SFE
   // Manager / Super Admin; the month is the entity id so a row says WHICH period
   // was handed over. audit_logs has no CHECK on entity_type, so this needs no migration.
