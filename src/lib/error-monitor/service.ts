@@ -148,6 +148,12 @@ export type LogAppErrorInput = {
   // report-client-error.ts. PREPENDED to `stack` under its own separator — see
   // combineStack for why it leads rather than trails.
   clientContext?: string | null;
+  /**
+   * False keeps the row but sends no new-error Telegram. /api/errors/client takes reports from anyone, so it
+   * passes false unless the reporter is signed in: an anonymous caller must not write the Super Admin's alert
+   * text or use up the per-process alert cap. Every trusted in-process caller leaves it unset.
+   */
+  alert?: boolean;
 };
 
 /** Kept identical to the separator in message-decode.ts's extractTopComponent. */
@@ -240,7 +246,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<string | nul
     // fence the production build failed on it (17 Nov 2026). It reads "nodejs" in Next's server and is unset in a
     // plain node process (the tests, a script): both send. Keep the comparison on its own, so it stays a constant.
     if (process.env.NEXT_RUNTIME !== "") {
-      if (id) {
+      if (id && input.alert !== false) {
         // A NEW error reaches the Super Admin's Telegram once, the moment its first row lands (new-error-alert.ts).
         // Fire and forget: the caller is on an error path and never waits for a notice. A dynamic import keeps the
         // notification stack out of this module's graph, and the alert never throws.

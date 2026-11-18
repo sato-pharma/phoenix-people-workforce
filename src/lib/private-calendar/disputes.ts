@@ -151,6 +151,7 @@ export async function submitPrivateCalendarDataDispute(
     detailText?: unknown;
     /** What the calendar showed on each day, keyed by date — kept with the request for the record. */
     displayedSummaries?: Record<string, string> | null;
+    /** Ignored: the sender's name comes from their own employee record, never from the request body. */
     employeeName?: string | null;
     /** Pictures the employee attached to the request itself (owner, 2026-10-09). Kept on the first day. */
     images?: CheckedDisputeImage[];
@@ -160,6 +161,13 @@ export async function submitPrivateCalendarDataDispute(
   await assertPermission(access, "attendance", "read");
   const employeeHrId = resolveEmployeeIdentityId(access);
   if (!employeeHrId) throw new Error("Your employee profile is not linked. Contact HR.");
+  // Named from the sender's own record: a name in the request body could put anyone's name on the confirmer's card.
+  const { data: ownRecord } = await getSupabaseAdmin()
+    .from("employees")
+    .select("full_name")
+    .ilike("hr_id", privateCalendarHrIdPattern(employeeHrId))
+    .limit(1);
+  const employeeName = tidyDisputeText(String((ownRecord as Array<{ full_name: string | null }> | null)?.[0]?.full_name ?? "")) || null;
 
   const explanation = checkExplanation(
     { confirmerHrId: input.confirmerHrId, dates: input.dates, detailText: input.detailText, reasonCode: input.reasonCode },
@@ -205,7 +213,7 @@ export async function submitPrivateCalendarDataDispute(
         displayed_summary: input.displayedSummaries?.[date]?.trim() || "(nothing was shown for this day)",
         dispute_date: date,
         employee_hr_id: employeeHrId,
-        employee_name: input.employeeName ?? null,
+        employee_name: employeeName,
         item_source: null,
         item_source_record_id: null,
         status: "pending_review",
@@ -250,7 +258,7 @@ export async function submitPrivateCalendarDataDispute(
       cases: disputes.map((dispute) => ({ dates: [dispute.disputeDate], ref: dispute.id })),
       confirmer,
       employeeHrId,
-      employeeName: input.employeeName ?? null,
+      employeeName,
       explanation,
       groupId,
     });
@@ -300,7 +308,7 @@ export async function submitPrivateCalendarDataDispute(
     summary: `Private calendar ${dates.length === 1 ? "day" : `${dates.length} days`} explained: ${explainReason(explanation.reasonCode).label}`,
   });
 
-  const who = input.employeeName ?? employeeHrId;
+  const who = employeeName ?? employeeHrId;
   // The days as a person reads them, gaps kept ("2–3 Nov and 9 Nov"), never one run from first to last.
   const span = dates.length === 1 ? explainDayLabel(dates[0]) : `${explainDatesPhrase(dates)} (${dates.length} days)`;
 
@@ -313,7 +321,7 @@ export async function submitPrivateCalendarDataDispute(
       confirmer,
       dates,
       employeeHrId,
-      employeeName: input.employeeName ?? null,
+      employeeName,
       groupId,
       reasonCode: explanation.reasonCode,
     });
