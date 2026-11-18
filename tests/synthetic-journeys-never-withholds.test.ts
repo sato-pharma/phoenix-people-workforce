@@ -1,4 +1,5 @@
-// The production smoke test must never be able to withhold a production deploy.
+// The production smoke test must never be able to withhold a production deploy — and, clause 5,
+// must never publish a recording of production while the repository is public.
 //
 // WHY THIS EXISTS. A production deploy is gated on that commit's check suites (Railway "Wait for
 // CI"), and Railway withholds the deploy when ANY suite on the commit fails — a withheld deploy is
@@ -88,4 +89,37 @@ export function runSyntheticJourneysNeverWithholdsTests() {
       "public.synthetic_journey_runs, and since the job is deliberately green, the failure would " +
       "then be invisible everywhere.",
   );
+
+  // 5. And the run must never PUBLISH production (owner, 2026-11-18: "Yes, do both"). A failed
+  //    journey keeps a screenshot and a full Playwright trace — page snapshots and network traffic of
+  //    production, signed in as the Super Admin synthetic account. On a public repository any GitHub
+  //    user can download an artifact; on 2026-11-18 thirty-five such recordings were open for
+  //    download and had to be deleted by hand. So EVERY artifact upload in this workflow is gated on
+  //    the repository being private. Read from the `if:` line itself, with comment lines dropped
+  //    first, because the comment above the step names the same expression and would satisfy a
+  //    search of the whole block. CRLF is folded first: this laptop checks out CRLF, the runner LF.
+  const lf = source.replace(/\r\n/g, "\n");
+  const steps = lf.split("\n      - name: ").slice(1);
+  const uploads = steps.filter((block) =>
+    block
+      .split("\n")
+      .some((line) => !/^\s*#/.test(line) && /uses:\s*actions\/upload-artifact@/.test(line)),
+  );
+  assert.ok(
+    uploads.length > 0,
+    "synthetic-journeys.yml no longer uploads any artifact, so clause 5 is checking nothing — " +
+      "update this clause rather than leaving it vacuous.",
+  );
+  for (const block of uploads) {
+    const name = block.split("\n")[0].trim();
+    const ifLine = block.split("\n").find((line) => /^\s*if:/.test(line)) ?? "";
+    assert.match(
+      ifLine,
+      /github\.event\.repository\.private\s*==\s*true/,
+      `🔴 The '${name}' step uploads an artifact without \`github.event.repository.private == true\` ` +
+        `in its \`if:\` (found: ${ifLine.trim() || "no if: at all"}). While the repository is public ` +
+        "anyone with a GitHub account can download it, and a failed journey's report is a recording of " +
+        "production signed in as Super Admin.",
+    );
+  }
 }
