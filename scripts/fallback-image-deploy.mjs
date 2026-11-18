@@ -79,6 +79,18 @@ export function switchInput({ sha, username, password }) {
   return { source: { image: imageRef(sha) }, registryCredentials: { username, password } };
 }
 
+/**
+ * The environment patch that REMOVES a service's image-pull credentials once `restore` has put it back on git.
+ * `serviceInstanceUpdate` cannot do it — its RegistryCredentialsInput needs both a username and a password — and
+ * `serviceConnect` leaves them in place, so before this the pull token outlived every restore in production's
+ * config (found by the 18 Nov 2026 Railway audit and cleared by hand). Railway's environment schema allows
+ * `registryCredentials: null`, and a committed patch with it removes the field.
+ */
+export function clearCredentialsPatch(serviceId) {
+  if (!serviceId) throw new Error("A service id is required to clear its registry credentials.");
+  return { services: { [serviceId]: { deploy: { registryCredentials: null } } } };
+}
+
 /** Roll a deployment's status up to what the waiter does with it. */
 export function classifyStatus(status) {
   const s = String(status ?? "").toUpperCase();
@@ -376,18 +388,39 @@ async function restore(flags) {
   await assertServiceNames(services);
   const head = await mainHead();
   note(`### Restoring ${services.join(" + ")} to ${GIT_SOURCE.repo}@${GIT_SOURCE.branch} (main is ${head.slice(0, 9)})`);
+  const credentialsLeft = [];
   for (const key of services) {
     const svc = SERVICES[key];
     const before = (await readInstance(ENVIRONMENTS.production, svc.id)).latestDeployment?.id ?? null;
     await gql(`mutation($s:String!,$i:ServiceConnectInput!){serviceConnect(id:$s,input:$i)}`, { s: svc.id, i: { repo: GIT_SOURCE.repo, branch: GIT_SOURCE.branch } });
     note(`- ${key}: reconnected to the git source`);
+    // Only AFTER the reconnect: a service still on the image needs these to pull it. A git build never reads them, and
+    // skipDeploys keeps this from starting a second deployment beside the one the reconnect started.
+    try {
+      await gql(`mutation($e:String!,$p:EnvironmentConfig,$m:String){environmentPatchCommit(environmentId:$e,patch:$p,commitMessage:$m,skipDeploys:true)}`, {
+        e: ENVIRONMENTS.production,
+        p: clearCredentialsPatch(svc.id),
+        m: `fallback restore: remove ${svc.name}'s image-pull credentials`,
+      });
+      note(`- ${key}: image-pull credentials removed`);
+    } catch (error) {
+      credentialsLeft.push(key);
+      note(`- ${key}: image-pull credentials NOT removed — ${error.message}`);
+    }
     await waitForNewDeployment({ envId: ENVIRONMENTS.production, serviceId: svc.id, beforeId: before, label: key });
     if (key === "web") {
       const live = await liveRevision();
       note(`- web: production reports ${String(live).slice(0, 9)}`);
     }
   }
-  note("**Done.** Back on Railway's own builds. Confirm /api/healthz `revision` is main's head or newer.");
+  // Back on git either way, but a token left in production's config is not a finished restore: end red and name it.
+  if (credentialsLeft.length) {
+    throw new Error(
+      `Back on the git source, but the image-pull credentials are still saved on ${credentialsLeft.join(" + ")}. Remove them ` +
+        "(environmentPatchCommit with registryCredentials: null, skipDeploys: true) — docs/deployment.md, \"The fallback route\".",
+    );
+  }
+  note("**Done.** Back on Railway's own builds, with no image-pull credentials left behind. Confirm /api/healthz `revision` is main's head or newer.");
 }
 
 async function rehearse(flags) {
