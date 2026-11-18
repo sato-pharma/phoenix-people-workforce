@@ -246,14 +246,17 @@ export async function logAppError(input: LogAppErrorInput): Promise<string | nul
     // fence the production build failed on it (17 Nov 2026). It reads "nodejs" in Next's server and is unset in a
     // plain node process (the tests, a script): both send. Keep the comparison on its own, so it stays a constant.
     if (process.env.NEXT_RUNTIME !== "") {
-      if (id && input.alert !== false) {
+      if (id) {
         // A NEW error reaches the Super Admin's Telegram once, the moment its first row lands (new-error-alert.ts).
         // Fire and forget: the caller is on an error path and never waits for a notice. A dynamic import keeps the
-        // notification stack out of this module's graph, and the alert never throws.
+        // notification stack out of this module's graph, and the alert never throws. `alert: false` keeps the row
+        // and sends nothing (see LogAppErrorInput).
         const report = { message, moduleLabel: input.moduleLabel ?? null, route: redactSecretsFromRoute(input.route), source: input.source };
-        void import("@/lib/error-monitor/new-error-alert")
-          .then(({ alertNewError }) => alertNewError(report))
-          .catch(() => undefined);
+        if (input.alert !== false) {
+          void import("@/lib/error-monitor/new-error-alert")
+            .then(({ alertNewError }) => alertNewError(report))
+            .catch(() => undefined);
+        }
       }
     }
     return id;
