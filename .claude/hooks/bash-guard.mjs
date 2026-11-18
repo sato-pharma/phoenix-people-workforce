@@ -83,7 +83,7 @@
 // FAILS OPEN: any parse/logic error exits 0 (allow). A hook bug must never block a real command.
 import { exec, execFile, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { freemem, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1371,15 +1371,26 @@ try {
         input.tool_name === 'PowerShell'
           ? `$env:PHX_TYPECHECK_OK=1; ${typecheck.trim()}`
           : `PHX_TYPECHECK_OK=1 ${typecheck.trim()}`;
+      // The refusal used to stop at "push the branch", which is no answer for a session with no PR
+      // yet — so it reached for the stand-down printed under it and froze the laptop, or gave up
+      // (owner, 2026-11-18: "fix this blockage"). It now hands over the two commands that DO answer,
+      // with this machine's live free RAM, so the stand-down reads as the risk it is.
+      const freeMb = Math.round(freemem() / 1048576);
       deny(
         'A local typecheck is refused on this machine - it does not fail, it gets KILLED, and silently. ' +
           '`tsc` over this repo needs 4.0-4.5 GB of heap; node\'s own default ceiling is about 4.1 GB, and ' +
           'with the desktop app holding ~4.2 GB across its processes, mem-watchdog.ps1 reaps tsc as the ' +
           'largest node job once free RAM drops under its floor. Raising --max-old-space-size makes it the ' +
           'BIGGEST job and so the FIRST victim: 4096, 5120, 6144 and 7168 were all tried and all reaped.\n' +
-          'Push the branch instead. The PR\'s required `typecheck` check runs cold on a clean runner in ' +
-          'about three minutes, and it is the check that actually blocks the merge (AGENTS.md §7).\n' +
-          'For a one-off you will sit and watch, stand this guard down for that one command:\n' +
+          'Push the branch and let GitHub answer instead - commit first, then these two commands, the ' +
+          'second with run_in_background: true:\n' +
+          '  git push -u origin HEAD\n' +
+          '  node scripts/remote-check.mjs typecheck --dispatch\n' +
+          'It reads the open PR\'s own CI run for this commit, or starts ONE ci.yml run when there is no ' +
+          'PR yet, and exits 0 PASS, 1 FAIL, 2-9 NO VERDICT (never a pass). The PR\'s required `checks` ' +
+          'job runs the same typecheck cold and is what blocks the merge (AGENTS.md §7).\n' +
+          `Free RAM right now: ${freeMb.toLocaleString('en-US')} MB - under ~6,000 MB the stand-down below ` +
+          'freezes the laptop, so use it only for a one-off you will sit and watch:\n' +
           `  ${once}`,
       );
     }
