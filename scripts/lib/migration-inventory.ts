@@ -2556,6 +2556,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // nullability, in order) b1407073faae0a1070654c44ad88f2b8, md5(rate_card::text) e87a5dc0b6cca4444d8be6f520c95c35.
   // Re-applying is a no-op (`create table if not exists`, the policy row guarded by `where not exists`).
   "20261117041500_medical_insurance_libano_suisse.sql",
+  // Applied 18 Nov 2026 by scripts/apply-sql-file.mjs from the owner's machine on production (the aws-1 pooler), the
+  // standing route, after the production MCP refused it (read-only). It writes NO ledger row. It replaces ONE function,
+  // public.phoenix_crm_decide_shared_place(jsonb), with the 20261116230741 body plus one change (Keep it / a bulk
+  // Approve of a building a Super Admin approved leaves his name on decided_by_hr_id); no table, column or data.
+  // Verified on ozucdzovmcqvepbozvqf (project name Phoenix HR): md5(prosrc) BEFORE ecf4716f3332a29f32845f4d5a22f71d
+  // (9,505 chars, equal to the 20261116230741 body as-is LF), AFTER c2fcbc4d6b1b00a85367cd6857aaeb0a (9,974 chars,
+  // equal to this file's body as-is LF); still security definer with search_path=public, service_role can execute it,
+  // anon and authenticated cannot. Re-applying is a no-op (`create or replace` with the same body).
+  "20261118120000_phoenix_crm_super_admin_approval_survives_keep_it.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
