@@ -83,6 +83,16 @@ variable (comma separated). From then on only a listed client can reach the Allo
 and again when Allow is pressed. A connection already allowed keeps working. Unset, every registered client can
 reach Allow, as before. The same person re-adding the connector in ChatGPT gets a new client id and must list it.
 
+## Sign-in text that names no account
+
+A wrong sign-in name is stored as it was typed — a password pasted into the login-id box is stored as text — in
+`auth_login_attempts.login_id` and in the `actor_login_id` and `entity_id` of an `auth_session` audit row. The table tools
+read every table, so (owner, 18 Nov 2026) such text reads **"(not an account)"** instead: a real login id or HR id stays
+visible, so "who failed to sign in" still works, and only text that proves nobody is hidden. An audit row's entity is masked
+only when it is its actor's typed text; a blocked address and every other row stay as stored. The check lives in
+`maskUnrecognizedIdentifiers` (`tools/table-guard.ts`), runs on every page of the reader and the export, and refuses the read
+when the list of accounts cannot be loaded.
+
 ## The kill switch
 
 To end every ChatGPT connection at once, run this on production:

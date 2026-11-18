@@ -15,17 +15,21 @@ import { z } from "zod";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { storeConnectorFile } from "@/lib/chatgpt-connector/files";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { capRows, cappedNote, normalizeSearchText } from "@/lib/chatgpt-connector/tools/helpers";
 import {
   TABLE_EXPORT_MAX_ROWS,
   TABLE_FILTER_OPS,
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
+  holdsTypedSignInText,
+  maskUnrecognizedIdentifiers,
   orderTiebreakers,
   planTableRead,
   readableTables,
   rowsThatFit,
   schemaFromOpenApi,
+  signInMaskExtraColumns,
   type TableReadPlan,
 } from "@/lib/chatgpt-connector/tools/table-guard";
 import { addPhoenixTableSheet, type ExportRow } from "@/lib/export/table-workbook";
@@ -101,8 +105,39 @@ export function stableOrder(plan: TableReadPlan, known: readonly string[]): { co
   return { column: plan.columns[0], ascending: true };
 }
 
+let accountKeysCache: { at: number; keys: Set<string> } | null = null;
+
+/** Every login id and HR id of an account, lower-cased — what a sign-in name must match to be shown as typed. */
+async function loadAccountKeys(): Promise<ReadonlySet<string>> {
+  if (accountKeysCache && Date.now() - accountKeysCache.at < SCHEMA_TTL_MS) return accountKeysCache.keys;
+  let rows: Array<{ login_id: string | null; hr_id: string | null }>;
+  try {
+    rows = await fetchAllRows<{ login_id: string | null; hr_id: string | null }>(() => getSupabaseAdmin().from("app_auth_users").select("login_id, hr_id"), "login_id");
+  } catch {
+    // Fail closed: with no list of accounts nothing can be told from a typed password.
+    throw new ToolRefusal("The account list could not be read, so the sign-in names in this table cannot be checked. Try again.");
+  }
+  const keys = new Set<string>();
+  for (const row of rows) {
+    for (const value of [row.login_id, row.hr_id]) {
+      const text = String(value ?? "").trim().toLowerCase();
+      if (text) keys.add(text);
+    }
+  }
+  accountKeysCache = { at: Date.now(), keys };
+  return keys;
+}
+
 /** One page of a guarded plan, with PostgREST's row count (exact on small tables, the planner's estimate on huge ones). */
 async function readPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number) {
+  const page = await readPageRows(plan, known, offset, size);
+  if (!holdsTypedSignInText(plan.table)) return page;
+  // Text a person typed into the sign-in box is shown only when it names an account (see maskUnrecognizedIdentifiers).
+  const extra = signInMaskExtraColumns(plan.table, plan.columns);
+  return { ...page, rows: maskUnrecognizedIdentifiers(plan.table, page.rows, await loadAccountKeys(), extra) };
+}
+
+async function readPageRows(plan: TableReadPlan, known: readonly string[], offset: number, size: number) {
   const ties = orderTiebreakers(stableOrder(plan, known), plan, known);
   try {
     return await readOrderedPage(plan, known, offset, size, ties);
@@ -117,7 +152,8 @@ async function readPage(plan: TableReadPlan, known: readonly string[], offset: n
 }
 
 async function readOrderedPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number, ties: readonly string[]) {
-  let query = getSupabaseAdmin().from(plan.table).select(plan.columns.join(","), { count: "estimated" });
+  const selected = [...plan.columns, ...signInMaskExtraColumns(plan.table, plan.columns)];
+  let query = getSupabaseAdmin().from(plan.table).select(selected.join(","), { count: "estimated" });
   for (const filter of plan.filters) {
     switch (filter.op) {
       case "eq":
