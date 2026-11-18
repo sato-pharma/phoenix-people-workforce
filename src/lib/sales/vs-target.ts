@@ -64,6 +64,7 @@ import { unstable_cache } from "next/cache";
 import { SALES_ACHIEVEMENT_STAMPED_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { asyncPool } from "@/lib/utils/async-pool";
+import { createConcurrencyLimit } from "@/lib/utils/concurrency-limit";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { resolveTargetLineCode, type AchievementRow } from "@/lib/sales/monthly-targets";
 
@@ -245,6 +246,23 @@ const ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS = 3600;
  * single call. asyncPool clamps this to 1 in development.
  */
 const ACHIEVEMENT_MONTH_FETCH_CONCURRENCY = 4;
+/**
+ * How many phx_sales_vs_target_range calls may be in flight across the WHOLE PROCESS at once.
+ *
+ * ACHIEVEMENT_MONTH_FETCH_CONCURRENCY above bounds ONE request; it cannot see the request next to
+ * it. On 18 Nov 2026 at 17:52 Cairo production made 133 calls of this one RPC inside 18 seconds,
+ * PostgREST ran out of database connections (PGRST003, "timed out acquiring connection") and the
+ * sign-in session bundle, the employee list and the error log all answered 504 until it drained.
+ * Nothing here limited it: each request pools four, the token-keyed sharing below only joins reads
+ * of the SAME month under the SAME token, a failed or missing freshness token reads every month live
+ * with no sharing at all, and the Empty Seats report asks for each month at once (Promise.all).
+ *
+ * Four is the per-request cap, so a lone cold request is exactly as fast as before; what changes is
+ * that the fortieth concurrent read waits HERE, in this process, instead of in PostgREST's queue
+ * where it starves every other query. Pinned by tests/sales-vs-target-cache.test.ts.
+ */
+const ACHIEVEMENT_RPC_PROCESS_CONCURRENCY = 4;
+const limitAchievementRpc = createConcurrencyLimit(ACHIEVEMENT_RPC_PROCESS_CONCURRENCY);
 /**
  * The widest range the fan-out will expand, mirroring au.f_sales_vs_target_range's own v_max_months.
  *
@@ -431,11 +449,15 @@ export function dropRowsWithNoSalesLine<Row extends { lineCode: string | null }>
  */
 async function loadAchievementRangeUncached(from: string, to: string): Promise<AchievementRow[]> {
   const supabase = getSupabaseAdmin();
-  const rows = await rpcAll<Record<string, unknown>>(
-    supabase,
-    "phx_sales_vs_target_range",
-    { p_from: from, p_to: to },
-    ["period", "line_code", "region_code", "area_code", "product_code"],
+  // Through the process-wide limit — see ACHIEVEMENT_RPC_PROCESS_CONCURRENCY for the 18 Nov 2026
+  // pool exhaustion this stops. rpcAll's pages run inside the one slot, one after another.
+  const rows = await limitAchievementRpc(() =>
+    rpcAll<Record<string, unknown>>(
+      supabase,
+      "phx_sales_vs_target_range",
+      { p_from: from, p_to: to },
+      ["period", "line_code", "region_code", "area_code", "product_code"],
+    ),
   );
   return dropRowsWithNoSalesLine(rows.map((row) => ({
     period: str(row.period),

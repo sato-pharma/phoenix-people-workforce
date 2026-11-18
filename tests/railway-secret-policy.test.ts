@@ -14,6 +14,7 @@ import {
   checkCanonicalOrigins,
   checkExpectedValues,
   checkForbiddenVariables,
+  checkSupabaseProjectRefs,
 } from "../scripts/secret-policy.mjs";
 import { parseOverwriteNames, planSecretSync, railwayValuesByName } from "../scripts/lib/secret-sync-plan.mjs";
 import { variables as syncedVariables } from "../scripts/sync-railway-production-secrets.mjs";
@@ -269,6 +270,43 @@ export function runRailwaySecretPolicyTests() {
     checkCanonicalOrigins(new Map([["APP_URL", "https://phoenix-hr-abc123-ew.a.run.app"]]), "production")
       .some((failure) => failure.includes("APP_URL") && failure.includes("run.app")),
     "the dead-host rejection must cover APP_URL and PHOENIX_APP_URL as well, not only the canonical name",
+  );
+
+  // --- 7b. the Supabase variables open PRODUCTION's database (Supabase audit, 18 Nov 2026) ---
+  // Read out of the URL: a staging URL pasted into the production secret is present and well
+  // shaped, so every other check here passed it.
+  const prodRef = "ozucdzovmcqvepbozvqf";
+  const stagingRef = "cifwmndunmlxjhyjugxa";
+  const healthySupabase = new Map([
+    ["NEXT_PUBLIC_SUPABASE_URL", `https://${prodRef}.supabase.co`],
+    ["SUPABASE_PROJECT_ID", prodRef],
+    ["SUPABASE_PROJECT_REF", prodRef],
+  ]);
+  assert.deepEqual(checkSupabaseProjectRefs(healthySupabase, "production"), [], "production's own URL and refs pass");
+  assert.ok(
+    checkSupabaseProjectRefs(new Map([["NEXT_PUBLIC_SUPABASE_URL", `https://${stagingRef}.supabase.co`]]), "production")
+      .some((failure) => failure.includes("STAGING")),
+    "a staging URL in production must be refused and named as staging",
+  );
+  assert.equal(
+    checkSupabaseProjectRefs(new Map([["NEXT_PUBLIC_SUPABASE_URL", "https://example.com"]]), "production").length,
+    1,
+    "a URL that names no Supabase project is refused, never read as healthy",
+  );
+  assert.deepEqual(
+    checkSupabaseProjectRefs(new Map([...healthySupabase, ["SUPABASE_PROJECT_REF", stagingRef]]), "production"),
+    ["SUPABASE_PROJECT_REF must be the production project ref ozucdzovmcqvepbozvqf — it holds the STAGING ref"],
+    "a ref that disagrees with the URL beside it is refused by name",
+  );
+  assert.deepEqual(checkSupabaseProjectRefs(new Map(), "production"), [], "absence is the presence check's job, not this one's");
+  assert.deepEqual(
+    checkSupabaseProjectRefs(new Map([["NEXT_PUBLIC_SUPABASE_URL", `https://${stagingRef}.supabase.co`]]), "staging"),
+    [],
+    "production-only, like every rule in secret-policy.mjs",
+  );
+  assert.ok(
+    validatorSource.includes("failures.push(...checkSupabaseProjectRefs(valuesByName, railEnv));"),
+    "the validator must run the project check — a check nothing calls protects nothing",
   );
 
   // --- 8. the Railway CLI is pinned at all three call sites ---------------------------------

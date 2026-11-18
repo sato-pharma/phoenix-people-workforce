@@ -282,7 +282,7 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
 
 // The admin client is a stateless REST (postgrest-js/fetch) wrapper keyed on the fixed
 // service-role key — no per-caller session is ever set on it, so one instance can safely
-// be shared across concurrent requests on the same Cloud Run instance. Memoizing it avoids
+// be shared across concurrent requests on the same server instance. Memoizing it avoids
 // reconstructing the client (and its auth/storage/functions sub-clients) on every one of
 // the dozens of getSupabaseAdmin() calls a single request can make (e.g. the employee
 // directory service). A custom requestTimeoutMs is deliberately rare (heavy admin-only

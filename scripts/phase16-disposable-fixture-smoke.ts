@@ -10,12 +10,17 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createVacationRequest, decideVacationRequest } from "@/lib/vacation/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 
+import { requireStagingSupabase } from "./lib/supabase-project-refs.mjs";
+
 const suffix = `${Date.now().toString(36)}_${randomUUID().slice(0, 8).toUpperCase()}`;
 const fixture = `PHASE16_${suffix}`.toUpperCase();
 const actor = "phase16.fixture.smoke";
 const today = "2026-05-18";
 
 loadLocalEnv();
+// Writes employees, payroll and sales fixtures, so STAGING only: every .env.local on this laptop
+// points at production (Supabase audit, 18 Nov 2026). Refuses before any client exists.
+requireStagingSupabase("phase16-disposable-fixture-smoke");
 
 const supabase = getSupabaseAdmin();
 const cleanupWarnings: string[] = [];
