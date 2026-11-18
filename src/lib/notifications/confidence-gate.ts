@@ -407,6 +407,11 @@ export const CEILING_OVERRIDES: Record<string, CeilingOverride> = {
   // his first send would sit in a review queue. 60 is APPROVED_REQUESTS_MAX_RECIPIENTS: the send refuses
   // more than that itself, so this ceiling is never the thing that stops one.
   "marketing_requests/approved_requests_sent": { appliesTo: "always", ceiling: 60 },
+  // The new joiner announcement (owner, 2026-11-18): every active Head Office employee hears that a
+  // new hire accepted the offer — 17 people measured that day. 40 is NEW_JOINER_MAX_RECIPIENTS: the
+  // send refuses more than that itself (src/lib/offers/new-joiner-announcement.ts), so this ceiling is
+  // never the thing that stops one, and a brand-new pair is not held on its first joiner.
+  "offers/new_joiner_announcement": { appliesTo: "always", ceiling: 40 },
 };
 
 /**
