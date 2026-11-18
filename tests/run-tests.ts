@@ -1795,6 +1795,7 @@ import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-s
 import { runMigrationSchemaRevokeRuleTests } from "./migration-schema-revoke-rule.test.ts";
 import { runCanSeeEmployeeBlankIdTests } from "./can-see-employee-blank-id.test.ts";
 import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
+import { runSupabaseWriteTargetGuardTests } from "./supabase-write-target-guard.test.ts";
 import { runMigrationDriftCheckFlagsTests } from "./migration-drift-check-flags.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-payroll-expense-step-approved-only.test.ts";
@@ -2835,6 +2836,7 @@ import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runDeployFailureAlertTests } from "./deploy-failure-alert.test.ts";
 import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
+import { runBrowserTestReportsPrivateOnlyTests } from "./browser-test-reports-private-only.test.ts";
 import { runSyntheticTelegramAlertTests } from "./synthetic-telegram-alert.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
@@ -4962,8 +4964,12 @@ await runTest("closing matrix fold (matrix derived from distributor_product, mat
 await runTest("closing summary fits the screen and foots to the matrix beside it", runClosingSummaryFitsTests);
 await runTest("master workbook keyset (single keyset pass, raw_row folded, no OFFSET rescan)", runMasterWorkbookKeysetTests);
 await runTest(
-  "sales vs target cache (freshness token in the key; rows gzipped under Next's 2MB data-cache limit)",
+  "sales vs target cache (freshness token in the key; rows gzipped under Next's 2MB data-cache limit; at most four achievement reads in flight across the whole process)",
   runSalesVsTargetCacheTests,
+);
+await runTest(
+  "Supabase write target guard (a URL names its project in all three shapes; the fixture smoke runners refuse anything but staging before a client exists; the SQL apply step refuses a URL whose project is not the one its argument names)",
+  runSupabaseWriteTargetGuardTests,
 );
 await runTest(
   "staging HR sync (production is only ever READ and staging only ever WRITTEN — production as the target is refused; FK dependency order holds; never deletes; triggers off but foreign keys on; dry run is the default)",
@@ -11195,6 +11201,11 @@ await runTest(
 await runTest(
   "the production smoke test keeps a GREEN job conclusion and reports failure to the dashboard and as an ::error:: annotation, so a real outage can never withhold the deploy carrying its own fix (a schedule run always attaches its suite to main HEAD)",
   runSyntheticJourneysNeverWithholdsTests,
+);
+
+await runTest(
+  "no browser-test report is published while the repository is public: every artifact upload of a Playwright report, trace or screenshot in any workflow (CI's login test and full suite, the production smoke test) carries github.event.repository.private == true in its if:, and the scan still finds the three it was written for",
+  runBrowserTestReportsPrivateOnlyTests,
 );
 
 await runTest(

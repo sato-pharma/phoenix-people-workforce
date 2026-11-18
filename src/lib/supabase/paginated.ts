@@ -1,8 +1,9 @@
 /**
  * Helpers for reading a table/view in full.
  *
- * PostgREST caps every response at db-max-rows (default 1000), so any read that can exceed that
- * MUST page. Two things have gone wrong here before, both silently:
+ * PostgREST caps a response at db-max-rows where one is set: 1,000 on staging and in the local config.
+ * Production sets none (docs/postgrest-row-ceiling.md), so a read right on production alone is
+ * untested, and any read that can exceed 1,000 MUST page. Two things have gone wrong here before, both silently:
  *
  *  - an offset walk with no stable ORDER BY loses and duplicates rows between pages (#1446 lost
  *    1,262 of 49,713 customer mappings, and the symptom looked like a bad source sheet);

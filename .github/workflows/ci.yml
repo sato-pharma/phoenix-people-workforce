@@ -527,8 +527,15 @@ jobs:
       # The synthetic-journey report is saved by synthetic-journeys.yml, the only workflow that makes one. A
       # best-effort ingest step here (removed 18 Nov 2026, credentials audit) never found a report, and it handed the
       # PRODUCTION service key to a job that runs on every branch.
+
+      # Attached only while the repository is PRIVATE (owner, 2026-11-19: "Guard CI's reports too"). A
+      # failed login test keeps screenshots and a trace of the pages it opened, signed in, against an
+      # environment that holds real HR data; on a public repository any GitHub user can download an
+      # artifact. When GitHub cannot say the repository is private this reads false and uploads
+      # nothing. Read a failure from the run's log while public. Pinned by
+      # tests/browser-test-reports-private-only.test.ts.
       - name: Upload Playwright report on failure
-        if: github.event_name != 'pull_request' && (failure())
+        if: ${{ failure() && github.event_name != 'pull_request' && github.event.repository.private == true }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report
@@ -1328,15 +1335,23 @@ jobs:
         run: pnpm run test:e2e -- -j 4
         env:
           NODE_ENV: test
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # STAGING, never production (Supabase audit, 18 Nov 2026). This job runs the whole
+          # Playwright suite, data-bearing specs included, with a service-role key; until then it
+          # took production's URL and key from the repo secrets, so a hand-run dispatch wrote its
+          # sessions and audit rows into the live database. Same staging URL and public anon key
+          # as the smoke job above; the data user must exist on staging (it is a clone of
+          # production, so a seat cloned with its password still signs in).
+          NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpZndtbmR1bm1seGpoeWp1Z3hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzQxMzEsImV4cCI6MjA5OTM1MDEzMX0.2bWjOI1gH67H8Fj1wr2XheQjlDhM5pOQ6xPD8YLd5lc" # gitleaks:allow (public anon key, RLS-protected -- see comment above)
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           PHOENIX_AUTH_SECRET: ${{ secrets.PHOENIX_AUTH_SECRET || 'ci-only-phoenix-auth-secret-for-playwright-session-signing' }}
           PLAYWRIGHT_DATA_USER_HRID: ${{ secrets.PLAYWRIGHT_DATA_USER_HRID }}
           PLAYWRIGHT_DATA_USER_PASSWORD: ${{ secrets.PLAYWRIGHT_DATA_USER_PASSWORD }}
 
+      # Private repository only, for the same reason as the login test's report above: a failed
+      # journey's trace is a signed-in recording of real data, downloadable by anyone while public.
       - name: Upload Playwright report on failure
-        if: failure()
+        if: ${{ failure() && github.event.repository.private == true }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report-full-e2e

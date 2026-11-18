@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import postgres from "postgres";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import { PRODUCTION_PROJECT_REF, STAGING_PROJECT_REF, projectRefFromUrl } from "./lib/supabase-project-refs.mjs";
 
 // A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs).
 refuseUnknownFlags({
@@ -42,15 +43,24 @@ function envVar(name) {
 // and the `postgres.<ref>` username), which is the form the dashboard's "Session pooler" tab gives
 // you and the form you should prefer.
 const DEFAULT_POOLER_HOST = "aws-0-eu-central-1.pooler.supabase.com";
+// The two projects' own poolers, measured: production answers only on aws-1 ("Tenant or user not
+// found" on aws-0, every production apply since 2026-10-15 needed PHOENIX_POOLER_HOST for it);
+// staging answers on aws-0. A direct URL for either now lands on the right one with no prefix.
+const POOLER_HOST_BY_REF = {
+  [PRODUCTION_PROJECT_REF]: "aws-1-eu-central-1.pooler.supabase.com",
+  [STAGING_PROJECT_REF]: "aws-0-eu-central-1.pooler.supabase.com",
+};
+
+function poolerHostFor(ref) {
+  return process.env.PHOENIX_POOLER_HOST?.trim() || POOLER_HOST_BY_REF[ref] || DEFAULT_POOLER_HOST;
+}
 
 function toPooler(raw) {
   const m = /^(\w+):\/\/([^:]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co:(\d+)\/(.+)$/.exec(raw);
   if (!m) return raw; // already pooler form (or something else) — leave it alone
   const [, scheme, user, pass, ref, , db] = m;
-  // Escape hatch for a project that is not on the default region, so a direct URL still works
-  // without editing this file: PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com
-  const host = process.env.PHOENIX_POOLER_HOST?.trim() || DEFAULT_POOLER_HOST;
-  return `${scheme}://${user}.${ref}:${pass}@${host}:5432/${db}`;
+  // PHOENIX_POOLER_HOST still wins, for a project on neither known pooler.
+  return `${scheme}://${user}.${ref}:${pass}@${poolerHostFor(ref)}:5432/${db}`;
 }
 
 /**
@@ -68,7 +78,7 @@ function explainConnectionError(error, rawUrl) {
       "This is USUALLY the wrong pooler REGION, not a bad password.\n" +
       (rewritten
         ? `The URL was the direct db.<ref>.supabase.co form, so it was rewritten to ` +
-          `${process.env.PHOENIX_POOLER_HOST?.trim() || DEFAULT_POOLER_HOST}. If this project is on a ` +
+          `${poolerHostFor(projectRefFromUrl(rawUrl))}. If this project is on a ` +
           "different region, that host is wrong.\n\n"
         : "") +
       "FIX: use the Session pooler URI from Supabase (Project Settings -> Database -> Connection " +
@@ -84,16 +94,30 @@ if (env !== "staging" && env !== "production") throw new Error("env must be stag
 
 const varName = env === "staging" ? "PHOENIX_STAGING_DATABASE_URL" : "PHOENIX_PRODUCTION_DATABASE_URL";
 const rawUrl = envVar(varName);
+
+// WHICH PROJECT, before a connection opens. This used to print `current_database()`, which answers
+// "postgres" on staging and production alike, so a staging run with a production URL in the
+// staging variable (or the reverse) applied with nothing to show for it. The ref is read out of
+// the URL itself — the db.<ref> host or the postgres.<ref> pooler user — and must be the
+// project the argument names.
+const expectedRef = env === "staging" ? STAGING_PROJECT_REF : PRODUCTION_PROJECT_REF;
+const urlRef = projectRefFromUrl(rawUrl);
+if (urlRef !== expectedRef) {
+  throw new Error(
+    `${varName} names ${urlRef ? `project ${urlRef}` : "no Supabase project"}, but "${env}" is ${expectedRef}. ` +
+      "Nothing was applied. Fix the variable rather than the argument.",
+  );
+}
+
 const sql = postgres(toPooler(rawUrl), { max: 1, prepare: false });
 
 try {
-  let ref;
   try {
-    [{ ref }] = await sql`select current_database() as ref`;
+    await sql`select 1`;
   } catch (connectionError) {
     throw explainConnectionError(connectionError, rawUrl);
   }
-  console.log(JSON.stringify({ env, database: ref, file }));
+  console.log(JSON.stringify({ env, projectRef: urlRef, file }));
   const text = readFileSync(file, "utf8");
   const result = await sql.unsafe(text);
   console.log(JSON.stringify({ applied: true, count: result.count ?? result.length ?? null }));

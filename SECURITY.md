@@ -127,15 +127,16 @@ Key principles:
 ## Deployment Security
 
 - **Production deploys** are only permitted from the `main` branch, and only
-  after the PR's four required checks pass -- `validate`, `checks`, `mobile`
-  and `secret-scan`, which between them cover lint, typecheck, the unit suite,
-  the production build, the mobile app's lockfile and secret scanning. Read the
-  list from branch protection, not from here: it has changed four times.
+  after the PR's two required checks pass -- `validate` and `checks`, which
+  between them cover lint, typecheck and the unit suite. Railway builds every
+  merge, and the release gate holds the new container until `checks` passed on
+  that commit. Read the list from branch protection, not from here: it has
+  changed five times.
 - **Preview environments** enforce a read-only guard via the
   `PHOENIX_PREVIEW_READ_ONLY` environment variable, preventing accidental
   mutations against production data from preview deployments.
 - The production domain (`https://phoenix-hr.satopharma.com`) must be
   verified after every production deploy -- workspace aliases can diverge
   from the public alias.
-- Only two active Vercel deployments are maintained: production (`main`) and
-  the working preview branch.
+- Production runs on Railway (service `phoenix-people-workforce`, region
+  europe-west4); Vercel and Cloud Run are retired and hold nothing live.
