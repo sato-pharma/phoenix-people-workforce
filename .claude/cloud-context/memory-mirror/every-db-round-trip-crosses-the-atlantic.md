@@ -1,6 +1,6 @@
 ---
 name: every-db-round-trip-crosses-the-atlantic
-description: "Railway runs in sfo (US West), Supabase in eu-central-1 (Frankfurt) — every DB round trip is transatlantic, so paginated scan COUNT dominates, not query time"
+description: "CORRECTED 2026-11-18 — production Railway now runs in europe-west4 beside Supabase eu-central-1 (AGENTS.md §3), so a round trip no longer crosses the Atlantic; the lesson stands: on a slow server route, paginated scan COUNT dominates, not query time"
 metadata: 
   node_type: memory
   type: project
@@ -8,7 +8,11 @@ metadata:
   modified: 2026-08-05T12:25:06.421Z
 ---
 
-The app server and the database are on different continents. Railway service
+**CORRECTED 2026-11-18 (Supabase audit):** production's Railway service now runs in
+**`europe-west4`** (AGENTS.md §3, "it must stay in Europe"), beside Supabase in Frankfurt, so the
+transatlantic figure below is history. The round-trip COUNT lesson still holds.
+
+As written on 2026-08-05: the app server and the database are on different continents. Railway service
 `phoenix-people-workforce` runs in **`sfo` (US West)**; Supabase production
 (`ozucdzovmcqvepbozvqf`) is **`eu-central-1` (Frankfurt)**. Every PostgREST call pays
 ~150-250 ms of pure latency before Postgres does any work.

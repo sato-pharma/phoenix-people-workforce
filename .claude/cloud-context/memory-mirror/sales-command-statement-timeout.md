@@ -1,6 +1,6 @@
 ---
 name: sales-command-statement-timeout
-description: "/admin/sales-command 'Failed to load Source of Sales data' = Postgres 57014 statement timeout: authenticator role caps EVERY app query at 8s; exec aggregates were too slow + rpcAll re-ran them per page. Fixed via DB timeout override + indexes + single-pass rpcAll + lite comparison mode. PR #74."
+description: "/admin/sales-command 'Failed to load Source of Sales data' = Postgres 57014 statement timeout (SUPERSEDED 2026-10-23: service_role now has 5 min and PostgREST applies the impersonated role's own limit — .claude/rules/database.md); in June the authenticator role capped EVERY app query at 8s; exec aggregates were too slow + rpcAll re-ran them per page. Fixed via DB timeout override + indexes + single-pass rpcAll + lite comparison mode. PR #74."
 metadata:
   node_type: memory
   type: project
@@ -9,7 +9,14 @@ metadata:
 
 The CEO's `/admin/sales-command` page showed **"Failed to load Source of Sales data."** — a generic fallback that HID the real error. Real cause (server-logged after I added `console.error`): **Postgres `57014` "canceling statement due to statement timeout."**
 
-**THE reusable gotcha — every app Supabase call is capped at 8s.** The Supabase `authenticator` role (which PostgREST uses for every request, then `SET ROLE service_role`) has `ALTER ROLE authenticator SET statement_timeout = '8s'`. `SET ROLE` does NOT re-apply the target role's settings, so even `getSupabaseAdmin()` (service_role, whose own rolconfig is null/120s) effectively runs under **8s**. The DB default `statement_timeout` is 120s and `anon`=3s / `authenticated`=8s — but the one that bites server code is **authenticator=8s**. Any heavy query/RPC from the app must finish < 8s or get 57014. Override per-function with `ALTER FUNCTION f(args) SET statement_timeout = '45s'` (function-scoped, no body change, reversible via `RESET`). `pgrst.db_max_rows` is **null** on prod (no PostgREST row cap → one unbounded `.rpc()` returns all rows).
+**CORRECTED 2026-11-18 (Supabase audit): the 8 s cap below is no longer true for the service-role
+client.** Since `20261023093000` `service_role` carries `statement_timeout = 5min`, and PostgREST
+applies the IMPERSONATED role's own settings — asked of PostgREST on 2026-10-23 — so the June claim
+that `SET ROLE` keeps authenticator's 8 s was a fallback, not a rule: 8 s is what a session got while
+`service_role` had no override. `authenticated` 8 s and `anon` 3 s are unchanged, and a function's
+own `SET statement_timeout` wins through the app. Read `.claude/rules/database.md` first.
+
+**As written in June — every app Supabase call is capped at 8s.** The Supabase `authenticator` role (which PostgREST uses for every request, then `SET ROLE service_role`) has `ALTER ROLE authenticator SET statement_timeout = '8s'`. `SET ROLE` does NOT re-apply the target role's settings, so even `getSupabaseAdmin()` (service_role, whose own rolconfig is null/120s) effectively runs under **8s**. The DB default `statement_timeout` is 120s and `anon`=3s / `authenticated`=8s — but the one that bites server code is **authenticator=8s**. Any heavy query/RPC from the app must finish < 8s or get 57014. Override per-function with `ALTER FUNCTION f(args) SET statement_timeout = '45s'` (function-scoped, no body change, reversible via `RESET`). `pgrst.db_max_rows` is **null** on prod (no PostgREST row cap → one unbounded `.rpc()` returns all rows).
 
 **Why the exec dashboard was slow:**
 - The 3 exec aggregates (`phx_exec_distributor_product` ~5.7s, `phx_exec_customers` ~7.7s/12,794 rows, `phx_exec_brick` ~4s) each scan the whole month of ~32k fact rows. Slowness was a per-batch nested-loop (re-scans rows once PER validated batch — 2x for May, 4x for April) from a stale row-estimate; `ANALYZE` + an expression index on `upper(btrim(product_code))` flips it to a single index-scan + hash join (customers 7.7s→1.3s).
