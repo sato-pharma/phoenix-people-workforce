@@ -8,11 +8,13 @@
  * does not sit in it, so his calendar does not carry it. A cancelled interview is a deleted row, so it
  * simply drops off.
  *
- * 🔴 DISPLAY ONLY. An interview NEVER clears "No Activity Recorded" (it is not in `isCovered`): that
- * reading feeds the No Records Activity deductions, and an hour's interview booked for someone is not a
- * record that the day was worked. The day he spends on interviews is recorded as the Phoenix CRM
- * "Interviews" day activity (#6670), which is what counts. That is also why the company-wide deductions
- * pass (`getCompanyNoActivityDays`) does not read this source at all.
+ * 🔴 ONE INTERVIEW IS DISPLAY ONLY; TWO OR MORE IN ONE HALF ARE THAT HALF DAY WORKED (owner, 2026-11-18,
+ * replacing the display-only rule of 2026-10-29 for that case). A half is the morning (starts before
+ * 1 PM Cairo) or the afternoon (from 1 PM); the rule is `interview-halves.ts`. Each item carries its
+ * `interviewHalf`, `isCovered` counts them, and the company-wide deductions pass and
+ * `loadProvenWorkedDays` read the same bookings through `loadInterviewHalfDays`, which THROWS — a
+ * silent "no interviews" there would be a charge. The Phoenix CRM "Interviews" day activity still
+ * counts as before.
  *
  * Best-effort, like every other calendar source: a failed read answers `ready: false` (the screen then
  * says the source could not be read) and never throws the whole month away.
@@ -23,6 +25,7 @@ import { privateCalendarHrIdKey, privateCalendarSourceLabels, type PrivateCalend
 import { listInterviewsForPrivateCalendar, type PrivateCalendarInterviewRow } from "@/lib/recruitment/interview-calendar";
 import { PLATFORM_LABEL } from "@/lib/recruitment/interview-calendar-types";
 import { cairoDateKey, cairoLocalToUtc, cairoMinutesOfDay } from "@/lib/recruitment/interview-calendar-week";
+import { interviewHalfOf, selectInterviewHalfDays, type InterviewHalfDay } from "@/lib/private-calendar/interview-halves";
 
 export const INTERVIEW_BOOKINGS_TABLE = "ats_interview_bookings";
 
@@ -57,7 +60,7 @@ export function mapInterviewToPrivateCalendarItem(attendance: InterviewAttendanc
   return {
     activityKind: "interview",
     approvalImpact:
-      "Shown from the recruitment interview calendar. It does not clear No Activity Recorded — record the day's Interviews activity in Phoenix CRM for that.",
+      "Shown from the recruitment interview calendar. Two or more interviews in the morning (starting before 1 PM) or in the afternoon (from 1 PM) count as that half day worked; a single interview does not.",
     chipLines: [`${time} Interview`, ...(role ? [role] : [])],
     description: null,
     detailLines,
@@ -69,6 +72,7 @@ export function mapInterviewToPrivateCalendarItem(attendance: InterviewAttendanc
     endDate: date,
     exceptionFlags: [],
     id: `interview-${interview.id}-${privateCalendarHrIdKey(hrId)}`,
+    interviewHalf: interviewHalfOf(from),
     managerName: null,
     severity: "info",
     source: "interview",
@@ -114,18 +118,54 @@ function nextDay(date: string) {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 }
 
+function interviewsInCairoDays(start: string, end: string) {
+  // start..end are Cairo days; the bookings are instants, so the window is Cairo midnight to Cairo midnight.
+  return listInterviewsForPrivateCalendar(cairoLocalToUtc(start, 0), cairoLocalToUtc(nextDay(end), 0));
+}
+
+/**
+ * The interview items for these people. `strict` is for the company-wide deductions pass: a failed
+ * read THROWS there, because an interview that covers a half day and is silently missing is a charge.
+ * Every calendar screen reads best-effort and says the source could not be read.
+ */
 export async function loadInterviewPrivateCalendarItems(
   hrIds: readonly string[],
   start: string,
   end: string,
+  options: { strict?: boolean } = {},
 ): Promise<{ items: PrivateCalendarItem[]; ready: boolean }> {
   if (hrIds.length === 0) return { items: [], ready: true };
   try {
-    // start..end are Cairo days; the bookings are instants, so the window is Cairo midnight to Cairo midnight.
-    const interviews = await listInterviewsForPrivateCalendar(cairoLocalToUtc(start, 0), cairoLocalToUtc(nextDay(end), 0));
+    const interviews = await interviewsInCairoDays(start, end);
     return { items: interviewAttendeesFor(interviews, hrIds).map(mapInterviewToPrivateCalendarItem), ready: true };
   } catch (error) {
+    if (options.strict) throw error;
     console.error("[private-calendar] interviews could not be read", error);
     return { items: [], ready: false };
   }
+}
+
+/** Everyone who sits in each interview — the lead unless he declined, and each panel member. Pure. */
+export function everyInterviewAttendance(interviews: readonly PrivateCalendarInterviewRow[]): InterviewAttendance[] {
+  const hrIds = interviews.flatMap((interview) => [interview.leadHrId ?? "", ...interview.panelHrIds]).filter(Boolean);
+  return interviewAttendeesFor(interviews, hrIds);
+}
+
+/** The person-days whose interviews cover a half day, from the attendances. Pure. */
+export function interviewHalfDaysFromAttendances(attendances: readonly InterviewAttendance[]): InterviewHalfDay[] {
+  return selectInterviewHalfDays(
+    attendances.map(({ hrId, interview }) => {
+      const startsAt = new Date(interview.startsAt);
+      return { date: cairoDateKey(startsAt), half: interviewHalfOf(cairoMinutesOfDay(startsAt)), hrId, interviewId: interview.id };
+    }),
+    privateCalendarHrIdKey,
+  );
+}
+
+/**
+ * Every person-day in the window on which two or more interviews cover a half, for the deduction
+ * readers (`loadProvenWorkedDays`). FAILS CLOSED: it throws, and nothing here catches.
+ */
+export async function loadInterviewHalfDays(input: { end: string; start: string }): Promise<InterviewHalfDay[]> {
+  return interviewHalfDaysFromAttendances(everyInterviewAttendance(await interviewsInCairoDays(input.start, input.end)));
 }

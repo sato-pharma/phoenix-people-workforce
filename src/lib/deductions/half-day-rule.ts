@@ -127,6 +127,13 @@ export type HalfDayCover = {
    * can be missing. `full_day`, and anything unrecognized, is the whole day.
    */
   contractHalf?: HalfDayContract;
+  /**
+   * Two or more interviews on the recruitment calendar in the morning (starting before 1 PM Cairo)
+   * or in the afternoon (from 1 PM) — that half is a half day worked (owner, 2026-11-18). Read from
+   * `ProvenWorkedDays.interviewHalfOnly`; one interview never sets it.
+   */
+  interviewsAm?: boolean;
+  interviewsPm?: boolean;
   // 🔴 NO PLAN FIELD LIVES HERE. An approved weekly plan item used to fill `planAm`/`planPm` and
   // clear that half; the owner ended that on 2026-10-12 (the file header carries his words), so the
   // cover a half day is judged against holds captured records only.
@@ -162,7 +169,7 @@ export type HalfDayVerdict =
       kind: "half_day";
       missing: HalfDaySlot;
       /** What covers the half that WAS accounted for. */
-      coveredBy: Array<"crm" | "approved_vacation">;
+      coveredBy: Array<"crm" | "approved_vacation" | "interviews">;
     };
 
 const CRM_CAMPAIGN_VISIT_TYPE = -8;
@@ -490,8 +497,8 @@ export function judgeHalfDay(evidence: HalfDayEvidence | undefined, cover: HalfD
   if (cover.leaveTheDayAlone) return { kind: "left_alone", why: "request_on_file" };
   if (crm.unattributedRow) return { kind: "left_alone", why: "unattributed_row" };
 
-  const amCovered = crm.am || Boolean(cover.vacationAm);
-  const pmCovered = crm.pm || Boolean(cover.vacationPm);
+  const amCovered = crm.am || Boolean(cover.vacationAm) || Boolean(cover.interviewsAm);
+  const pmCovered = crm.pm || Boolean(cover.vacationPm) || Boolean(cover.interviewsPm);
   // Both halves accounted for is a full day; neither is a whole-day absence, which the CRM
   // no-activity and district-manager connectors own. Only exactly one is a half day.
   if (amCovered === pmCovered) return { kind: "not_a_half_day" };
@@ -507,9 +514,10 @@ export function judgeHalfDay(evidence: HalfDayEvidence | undefined, cover: HalfD
   if (missing === "PM" && crm.eveningProof) return { kind: "cleared", missing, by: "evening_trace" };
 
   const half = missing === "AM" ? "pm" : "am";
-  const coveredBy: Array<"crm" | "approved_vacation"> = [];
+  const coveredBy: Array<"crm" | "approved_vacation" | "interviews"> = [];
   if (crm[half]) coveredBy.push("crm");
   if (half === "am" ? cover.vacationAm : cover.vacationPm) coveredBy.push("approved_vacation");
+  if (half === "am" ? cover.interviewsAm : cover.interviewsPm) coveredBy.push("interviews");
   return { kind: "half_day", missing, coveredBy };
 }
 
@@ -517,10 +525,12 @@ export function judgeHalfDay(evidence: HalfDayEvidence | undefined, cover: HalfD
 export function halfDayReason(verdict: Extract<HalfDayVerdict, { kind: "half_day" }>): string {
   const worked = verdict.missing === "AM" ? "afternoon" : "morning";
   const missing = verdict.missing === "AM" ? "morning" : "afternoon";
-  // Only two things can account for the half that WAS covered now, so there is no third branch.
+  // A record of work first, then interviews, then approved leave — the reviewer reads the strongest.
   const cover = verdict.coveredBy.includes("crm")
     ? `Worked the ${worked} only`
-    : `${worked === "morning" ? "AM" : "PM"} off approved`;
+    : verdict.coveredBy.includes("interviews")
+      ? `Interviews in the ${worked} only`
+      : `${worked === "morning" ? "AM" : "PM"} off approved`;
   return `${cover} — nothing recorded for the ${missing}: no visit, check-in, approved vacation or request`;
 }
 

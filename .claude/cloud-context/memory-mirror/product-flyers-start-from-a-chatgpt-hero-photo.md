@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 21f0c779-a0cb-4588-acf8-2bc3502486eb
-  modified: 2026-11-17T23:32:53.825Z
+  modified: 2026-11-18T18:37:29.466Z
 ---
 
 On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid out in HTML/CSS with cut-out can photos, a baby photo and a teal field. The owner scored them 0/10, 2/10 and 0.5/10. His complaints, picked from a multiple-choice question: "looks cheap / like a webpage", "cans look pasted on", "two halves don't connect", and "back page is a boring table". He then picked "ChatGPT hero image" as the base for the next version.
@@ -31,6 +31,9 @@ On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid
 - Two photos of the same subject are measured and matched (the back baby was 15% more saturated than the front one).
 - Compare the baselines of sibling tiles at print resolution. A label holding a character from a fallback face (the prime in 2′-FL) made that tile's line taller and dropped its figure 0.3 mm below its neighbours; every micro label gets an explicit `line-height`.
 - A facts row on white with hairlines was the last part of the front that still read as a webpage. In v13 (18 Nov 2026, after he clicked "Push it further" on v12) it moved onto the back's own foot: gold line, flat teal field, gold icons, white figures, deeper base for the notice. That was my choice; he had not rated v13 when this was written.
+- The "Advanced" badge in the stock Lacto Advanced logo file is too small at flyer size. On 18 Nov 2026, on v13, he asked: "make the advanced under lacto more bigger, more clearer". v14 enlarged the logo's own badge 1.6 times (cut out along its grey border, scaled about the left end of its top edge so it covers the small one, nothing redrawn). Start any Lacto Advanced piece with the badge at that size.
+- When a cut-out is enlarged, the soft shadow of whatever it touched travels with it: the wordmark's faint shadow, enlarged with the badge, printed as a smear above it. Check the cut-out's surroundings with the near-whites stretched.
+- Text set at the same `left` as a box does not start on the same line, because each letter has space on its left. Measure the first letter's ink on the render and move each text block onto the line (they were 0.08 to 0.36 mm off).
 - "Publish" for a flyer = a final folder in Downloads: print PDF with bleed, crop marks and trim/bleed boxes, a small screen PDF trimmed to A5, PNG previews and the source. This machine has no CMYK tool, so say the print file is RGB.
 
 Related: [[the-next-step-box-must-not-manufacture-the-next-task]]

@@ -11938,7 +11938,7 @@ await runTest(
   runPrivateCalendarOutstationTripsTests,
 );
 await runTest(
-  "every interview on the recruitment calendar shows on the private calendar of the lead (unless he declined) and each panel member, never a manager it was only shared with, in Cairo time; it is display only and never clears No Activity Recorded, which the Excel export still prints on an interview-only day; the workspace and the day evidence load it, the company deductions engine does not",
+  "every interview on the recruitment calendar shows on the private calendar of the lead (unless he declined) and each panel member, never a manager it was only shared with, in Cairo time; one interview is display only and the Excel export still prints No Activity Recorded beside it, while two or more in one half (the morning ends at 1 PM; any hour on a Thursday) are that half day worked on the calendar, in the company deductions pass (read strictly) and in the proven-worked days, where a one-half day leaves the other half to the Half Day tab",
   runPrivateCalendarInterviewsTests,
 );
 await runTest(

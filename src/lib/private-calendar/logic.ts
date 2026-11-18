@@ -8,6 +8,7 @@ import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import type { ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import type { DisputeAttachment } from "@/lib/dispute-center/types.ts";
+import { interviewDayCover, interviewHalvesWorked, type InterviewHalf } from "@/lib/private-calendar/interview-halves";
 import { isWithinManagerHierarchy, type SeatContinuitySubject } from "@/lib/workforce/hierarchy-resolver";
 import {
   summarizePrivateCalendarVisits,
@@ -80,6 +81,10 @@ export type PrivateCalendarItem = {
   endDate: string;
   exceptionFlags: string[];
   id: string;
+  // Only on an `interview` item: the half it falls in — the morning if it starts before 1 PM Cairo,
+  // the afternoon from 1 PM. Two or more in one half cover that half (owner, 2026-11-18,
+  // interview-halves.ts); one alone covers nothing.
+  interviewHalf?: InterviewHalf;
   managerName: string | null;
   // Only on a `plan` item: whether Phoenix records that kind of day nowhere else (Travel, Admin,
   // Meeting, Training, Event, Other), so somebody comparing the plan against the actual should expect
@@ -1065,7 +1070,18 @@ export function derivePrivateCalendarExceptions(input: {
       // 2026-10-12 — see plansOnTheDay above). It joined it on 2026-10-07 and was removed five days
       // later: every entry here is a CAPTURED record of something that happened, and a plan is an
       // intention. A planned Training the rep never attended is exactly the day he asked about.
+      // TWO OR MORE INTERVIEWS IN ONE HALF ARE THAT HALF DAY WORKED (owner, 2026-11-18). Like a
+      // half-day vacation, a covered half clears the day here; the other half is the Half Day (CRM)
+      // deduction tab's to judge, through loadProvenWorkedDays. One interview in a half covers nothing.
+      // Keyed by item id (booking + person), so one interview reaching the day twice still counts once.
+      const interviewHalfById = new Map<string, InterviewHalf>();
+      for (const item of dayItems) {
+        if (item.source === "interview" && item.interviewHalf) interviewHalfById.set(item.id, item.interviewHalf);
+      }
+      // On a Thursday (the field force's morning-only day) two or more at any hour count.
+      const interviewsCoverAHalf = interviewDayCover(date, interviewHalvesWorked([...interviewHalfById.values()])) !== null;
       const isCovered =
+        interviewsCoverAHalf ||
         attendance.length > 0 ||
         vacations.length > 0 ||
         excuses.length > 0 ||
@@ -1123,7 +1139,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation, no approved excuse and no two interviews in one half recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],
@@ -1148,6 +1164,7 @@ export function derivePrivateCalendarExceptions(input: {
       // holiday has its real record, and the comparison is not the thing to read on it.
       const planIsTheOnlyThingOnFile =
         plansOnTheDay.length > 0 &&
+        !interviewsCoverAHalf &&
         attendance.length === 0 &&
         vacations.length === 0 &&
         excuses.length === 0 &&
