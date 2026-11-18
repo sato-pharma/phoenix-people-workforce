@@ -10264,6 +10264,7 @@ declare
   v_reopened jsonb := '[]'::jsonb;
   v_places integer := 0;
   v_validated jsonb := '[]'::jsonb;
+  v_keeps_decision boolean := false;
 begin
   if v_id is null or v_actor is null or v_decision not in ('approve', 'reject')
     or (v_note is not null and char_length(v_note) > 500) then
@@ -10288,9 +10289,40 @@ begin
     raise exception 'phoenix_crm:approved_by_super_admin';
   end if;
 
+  -- 🔴 ...AND NOT THROUGH THE BUILDING EITHER: rejecting it retires every seat in it, so it is refused for anyone but a
+  -- Super Admin while a validated customer seated in it stands on his approval (a review he approved, or a place he
+  -- created). Pending seats count for nothing yet, so a held building is still the SFE's to reject.
+  if v_decision = 'reject' and not public.phoenix_crm_is_super_admin(v_actor) and exists (
+    select 1
+    from public.phoenix_crm_places pl
+    join public.phoenix_crm_customers c on c.id = pl.customer_id
+    where pl.shared_place_id = v_id and pl.status = 'active' and c.status = 'active'
+      and (
+        public.phoenix_crm_is_super_admin(pl.created_by_hr_id)
+        or exists (
+          select 1 from public.phoenix_crm_validation_reviews r
+          where r.place_id = pl.id and r.status = 'approved' and public.phoenix_crm_is_super_admin(r.decided_by_hr_id)
+        )
+      )
+  ) then
+    raise exception 'phoenix_crm:approved_by_super_admin';
+  end if;
+
   if v_decision = 'approve' then
+    -- 🔴 KEEP IT / A BULK APPROVE OF A BUILDING A SUPER ADMIN ALREADY APPROVED LEAVES HIS NAME ON IT: the reject
+    -- lock above reads decided_by_hr_id, so re-stamping it with the SFE Manager would dissolve the lock.
+    -- His name, his time and his note stay together: a Keep it by anyone else changes none of the three.
+    v_keeps_decision := coalesce(
+      v_venue.status = 'active'
+        and public.phoenix_crm_is_super_admin(v_venue.decided_by_hr_id)
+        and not public.phoenix_crm_is_super_admin(v_actor),
+      false
+    );
     update public.phoenix_crm_shared_places
-    set status = 'active', decided_at = now(), decided_by_hr_id = v_actor, decision_note = v_note,
+    set status = 'active',
+        decided_at = case when v_keeps_decision then v_venue.decided_at else now() end,
+        decided_by_hr_id = case when v_keeps_decision then v_venue.decided_by_hr_id else v_actor end,
+        decision_note = case when v_keeps_decision then v_venue.decision_note else v_note end,
         refusal_reason = null, updated_at = now()
     where id = v_id;
 
@@ -98627,6 +98659,13 @@ GRANT ALL ON FUNCTION au.f_line_area_occupancy_drift() TO service_role;
 
 REVOKE ALL ON FUNCTION au.f_monthly_achievement(p_period text) FROM PUBLIC;
 GRANT ALL ON FUNCTION au.f_monthly_achievement(p_period text) TO service_role;
+
+--
+-- Name: FUNCTION f_monthly_achievement_live(p_period text); Type: ACL; Schema: au; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION au.f_monthly_achievement_live(p_period text) FROM PUBLIC;
+GRANT ALL ON FUNCTION au.f_monthly_achievement_live(p_period text) TO service_role;
 
 --
 -- Name: FUNCTION f_monthly_attribution(p_period text); Type: ACL; Schema: au; Owner: postgres
