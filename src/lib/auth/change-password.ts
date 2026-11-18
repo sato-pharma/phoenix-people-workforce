@@ -33,7 +33,7 @@ export class SamePasswordError extends Error {
   }
 }
 
-/** The new password is one every guessing list tries first (password-strength.ts); the message says why. */
+/** The new password is too short or is the person's own login id (password-strength.ts); the message says why. */
 export class WeakPasswordError extends Error {
   constructor(message: string) {
     super(message);
@@ -107,7 +107,7 @@ export async function changeUserPassword(input: {
     if (input.newPassword.length < 8) {
       throw new WeakPasswordError("New password must be at least 8 characters.");
     }
-    // And not a password every guessing list tries first (password-strength.ts).
+    // And not the person's own login id (password-strength.ts).
     const weakness = passwordWeakness(input.newPassword, [row.login_id, row.hr_id]);
     if (weakness) throw new WeakPasswordError(weakness);
     // And not one that already sits in a published breach (leaked-password.ts). Asked before anything is
