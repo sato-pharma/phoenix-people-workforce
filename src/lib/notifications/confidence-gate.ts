@@ -10,6 +10,7 @@ import { conflictError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { logError, logInfo } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { HELD_ATTACHMENT_TYPES, storedContentType } from "@/lib/uploads/stored-content-type";
 
 // Notification Confidence Gate — every automated email in Phoenix passes through
 // evaluateAndRecordNotificationSend() from send-phoenix-email.ts (the single choke point
@@ -822,7 +823,9 @@ export async function keepHeldAttachments(attachments: PreparedEmailAttachment[]
     const path = `${folder}/${index}`;
     try {
       const { error } = await supabase.storage.from(HELD_ATTACHMENTS_BUCKET).upload(path, bytes, {
-        contentType: att.contentType || "application/octet-stream",
+        // The bucket allows an exact list of types; any other is kept as a plain download, so no
+        // file type can make an email unapprovable. The email still goes out under entry.contentType.
+        contentType: storedContentType(att.contentType, HELD_ATTACHMENT_TYPES),
         upsert: false,
       });
       if (error) throw error;
