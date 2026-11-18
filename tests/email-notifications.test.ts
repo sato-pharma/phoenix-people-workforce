@@ -108,6 +108,14 @@ export function runEmailNotificationTests() {
     // deactivated, so they cannot themselves be templates) now reach sendPhoenixEmail through it.
     "src/lib/notifications/direct-email-payload.ts",
     "src/lib/notifications/email.ts",
+    // The new joiner announcement (owner, 18 Nov 2026): when a new hire submits the joining form,
+    // one Sato house letter naming their line, area and hiring date goes to every active Head Office
+    // employee, the addresses in BCC. Its table is built from the new employee record, so it has no
+    // fixed wording for the template catalogue (the `general` body carries no `{{detailsTable}}`).
+    // It passes an origin so the confidence gate still reviews it (ceiling in CEILING_OVERRIDES),
+    // keys idempotency on the offer, and refuses above 40 recipients. See
+    // tests/offer-new-joiner-announcement.test.ts.
+    "src/lib/offers/new-joiner-announcement.ts",
     // An offer of employment goes to a candidate who has no Phoenix account, so there is no
     // notification preference to resolve and nothing for the dispatcher to hold. It is also the
     // one send in the system that must NOT carry Phoenix's identity — the owner's rule is that an
