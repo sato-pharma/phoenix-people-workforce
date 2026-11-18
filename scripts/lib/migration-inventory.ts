@@ -2565,6 +2565,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // equal to this file's body as-is LF); still security definer with search_path=public, service_role can execute it,
   // anon and authenticated cannot. Re-applying is a no-op (`create or replace` with the same body).
   "20261118120000_phoenix_crm_super_admin_approval_survives_keep_it.sql",
+  // Applied 18 Nov 2026 by scripts/apply-sql-file.mjs from the owner's machine on production (the aws-1 pooler), the
+  // standing route, after the production MCP refused every write (-32600). It writes NO ledger row. It replaces ONE
+  // function, public.phoenix_crm_decide_shared_place(jsonb), with the 20261118120000 body plus one change: when the
+  // approve branch keeps a Super Admin as decided_by_hr_id (Keep it / a bulk Approve of a building he approved), it
+  // keeps his decided_at and decision_note with his name; no table, column or data. Verified on ozucdzovmcqvepbozvqf
+  // (project name Phoenix HR) straight after: md5(prosrc) BEFORE c2fcbc4d6b1b00a85367cd6857aaeb0a (9,974 chars, the
+  // 20261118120000 body), AFTER 6c6a26c20978a3a6b6ff3ca438fa5f96 (10,297 chars, equal to this file's body as-is LF);
+  // one overload, security definer with search_path=public, service_role can execute it, anon and authenticated
+  // cannot. Staging took it through staging-migrate run 93 on the merge (cf767f08), which succeeded. Re-applying is a
+  // no-op (`create or replace` with the same body).
+  "20261118191500_phoenix_crm_keep_it_keeps_the_super_admin_decision.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
