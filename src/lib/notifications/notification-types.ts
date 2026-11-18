@@ -379,6 +379,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "system", eventType: "email_block_new", label: "A new address was blocked from receiving email", sentFrom: ["src/lib/email/suppression-watch.ts"] },
   { module: "system", eventType: "ai_quota_exhausted", label: "The AI service has run out of credit", sentFrom: ["src/lib/notifications/ai-quota-alert.ts"] },
   { module: "system", eventType: "ai_key_rejected", label: "The AI service rejected its key", sentFrom: ["src/lib/notifications/ai-quota-alert.ts"] },
+  { module: "system", eventType: "ai_account_answering", label: "An AI account is answering again after an outage", sentFrom: ["src/lib/notifications/ai-quota-alert.ts"] },
   { module: "system", eventType: "activity_inactivity_digest", label: "Colleagues who have not used Phoenix lately", sentFrom: ["src/lib/notifications/inactive-user-digest.ts"] },
   { module: "system", eventType: "attendance_punch_feed_stalled", label: "Attendance punches have stopped arriving", sentFrom: ["src/lib/attendance/punch-feed-stalled-telegram.ts"] },
   { module: "system", eventType: "brick_move_net_unsettled", label: "A brick move left sales figures unsettled", sentFrom: ["src/lib/sales/master-data/brick-move-net-alert.ts"] },

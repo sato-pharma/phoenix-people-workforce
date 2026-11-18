@@ -118,6 +118,11 @@ const COMPONENT_LABELS: Record<AiCallComponent, string> = {
   sales_weekly_ai_verify: "Weekly sales — AI verify",
 };
 
+/** The feature's name as a human reads it — the same words the failure row uses. */
+export function aiComponentLabel(component: AiCallComponent): string {
+  return COMPONENT_LABELS[component] ?? component;
+}
+
 /**
  * How long one component+purpose+code combination stays quiet after reporting once.
  *
@@ -271,28 +276,108 @@ function failureReportingEnabled(): boolean {
 }
 
 /**
- * Records one AI call's outcome. Fire-and-forget by contract: NEVER throws, and is never awaited
- * by the call it describes — a telemetry failure must not turn a working AI call into a failing
- * one, nor add latency to one the user is waiting on.
+ * Whether this answer should ask "was this account's outage told and never closed?" — pure, the caller owns
+ * both sets, so the suite can pin it.
+ *
+ * 🔴 WHY THERE IS NO ROW FOR A SUCCESS, AND WHY THIS EXISTS. Successes write nothing (the header above), so
+ * on 18 Nov 2026 the first Anthropic account ran out of credit at 03:35 Cairo, the backup answered every
+ * call all day, and when it was topped up the only sign would have been failure rows that STOPPED — which
+ * at night reads exactly like nobody working. The alarm said when it broke; nothing said when it mended.
+ *
+ * Asks on the account's FIRST answer in this process — a process started after a key was swapped on Railway
+ * never saw the refusals, and is exactly the one that answers again — and on its first answer after this
+ * process saw it refuse for credit or its key. Every other answer costs nothing: no read, no import.
  */
-export function recordAiCall(record: AiCallRecord): void {
+export function takeAnsweringCheckSlot(
+  record: AiCallRecord,
+  checked: Set<AiCallProvider>,
+  refusedSinceCheck: Set<AiCallProvider>,
+): boolean {
+  if (record.status !== "success") {
+    if (isQuotaExhaustedRecord(record) || isKeyRejectedRecord(record)) refusedSinceCheck.add(record.provider);
+    return false;
+  }
+  if (checked.has(record.provider) && !refusedSinceCheck.has(record.provider)) return false;
+  checked.add(record.provider);
+  refusedSinceCheck.delete(record.provider);
+  return true;
+}
+
+/** Where one call's outcome goes. Live: the lazy notice imports and the failure table; in the suite, fakes. */
+export type AiCallSinks = {
+  /** An account the alarm may have named has answered: ask whether its outage is still open. */
+  askAnswering: (record: AiCallRecord) => void;
+  /** Out of credit or a refused key: page a human (once a day per account, ai-quota-alert.ts). */
+  pageAlarm: (record: AiCallRecord) => void;
+  /** The failure row, already throttled. */
+  writeRow: (event: NonNullable<ReturnType<typeof buildAiFailureEvent>>) => void;
+};
+
+/** What one process remembers between calls. Bounded: a handful of accounts, and the throttle prunes itself. */
+export type AiCallState = {
+  answeringChecked: Set<AiCallProvider>;
+  lastReportedAt: Map<string, number>;
+  refusedSinceCheck: Set<AiCallProvider>;
+};
+
+/**
+ * Routes one call's outcome. Pure apart from the sinks, so the suite drives the real routing — a success must
+ * reach the answering check BEFORE the early return that writes no row for it, or no success ever would.
+ */
+export function dispatchAiCall(record: AiCallRecord, sinks: AiCallSinks, state: AiCallState, nowMs: number = Date.now()): void {
+  // An account the out-of-credit or refused-key alarm named may have come back: ask, at most once per
+  // account per process until it refuses again (takeAnsweringCheckSlot).
+  if (takeAnsweringCheckSlot(record, state.answeringChecked, state.refusedSinceCheck)) sinks.askAnswering(record);
   const event = buildAiFailureEvent(record);
   if (!event) return;
-  if (!failureReportingEnabled()) return;
   // Out of credit and a refused key are the AI failures only a human can end, and on 2026-09-18 the
-  // first sat in this table unread. Page the owner too (in-app + Telegram, once a day — ai-quota-alert.ts). Loaded
-  // lazily so this light module does not pull the notification stack into every AI call site.
-  if (isQuotaExhaustedRecord(record) || isKeyRejectedRecord(record)) {
+  // first sat in this table unread. Page the owner too (in-app + Telegram, once a day — ai-quota-alert.ts).
+  if (isQuotaExhaustedRecord(record) || isKeyRejectedRecord(record)) sinks.pageAlarm(record);
+  if (!shouldReportFailure(failureThrottleKey(record), nowMs, state.lastReportedAt)) return;
+  sinks.writeRow(event);
+}
+
+const LIVE_STATE: AiCallState = {
+  answeringChecked: new Set<AiCallProvider>(),
+  lastReportedAt,
+  refusedSinceCheck: new Set<AiCallProvider>(),
+};
+
+// Both notices are loaded lazily so this light module does not pull the notification stack into every AI
+// call site. Best-effort by contract: nothing here may throw into the call it describes.
+const LIVE_SINKS: AiCallSinks = {
+  askAnswering: (record) => {
+    void import("@/lib/notifications/ai-quota-alert")
+      .then((alert) => alert.notifyAiAccountAnswering(record))
+      .then((finished) => {
+        // A check that could not finish is asked again on the next answer; its key stops a second send.
+        if (!finished) LIVE_STATE.refusedSinceCheck.add(record.provider);
+      })
+      .catch(() => {
+        LIVE_STATE.refusedSinceCheck.add(record.provider);
+      });
+  },
+  pageAlarm: (record) => {
     void import("@/lib/notifications/ai-quota-alert")
       .then((alert) => alert.notifyAiQuotaExhausted(record))
       .catch(() => {
         // Best-effort by contract, like the row below.
       });
-  }
-  if (!shouldReportFailure(failureThrottleKey(record), Date.now(), lastReportedAt)) return;
+  },
+  writeRow: (event) => {
+    void logAppError(event).catch(() => {
+      // Best-effort by contract. logAppError already swallows its own failures; this is the belt for
+      // anything thrown before it gets that far.
+    });
+  },
+};
 
-  void logAppError(event).catch(() => {
-    // Best-effort by contract. logAppError already swallows its own failures; this is the belt for
-    // anything thrown before it gets that far.
-  });
+/**
+ * Records one AI call's outcome. Fire-and-forget by contract: NEVER throws, and is never awaited
+ * by the call it describes — a telemetry failure must not turn a working AI call into a failing
+ * one, nor add latency to one the user is waiting on.
+ */
+export function recordAiCall(record: AiCallRecord): void {
+  if (!failureReportingEnabled()) return;
+  dispatchAiCall(record, LIVE_SINKS, LIVE_STATE);
 }
