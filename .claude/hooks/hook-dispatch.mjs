@@ -379,6 +379,20 @@ export async function dispatch(options) {
   return mergeHookResults(await runHooks(options), options.event);
 }
 
+/**
+ * The one line the runner prints when IT fails rather than a hook. Still exit 0 — a broken runner must
+ * never refuse a tool call — but no longer silent: until 2026-11-18 an unreadable dispatch.json or a
+ * crash here exited 0 with nothing printed, which switches every guard it runs off without a trace.
+ */
+export function runnerFailure(what, err) {
+  const why = String((err && err.message) || err || 'unknown error').split(/\r?\n/)[0];
+  return `${JSON.stringify({
+    systemMessage:
+      `Hook runner (${HOOKS_DIR}): ${what} — ${why}. Every hook it runs was skipped for this call, ` +
+      'so its guards did not check it.',
+  })}\n`;
+}
+
 async function main() {
   const event = process.argv[2] || 'PreToolUse';
   const write = { out: process.stdout.write.bind(process.stdout), err: process.stderr.write.bind(process.stderr) };
@@ -389,7 +403,12 @@ async function main() {
   let payload = '';
   try { payload = fs.readFileSync(0, 'utf8'); } catch {}
   let table;
-  try { table = JSON.parse(fs.readFileSync(TABLE_FILE, 'utf8')); } catch { exit(0); }
+  try {
+    table = JSON.parse(fs.readFileSync(TABLE_FILE, 'utf8'));
+  } catch (err) {
+    write.out(runnerFailure('could not read dispatch.json', err), () => exit(0));
+    return;
+  }
   const processes = process.env.PHX_HOOK_DISPATCH_PROCESSES === '1';
   const out = await dispatch({ event, payload, table, processes });
   if (out.stderr) write.err(out.stderr);
@@ -398,5 +417,6 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => process.exit(0)); // fail open, like every hook here
+  // Fail open, like every hook here — but say so.
+  main().catch((err) => process.stdout.write(runnerFailure('crashed', err), () => process.exit(0)));
 }
