@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [Product flyers start from a ChatGPT hero photo](product-flyers-start-from-a-chatgpt-hero-photo.md) - three HTML-box Lacto flyers scored 0-2/10; photo scene first, real packs laid over it, type last.
 
 
 
