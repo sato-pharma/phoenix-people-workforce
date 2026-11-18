@@ -13,11 +13,16 @@ import { deleteSalesBatch, replaceSalesBatch, updateSalesBatchStatus } from "@/l
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createVacationRequest, decideVacationRequest } from "@/lib/vacation/service";
 
+import { requireStagingSupabase } from "./lib/supabase-project-refs.mjs";
+
 const suffix = `${Date.now().toString(36)}_${randomUUID().slice(0, 8).toUpperCase()}`;
 const fixture = `PHASE17_${suffix}`.toUpperCase();
 const actor = "phase17.fixture.smoke";
 
 loadLocalEnv();
+// Writes employees, payroll and sales fixtures, so STAGING only: every .env.local on this laptop
+// points at production (Supabase audit, 18 Nov 2026). Refuses before any client exists.
+requireStagingSupabase("phase17-disposable-fixture-smoke");
 
 const supabase = getSupabaseAdmin();
 const cleanupWarnings: string[] = [];

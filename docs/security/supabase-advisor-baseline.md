@@ -150,7 +150,32 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (297 as of 2026-11-14; 284 on 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (309 as of 2026-11-18; 297 on 2026-11-14; 284 on 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 297 to 309 on 2026-11-18 — eleven new server-only tables and one pre-image.** Read live on
+production during the Supabase audit of 18 Nov: `phx_ci_advisor_counts()` returned 309. The twelve that
+join are, by oid, the newest twelve, every one above oid 752000, and each has row security on, no policy
+and no grant to `anon`, `authenticated` or `PUBLIC`:
+
+| Table | oid | Where it came from |
+| --- | --- | --- |
+| `public.dispute_explanations` | 752113 | `20261116234054`: the reason list a deduction dispute opens with |
+| `public.medical_insurance_policies` | 753900 | `20261104092817`, `20261117041500`: the medical insurance module |
+| `public.medical_insurance_members` | 753913 | the same |
+| `public.medical_insurance_exceptions` | 753942 | the same |
+| `public.medical_insurance_category_choices` | 753959 | the same |
+| `public.medical_insurance_invoices` | 753973 | the same |
+| `public.medical_insurance_documents` | 753997 | the same |
+| `public.connector_oauth_clients` | 758056 | `20261117130928`: the ChatGPT connector's sign-in |
+| `public.connector_oauth_codes` | 758064 | the same |
+| `public.connector_oauth_tokens` | 758082 | the same |
+| `public.connector_files` | 758106 | the same |
+| `au.bak_20261117_cns_kfs2_line_area_map` | 758193 | `20261117143000`: the pre-image taken before CNS Kafr El Sheikh 2 moved |
+
+The pre-image sits in the standing `au` schema, like the `au.bak_*` pre-images counted on 2026-10-23
+and 2026-11-01, so it stays in this count until it is dropped by hand. Re-proved live the same day: 0 of
+all 309 grant `anon`, `authenticated` or `PUBLIC` anything. `unused_index` read 482 the same day, under
+its 508, and is left alone.
 
 **Corrected 298 to 297 on 2026-11-14 — thirteen joined, not fourteen.** The entry below counted
 `public.phoenix_crm_shared_place_timetable_marks` while its migration was still being finished. PR 408's

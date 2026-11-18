@@ -255,7 +255,8 @@ that is the thing to look at. It cannot reach production — the script refuses 
 but `cifwmndunmlxjhyjugxa` before it opens a connection, and has no override flag.
 
 To take a new migration to production, apply to staging first — before merge that still means
-the Supabase MCP `apply_migration` tool (or `supabase db push`), after merge the workflow above
+the Supabase MCP `apply_migration` tool (never the CLI's push: it fails here on the archived
+baseline, and since 18 Nov 2026 the repo settings deny it), after merge the workflow above
 has done it — verify with `get_advisors` plus a targeted
 `pg_policies`/`pg_constraint`/`has_function_privilege` check, then repeat against
 production after explicit approval. If the apply tool records a drifted

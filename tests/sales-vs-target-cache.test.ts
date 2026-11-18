@@ -11,6 +11,7 @@ import {
   unpackAchievementRows,
 } from "../src/lib/sales/vs-target.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
+import { createConcurrencyLimit } from "../src/lib/utils/concurrency-limit.ts";
 
 /**
  * loadAchievementRange (the field force's #1 production query by DB time) is served from a
@@ -379,4 +380,72 @@ export async function runSalesVsTargetCacheTests() {
     await assert.rejects(throwing, /threw before awaiting/);
     assert.equal(flights.size, 0, "and leaves no slot behind");
   }
+
+  // 20. The process-wide limit holds its cap, keeps first-come order, and never leaks a slot
+  //     (18 Nov 2026, 17:52 Cairo: 133 calls of phx_sales_vs_target_range in 18 seconds ran
+  //     PostgREST out of connections and the sign-in bundle answered 504). A per-request pool
+  //     cannot see the request beside it; this limit is shared by every caller in the process.
+  {
+    const limit = createConcurrencyLimit(2);
+    let inFlight = 0;
+    let peak = 0;
+    const started: number[] = [];
+    const releases: Array<() => void> = [];
+    const job = (id: number) => () => {
+      started.push(id);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return new Promise<number>((resolve) => {
+        releases.push(() => {
+          inFlight -= 1;
+          resolve(id);
+        });
+      });
+    };
+    const all = [1, 2, 3, 4, 5].map((id) => limit(job(id)));
+    await Promise.resolve();
+    assert.deepEqual(started, [1, 2], "only two of five start while the cap is two");
+    while (releases.length > 0) {
+      releases.shift()?.();
+      // Let the released slot reach the next waiter before reading the counters again.
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.deepEqual(await Promise.all(all), [1, 2, 3, 4, 5], "every run resolves with its own answer");
+    assert.equal(peak, 2, "never more than two in flight at once");
+    assert.deepEqual(started, [1, 2, 3, 4, 5], "waiters start in the order they arrived");
+
+    // A rejected run and a run that throws before awaiting both give their slot back.
+    const one = createConcurrencyLimit(1);
+    await assert.rejects(one(() => Promise.reject(new Error("db down"))), /db down/);
+    await assert.rejects(
+      one(() => {
+        throw new Error("threw before awaiting");
+      }),
+      /threw before awaiting/,
+    );
+    assert.equal(await one(() => Promise.resolve("still has its slot")), "still has its slot", "a failure never shrinks the cap");
+    assert.throws(() => createConcurrencyLimit(0), RangeError, "a cap below one is refused, never treated as no cap");
+  }
+
+  // 21. Every phx_sales_vs_target_range call goes through ONE limit built at module scope. Built
+  //     inside the function, each call would get its own fresh limit and the cap would be gone
+  //     while every behavioural test still passed — so this is pinned against the source.
+  assert.match(
+    vsTargetSource,
+    /^const limitAchievementRpc = createConcurrencyLimit\(ACHIEVEMENT_RPC_PROCESS_CONCURRENCY\);$/m,
+    "the achievement RPC limit must be ONE module-scope createConcurrencyLimit(...)",
+  );
+  const uncachedAt = vsTargetSource.indexOf("async function loadAchievementRangeUncached(");
+  assert.notEqual(uncachedAt, -1, "loadAchievementRangeUncached must still exist — this pin cannot silently stop checking anything");
+  const uncachedBody = vsTargetSource.slice(uncachedAt, vsTargetSource.indexOf("\n}\n", uncachedAt));
+  assert.match(
+    uncachedBody,
+    /=\s*await\s+limitAchievementRpc\(\s*\(\)\s*=>\s*rpcAll</,
+    "the phx_sales_vs_target_range read must run inside limitAchievementRpc(() => rpcAll(...))",
+  );
+  assert.equal(
+    (vsTargetSource.match(/"phx_sales_vs_target_range"/g) ?? []).length,
+    1,
+    "phx_sales_vs_target_range is called from ONE place — a second call site would bypass the limit",
+  );
 }
