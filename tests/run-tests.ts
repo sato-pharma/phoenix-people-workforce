@@ -2821,6 +2821,8 @@ import { runScriptsAliasLoaderTests } from "./scripts-alias-loader.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runRiskyAllowGuardTests } from "./risky-allow-guard.test.ts";
+import { runSupabaseMcpProjectActionsDeniedTests } from "./supabase-mcp-project-actions-denied.test.ts";
+import { runWorkflowSecretsNeedEnvironmentTests } from "./workflow-secrets-need-environment.test.ts";
 import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runSqlColumnHintTests } from "./sql-column-hint.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
@@ -11149,6 +11151,16 @@ await runTest(
 await runTest(
   "a risky blanket 'allow' wildcard (node -e */python -c */sh -c */npx */pnpm exec */railway run *) added to any .claude/settings*.json is DENIED by risky-allow-guard.mjs — across Write, Edit, MultiEdit and NotebookEdit, user and repo settings, forward and backslash paths — while an exact scoped command, any non-settings file, a Read, a Bash command and the PHX_RISKY_ALLOW_GUARD_OFF escape hatch all pass; it fails OPEN on empty or garbled input, and it is registered in .claude/settings.json for every one of those four tools (a matcher missing one looks installed and lets it through), so cloud sessions with no ~/.claude are covered too",
   runRiskyAllowGuardTests,
+);
+
+await runTest(
+  "every Supabase connection (production, staging and the claude.ai connector) is DENIED the eight project- and branch-level actions in .claude/settings.json — create, pause and restore a project; create, delete, merge, reset and rebase a branch — because one account-wide token reaches every project and AGENTS.md §8 never pre-authorized them, while SQL, migrations and the reads stay undenied and no connection is switched off wholesale",
+  runSupabaseMcpProjectActionsDeniedTests,
+);
+
+await runTest(
+  "every workflow job that reads a production secret declares the main-only main-secrets environment (urgent-deploy.yml: the urgent-deploy environment), the mover keeps exactly the repository-wide names this test lists, ci.yml's validate reads no production secret and signs with the CI-only literal, fallback-image's pull-request build gets no Railway token, and only emergency-host passes secrets: inherit",
+  runWorkflowSecretsNeedEnvironmentTests,
 );
 
 await runTest(

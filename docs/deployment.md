@@ -853,7 +853,7 @@ turn Wait for CI back on in the same breath as setting it. The urgent route need
   table, is refused (`supabase/migrations/20261023093100_release_gate_writer_login.sql`). To rotate it: compute a
   SCRAM-SHA-256 verifier on the laptop, `alter role release_gate_writer with login password '<verifier>'` on
   production, and pipe the new URL (`postgresql://release_gate_writer.ozucdzovmcqvepbozvqf:<password>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`)
-  straight into `gh secret set RELEASE_GATE_DATABASE_URL` — never print it, and never put the password in a
+  straight into `gh secret set RELEASE_GATE_DATABASE_URL --env main-secrets` — never print it, and never put the password in a
   migration. Staging has the role with no login.
 - **Two merges close together.** Each container waits for its own row; the newer one that passes becomes the
   active deploy and the older is superseded, as with any queue here.
@@ -1021,7 +1021,7 @@ script waits for the new deployment and, for the web service, for `/api/healthz`
   deletes only what it created (re-checked by name), and `cleanup` removes a leftover.
 - **The private image needs a pull credential.** With the secret `GHCR_PULL_TOKEN` (a classic personal
   access token with ONLY `read:packages`, stored by the owner himself:
-  `gh secret set GHCR_PULL_TOKEN --repo sato-pharma/phoenix-people-workforce`) Railway can re-pull the
+  `gh secret set GHCR_PULL_TOKEN --env main-secrets --repo sato-pharma/phoenix-people-workforce`) Railway can re-pull the
   image for as long as the fallback is in use. Without it the run's own token is used: enough to start
   the container now, **not** enough for a later restart on another node. The production job's summary
   says which one was used. Never make the package public — it holds the compiled server code.
@@ -1099,9 +1099,9 @@ build from production), and Vercel is a retired platform here.
 **What only the owner does, once** (a session may not create accounts or handle these tokens):
 
 - A Fly.io account with a card (pay-as-you-go; the standby has no machines between emergencies).
-- An organisation token from the Fly dashboard → `gh secret set FLY_API_TOKEN --repo sato-pharma/phoenix-people-workforce`.
+- An organisation token from the Fly dashboard → `gh secret set FLY_API_TOKEN --env main-secrets --repo sato-pharma/phoenix-people-workforce`.
 - A Cloudflare API token with **Zone → DNS → Edit** and **Zone → Zone → Read** on `satopharma.com` only →
-  `gh secret set CLOUDFLARE_API_TOKEN --repo sato-pharma/phoenix-people-workforce`.
+  `gh secret set CLOUDFLARE_API_TOKEN --env main-secrets --repo sato-pharma/phoenix-people-workforce`.
 - Then Actions → Emergency host → `setup`, then `rehearse`. Optional repository variables: `FLY_APP` (default
   `phoenix-hr-standby`, if that name is taken on Fly) and `FLY_ORG` (default `personal`).
 

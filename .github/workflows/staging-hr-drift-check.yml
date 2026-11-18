@@ -69,6 +69,7 @@ jobs:
   drift:
     name: staging HR drift
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     # This job had NO `timeout-minutes`, so its ceiling was GitHub's default of six hours — a
     # hung read would have held a runner all night and then cancelled, withholding that `main`
     # commit's production deploy. Measured duration is ~20s.

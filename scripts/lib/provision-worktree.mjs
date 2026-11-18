@@ -1,5 +1,6 @@
 // Give EVERY worktree the two gitignored things `git worktree add` never copies —
-// node_modules (as a junction to the primary's) and the local .env files — so that
+// node_modules (as a junction to the primary's) and the local .env files (as HARD LINKS to the
+// primary's since 2026-11-18, never copies — scripts/lib/env-file-links.mjs) — so that
 // node / pnpm / npm commands run in all working trees, not only in the one worktree
 // a Claude session happens to have open.
 //
@@ -23,8 +24,11 @@
 // ---------------------------------------------
 // It writes only gitignored, non-tracked files — the node_modules junction and the
 // .env* files — never edits a tracked file, never runs a git command against the
-// target folder, and never overwrites an env file that is already there (a worktree's
-// env may legitimately differ; that is why the copy is skip-if-exists unless force).
+// target folder, and never replaces an env file that DIFFERS from the primary's (a worktree's
+// env may legitimately differ; only a byte-identical copy, or a link left on bytes the primary
+// has since replaced, becomes a link to the primary's file — see env-file-links.mjs). A
+// date-stamped, backup or retired env file is never provisioned, and a worktree's copy of one goes
+// only while the primary still holds the same bytes.
 // `linkNodeModules` is idempotent and never touches a REAL node_modules a session
 // installed into. It deliberately does NOT touch `.claude/settings.local.json` in the
 // swept worktrees: that primary-wins permission refresh stays the job of the sync run
@@ -35,23 +39,27 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { envFileChanged, provisionEnvFile, removeStaleEnvCopies } from "./env-file-links.mjs";
 import { linkNodeModules } from "./link-node-modules.mjs";
 
 /**
- * Provision ONE worktree directory: copy any MISSING env file from the primary, and
- * junction its node_modules to the primary's. Never overwrites an env file that is
- * already there unless `force`; never touches a real node_modules.
+ * Provision ONE worktree directory: hard-link each env file to the primary's (a missing one, a
+ * byte-identical copy, or a link the primary has since replaced), remove stale duplicates, and
+ * junction its node_modules to the primary's. Never replaces an env file that differs unless
+ * `force`; never touches a real node_modules.
  *
  * @param {string} dir          absolute path to the worktree to provision
- * @param {string} primaryRoot  absolute path to the primary clone (the copy/junction source)
+ * @param {string} primaryRoot  absolute path to the primary clone (the link/junction source)
  * @param {string[]} candidates env filenames found gitignored in the primary root
  * @param {{ force?: boolean, dryRun?: boolean }} [options]
- * @returns {{ dir: string, present: boolean, copied: string[], skipped: string[], modulesStatus: string }}
+ * @returns {{ dir: string, present: boolean, linked: string[], skipped: string[], removed: string[], modulesStatus: string }}
  *   `present` is false when the registered worktree's folder is gone (a husk) — nothing done.
- *   In dryRun, `copied` lists what WOULD be copied and modulesStatus is the would-* form.
+ *   `linked` names each env file linked (or, where a link cannot be made, copied); `skipped` each
+ *   one already linked or kept because it differs; `removed` each stale duplicate deleted.
+ *   In dryRun, `linked`/`removed` list what WOULD change and modulesStatus is the would-* form.
  */
 export function provisionDir(dir, primaryRoot, candidates, { force = false, dryRun = false } = {}) {
-  const result = { dir, present: true, copied: [], skipped: [], modulesStatus: "skipped" };
+  const result = { dir, present: true, linked: [], skipped: [], removed: [], modulesStatus: "skipped" };
 
   // A registered worktree whose folder is gone (a husk), or a path that is not a
   // directory — nothing to provision. Copying into it would throw.
@@ -67,20 +75,13 @@ export function provisionDir(dir, primaryRoot, candidates, { force = false, dryR
   }
 
   for (const name of candidates) {
-    const src = path.join(primaryRoot, name);
-    const dest = path.join(dir, name);
-    if (!fs.existsSync(src)) continue; // the primary no longer has it
-    const exists = fs.existsSync(dest);
-    if (exists && !force) {
-      result.skipped.push(name);
-      continue;
-    }
-    if (dryRun) {
-      result.copied.push(name); // intent only — nothing written
-      continue;
-    }
-    fs.copyFileSync(src, dest);
-    result.copied.push(name);
+    const status = provisionEnvFile(path.join(primaryRoot, name), path.join(dir, name), { force, dryRun });
+    if (status === "absent") continue; // the primary no longer has it
+    if (envFileChanged(status)) result.linked.push(name);
+    else result.skipped.push(name);
+  }
+  for (const stale of removeStaleEnvCopies(primaryRoot, dir, { dryRun })) {
+    if (stale.status !== "kept") result.removed.push(stale.name);
   }
 
   result.modulesStatus = linkNodeModules(dir, primaryRoot, { dryRun });
@@ -122,8 +123,11 @@ export function linkedNodeModules(modulesStatus) {
   return /junctioned|relinked|would-link|would-relink/.test(modulesStatus);
 }
 
-/** A result counts as "changed" (worth a summary line) when it copied an env file
+/** A result counts as "changed" (worth a summary line) when it linked or removed an env file
  *  or created/relinked a junction; an already-provisioned worktree stays quiet. */
 export function wasChanged(result) {
-  return result.present && (result.copied.length > 0 || linkedNodeModules(result.modulesStatus));
+  return (
+    result.present &&
+    (result.linked.length > 0 || result.removed.length > 0 || linkedNodeModules(result.modulesStatus))
+  );
 }

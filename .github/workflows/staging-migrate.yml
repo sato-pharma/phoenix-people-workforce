@@ -52,6 +52,7 @@ env:
 jobs:
   apply:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 15
 
     # `secrets` is not a valid context in a step-level `if:` — GitHub rejects the whole workflow
