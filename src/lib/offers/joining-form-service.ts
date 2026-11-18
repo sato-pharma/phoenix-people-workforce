@@ -43,6 +43,7 @@ import {
   releaseOfferJoiningClaim,
   stampOfferAcceptedByJoiningForm,
 } from "@/lib/offers/service";
+import { pickReportsToManager, reportsToChoicesForTitle } from "@/lib/offers/reports-to-choices";
 import type { OfferRecord, OfferVacancyOption } from "@/lib/offers/types";
 import { checkOfferVacancy } from "@/lib/offers/vacancies";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
@@ -139,6 +140,42 @@ function governorateValue(english: string | null): string | null {
   if (!english) return null;
   const match = JOINING_FORM_GOVERNORATES.find((g) => g.label.startsWith(`${english} ·`));
   return match?.value ?? null;
+}
+
+/**
+ * The seat with the offer's CHOSEN reporting line applied. A Product Manager's offer names the
+ * Marketing Manager or the Group Product Manager (`reports-to-choices.ts`); the record and the new
+ * joiner announcement must name that person, not the vacancy's default manager. Every other offer,
+ * a title held by nobody or by several, and a failed read all keep the vacancy's manager.
+ */
+async function withOfferReportsTo(seat: JoiningFormSeat | null, offer: OfferRecord): Promise<JoiningFormSeat | null> {
+  if (!seat) return null;
+  const wanted = String(offer.reportsTo ?? "").trim().toLowerCase();
+  if (!wanted || !reportsToChoicesForTitle(offer.title).some((choice) => choice.toLowerCase() === wanted)) return seat;
+  try {
+    const { getEmployeeDirectoryRows, isActiveLifecycleStatus } = await import("@/lib/employees/employee-directory");
+    const rows = await getEmployeeDirectoryRows();
+    const manager = pickReportsToManager({
+      offerTitle: offer.title,
+      people: rows.map((row) => ({
+        active: isActiveLifecycleStatus(row.employmentStatus),
+        hrId: row.hrId,
+        jobTitle: row.jobTitle,
+        lineId: row.lineId,
+        name: row.displayName || row.fullName,
+      })),
+      reportsTo: offer.reportsTo,
+      seatLineId: seat.lineId,
+    });
+    return manager ? { ...seat, managerHrId: manager.hrId, managerName: manager.name } : seat;
+  } catch (error) {
+    logError("The joining form could not read who holds the offer's reporting line; the vacancy's manager stays", {
+      context: { offerId: offer.id },
+      error: error instanceof Error ? error : new Error(String(error)),
+      labels: { event: "offer_joining_form_reports_to_unread" },
+    });
+    return seat;
+  }
 }
 
 async function loadSeat(vacancy: OfferVacancyOption | null): Promise<JoiningFormSeat | null> {
@@ -261,7 +298,7 @@ async function loadOffer(token: string): Promise<Loaded | null> {
     seatUnread: seatCheck?.status === "unread",
     status: offer.status,
   });
-  const seat = state === "open" ? await loadSeat(vacancy) : null;
+  const seat = state === "open" ? await withOfferReportsTo(await loadSeat(vacancy), offer) : null;
   return { offer, requiresSeat, seat, state, vacancy };
 }
 
