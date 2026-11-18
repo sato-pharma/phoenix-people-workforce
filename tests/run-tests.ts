@@ -3194,6 +3194,7 @@ import { runSyntheticJourneyRunStatusTests } from "./synthetic-journey-run-statu
 import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declared-page.test.ts";
 import { runSyntheticJourneySignInStepTests } from "./synthetic-journey-sign-in-step.test.ts";
 import { runSyntheticJourneysRunHistoryFitTests } from "./synthetic-journeys-run-history-fit.test.ts";
+import { runStoredContentTypeTests } from "./stored-content-type.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12667,6 +12668,7 @@ await runTest("smoke-test run status on the Synthetic Journeys page (every check
 await runTest("smoke check that skips itself shows its real page (the Outstation Expenses export reads /admin/outstation/expenses, not the word unknown; a check that named no page still reads unknown)", runSyntheticJourneyDeclaredPageTests);
 await runTest("smoke-suite sign-in step is saved under its own code (sign-in, not the test runner's internal hash), with its /login page and Super Admin role; every other check keeps its own code", runSyntheticJourneySignInStepTests);
 await runTest("Synthetic Journeys Run History fits a phone: the table is the desktop's alone and a phone gets cards with every run's facts and its View button, never a sideways scroll", runSyntheticJourneysRunHistoryFitTests);
+await runTest("the WhatsApp inbox and held-email buckets take exact type lists, and a file of any other type is kept as a plain download, never refused, so no file is lost and no held email becomes unapprovable", runStoredContentTypeTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

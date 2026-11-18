@@ -20,6 +20,7 @@ import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruit
 import { REPLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-conversation";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { storedContentType, WHATSAPP_INBOX_MEDIA_TYPES } from "@/lib/uploads/stored-content-type";
 import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
 import { pickInboxCvs, type InboxDocumentMessage } from "@/lib/whatsapp-inbox/cv-pick";
 import { findWhatsAppInboxLine, whatsAppInboxLineLabel } from "@/lib/whatsapp-inbox/lines";
@@ -905,7 +906,9 @@ async function copyFromMeta(row: MessageRow): Promise<InboxAttachment> {
   const supabase = getSupabaseAdmin();
   const { error: uploadError } = await supabase.storage
     .from(WHATSAPP_INBOX_MEDIA_BUCKET)
-    .upload(path, bytes, { cacheControl: "31536000", contentType: resolvedMime, upsert: true });
+    // The bucket allows an exact list of types; any other is kept as a plain download. The row below
+    // keeps the real type, and every read of this file answers with the row's type.
+    .upload(path, bytes, { cacheControl: "31536000", contentType: storedContentType(resolvedMime, WHATSAPP_INBOX_MEDIA_TYPES), upsert: true });
   if (uploadError) throw new Error(`storage upload failed: ${uploadError.message}`);
   const { error: updateError } = await supabase
     .from(WHATSAPP_INBOX_MESSAGES_TABLE)
@@ -993,7 +996,7 @@ async function keepInboxCopy(row: MessageRow): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { error: uploadError } = await supabase.storage
     .from(WHATSAPP_INBOX_MEDIA_BUCKET)
-    .upload(path, held.bytes, { cacheControl: "31536000", contentType: mimeType, upsert: true });
+    .upload(path, held.bytes, { cacheControl: "31536000", contentType: storedContentType(mimeType, WHATSAPP_INBOX_MEDIA_TYPES), upsert: true });
   if (uploadError) throw new Error(`storage upload failed: ${uploadError.message}`);
   const { error: updateError } = await supabase
     .from(WHATSAPP_INBOX_MESSAGES_TABLE)
@@ -1116,7 +1119,7 @@ export async function storeInboxOutboundFile(input: { bytes: Buffer; mimeType: s
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.storage
     .from(WHATSAPP_INBOX_MEDIA_BUCKET)
-    .upload(path, input.bytes, { cacheControl: "31536000", contentType: input.mimeType, upsert: false });
+    .upload(path, input.bytes, { cacheControl: "31536000", contentType: storedContentType(input.mimeType, WHATSAPP_INBOX_MEDIA_TYPES), upsert: false });
   if (error) throw new Error(`Phoenix could not keep a copy of the file: ${error.message}`);
   return path;
 }
