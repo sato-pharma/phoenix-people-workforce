@@ -58,6 +58,7 @@ export const ALL_COMPANY_ACTIVITY_DAY_OUTCOMES: readonly CompanyActivityDayOutco
   "office_present",
   "crm_field_visit",
   "crm_leave",
+  "interview",
   "leave_approved",
   "leave_pending",
   "device_outage",
@@ -75,6 +76,7 @@ export const OUTCOME_LABEL: Record<CompanyActivityDayOutcome, string> = {
   office_present: "Office Present",
   crm_field_visit: "CRM Field Visit",
   crm_leave: "CRM Leave (Annual Vacation)",
+  interview: "Interview",
   leave_approved: "Leave Approved",
   leave_pending: "Leave Pending",
   device_outage: "Device Outage",
@@ -96,6 +98,8 @@ export const OUTCOME_FILL: Record<CompanyActivityDayOutcome, string> = {
   office_present: WHITE,
   crm_field_visit: WHITE,
   crm_leave: INFO_FILL,
+  // Green: a record of work, the one outcome below presence that is not a gap or a leave.
+  interview: GOOD_FILL,
   leave_approved: INFO_FILL,
   leave_pending: AMBER,
   device_outage: INFO_FILL,
@@ -116,6 +120,7 @@ export const OUTCOME_FONT: Record<CompanyActivityDayOutcome, string> = {
   office_present: SLATE,
   crm_field_visit: SLATE,
   crm_leave: MUTED,
+  interview: GOOD_FONT,
   leave_approved: MUTED,
   leave_pending: ATTENTION_FONT,
   device_outage: MUTED,
@@ -198,6 +203,21 @@ function visitSummaryText(day: CompanyActivityDayRow): string {
     .join("; ");
 }
 
+/** Every interview of the day, one phrase each, in time order — names and words, never an id. */
+export function interviewSummaryText(day: CompanyActivityDayRow): string {
+  if (day.interviews.length === 0) return "";
+  return day.interviews
+    .map((interview) => {
+      const head = [interview.timeLabel, interview.candidateName].filter(Boolean).join(" ");
+      const role = interview.jobTitle ? ` — ${interview.jobTitle}` : "";
+      const facts = [interview.part, interview.platform, interview.where, interview.outcome ? `Outcome: ${interview.outcome}` : null]
+        .map((part) => (part ?? "").trim())
+        .filter(Boolean);
+      return `${head}${role}${facts.length > 0 ? ` (${facts.join(" · ")})` : ""}`;
+    })
+    .join("; ");
+}
+
 function sumBy<T>(rows: T[], pick: (row: T) => number): number {
   return rows.reduce((total, row) => total + pick(row), 0);
 }
@@ -218,6 +238,8 @@ const SUMMARY_COLUMNS: TableColumn[] = [
   { label: "Total CRM Visits", numFmt: UNITS_FMT, right: true, width: 13 },
   { label: "Unplanned Visits", numFmt: UNITS_FMT, right: true, width: 13 },
   { label: "Unplanned Visit Days", numFmt: UNITS_FMT, right: true, width: 14 },
+  { label: "Interviews", numFmt: UNITS_FMT, right: true, width: 11 },
+  { label: "Interview Days", numFmt: UNITS_FMT, right: true, width: 12 },
   { label: "Leave Days (Approved/CRM)", numFmt: UNITS_FMT, right: true, width: 16 },
   { label: "Leave Days (Pending)", numFmt: UNITS_FMT, right: true, width: 14 },
   { label: "No Entry Days", numFmt: UNITS_FMT, right: true, width: 12 },
@@ -228,9 +250,9 @@ const SUMMARY_COLUMNS: TableColumn[] = [
 ];
 
 // 1-based column indexes into SUMMARY_COLUMNS that get severity banding after writeTable runs.
-const SUMMARY_COL_NO_ENTRY = 16;
-const SUMMARY_COL_NO_SIGNAL = 17;
-const SUMMARY_COL_CONFLICT = 18;
+export const SUMMARY_COL_NO_ENTRY = 18;
+export const SUMMARY_COL_NO_SIGNAL = 19;
+export const SUMMARY_COL_CONFLICT = 20;
 
 function summaryRowValues(row: CompanyActivityEmployeeSummary): CellValue[] {
   return [
@@ -247,6 +269,8 @@ function summaryRowValues(row: CompanyActivityEmployeeSummary): CellValue[] {
     row.totalCrmVisits,
     row.campaignVisits,
     row.campaignVisitDays,
+    row.interviewCount,
+    row.interviewDays,
     row.leaveApprovedDays,
     row.leavePendingDays,
     row.noEntryDays,
@@ -275,6 +299,7 @@ function addSummarySheet(workbook: ExcelJS.Workbook, report: CompanyActivityRepo
     "TOTAL", "", "", "", "", "", "",
     total((s) => s.workingDays), total((s) => s.officePresentDays), total((s) => s.crmFieldVisitDays), total((s) => s.totalCrmVisits),
     total((s) => s.campaignVisits), total((s) => s.campaignVisitDays),
+    total((s) => s.interviewCount), total((s) => s.interviewDays),
     total((s) => s.leaveApprovedDays), total((s) => s.leavePendingDays),
     total((s) => s.noEntryDays), total((s) => s.noSignalDays), total((s) => s.conflictDays),
     "", "",
@@ -320,6 +345,8 @@ const DETAIL_COLUMNS: TableColumn[] = [
   { label: "Visit Count", numFmt: UNITS_FMT, right: true, width: 10 },
   { label: "Unplanned Visits", numFmt: UNITS_FMT, right: true, width: 13 },
   { label: "Visit Details", width: 46 },
+  { label: "Interviews", numFmt: UNITS_FMT, right: true, width: 10 },
+  { label: "Interview Details", width: 46 },
   { label: "Office First Punch", width: 13 },
   { label: "Office Last Punch", width: 13 },
   { label: "Leave Status", width: 16 },
@@ -328,8 +355,8 @@ const DETAIL_COLUMNS: TableColumn[] = [
 ];
 
 // 1-based column indexes into DETAIL_COLUMNS that get banded after writeTable runs.
-const DETAIL_COL_OUTCOME = 6;
-const DETAIL_COL_CONFLICT = 15;
+export const DETAIL_COL_OUTCOME = 6;
+export const DETAIL_COL_CONFLICT = 17;
 
 function detailRowValues(input: {
   day: CompanyActivityDayRow;
@@ -347,6 +374,8 @@ function detailRowValues(input: {
     day.crmVisitCount,
     day.crmCampaignVisitCount,
     visitSummaryText(day),
+    day.interviewCount,
+    interviewSummaryText(day),
     minutesToClock(day.firstPunchMinutes),
     minutesToClock(day.lastPunchMinutes),
     day.leave?.status ?? "",
@@ -372,7 +401,7 @@ function addDailyDetailSheet(
     title: "Every employee, every day in range",
     note:
       "One row per employee per day in range, every day — including weekly-off, holidays, and days with nothing recorded — so no day is silently omitted. " +
-      "Visit Count and Unplanned Visits reconcile exactly with Cover's company-wide totals.",
+      "Visit Count and Unplanned Visits reconcile exactly with Cover's company-wide totals, and so does Interviews: every interview a person sat in is listed on its own day, whatever that day's outcome.",
   });
 
   const firstDataRow = 7;
@@ -410,9 +439,14 @@ function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport
     ["Unplanned Visits vs. Unplanned Visit Days", "\"Unplanned Visits\" sums every unplanned visit in range; \"Unplanned Visit Days\" counts the distinct days that had at least one. Read together, not as duplicates — e.g. 6 visits over 2 days (3/day, concentrated) reads very differently from 6 visits over 6 days (1/day, spread out), even though the visit total is identical. Cover states this comparison directly for the whole filtered roster."],
     ["CRM Field Visit", "A day with a real CRM-logged visit — either a Regular customer visit or one of the CP-type activities (Conference, Group Meeting, Campaign, Training, Meeting, Traveling, Health Day, and the vendor's undocumented-but-classified codes). Counted as proof of field work, the same rule the payroll digest engine uses."],
     ["CRM Leave (Annual Vacation)", "The CRM itself recorded an Annual Vacation entry that day, with no office punch and no CRM field visit — a CRM-confirmed leave signal, independent of whether a matching Phoenix leave request exists."],
+    ["Interview", "A working day whose only record is an interview this person sat in — the lead interviewer (unless they declined it) or a panel member on the recruitment interview calendar, or an interview recorded on their Phoenix CRM Interviews day. Ranked below an office punch, a CRM field visit and every leave signal, so it never hides one of them; above No Entry, because a day with an interview on record is not a day with nothing on it."],
+    ["Interviews / Interview Details", "Every interview in range, listed on its own day whatever that day's outcome — a weekly-off or holiday interview included — with the time (Cairo), the candidate, the role, the person's part (Lead interviewer, Panel, or Recorded on the Phoenix CRM Interviews day), the platform, the area and line, and the outcome when one was recorded. A manager an interview was only shared with did not sit in it, so it is not counted for them. A cancelled interview no longer exists and is not listed. A Phoenix CRM Interviews day itself is also shown in Visit Details as \"Interviews\"."],
+    ["Interview sources", report.interviewSourcesReachable
+      ? "The recruitment interview calendar and the Phoenix CRM day interviews were both read for this range."
+      : "The recruitment interview calendar or the Phoenix CRM day interviews could NOT be read for this export — interviews may be missing from this workbook. Export again to include them."],
     ["Office Present", "At least one fingerprint device punch was recorded for this employee on this day."],
     ["Leave Approved / Leave Pending", "From Phoenix's own leave requests (v2_vacation_requests), shown with their REAL status — Approved, Pending Manager, Pending HR, Submitted, or Needs Assignment — never collapsed to a payroll-style yes/no. A rejected or cancelled request is not shown as leave at all."],
-    ["No Entry", "A working day (not weekly-off, not a holiday, not in the future) with no office punch, no CRM visit, no device outage, and no leave request on record."],
+    ["No Entry", "A working day (not weekly-off, not a holiday, not in the future) with no office punch, no CRM visit, no interview, no device outage, and no leave request on record."],
     ["No Signal Available", "This employee has neither an active fingerprint device mapping nor a Phoenix CRM seat — the system has no way to observe them at all that day. Distinct from No Entry, which means the systems could see them and saw nothing."],
     ["Device Outage", "A company-wide fingerprint device/sync outage was detected for this date — no punch data is available for ANYONE that day, so an empty punch record here is not necessarily this employee's absence."],
     ["Conflict", "This day shows evidence of BOTH physical presence (an office punch or a real CRM field visit) AND a leave signal (CRM leave or a Phoenix leave request) covering the same date. Surfaced for review, never auto-resolved — this report exists to show what actually happened, not to make a payroll judgment."],
@@ -463,10 +497,14 @@ function buildCoverProvenance(report: CompanyActivityReport, rangeLabel: string)
         : `${totalCampaignVisits.toLocaleString("en-US")} unplanned visits`,
     ],
     ["Leave days", `${total((s) => s.leaveApprovedDays).toLocaleString("en-US")} approved/CRM, ${total((s) => s.leavePendingDays).toLocaleString("en-US")} pending`],
+    ["Interviews", `${total((s) => s.interviewCount).toLocaleString("en-US")} across ${total((s) => s.interviewDays).toLocaleString("en-US")} person-days (recruitment interview calendar and Phoenix CRM Interviews days)`],
     ["No entry days", `${total((s) => s.noEntryDays).toLocaleString("en-US")} (working days with nothing recorded at all)`],
     ["No signal days", `${total((s) => s.noSignalDays).toLocaleString("en-US")} (no device mapping and no Phoenix CRM seat)`],
     ["Conflict days", `${total((s) => s.conflictDays).toLocaleString("en-US")} (presence evidence AND a leave signal on the same date — review, never auto-resolved)`],
   ];
+  if (!report.interviewSourcesReachable) {
+    rows.push(["Interviews — NOT COMPLETE", "An interview source could not be read for this export; interviews may be missing. Export again."]);
+  }
   if (report.unmappedCrmVisitCount != null && report.unmappedCrmVisitCount > 0) {
     rows.push(["Unmapped CRM visits", `${report.unmappedCrmVisitCount.toLocaleString("en-US")} (company-wide CRM attribution blind spot — not limited to this filter)`]);
   }

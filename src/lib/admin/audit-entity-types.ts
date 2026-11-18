@@ -150,6 +150,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   phoenix_crm_integrity_export: true,
   phoenix_crm_list_template: true,
   phoenix_crm_list_template_import: true,
+  phoenix_crm_line_customer_list: true,
   phoenix_crm_reports_export: true,
   phoenix_crm_visit_report_export: true,
   phoenix_crm_visit_report_view: true,

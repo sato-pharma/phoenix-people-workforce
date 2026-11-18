@@ -40,6 +40,10 @@ export type CompanyActivityDayOutcome =
   | "office_present"
   | "crm_field_visit"
   | "crm_leave"
+  /** A working day whose only record is an interview the person sat in (the recruitment interview
+   * calendar, or a Phoenix CRM Interviews day). Ranked BELOW office presence, a CRM field visit and
+   * every leave signal, so it never hides one of them — see reconcile.ts. */
+  | "interview"
   | "leave_approved"
   | "leave_pending"
   | "device_outage"
@@ -78,6 +82,26 @@ export type CompanyActivityVisitDetail = {
   phoenix: PhoenixVisitDetail | null;
 };
 
+/** One interview a person sat in on one day — see interview-detail.ts. Names and words only, never an id. */
+export type CompanyActivityInterviewDetail = {
+  /** `calendar`: the recruitment interview calendar. `phoenix_crm`: an interview recorded on a Phoenix
+   * CRM Interviews day and not (or no longer) on the calendar. */
+  source: "calendar" | "phoenix_crm";
+  /** The instant it starts, for ordering only. */
+  startsAtIso: string;
+  /** Cairo wall-clock time, "10:30 – 11:00", or null when the record carries no time. */
+  timeLabel: string | null;
+  candidateName: string;
+  jobTitle: string | null;
+  /** Area · line, when the interview names them. */
+  where: string | null;
+  platform: string | null;
+  /** "Lead interviewer", "Panel", or "Recorded on the Phoenix CRM Interviews day". */
+  part: string;
+  /** What the interview came to (Attended, Shortlisted, Didn't come…), when recorded. */
+  outcome: string | null;
+};
+
 export type CompanyActivityLeaveDetail = {
   id: string;
   vacationType: string | null;
@@ -106,6 +130,9 @@ export type CompanyActivityDayRow = {
   hasOfficePunch: boolean;
   firstPunchMinutes: number | null;
   lastPunchMinutes: number | null;
+  /** Every interview this person sat in on this day — listed whatever the day's outcome. */
+  interviews: CompanyActivityInterviewDetail[];
+  interviewCount: number;
   leave: CompanyActivityLeaveDetail | null;
   /** True when this employee has neither an active fingerprint device mapping nor a Phoenix
    * CRM seat — "no signal available" is a distinct state from "nothing happened", never
@@ -141,6 +168,12 @@ export type CompanyActivityEmployeeSummary = {
   noEntryDays: number;
   noSignalDays: number;
   conflictDays: number;
+  /** Every interview in range, on any day (a weekly-off interview included). */
+  interviewCount: number;
+  /** Distinct days with at least one interview. */
+  interviewDays: number;
+  /** Working days whose ONLY record was an interview — the "interview" outcome. */
+  interviewOnlyDays: number;
 };
 
 export type CompanyActivityReport = {
@@ -156,4 +189,7 @@ export type CompanyActivityReport = {
   /** False when Google's holiday calendar could not be read for a month in the range: a Google Calendar outage keeps holidaySourceConnected true for any month holding a company or fixed-date public holiday (1 May, say) while both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter are missing (owner, 2026-09-16).
    * Those days then show as ordinary working days here. */
   holidayCalendarReachable: boolean;
+  /** False when the recruitment interview calendar or the Phoenix CRM day interviews could not be read —
+   * interviews may then be missing, and the screen and workbook say so instead of showing none. */
+  interviewSourcesReachable: boolean;
 };

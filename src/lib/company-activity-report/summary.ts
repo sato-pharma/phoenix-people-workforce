@@ -22,12 +22,19 @@ export function summarizeCompanyActivityEmployee(
   let noEntryDays = 0;
   let noSignalDays = 0;
   let conflictDays = 0;
+  let interviewCount = 0;
+  let interviewDays = 0;
+  let interviewOnlyDays = 0;
 
   for (const day of days) {
     totalCrmVisits += day.crmVisitCount;
     campaignVisits += day.crmCampaignVisitCount;
     if (day.crmCampaignVisitCount > 0) campaignVisitDays += 1;
     if (day.conflict) conflictDays += 1;
+    // Counted on EVERY day, a weekly-off or post-exit one included — an interview held is a record
+    // wherever it falls, and the Daily Detail lists it there.
+    interviewCount += day.interviewCount;
+    if (day.interviewCount > 0) interviewDays += 1;
     // Skips weekly_off/holiday/future AND "after_exit" (a day strictly after a terminal employee's
     // own lastWorkingDate — see reconcile.ts) alike: none of them are a working day expectation for
     // this employee, so none of them should inflate workingDays or fall into the outcome switch
@@ -49,6 +56,9 @@ export function summarizeCompanyActivityEmployee(
         break;
       case "leave_pending":
         leavePendingDays += 1;
+        break;
+      case "interview":
+        interviewOnlyDays += 1;
         break;
       case "no_signal":
         noSignalDays += 1;
@@ -82,5 +92,8 @@ export function summarizeCompanyActivityEmployee(
     noEntryDays,
     noSignalDays,
     conflictDays,
+    interviewCount,
+    interviewDays,
+    interviewOnlyDays,
   };
 }
