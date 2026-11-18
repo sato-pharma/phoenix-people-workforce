@@ -23,9 +23,12 @@
 // git-detached by another session's checkout, a branch auto-deleted mid-work by a second session
 // reusing its name, a swarm of sessions dropping a staged file.
 //
-// A WORKTREE THIS SESSION CREATED IS ITS OWN. "Own" used to mean CLAUDE_PROJECT_DIR alone, and a
-// desktop-app session is pinned to the `.claude/worktrees/<name>` folder it started in, so that
-// never moves. But AGENTS.md §5 sends a session to do its work in a fresh `_wt-<task>` made by
+// A WORKTREE THIS SESSION CREATED IS ITS OWN. "Own" used to mean the folder the session started in
+// alone, and a desktop-app session is pinned to the `.claude/worktrees/<name>` folder it started in,
+// so that never moves. (That folder is read from the payload by scripts/lib/session-folder.mjs, not
+// from CLAUDE_PROJECT_DIR: in the desktop app CLAUDE_PROJECT_DIR is the PRIMARY, and until
+// 2026-11-18 this guard therefore took the primary as every desktop session's own tree — every
+// worktree sits inside it — and allowed every write into every other session's worktree.) But AGENTS.md §5 sends a session to do its work in a fresh `_wt-<task>` made by
 // `node scripts/new-session.mjs <task>` — and until 2026-09-18 this guard denied Edit and Write on
 // every file of the worktree the session had just made, as "another session worktree". The only
 // way through was a Bash write, which this guard deliberately does not read; the session behind
@@ -82,6 +85,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import { gitLayout } from '../../scripts/lib/git-layout.mjs';
+import { sameFolder, sessionFolder } from '../../scripts/lib/session-folder.mjs';
 
 /** The claim `scripts/new-session.mjs` writes into the git admin folder of a worktree it creates. */
 export const CLAIM_FILE = 'phx-session-owner.json';
@@ -131,10 +135,14 @@ export function claimOwner(text) {
  * The session holding a LIVE lock, or null. Live is session-lock.mjs's own rule: the age of
  * `refreshedAt` (else `startedAt`) is finite and not over two hours. The lock's pid is never
  * consulted — it names the hook's own short-lived shell, so it proves nothing either way.
+ * A lock naming a `folder` other than `tree` is a copy (the desktop app copies the primary's
+ * gitignored .claude files into each new worktree) and names nobody, exactly as session-lock.mjs
+ * reads it; a lock with no `folder` was written by an older hook and is read as before.
  */
-export function liveLockHolder(text, now = Date.now()) {
+export function liveLockHolder(text, now = Date.now(), tree = null) {
   try {
     const lock = JSON.parse(text);
+    if (tree && typeof lock?.folder === 'string' && lock.folder && !sameFolder(lock.folder, tree)) return null;
     const holder = idOf(lock?.sessionId);
     const ageMs = now - Date.parse(lock?.refreshedAt || lock?.startedAt || '');
     return holder && Number.isFinite(ageMs) && ageMs <= LOCK_STALE_MS ? holder : null;
@@ -251,7 +259,7 @@ function gitTrees(dir) {
         others.push({
           path: tree,
           claimedBy: claimOwner(readText(join(base, entry, CLAIM_FILE))),
-          lockedBy: liveLockHolder(readText(join(tree, '.claude', 'session.lock'))),
+          lockedBy: liveLockHolder(readText(join(tree, '.claude', 'session.lock')), Date.now(), tree),
         });
       } catch {
         /* a half-removed worktree - skip it */
@@ -402,6 +410,11 @@ function selftest() {
   check('lock: undated belongs to nobody', liveLockHolder(lock({ sessionId: THEM }), NOW), null);
   check('lock: no session id names no holder', liveLockHolder(lock({ refreshedAt: '2026-09-18T11:59:00.000Z' }), NOW), null);
   check('lock: no file', liveLockHolder(null, NOW), null);
+  const fresh = { sessionId: THEM, refreshedAt: '2026-09-18T11:59:00.000Z' };
+  check('lock: its own folder is live', liveLockHolder(lock({ ...fresh, folder: WT }), NOW, WT), THEM);
+  check('lock: its own folder written with backslashes and other case', liveLockHolder(lock({ ...fresh, folder: WT.replace(/\//g, '\\').toUpperCase() }), NOW, WT), THEM);
+  check("lock: a copy of another folder's lock names nobody", liveLockHolder(lock({ ...fresh, folder: PRIMARY }), NOW, WT), null);
+  check('lock: no folder (an older hook) is read as before', liveLockHolder(lock(fresh), NOW, WT), THEM);
 
   // --- one rule each, not two copies that drift apart --------------------------
   const sibling = (relative) => {
@@ -463,9 +476,10 @@ function main() {
   const target = targetOf(input.tool_input);
   if (!target) return;
 
-  // CLAUDE_PROJECT_DIR is the session's OWN worktree — measured in all three layouts on this
-  // machine. The hook's cwd is not reliable for this: it follows whatever the last command did.
-  const sessionRoot = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  // The folder the session started in, read from the payload's transcript path
+  // (scripts/lib/session-folder.mjs). Not CLAUDE_PROJECT_DIR: that is the session's own worktree in
+  // the CLI but the PRIMARY in the desktop app. Not the hook's cwd: it follows the last command.
+  const sessionRoot = sessionFolder(input);
   const { linked, primary, root, others } = gitTrees(sessionRoot);
   const verdict = classify({
     target,

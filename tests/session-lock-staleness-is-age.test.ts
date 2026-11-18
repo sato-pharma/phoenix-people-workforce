@@ -235,15 +235,15 @@ function testTheHeartbeatIsWired() {
   // The command no longer expands the folder in the shell. That bash-only form ("$DIR" /
   // ${CLAUDE_PROJECT_DIR}) errored under any runtime that reads .claude/settings.json and does not
   // honour "shell": "bash" — it ran the raw string through cmd.exe / PowerShell, which cannot parse
-  // it, and denied every tool call. session-lock.mjs now resolves the folder from
-  // process.env.CLAUDE_PROJECT_DIR — the session's own worktree — so the isolation guarantee lives
-  // in the hook itself, not the command string. Read through `stripComments` (as the staleness scan
-  // at the top of this file does): the prose above this assertion names the variable, and so does
-  // the hook's own header, so a raw `includes` would stay green on a hook whose real read had been
-  // deleted and only its comment left behind.
+  // it, and denied every tool call. session-lock.mjs resolves the folder itself, so the isolation
+  // guarantee lives in the hook, not the command string. Since 2026-11-18 it reads the folder from the
+  // payload (scripts/lib/session-folder.mjs), because CLAUDE_PROJECT_DIR is the session's own worktree
+  // only in the CLI — in the desktop app it is the PRIMARY. tests/session-folder.test.ts drives that
+  // behaviour; this only refuses the old direct read coming back. Read through `stripComments`: the
+  // hook's own header names the variable while explaining why it is no longer read.
   assert.ok(
-    stripComments(readFileSync(HOOK, "utf8")).includes("process.env.CLAUDE_PROJECT_DIR"),
-    "session-lock.mjs must resolve its folder from CLAUDE_PROJECT_DIR — the session's own worktree",
+    !stripComments(readFileSync(HOOK, "utf8")).includes("process.env.CLAUDE_PROJECT_DIR"),
+    "session-lock.mjs must not take CLAUDE_PROJECT_DIR as the session's folder — in the desktop app it is the primary checkout",
   );
   const beat = entries("PreToolUse", "beat")[0];
   for (const tool of ["Bash", "PowerShell", "Edit", "Write"]) {

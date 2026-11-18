@@ -63,6 +63,7 @@ import path from "node:path";
 
 import { gitLayout } from "./lib/git-layout.mjs";
 import { linkNodeModules } from "./lib/link-node-modules.mjs";
+import { readHookPayload, sessionFolder } from "./lib/session-folder.mjs";
 import { sweepWorktrees, wasChanged, linkedNodeModules } from "./lib/provision-worktree.mjs";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -115,7 +116,15 @@ if (failOpen) {
 // file + `commondir` pointer git itself reads — instead of two `git rev-parse` processes, so a
 // session start in the PRIMARY now starts no process at all. gitLayout() returns null whenever the
 // layout cannot be read off disk (or GIT_DIR and friends are set), and then git still answers.
-const layout = gitLayout(process.cwd());
+// WHICH FOLDER THIS RUN IS ABOUT. By hand, the working directory. As a SessionStart hook (--hook,
+// --sweep-only), the session's own folder, read from the payload on stdin by
+// scripts/lib/session-folder.mjs: in the desktop app a hook runs with the PRIMARY as its working
+// directory, so until 2026-11-18 every desktop session's --hook printed "this IS the primary —
+// nothing to sync" and its worktree never got the primary's env files, while --sweep-only, whose one
+// promise is to leave the session's own folder alone, swept that folder like any other. With no
+// payload (a hand run of a hook mode, a test) the answer is the working directory, as before.
+const startDir = failOpen ? sessionFolder(readHookPayload(), { env: {} }) : process.cwd();
+const layout = gitLayout(startDir);
 let commonDir;
 let currentRoot;
 if (layout) {
@@ -123,12 +132,12 @@ if (layout) {
   currentRoot = layout.toplevel;
 } else {
   try {
-    commonDir = git(["rev-parse", "--git-common-dir"]);
+    commonDir = path.resolve(startDir, git(["rev-parse", "--git-common-dir"], { cwd: startDir }));
   } catch {
     fail("not inside a git repository.");
   }
   try {
-    currentRoot = git(["rev-parse", "--show-toplevel"]);
+    currentRoot = git(["rev-parse", "--show-toplevel"], { cwd: startDir });
   } catch {
     fail("could not resolve the current worktree root.");
   }
