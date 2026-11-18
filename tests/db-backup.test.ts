@@ -132,6 +132,11 @@ export async function runDbBackupTests() {
 
   const dockerfile = readFileSync("infra/code-backup/Dockerfile", "utf8");
   assert.match(dockerfile, /postgresql17-client/, "🔴 pg_dump refuses a server newer than itself, and production is PostgreSQL 17");
+  assert.match(
+    dockerfile,
+    /^FROM public\.ecr\.aws\/docker\/library\/alpine:[^\s@]+@sha256:[0-9a-f]{64}$/m,
+    "🔴 the backup image comes from AWS's copy of Docker Hub, pinned by digest: Railway's shared builders hit Docker Hub's anonymous 429 limit (Railway audit, 2026-11-18)",
+  );
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/nightly-backup"\]/, "the service runs both backups");
   assert.doesNotMatch(dockerfile, /^COPY[^\n]*restore-drill/m, "🔴 the script that decrypts is in the image that makes the backups");
 

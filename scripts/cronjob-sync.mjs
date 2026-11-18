@@ -812,7 +812,10 @@ const JOBS = {
   "background-jobs": {
     adopted: { jobId: 8200915 },
     title: "Phoenix — background jobs drain",
-    path: "/api/cron/background-jobs",
+    // The live job's address carries `?limit=10` (read on cron-job.org in the 2026-11-18 Railway audit). Jobs are
+    // matched on the exact URL, so without it every run reported this job MISSING while it ran each Friday.
+    // The route caps the limit at 10 and defaults to 10, so the query changes nothing it does.
+    path: "/api/cron/background-jobs?limit=10",
     // Fridays 03:00 Cairo (`0 3 * * 5`).
     schedule: { hours: [3], minutes: [0], mdays: [-1], months: [-1], wdays: [5] },
     requestTimeout: 300,

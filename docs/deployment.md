@@ -678,20 +678,16 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
 ## Deployment Workflow
 
 1. Develop on a branch/worktree, open a PR to `main`.
-2. `.github/workflows/ci.yml` declares three jobs that a PR could reach: `validate`
-   (routes/migrations/sql-backups/deductions/stale-domain checks, the unit suite, and on non-PR
-   events a build plus a Playwright login smoke test run against the built app **inside the CI
-   runner**, pointed at the staging Supabase project — it does not deploy or hit any live preview
-   URL), `checks` (lint and typecheck, folded into one job by #4527 on 2026-09-27 — `lint`,
-   `typecheck` and `test` are STEPS from then on, never job or check names) and `mobile` (`npm ci`
-   plus a typecheck inside `mobile/`, added 2026-09-18 and seconds long on a PR that leaves that
-   folder alone). 🔴 **On a pull request only the first two of those actually run** — `mobile`
-   carries `if: github.event_name != 'pull_request'` since 2026-09-29, and `secret-scan` in
-   `security-scan.yml` lost its `pull_request` trigger in the same change (gitleaks moved into
-   `bash-guard.mjs` clause C12, which refuses the push instead). So a PR's check list is `validate`
-   and `checks`, which is exactly the required pair. The smoke test used to be a separate
-   `preview-smoke` job; it now runs as a step inside `validate`, so there is no separate job to wait
-   on.
+2. `.github/workflows/ci.yml` (layout read 2026-11-18): `validate` (on a pull request one step that
+   says why and passes, since 2026-11-05 "Yes, skip the PR build"; on `main` and a dispatch the
+   two-process build plus the Playwright login smoke **inside the CI runner**, pointed at staging),
+   `static` (lint, typecheck and the offline gates), `unit` (the suite in two parallel parts),
+   `checks` (needs `static` and `unit`; refuses unless every test ran exactly once), `release-gate`
+   (needs `checks`, push to `main` only — writes the row `/api/readyz` waits for, "The release
+   gate"), `mobile` (never on a pull request) and `full-e2e` (a dispatch with `full_e2e` only).
+   The two required checks are `validate` and `checks`; read them live from branch protection, never
+   from here. `secret-scan` in `security-scan.yml` has no `pull_request` trigger (gitleaks is
+   `bash-guard.mjs` clause C12, which refuses the push instead).
 3. Do **not** run a local full validation before pushing — those PR checks are the gate, and they
    are the same steps. See AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
@@ -809,7 +805,8 @@ would fail that restart.
 
 **What it replaces, and what that changes.** Wait for CI also withheld a deploy for any failed or queued
 suite on the commit, scheduled workflows and Dependabot included (`engineering-deploys` rules). With the gate
-the deploy depends on exactly `validate` and `checks`. A red `mobile` job, a scheduled Security Scan that
+the deploy depends on exactly `checks` — `validate`, the CI build and login smoke, left the gate on
+2026-11-04 (owner: "Tests only") and sends a Telegram when it is red. A red `mobile` job, a scheduled Security Scan that
 happens to attach to `main` HEAD, or a failing `staging-migrate` no longer holds production; each still
 shows red where it always did. That is the intended narrowing, not a loss: those suites were never the
 checks the owner asked for, and the nine-minute hold on 16 Oct came from one of them.
@@ -1662,10 +1659,12 @@ immediately and with no further action: #6386 merged at 21:07 Cairo and staging 
 and `/api/healthz` returned `revision d7d10009…`, `/api/readyz` `ready` with `database: true`, and
 `/login` served its HTML — the environment had simply been nine days behind, not broken.
 
-🔴 **The project's four triggers, read live afterwards, are the whole wiring** — production for
-`phoenix-people-workforce`, `phoenix-workforce-worker` and `phoenix-headwind`, and staging for
+🔴 **The project's six triggers, read live in the 2026-11-18 Railway audit, are the whole wiring** —
+production for `phoenix-people-workforce`, `phoenix-workforce-worker`, `phoenix-workforce-robot`
+(14 Nov), `phoenix-headwind` and `phoenix-code-backup` (3 Nov), and staging for
 `phoenix-people-workforce`, every one on branch `main` with `checkSuites: false` (Wait for CI is off
-on both services since 2026-10-20 — "The release gate" above). `phoenix-cron` (`alpine:3`) and
+on every service since 2026-10-20 — "The release gate" above). It read four when this section was
+written on 2026-10-23. `phoenix-cron` (`alpine:3`) and
 `headwind-db-eu` (a postgres image) deploy from IMAGES and correctly have none.
 
 **What now catches it: `scripts/check-railway-deploy-triggers.mjs`, a fourth leg of the daily

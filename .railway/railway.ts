@@ -136,12 +136,10 @@ export default defineRailway(() => {
   // (/api/internal/mailbox-robot/*) — so a Chromium never opens beside the page server. It runs no
   // in-process scheduler and no database sampler (src/lib/platform/process-role.ts).
   //
-  // 🔴 IT DOES NOT EXIST UNTIL THE OWNER CREATES IT BY HAND, the way the worker was on 2026-10-16:
-  // dashboard → New → GitHub repo → this repository, named `phoenix-workforce-robot`, then its region
-  // moved to europe-west4-drams3a (a new service here starts in `sfo`), "Wait for CI" off, the
-  // healthcheck below, and a generated domain. This block was written to match that, and
-  // `scripts/railway-iac-preapply-check.mjs` REFUSES any apply that includes it until the service exists
-  // (it cannot read its variables). docs/deployment.md, "The robot service", has the order.
+  // IT EXISTS SINCE 14 Nov 2026 (read live in the 2026-11-18 Railway audit: europe-west4-drams3a, one
+  // replica, "Wait for CI" off, healthcheck /api/readyz with the 900 s window, role `robot`). It was made by
+  // hand the way the worker was on 2026-10-16, and this block was written to match it; how it was made is
+  // in docs/deployment.md, "The robot service".
   //
   // Variables: ONLY what the robots, their heartbeat and /api/readyz read. As on the worker, every one but
   // PHOENIX_PROCESS_ROLE (=robot) is set as a Railway reference to the website's own
@@ -205,7 +203,10 @@ export default defineRailway(() => {
     env: { DATABASE_URL: preserve(), PGDATA: preserve(), PGDATABASE: preserve(), PGHOST: preserve(), PGPASSWORD: preserve(), PGPORT: preserve(), PGUSER: preserve(), POSTGRES_DB: preserve(), POSTGRES_PASSWORD: preserve(), POSTGRES_USER: preserve(), SSL_CERT_DAYS: preserve() },
   });
 
+  // 🔴 EVERY service declared above is listed here. `.railway/README.md`: "ordinary whole-project applies can
+  // delete omitted resources", and `phoenixCodeBackup` was declared but missing from this list until the
+  // 2026-11-18 Railway audit — one whole-project apply away from deleting the nightly backups.
   return project("Phoenix-HR-Workforce", {
-    resources: [phoenixCron, phoenixPeopleWorkforce, phoenixWorkforceWorker, phoenixWorkforceRobot, phoenixHeadwind, headwindDbEu, headwindDbEuVolume, phoenixHeadwindVolume],
+    resources: [phoenixCron, phoenixPeopleWorkforce, phoenixWorkforceWorker, phoenixWorkforceRobot, phoenixHeadwind, phoenixCodeBackup, headwindDbEu, headwindDbEuVolume, phoenixHeadwindVolume],
   });
 });
