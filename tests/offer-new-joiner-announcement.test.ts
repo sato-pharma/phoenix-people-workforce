@@ -9,6 +9,7 @@ import {
   NEW_JOINER_MODULE,
   newJoinerDetails,
   pickHeadOfficeAudience,
+  pickNewJoinerAudience,
   renderNewJoinerAnnouncement,
   type NewJoinerDirectoryRow,
 } from "../src/lib/offers/new-joiner-announcement.ts";
@@ -69,6 +70,44 @@ export function runNewJoinerAnnouncementTests() {
     ["A-8", "A-9", "AA", "B-10", "B-155"],
     "Head Office is the line (CEO included) plus the marketers reporting into it — never the field force, never the new hire",
   );
+
+  // ── 1b. Plus the new joiner's OWN managers up the line — never the rest of the line ─────────
+  // His example (18 Nov 2026): a Cairo Pedia rep → his DM, … and Ali Mohamed Ali, the Pedia National
+  // Sales Manager; "if Anti Infective the same but not Ali"; "never the whole Pedia line".
+  const lineRows: NewJoinerDirectoryRow[] = [
+    ...rows,
+    person({ hrId: "A-12", jobTitle: "National Sales Manager", lineId: 2, managerHrId: "AA" }),
+    person({ hrId: "PR-1", jobTitle: "Regional Sales Manager", lineId: 2, managerHrId: "A-12" }),
+    person({ hrId: "PD-1", jobTitle: "District Manager", lineId: 2, managerHrId: "PR-1" }),
+    person({ hrId: "PM-1", jobTitle: "Medical Representative", lineId: 2, managerHrId: "PD-1" }),
+    person({ hrId: "PD-2", jobTitle: "District Manager", lineId: 2, managerHrId: "PR-2" }),
+  ];
+  const audienceFor = (hire: NewJoinerDirectoryRow, chainRows?: NewJoinerDirectoryRow[]) =>
+    pickNewJoinerAudience(lineRows, { chainRows, hire, isHeadOffice }).map((row) => row.hrId).sort();
+  const headOffice = ["A-8", "A-9", "AA", "B-10", "B-155", "B-200"];
+  assert.deepEqual(
+    audienceFor(person({ hrId: "PM-9", jobTitle: "Medical Representative", lineId: 2, managerHrId: "PD-1" })),
+    [...headOffice, "A-12", "PD-1", "PR-1"].sort(),
+    "a Pedia rep's announcement reaches Head Office and his DM, RSM and NSM — never a colleague rep on the line",
+  );
+  assert.deepEqual(
+    audienceFor(person({ hrId: "AI-9", jobTitle: "Medical Representative", lineId: 1, managerHrId: "D-1" })),
+    [...headOffice, "D-1", "N-1"].sort(),
+    "an Anti Infective rep's announcement reaches its own DM and NSM — not Ali, the Pedia NSM",
+  );
+  // A vacant seat in the chain is walked through (its leaver's pointer), never added.
+  const leaver = person({ hrId: "PR-2", jobTitle: "Regional Sales Manager", lineId: 2, managerHrId: "A-12" });
+  assert.deepEqual(
+    audienceFor(person({ hrId: "PM-8", jobTitle: "Medical Representative", lineId: 2, managerHrId: "PD-2" }), [...lineRows, leaver]),
+    [...headOffice, "A-12", "PD-2"].sort(),
+    "a vacant regional seat does not cut the National Sales Manager off, and the leaver is not emailed",
+  );
+  // A loop in manager pointers still ends.
+  const looped = pickNewJoinerAudience(
+    [...lineRows, person({ hrId: "L-1", jobTitle: "District Manager", lineId: 3, managerHrId: "L-2" }), person({ hrId: "L-2", jobTitle: "District Manager", lineId: 3, managerHrId: "L-1" })],
+    { hire: person({ hrId: "L-9", lineId: 3, managerHrId: "L-1" }), isHeadOffice },
+  ).map((row) => row.hrId);
+  assert.ok(looped.includes("L-1") && looped.includes("L-2"), "a manager loop is walked once and ends");
 
   // ── 2. What it says ─────────────────────────────────────────────────────────────────────────
   const hire = person({
@@ -131,6 +170,10 @@ export function runNewJoinerAnnouncementTests() {
     "the announcement goes out after the record and its hand-off, never before",
   );
   const announcer = flat("src/lib/offers/new-joiner-announcement.ts");
+  assert.ok(
+    announcer.includes("pickNewJoinerAudience(active, { chainRows: everyone, hire, isHeadOffice })"),
+    "the send reaches Head Office AND the new joiner's managers, walking leavers' seats",
+  );
   assert.ok(announcer.includes("idempotencyKey: `${NEW_JOINER_EVENT_TYPE}:${offerId}`"), "once per offer");
   assert.ok(announcer.includes("fanoutToBcc: true"), "the addresses go in BCC, so a reply never reaches the whole team");
   assert.ok(announcer.includes("to.length > NEW_JOINER_MAX_RECIPIENTS"), "an audience the size of the company is refused");

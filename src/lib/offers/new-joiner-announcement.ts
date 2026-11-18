@@ -14,6 +14,8 @@
  * reaches it (the Product Managers filed on a product line who report to the Marketing Manager —
  * the same rule the organogram's Head Office branch uses). The new hire is never sent their own
  * announcement. Measured on production 18 Nov 2026: 15 on the line + 2 marketers = 17 people.
+ * PLUS the new joiner's own managers up the line (District, Regional, National Sales Manager) —
+ * never the rest of that line (owner, same day: "never the whole Pedia line").
  * Above NEW_JOINER_MAX_RECIPIENTS the send is REFUSED and logged — a definition that suddenly
  * reaches the field force must never email the company.
  *
@@ -97,6 +99,42 @@ export function pickHeadOfficeAudience(
     .map(([, row]) => row);
 }
 
+/**
+ * Who is told about a new joiner (owner, 18 Nov 2026, his example: a Cairo Pedia rep is hired → his
+ * DM, SFE, Training Manager, HR, Finance, the CEO, the QPPV, Rasha Sabry, Ahmed Sharaf, Hossam Reda
+ * and Ali Mohamed Ali, the Pedia National Sales Manager; "if Anti Infective the same but not Ali";
+ * "never the whole Pedia line"): the Head Office team, plus the new joiner's OWN managers up the
+ * line — District, Regional, National Sales Manager — walked by manager pointer until the CEO.
+ * Never their colleagues on the line, never the hire. `chainRows` may hold leavers so a vacant seat
+ * in the chain is walked through, but only ACTIVE managers are added. PURE.
+ */
+export function pickNewJoinerAudience(
+  activeRows: readonly NewJoinerDirectoryRow[],
+  options: {
+    chainRows?: readonly NewJoinerDirectoryRow[];
+    hire: NewJoinerDirectoryRow;
+    isHeadOffice: (row: NewJoinerDirectoryRow) => boolean;
+  },
+): NewJoinerDirectoryRow[] {
+  const keyOf = (hrId: string | null | undefined) => canonicalHrIdKey(hrId) ?? "";
+  const audience = new Map<string, NewJoinerDirectoryRow>();
+  for (const row of pickHeadOfficeAudience(activeRows, { isHeadOffice: options.isHeadOffice, newHireHrId: options.hire.hrId })) {
+    audience.set(keyOf(row.hrId), row);
+  }
+  const active = new Map(activeRows.map((row) => [keyOf(row.hrId), row] as const));
+  const anyone = new Map((options.chainRows ?? activeRows).map((row) => [keyOf(row.hrId), row] as const));
+  const seen = new Set<string>([keyOf(options.hire.hrId)]);
+  let managerKey = keyOf(options.hire.managerHrId);
+  while (managerKey && !seen.has(managerKey)) {
+    seen.add(managerKey);
+    const manager = active.get(managerKey) ?? anyone.get(managerKey);
+    if (!manager || CEO_TITLE.test(manager.jobTitle ?? "")) break;
+    if (active.has(managerKey)) audience.set(managerKey, manager);
+    managerKey = keyOf(manager.managerHrId);
+  }
+  return Array.from(audience.values());
+}
+
 function stated(value: string | null | undefined, fallback: string): string {
   const text = String(value ?? "").trim();
   return text.length > 0 ? text : fallback;
@@ -153,7 +191,7 @@ export function renderNewJoinerAnnouncement(details: NewJoinerDetails): { html: 
       `and joins Sato Pharma as <strong>${escapeHtml(details.jobTitle)}</strong>.</p>` +
       table +
       "<p>Please make our new colleague feel welcome. We wish them every success in the new role.</p>",
-    footnote: "Sent automatically to the Head Office team when a new joiner accepts their job offer.",
+    footnote: "Sent automatically to the Head Office team and the new joiner's managers when a new joiner accepts their job offer.",
     kicker: "New joiner",
     signOff: "Human Resources",
     subject,
@@ -206,7 +244,7 @@ export async function announceNewJoinerToHeadOffice(input: {
 
     const isHeadOffice = (row: NewJoinerDirectoryRow) => isHeadOfficeRow({ lineId: row.lineId, lineName: row.lineName });
     const active = everyone.filter((row) => directory.isActiveLifecycleStatus(row.employmentStatus));
-    const audience = pickHeadOfficeAudience(active, { isHeadOffice, newHireHrId: input.hrId });
+    const audience = pickNewJoinerAudience(active, { chainRows: everyone, hire, isHeadOffice });
     const to = Array.from(
       new Set(
         audience
