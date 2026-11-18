@@ -83,7 +83,7 @@
 // FAILS OPEN: any parse/logic error exits 0 (allow). A hook bug must never block a real command.
 import { exec, execFile, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { freemem, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1374,8 +1374,8 @@ try {
       // The refusal used to stop at "push the branch", which is no answer for a session with no PR
       // yet — so it reached for the stand-down printed under it and froze the laptop, or gave up
       // (owner, 2026-11-18: "fix this blockage"). It now hands over the two commands that DO answer,
-      // with this machine's live free RAM, so the stand-down reads as the risk it is.
-      const freeMb = Math.round(freemem() / 1048576);
+      // and says what the stand-down costs. Never print the LIVE free RAM here: the dispatcher's test
+      // requires this answer byte-identical across two runs, and a moving figure reddened it (PR 529).
       deny(
         'A local typecheck is refused on this machine - it does not fail, it gets KILLED, and silently. ' +
           '`tsc` over this repo needs 4.0-4.5 GB of heap; node\'s own default ceiling is about 4.1 GB, and ' +
@@ -1389,8 +1389,8 @@ try {
           'It reads the open PR\'s own CI run for this commit, or starts ONE ci.yml run when there is no ' +
           'PR yet, and exits 0 PASS, 1 FAIL, 2-9 NO VERDICT (never a pass). The PR\'s required `checks` ' +
           'job runs the same typecheck cold and is what blocks the merge (AGENTS.md §7).\n' +
-          `Free RAM right now: ${freeMb.toLocaleString('en-US')} MB - under ~6,000 MB the stand-down below ` +
-          'freezes the laptop, so use it only for a one-off you will sit and watch:\n' +
+          'The stand-down below freezes the laptop unless about 6,000 MB of RAM is free - read free RAM ' +
+          'first, and use it only for a one-off you will sit and watch:\n' +
           `  ${once}`,
       );
     }
