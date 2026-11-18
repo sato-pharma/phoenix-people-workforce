@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 21f0c779-a0cb-4588-acf8-2bc3502486eb
-  modified: 2026-11-18T21:41:55.699Z
+  modified: 2026-11-18T22:07:49.908Z
 ---
 
 On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid out in HTML/CSS with cut-out can photos, a baby photo and a teal field. The owner scored them 0/10, 2/10 and 0.5/10. His complaints, picked from a multiple-choice question: "looks cheap / like a webpage", "cans look pasted on", "two halves don't connect", and "back page is a boring table". He then picked "ChatGPT hero image" as the base for the next version.
@@ -55,6 +55,12 @@ On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid
   - The "A"'s foot runs off the white onto the magenta end.
   - The centre fades to grey on the left, the yellow "a" is faint, and the letters are soft at flyer size.
   - **How to apply:** this time it was his own ask, so the badge may change. The route is the ChatGPT image (references in `Downloads\Lacto-Advanced-logo-reference.png` and `...-badge-closeup.png`). Fit the result onto `logo-nobadge.png` at the old tilt, and show it on the whole page, both sides, before packaging anything. Never redraw the badge myself again.
+- **The ChatGPT badge failed (19 Nov 2026, ~00:05 Cairo).** He answered "awful logo he created". So I repaired the stock badge in place, with the letters left untouched, in `repair_badge3.py 18 <out> crescent`, and showed it on E, both sides, before building anything. The repair:
+  - The pink and sky ends are crescents that follow the rounded rim, 18 px wide at mid height and 10 px clear of the A and the d. The centre is flat white.
+  - The rim is one flat silver `#B5B6B7`. The darker line under part of its top was the old box's edge, so it went with the box.
+  - The brand's letters were un-blended from the old grey ground; none of their solid pixels changed.
+  - Traps I hit: a slanted cut leaves white corners; square caps read as thin strips; the 10 px rim eats a shift taken from the OUTER edge; a band taken as `inside × (1 − shifted inside)` leaves hairlines under the straight rim, so take the DIFFERENCE of smooth coverage; the outer edge pixel keeps the old darker rim unless it is re-coloured.
+  - Output: `Downloads\Lacto-Advanced-logo-repaired-badge.png`, previews `...-badge-repair-preview.png` and `...-badge-repair-closeup.png`. His verdict was pending when this was written.
 - **Print check that works on this laptop:** Windows ships `C:\Windows\System32\spool\drivers\color\RSWOP.icm`, an old US SWOP press profile. `print_check_v17.py` soft-proofs flat colours with it and reports the effective dpi of every picture.
   - Two colours were outside what a press can print: the stage-2 blue `#3848B8` (ΔE 7.3) and the pale aqua labels `#A8EBDD` (ΔE 6.2). They became `#334B9E` and `#A9D8CC`.
   - Dark teals and the ink colour read flatter through RSWOP. This is a press limit and cannot be confirmed without the printer's own profile.

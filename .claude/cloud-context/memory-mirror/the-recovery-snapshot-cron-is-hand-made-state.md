@@ -29,6 +29,8 @@ history), and **it is guarded on `pg_extension`**, so it warns instead of failin
 is absent — which matters beyond tidiness, because a failing `staging-migrate` withholds the
 production deploy. It does **not** install the extension.
 
+**STALE since 2026-10-08 — staging HAS `pg_cron` and runs the store (7 `cron.job` rows on
+2026-11-18, still no retention job; `.claude/rules/database.md`).** As written before that:
 **Staging has never run it at all** — `pg_cron` is not installed there, so `cron.job` does not
 exist, `recovery.snapshot_runs` holds 0 rows and all 7 tables read 0 snapshots. That is what the
 nightly `migration-drift-check` reports; it is **staging-only and not a production fault**, though
