@@ -56,7 +56,8 @@ export async function runWorkerOnlyCronRoutesTests() {
   // ── cronjob-sync: the adopted jobs, and that adopted means never written ──────────────────────
   assert.equal(WORKER, "https://phoenix-workforce-worker-production.up.railway.app", "the worker is Railway's again (23 Oct, owner)");
   const adopted: Record<string, { base: string; jobId: number; path: string }> = {
-    "background-jobs": { base: PROD, jobId: 8200915, path: "/api/cron/background-jobs" },
+    // `?limit=10` is on the live job's address (2026-11-18 Railway audit); without it the exact-URL match reported MISSING.
+    "background-jobs": { base: PROD, jobId: 8200915, path: "/api/cron/background-jobs?limit=10" },
     "inbound-intake": { base: WORKER, jobId: 8200920, path: "/api/cron/inbound-intake" },
     "process-notifications": { base: WORKER, jobId: 8200914, path: "/api/notifications/process?limit=50" },
     "recruitment-email-intake": { base: WORKER, jobId: 8200919, path: "/api/cron/recruitment-email-intake" },

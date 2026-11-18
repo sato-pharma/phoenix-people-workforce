@@ -89,15 +89,31 @@ export async function runReleaseGateTests(): Promise<void> {
   assert.deepEqual(resolveReleaseGateScope({}, null), { required: false, reason: "not_production_railway" }, "a laptop or CI has no Railway environment");
 
   assert.deepEqual(
-    resolveReleaseGateScope(PRODUCTION, SHA),
+    resolveReleaseGateScope({ RAILWAY_ENVIRONMENT_NAME: "production", RAILWAY_GIT_COMMIT_SHA: undefined }, SHA),
     { required: false, reason: "urgent_upload" },
     "the urgent `railway up` route carries no git sha and skips the checks by the owner's own words, so it is never held",
   );
   assert.deepEqual(
-    resolveReleaseGateScope({ RAILWAY_ENVIRONMENT_NAME: "production", RAILWAY_GIT_COMMIT_SHA: undefined }, SHA),
+    resolveReleaseGateScope({ RAILWAY_ENVIRONMENT_NAME: "production", RAILWAY_GIT_COMMIT_SHA: "  " }, SHA),
     { required: false, reason: "urgent_upload" },
-    "the urgent route is recognised by its marker BEFORE the missing commit is looked at — it never relied on no_commit",
+    "a blank commit with the marker is still the urgent upload — it never relied on no_commit",
   );
+  // 🔴 A MARKER ON A GIT BUILD IS IGNORED (Railway audit, 2026-11-18). A `public/urgent-deploy.json` committed by
+  // mistake rides along in every git build after it; read first, it opened the gate for a merge whose checks had
+  // not passed. A container that has a git commit is held to THAT commit, marker or not.
+  assert.deepEqual(
+    resolveReleaseGateScope(PRODUCTION, SHA),
+    { required: true, sha: SHA, malformed: false },
+    "🔴 a git build that happens to carry the urgent marker must stay HELD to its own commit — never urgent_upload",
+  );
+  clearReleaseGateCache();
+  const strayMarker = reader(false);
+  assert.deepEqual(
+    await evaluateReleaseGate({ env: PRODUCTION, urgentRevision: "fedcba9876543210fedcba9876543210fedcba98", hasRecord: strayMarker.hasRecord }),
+    { required: true, passed: false, reason: "not_recorded", sha: SHA },
+    "🔴 /api/readyz must answer NOT ready for a git build with a stray marker until CI records ITS commit",
+  );
+  assert.equal(strayMarker.calls, 1, "the stray-marker build is looked up like any other git build");
   // 🔴 FAIL CLOSED ON A MISSING COMMIT (audit P6-03 / D-03, 2026-10-23). Production with no commit and no urgent
   // marker used to be `required: false` — a hand `railway up`, or an image that lost its ENV layer, took traffic
   // with no checks at all. Nothing CI records can ever match it, so it is held.
@@ -180,7 +196,7 @@ export async function runReleaseGateTests(): Promise<void> {
   clearReleaseGateCache();
   for (const [env, urgent] of [
     [{ RAILWAY_ENVIRONMENT_NAME: "staging", RAILWAY_GIT_COMMIT_SHA: SHA }, null],
-    [PRODUCTION, SHA],
+    [{ RAILWAY_ENVIRONMENT_NAME: "production" }, SHA],
     [{ ...PRODUCTION, PHOENIX_RELEASE_GATE: "off" }, null],
     [{ ...PRODUCTION, RAILWAY_GIT_COMMIT_SHA: "short" }, null],
     [{ RAILWAY_ENVIRONMENT_NAME: "production" }, null],

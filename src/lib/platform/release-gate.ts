@@ -7,9 +7,10 @@
 // stop an unchecked build is the healthcheck Railway asks of a NEW container before it moves traffic: the
 // old version keeps serving until that answers 2xx, and a deploy whose probe never does is marked failed.
 // /api/readyz therefore answers 503 until a row for this container's own commit exists in release_gates,
-// and the last job of ci.yml writes that row only after `validate` and `checks` (the two required checks)
-// both passed. Nothing is skipped: the checks still run on every merge, the deploy still cannot go live
-// without them, and a red check leaves the old version serving.
+// and ci.yml's `release-gate` job writes that row only after `checks` (lint, typecheck and the whole suite)
+// passed. `validate`, the CI build and login smoke, waited too until 2026-11-04 (owner: "Tests only"); it
+// still runs on `main` and alerts when red. Nothing is skipped: the checks still run on every merge, the
+// deploy still cannot go live without them, and a red check leaves the old version serving.
 //
 // FAIL CLOSED. A production container whose row cannot be read is NOT ready, and neither is one that names
 // no commit at all (a hand `railway up` with no urgent marker, an image deploy that lost its ENV layer): there
@@ -89,9 +90,16 @@ export function resolveReleaseGateScope(
   if (String(env.PHOENIX_RELEASE_GATE ?? "").trim().toLowerCase() === "off") {
     return { required: false, reason: "switched_off" };
   }
-  if (urgentRevision) return { required: false, reason: "urgent_upload" };
   const sha = String(env.RAILWAY_GIT_COMMIT_SHA ?? "").trim().toLowerCase();
-  if (sha === "") return { required: true, sha: null, reason: "no_commit" };
+  // 🔴 THE URGENT MARKER COUNTS ONLY ON A CONTAINER WITH NO GIT COMMIT (Railway audit, 2026-11-18). The urgent
+  // route's `railway up` carries no RAILWAY_GIT_COMMIT_SHA, so that is the only container the marker can mean.
+  // Read first, the marker opened the gate for ANY build that had the file — a `public/urgent-deploy.json`
+  // committed by mistake would have served a normal merge with no checks, and the one test that refuses the
+  // file runs inside the very checks the marker made irrelevant. A git build is held to its own commit.
+  if (sha === "") {
+    if (urgentRevision) return { required: false, reason: "urgent_upload" };
+    return { required: true, sha: null, reason: "no_commit" };
+  }
   return { required: true, sha, malformed: !FULL_SHA.test(sha) };
 }
 
