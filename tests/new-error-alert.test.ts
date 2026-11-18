@@ -100,6 +100,27 @@ function signatureTests() {
     newErrorSignature({ message: "Minified React error #423; visit https://react.dev/errors/423", source: "client" }),
     "an error code names the error: two codes are two errors",
   );
+  // A status or error code names the error in every spelling it arrives in — a colon, a quoted JSON key, the HTTP
+  // version — so a harmless first one never silences a serious sibling.
+  for (const [first, second] of [
+    ["Request failed, status: 403", "Request failed, status: 500"],
+    ["HTTP/1.1 502 Bad Gateway", "HTTP/1.1 504 Bad Gateway"],
+    ['{"code":"42501","message":"denied"}', '{"code":"23505","message":"denied"}'],
+    ["Upstream answered status 403", "Upstream answered status 500"],
+  ] as const) {
+    assert.notEqual(
+      newErrorSignature({ message: first, source: "server" }),
+      newErrorSignature({ message: second, source: "server" }),
+      `two codes are two errors: ${first} / ${second}`,
+    );
+  }
+  // And an id after `#` is a record, not an error number: only a React-sized number (up to three digits) is kept,
+  // so a message that carries a long id is one error, not one Telegram per record.
+  assert.equal(
+    newErrorSignature({ message: "Request #48210 failed", source: "server" }),
+    newErrorSignature({ message: "Request #48211 failed", source: "server" }),
+    "a long id after # is folded like any other id",
+  );
   assert.notEqual(
     newErrorSignature({ message: "permission denied for table some_very_long_table_name_alpha", source: "server" }),
     newErrorSignature({ message: "permission denied for table some_very_long_table_name_bravo", source: "server" }),

@@ -23,6 +23,7 @@ import {
   buildMedicalInsuranceActions,
   buildPolicyYearCost,
   employeeCoverWindow,
+  isActiveEmploymentStatus,
   planFamilyMove,
   plannedLinesTotal,
   type EmployeeFacts,
@@ -169,6 +170,16 @@ function testEveryoneBelongsFromDayOneAndTheRecordDecidesTheEnd() {
   assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "placeholder" }), POLICY), null, "a placeholder is nobody");
   assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "resigned", exitDay: "2026-10-15" }), POLICY), null, "left before the policy");
   assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: "resigned" }), POLICY), null, "left with no day on record");
+  // The other two ways an exit is recorded: a contract not renewed, and the resignation workflow's own `inactive`.
+  // Each leaves a day on record and is covered to it — never read as "not an employee" and refunded from day one.
+  for (const status of ["not_renewed", "inactive"]) {
+    assert.deepEqual(
+      employeeCoverWindow(employee({ active: false, employmentStatus: status, exitDay: "2026-11-20" }), POLICY),
+      { from: POLICY.startsOn, until: "2026-11-20" },
+      `${status} with a last working day: covered until it`,
+    );
+    assert.equal(employeeCoverWindow(employee({ active: false, employmentStatus: status }), POLICY), null, `${status} with no day on record cannot be placed`);
+  }
   assert.deepEqual(employeeCoverWindow(employee({ exitDay: "2026-12-15" }), POLICY), { from: POLICY.startsOn, until: "2026-12-15" }, "serving notice: covered until they go");
 }
 
@@ -264,6 +275,42 @@ function testSomeoneWhoDeclinesIsExcluded() {
   assert.match(actionsSource, /decision: "keep_out", hrId: action.hrId, reason: DECLINED_REASON/, "the Exclude press records a keep-off exception with the decline reason");
   const membersSource = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-members.tsx", "utf8"));
   assert.match(membersSource, /action: "end", coverageEnd: member.coverageStart, endReason: declined, keepOut: true/, "excluding someone on the register ends them from their first day and keeps them off");
+}
+
+/**
+ * The three service fixes that rode on a review, each pinned so reverting it turns something red:
+ *   1. an employee on leave is still an employee (the lifecycle set, not the literal "active");
+ *   2. Exclude/keep-out is refused for someone with an open row, and a reinstate is refused when another open row exists;
+ *   3. Put back and Add someone both revoke a live keep_out, each with its own audit row, and Put back revokes FIRST.
+ * (1) is behaviour; the rest is database work no unit can run, so the service's own text is held to its order.
+ */
+function testTheServiceFixesCannotBeRevertedQuietly() {
+  for (const status of ["active", "on_leave", " Active ", "", null, undefined]) {
+    assert.equal(isActiveEmploymentStatus(status), true, `${JSON.stringify(status)} is someone who works here`);
+  }
+  for (const status of ["resigned", "terminated", "not_renewed", "inactive", "declined_offer", "placeholder"]) {
+    assert.equal(isActiveEmploymentStatus(status), false, `${status} is not`);
+  }
+  const service = stripComments(readFileSync("src/lib/medical-insurance/service.ts", "utf8"));
+  assert.match(service, /active: isActiveEmploymentStatus\(row\.employmentStatus\),/, "the register reads an employee on leave as active");
+
+  const guardStart = service.indexOf("export async function addMedicalInsuranceException(");
+  const guard = service.slice(guardStart, service.indexOf("export async function revokeMedicalInsuranceException("));
+  assert.match(guard, /if \(input\.decision === "keep_out"\) \{[\s\S]*?\.is\("coverage_ends_on", null\)[\s\S]*?already on the register/, "a bare keep_out is refused for someone with an open row");
+
+  const reinstate = service.slice(service.indexOf('input.action === "reinstate"'), service.indexOf('const coverageStart = cleanDay(input.coverageStart, "The start of cover") ?? member.coverage_starts_on;'));
+  const precheck = reinstate.indexOf('.neq("id", memberId)');
+  const keepOut = reinstate.indexOf("revokeLiveKeepOuts(access, policy.id, member.hr_id");
+  const familyBack = reinstate.indexOf('.eq("principal_member_id", memberId)');
+  const reopen = reinstate.indexOf('.eq("id", memberId)');
+  assert.ok(precheck > -1 && keepOut > -1 && familyBack > -1 && reopen > -1, "the reinstate keeps its open-row check, its keep_out revoke, its family and its own reopen");
+  assert.ok(precheck < keepOut && keepOut < familyBack && familyBack < reopen, "an open-row refusal, then the keep_out, then the family, then the row — a failure never leaves an open row beside a live keep_out");
+
+  const helper = service.slice(service.indexOf("async function revokeLiveKeepOuts("), service.indexOf("export async function addMedicalInsuranceException("));
+  assert.match(helper, /\.eq\("decision", "keep_out"\)[\s\S]*?\.is\("revoked_at", null\)/, "only a live keep_out is revoked, and it stays on the table");
+  assert.match(helper, /for \(const row of revoked\) \{\s*await writeRequiredAuditLog\(/, "each revoked exception leaves its own audit row, as the Exceptions tab's Remove does");
+  const add = service.slice(service.indexOf("export async function addMedicalInsuranceMember("), service.indexOf("export type UpdateMemberInput"));
+  assert.ok(add.indexOf('.from("medical_insurance_members")\n    .insert(') < add.indexOf("revokeLiveKeepOuts(access, policy.id, hrId"), "Add someone revokes the keep_out only AFTER the row is in, so a refused add keeps the exclusion");
 }
 
 /** The contract's age limits: over 64 for an employee or spouse, over 18 for a child, and no birth date. */
@@ -617,6 +664,7 @@ export async function runMedicalInsuranceTests() {
   testFamilyFollowTheirEmployee();
   testSomeoneIsPutUnderAnEmployeeWithTheirFamily();
   testSomeoneWhoDeclinesIsExcluded();
+  testTheServiceFixesCannotBeRevertedQuietly();
   testALateJoinerIsCoveredFromTheDayTheyJoin();
   testEachEmployeeShowsTheirHrNumberHireDayLineAndArea();
   testTheContractsAgeLimitsAreReviewed();

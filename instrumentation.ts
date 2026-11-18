@@ -11,6 +11,7 @@ import type { Instrumentation } from "next";
 import { isBenignClientDisconnect } from "@/lib/error-monitor/benign-disconnect";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { isModuleLockRefusal } from "@/lib/error-monitor/expected-refusal";
+import { SERVER_FORWARD_PROOF_HEADER, signServerErrorForward } from "@/lib/error-monitor/server-forward-proof";
 
 // Starts this process's in-process schedulers (the Early Birds fortnight close and the CRM
 // housekeeping timer) exactly once per server process. Their imports MUST stay dynamic and inside
@@ -159,6 +160,12 @@ async function forwardServerErrorToIngestion(
     // a browser's same-origin fetch would carry one automatically.
     const headers: Record<string, string> = { "Content-Type": "application/json", Origin: origin };
     if (cookie) headers.cookie = cookie;
+    // The proof only this server can sign: it is what lets the route send the new-error Telegram for a
+    // server error that carried no cookie (a cron hit, a webhook), and refuse it for anyone who merely
+    // posts `source: "server"` themselves. An HMAC with a one-minute expiry, never the secret (the origin
+    // above is built from the request's own Host header).
+    const proof = await signServerErrorForward();
+    if (proof) headers[SERVER_FORWARD_PROOF_HEADER] = proof;
 
     await fetch(`${origin}/api/errors/client`, {
       body: JSON.stringify({

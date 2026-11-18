@@ -83,7 +83,7 @@ export default async function ConnectorAuthorizePage({ searchParams }: PageProps
 
   return (
     <Shell>
-      <ConnectorConsent params={params} clientName={clientName ?? "ChatGPT"} role={access.role} />
+      <ConnectorConsent params={params} clientName={clientName} role={access.role} />
     </Shell>
   );
 }

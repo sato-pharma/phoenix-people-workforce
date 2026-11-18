@@ -34,6 +34,7 @@ import {
   TABLE_TOOL_ROLES,
   isDeniedColumn,
   isDeniedTable,
+  orderTiebreakers,
   planTableRead,
   readableTables,
   rowsThatFit,
@@ -467,6 +468,18 @@ function testToolSources() {
   assert.equal((tables.match(/roles:\s*TABLE_TOOL_ROLES/g) ?? []).length, 3, "all three table tools are the owner's and the CEO's alone");
   assert.equal((tables.match(/planTableRead\(/g) ?? []).length, 2, "the reader and the export both run only a guarded plan");
   assert.ok(tables.includes("rowsThatFit("), "the reader shortens a page to whole rows instead of letting the answer be cut");
+  // Offset paging repeats and skips rows when rows tying on the order column come back in a different order per page.
+  // A table with an id breaks the tie by id; one WITHOUT an id (page_timings orders by a non-unique hour) by every other
+  // column the read selects, and never by a column the read does not select (a credential column).
+  assert.deepEqual(orderTiebreakers({ column: "hour" }, { columns: ["hour", "path", "ms"] }, ["id", "hour", "path", "ms"]), ["id"]);
+  assert.deepEqual(orderTiebreakers({ column: "id" }, { columns: ["id", "ms"] }, ["id", "ms"]), [], "ordering by id needs no tiebreak");
+  assert.deepEqual(
+    orderTiebreakers({ column: "hour" }, { columns: ["hour", "path", "ms"] }, ["hour", "path", "ms", "secret_token"]),
+    ["path", "ms"],
+    "with no id, every other SELECTED column breaks the tie — the unselected credential column never does",
+  );
+  assert.ok(tables.includes("for (const column of ties) query = query.order(column"), "the page applies the tiebreakers after the asked order");
+  assert.ok(tables.includes('error.message.includes("ordering operator")'), "a table whose column has no ordering operator still reads, by the asked order alone");
   assert.ok(tables.includes("next_offset"), "the reader tells ChatGPT where the next page starts");
   assert.ok(tables.includes("planTableRead("), "the table reader runs only a guarded plan");
   assert.ok(tables.includes("phoenix_sales_achievement"), "the table tools send ChatGPT to the closing for any sales figure");

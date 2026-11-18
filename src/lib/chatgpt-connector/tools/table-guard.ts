@@ -131,6 +131,18 @@ export type TableReadPlan = {
   offset: number;
 };
 
+/**
+ * What breaks a tie on the order column, so rows that tie keep one order from page to page: `id` where the table
+ * has one, else every other column the read selects (a relation with no id — `page_timings` orders by a
+ * non-unique hour — is otherwise left to the planner's tie order, which can differ per OFFSET page). Only columns
+ * the read already selects are used, so a credential column is never ordered by. Rows identical on all of them
+ * are indistinguishable in the answer, so whichever page holds them says the same thing.
+ */
+export function orderTiebreakers(order: { column: string }, plan: Pick<TableReadPlan, "columns">, known: readonly string[]): string[] {
+  if (known.includes("id")) return order.column === "id" ? [] : ["id"];
+  return plan.columns.filter((column) => column !== order.column);
+}
+
 function isScalar(value: unknown): value is TableScalar {
   return value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
 }

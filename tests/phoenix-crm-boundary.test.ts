@@ -1151,6 +1151,12 @@ const LATER_MIGRATIONS = [
   // NEW table, phoenix_crm_line_lookalike_answers, and no function — the confirmation validates through
   // phoenix_crm_share_line_validation. It replaces nothing save_visit depends on.
   "supabase/migrations/20261116234831_phoenix_crm_line_lookalike_answers.sql",
+  // "Keep it" must not dissolve the Super Admin's lock (owner rule of 16 Nov 2026), in two steps the same day:
+  // phoenix_crm_decide_shared_place REPLACED twice, first to keep his name as the decider, then to keep his time
+  // and note with it. Each is the last replacer of that function in turn, so they stay at the end of this list.
+  // It replaces nothing save_visit depends on.
+  "supabase/migrations/20261118120000_phoenix_crm_super_admin_approval_survives_keep_it.sql",
+  "supabase/migrations/20261118191500_phoenix_crm_keep_it_keeps_the_super_admin_decision.sql",
 ];
 
 /**

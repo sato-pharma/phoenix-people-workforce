@@ -14,6 +14,8 @@
 // (2026-11-17) it also checks the contract's age limits: an employee or spouse over 64, and a child over 18.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
+
 import {
   additionCharge,
   addDays,
@@ -71,7 +73,23 @@ export type ExceptionFacts = {
 
 export type CoverWindow = { from: string; until: string | null };
 
-const DEPARTED_STATUSES = new Set(["resigned", "terminated"]);
+/**
+ * Whether an employee record's status counts as someone who works here now. The repo-wide lifecycle set: on leave is
+ * still an employee, and a record with no status counts as active. Literal "active" alone read an employee on leave
+ * as "not an employee on the policy dates" and refunded them from their first day.
+ */
+export function isActiveEmploymentStatus(value: string | null | undefined): boolean {
+  const status = String(value ?? "").trim().toLowerCase();
+  return status === "" || ACTIVE_EMPLOYMENT_STATUSES.has(status);
+}
+
+/**
+ * Every status that means someone LEFT. `not_renewed` is the contract that ended, and `inactive` is the third exit
+ * status the resignation workflow itself writes (resignations/service.ts: "resigned, terminated, or inactive"): neither
+ * is active, so left out of this set they read as "never an employee" and were removed from their first day, with a
+ * full refund, instead of by the day to their last working day.
+ */
+const DEPARTED_STATUSES = new Set(["resigned", "terminated", "not_renewed", "inactive"]);
 
 /**
  * The stretch of the policy an employee's own record says they belong in. Null for someone who never
