@@ -780,6 +780,10 @@ export function PrivateCalendar({
   // Asked for only once the form opens; the picker shares the same single request.
   const explainConfirmers = useExplainConfirmers(disputeFormOpen);
 
+  // The day on the grid is always sent, so it can never also be an extra: clicking a ticked extra on the grid would
+  // otherwise make the button count a day that the send folds into the first.
+  const explainExtraDatesToSend = explainExtraDates.filter((date) => date !== selectedDate);
+
   function openExplainForm() {
     setDisputeFormOpen((open) => !open);
     setDisputeNotice(null);
@@ -802,7 +806,7 @@ export function PrivateCalendar({
 
   async function submitDayDispute() {
     setDisputeNotice(null);
-    const dates = Array.from(new Set([selectedDate, ...explainExtraDates])).sort();
+    const dates = Array.from(new Set([selectedDate, ...explainExtraDatesToSend])).sort();
     const draft = {
       confirmerHrId: explainDraft.confirmerHrId || null,
       dates,
@@ -1644,8 +1648,8 @@ export function PrivateCalendar({
                     >
                       {disputeSubmitting
                         ? "Sending"
-                        : explainExtraDates.length > 0
-                          ? `Send for ${explainExtraDates.length + 1} days`
+                        : explainExtraDatesToSend.length > 0
+                          ? `Send for ${explainExtraDatesToSend.length + 1} days`
                           : "Send"}
                     </button>
                   }

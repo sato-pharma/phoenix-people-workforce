@@ -84,6 +84,8 @@ export async function POST(request: Request) {
       const activityModule = resolveActivityModule(report.route);
 
       eventId = await logAppError({
+        // Anyone can post here, so only a signed-in reporter may raise the Super Admin's new-error Telegram.
+        alert: Boolean(access.hrId || access.loginId),
         clientContext: report.clientContext,
         componentStack: report.componentStack,
         digest: report.digest,

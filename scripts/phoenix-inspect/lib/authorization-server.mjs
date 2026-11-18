@@ -376,7 +376,8 @@ export function createAuthorizationServer({ issuer, resource, stateDir, google, 
       state.grants.push(grant);
       // Keep every live grant; drop the oldest revoked or expired ones past the cap.
       while (state.grants.length > MAX_GRANTS) {
-        const dead = state.grants.findIndex((item) => item.revokedAt || item.refreshExpiresAt <= seconds());
+        // The new grant is born with refreshExpiresAt 0 (issue() sets it next), so it must never count as expired here.
+        const dead = state.grants.findIndex((item) => item !== grant && (item.revokedAt || item.refreshExpiresAt <= seconds()));
         state.grants.splice(dead === -1 ? 0 : dead, 1);
       }
       return issue(grant);

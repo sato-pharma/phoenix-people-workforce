@@ -136,6 +136,9 @@ async function readPage(plan: TableReadPlan, known: readonly string[], offset: n
   }
   const order = stableOrder(plan, known);
   query = query.order(order.column, { ascending: order.ascending });
+  // Rows that tie on the asked column must keep one order from page to page, or offset paging repeats some and
+  // skips others while the answer says every row was read: `id` breaks the tie where the table has one.
+  if (order.column !== "id" && known.includes("id")) query = query.order("id", { ascending: true });
   const { data, error, count } = await query.range(offset, offset + size - 1);
   if (error) throw new ToolRefusal(`The read of ${plan.table} failed: ${error.message}`);
   return { rows: (data ?? []) as unknown as Record<string, unknown>[], count: typeof count === "number" ? count : null };

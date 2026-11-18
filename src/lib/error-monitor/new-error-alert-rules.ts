@@ -24,8 +24,10 @@ export type NewErrorReport = {
 
 const HR_ID = /\b[A-Za-z]{1,3}-\d{1,8}\b/g;
 // A uuid is one long token (36 characters of hex and hyphens), so it is folded here whole, before the numbers in it.
-const LONG_TOKEN = /\b[A-Za-z0-9_-]{24,}\b/g;
-const NUMBER = /\d+(?:[.,]\d+)?/g;
+// Only a token that carries a digit is an id; a long table or function name is what tells two errors apart.
+const LONG_TOKEN = /\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{24,}\b/g;
+// A number that NAMES the error stays: "error #418" and "#423", "/errors/418", "status 403" and "status 500".
+const NUMBER = /(?<![\d#]|\/errors\/|\b(?:status|code|http|error) )\d+(?:[.,]\d+)?/gi;
 
 /** The message with every part that changes between occurrences replaced by `#`, lower-cased and bounded. */
 export function normalizeErrorMessage(message: string | null | undefined): string {
