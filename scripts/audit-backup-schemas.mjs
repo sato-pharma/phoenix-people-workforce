@@ -599,7 +599,7 @@ async function main() {
     ? "aws-1-eu-central-1.pooler.supabase.com"
     : "aws-0-eu-central-1.pooler.supabase.com";
 
-  const sql = postgres(toPooler(rawUrl, host), { max: 1, prepare: false });
+  const sql = postgres(toPooler(rawUrl, host), { max: 1, prepare: false, ssl: "require" });
   const today = new Date().toISOString().slice(0, 10);
 
   try {

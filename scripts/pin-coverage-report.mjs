@@ -48,7 +48,7 @@ for (const line of readFileSync(pinsFile, "utf8").split(/\r?\n/)) {
   if (m) status.set(m[1], m[2]);
 }
 
-const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false });
+const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false, ssl: "require" });
 let rows;
 try {
   rows = await sql`

@@ -215,7 +215,7 @@ async function main() {
   const suffix = dryRun ? " — DRY RUN, nothing will be applied" : "";
   console.log(`${LOG} target project ref: ${ref} (staging)${suffix}`);
 
-  const sql = postgres(toPooler(rawUrl), { max: 1, prepare: false });
+  const sql = postgres(toPooler(rawUrl), { max: 1, prepare: false, ssl: "require" });
   let applied = 0;
   try {
     // withCommitTimes: false — the only consumer of a commit time is the grace window, which this

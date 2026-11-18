@@ -91,7 +91,7 @@ approval, the default token is read-only).
 | Environment | Branches allowed to use it | Holds |
 | --- | --- | --- |
 | `main-secrets` | `main` only | every production secret |
-| `urgent-deploy` | `urgent-deploy/production`, `urgent-deploy/dry-run` | `RAILWAY_API_TOKEN`, `RAILWAY_TOKEN` only |
+| `urgent-deploy` | `urgent-deploy/production`, `urgent-deploy/dry-run` | `RAILWAY_API_TOKEN`, `RAILWAY_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALERT_CHAT_ID` |
 
 Every job that reads a production secret declares `environment: main-secrets` (urgent-deploy.yml: `urgent-deploy`),
 so a branch run of it is refused before it starts. The name avoids the word "production" on purpose:
@@ -99,13 +99,24 @@ deploy-failure-alert.yml and `scripts/lib/post-deploy-errors.mjs` treat any envi
 production deploy. Each such job now also leaves a deployment record on GitHub; that is expected.
 
 **Stays repository-wide:** browser-visible values (`NEXT_PUBLIC_*`, the Supabase URL, anon and publishable keys,
-`APP_URL`, `SYNTHETIC_BASE_URL`), the Telegram alarm pair (every Notify job reads it), `EXPO_TOKEN`, and
-`STAGING_SUPABASE_SERVICE_ROLE_KEY`, which ci.yml's `validate` needs on every branch for the staging login
-smoke. ci.yml's `validate` reads nothing else: the login smoke signs with a CI-only literal, and fallback-image's
-pull-request build gets no Railway token. Residual risks, accepted: a branch can still read the staging service key
-and the Telegram bot token, and a push to one of the two `urgent-deploy/*` branch names can still read the Railway
-tokens. `tests/workflow-secrets-need-environment.test.ts` holds all of this, and its list must equal the `keep`
-pattern in `.github/workflows/move-secrets-to-environments.yml`.
+`APP_URL`, `SYNTHETIC_BASE_URL`) and `EXPO_TOKEN`, nothing else. `tests/workflow-secrets-need-environment.test.ts`
+holds all of this, and its list must equal the `keep` pattern in `.github/workflows/move-secrets-to-environments.yml`.
+
+**The three gaps closed on 19 Nov 2026** (the owner's "fix those"):
+
+- **The staging service key and the Telegram alarm pair moved into `main-secrets`.** ci.yml's `validate` runs on every
+  branch, so it stands in the environment only when the run is a push or dispatch on `main`
+  (`environment: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'main-secrets' || '' }}`),
+  and the staging login smoke runs only there. A pull request's `validate` reads no secret at all and signs with the
+  CI-only literal; fallback-image's pull-request build gets no Railway token.
+- **deploy-failure-alert.yml hands its message to a job on `main`.** A Railway `deployment_status` run's ref is the
+  deployment's full sha, which the environment's branch rule refuses, so the `alert` job reads no secret: it builds the
+  message and dispatches the same workflow on `main` with `relay_text`, and the `send` job there stands in
+  `main-secrets` and sends it to Telegram. A dispatch carrying `relay_text` never runs `alert`, so it cannot loop.
+- **Only admins may create or push an `urgent-deploy/*` branch.** Repository ruleset "urgent-deploy branches: only
+  admins create or push" refuses creation, update and force-push on `refs/heads/urgent-deploy/**` for everyone but
+  repository admins; deletion stays open so the guard can remove the branch at hand-over. GitHub Actions cannot be a
+  bypass actor, so the guard's "regressed" re-push is refused by design (`scripts/urgent-deploy.mjs` says so beside it).
 
 **Setting or rotating a GitHub secret from now on:** `printf '%s' "$NEW_VALUE" | gh secret set NAME --env main-secrets`
 (the Railway tokens: also `--env urgent-deploy`). An environment secret outranks a repository secret of the same
@@ -115,9 +126,29 @@ workflows read.
 **The one-time move** (after the pull request that added the environments merged): `gh auth token | gh secret set
 SECRETS_MOVER_TOKEN --env main-secrets`, then `gh workflow run move-secrets-to-environments.yml --ref main -f
 confirm=MOVE`, then `gh secret delete SECRETS_MOVER_TOKEN --env main-secrets` the moment the run ends, then
-`gh secret list --env main-secrets` against the run's summary. The workflow only COPIES. The repository-wide copies
+`gh secret list --env main-secrets` against the run's summary. Run 1 (19 Nov 2026, 00:55 Cairo) moved 62 secrets and
+the repository copies were deleted on the owner's word; a re-run copies only names an environment does not hold yet. The workflow only COPIES. The repository-wide copies
 are deleted afterwards by name, and only on the owner's word: that delete cannot be undone, because GitHub never
 shows a secret's value again.
+
+
+## Script database connections ask for TLS (19 Nov 2026)
+
+Credentials audit of 18 Nov 2026, finding 2: the production database accepts unencrypted connections until SSL
+enforcement is switched on, and postgres.js (3.4.9) connects WITHOUT TLS unless the call names `ssl` — it has no
+PGSSLMODE support, and none of the database URLs the scripts read (`.env.local` and the others) carries `sslmode`.
+About 17 script connections therefore sent the database password and the rows in clear.
+
+- Every `postgres()` call under `scripts/` and `tests/scripts/` now names `ssl: "require"`, in its own arguments or
+  in an options object declared in the same file. `tests/postgres-connections-use-tls.test.ts` fails a call without it
+  or with a weaker mode (`false`, `prefer`, `allow`, `disable`).
+- psql and pg_dump (the release gate, the code backup) use libpq, whose default `prefer` negotiates TLS; the release
+  gate also sets `PGSSLMODE: require` so it can never fall back to plain text.
+- The app opens no Postgres connection (it reaches Supabase over HTTPS), and `infra/phoenix-mcp` verifies the
+  certificate chain itself.
+- Switching SSL enforcement on is the owner's own action on the production project, after this change has merged; it
+  may restart the database. A network restriction is NOT recommended: Railway, GitHub's runners and the laptop have no
+  fixed addresses, so it would cut off the app's own scripts and the release gate.
 
 ## Never print a secret
 
