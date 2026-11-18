@@ -329,7 +329,31 @@
       "Bash(gh api *enablePullRequestAutoMerge*)",
       "PowerShell(gh api *enablePullRequestAutoMerge*)",
       "Bash(railway service source connect*)",
-      "PowerShell(railway service source connect*)"
+      "PowerShell(railway service source connect*)",
+      "mcp__supabase-production__create_project",
+      "mcp__supabase-production__pause_project",
+      "mcp__supabase-production__restore_project",
+      "mcp__supabase-production__create_branch",
+      "mcp__supabase-production__delete_branch",
+      "mcp__supabase-production__merge_branch",
+      "mcp__supabase-production__reset_branch",
+      "mcp__supabase-production__rebase_branch",
+      "mcp__supabase-staging__create_project",
+      "mcp__supabase-staging__pause_project",
+      "mcp__supabase-staging__restore_project",
+      "mcp__supabase-staging__create_branch",
+      "mcp__supabase-staging__delete_branch",
+      "mcp__supabase-staging__merge_branch",
+      "mcp__supabase-staging__reset_branch",
+      "mcp__supabase-staging__rebase_branch",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__create_project",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__pause_project",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__restore_project",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__create_branch",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__delete_branch",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__merge_branch",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__reset_branch",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__rebase_branch"
     ]
   }
 }

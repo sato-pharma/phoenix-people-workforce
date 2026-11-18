@@ -77,6 +77,48 @@ short: do step 2 immediately after step 1.
 > `railway redeploy` in step 3 is the single controlled rollout (and it rebuilds from `main` HEAD —
 > see the warning above).
 
+## Where the secrets live — the GitHub Actions copies are in two environments, never repository-wide (18 Nov 2026)
+
+Until the credentials audit of 18 Nov 2026 (finding 1) all 77 Actions secrets were **repository-wide**, and
+both GitHub environments held none. A workflow runs from the branch it was started on, so ANY pushed branch
+whose workflow was edited could read the production service key, the database password, the session-signing
+secret and the Railway key — and three things can push a branch: the owner, the Claude GitHub app (every cloud
+session) and the Railway GitHub app. Outside forks never could (no `pull_request_target`, a fork's run needs
+approval, the default token is read-only).
+
+**Now:**
+
+| Environment | Branches allowed to use it | Holds |
+| --- | --- | --- |
+| `main-secrets` | `main` only | every production secret |
+| `urgent-deploy` | `urgent-deploy/production`, `urgent-deploy/dry-run` | `RAILWAY_API_TOKEN`, `RAILWAY_TOKEN` only |
+
+Every job that reads a production secret declares `environment: main-secrets` (urgent-deploy.yml: `urgent-deploy`),
+so a branch run of it is refused before it starts. The name avoids the word "production" on purpose:
+deploy-failure-alert.yml and `scripts/lib/post-deploy-errors.mjs` treat any environment containing it as a Railway
+production deploy. Each such job now also leaves a deployment record on GitHub; that is expected.
+
+**Stays repository-wide:** browser-visible values (`NEXT_PUBLIC_*`, the Supabase URL, anon and publishable keys,
+`APP_URL`, `SYNTHETIC_BASE_URL`), the Telegram alarm pair (every Notify job reads it), `EXPO_TOKEN`, and
+`STAGING_SUPABASE_SERVICE_ROLE_KEY`, which ci.yml's `validate` needs on every branch for the staging login
+smoke. ci.yml's `validate` reads nothing else: the login smoke signs with a CI-only literal, and fallback-image's
+pull-request build gets no Railway token. Residual risks, accepted: a branch can still read the staging service key
+and the Telegram bot token, and a push to one of the two `urgent-deploy/*` branch names can still read the Railway
+tokens. `tests/workflow-secrets-need-environment.test.ts` holds all of this, and its list must equal the `keep`
+pattern in `.github/workflows/move-secrets-to-environments.yml`.
+
+**Setting or rotating a GitHub secret from now on:** `printf '%s' "$NEW_VALUE" | gh secret set NAME --env main-secrets`
+(the Railway tokens: also `--env urgent-deploy`). An environment secret outranks a repository secret of the same
+name for a job in that environment, so a value set without `--env` after the move is silently NOT the one the
+workflows read.
+
+**The one-time move** (after the pull request that added the environments merged): `gh auth token | gh secret set
+SECRETS_MOVER_TOKEN --env main-secrets`, then `gh workflow run move-secrets-to-environments.yml --ref main -f
+confirm=MOVE`, then `gh secret delete SECRETS_MOVER_TOKEN --env main-secrets` the moment the run ends, then
+`gh secret list --env main-secrets` against the run's summary. The workflow only COPIES. The repository-wide copies
+are deleted afterwards by name, and only on the owner's word: that delete cannot be undone, because GitHub never
+shows a secret's value again.
+
 ## Never print a secret
 
 - **Railway renders *staged* variable values UNMASKED** in the web UI's changes panel (saved values

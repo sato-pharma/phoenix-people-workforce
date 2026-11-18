@@ -191,14 +191,18 @@ function writeEnvLocal(values) {
   console.log(`Wrote ${keys.length} keys into .env.local (${kept.length} existing lines untouched).`);
 }
 
-/** Store a value as a GitHub Actions secret, passing it on stdin so it never reaches argv. */
+/**
+ * Store a value as a GitHub Actions secret in the main-only `main-secrets` environment, passing it on stdin so it
+ * never reaches argv. The environment is where apps-script-push.yml reads it, and a repository-wide copy would be
+ * readable from any branch (credentials audit, 18 Nov 2026, finding 1).
+ */
 function storeSecret(name, value) {
   return new Promise((resolve, reject) => {
-    const child = spawn("gh", ["secret", "set", name], { stdio: ["pipe", "inherit", "inherit"] });
+    const child = spawn("gh", ["secret", "set", name, "--env", "main-secrets"], { stdio: ["pipe", "inherit", "inherit"] });
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`gh secret set ${name} exited ${code}`));
+      else reject(new Error(`gh secret set ${name} --env main-secrets exited ${code}`));
     });
     child.stdin.end(value);
   });
@@ -321,7 +325,7 @@ async function main() {
 
   console.log("\nStored. Remaining step — the script id of each sheet you want connected:");
   console.log("  Sheet → Extensions → Apps Script → Project Settings → Script ID");
-  console.log("  Then: gh secret set CV_LIFECYCLE_APPS_SCRIPT_ID   (paste when prompted)");
+  console.log("  Then: gh secret set CV_LIFECYCLE_APPS_SCRIPT_ID --env main-secrets   (paste when prompted)");
   console.log("\nA script id is not a secret, but keeping it beside the others keeps it in one place.");
 }
 

@@ -62,6 +62,7 @@ jobs:
   status:
     if: ${{ inputs.action == 'status' }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 5
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -77,6 +78,7 @@ jobs:
   setup:
     if: ${{ inputs.action == 'setup' }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -214,6 +216,7 @@ jobs:
       packages: read
     if: ${{ always() && needs.gate.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
     runs-on: ubuntu-latest # hosted-only: pulls and pushes the amd64 image with Docker
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 40
     env:
       SHA: ${{ needs.gate.outputs.sha }}
@@ -297,6 +300,7 @@ jobs:
   back-to-railway:
     if: ${{ inputs.action == 'back-to-railway' }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 25
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

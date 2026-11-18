@@ -388,7 +388,7 @@ function main() {
     console.error(`[sync-railway-production-secrets] HELD: production holds a different value for ${plan.held.length} variable(s), and none of them was overwritten:`);
     for (const name of plan.held) console.error(`  - ${name}`);
     console.error("  One of the two stores is behind, and this script cannot tell which.");
-    console.error("  If production is right: set the GitHub secret or variable to production's value (gh secret set NAME).");
+    console.error("  If production is right: set the GitHub secret or variable to production's value (gh secret set NAME --env main-secrets).");
     console.error(`  If GitHub is right: run this workflow by hand and release them: gh workflow run sync-railway-production-secrets.yml -f overwrite=${plan.held.join(",")}`);
   }
 

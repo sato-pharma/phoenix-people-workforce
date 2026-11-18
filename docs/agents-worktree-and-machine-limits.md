@@ -24,6 +24,51 @@ On **2026-08-26** every sibling worktree was measured in exactly that broken sta
 server anywhere but the primary. That is precisely how the collision incidents in this area happen:
 everyone is forced back into one folder.
 
+## A worktree's env files are hard links to the primary's, never copies — 2026-11-18
+
+**What changed.** Until the credentials audit of 18 Nov 2026 (finding 3), `sync-worktree-env.mjs` and
+the session-start sweep in `scripts/lib/provision-worktree.mjs` **copied** the primary's gitignored
+`.env*` files into every worktree. Each copy of `.env.local` holds the live production service key,
+the cron secret and the database password, so 18 worktrees meant 18 copies of each, and a rotation in
+the primary left every copy behind. Measured that night: 13 of 19 worktree `.env.local` files were
+OLDER than the primary's (all four primary files had been rewritten 17 Nov 22:12 Cairo), 6 were
+byte-identical, and not one had been edited after the primary's last write. The stale files rode
+along too: `.env.local.production-20260921` (an old-format service key, switched off in production)
+and `.env.production` (a dead third project's keys) sat in every worktree.
+
+**What runs now** (`scripts/lib/env-file-links.mjs`, used by both callers). A worktree's env file is a
+**hard link**: one file on disk under two names. No admin right or developer mode is needed (unlike a
+symbolic link); it works only within one volume, and every worktree here is on F:. Per file:
+
+| In the worktree | What the run does |
+| --- | --- |
+| missing | linked to the primary's |
+| already the primary's file (same inode) | nothing |
+| a byte-identical copy | replaced by a link |
+| an OLDER copy (last written before the primary's) | replaced by a link — a snapshot the primary moved past |
+| a link the primary has since REPLACED (`refresh-local-env.mjs` renames the old file aside) | re-linked to the primary's current file |
+| a file written AFTER the primary's, not a link | **kept** — the worktree's own on purpose; `--force` re-links it |
+
+A link that cannot be made falls back to a copy for a MISSING file only; an existing file is never
+touched when its replacement fails. The replacement links under a temporary name and renames over the
+old file, so a reader never sees the name missing.
+
+**Stale names are never handed out.** `isStaleEnvName()` covers `.env.production`,
+`.env.sentry-build-plugin` (the retired error tracker's upload token), any `-YYYYMMDD` snapshot and
+any `.bak`/`.backup`/`.old`/`.orig`/`.prev` name. A worktree's copy of one is REMOVED when the primary
+holds the same name with the same or newer bytes; a copy with no original in the primary (the
+`.env.sentry-build-plugin` files) or one written after it is kept and reported. The primary's own
+files are never touched.
+
+🔴 **A hard link shares the bytes both ways.** Appending to a worktree's `.env.local` in place edits
+the primary's and every other worktree's. A worktree that needs its own values deletes the link first
+and writes a fresh file — the next run then keeps it, because it was written after the primary's.
+
+Pinned by `tests/worktree-provision-all.test.ts` (cases 1, 2, 7, 8 and 9) and
+`tests/sync-worktree-env-fast-path.test.ts`. Each new case was proved by breaking the module and
+watching its own assertion fire: a copy in place of a link ("must be a HARD LINK"), an older copy kept,
+and an orphaned link not followed.
+
 ## Why `pnpm` is banned inside a worktree
 
 A `pnpm install` inside a worktree duplicates roughly **1.9M path entries**. Worse, `pnpm run`
@@ -484,7 +529,7 @@ describes the script that enforces them, which is the part a session cannot deri
 A third bullet relocated here on 2026-09-01 duplicated *The husk that nothing built into git can
 see* above and was dropped the same day. The cue — and every memory slug — stays in `AGENTS.md`.
 
-- **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](../scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, copy the gitignored env files. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `node scripts/sync-worktree-env.mjs` **plus** the junction.
+- **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](../scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, hard-link the gitignored env files to the primary's. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `node scripts/sync-worktree-env.mjs` **plus** the junction.
 
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate. 🔴 **If the folder stops being a git checkout WHILE the command runs** (the session that owns it retires it the same minute its PR merges), the verdict is `folder-gone`, not `stranded`: the later reads fail inside a dead folder and used to be blamed on the commits (2026-10-19, `_wt-weekly-plan-followups`, PR 6099). It then reads the tip from the branch, runs `git worktree prune` and exits 0, saying it removed nothing itself; an open PR on the head still refuses first. Only the slow-`gh` window is covered — a folder that vanishes during the earlier scan still refuses or errors as before.
 
@@ -1127,7 +1172,7 @@ are in [docs/agents-worktree-and-machine-limits.md](agents-worktree-and-machine-
 - Never run `git clone`, `git init`, or anything that recreates the primary repository's `.git`.
 - Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as the owner's work. If the tree is dirty, classify and preserve it.
 - **Never delete a `.xlsx` or `.pdf` file**, even a stray untracked one in a worktree being cleaned up. Scan any folder for them before removing it; if found and not identical to a git-tracked copy, move them into `xlsx/` at the repo root.
-- **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** (fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules`, copy the gitignored env files). It refuses below 6 GB of free commit charge. `--status` prints live headroom, `--repair` fixes a worktree missing either piece, `--from <ref>` branches elsewhere. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently) and no `node_modules`.
+- **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** (fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules`, hard-link the gitignored env files). It refuses below 6 GB of free commit charge. `--status` prints live headroom, `--repair` fixes a worktree missing either piece, `--from <ref>` branches elsewhere. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently) and no `node_modules`.
 - **A sibling `_wt-<task>` is a NEW project to Claude Code's own memory/settings, unlike a NESTED `.claude/worktrees/<name>` one** — the latter is Claude Code's native worktree feature and is recognized as the same project automatically; the former is just a different absolute path, so a session opened there starts with an empty auto-memory bucket and no `.claude/settings.local.json` (none of `MEMORY.md` or the personal Bash allow-list carries over). `scripts/sync-worktree-env.mjs` (step 4 above, and re-run at every SessionStart) now also copies `.claude/settings.local.json` from the primary when missing and points `autoMemoryDirectory` back at the primary's real memory folder — re-run it by hand (`node scripts/sync-worktree-env.mjs`) on any worktree created before this existed.
 - **Never `pnpm install` inside a worktree, and never `pnpm run` — or `pnpm exec` — there.** Both run the deps-status check first, and it purges `node_modules` once it sees the lockfile has moved, destroying the junction before your command starts. **`pnpm exec` fails SILENTLY-SHAPED**: it aborts the purge (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`) and exits 1 without starting anything, while the background task reports **exit code 0** and the port stays dead — which reads as a permissions or path problem, not as pnpm. Invoke `node scripts/…` directly, and start the dev server as `node scripts/dev-server.mjs --port 3000` — it passes `--webpack` on Windows and caps the heap at 4 GB (a raw `next dev` is refused by `bash-guard.mjs` C7 since 2026-09-21). The junction is enough for `typecheck`, `lint` and `node scripts/…`, but **not for `next dev`** without the explicit `--webpack` flag (§2.1, Worktrees).
 - **Stopping a dev server: kill it by PORT, not by task.** Stopping the background TASK kills the wrapper shell and leaves `next dev` itself holding 3000 — the harness reports "Successfully stopped", `curl /api/healthz` still answers 200, and the next start then fights a port it cannot have. Three times in one session, 2026-09-02. From PowerShell: `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. **Believe only a live probe, in both directions** — a background task can also report a bare `exit 127` moments AFTER serving a healthy 200, so read its log before blaming permissions. A curl of `000` is the only proof the port is free, and holding it stale is what breaks "one dev server at a time, ever" below.
