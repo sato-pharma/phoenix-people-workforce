@@ -12,7 +12,15 @@ import {
   offerBuiltinTemplate,
 } from "../src/lib/offers/builtin-templates.ts";
 import { PREMIUM_OFFER_SKIN } from "../src/lib/offers/premium-skin.ts";
-import { PRESTIGE_GOLD, PRESTIGE_GOLD_ON_NAVY, PRESTIGE_NAVY, PRESTIGE_OFFER_SKIN } from "../src/lib/offers/prestige-skin.ts";
+import {
+  PRESTIGE_GOLD,
+  PRESTIGE_GOLD_ON_NAVY,
+  PRESTIGE_NAME_ONE_LINE,
+  PRESTIGE_NAVY,
+  PRESTIGE_OFFER_SKIN,
+  PRESTIGE_PAGE_ONE_TIGHT_FROM_MM,
+  prestigePageOneEstimateMm,
+} from "../src/lib/offers/prestige-skin.ts";
 import { buildOfferTokens, offerPageFooterHtml, renderOfferDocument } from "../src/lib/offers/render.ts";
 import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
 import type { OfferBlockType, OfferFields } from "../src/lib/offers/types.ts";
@@ -994,6 +1002,67 @@ function prestigeSkinTests(
   assert.ok(/counter\(pxsec,upper-roman\)/.test(PRESTIGE_OFFER_SKIN), "sections are numbered in Roman capitals by a counter");
   assert.ok(/double/.test(PRESTIGE_OFFER_SKIN), "the double rule is drawn");
   assert.ok(/Georgia/.test(PRESTIGE_OFFER_SKIN), "the serif display face is named");
+
+  // ── Three fixed A4 pages (owner, 18 Nov 2026: "Many white spaces, dimensions not fixed") ─────────
+  // The live PDF printed the Compensation heading alone at the foot of page one, page two half empty
+  // behind the designer's page break, and the closing plate alone on a fourth page with its gold rule
+  // left behind on the third. Measured in Chromium on the production fonts after the fix: three pages,
+  // page one 260mm of 270 for the live Product Manager letter.
+  const body = prestigeDoc.body;
+  const pageAt = (name: string) => body.indexOf(`<div class="px-page ${name}`);
+  const [one, two, three] = [pageAt("px-p1"), pageAt("px-p2"), pageAt("px-p3")];
+  assert.ok(one >= 0 && two > one && three > two, "the prestige letter is laid out as three pages, in order");
+  assert.equal((body.match(/class="px-page /g) ?? []).length, 3, "exactly three pages — never a fourth");
+  const between = (from: number, to: number) => body.slice(from, to);
+  const pageOne = between(one, two);
+  const pageTwo = between(two, three);
+  const pageThree = body.slice(three);
+  assert.ok(pageOne.includes("px-plate") && pageOne.includes('class="comp keep"'), "page one carries the cover plate and the compensation");
+  assert.ok(!pageOne.includes('class="benefits keep"'), "page one ends with the compensation — the benefits start page two");
+  assert.ok(pageTwo.includes('class="benefits keep"') && pageTwo.includes('class="clause keep'), "page two carries the benefits and the terms");
+  assert.ok(!pageTwo.includes('class="steps keep"'), "the steps open page three");
+  assert.ok(
+    pageThree.includes('class="steps keep"') && pageThree.includes('class="accept keep"') && pageThree.includes('<footer class="foot">'),
+    "page three carries what happens next, the signatures and the closing plate",
+  );
+  assert.ok(!body.includes('class="page-break"'), "the pages make the breaks — the designer's page break is not drawn as well");
+  assert.equal(
+    (body.match(/class="section-h"/g) ?? []).length,
+    (body.match(/<section class="px-sec"><div class="section-h">/g) ?? []).length,
+    "every section heading is held with the block after it, so none is left alone at the foot of a page",
+  );
+  assert.ok((body.match(/class="px-sec"/g) ?? []).length >= 4, "the four sections are each held whole");
+  assert.ok(
+    body.includes('<div class="px-close"><div class="px-rule"></div><footer class="foot">'),
+    "the closing plate carries its own gold rule, so the rule never stays behind on the page before",
+  );
+  assert.ok(!/\.foot::before/.test(PRESTIGE_OFFER_SKIN), "the closing plate's rule is no longer a pseudo-element hanging outside the plate");
+  const printCss = /@media print\{([\s\S]*?)\n\}/.exec(PRESTIGE_OFFER_SKIN)?.[1] ?? "";
+  const minHeight = Number(/\.px-page\{[^}]*min-height:([\d.]+)mm/.exec(printCss)?.[1]);
+  assert.ok(minHeight >= 260 && minHeight < 271, `each page is the A4 printable height (297 - 12 - 14 = 271mm), with a hair to spare (found ${minHeight}mm)`);
+  assert.ok(/\.px-page \+ \.px-page\{break-before:page\}/.test(printCss), "each page after the first starts a new sheet");
+  assert.ok(/\.px-air\{display:none\}/.test(PRESTIGE_OFFER_SKIN), "on screen the preview flows; the page geometry is print only");
+  assert.ok(/\.px-p3 > \.px-close\{margin-top:auto/.test(printCss), "the closing plate stands on the foot of page three");
+  for (const [name, doc] of [["classic", classicDoc], ["house", houseDoc], ["premium", premiumDoc]] as const) {
+    assert.ok(!doc.css.includes("px-page") && !doc.body.includes("px-page"), `the page geometry reaches no other design (${name})`);
+  }
+
+  // Page one never loses the salary: a long name steps down a size, and a long letter is set tighter.
+  assert.equal(PRESTIGE_PAGE_ONE_TIGHT_FROM_MM, 264, "page one is set tighter past 264mm of its 271");
+  assert.ok(prestigePageOneEstimateMm(910, 19) <= PRESTIGE_PAGE_ONE_TIGHT_FROM_MM, "the live Product Manager letter (910 characters, measured 260mm) is not tightened");
+  assert.ok(prestigePageOneEstimateMm(1011, 43) > PRESTIGE_PAGE_ONE_TIGHT_FROM_MM, "a longer letter under a wrapping name is tightened");
+  const longName = "Mohamed Abdelrahman Elsayed Mahmoud";
+  assert.ok(longName.length > PRESTIGE_NAME_ONE_LINE, "the long-name fixture is longer than the full-size line");
+  const longDoc = renderDesign(prestige, { ...SAMPLE, candidateName: longName, roleSummary: "word ".repeat(220).trim() });
+  assert.ok(longDoc.body.includes('<div class="px-name px-long">'), "a long name steps down a size so the plate keeps its height");
+  assert.ok(longDoc.body.includes('<div class="px-page px-p1 px-tight">'), "a long letter sets page one tighter");
+  assert.ok(!prestigeDoc.body.includes("px-tight") && !prestigeDoc.body.includes("px-long"), "an ordinary letter keeps the full size");
+  // A letter a designer has stripped of its compensation is not paged, and keeps its own page break.
+  const unpaged = renderDesign(
+    { ...prestige, blocks: () => prestige.blocks().filter((block) => block.type !== "compensation") } as BuiltinDesign,
+    SAMPLE,
+  ).body;
+  assert.ok(!unpaged.includes("px-page") && unpaged.includes('class="page-break"'), "with no compensation block the letter flows and draws its page break");
 
   // ── The PDF path's only prestige branch is the reverse mark — no inlining, no page stamping ──────
   const pdfSource = stripComments(readFileSync("src/lib/offers/pdf.ts", "utf8"));

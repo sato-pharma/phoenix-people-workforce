@@ -62,6 +62,81 @@ godmode premium polished one". So the letter now opens on a plate of its own.
 The four frozen designs keep their digests and Premium is untouched; the skin reaches only a row whose
 `variant` is `prestige`.
 
+## The three fixed pages (18 November 2026)
+
+Owner, 18 Nov 2026, on the PDF of the first live Prestige offer (Senior Product Manager,
+SP-HR-PM-2026-001): "totally brutal and awful. Many white spaces, dimensions not fixed."
+
+**What the PDF did.** The letter flowed and broke wherever a block happened to end. Rendered on
+the production fonts (Noto Serif and Noto Sans; the server has no Georgia or Segoe UI), it printed
+four pages:
+
+1. Page one ended on the "I Compensation" heading alone, over a third of a page of white. The salary
+   block is unbreakable, so it moved to page two without its heading.
+2. Page two was half empty, because the designer's page-break block forced the terms onto page three.
+3. Page three left the closing plate's gold rule behind. The rule was a pseudo-element hanging 2.2mm
+   above the plate.
+4. Page four held the navy closing plate and nothing else.
+
+**What it does now.** `prestigeOfferBody` lays the letter out as three pages. The pages are found by
+the kind of block, so a block a designer adds lands on the page its kind belongs to:
+
+- **Page one:** the cover plate, the letter, the scope and the compensation. It ends with the first
+  `compensation` block.
+- **Page two:** the benefits and the terms, which is everything in between.
+- **Page three:** what happens next, the closing words, the signatures and the closing plate. It
+  starts at the first `steps` block, or at the signatures if there are no steps.
+
+The other rules that make up the layout:
+
+- **Page size.** In print each page is a flex column 270mm tall: A4's 297mm, less the 12mm and 14mm
+  margins of the base `@page`, with a hair to spare so rounding never spills a blank page. Each page
+  after the first starts a new sheet.
+- **Page breaks.** The pages make the breaks, so a page-break block is not drawn as well. A letter
+  with no compensation block is not paged at all, and draws its page breaks as before.
+- **Headings.** Every heading is held with the block after it in a `.px-sec`, so no heading is left
+  alone at the foot of a page.
+- **The closing plate's rule.** The closing plate carries its gold rule as its own element (`.px-rule`)
+  inside one `.px-close`, so the two never part.
+- **Spare height.** A page's spare height is shared out between its pieces, up to 14mm per gap, by
+  `.px-air` spacers. On pages one and two, whatever is left after that sits at the foot. On page three
+  the spare height is shared equally above the closing words, above the signatures and above the
+  closing plate, so the plate stands on the foot of the page.
+- **Air on pages two and three.** Those two pages carry more air (10.4pt running text, roomier clauses,
+  benefits and steps, 22mm of signing room), because page one is full by design.
+- **On screen.** The designer's preview is not printed, so its pages simply follow one another. Every
+  page rule above is under `@media print`.
+
+**Page one never loses the salary.** Page one's height was measured in Chromium on the production
+fonts at the true print width (184mm):
+
+| Letter | Page one |
+| --- | --- |
+| The live Product Manager letter | 260mm of 271 |
+| The role-neutral standard sentence | 233mm |
+| A four-part name over two lines, under the Product Manager paragraph | 270mm |
+
+`prestigePageOneEstimateMm` rebuilds that height: 212mm plus 0.053mm for each character of the
+letter's own paragraphs, plus 8mm when the name still wraps. Two guards act on it:
+
+- **A long name.** A name over 24 capitals steps down from 25pt to 19pt (`.px-long`), so it stays on
+  one line and the plate keeps its height.
+- **A long letter.** A letter estimated past 264mm sets page one tighter (`.px-tight`).
+
+Every case above, and a longer hand-typed paragraph under a 43-character name, prints exactly three
+pages. Pinned by `prestigeSkinTests` in `tests/offer-builtin-templates.test.ts`; two of those
+assertions were watched firing with the fix broken.
+
+The look is unchanged:
+
+- the navy cover plate and the flat gold;
+- the navy closing plate;
+- the signature and the 21mm seal centred on the company line.
+
+Only the dimensions and the spacing moved. The change is CSS and the body builder, both in code, so it
+is live on deploy. The live `offer_templates` row needs no correction, because its blocks are the same
+blocks.
+
 ## Which position opens on it
 
 The registry entry carries `opensFor: ["Product Manager"]`. `ensureBuiltinTemplates()` in
