@@ -193,6 +193,16 @@ export function runLocalTypecheckGuardTests() {
       assert.match(reason, /KILLED/, `the deny must say the run is killed, not failed.\n${reason}`);
       assert.match(reason, /4\.0-4\.5 GB/, `the deny must name the heap it needs.\n${reason}`);
       assert.match(reason, /Push the branch/, `the deny must name the answer, not just the refusal.\n${reason}`);
+      // "Push the branch" alone left a session with no PR nowhere to go, so it took the stand-down
+      // and froze the laptop (2026-11-18). The deny must hand over the command that answers with no
+      // PR, on a line of its own, and say what the stand-down costs. A FIXED figure, never the live
+      // free RAM — the dispatcher test needs this answer byte-identical across two runs.
+      assert.match(
+        reason,
+        /^ {2}node scripts\/remote-check\.mjs typecheck --dispatch$/m,
+        `the deny must hand over the remote-check command on a line of its own.\n${reason}`,
+      );
+      assert.match(reason, /freezes the laptop unless about 6,000 MB/, `the deny must say what the stand-down costs.\n${reason}`);
 
       // And the escape hatch it hands back must itself be allowed, in the dialect of the tool that
       // asked — `PHX_TYPECHECK_OK=1 <cmd>` is not something PowerShell can run. A deny whose own
