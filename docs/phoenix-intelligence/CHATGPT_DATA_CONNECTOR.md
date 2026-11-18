@@ -44,8 +44,10 @@ Any seat other than the owner or the CEO sees "ChatGPT cannot be connected from 
 - **Every table, for the owner and the CEO.** `phoenix_list_tables`, `phoenix_read_table` and
   `phoenix_export_table` read any public table or view. A read is one page of up to 1,000 rows; a page too big
   for one answer is shortened to whole rows, and the answer gives `next_offset` so the next read carries on. Nothing
-  is cut mid-row. `phoenix_export_table` puts a whole table (up to 50,000 rows a file, or what it can read in 25
-  seconds) in one Excel workbook and names the offset for the next file. A cell over Excel's limit (32,000
+  is cut mid-row. `phoenix_export_table` puts a whole table (up to 50,000 rows a file and 500,000 cells, so a
+  table of 25 columns gives 20,000 rows a file and one of 200 columns 2,500; or what it can read in 15 seconds) in one
+  Excel workbook and names the offset for the next file. If reading and building took over 30 seconds, nothing is saved and
+  the answer says so (the call's own 40-second limit does not cancel work, so a late file would be an orphan a retry duplicates). A cell over Excel's limit (32,000
   characters) is shortened in the sheet and named in the answer. What stays out, always: passwords and their
   hashes, tokens, one-time and recovery codes, keys, the tables that hold them (sign-in links, share links,
   OAuth codes) and the session id in `app_sessions` (`src/lib/chatgpt-connector/tools/table-guard.ts`).

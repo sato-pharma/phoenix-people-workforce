@@ -33,6 +33,7 @@ import {
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
   isDeniedColumn,
+  exportRowCap,
   isDeniedTable,
   maskUnrecognizedIdentifiers,
   orderTiebreakers,
@@ -481,6 +482,15 @@ function testToolSources() {
     "with no id, every other SELECTED column breaks the tie — the unselected credential column never does",
   );
   assert.ok(tables.includes("for (const column of ties) query = query.order(column"), "the page applies the tiebreakers after the asked order");
+  // The export holds the whole workbook in memory: a narrow table keeps the owner's 50,000 rows a file, a wide one gives fewer.
+  assert.equal(exportRowCap(10), 50_000, "10 columns keep 50,000 rows");
+  assert.equal(exportRowCap(25), 20_000, "25 columns give the web export's own cap");
+  assert.equal(exportRowCap(200), 2_500, "200 columns give 2,500 rows a file");
+  assert.equal(exportRowCap(0), 50_000, "no columns never divides by zero");
+  assert.ok(tables.includes("exportRowCap(plan.columns.length)"), "the export loop is capped by cells, not by rows alone");
+  assert.ok(tables.includes("while (rows.length < rowCap &&") && tables.includes("rowCap - rows.length"), "the read loop and its page size stop at the cell cap, not at 50,000 rows");
+  assert.ok(tables.includes("EXPORT_BUILD_DEADLINE_MS"), "a build that overran saves nothing, so a retry cannot duplicate a file");
+  assert.ok(tables.indexOf("const started = Date.now();") < tables.indexOf("await loadPublicSchema();", tables.indexOf("export const exportTableTool")), "the budget starts before the schema read, which can itself be slow");
   // A wrong sign-in name is stored as typed — a password pasted into the login-id box too — and every table is readable,
   // so text that matches no account reads "(not an account)"; real login ids stay, so "who failed to sign in" still works.
   const accounts = new Set(["b-10", "owner", "pd-0042"]);

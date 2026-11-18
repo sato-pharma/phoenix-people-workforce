@@ -24,6 +24,7 @@ import {
   TABLE_TOOL_ROLES,
   holdsTypedSignInText,
   maskUnrecognizedIdentifiers,
+  exportRowCap,
   orderTiebreakers,
   planTableRead,
   readableTables,
@@ -246,7 +247,9 @@ export const readTableTool = defineTool({
 /** Excel holds at most 32,767 characters in one cell. */
 const EXCEL_CELL_MAX_CHARS = 32_000;
 /** Stop reading pages here and hand over what was read, so the call finishes inside its 40-second limit. */
-const EXPORT_READ_BUDGET_MS = 25_000;
+const EXPORT_READ_BUDGET_MS = 15_000;
+/** If reading and building the file took longer than this, nothing is saved: the call's own 40 s limit does not cancel work. */
+const EXPORT_BUILD_DEADLINE_MS = 30_000;
 const EXPORT_PAGE_ROWS = TABLE_READ_MAX_ROWS;
 
 export function exportCell(value: unknown, cut: { count: number }): string | number | null {
@@ -277,16 +280,18 @@ export const exportTableTool = defineTool({
     title: z.string().max(150).optional().describe("The workbook's title. Default: the table's name."),
   },
   async run(ctx, input) {
+    // Taken first: a cold schema read can itself spend seconds of the budget.
+    const started = Date.now();
     const schema = await loadPublicSchema();
     const plan = planTableRead({ ...input, limit: TABLE_EXPORT_MAX_ROWS }, schema, TABLE_EXPORT_MAX_ROWS);
+    const rowCap = exportRowCap(plan.columns.length);
     const known = schema.get(plan.table) ?? [];
-    const started = Date.now();
     const rows: Record<string, unknown>[] = [];
     let total: number | null = null;
     let offset = plan.offset;
     let exhausted = false;
-    while (rows.length < TABLE_EXPORT_MAX_ROWS && Date.now() - started < EXPORT_READ_BUDGET_MS) {
-      const size = Math.min(EXPORT_PAGE_ROWS, TABLE_EXPORT_MAX_ROWS - rows.length);
+    while (rows.length < rowCap && Date.now() - started < EXPORT_READ_BUDGET_MS) {
+      const size = Math.min(EXPORT_PAGE_ROWS, rowCap - rows.length);
       const page = await readPage(plan, known, offset, size);
       if (total === null) total = page.count;
       rows.push(...page.rows);
@@ -321,6 +326,11 @@ export const exportTableTool = defineTool({
       theme: "house",
     });
     const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    // Building the file after a slow read can run past the call's own 40 s limit, which answers "too long" without cancelling
+    // this work — and a file saved after that answer is an orphan the retry then duplicates. Nothing is saved instead.
+    if (Date.now() - started > EXPORT_BUILD_DEADLINE_MS) {
+      throw new ToolRefusal(`Building the file took too long, so nothing was saved. Export again with fewer columns or a filter, from offset ${plan.offset}.`);
+    }
     const file = await storeConnectorFile(ctx, { kind: "xlsx", title, body });
     const nextOffset = exhausted ? null : last;
     return {

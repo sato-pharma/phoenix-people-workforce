@@ -17,6 +17,17 @@ export const TABLE_READ_MAX_ROWS = POSTGREST_ROW_CEILING;
 export const TABLE_READ_DEFAULT_ROWS = 200;
 /** A whole-table export reads at most this many rows into one workbook. */
 export const TABLE_EXPORT_MAX_ROWS = 50_000;
+/**
+ * Cells a single export file may hold (rows x columns), because the web process builds the whole workbook in memory: a table of
+ * 200 columns would otherwise ask it for 10 million cells. A narrow table keeps its 50,000 rows a file; wider ones give fewer
+ * rows and the answer already says where the next file starts. Owner's choice, 18 Nov 2026.
+ */
+export const TABLE_EXPORT_MAX_CELLS = 500_000;
+
+/** How many rows one export file may carry for this many columns (never below 1, never above TABLE_EXPORT_MAX_ROWS). */
+export function exportRowCap(columnCount: number): number {
+  return Math.max(1, Math.min(TABLE_EXPORT_MAX_ROWS, Math.floor(TABLE_EXPORT_MAX_CELLS / Math.max(1, columnCount))));
+}
 
 export const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 
