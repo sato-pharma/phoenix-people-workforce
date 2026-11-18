@@ -24,6 +24,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -542,15 +543,19 @@ export async function listExplanationGroupsAwaitingViewer(access: AccessContext)
   const hrId = viewerHrIdOf(access);
   const lookups = hrIdLookupKeys(hrId);
   if (lookups.length === 0) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from("dispute_explanations")
-    .select(EXPLANATION_COLUMNS)
-    .in("confirmer_hr_id", lookups)
-    .eq("confirmation_status", "awaiting")
-    .order("created_at", { ascending: true })
-    .limit(500);
-  if (error) throw error;
-  return groupExplanations(await withOpenCases(((data ?? []) as ExplanationRow[]).map(mapExplanationRow)));
+  // Read whole, THEN cut to the open cases: a decision on a day the confirmer never answered leaves its row awaiting for
+  // ever, so a row cap taken before withOpenCases filled with old decided rows and hid newer live requests behind them.
+  const awaiting = await fetchAllRows<ExplanationRow>(
+    () =>
+      getSupabaseAdmin()
+        .from("dispute_explanations")
+        .select(EXPLANATION_COLUMNS)
+        .in("confirmer_hr_id", lookups)
+        .eq("confirmation_status", "awaiting")
+        .order("created_at", { ascending: true }),
+    "id",
+  );
+  return groupExplanations(await withOpenCases(awaiting.map(mapExplanationRow)));
 }
 
 /** Where the Super Admin decides the case: the calendar inbox, or the case itself in the Dispute Center. */

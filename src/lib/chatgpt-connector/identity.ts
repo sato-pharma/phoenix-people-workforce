@@ -18,7 +18,7 @@ import { hrIdsMatch } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { isConnectorRole, type GrantSubject } from "./oauth";
+import { isConnectorRole, type GrantSubject, type LiveSubjectVerdict } from "./oauth";
 
 export type LiveAccount = {
   login_id: string;
@@ -38,7 +38,7 @@ export function decideLiveSubject(
   account: LiveAccount | null,
   employee: { lookupFailed: boolean; row: LiveEmployee },
   todayCairo: string,
-): { ok: true } | { ok: false; reason: string } {
+): LiveSubjectVerdict {
   if (!account) return { ok: false, reason: "The Phoenix account no longer exists." };
   if (account.is_active !== true) return { ok: false, reason: "The Phoenix account is switched off." };
   if (account.is_test_persona === true) return { ok: false, reason: "Test accounts cannot connect ChatGPT." };
@@ -62,7 +62,9 @@ export function decideLiveSubject(
     todayCairo,
   });
   if (!gate.allowed) {
-    return { ok: false, reason: gate.reason === "employee_lookup_failed" ? "Phoenix could not check the account just now. Try again." : "The employee is no longer active." };
+    // The employee read failing is an outage, not "no longer active": a blip must not end the connection.
+    if (gate.reason === "employee_lookup_failed") return { ok: false, reason: "Phoenix could not check the account just now. Try again.", unavailable: true };
+    return { ok: false, reason: "The employee is no longer active." };
   }
   return { ok: true };
 }
@@ -86,19 +88,19 @@ async function readLiveEmployee(hrId: string | null, db = getSupabaseAdmin()): P
 }
 
 /** The live check oauth.ts runs at approval, code exchange and refresh. */
-export async function checkConnectorSubject(subject: GrantSubject): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function checkConnectorSubject(subject: GrantSubject): Promise<LiveSubjectVerdict> {
   let account: LiveAccount | null;
   try {
     account = await readLiveAccount(subject.loginId);
   } catch {
-    return { ok: false, reason: "Phoenix could not check the account just now. Try again." };
+    return { ok: false, reason: "Phoenix could not check the account just now. Try again.", unavailable: true };
   }
   const employee = await readLiveEmployee(account?.hr_id ?? subject.hrId);
   return decideLiveSubject(subject, account, employee, currentCairoDateOnlyIso());
 }
 
 /** The access context for one /api/mcp call, or the reason it is refused. */
-export async function connectorAccessContext(subject: GrantSubject): Promise<{ ok: true; ctx: AccessContext } | { ok: false; reason: string }> {
+export async function connectorAccessContext(subject: GrantSubject): Promise<{ ok: true; ctx: AccessContext } | { ok: false; reason: string; unavailable?: true }> {
   const verdict = await checkConnectorSubject(subject);
   if (!verdict.ok) return verdict;
   return {

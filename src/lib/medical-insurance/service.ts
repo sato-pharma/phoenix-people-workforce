@@ -41,7 +41,7 @@ import {
   uploadMedicalInsuranceFile,
 } from "./file-storage";
 import { buildMonthlySplit } from "./monthly-split";
-import type { LibanoMemberFileKind, LibanoMemberLine } from "./workbooks";
+import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import type {
   MedicalInsuranceDocumentKind,
   MedicalInsuranceDocumentRow,
@@ -635,6 +635,26 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
       }
     }
 
+    // The keep-off is written AFTER the end, and the table allows one live exception per person, so a live one is
+    // asked for before the first write: a live keep-on is refused with nothing written (removing it is an explicit,
+    // reasoned, audited act on the Exceptions tab), and a live keep-off already says what this would write.
+    let alreadyKeptOut = false;
+    if (input.keepOut === true && member.member_type === "employee" && member.hr_id) {
+      const { data: live, error: liveError } = await supabase
+        .from("medical_insurance_exceptions")
+        .select("decision")
+        .eq("policy_id", policy.id)
+        .eq("hr_id", member.hr_id)
+        .is("revoked_at", null)
+        .limit(1);
+      fail(liveError);
+      const liveDecision = ((live ?? []) as Array<{ decision: string }>)[0]?.decision;
+      if (liveDecision === "keep_in") {
+        throw new MedicalInsuranceInputError(`${member.full_name} has a keep-on exception. Remove it on the Exceptions tab first, then exclude them.`);
+      }
+      alreadyKeptOut = liveDecision === "keep_out";
+    }
+
     fail((await supabase.from("medical_insurance_members").update({ ...stamp, coverage_ends_on: endsOn, end_reason: reason }).eq("id", memberId)).error);
     if (member.member_type === "employee") {
       fail(
@@ -647,7 +667,7 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
         ).error,
       );
     }
-    if (input.keepOut === true && member.member_type === "employee" && member.hr_id) {
+    if (input.keepOut === true && !alreadyKeptOut && member.member_type === "employee" && member.hr_id) {
       await addMedicalInsuranceException(access, { decision: "keep_out", hrId: member.hr_id, reason });
     }
     await writeRequiredAuditLog({
@@ -728,6 +748,22 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
         throw new MedicalInsuranceInputError(`${member.full_name} is already on the register again on another row, so this one cannot be put back.`);
       }
     }
+    // A spouse or child only sits under an OPEN employee row (the add path and planFamilyMove hold the same line): put
+    // back under a still-ended employee they would be covered with nobody to be covered under.
+    if (member.member_type !== "employee" && member.principal_member_id) {
+      const { data: owner, error: ownerError } = await supabase
+        .from("medical_insurance_members")
+        .select("full_name, coverage_ends_on")
+        .eq("id", member.principal_member_id)
+        .maybeSingle();
+      fail(ownerError);
+      const ended = owner as { full_name: string; coverage_ends_on: string | null } | null;
+      if (ended?.coverage_ends_on) {
+        throw new MedicalInsuranceInputError(
+          `${ended.full_name}'s cover has ended, so ${member.full_name} cannot be put back under it. Put ${ended.full_name} back first (their family comes back with them), or add ${member.full_name} again under an employee who is on cover.`,
+        );
+      }
+    }
     // Putting someone back undoes an Exclude that ended them: a live keep_out would list them "Excluded" while
     // their row is open and priced. Revoked FIRST, and each revoke audited like the Exceptions tab's own: if a
     // later write fails the employee is still ended (so "Put back" is still offered and a retry finds them), whereas
@@ -763,6 +799,16 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
   const coverageStart = cleanDay(input.coverageStart, "The start of cover") ?? member.coverage_starts_on;
   if (coverageStart < policy.startsOn) throw new MedicalInsuranceInputError("Cover cannot start before the policy does.");
   if (coverageStart > policy.endsOn) throw new MedicalInsuranceInputError("Cover cannot start after the policy ends.");
+  // Nobody sits under a certificate before it begins — the add path refuses it, so editing a start must too. Asked only
+  // when the start CHANGES, so a row that is already early can still have its notes or birth date corrected.
+  if (member.member_type !== "employee" && member.principal_member_id && coverageStart !== member.coverage_starts_on) {
+    const { data: owner, error: ownerError } = await supabase.from("medical_insurance_members").select("coverage_starts_on").eq("id", member.principal_member_id).maybeSingle();
+    fail(ownerError);
+    const ownerStart = (owner as { coverage_starts_on: string } | null)?.coverage_starts_on;
+    if (ownerStart && coverageStart < ownerStart) {
+      throw new MedicalInsuranceInputError(`Cover cannot start before the employee's own cover, on ${ownerStart}.`);
+    }
+  }
   const patch = {
     ...stamp,
     birth_date: input.birthDate === undefined ? member.birth_date : cleanDay(input.birthDate, "The date of birth"),
@@ -1310,5 +1356,15 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
       staffNumber: action.hrId,
     };
   });
+  // The insurer's sheet marks the date of birth and the sex mandatory, and the Employee Master can hold neither. The
+  // register path refuses a missing date of birth too (addMedicalInsuranceMember), so everyone is named at once and HR
+  // fixes the records or unticks them, instead of a file with blank cells going out.
+  const gaps = rows.flatMap((line) => {
+    const lacking = libanoLineGaps(line);
+    return lacking.length > 0 ? [`${line.fullName} (${lacking.join(" and ")})`] : [];
+  });
+  if (gaps.length > 0) {
+    throw new MedicalInsuranceInputError(`Libano-Suisse's file needs a date of birth and sex for everyone. Fill them on the Employee Master, or untick: ${gaps.join(", ")}.`);
+  }
   return { kind, policyId: policy.id, rows };
 }

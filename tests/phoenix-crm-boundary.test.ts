@@ -1157,6 +1157,9 @@ const LATER_MIGRATIONS = [
   // It replaces nothing save_visit depends on.
   "supabase/migrations/20261118120000_phoenix_crm_super_admin_approval_survives_keep_it.sql",
   "supabase/migrations/20261118191500_phoenix_crm_keep_it_keeps_the_super_admin_decision.sql",
+  // A building is not rejected by anyone but a Super Admin while a validated seat stands on his approval (owner, 18 Nov
+  // 2026): phoenix_crm_decide_shared_place REPLACED a third time, from the body before it, and the last replacer.
+  "supabase/migrations/20261118220000_phoenix_crm_building_reject_respects_super_admin_seats.sql",
 ];
 
 /**

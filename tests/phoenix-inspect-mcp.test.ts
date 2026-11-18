@@ -187,6 +187,22 @@ export async function runPhoenixInspectMcpTests() {
       assert.equal((repeated.structuredContent as { runId?: string } | undefined)?.runId, lateId, "the finished, uncollected run answers the repeat");
       assert.ok(repeated.content.some((item) => item.type === "image"), "with its pictures");
       assert.equal(runs.length, countBefore, "without a second capture");
+      // …but only for a moment. A run that finished and was never collected must not answer the same question ten minutes
+      // later (or after a deploy) with its old pictures: the repeat shortcut is for ChatGPT's immediate retry.
+      hold = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const stale = await quickCall("phoenix_open_module", { module: "kpi-reports", persona: "sfe" });
+      const staleId = (stale.structuredContent as { status: string; runId: string }).runId;
+      assert.equal((stale.structuredContent as { status: string }).status, "capturing");
+      finish();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      clock += 10 * 60_000;
+      hold = null;
+      const staleCountBefore = runs.length;
+      const fresh = await quickCall("phoenix_open_module", { module: "kpi-reports", persona: "sfe" });
+      assert.equal(runs.length, staleCountBefore + 1, "ten minutes after it finished, the same request starts a new capture");
+      assert.notEqual((fresh.structuredContent as { runId?: string } | undefined)?.runId, staleId, "and is not answered by the old run");
       const missing = await quickCall("phoenix_get_capture", { module: "kpi-reports", runId: "20261117-000000-nope" });
       assert.match(missing.content[0].text ?? "", /not on this machine/);
     } finally {

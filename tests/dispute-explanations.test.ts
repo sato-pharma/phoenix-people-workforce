@@ -12,11 +12,13 @@ import {
   explainReasonPhrase,
   explanationFacts,
   explanationSummary,
+  explanationVerifySource,
   initialConfirmationStatus,
   validateExplanation,
   validateExplanationReason,
   type DisputeExplanation,
 } from "@/lib/dispute-center/explain-reasons";
+import { currentVerificationSourceText } from "@/lib/private-calendar/verification-sources";
 
 /**
  * THE REASON LIST BEHIND EVERY DISPUTE (owner, 2026-11-16: "make the rep write whatever he wants … find a
@@ -159,6 +161,15 @@ export function runDisputeExplanationsTests() {
 
   // ── 4 · The wiring ────────────────────────────────────────────────────────────────────────────
   const server = read("src/lib/dispute-center/explanations.ts");
+  // The confirmer's awaiting list is read whole and THEN cut to the open cases; a row cap first hid live requests behind old decided ones.
+  const listFn = /export async function listExplanationGroupsAwaitingViewer\([\s\S]*?\n\}/.exec(server)?.[0] ?? "";
+  assert.ok(listFn.includes("fetchAllRows"), "the confirmer's awaiting list is read whole, then cut to the open cases");
+  assert.doesNotMatch(listFn, /\.limit\(/, "a row cap before withOpenCases hides newer live requests behind older decided ones");
+  // The proof text names who was ASKED: it is saved at submission, before anyone answers.
+  assert.equal(explanationVerifySource({ confirmerName: "Ahmed", reasonCode: "training" }), "Named confirmer: Ahmed");
+  assert.doesNotMatch(explanationVerifySource({ confirmerName: "Ahmed", reasonCode: "meeting" }), /^Confirmed/);
+  assert.equal(currentVerificationSourceText("Confirmed by Ahmed"), "Named confirmer: Ahmed", "a request filed before the wording was fixed reads as what it was");
+  assert.equal(currentVerificationSourceText("Manager Confirmation"), "Manager Confirmation", "an ordinary option is left alone");
   const notice = server.slice(server.indexOf("export async function notifyExplanationConfirmer"), server.indexOf("// ── The confirmer's side"));
   assert.match(notice, /channels: \["in_app", "push"\]/, "the confirmer is told in-app and by push");
   assert.doesNotMatch(notice, /"email"/, "and never by email");

@@ -33,12 +33,15 @@ import {
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
   isDeniedColumn,
+  exportRowCap,
   isDeniedTable,
+  maskUnrecognizedIdentifiers,
   orderTiebreakers,
   planTableRead,
   readableTables,
   rowsThatFit,
   schemaFromOpenApi,
+  signInMaskExtraColumns,
 } from "../src/lib/chatgpt-connector/tools/table-guard.ts";
 import {
   CUSTOMER_LIST_COLUMNS,
@@ -479,6 +482,51 @@ function testToolSources() {
     "with no id, every other SELECTED column breaks the tie — the unselected credential column never does",
   );
   assert.ok(tables.includes("for (const column of ties) query = query.order(column"), "the page applies the tiebreakers after the asked order");
+  // The export holds the whole workbook in memory: a narrow table keeps the owner's 50,000 rows a file, a wide one gives fewer.
+  assert.equal(exportRowCap(10), 50_000, "10 columns keep 50,000 rows");
+  assert.equal(exportRowCap(25), 20_000, "25 columns give the web export's own cap");
+  assert.equal(exportRowCap(200), 2_500, "200 columns give 2,500 rows a file");
+  assert.equal(exportRowCap(0), 50_000, "no columns never divides by zero");
+  assert.ok(tables.includes("exportRowCap(plan.columns.length)"), "the export loop is capped by cells, not by rows alone");
+  assert.ok(tables.includes("while (rows.length < rowCap &&") && tables.includes("rowCap - rows.length"), "the read loop and its page size stop at the cell cap, not at 50,000 rows");
+  assert.ok(tables.includes("EXPORT_BUILD_DEADLINE_MS"), "a build that overran saves nothing, so a retry cannot duplicate a file");
+  assert.ok(tables.indexOf("const started = Date.now();") < tables.indexOf("await loadPublicSchema();", tables.indexOf("export const exportTableTool")), "the budget starts before the schema read, which can itself be slow");
+  // A wrong sign-in name is stored as typed — a password pasted into the login-id box too — and every table is readable,
+  // so text that matches no account reads "(not an account)"; real login ids stay, so "who failed to sign in" still works.
+  const accounts = new Set(["b-10", "owner", "pd-0042"]);
+  assert.deepEqual(
+    maskUnrecognizedIdentifiers("auth_login_attempts", [{ login_id: "B-10" }, { login_id: "Hunter2!2026" }, { login_id: null }], accounts),
+    [{ login_id: "B-10" }, { login_id: "(not an account)" }, { login_id: null }],
+    "the attempts table keeps a real id and masks typed text that names nobody",
+  );
+  assert.deepEqual(
+    maskUnrecognizedIdentifiers(
+      "audit_logs",
+      [
+        { entity_type: "auth_session", actor_login_id: "Hunter2!2026", entity_id: "Hunter2!2026" },
+        { entity_type: "auth_session", actor_login_id: "owner", entity_id: "203.0.113.9" },
+        { entity_type: "auth_session", actor_login_id: "system", entity_id: "owner" },
+        { entity_type: "employee", actor_login_id: "someone-not-listed", entity_id: "B-158" },
+      ],
+      accounts,
+    ),
+    [
+      { entity_type: "auth_session", actor_login_id: "(not an account)", entity_id: "(not an account)" },
+      { entity_type: "auth_session", actor_login_id: "owner", entity_id: "203.0.113.9" },
+      { entity_type: "auth_session", actor_login_id: "system", entity_id: "owner" },
+      { entity_type: "employee", actor_login_id: "someone-not-listed", entity_id: "B-158" },
+    ],
+    "an audit row is masked only when it is a sign-in row whose actor matches no account; a blocked address and every other row stay as stored",
+  );
+  assert.deepEqual(signInMaskExtraColumns("audit_logs", ["entity_id"]), ["entity_type", "actor_login_id"], "the mask reads the columns it needs and the answer drops them");
+  assert.deepEqual(signInMaskExtraColumns("audit_logs", ["summary"]), [], "a read that touches neither column needs nothing extra");
+  assert.deepEqual(signInMaskExtraColumns("employees", ["entity_id"]), []);
+  assert.deepEqual(
+    maskUnrecognizedIdentifiers("audit_logs", [{ entity_type: "auth_session", actor_login_id: "Hunter2!2026", entity_id: "Hunter2!2026" }], accounts, ["entity_type", "actor_login_id"]),
+    [{ entity_id: "(not an account)" }],
+    "the internal columns are removed from the answer",
+  );
+  assert.ok(tables.includes("maskUnrecognizedIdentifiers(plan.table, page.rows, await loadAccountKeys(), extra)"), "every page of the two sign-in tables goes through the mask, the export too");
   assert.ok(tables.includes('error.message.includes("ordering operator")'), "a table whose column has no ordering operator still reads, by the asked order alone");
   assert.ok(tables.includes("next_offset"), "the reader tells ChatGPT where the next page starts");
   assert.ok(tables.includes("planTableRead("), "the table reader runs only a guarded plan");
@@ -495,6 +543,8 @@ function testToolSources() {
   assert.ok(sales.includes("filterRowsForBound("), "rows are bounded to the viewer before any roll-up");
   assert.ok(sales.includes("isRowPublished("), "only published closings are figures");
   const hr = source("hr.ts");
+  assert.equal(hr.includes("absenceRate * 100"), false, "absenceRate is already a percent (monthly-summary.ts round2(...*100)): never multiplied again");
+  assert.ok(hr.includes("t.absenceRate.toFixed(1)"), "the company attendance summary prints the percent as it is");
   assert.ok(hr.includes('assertPermission(ctx, "attendance", "read")') && hr.includes("assertCanViewEmployeeAttendance("), "attendance mirrors its route's two gates");
   assert.ok(hr.includes("assertAttendanceMonthlySummaryPermission("), "the company attendance summary keeps its salary-blind gate");
   assert.ok(hr.includes('getPayrollScope(ctx) !== "COMPANY"') && hr.includes('assertPermission(ctx, "payroll", "export")'), "payroll mirrors the download route");

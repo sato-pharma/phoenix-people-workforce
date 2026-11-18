@@ -100,7 +100,8 @@ function checkDatabase(): void {
   // "Keep it" (and a bulk Approve) runs the approve branch again. The reject lock above reads decided_by_hr_id,
   // so that branch must leave a Super Admin's decision whole — name, time and note TOGETHER — when somebody who is
   // not one approves an active building he approved. Last replacer of the function: the follow-up migration.
-  const keepIt = readSql("supabase/migrations/20261118191500_phoenix_crm_keep_it_keeps_the_super_admin_decision.sql");
+  // The last replacer of the function reads from here: it must keep every Keep-it line below AND the building guard.
+  const keepIt = readSql("supabase/migrations/20261118220000_phoenix_crm_building_reject_respects_super_admin_seats.sql");
   const approve = /create or replace function public\.phoenix_crm_decide_shared_place\(p jsonb\)[\s\S]*?\n\$\$;/.exec(keepIt);
   assert.ok(approve, "the Keep-it migration redefines phoenix_crm_decide_shared_place");
   assert.match(
@@ -118,6 +119,18 @@ function checkDatabase(): void {
       `Keep it leaves his ${column} alone — the name alone staying put printed his name beside the SFE Manager's click time and note`,
     );
   }
+  // Rejecting the BUILDING retires every seat in it, so it is refused for anyone but a Super Admin while a VALIDATED
+  // customer seated in it stands on a Super Admin's approval (a review he approved, or a place he created); a building
+  // whose seated doctors are still pending stays the SFE's to reject (owner, 18 Nov 2026).
+  assert.match(
+    approve[0],
+    /if v_decision = 'reject' and not public\.phoenix_crm_is_super_admin\(v_actor\) and exists \([\s\S]*?pl\.shared_place_id = v_id and pl\.status = 'active' and c\.status = 'active'[\s\S]*?public\.phoenix_crm_is_super_admin\(pl\.created_by_hr_id\)[\s\S]*?r\.status = 'approved' and public\.phoenix_crm_is_super_admin\(r\.decided_by_hr_id\)[\s\S]*?raise exception 'phoenix_crm:approved_by_super_admin';/,
+    "a building is not rejected by anyone else while a validated seat stands on the Super Admin's approval",
+  );
+  assert.ok(
+    approve[0].indexOf("c.status = 'active'") < approve[0].indexOf("set status = 'retired', decided_at = now()"),
+    "and the guard runs before the building is retired",
+  );
   assert.ok(approve[0].includes("revoke execute on function") === false && keepIt.includes("revoke execute on function public.phoenix_crm_decide_shared_place(jsonb) from public, anon, authenticated;"), "and the function stays closed to the browser roles");
 }
 
