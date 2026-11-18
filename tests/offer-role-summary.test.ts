@@ -7,7 +7,7 @@ import { executiveOfferBlocks } from "../src/lib/offers/executive-template.ts";
 import { houseOfferBlocks } from "../src/lib/offers/house-template.ts";
 import { premiumOfferBlocks } from "../src/lib/offers/premium-template.ts";
 import { prestigeOfferBlocks } from "../src/lib/offers/prestige-template.ts";
-import { reportsToChoicesForTitle } from "../src/lib/offers/reports-to-choices.ts";
+import { pickReportsToManager, reportsToChoicesForTitle, type ReportsToPerson } from "../src/lib/offers/reports-to-choices.ts";
 import { satoOfferBlocks } from "../src/lib/offers/sato-template.ts";
 import {
   OFFER_FIELD_FORCE_ROLE_SUMMARY,
@@ -323,6 +323,26 @@ export function runOfferRoleSummaryTests(): void {
   assert.deepEqual([...reportsToChoicesForTitle("Group Product Manager")], [], "a Group Product Manager is not offered a choice");
   assert.deepEqual([...reportsToChoicesForTitle("Medical Representative")], [], "every other title keeps its one reporting line");
   assert.deepEqual([...reportsToChoicesForTitle(null)], [], "no title, no choices");
+
+  // The joining form files the joiner under the person holding the CHOSEN title, not the vacancy's
+  // default manager (Nourhan Abdelmoniem, 18 Nov 2026: offer named the Group Product Manager, the
+  // record and the Head Office announcement named the Marketing Manager).
+  const people: ReportsToPerson[] = [
+    { active: true, hrId: "A-9", jobTitle: "Marketing Manager", lineId: 1, name: "Hossam" },
+    { active: true, hrId: "A-8", jobTitle: "Group Product Manager", lineId: 3, name: "Rasha Sabry" },
+    { active: false, hrId: "A-7", jobTitle: "Group Product Manager", lineId: 2, name: "Left" },
+  ];
+  const pick = (reportsTo: string | null, offerTitle = "Product Manager", list = people, seatLineId: number | null = 2) =>
+    pickReportsToManager({ offerTitle, people: list, reportsTo, seatLineId });
+  assert.deepEqual(pick("Group Product Manager"), { hrId: "A-8", name: "Rasha Sabry" }, "the one active Group Product Manager is the manager");
+  assert.deepEqual(pick("  group product MANAGER "), { hrId: "A-8", name: "Rasha Sabry" }, "matched on the trimmed title, any case");
+  assert.deepEqual(pick("Marketing Manager"), { hrId: "A-9", name: "Hossam" }, "the other choice resolves the same way");
+  assert.equal(pick("Group Product Manager", "Medical Representative"), null, "a title without choices keeps the vacancy's manager");
+  assert.equal(pick("Chief Executive Officer"), null, "words that are not one of the choices keep the vacancy's manager");
+  assert.equal(pick(null), null, "no reporting line, no change");
+  const two = [...people, { active: true, hrId: "A-6", jobTitle: "Group Product Manager", lineId: 2, name: "Second" }];
+  assert.deepEqual(pick("Group Product Manager", "Product Manager", two, 2), { hrId: "A-6", name: "Second" }, "two holders: the one on the seat's line");
+  assert.equal(pick("Group Product Manager", "Product Manager", two, 9), null, "two holders and neither on the seat's line: never a guess");
   const pmLetter = renderedBody(prestigeOfferBlocks(), {
     ...FIELDS,
     reportsTo: "Group Product Manager",

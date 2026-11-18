@@ -28,3 +28,41 @@ function normalizeTitle(title: string | null | undefined): string {
 export function reportsToChoicesForTitle(title: string | null | undefined): readonly string[] {
   return REPORTS_TO_CHOICES[normalizeTitle(title)] ?? [];
 }
+
+/** One person the joining form may file a new joiner under. */
+export type ReportsToPerson = {
+  active: boolean;
+  hrId: string;
+  jobTitle: string | null;
+  lineId: number | null;
+  name: string;
+};
+
+/**
+ * The manager the joining form files a new joiner under when the offer CHOSE a reporting line.
+ *
+ * WHY. The record's manager used to come from the vacancy alone, so a Product Manager whose offer
+ * said "reporting to the Group Product Manager" was filed under the Marketing Manager, and the new
+ * joiner announcement told Head Office the wrong name (Nourhan Abdelmoniem, 18 Nov 2026: the offer
+ * named the Group Product Manager, the record and the email named the Marketing Manager).
+ *
+ * Only for a title that offers choices, and only when the offer's words are one of them: every other
+ * title's "Reports to" is free text and the vacancy keeps deciding. The choice is a title, so it
+ * becomes a person only when exactly one ACTIVE employee holds that title, or exactly one on the
+ * seat's own line; anything else returns null and the vacancy's manager stays. PURE.
+ */
+export function pickReportsToManager(input: {
+  offerTitle: string | null | undefined;
+  people: readonly ReportsToPerson[];
+  reportsTo: string | null | undefined;
+  seatLineId: number | null;
+}): { hrId: string; name: string } | null {
+  const wanted = normalizeTitle(input.reportsTo);
+  if (!wanted) return null;
+  const offered = reportsToChoicesForTitle(input.offerTitle).map(normalizeTitle);
+  if (!offered.includes(wanted)) return null;
+  const holders = input.people.filter((person) => person.active && normalizeTitle(person.jobTitle) === wanted);
+  const onLine = input.seatLineId === null ? [] : holders.filter((person) => person.lineId === input.seatLineId);
+  const pick = holders.length === 1 ? holders[0] : onLine.length === 1 ? onLine[0] : null;
+  return pick ? { hrId: pick.hrId, name: pick.name } : null;
+}
