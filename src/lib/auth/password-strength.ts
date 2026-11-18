@@ -2,17 +2,17 @@
  * The one rule for a password a person chooses (changing it, or setting it from a link).
  *
  * At least 8 characters, and not the person's own login id. Every Phoenix sign-in is also throttled per
- * account and per address and locks after repeated failures, and leaked-password.ts refuses a password
- * found in a published leak.
+ * account and per address and locks after repeated failures.
  *
  * THE "TOO COMMON" RULE IS GONE (owner, 18 Nov 2026: "remove this security shit", then "Just this rule"):
  * a well-known password, a straight run, or a word dressed with digits and symbols ("Phoenix2026!") is no
- * longer refused here. The 8-character floor, the own-login-id rule and the leak check stay.
+ * longer refused here. The leaked-password check was switched off the same night ("Remove it too"). The
+ * 8-character floor and the own-login-id rule stay.
  *
  * Generated passwords (temporary-password.ts, the test accounts' first one) never pass through here.
  *
  * A TEST ACCOUNT TAKES WHATEVER PASSWORD THE SUPER ADMIN CHOOSES (owner, 17 Nov 2026: "when test account
- * make it normally be as i want"). No length floor, no login-id rule, no leaked-password check — on both
+ * make it normally be as i want"). No length floor and no login-id rule — on both
  * doors, changing it and setting it from the link. Only an empty password is still refused.
  */
 

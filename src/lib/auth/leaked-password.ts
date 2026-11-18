@@ -1,4 +1,8 @@
 /**
+ * 🔴 SWITCHED OFF (owner, 18 Nov 2026: "Remove it too"). Neither door calls checkLeakedPassword any more;
+ * the module and its tests are kept so it can be switched back on by calling it again in
+ * change-password.ts and password-setup.ts.
+ *
  * A PASSWORD THAT HAS ALREADY LEAKED IS REFUSED WHEN IT IS CHOSEN (integration audit INT-006; owner,
  * 13 Nov 2026: "Refuse it when chosen").
  *
