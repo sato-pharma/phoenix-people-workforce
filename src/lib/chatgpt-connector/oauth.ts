@@ -242,7 +242,13 @@ export interface ConnectorOAuthStore {
 }
 
 /** The live account check (identity.ts reads app_auth_users and employees). */
-export type LiveSubjectCheck = (subject: GrantSubject) => Promise<{ ok: true } | { ok: false; reason: string }>;
+/**
+ * The live account check's answer. `unavailable` marks a refusal that is an OUTAGE (a read that failed), never a verdict
+ * about the account: a verdict ends the connection, an outage leaves it exactly as it was — the website session's own
+ * rule (session-lifecycle.ts). A verdict carries no flag.
+ */
+export type LiveSubjectVerdict = { ok: true } | { ok: false; reason: string; unavailable?: true };
+export type LiveSubjectCheck = (subject: GrantSubject) => Promise<LiveSubjectVerdict>;
 
 export type TokenResponse = {
   access_token: string;
@@ -409,6 +415,9 @@ export function createConnectorOAuth(options: {
       }
       const live = await checkSubject(known);
       if (!live.ok) {
+        // A read blip must not destroy the connection: the refresh token is still unspent (it is spent only after the
+        // new pair is written), so ChatGPT's retry refreshes normally. Only a real verdict revokes the family.
+        if (live.unavailable) throw new OAuthError("temporarily_unavailable", live.reason, 503);
         await store.revokeFamily(known.familyId, "account_check_failed", iso(now()));
         throw new OAuthError("invalid_grant", live.reason);
       }

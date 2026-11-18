@@ -249,6 +249,8 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
   /** Captures that outlived answerWithinMs, by run id, until phoenix_get_capture collects them. */
   const pending = new Map();
   const PENDING_KEEP_MS = 30 * 60_000;
+  /** How long after a run FINISHES an identical request is read as ChatGPT's retry rather than a new question. */
+  const REASK_WINDOW_MS = 120_000;
   const auditPath = auditFile === undefined ? path.join(repoRoot, ...RUN_ROOT, "mcp-audit.jsonl") : auditFile;
 
   function audit(record) {
@@ -279,7 +281,10 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     // of exactly these ids answers instead of a second browser.
     const key = JSON.stringify({ module, persona, states, viewports: viewports ?? ["desktop"] });
     for (const [id, entry] of pending) {
-      if (entry.key === key && now() - entry.startedAt <= PENDING_KEEP_MS) return collect(id, entry);
+      // Running, or finished only moments ago. A run that finished and was never collected must not answer the same
+      // question 20 minutes later (or after a deploy) with its old pictures; asking for it by run id still works.
+      const fresh = entry.finishedAt === null ? now() - entry.startedAt <= PENDING_KEEP_MS : now() - entry.finishedAt <= REASK_WINDOW_MS;
+      if (entry.key === key && fresh) return collect(id, entry);
     }
     const runId = `${cairoStamp(new Date(now())).id}-mcp`;
     const running = runBounded((signal) =>
@@ -289,7 +294,12 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     if (!finished) {
       running.catch(() => {});
       for (const [id, entry] of pending) if (now() - entry.startedAt > PENDING_KEEP_MS) pending.delete(id);
-      pending.set(runId, { module, key, running, startedAt: now() });
+      const entry = { module, key, running, startedAt: now(), finishedAt: null };
+      const done = () => {
+        entry.finishedAt = now();
+      };
+      running.then(done, done);
+      pending.set(runId, entry);
       return stillCapturing(module, runId);
     }
     return resultOf(finished.run);

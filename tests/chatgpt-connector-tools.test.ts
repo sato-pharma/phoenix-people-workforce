@@ -495,6 +495,8 @@ function testToolSources() {
   assert.ok(sales.includes("filterRowsForBound("), "rows are bounded to the viewer before any roll-up");
   assert.ok(sales.includes("isRowPublished("), "only published closings are figures");
   const hr = source("hr.ts");
+  assert.equal(hr.includes("absenceRate * 100"), false, "absenceRate is already a percent (monthly-summary.ts round2(...*100)): never multiplied again");
+  assert.ok(hr.includes("t.absenceRate.toFixed(1)"), "the company attendance summary prints the percent as it is");
   assert.ok(hr.includes('assertPermission(ctx, "attendance", "read")') && hr.includes("assertCanViewEmployeeAttendance("), "attendance mirrors its route's two gates");
   assert.ok(hr.includes("assertAttendanceMonthlySummaryPermission("), "the company attendance summary keeps its salary-blind gate");
   assert.ok(hr.includes('getPayrollScope(ctx) !== "COMPANY"') && hr.includes('assertPermission(ctx, "payroll", "export")'), "payroll mirrors the download route");
