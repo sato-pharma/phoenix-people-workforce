@@ -53,14 +53,22 @@ export function expectedOwnerOf(slugOrName, org = GITHUB_OWNER, personal = PERSO
  * A reason is not a failure, and naming WHICH one keeps the next reader off the wrong trail: a 403
  * here was a real three-hour Pro-entitlement lapse on 2026-09-27, during which protection returned
  * "Upgrade to GitHub Pro" and `branches/main` read `protected: false`.
+ *
+ * 🔴 A 403 IS ANSWERED FROM `branches/main`, NEVER LEFT AS A SKIP (2026-11-19, owner: "fix the protection
+ * drift check that stays green on 403"). The protection endpoint needs repository-administration rights,
+ * which no workflow token can be granted, so the daily drift check read 403 and skipped EVERY day, green,
+ * proving nothing. `branches/main` carries the same list (`protection.required_status_checks.contexts`)
+ * to anyone who can read the repository; measured 2026-11-19 it answered `validate`, `checks` with no
+ * token at all. So a 403 reads that, and it also tells the two 403s apart: `protected: false` is the
+ * entitlement lapse above, i.e. `main` unprotected, and is returned as the alarm, never as a list.
+ * A branch read with no list on it is a skip: an empty list is never invented, because downstream an
+ * empty list is the one reading that makes every open PR look green (scripts/rollup-check-state.mjs).
+ *
+ * `gh` is a parameter only so tests/protection-read-fallback.test.ts can drive every branch.
  */
-export function readProtectionContexts() {
+export function readProtectionContexts({ gh = runGh } = {}) {
   try {
-    const raw = execFileSync(
-      'gh',
-      ['api', `repos/${REPO}/branches/main/protection/required_status_checks`, '--jq', '.contexts'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 },
-    );
+    const raw = gh(['api', `repos/${REPO}/branches/main/protection/required_status_checks`, '--jq', '.contexts']);
     const contexts = JSON.parse(raw);
     if (!Array.isArray(contexts)) return { skipped: 'protection returned no contexts array' };
     return { contexts };
@@ -68,10 +76,35 @@ export function readProtectionContexts() {
     const stderr = String(err?.stderr ?? '');
     if (err?.code === 'ENOENT') return { skipped: 'the `gh` CLI is not on PATH here' };
     if (/gh auth login|authentication|not logged/i.test(stderr)) return { skipped: '`gh` is not authenticated here' };
-    if (/403/.test(stderr)) return { skipped: 'protection returned 403 — token scope, or the repo lost its Pro entitlement' };
+    if (/403/.test(stderr)) return readBranchProtectionSummary(gh);
     if (/404/.test(stderr)) return { skipped: 'protection returned 404 — main may not be protected at all (read that as an ALARM, not a skip)' };
     return { skipped: `could not read protection (${String(err?.message ?? err).split('\n')[0]})` };
   }
+}
+
+/** Runs `gh` and returns its stdout, throwing as execFileSync does (with `.stderr` and `.code`). */
+function runGh(args) {
+  return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
+}
+
+/** The required checks as `branches/main` states them, after the protection endpoint answered 403. */
+function readBranchProtectionSummary(gh) {
+  const forbidden = 'protection returned 403 — token scope, or the repo lost its Pro entitlement';
+  let branch;
+  try {
+    branch = JSON.parse(gh(['api', `repos/${REPO}/branches/main`]));
+  } catch (err) {
+    const why = String(err?.stderr || err?.message || err).trim().split('\n')[0];
+    return { skipped: `${forbidden}, and the branches/main read failed too (${why})` };
+  }
+  if (branch?.protected === false) {
+    return { skipped: 'branches/main reads protected: false — main is NOT protected at all (read that as an ALARM, not a skip)' };
+  }
+  const contexts = branch?.protection?.required_status_checks?.contexts;
+  if (branch?.protected !== true || !Array.isArray(contexts)) {
+    return { skipped: `${forbidden}, and branches/main carried no required-check list` };
+  }
+  return { contexts, via: 'branches/main' };
 }
 
 /**

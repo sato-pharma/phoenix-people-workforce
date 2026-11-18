@@ -148,6 +148,12 @@ if (asJson) {
 }
 
 console.log(`[required-checks] protection requires ${live.contexts.length}: ${live.contexts.join(', ')}`);
+if (live.via) {
+  console.log(
+    `[required-checks] read from ${live.via} — the protection endpoint answered 403 to this token (it needs `
+      + 'administration rights); the branch states the same list to any reader.',
+  );
+}
 console.log(`[required-checks] AGENTS.md §2 declares ${declared.count}: ${declared.names.join(', ')}`);
 console.log(positionLine());
 

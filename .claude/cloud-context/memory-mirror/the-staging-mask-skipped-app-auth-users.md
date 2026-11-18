@@ -1,12 +1,17 @@
 ---
 name: the-staging-mask-skipped-app-auth-users
-description: "staging's mask only ever covered `employees` — a full audit of all 3,034 text columns on 2026-10-06 found ~236,000 rows of real names, 528 real work emails and 199 real Egyptian national IDs across 27 other columns, worst being ireports360_visits (126k agent names, 88k Arabic doctor names) and salary_records. The test: any employee-name value outside the `employees.full_name` pool was never rewritten"
+description: "HISTORY — measured 19 Nov 2026, staging's `employees` table is NOT masked any more (225/245 names, 244 work emails, 183 national IDs equal production by HR id) and the pre-image schema masking_backup_20261006 was dropped; see staging-is-now-mock-data-not-a-production-mirror. As of 6 Oct: staging's mask only ever covered `employees` — a full audit of all 3,034 text columns on 2026-10-06 found ~236,000 rows of real names, 528 real work emails and 199 real Egyptian national IDs across 27 other columns, worst being ireports360_visits (126k agent names, 88k Arabic doctor names) and salary_records. The test: any employee-name value outside the `employees.full_name` pool was never rewritten"
 metadata:
   node_type: memory
   type: project
   originSessionId: d633e730-6670-4001-a5e4-27b0a4fd99f4
-  modified: 2026-10-06T04:39:55.356Z
+  modified: 2026-11-18T22:57:02.447Z
 ---
+
+> **19 Nov 2026:** staging's live `employees` table no longer holds masked values — 225 of 245 English
+> names, 235 Arabic names, 244 work emails and 183 national IDs equal production's for the same HR id
+> (read-only comparison). The pre-image schema `masking_backup_20261006` named below was dropped on
+> the owner's word. Treat everything below as the 6 Oct state.
 
 The staging mask (run 5-6 Oct 2026, before the *Inside Phoenix* LinkedIn filming) covered
 `employees` and missed **`app_auth_users`**, which is what the admin user-management screens read.
