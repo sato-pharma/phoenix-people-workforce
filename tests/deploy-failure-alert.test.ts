@@ -15,7 +15,10 @@
 //   - both working steps are `continue-on-error` with their own timeout, because the run's check
 //     suite attaches to the DEPLOYMENT'S COMMIT and a red or cancelled suite there is what makes a
 //     release gate refuse that commit (tests/scheduled-alarms-never-withhold.test.ts, same rule);
-//   - the Telegram step keeps its fallback text and the same secrets as the drift check.
+//   - the Telegram step keeps its fallback text and the same secrets as the drift check;
+//   - the message is HANDED OFF to a second run on main (clause 8): the Telegram pair lives only in the main-only
+//     `main-secrets` environment, and a `deployment_status` run has no branch for its "only main" rule to match,
+//     because Railway creates each deployment with a bare commit sha as its ref (credentials audit, 19 Nov 2026).
 //
 // Each invariant is asserted SEPARATELY with its own message, so a failing clause names itself.
 
@@ -61,31 +64,37 @@ export function runDeployFailureAlertTests() {
 
   // 4 — it can never leave a red or cancelled suite on the deployment's commit.
   assert.match(source, /concurrency:[\s\S]*?cancel-in-progress:\s*false/, "cancelling a run would leave a `cancelled` suite on the deployment's commit");
-  const jobCeiling = Number(/^ {4}timeout-minutes:\s*(\d+)\s*$/m.exec(source)?.[1] ?? "0");
-  assert.ok(jobCeiling > 0, "the job needs its own timeout-minutes, otherwise its ceiling is six hours");
-  const steps = source.split(/^ {6}- name: /m).slice(1);
-  assert.equal(steps.length, 2, `expected exactly two steps (facts, Telegram), found ${steps.length}`);
-  let budget = 0;
-  for (const step of steps) {
-    const name = step.split("\n")[0];
-    assert.match(step, /^ {8}continue-on-error:\s*true\s*$/m, `step "${name}" must be continue-on-error so a finding or a delivery failure never turns the commit red`);
-    const t = /^ {8}timeout-minutes:\s*(\d+)\s*$/m.exec(step);
-    assert.ok(t, `step "${name}" needs its own timeout-minutes: a step timeout is absorbed, a job timeout concludes cancelled`);
-    budget += Number(t![1]);
+  const jobs = jobBlocks(source);
+  assert.deepEqual(Object.keys(jobs), ["alert", "send"], "expected exactly two jobs: `alert` works out the message, `send` posts it from main");
+  const stepCount: Record<string, number> = { alert: 2, send: 1 };
+  for (const [id, body] of Object.entries(jobs)) {
+    const jobCeiling = Number(/^ {4}timeout-minutes:\s*(\d+)\s*$/m.exec(body)?.[1] ?? "0");
+    assert.ok(jobCeiling > 0, `job \`${id}\` needs its own timeout-minutes, otherwise its ceiling is six hours`);
+    const steps = body.split(/^ {6}- name: /m).slice(1);
+    assert.equal(steps.length, stepCount[id], `job \`${id}\`: expected ${stepCount[id]} step(s), found ${steps.length}`);
+    let budget = 0;
+    for (const step of steps) {
+      const name = step.split("\n")[0];
+      assert.match(step, /^ {8}continue-on-error:\s*true\s*$/m, `step "${name}" must be continue-on-error so a finding or a delivery failure never turns the commit red`);
+      const t = /^ {8}timeout-minutes:\s*(\d+)\s*$/m.exec(step);
+      assert.ok(t, `step "${name}" needs its own timeout-minutes: a step timeout is absorbed, a job timeout concludes cancelled`);
+      budget += Number(t![1]);
+    }
+    assert.ok(jobCeiling > budget, `job \`${id}\`: the ceiling (${jobCeiling}) must sit above the sum of its step budgets (${budget})`);
   }
-  assert.ok(jobCeiling > budget, `the job ceiling (${jobCeiling}) must sit above the sum of its step budgets (${budget})`);
 
   // 5 — delivery: the same channel as the drift check, with a fallback so the facts step breaking never silences it.
-  assert.match(source, /secrets\.TELEGRAM_BOT_TOKEN/, "must use the existing TELEGRAM_BOT_TOKEN secret");
-  assert.match(source, /secrets\.TELEGRAM_ALERT_CHAT_ID/, "must use the existing TELEGRAM_ALERT_CHAT_ID secret, never a new recipient");
-  assert.match(source, /if: \$\{\{ always\(\) && env\.SEND != 'no' \}\}/, "the Telegram step must run unless the facts step positively said this is a repeat");
-  assert.match(source, /if \[ -z "\$\{TEXT:-\}" \]/, "the Telegram step must keep a bare fallback text for the case where the facts step broke");
-  assert.match(source, /api\.telegram\.org\/bot\$\{TELEGRAM_BOT_TOKEN\}\/sendMessage/, "must post to the Telegram Bot API");
+  assert.match(jobs.send, /secrets\.TELEGRAM_BOT_TOKEN/, "the send job must use the existing TELEGRAM_BOT_TOKEN secret");
+  assert.match(jobs.send, /secrets\.TELEGRAM_ALERT_CHAT_ID/, "the send job must use the existing TELEGRAM_ALERT_CHAT_ID secret, never a new recipient");
+  assert.match(jobs.alert, /if: \$\{\{ always\(\) && env\.SEND != 'no' \}\}/, "the hand-off must run unless the facts step positively said this is a repeat");
+  assert.match(jobs.alert, /if \[ -z "\$\{TEXT:-\}" \]/, "the hand-off must keep a bare fallback text for the case where the facts step broke");
+  assert.match(jobs.send, /api\.telegram\.org\/bot\$\{TELEGRAM_BOT_TOKEN\}\/sendMessage/, "the send job must post to the Telegram Bot API");
   assert.doesNotMatch(source, /parse_mode/, "the commit subject is attacker-shaped text; it must go out as plain text, never parsed as HTML or Markdown");
 
   // 6 — event data reaches the shell through `env:`, never interpolated into the script body.
-  const scriptBodies = source.split(/^ {8}run: \|\n/m).slice(1).map((b) => b.split(/^ {6}- name: /m)[0]);
-  assert.ok(scriptBodies.length === 2, `expected two run blocks, found ${scriptBodies.length}`);
+  // A block ends at the first non-blank line indented less than its own ten spaces (the next step, or the next job).
+  const scriptBodies = source.split(/^ {8}run: \|\n/m).slice(1).map((b) => b.split(/^(?! {10}|\s*$)/m)[0]);
+  assert.ok(scriptBodies.length === 3, `expected three run blocks (facts, hand-off, send), found ${scriptBodies.length}`);
   for (const body of scriptBodies) {
     assert.doesNotMatch(body, /\$\{\{/, "an expression inside a run block interpolates event data into shell source; pass it through env: instead");
   }
@@ -110,4 +119,41 @@ export function runDeployFailureAlertTests() {
   const carried = /if \[ "\$CARRIED" = "yes" \] && \[ "\$\{WENT_LIVE:-0\}" = "0" \]; then[\s\S]*?\n {10}fi\n/.exec(source)?.[0] ?? "";
   assert.match(carried, /emit SEND "no"/, "the carried case must silence the alert, not merely reword it");
   assert.match(carried, /exit 0/, "the carried case must stop there rather than fall through and build a message it has already explained");
+
+  // 8 — the message is handed to a run on main, because only main may read the Telegram pair.
+  //
+  // WHY. Since 19 Nov 2026 the Telegram pair lives only in `main-secrets`, which only `main` may use (credentials audit,
+  // the owner's "fix those"). Railway creates its deployments with a bare commit sha as the ref, so a
+  // `deployment_status` run has no branch for that rule to match and cannot stand in the environment. The `alert` job
+  // therefore reads no secret and dispatches this workflow on main with `relay_text`; `send` posts it from there.
+  assert.doesNotMatch(jobs.alert, /secrets\./, "the alert job runs on Railway's event, which no environment rule can admit, so it must read no secret");
+  assert.doesNotMatch(jobs.alert, /^ {4}environment:/m, "the alert job must not stand in an environment: a deployment_status run has no branch, so main-secrets would refuse it and the alarm would die");
+  assert.match(jobs.send, /^ {4}environment: main-secrets\b/m, "the send job must stand in main-secrets, the only place the Telegram pair lives");
+  assert.match(jobs.alert, /^ {6}actions: write\b/m, "the alert job needs `actions: write` to dispatch the send run");
+  assert.match(jobs.alert, /actions\/workflows\/deploy-failure-alert\.yml\/dispatches/, "the hand-off must dispatch this same workflow");
+  assert.match(jobs.alert, /\{ref: "main", inputs: \{relay_text: \$t\}\}/, "the hand-off must dispatch on main (the only ref main-secrets admits), with the message as relay_text built by jq");
+  const alertIf = /^ {4}if:\s*(.+)$/m.exec(jobs.alert)?.[1] ?? "";
+  assert.match(alertIf, /github\.event_name == 'workflow_dispatch' && inputs\.relay_text == ''/, "a dispatch carrying relay_text must never re-enter the alert job, or the hand-off would loop for ever");
+  const sendIf = /^ {4}if:\s*(.+)$/m.exec(jobs.send)?.[1] ?? "";
+  assert.match(sendIf, /github\.event_name == 'workflow_dispatch' && inputs\.relay_text != ''/, "the send job must run only for a hand-off");
+  assert.match(jobs.send, /^ {10}TEXT: \$\{\{ inputs\.relay_text \}\}$/m, "the send job must take the message from relay_text through env:, never into the script body");
+  assert.match(source, /^ {6}relay_text:\s*$/m, "workflow_dispatch must declare the relay_text input");
+}
+
+/** Each top-level job's body, keyed by its id, in file order. */
+function jobBlocks(source: string): Record<string, string> {
+  const at = source.search(/^jobs:\s*$/m);
+  assert.ok(at >= 0, "the workflow has no jobs: block");
+  const out: Record<string, string> = {};
+  let id = "";
+  for (const line of source.slice(at).split("\n").slice(1)) {
+    const head = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+    if (head) {
+      id = head[1];
+      out[id] = "";
+      continue;
+    }
+    if (id) out[id] += line + "\n";
+  }
+  return out;
 }

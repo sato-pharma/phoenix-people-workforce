@@ -146,7 +146,7 @@ async function lookup(q) {
 }
 
 const outFile = process.argv[2] ?? "gap-pins.sql";
-const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false });
+const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false, ssl: "require" });
 
 let targets, centres;
 try {

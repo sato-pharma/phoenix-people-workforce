@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: fb7acb22-dea4-40c6-b1bb-b67f01bff48a
-  modified: 2026-11-18T22:56:25.584Z
+  modified: 2026-11-18T23:20:28.686Z
 ---
 
 **What happened.** The 18 Nov 2026 Railway audit found a GitHub classic token in the website service's production
@@ -27,5 +27,9 @@ status COMMITTED, no error; read-back shows no registry field anywhere in produc
 - From node, start the CLI by its full path, `C:/Users/satoh/AppData/Roaming/npm/node_modules/@railway/cli/bin/railway.exe`
   — `spawnSync("railway.exe")` without a shell finds nothing (the npm shim is `railway.cmd`).
 - Read registry fields by NAME only (SET/empty), never print the value.
-- Revoking the token on GitHub is the owner's. If it is `GHCR_PULL_TOKEN`, the fallback route then needs a new
-  read-only package token saved under that name, minted by him. Related: [[the-repo-railway-token-is-dead-and-the-fallback-needs-an-account-token]].
+- **The owner revoked the old token on GitHub at about 01:20 Cairo on 19 Nov 2026 ("I revoked it").** Nothing that
+  runs used it. Tested right after, by hash and GitHub's answer only: the laptop's `gh` and git login, Railway
+  production's `GITHUB_ACTIONS_DISPATCH_TOKEN` (website and worker) and `GITHUB_BACKUP_TOKEN` (code backup) all
+  answered 200. The Configuration Drift Check (run 44419653943, on c41f75494) read `GHCR_PULL_TOKEN` as **live, no expiry**,
+  and the dispatch and billing tokens as live too. So the token in the registry field was NOT today's
+  `GHCR_PULL_TOKEN`, and the fallback route needs no new token. Related: [[the-repo-railway-token-is-dead-and-the-fallback-needs-an-account-token]].

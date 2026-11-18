@@ -109,7 +109,7 @@ function connect(): postgres.Sql {
   const raw = process.env.PHOENIX_PRODUCTION_DATABASE_URL;
   if (!raw) throw new Error("PHOENIX_PRODUCTION_DATABASE_URL is needed — run with --env-file-if-exists=.env.production.rls.local");
   const direct = /^\w+:\/\/([^:]+):(.+)@db\.([a-z0-9]+)\.supabase\.co:(\d+)\/([^?]+)/.exec(raw);
-  const options = { max: 1, prepare: false, onnotice: () => undefined };
+  const options = { max: 1, prepare: false, onnotice: () => undefined, ssl: "require" as const };
   if (!direct) return postgres(raw, options);
   let password = direct[2];
   try {

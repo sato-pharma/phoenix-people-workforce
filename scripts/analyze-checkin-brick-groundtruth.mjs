@@ -71,7 +71,7 @@ function toPooler(raw) {
   return `${scheme}://${user}.${ref}:${pass}@aws-0-eu-central-1.pooler.supabase.com:5432/${db}`;
 }
 
-const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false });
+const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false, ssl: "require" });
 
 const HAVERSINE = (aLat, aLon, bLat, bLon) =>
   `2*6371*asin(sqrt(power(sin(radians((${aLat}-${bLat})/2)),2)+cos(radians(${bLat}))*cos(radians(${aLat}))*power(sin(radians((${aLon}-${bLon})/2)),2)))`;

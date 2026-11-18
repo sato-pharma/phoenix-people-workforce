@@ -109,7 +109,7 @@ if (urlRef !== expectedRef) {
   );
 }
 
-const sql = postgres(toPooler(rawUrl), { max: 1, prepare: false });
+const sql = postgres(toPooler(rawUrl), { max: 1, prepare: false, ssl: "require" });
 
 try {
   try {
