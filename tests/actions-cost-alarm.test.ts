@@ -277,4 +277,10 @@ export function runActionsCostAlarmTests() {
   assert.match(notify, /COST_UNREAD:\s*\$\{\{\s*steps\.actions_cost\.outputs\.cost_unread\s*\}\}/, "Telegram must be told the cost alarm could not read");
   assert.match(notify, /\[ "\$COST_UNREAD" = "true" \]/, "Telegram must word a blind cost alarm apart from a budget about to be reached");
   assert.match(notify, /ACTIONS COST ALARM IS BLIND/);
+
+  // 13. 🔴 EVERY BUDGET LINK THE WORKFLOW PRINTS IS THE ORGANIZATION'S PAGE. The budget lives on the
+  //     organization since 2026-11-06; github.com/settings/billing is the personal account's page, which
+  //     shows none of it. The run-page annotation still named it after #553 fixed the report and Telegram.
+  assert.doesNotMatch(source, /github\.com\/settings\/billing/, "🔴 the drift check points at the personal account's billing page, not the organization's");
+  assert.match(source, /github\.com\/organizations\/sato-pharma\/settings\/billing\/budgets/);
 }
