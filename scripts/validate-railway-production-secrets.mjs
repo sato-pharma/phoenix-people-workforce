@@ -13,6 +13,7 @@ import {
   checkCanonicalOrigins,
   checkExpectedValues,
   checkForbiddenVariables,
+  checkSupabaseProjectRefs,
 } from "./secret-policy.mjs";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -199,6 +200,8 @@ failures.push(...checkExpectedValues(valuesByName, railEnv));
 // values and is in no workflow, no ci.yml step and no npm script, so it exits 1 with nothing set.
 // This is the one place that HAS the values.
 failures.push(...checkCanonicalOrigins(valuesByName, railEnv));
+// Which DATABASE the Supabase variables open, read out of the URL (Supabase audit, 18 Nov 2026).
+failures.push(...checkSupabaseProjectRefs(valuesByName, railEnv));
 // At least ONE of the three AI keys (2026-10-24). None is required on its own any more.
 failures.push(...checkAiKeyPresent(valuesByName, railEnv));
 

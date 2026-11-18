@@ -16,6 +16,8 @@
 
 import { readFileSync } from "node:fs";
 
+import { PRODUCTION_PROJECT_REF, STAGING_PROJECT_REF, projectRefFromUrl } from "./lib/supabase-project-refs.mjs";
+
 /**
  * The exact `@railway/cli` version every script in this repo invokes through npx.
  *
@@ -287,6 +289,48 @@ export function checkCanonicalOrigins(valuesByName, environment = "production") 
   // Absence is the presence check's job — this name is in REQUIRED_VARIABLES — not this one's.
   if (value !== "" && value.replace(/\/+$/, "") !== canonical) {
     failures.push(`${CANONICAL_ORIGIN_VARIABLE} must equal the canonical origin (${canonical})`);
+  }
+
+  return failures;
+}
+
+/**
+ * WHICH Supabase project production's variables name — read out of the URL, never trusted from a
+ * variable's name (Supabase audit, 18 Nov 2026).
+ *
+ * Nothing compared them before. The sync copies NEXT_PUBLIC_SUPABASE_URL, SUPABASE_PROJECT_ID and
+ * SUPABASE_PROJECT_REF from GitHub secrets one by one, so a staging URL pasted into the production
+ * secret, or a ref that disagrees with the URL beside it, reached Railway as a healthy-looking
+ * value: every check above asks whether a value is present and shaped right, none asks which
+ * database it opens. Production-only like every rule here; absence stays the presence check's job.
+ */
+export function checkSupabaseProjectRefs(valuesByName, environment = "production") {
+  if (!isProductionEnvironment(environment)) return [];
+  const values = asMap(valuesByName);
+  const failures = [];
+  const text = (name) => {
+    const raw = values.get(name);
+    return raw === undefined || raw === null ? "" : String(raw).trim();
+  };
+
+  const url = text("NEXT_PUBLIC_SUPABASE_URL");
+  if (url !== "") {
+    const ref = projectRefFromUrl(url);
+    if (ref === STAGING_PROJECT_REF) {
+      failures.push(`NEXT_PUBLIC_SUPABASE_URL names the STAGING project (${STAGING_PROJECT_REF}), not production (${PRODUCTION_PROJECT_REF})`);
+    } else if (ref !== PRODUCTION_PROJECT_REF) {
+      failures.push(`NEXT_PUBLIC_SUPABASE_URL must name the production project ${PRODUCTION_PROJECT_REF}, but names ${ref ?? "no Supabase project"}`);
+    }
+  }
+
+  for (const name of ["SUPABASE_PROJECT_ID", "SUPABASE_PROJECT_REF"]) {
+    const value = text(name).toLowerCase();
+    if (value !== "" && value !== PRODUCTION_PROJECT_REF) {
+      failures.push(
+        `${name} must be the production project ref ${PRODUCTION_PROJECT_REF}` +
+          (value === STAGING_PROJECT_REF ? " — it holds the STAGING ref" : ""),
+      );
+    }
   }
 
   return failures;

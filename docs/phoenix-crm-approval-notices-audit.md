@@ -96,7 +96,8 @@ the same fail-open direction that resolver was written for.
 ## 2 · A Phoenix CRM read that grows with the field is paged, or it lies at 1,000 rows
 
 PostgREST stops at `max_rows = 1000` (`supabase/config.toml`) with **no error and no marker** — the
-array just stops. Two reads were sized for the pilot, and both failed toward SILENCE:
+array just stops. (Corrected 2026-11-18: that is staging and the local config; production's API has
+no row cap, so there only a cap the code writes can cut a read — `docs/postgrest-row-ceiling.md`.) Two reads were sized for the pilot, and both failed toward SILENCE:
 
 - **`seatsWithRealActivity`** (`server/daily-digest.ts`) selected `seat_id` from six tables
   (`phoenix_crm_visits`, `_places`, `_plans`, `_monthly_plans`, `_day_activities`, `_list_requests`)
