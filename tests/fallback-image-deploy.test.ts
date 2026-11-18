@@ -12,6 +12,7 @@ import {
   SERVICES,
   assertProductionOnly,
   classifyStatus,
+  clearCredentialsPatch,
   imageRef,
   isFullSha,
   parseArgs,
@@ -47,6 +48,8 @@ const withoutFullLineComments = (source: string): string =>
  *      release gate reads "no commit" and OPENS, so an unchecked image could take traffic.
  *   3. The commit must already have a green `release-gate` job in its own ci.yml push run.
  *   4. switch / restore refuse staging: the source is service-level, so a "staging" change is a production change.
+ *      And restore REMOVES the image-pull credentials switch saved: `serviceConnect` leaves them, and on 18 Nov 2026 the
+ *      Railway audit found the pull token still in production's config long after the service was back on git.
  *   5. The workflow never runs on a push to main (it would attach a check suite to main HEAD) and is never cancelled
  *      half way (a service left on a source nobody chose).
  */
@@ -136,6 +139,24 @@ export function runFallbackImageDeployTests(): void {
     assert.equal(SERVICES.worker.name, "phoenix-workforce-worker");
     assert.deepEqual(GIT_SOURCE, { repo: REPO, branch: "main" }, "restore reconnects the repository's main");
     assert.match(script, /await assertServiceNames\(services\)/, "a stale service id fails loudly before anything changes");
+
+    // restore removes the pull token: reconnect, THEN clear (a service still on the image needs it), THEN wait.
+    assert.deepEqual(
+      clearCredentialsPatch(SERVICES.web.id),
+      { services: { [SERVICES.web.id]: { deploy: { registryCredentials: null } } } },
+      "the patch names only that service and sets registryCredentials to null, which removes it",
+    );
+    assert.throws(() => clearCredentialsPatch(""), /service id/);
+    const restoreBody = script.slice(script.indexOf("async function restore("), script.indexOf("async function rehearse("));
+    assert.ok(restoreBody.length > 200, "restore() was found");
+    const reconnectAt = restoreBody.indexOf("serviceConnect(");
+    const clearAt = restoreBody.indexOf("p: clearCredentialsPatch(svc.id)");
+    const waitAt = restoreBody.indexOf("await waitForNewDeployment(");
+    assert.ok(clearAt > -1, "🔴 restore clears each service's image-pull credentials — without it the token outlives every restore");
+    assert.ok(reconnectAt > -1 && reconnectAt < clearAt && clearAt < waitAt, "reconnect to git first, then clear, then wait for the deployment");
+    assert.match(restoreBody, /environmentPatchCommit\(environmentId:\$e,patch:\$p,commitMessage:\$m,skipDeploys:true\)/, "an environment patch, with no second deployment");
+    assert.match(restoreBody, /e: ENVIRONMENTS\.production,/, "the patch is production's, the only environment restore may touch");
+    assert.match(restoreBody, /if \(credentialsLeft\.length\) \{\s*throw new Error\(/, "a token left behind ends the run red, after every service is back on git");
   }
 
   // ── 5. When the workflow runs ──────────────────────────────────────────────────────────────────────────────────

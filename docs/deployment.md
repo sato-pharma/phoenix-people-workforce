@@ -1004,6 +1004,17 @@ script or the `Dockerfile` builds and boots the image (nothing pushed), which al
 script waits for the new deployment and, for the web service, for `/api/healthz` to report the commit.
 `restore` reconnects `sato-pharma/phoenix-people-workforce@main` with `serviceConnect` and waits again.
 
+- 🔴 **`restore` also removes the pull credential `switch` saved.** `serviceConnect` leaves
+  `registryCredentials` in place, and a git build never reads them, so the token stayed in production's
+  config after a restore. The 18 Nov 2026 Railway audit found it on the website service, and it was
+  cleared by hand on 19 Nov at 00:21 Cairo. `serviceInstanceUpdate` cannot remove it, because its
+  `RegistryCredentialsInput` needs both a username and a password. What removes it is an environment patch:
+  `environmentPatchCommit` with `{services: {<id>: {deploy: {registryCredentials: null}}}}` and
+  `skipDeploys: true`. Railway's environment schema allows the null. `restore` sends that patch for each
+  service right after its reconnect, never before (a service still on the image needs the credential to
+  pull it). If the patch is refused, the run ends red and names the service once every service is back
+  on git. Pinned by `tests/fallback-image-deploy.test.ts`, section 4.
+
 - 🔴 **The source is service-level, shared by every environment** (§2.3's `source connect` incident), so
   `switch` and `restore` refuse `--env staging`: a "staging test" of a source change would change
   PRODUCTION. The rehearsal creates a service of its own (`fallback-rehearsal-<sha>`, staging only),
