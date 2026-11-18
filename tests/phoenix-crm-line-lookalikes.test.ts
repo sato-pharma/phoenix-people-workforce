@@ -142,6 +142,11 @@ function runListTests(): void {
     const waiting = customer({});
     const source = validated({ name: "احمد صبري معشل" });
     assert.deepEqual(listFor(waiting, source, { notSame: new Set([pairKey(waiting.id, source.id)]) }), [], "an answered pair is never asked again");
+    assert.deepEqual(
+      listFor(waiting, source, { notSame: new Set([pairKey(source.id, waiting.id)]) }),
+      [],
+      "answered the other way round (a join card stores joining|anchor), it is never asked again either",
+    );
   }
   {
     const waiting = customer({});
@@ -186,6 +191,11 @@ function runConfirmTests(): void {
     assert.deepEqual(plan.sourcePlaceIds, [own.id]);
     assert.equal(plan.validatedByHrId, "R-9", "the validation stays the other line's validator's");
   }
+  assert.deepEqual(
+    planLookalikeConfirm({ ...input, notSame: new Set([pairKey(source.id, waiting.id)]) }, waiting.id, source.id),
+    { ok: false, refusal: "answered_not_same" },
+    "a Not the same answered from the other customer's card still refuses the confirmation",
+  );
   const meanwhile = { ...input, customers: [{ ...waiting, status: "active", validatedAt: "2026-11-16T08:00:00Z" }, source] };
   assert.deepEqual(planLookalikeConfirm(meanwhile, waiting.id, source.id), { ok: false, refusal: "not_waiting" }, "validated meanwhile: nothing to confirm");
   assert.deepEqual(planLookalikeConfirm({ ...input, places: [] }, waiting.id, source.id), { ok: false, refusal: "source_not_validated" });
@@ -208,6 +218,11 @@ function read(path: string): string {
 function runSourceTests(): void {
   const server = read("src/lib/phoenix-crm/server/line-lookalikes.ts");
   assert.ok(server.includes("return !viewer.isTestPersona && viewer.isSuperAdmin && viewer.canApprove;"), "🔴 the Super Admin alone, never as a test account");
+  assert.doesNotMatch(
+    server,
+    /\.filter\(\(held\) => held\.waitingCustomerId === waitingCustomerId && held\.sourceCustomerId === sourceCustomerId\)/,
+    "the confirm path loads the answers about the pair in BOTH directions, as the join path does",
+  );
   assert.equal(
     server.split("if (!canReviewLineLookalikes(viewer)) throw forbiddenError(").length - 1,
     2,

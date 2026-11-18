@@ -32,5 +32,7 @@ export function currentVerificationSourceText(text: string): string;
 export function currentVerificationSourceText(text: string | null): string | null;
 export function currentVerificationSourceText(text: string | null): string | null {
   if (text == null) return text;
-  return text.split(RETIRED_CRM_VERIFICATION_SOURCE).join(PHOENIX_CRM_VERIFICATION_SOURCE);
+  // A request filed 16-18 Nov 2026 stored "Confirmed by <name>" at submission, before anyone had answered: it names who
+  // was ASKED. Read as what it always was, so the day's proof never says somebody confirmed what nobody has.
+  return text.split(RETIRED_CRM_VERIFICATION_SOURCE).join(PHOENIX_CRM_VERIFICATION_SOURCE).replace(/^Confirmed by /, "Named confirmer: ");
 }

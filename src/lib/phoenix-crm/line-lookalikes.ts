@@ -502,7 +502,8 @@ export function planLineLookalikes(input: LookalikeInput): LineLookalike[] {
     const candidates = sourcesByArea.get(`${waiting.isTest ? "t" : "r"}|${waiting.listType}|${waiting.areaCode}`) ?? [];
     for (const source of candidates) {
       if (!comparable(waiting, source)) continue;
-      if (input.notSame.has(pairKey(waiting.id, source.id))) continue;
+      // Answered EITHER way round: a join card stores (joining, anchor), so when the anchor later waits the key is reversed.
+      if (answeredEitherWay(input.notSame, waiting.id, source.id)) continue;
       if (areLineTwins(waiting, source, index.liveWords.get(waiting.id) ?? [], index.liveWords.get(source.id) ?? [])) continue;
       const judged = judge(index, waiting, source);
       if (!judged) continue;
@@ -555,7 +556,7 @@ export function planLookalikeConfirm(input: LookalikeInput, waitingCustomerId: s
   if (!isSource(index, source)) return { ok: false, refusal: "source_not_validated" };
   if (!comparable(waiting, source)) return { ok: false, refusal: "not_comparable" };
   if (waiting.listType === "AM" && !sameFacilityKind(waiting.name, source.name)) return { ok: false, refusal: "not_comparable" };
-  if (input.notSame.has(pairKey(waiting.id, source.id))) return { ok: false, refusal: "answered_not_same" };
+  if (answeredEitherWay(input.notSame, waiting.id, source.id)) return { ok: false, refusal: "answered_not_same" };
   if (areLineTwins(waiting, source, index.liveWords.get(waiting.id) ?? [], index.liveWords.get(source.id) ?? [])) return { ok: false, refusal: "rule_pairs_them" };
   const sourcePlaceIds = pickSharePlaces(index.ownPlaces.get(source.id) ?? []).map((place) => place.id);
   if (sourcePlaceIds.length === 0) return { ok: false, refusal: "source_not_validated" };
