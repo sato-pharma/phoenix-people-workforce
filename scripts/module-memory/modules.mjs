@@ -1986,6 +1986,7 @@ export const MODULES = [
     scope: "Git mechanics in this repo and the worktrees sessions run in: branches and what a squash merge leaves behind, merging and `gh pr merge`, pushes and refs, which checkout a command is really acting on, husks and retirement, and the ways a parallel session collides with yours. The harness, the laptop and the memory system are `sessions`.",
     globs: [
       "scripts/{new-session,sync-worktree-env,repo-doctor}*",
+      "scripts/lib/{provision-worktree,env-file-links}.mjs",
       "docs/agents-worktree-and-machine-limits.md",
     ],
     keywords: ["worktree", "worktrees", "primary checkout", "squash merge", "squash-merged", "branch", "husk", "parallel session", "parallel sessions", "session lock", "git worktree", "rerere"],

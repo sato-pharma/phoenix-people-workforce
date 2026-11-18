@@ -366,7 +366,8 @@ exits 0.
 
 These are GitHub Actions secrets, not Railway variables — the push happens in CI, not in the
 running app. `scripts/apps-script-authorize.mjs` performs the one-time consent and stores all
-three OAuth values with `gh secret set`, piped through stdin so no credential ever reaches a
+three OAuth values with `gh secret set --env main-secrets` (the main-only environment every secret-reading job
+stands in, docs/security/secret-rotation.md), piped through stdin so no credential ever reaches a
 command line (a permission allow-rule in this repo stores the literal command).
 
 ### What actually runs the push

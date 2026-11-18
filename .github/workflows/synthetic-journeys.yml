@@ -90,6 +90,7 @@ jobs:
     # test_alert takes its default, false, and every real run lands here.
     if: ${{ !inputs.test_alert }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
 
     # 🔴 45, NOT 20, AND THE ARITHMETIC IS THE WHOLE REASON. A JOB timeout ignores step-level
     # `continue-on-error` entirely: the runner cancels the job, the suite concludes `cancelled`, and

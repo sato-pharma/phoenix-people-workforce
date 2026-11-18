@@ -18,7 +18,7 @@ import { gitLayout } from "../scripts/lib/git-layout.mjs";
 // real script against throwaway repos under tests/support/spawn-probe.mjs, which records every
 // process the script starts, and pins:
 //   1. in the PRIMARY, the no-flag and --hook runs start NO process and print the same line,
-//   2. in a WORKTREE, exactly the gitignored .env files are copied — never *.example, never one
+//   2. in a WORKTREE, exactly the gitignored .env files are linked — never *.example, never one
 //      git does not call ignored — with ONE check-ignore and no rev-parse,
 //   3. --sweep-only provisions a SIBLING and leaves its own folder — env, node_modules and
 //      settings.local.json — exactly as it was, however the folder's path is cased,
@@ -127,19 +127,19 @@ export function runSyncWorktreeEnvFastPathTests() {
         assert.equal(
           fs.readFileSync(path.join(wt, name), "utf8"),
           `FROM_PRIMARY=${name}\n`,
-          `${name} is gitignored in the primary and must be copied into the worktree`,
+          `${name} is gitignored in the primary and must be linked into the worktree`,
         );
       }
       for (const name of NOT_COPIED) {
-        assert.equal(fs.existsSync(path.join(wt, name)), false, `${name} must NOT be copied (a *.example, or not gitignored)`);
+        assert.equal(fs.existsSync(path.join(wt, name)), false, `${name} must NOT be linked (a *.example, or not gitignored)`);
       }
       const out = lines(r.stdout);
       assert.deepEqual(
-        out.filter((l) => l.trim().startsWith("copied ")).map((l) => l.trim().split(" ")[1]),
+        out.filter((l) => l.trim().startsWith("linked ")).map((l) => l.trim().split(" ")[1]),
         IGNORED,
-        "the copied lines name exactly the ignored env files, in sorted order",
+        "the linked lines name exactly the ignored env files, in sorted order",
       );
-      assert.equal(out.at(-1), "sync-worktree-env: done — 3 copied, 0 skipped.", "the closing line is unchanged");
+      assert.equal(out.at(-1), "sync-worktree-env: done — 3 linked, 0 skipped.", "the closing line counts linked files");
 
       const gitCalls = probeCalls(probeOut).filter((c) => /^git\b/.test(c.what));
       assert.equal(
@@ -169,12 +169,12 @@ export function runSyncWorktreeEnvFastPathTests() {
       assert.equal(r.status, 0, `--sweep-only must exit 0 (stderr: ${r.stderr})`);
       assert.ok(fs.readFileSync(ownSettings).equals(before), "--sweep-only must leave its own settings.local.json byte-identical");
       assert.equal(fs.existsSync(ownSettings + ".bak-prev"), false, "--sweep-only must not even back its own settings up");
-      assert.equal(fs.existsSync(path.join(own, ".env.local")), false, "--sweep-only must not copy env into its own folder");
+      assert.equal(fs.existsSync(path.join(own, ".env.local")), false, "--sweep-only must not link env into its own folder");
       assert.throws(() => fs.lstatSync(path.join(own, "node_modules")), "--sweep-only must not link its own node_modules");
 
       const siblingEnv = path.join(sibling, ".env.local");
       const siblingDep = path.join(sibling, "node_modules", "some-dep", "index.js");
-      assert.ok(fs.existsSync(siblingEnv), "--sweep-only must still copy a SIBLING worktree's missing .env");
+      assert.ok(fs.existsSync(siblingEnv), "--sweep-only must still link a SIBLING worktree's missing .env");
       assert.equal(fs.readFileSync(siblingEnv, "utf8"), "FROM_PRIMARY=.env.local\n", "the sibling's .env is the primary's");
       assert.ok(fs.existsSync(siblingDep), "--sweep-only must still junction a SIBLING worktree's node_modules");
       assert.equal(fs.readFileSync(siblingDep, "utf8"), "module.exports = 7;\n", "the sibling's junction resolves to the primary's");
@@ -205,7 +205,7 @@ export function runSyncWorktreeEnvFastPathTests() {
         lines(r.stdout).includes("  (no local env files found in the primary worktree)"),
         `check-ignore exiting 1 means 'none ignored':\n${r.stdout}`,
       );
-      assert.equal(fs.existsSync(path.join(fx.worktrees["_wt-x"], ".env.notignored")), false, "an un-ignored env file is never copied");
+      assert.equal(fs.existsSync(path.join(fx.worktrees["_wt-x"], ".env.notignored")), false, "an un-ignored env file is never linked");
     }
 
     // ── 5. Outside any repository: the hook entries fail OPEN, the no-flag run does not ──
