@@ -2576,6 +2576,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // cannot. Staging took it through staging-migrate run 93 on the merge (cf767f08), which succeeded. Re-applying is a
   // no-op (`create or replace` with the same body).
   "20261118191500_phoenix_crm_keep_it_keeps_the_super_admin_decision.sql",
+  // Applied 18 Nov 2026 by scripts/apply-sql-file.mjs from the owner's machine on production (the aws-1 pooler), the
+  // standing route, after the production MCP refused every write (-32600). It writes NO ledger row. It replaces ONE
+  // function, public.phoenix_crm_decide_shared_place(jsonb), with the 20261118191500 body plus one block: a REJECT of a
+  // building by anybody but a Super Admin is refused (phoenix_crm:approved_by_super_admin) while a validated customer
+  // seated in it stands on a Super Admin's approval (a review he approved, or a place he created); a building whose
+  // seated doctors are still pending stays rejectable by the SFE (owner's choice, 18 Nov 2026); no table, column or data.
+  // Verified on ozucdzovmcqvepbozvqf (project name Phoenix HR) straight after: md5(prosrc) BEFORE
+  // 6c6a26c20978a3a6b6ff3ca438fa5f96 (10,297 chars, the 20261118191500 body), AFTER 2c29e6b379e5d43929a6dd4ae7777548
+  // (11,302 chars, equal to this file's body as-is LF); one overload, security definer with search_path=public,
+  // service_role can execute it, anon and authenticated cannot, and the body still carries the Keep it lines
+  // (v_keeps_decision) beside the new guard. Staging took it through staging-migrate run 94 on the #535 merge
+  // (4ca93e74), which succeeded. Re-applying is a no-op (`create or replace` with the same body).
+  "20261118220000_phoenix_crm_building_reject_respects_super_admin_seats.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
