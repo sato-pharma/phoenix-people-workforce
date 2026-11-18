@@ -492,8 +492,11 @@ export function regionalManagerMembersFromRows(
     const rsm = regionalManagerAbove(seatId, seats);
     if (rsm) {
       if (exclude && rsm.hrId.trim().toUpperCase() === exclude) continue;
-      // Re-keyed, never re-priced: the row's own values go under the RSM's occupant.
-      underRegionalManagers.push({ ...row, dmHrId: rsm.hrId });
+      // Re-keyed, never re-priced: the row's own values go under the RSM's occupant. The month key carries the DISTRICT, so
+      // the Regional Manager's graded sales are the SUM of his districts' own gradings (what Sales vs Target, the connector
+      // and Employee 360 print), never one pooled month: a district that sold in a month nobody targeted it must not be
+      // graded in just because a sibling district had a target that month.
+      underRegionalManagers.push({ ...row, dmHrId: rsm.hrId, period: `${row.dmHrId}|${row.period}` });
       continue;
     }
     if (viewerIsRegionalManager) continue;
@@ -504,7 +507,7 @@ export function regionalManagerMembersFromRows(
     if (!region) continue;
     const key = `${REGION_WITHOUT_MANAGER_KEY_PREFIX}${region.toLowerCase()}`;
     regionLabels.set(key, `${region} — no regional manager`);
-    underRegionalManagers.push({ ...row, dmHrId: key });
+    underRegionalManagers.push({ ...row, dmHrId: key, period: `${row.dmHrId}|${row.period}` });
   }
   const names = regionLabels.size > 0 ? new Map([...employeeNames, ...regionLabels]) : employeeNames;
   return membersFromRows(underRegionalManagers, "dm", names, productNames, dmManagerResolver(nsm.hrId, nsm.name)).map(
