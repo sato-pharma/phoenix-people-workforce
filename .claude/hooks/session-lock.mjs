@@ -13,11 +13,20 @@
 // informational breadcrumb in the warning message.
 //
 // ONE LOCK PER FOLDER. The lock lives in `<projectDir>/.claude/session.lock`,
-// resolved from CLAUDE_PROJECT_DIR — the session's OWN worktree — which this
-// script reads from its own environment, so a worktree session reads its
-// worktree's lock, never the primary's. It is NOT passed as an argument: the
-// settings.json command carries no shell operators so it parses identically
-// under bash, cmd.exe and PowerShell.
+// where projectDir is the folder the session belongs to, read from the hook
+// payload by scripts/lib/session-folder.mjs — so a worktree session reads its
+// worktree's lock, never the primary's. Until 2026-11-18 it was
+// CLAUDE_PROJECT_DIR, which is the session's own folder in the CLI but the
+// PRIMARY in the desktop app: every desktop session then refreshed the
+// primary's lock, and each new one was told "another session is active". It is
+// NOT passed as an argument: the settings.json command carries no shell
+// operators so it parses identically under bash, cmd.exe and PowerShell.
+//
+// A LOCK NAMES ITS FOLDER. The desktop app copies the primary's gitignored
+// .claude files into each new worktree, the lock among them, so a fresh
+// worktree used to open holding a copy of someone else's live lock. Every lock
+// now carries `folder`, and a lock whose folder is not this one reads as no
+// lock at all. A lock an older hook wrote has no folder and is read as before.
 //
 // A LIVE SESSION REFRESHES ITS LOCK ("beat", on PreToolUse). Until 2026-09-17
 // the lock was written once, at SessionStart, and staleness was its age — so
@@ -32,8 +41,11 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 
+import { sameFolder, sessionFolder } from "../../scripts/lib/session-folder.mjs";
+
 const mode = process.argv[2]; // "start" | "beat" | "end"
-const projectDir = process.argv[3] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const input = readHookInput();
+const projectDir = process.argv[3] || sessionFolder(input);
 const lockPath = path.join(projectDir, ".claude", "session.lock");
 const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours — a crashed session's leftover lock self-expires this long after its last refresh
 const BEAT_EVERY_MS = 5 * 60 * 1000; // a beat rewrites the lock at most this often
@@ -73,7 +85,10 @@ function readHookInput() {
 
 function readLock() {
   try {
-    return JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    // A copy of another folder's lock is no lock: its holder is not working here.
+    if (lock && typeof lock.folder === "string" && lock.folder && !sameFolder(lock.folder, projectDir)) return null;
+    return lock;
   } catch {
     return null;
   }
@@ -94,6 +109,7 @@ function writeLock(sessionId, previous) {
     refreshedAt: now,
     sessionId,
     host: os.hostname(),
+    folder: projectDir,
   };
   fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2));
 }
@@ -107,8 +123,6 @@ function formatAge(ms) {
   if (minutes < 60) return `${minutes} minute(s) ago`;
   return `${Math.round(minutes / 60)} hour(s) ago`;
 }
-
-const input = readHookInput();
 
 if (mode === "beat") {
   // No session id, no ownership to prove: a beat never invents one.

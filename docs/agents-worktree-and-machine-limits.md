@@ -1110,6 +1110,15 @@ The lock was already per folder: settings.json passes `CLAUDE_PROJECT_DIR`, the 
 worktree. That is now pinned too. `tests/session-lock-staleness-is-age.test.ts` runs the real hook
 against throwaway folders.
 
+**Corrected 2026-11-18:** `CLAUDE_PROJECT_DIR` is the session's own worktree only in a CLI session.
+In the desktop app every hook is handed the PRIMARY and runs in it, so the lock was the primary's
+for every desktop session (each new one was told "another session is ACTIVE"), the write guard
+allowed writes into other sessions' worktrees, the exit check stayed silent and the env sync said
+"this IS the primary". The hooks now read the session's folder from the payload's transcript path
+(`scripts/lib/session-folder.mjs`), every lock names its `folder` so the copy the app makes into a
+new worktree reads as no lock, and `tests/session-folder.test.ts` drives each hook in the desktop
+layout.
+
 **Outside the repository:** `~/.claude/scripts/claude-hygiene.mjs` judged a lock by `startedAt` alone.
 That was the weekly `--fix` pass, the one that once deleted live locks. It was changed the same day
 to read `refreshedAt` first.
