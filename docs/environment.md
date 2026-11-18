@@ -647,8 +647,9 @@ minutes. Pinned by `tests/ai-failure-visibility.test.ts` and `tests/ai-provider-
 ### Infra & ops
 | Secret | Purpose |
 |---|---|
-| RAILWAY_TOKEN | Auth for `sync-railway-production-secrets.yml`'s Railway CLI calls |
-| CLOUDFLARE_API_TOKEN | Not currently consumed by any workflow or app code — held for future Cloudflare DNS/cache automation |
+| RAILWAY_TOKEN | The PROJECT key. The Railway CLI calls in `sync-railway-production-secrets.yml`, `secret-drift-check.yml` and `urgent-deploy.yml` try it first, under its own name — never merged with the next one (`scripts/lib/railway-cli-credentials.mjs`; `.claude/rules/engineering-railway-cli.md`) |
+| RAILWAY_API_TOKEN | The WORKSPACE key. Tried second by those CLI calls; the only key the GraphQL calls accept (`fallback-image.yml`, `emergency-host.yml`, the deploy-settings and trigger legs of `secret-drift-check.yml`). Minting either key is the owner's |
+| CLOUDFLARE_API_TOKEN | The emergency host's one DNS change: `scripts/emergency-host.mjs` flips the `phoenix-hr` CNAME between Railway and the Fly standby (`emergency-host.yml`). Also copied to Railway production by the secrets sync. The record is unproxied since 2026-10-31 — never turn the proxy back on without the owner (`docs/deployment.md`, "The emergency host") |
 
 ### CI / testing
 | Secret | Purpose |
@@ -668,6 +669,19 @@ minutes. Pinned by `tests/ai-failure-visibility.test.ts` and `tests/ai-provider-
 `APP_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `RAILWAY_PROJECT_ID`,
 `RAILWAY_SERVICE_NAME`, `SUPABASE_PROJECT_ID` — all verified matching their Railway counterparts.
+`RAILWAY_SERVICE_NAME` is the website service the secrets sync writes and validates (`phoenix-people-workforce`).
+`RAILWAY_PROJECT_IDS` (comma-separated) widens `scripts/check-railway-deploy-triggers.mjs` to every Railway project
+whose services build from this repository, beside `RAILWAY_PROJECT_ID`. `FLY_WORKER_APP` names a live Fly worker for
+the emergency host's go-live; it is unset on purpose since the Fly worker was destroyed on 23 Oct 2026, and the
+go-live then says that no background job runs (`.github/workflows/emergency-host.yml`).
+
+### Railway service variables that differ between services
+Every other worker and robot variable is a Railway reference to the website's own (`${{phoenix-people-workforce.NAME}}`),
+so the secrets sync that writes the website reaches them too (read live in the 2026-11-18 Railway audit).
+| Variable | Purpose |
+|---|---|
+| PHOENIX_PROCESS_ROLE | `web` on the website (no background scheduler), `worker` on `phoenix-workforce-worker` (the in-process schedulers), `robot` on `phoenix-workforce-robot` (the Turbify mailbox robots only). Unset means `all` (`src/lib/platform/process-role.ts`). One worker only: two would run every job twice |
+| PHOENIX_LIVE_CRM_POLL | The Railway-only opt-in for the two in-process timers, the Early Birds fortnight close and CRM housekeeping (`src/lib/platform/in-process-host.ts`); `true` on the worker alone, forced `false` on the Fly standby. The iReports360 live poller it was named for was retired with the vendor on 6 Nov 2026 |
 
 Optional for full E2E:
 - PLAYWRIGHT_DATA_USER_HRID

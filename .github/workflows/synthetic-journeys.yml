@@ -262,7 +262,7 @@ jobs:
       - name: Report a failed journey without failing the job
         if: ${{ always() && steps.journeys.outcome == 'failure' }}
         run: |
-          echo "::error::PRODUCTION SMOKE TEST FAILED — the synthetic journeys did not pass against ${SYNTHETIC_BASE_URL:-https://phoenix-hr.satopharma.com}. This job is deliberately green so it cannot withhold a production deploy (see the comment above this step); the failure is real. Open the admin Synthetic Journeys page, and the Playwright report attached to this run."
+          echo "::error::PRODUCTION SMOKE TEST FAILED — the synthetic journeys did not pass against ${SYNTHETIC_BASE_URL:-https://phoenix-hr.satopharma.com}. This job is deliberately green so it cannot withhold a production deploy (see the comment above this step); the failure is real. Open the admin Synthetic Journeys page and this run's log. The Playwright report is attached to the run only while the repository is private."
         env:
           SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
 
@@ -368,10 +368,21 @@ jobs:
       # have nothing to do with this repository (a storage blip, a quota, a 503 from the artifact
       # service), and none of them are worth a cancelled production deploy. Losing the HTML report is
       # an inconvenience; the verdict is already in the log, the annotation and the dashboard row.
+      #
+      # 🔴 ONLY WHILE THE REPOSITORY IS PRIVATE (owner, 2026-11-18: "Yes, do both"). A failed journey
+      # keeps a screenshot and a full Playwright trace (playwright.synthetic.config.ts) — page
+      # snapshots and network traffic of PRODUCTION, signed in as the Super Admin synthetic account,
+      # on pages such as the payroll report and Employee 360. On a public repository every artifact
+      # can be downloaded by anyone with a GitHub account: on 2026-11-18 thirty-five of these, 37-73 MB
+      # each, from the failures of 8-17 Nov, sat open for download and were deleted by hand. So the
+      # upload runs only when GitHub says the repository is private, and an unreadable flag reads as
+      # public. While it is public the failure detail is the dashboard row, the ::error:: annotation
+      # and this run's log — never a recording of production. Going private brings the report back
+      # with no edit here. Pinned by tests/synthetic-journeys-never-withholds.test.ts (clause 5).
       - name: Upload Playwright report
         continue-on-error: true
         timeout-minutes: 5
-        if: always()
+        if: ${{ always() && github.event.repository.private == true }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: synthetic-report

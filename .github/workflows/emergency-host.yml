@@ -17,9 +17,11 @@ name: Emergency host
 #
 # 🔴 THE GATE IS NOT SKIPPED. Only a main commit whose own ci.yml push run has a green release-gate job can reach the
 # standby — off Railway the container's own /api/readyz gate is open, so this job is the gate.
-# 🔴 THE STANDBY IS WEB ONLY (infra/fly-standby/fly.toml forces the web role). The schedulers and the CRM poller run on
-# the separate Fly worker (phoenix-worker-standby, infra/fly-standby/fly-worker.toml); go-live moves it onto the same
-# image right after the website, so the two never run different code.
+# 🔴 THE STANDBY IS WEB ONLY (infra/fly-standby/fly.toml forces the web role). The schedulers run on
+# ONE worker: Railway's phoenix-workforce-worker today. The Fly worker that ran them during the 22 Oct outage was
+# destroyed on 23 Oct; infra/fly-standby/fly-worker.toml keeps its config. Only when the repository variable
+# FLY_WORKER_APP names a live Fly worker does go-live move it onto the same image right after the website; with none,
+# the run says plainly that no background job runs until Railway is back.
 # 🔴 A MIGRATION IS NOT COVERED, as on every route: apply it first (AGENTS.md §8).
 on:
   workflow_dispatch:
@@ -270,13 +272,23 @@ jobs:
       - name: Move the background worker to the same commit
         if: ${{ inputs.action == 'go-live' }}
         continue-on-error: true
+        # 🔴 NO DEFAULT APP NAME (Railway audit, 2026-11-18). The Fly worker phoenix-worker-standby was destroyed on
+        # 23 Oct 2026; the default named it anyway, and the step then printed "the jobs run elsewhere" — false during
+        # the very outage this button is for, when Railway's worker is down with the website. With no worker app
+        # named, the step now says plainly that no background job runs, and still never fails the go-live.
         env:
-          WORKER_APP: ${{ vars.FLY_WORKER_APP || 'phoenix-worker-standby' }}
+          WORKER_APP: ${{ vars.FLY_WORKER_APP }}
         run: |
           set -uo pipefail
-          if ! flyctl status -a "$WORKER_APP" > /dev/null 2>&1; then
-            echo "- no worker app ${WORKER_APP} on Fly — the jobs run elsewhere, nothing to move" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "${WORKER_APP}" ]; then
+            echo "- 🔴 no Fly worker is set up (repository variable FLY_WORKER_APP is empty), so NO background job or scheduler runs while Railway is down. To run them: docs/deployment.md, \"The worker on Fly\"" >> "$GITHUB_STEP_SUMMARY"
+            node scripts/emergency-host.mjs notify --text "Emergency host: the website is LIVE on ${SHA:0:9}, but there is no Fly worker, so background jobs and schedulers are NOT running until Railway is back. ${RUN_URL}" || true
             exit 0
+          fi
+          if ! flyctl status -a "$WORKER_APP" > /dev/null 2>&1; then
+            echo "- 🔴 the worker app ${WORKER_APP} (repository variable FLY_WORKER_APP) does not answer on Fly, so NO background job runs while Railway is down" >> "$GITHUB_STEP_SUMMARY"
+            node scripts/emergency-host.mjs notify --text "Emergency host: the website is LIVE on ${SHA:0:9}, but the Fly worker ${WORKER_APP} does not answer, so background jobs are NOT running. ${RUN_URL}" || true
+            exit 1
           fi
           if flyctl deploy -a "$WORKER_APP" -c infra/fly-standby/fly-worker.toml \
                --image "registry.fly.io/${FLY_APP}:${SHA}" \

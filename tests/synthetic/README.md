@@ -73,6 +73,13 @@ Every run also writes:
 - `tests/synthetic/report/latest.md` — the same data as a readable table.
 - A console summary table printed at the end of the run.
 
+On GitHub, `synthetic-journeys.yml` attaches the HTML report (with a failed journey's screenshot and
+trace) to the run **only while the repository is private**. A failed journey's trace records
+production pages and network traffic, signed in as the Super Admin synthetic account, and on a
+public repository anyone with a GitHub account can download an artifact. While the repository is
+public, read a failure from the admin Synthetic Journeys page and the run's log, or run the suite
+locally. Pinned by `tests/synthetic-journeys-never-withholds.test.ts`, clause 5.
+
 ## The typed result format
 
 Each journey produces a `JourneyResult` (`helpers/types.ts`):

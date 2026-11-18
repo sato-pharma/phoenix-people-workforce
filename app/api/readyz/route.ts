@@ -17,7 +17,8 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 // so it returns only booleans/status — never data, error text or variable names. Not called per user
 // request, so a light DB ping is acceptable.
 //
-// 🔴 THIS IS RAILWAY'S DEPLOY HEALTHCHECK SINCE 2026-09-30 (`railway.json`, `healthcheckPath`), SO
+// 🔴 THIS IS RAILWAY'S DEPLOY HEALTHCHECK SINCE 2026-09-30 (`healthcheckPath` in `.railway/railway.ts`
+// since 2026-10-23; `railway.json` before), AND THE RELEASE GATE'S DOOR SINCE 2026-10-19, SO
 // ITS WALL CLOCK IS NOW LOAD-BEARING. Before that it was only ever read by a human, and nothing
 // bounded it: the DB ping is capped at 4s, but the workflow-registry audit below had no cap at all —
 // it inherited the admin client's 15s default AND that client's transient-PGRST002 retry (3 attempts
