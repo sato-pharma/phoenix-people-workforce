@@ -211,6 +211,10 @@ jobs:
   validate:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
+    # The staging service key (login smoke) and the Telegram pair (the red-main alert) live only in the main-only
+    # environment since 19 Nov 2026 (credentials audit, the owner's "fix those"), so a branch's run can read neither.
+    # No environment on a pull request or a dispatch from another branch: those runs never sign in or alert.
+    environment: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'main-secrets' || '' }}
 
     steps:
       # 🔴 A PULL REQUEST DOES NOT BUILD (owner, 2026-11-05: "Yes, skip the PR build"). CI runs on one
@@ -489,7 +493,8 @@ jobs:
       # production bundle — exactly what the old preview-smoke job did after downloading
       # it, minus the transfer.
       - name: Run Playwright login smoke test
-        if: github.event_name != 'pull_request'
+        # Only on main: the staging service key it signs in with is in main-secrets, which no other branch may use.
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: pnpm run test:e2e:smoke
         env:
           NODE_ENV: test
@@ -1135,6 +1140,8 @@ jobs:
       - name: Record that every required check passed on this commit
         env:
           RELEASE_GATE_DATABASE_URL: ${{ secrets.RELEASE_GATE_DATABASE_URL }}
+          # libpq's default `prefer` falls back to plain text; `require` refuses it (credentials audit, finding 2).
+          PGSSLMODE: require
           RELEASE_SHA: ${{ github.sha }}
           RELEASE_RUN_ID: ${{ github.run_id }}
         run: |

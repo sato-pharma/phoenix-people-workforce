@@ -133,7 +133,7 @@ function connect(): postgres.Sql {
   // The password group is greedy, so a password holding `@` still parses, and the parts go to postgres
   // as fields: its own URL parser cuts the host at the FIRST `@`.
   const direct = /^\w+:\/\/([^:]+):(.+)@db\.([a-z0-9]+)\.supabase\.co:(\d+)\/([^?]+)/.exec(raw);
-  const options = { max: 1, prepare: false, onnotice: () => undefined };
+  const options = { max: 1, prepare: false, onnotice: () => undefined, ssl: "require" as const };
   if (!direct) return postgres(raw, options);
   let password = direct[2];
   try {

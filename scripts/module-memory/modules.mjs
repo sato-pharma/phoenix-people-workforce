@@ -1967,6 +1967,26 @@ export const MODULES = [
     keywords: ["field day", "field-day", "print-day", "nightly papers", "superseded paper"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-11-19: `engineering` reached 72,271 bytes against its 72,000 cap when the credentials
+  // audit's two rules (secrets live in the main-only environment; every script database connection asks
+  // for TLS) and tonight's notes landed. The secrets-and-environments section stands alone. `engineering`
+  // KEEPS EVERY GLOB IT HAD; this module ADDS the workflows, the scripts and the two tests that pin it, so
+  // its rules reach a session that edits a workflow or writes a script that opens a database connection.
+  {
+    id: "engineering-secrets",
+    title: "Engineering — Actions secrets, their environments and encrypted database connections",
+    scope: "Where the GitHub Actions secrets live (the main-only main-secrets environment and urgent-deploy), what stays repository-wide, how a secret is set or moved, and the TLS every script's own Postgres connection asks for.",
+    globs: [
+      ".github/workflows/**",
+      "scripts/*",
+      "tests/scripts/**",
+      "tests/workflow-secrets-need-environment.test.ts",
+      "tests/postgres-connections-use-tls.test.ts",
+      "docs/security/secret-rotation.md",
+    ],
+    keywords: ["main-secrets", "gh secret set", "repository-wide secret", "sslmode", "PGSSLMODE", "ssl enforcement"],
+    tables: [],
+  },
   // ── `sessions` split in two on 2026-10-03, at 69% of the cap and growing fastest ──
   //
   // 135 notes in one file, and they are NOT one subject: half are git and worktree MECHANICS (what a

@@ -898,6 +898,17 @@ page instead of his phone. A deployment that went live and **then** failed still
 is serving: that is a crash or a failed health check, not a build. The facts step's budget grew 3 → 8 minutes
 and the job ceiling 10 → 14, because the test asserts the ceiling sits above the sum of the step budgets.
 
+🔴 **The message is posted by a second run, on `main`** (19 Nov 2026, credentials audit, the owner's "fix
+those"). The Telegram pair now lives only in the main-only `main-secrets` environment, and a
+`deployment_status` run cannot stand in it: Railway creates every deployment with a bare commit sha as its
+ref (`ref=f311944f45d0…`, read 19 Nov), so the run has no branch for the "only main" rule to match. So the
+`alert` job reads no secret. It works out the message exactly as above, then **hands it off**. It
+dispatches this same workflow on `main` with the input `relay_text`, using GITHUB_TOKEN with
+`actions: write`; a dispatch is GitHub's one exception to "a GITHUB_TOKEN event starts no run". The `send` job
+there stands in `main-secrets` and posts it. A dispatch carrying `relay_text` never re-enters `alert`, so the
+hand-off cannot loop. The self-test takes both hops, so a green self-test proves the hand-off too. A failed
+hand-off is an `::error::` on the first run's page. Pinned by clause 8 of `tests/deploy-failure-alert.test.ts`.
+
 ## The urgent route — "live in five minutes"
 
 Built 2026-10-18 at the owner's instruction: *"an extra route that you don't ever use except with a
@@ -947,6 +958,15 @@ minutes per use (the guard waits). Nothing else: the PR still merges the normal 
 - **Never dispatch the workflow, never push to `urgent-deploy/*` by hand, never run it on `main`.** A
   run on `main` attaches a check suite to main HEAD, and Wait for CI would hold — or, red, withhold
   for good — the NORMAL deploy. `tests/urgent-deploy.test.ts` pins the trigger to the two branches.
+- 🔴 **Only an admin may create or push `urgent-deploy/*` — repository ruleset "urgent-deploy branches: only
+  admins create or push" (id 27593676), created 19 Nov 2026 on the owner's "fix those".** Those two branches
+  are the only ones the `urgent-deploy` environment admits, so before it the Claude or Railway GitHub app
+  could push one with an edited workflow and read the Railway key. The rules are creation, update and
+  non-fast-forward; the bypass is the repository's admin role and organization admins, and `launch` pushes
+  as the owner's admin account. GitHub refuses GitHub Actions as a bypass actor, so **the guard's own
+  re-upload push is refused**: a "production lost the fix" re-upload now alarms "could not push the rebuilt
+  commit" and stops, and putting the fix back is a fresh `launch` from the laptop. Deletion is not in the
+  rules, so the guard still removes the branch at hand-over and `stop` still works.
 - **A migration is not covered.** Apply it first, as always (§8); the route ships code only.
 - **Practise without deploying:** `launch <pr> --dry-run` pushes to `urgent-deploy/dry-run`, which
   builds the commit and proves the Railway credential reads the production service, and uploads nothing.

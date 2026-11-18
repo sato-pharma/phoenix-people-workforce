@@ -69,6 +69,7 @@ jobs:
     name: test alert
     if: ${{ inputs.test_alert }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
     timeout-minutes: 5
     steps:
       - name: Check out repository

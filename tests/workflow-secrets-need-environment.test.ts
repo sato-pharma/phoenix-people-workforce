@@ -24,11 +24,11 @@ import path from "node:path";
 const WORKFLOW_DIR = ".github/workflows";
 const MOVER = "move-secrets-to-environments.yml";
 
-// Stays repository-wide: browser-visible values, the Telegram alarm pair every Notify job reads, Expo's token, and
-// the STAGING service key ci.yml's `validate` needs on every branch for the staging login smoke.
+// Stays repository-wide: browser-visible values and Expo's token, nothing else. The STAGING service key and the
+// Telegram alarm pair joined main-secrets on 19 Nov 2026 (the owner's "fix those"): ci.yml's `validate` stands in it
+// only on main, and deploy-failure-alert.yml hands its message to a `send` job on main.
 export const REPOSITORY_WIDE = [
   "GITHUB_TOKEN",
-  "STAGING_SUPABASE_SERVICE_ROLE_KEY",
   "EXPO_TOKEN",
   "SYNTHETIC_BASE_URL",
   "APP_URL",
@@ -36,7 +36,13 @@ export const REPOSITORY_WIDE = [
   "SUPABASE_ANON_KEY",
   "SUPABASE_PUBLISHABLE_KEY",
 ];
-const REPOSITORY_WIDE_PREFIXES = ["NEXT_PUBLIC_", "TELEGRAM_"];
+const REPOSITORY_WIDE_PREFIXES = ["NEXT_PUBLIC_"];
+
+/** ci.yml's `validate` stands in main-secrets on main and in nothing on a pull request or another branch's dispatch. */
+const VALIDATE_ENVIRONMENT =
+  "${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'main-secrets' || '' }}";
+/** The only secrets `validate` may read: the staging login smoke's key and the red-main Telegram alert. */
+const VALIDATE_SECRETS = ["STAGING_SUPABASE_SERVICE_ROLE_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALERT_CHAT_ID"];
 
 export function isRepositoryWide(name: string): boolean {
   return REPOSITORY_WIDE.includes(name) || REPOSITORY_WIDE_PREFIXES.some((p) => name.startsWith(p));
@@ -88,7 +94,8 @@ export function runWorkflowSecretsNeedEnvironmentTests() {
       job.file === "urgent-deploy.yml"
         ? job.environment === "urgent-deploy"
         : job.environment === "main-secrets" ||
-          (job.file === "fallback-image.yml" && job.id === "image" && /'main-secrets'/.test(job.environment ?? ""));
+          (job.file === "fallback-image.yml" && job.id === "image" && /'main-secrets'/.test(job.environment ?? "")) ||
+          (job.file === "ci.yml" && job.id === "validate" && job.environment === VALIDATE_ENVIRONMENT);
     assert.ok(
       allowed,
       `${job.file} job \`${job.id}\` reads ${production.join(", ")} but declares environment ${JSON.stringify(job.environment)}. ` +
@@ -127,9 +134,19 @@ export function runWorkflowSecretsNeedEnvironmentTests() {
   const validate = jobs.find((j) => j.file === "ci.yml" && j.id === "validate");
   assert.ok(validate, "ci.yml no longer has a validate job");
   assert.deepEqual(
-    validate.secrets.filter((n) => !isRepositoryWide(n)),
+    validate.secrets.filter((n) => !isRepositoryWide(n) && !VALIDATE_SECRETS.includes(n)),
     [],
-    "ci.yml's validate runs on every branch, so it may read no production secret",
+    "ci.yml's validate runs on every branch, so it may read no production secret — only the staging key and the Telegram pair, inside main-secrets on main",
+  );
+  assert.equal(
+    validate.environment,
+    VALIDATE_ENVIRONMENT,
+    "ci.yml's validate must stand in main-secrets on main ONLY — never on a pull request, never on another branch's dispatch",
+  );
+  assert.match(
+    ci,
+    /- name: Run Playwright login smoke test\n(?: +#.*\n)* +if: github\.event_name != 'pull_request' && github\.ref == 'refs\/heads\/main'\n/,
+    "the login smoke reads the staging key, which only main's run holds, so it must run on main only",
   );
   assert.match(
     ci,
