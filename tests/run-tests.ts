@@ -2824,6 +2824,7 @@ import { runProtectedFileGuardTests } from "./protected-file-guard.test.ts";
 import { runRiskyAllowGuardTests } from "./risky-allow-guard.test.ts";
 import { runSupabaseMcpProjectActionsDeniedTests } from "./supabase-mcp-project-actions-denied.test.ts";
 import { runWorkflowSecretsNeedEnvironmentTests } from "./workflow-secrets-need-environment.test.ts";
+import { runPostgresConnectionsUseTlsTests } from "./postgres-connections-use-tls.test.ts";
 import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts";
 import { runSqlColumnHintTests } from "./sql-column-hint.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
@@ -11164,6 +11165,11 @@ await runTest(
 await runTest(
   "every workflow job that reads a production secret declares the main-only main-secrets environment (urgent-deploy.yml: the urgent-deploy environment), the mover keeps exactly the repository-wide names this test lists, ci.yml's validate reads no production secret and signs with the CI-only literal, fallback-image's pull-request build gets no Railway token, and only emergency-host passes secrets: inherit",
   runWorkflowSecretsNeedEnvironmentTests,
+);
+
+await runTest(
+  "every postgres() call in scripts/ and tests/scripts/ asks for TLS — ssl: \"require\" (or verify-full, true or an options object) in its own arguments or in an options object declared in the same file — because postgres.js connects in plain text otherwise and the production database refuses plain text once SSL enforcement is on; a missing ssl, ssl: false or a weaker mode fails it, and the judge is proven on fixtures before the tree is scanned",
+  runPostgresConnectionsUseTlsTests,
 );
 
 await runTest(

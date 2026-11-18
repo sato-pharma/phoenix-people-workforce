@@ -179,7 +179,7 @@ async function databaseSecurityAudit() {
     return;
   }
 
-  const sql = postgres(dbUrl, { max: 1, prepare: false });
+  const sql = postgres(dbUrl, { max: 1, prepare: false, ssl: "require" });
   try {
     const tableRows = await sql<{
       relforcerowsecurity: boolean;

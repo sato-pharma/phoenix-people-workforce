@@ -170,7 +170,7 @@ REGION_HINTS.D2 = [...(REGION_HINTS.D2 ?? []), "sharqia"];
 
 const region = process.argv[2] ?? "ALL";
 const outFile = process.argv[3] ?? "pins.sql";
-const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false });
+const sql = postgres(toPooler(envVar("PHOENIX_PRODUCTION_DATABASE_URL")), { max: 2, prepare: false, ssl: "require" });
 
 let bricks;
 try {
@@ -508,7 +508,7 @@ const applyIdx = process.argv.indexOf("--apply");
 if (applyIdx !== -1) {
   const env = process.argv[applyIdx + 1] === "staging" ? "staging" : "production";
   const varName = env === "staging" ? "PHOENIX_STAGING_DATABASE_URL" : "PHOENIX_PRODUCTION_DATABASE_URL";
-  const write = postgres(toPooler(envVar(varName)), { max: 2, prepare: false });
+  const write = postgres(toPooler(envVar(varName)), { max: 2, prepare: false, ssl: "require" });
   try {
     await write.unsafe(statement);
     const after = await write`select geocode_status, count(*)::int as n from public.geo_locations

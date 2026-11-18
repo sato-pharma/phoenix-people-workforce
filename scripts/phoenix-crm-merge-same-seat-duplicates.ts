@@ -293,7 +293,7 @@ async function verifyPreImage(schema: string, customerIds: string[]): Promise<vo
   const direct = /^(\w+):\/\/([^:]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co:(\d+)\/(.+)$/.exec(raw);
   const host = process.env.PHOENIX_POOLER_HOST?.trim() || "aws-0-eu-central-1.pooler.supabase.com";
   const url = direct ? `${direct[1]}://${direct[2]}.${direct[4]}:${direct[3]}@${host}:5432/${direct[6]}` : raw;
-  const sql = postgres(url, { max: 1, prepare: false });
+  const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });
   try {
     const [{ held }] = await sql.unsafe(
       `select count(*)::int as held from ${schema}.phoenix_crm_customers where id = any($1::uuid[])`,

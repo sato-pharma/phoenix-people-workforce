@@ -31,6 +31,7 @@
 ## Inbox — new notes land here
 - [GitHub holds a toJSON(secrets) workflow as malicious](github-holds-a-workflow-that-reads-every-secret-as-malicious.md) - action_required, zero jobs; owner clicks Approve and run PER RUN; arm the token first.
 - [The fallback restore leaves the pull token on the website](the-fallback-restore-leaves-the-pull-token-on-the-website.md) - `restore` never clears `registryCredentials`; cleared 19 Nov 00:21 Cairo by environment patch (null), never by serviceInstanceUpdate.
+- [Dependabot security updates stay ON](dependabot-security-updates-stay-on.md) - his 13 Nov decision, reaffirmed 19 Nov "Keep them on"; the old 7 Nov "off" reason died with Wait for CI on 20 Oct.
 
 
 
