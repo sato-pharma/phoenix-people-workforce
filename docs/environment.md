@@ -623,6 +623,21 @@ page twice. Anthropic's workspace spend limit answers HTTP 400 ("You have reache
 limits"), not 429: `anthropicErrorCodeFor` reads it as `quota_exceeded`, so it fails over and pages like
 an empty balance, and the Anthropic alarm says to add credit or raise the spend limit.
 
+**The alarm has a close: "answering again" (owner, 18 Nov 2026: "build both in one PR").** On 18 Nov the
+first Anthropic account ran out of credit at 03:35 Cairo and the backup answered every call all day. A
+success writes no row, so when the account was topped up the only sign would have been failure rows that
+stopped, which at night reads exactly like nobody working. Now, when an account answers, `recordAiCall`
+(through `dispatchAiCall` and `takeAnsweringCheckSlot`) asks `notifyAiAccountAnswering` whether that
+account's newest alarm-or-answering row in `notification_events` is an alarm still open. It asks on the
+account's FIRST answer in a process, because the process Railway starts after a key swap never saw the
+refusals, and on its first answer after the process saw it refuse for credit or its key. Every other answer
+costs nothing. If an alarm is open, the same audience gets "<account> account is answering again" in-app, on
+Telegram and by push (`ai_account_answering`, never email, in `operator-watch-channel-guard.ts`), naming the
+feature it answered, the time, and since when it was out. One audit row is written. The key is
+`ai-account-answering:<provider>:<the alarm's Cairo day>:<hrId>`, so every process lands on one notice. A
+check that cannot read the alarms is asked again on the next answer, and logs a warning, never an error row.
+Pinned by `tests/ai-failure-visibility.test.ts`.
+
 **A leg the next account is asked to cover is reported as failed over, not as an AI failure (owner,
 23 Oct 2026).** Until then every leg recorded `status: "error"`, so a dead OpenAI account wrote both halves
 of a healthy call to the error board: 520 `openai_request_failed` rows in the seven days to 23 Oct — the

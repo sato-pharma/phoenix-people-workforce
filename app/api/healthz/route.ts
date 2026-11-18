@@ -9,6 +9,12 @@ import { readUrgentDeployRevision } from "@/lib/observability/urgent-deploy-mark
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// When this server process started, to the second. A Railway variable change redeploys the SAME commit, so
+// `revision` cannot say whether a new value is live; a `startedAt` after the change can (18 Nov 2026: a key
+// swap could not be confirmed from here). Taken from the process's own uptime, once, so it is the process's
+// start and not the first request's.
+const STARTED_AT = new Date(Math.floor((Date.now() - process.uptime() * 1000) / 1000) * 1000).toISOString();
+
 export async function GET() {
   return NextResponse.json(
     {
@@ -20,6 +26,7 @@ export async function GET() {
       // An urgent `railway up` deploy carries no git sha; it names itself in public/urgent-deploy.json,
       // which only an urgent upload ever contains, so it wins whenever it is there.
       revision: readUrgentDeployRevision() ?? getDeployRevision(),
+      startedAt: STARTED_AT,
       time: new Date().toISOString(),
     },
     { headers: { "cache-control": "no-store" } },

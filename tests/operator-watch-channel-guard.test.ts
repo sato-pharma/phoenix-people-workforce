@@ -30,6 +30,7 @@ const ALARMS: Alarm[] = [
   { event: "notification_holds_expired", file: "src/lib/notifications/held-notification-alert.ts" },
   { event: "ai_quota_exhausted", file: "src/lib/notifications/ai-quota-alert.ts" },
   { event: "ai_key_rejected", file: "src/lib/notifications/ai-quota-alert.ts" },
+  { event: "ai_account_answering", file: "src/lib/notifications/ai-quota-alert.ts" },
   { event: "system_audit_daily", file: "src/lib/system-audit/daily-message.ts" },
   { event: "activity_inactivity_digest", file: "src/lib/notifications/inactive-user-digest.ts" },
   { event: "attendance_punch_feed_stalled", file: "src/lib/attendance/punch-feed-stalled-telegram.ts" },
