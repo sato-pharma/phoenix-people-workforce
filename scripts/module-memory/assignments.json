@@ -1417,6 +1417,7 @@
   "the-email-import-allowlist-holds-an-inbox-not-a-sender": "recruitment",
   "the-error-table-never-says-which-needs-you-source-timed-out": "portal",
   "the-evidence-photo-is-the-primary-source-of-trust": "marketing",
+  "the-fallback-restore-leaves-the-pull-token-on-the-website": "engineering-deploys",
   "the-four-shapes-a-stale-citation-sweep-misreads": "sessions",
   "the-future-talents-portal-is-offline-and-its-relay-secret-waits-for-its-next-deploy": "engineering",
   "the-hetzner-ci-box-is-retired-ci-is-github-hosted-and-parallel": "engineering",
