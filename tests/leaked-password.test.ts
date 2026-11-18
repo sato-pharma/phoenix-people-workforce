@@ -123,25 +123,18 @@ export async function runLeakedPasswordTests() {
   assert.equal(clientSafeErrorMessage(new Error(LEAKED_PASSWORD_MESSAGE), "Password setup failed.", { report: false }), LEAKED_PASSWORD_MESSAGE);
   assert.ok(/data leak/.test(LEAKED_PASSWORD_MESSAGE) && /different/.test(LEAKED_PASSWORD_MESSAGE), "it says why and what to do");
 
-  // ── 4. Both places a password is chosen ask, before anything is written ────────────────────────
+  // ── 4. SWITCHED OFF (owner, 18 Nov 2026: "Remove it too") — neither door asks any more ─────────
   const change = stripComments(readFileSync("src/lib/auth/change-password.ts", "utf8"));
-  const changeAsk = change.indexOf("await checkLeakedPassword(input.newPassword)");
-  assert.notEqual(changeAsk, -1, "changing a password asks");
-  assert.ok(change.indexOf("passwordWeakness(input.newPassword") < changeAsk, "after the rules that need no network");
-  assert.ok(changeAsk < change.indexOf("bcrypt.hash(input.newPassword"), "and before the new password is hashed or written");
-  assert.ok(changeAsk < change.indexOf('.from("app_auth_users")\n    .update('), "before the account is touched");
-  assert.ok(change.includes("if (leakVerdict.leaked === true) throw new WeakPasswordError(LEAKED_PASSWORD_MESSAGE);"), "only a certain leak refuses: unknown does not");
-  assert.ok(/leakedPasswordCheck,/.test(change.slice(change.indexOf("writeRequiredAuditLog("))), "the audit row says whether the check ran");
+  assert.ok(!change.includes("checkLeakedPassword("), "HEADLINE: changing a password no longer asks the leak service");
+  assert.ok(change.includes('leakedPasswordCheck = "switched_off";'), "and its audit row says the check is switched off");
+  assert.ok(/leakedPasswordCheck,/.test(change.slice(change.indexOf("writeRequiredAuditLog("))), "the audit row still carries the field");
 
   const setup = stripComments(readFileSync("src/lib/auth/password-setup.ts", "utf8"));
   const complete = setup.slice(setup.indexOf("export async function completePasswordSetup"));
-  const setupAsk = complete.indexOf("await checkLeakedPassword(password)");
-  assert.notEqual(setupAsk, -1, "setting a password from a link or a temporary password asks");
-  assert.ok(complete.indexOf("passwordWeakness(password") < setupAsk);
+  assert.ok(!complete.includes("checkLeakedPassword("), "HEADLINE: setting a password from a link no longer asks the leak service");
+  assert.ok(complete.includes('leakedPasswordCheck = "switched_off";'), "and its audit row says the check is switched off");
   const claim = complete.indexOf(".update({ updated_at: now, used_at: now })");
-  assert.ok(claim !== -1 && setupAsk < claim, "🔴 BEFORE the link is spent, so a refused password leaves the link usable");
-  assert.ok(complete.includes("if (leakVerdict.leaked === true) throw new Error(LEAKED_PASSWORD_MESSAGE);"));
-  assert.ok(/leakedPasswordCheck,/.test(complete.slice(claim)), "the audit row says whether the check ran");
+  assert.ok(claim !== -1 && /leakedPasswordCheck,/.test(complete.slice(claim)), "the audit row still carries the field");
 
   // Nothing checks at sign-in: passwords already in use are not touched (his choice).
   const login = stripComments(readFileSync("app/api/auth/login/route.ts", "utf8"));

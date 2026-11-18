@@ -131,7 +131,7 @@ export async function runPermissionMatrixColdStartTests(): Promise<void> {
 
   // ── 5. A chosen password: 8+ characters and not the person's own login id ────────────────────
   // The "too common" rule is gone (owner, 18 Nov 2026: "remove this security shit" → "Just this rule"):
-  // a well-known password or a word followed by numbers is accepted here (the leak check still runs).
+  // a well-known password or a word followed by numbers is accepted here (the leak check was switched off the same night).
   for (const common of ["12345678", "Password123", "P@ssw0rd123", "qwertyuiop", "aaaaaaaa", "Phoenix2026!", "Sato@1234", "Welcome@2026"]) {
     assert.equal(passwordWeakness(common, ["stand.in", "T-1"]), null, `HEADLINE: "${common}" is no longer refused as too common`);
   }
