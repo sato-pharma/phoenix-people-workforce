@@ -482,8 +482,8 @@ export async function getPrivateCalendarWorkspace(input: {
       // Every outstation trip claimed in Phoenix Expenses (owner, 2026-10-29) — the same trip days the
       // deductions engine already spares; see lib/private-calendar/outstation-trip-items.ts.
       loadOutstationTripPrivateCalendarItems(scopeHrIds, start, end),
-      // Every interview he sits in on the recruitment calendar (owner, 2026-10-29) — DISPLAY ONLY: it never
-      // clears a day; see lib/private-calendar/interview-items.ts.
+      // Every interview he sits in on the recruitment calendar (owner, 2026-10-29). Two or more in one half
+      // are that half day worked (owner, 2026-11-18); see lib/private-calendar/interview-halves.ts.
       loadInterviewPrivateCalendarItems(scopeHrIds, start, end),
       loadAttendancePolicyScheduleRows(),
       // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a dispute is read by
@@ -664,7 +664,7 @@ export async function getCompanyNoActivityDays(input: {
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(input.start, input.end);
 
-  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, attendancePolicyRows, ...holidaysByMonth] =
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, attendancePolicyRows, ...holidaysByMonth] =
     await Promise.all([
       loadAttendanceItems(hrIds, input.start, input.end),
       loadVacationItems(hrIds, input.start, input.end),
@@ -693,6 +693,10 @@ export async function getCompanyNoActivityDays(input: {
       // The SAME trip days the employee's own calendar shows as covered (owner, 2026-10-29), so the
       // two never disagree about a travelling day.
       loadOutstationTripPrivateCalendarItems(hrIds, input.start, input.end),
+      // Two or more interviews in one half are that half day worked (owner, 2026-11-18), so this pass
+      // reads them exactly as the employee's calendar does. STRICT: a failed read throws, because a
+      // missing interview here would raise a No Records Activity day he actually worked.
+      loadInterviewPrivateCalendarItems(hrIds, input.start, input.end, { strict: true }),
       loadAttendancePolicyScheduleRows(),
       ...months.map(({ year, month }) => loadHolidayItems(year, month, input.start, input.end)),
     ]);
@@ -708,6 +712,7 @@ export async function getCompanyNoActivityDays(input: {
     ...managerOwnVisits.items,
     ...plans.items,
     ...trips.items,
+    ...interviews.items,
   ], employees), employees);
 
   // Same per-employee suppression the calendar workspace uses. This path spans
@@ -806,7 +811,7 @@ export async function getPrivateCalendarDayEvidence(
     loadManagerOwnVisitPrivateCalendarItems(hrIds, start, end, { details: true }),
     loadPlanPrivateCalendarItems(hrIds, start, end),
     loadOutstationTripPrivateCalendarItems(hrIds, start, end),
-    // A reviewer sees the interview the employee sat in, exactly as his calendar shows it (display only).
+    // A reviewer sees the interview the employee sat in, exactly as his calendar shows it.
     loadInterviewPrivateCalendarItems(hrIds, start, end),
     ...months.map(({ year, month }) => loadHolidayItems(year, month, start, end)),
   ]);
