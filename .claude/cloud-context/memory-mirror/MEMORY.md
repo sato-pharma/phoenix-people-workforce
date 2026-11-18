@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [GitHub holds a toJSON(secrets) workflow as malicious](github-holds-a-workflow-that-reads-every-secret-as-malicious.md) - action_required, zero jobs; owner clicks Approve and run PER RUN; arm the token first.
 - [The fallback restore leaves the pull token on the website](the-fallback-restore-leaves-the-pull-token-on-the-website.md) - `restore` never clears `registryCredentials`; cleared 19 Nov 00:21 Cairo by environment patch (null), never by serviceInstanceUpdate.
 
 
