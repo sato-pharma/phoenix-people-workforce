@@ -1436,6 +1436,7 @@ import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferCopyRecipientsTests } from "./offer-copy-recipients.test.ts";
 import { runOfferCopyPickerTests } from "./offer-copy-picker.test.ts";
+import { runNewJoinerAnnouncementTests } from "./offer-new-joiner-announcement.test.ts";
 import { runOffersPagePolishTests } from "./offers-page-polish.test.ts";
 import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
 import { runOfferRoleSummaryTests } from "./offer-role-summary.test.ts";
@@ -6240,6 +6241,10 @@ await runTest(
 await runTest(
   "job offers: CC and BCC picked from Line → Region → Area lists (the area's District, Regional and National Sales Managers) and the HR team, with typing kept",
   runOfferCopyPickerTests,
+);
+await runTest(
+  "new joiner announcement: when a new hire accepts through the joining form, every active Head Office employee (the line plus the marketers reporting into it, never the field force or the hire) gets one email with the line, area and hiring date, once per offer, past the response",
+  runNewJoinerAnnouncementTests,
 );
 await runTest(
   "job offers page polish: the list searches, filters by status with counts and shows 20 at a time; the form has five numbered sections and Save and Send pinned under it; the tabs are the Hiring Documents underline",

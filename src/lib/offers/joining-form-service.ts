@@ -19,6 +19,8 @@ import { logError, logInfo } from "@/lib/observability/log";
 import { readOfferAcceptToken } from "@/lib/offers/accept-token";
 import { announceJoiningFormBlocked } from "@/lib/offers/accepted-offer-alert";
 import { buildOfferHireDraft } from "@/lib/offers/hire-draft";
+import { announceNewJoinerToHeadOffice } from "@/lib/offers/new-joiner-announcement";
+import { afterResponse } from "@/lib/http/after-response";
 import {
   JOINING_FORM_GOVERNORATES,
   JOINING_FORM_STATE_MESSAGE,
@@ -793,6 +795,12 @@ export async function submitJoiningForm(
     await openAndAnnounceNewHireMailboxes({ actorId: "joining-form", hrIds: [hrId], source: "manual_add" }), { failureOf: mailboxTaskFailure });
   // Every ledger row of this hire has landed (or was logged as not landing) before he is answered.
   await handoff.flush();
+
+  // The Head Office team hears that a new hire accepted (owner, 2026-11-18): one email, once per
+  // offer, past the response — the candidate's answer never waits for it, and it never throws.
+  const acceptedOffer = offer;
+  await afterResponse("offer.new-joiner-announcement", () =>
+    announceNewJoinerToHeadOffice({ hrId, offer: acceptedOffer }));
 
   logInfo("Offer accepted through the joining form", {
     context: { hrId, offerId: offer.id },
