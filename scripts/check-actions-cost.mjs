@@ -76,7 +76,7 @@ const money = (n) => `$${n.toFixed(2)}`;
  */
 export function projectActionsCost(
   items,
-  { now = new Date(), budget = 0, includedMinutes = 3000, rateDays = 7, freeRepositories = [], stopsUsage = true } = {},
+  { now = new Date(), budget = 0, includedMinutes = 3000, rateDays = 7, freeRepositories = /** @type {string[]} */ ([]), stopsUsage = true } = {},
 ) {
   const free = new Set(freeRepositories.map((name) => String(name).toLowerCase()));
   const isFree = (row) => free.has(String(row.repositoryName || "").toLowerCase());

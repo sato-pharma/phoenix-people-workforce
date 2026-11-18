@@ -196,15 +196,17 @@ export function runActionsCostAlarmTests() {
   const refused = () => {
     throw Object.assign(new Error("gh failed"), { stderr: "gh: Resource not accessible by personal access token (HTTP 403)" });
   };
-  const fromGithub = resolveBudget({ readBudgets: () => ({ budgets: live }), env: { ACTIONS_MONTHLY_BUDGET: "300" }, owner: "sato-pharma", isOrg: true });
+  // `resolveBudget` answers a union (a budget, or `{ error }`); the clauses read it as one loose shape.
+  type Resolved = { source?: string; amount?: number; why?: string; error?: string };
+  const fromGithub: Resolved = resolveBudget({ readBudgets: () => ({ budgets: live }), env: { ACTIONS_MONTHLY_BUDGET: "300" }, owner: "sato-pharma", isOrg: true });
   assert.equal(fromGithub.source, "github", "🔴 GitHub's own budget must win over a hand-copied variable");
   assert.equal(fromGithub.amount, 0);
-  const fromVar = resolveBudget({ readBudgets: refused, env: { ACTIONS_MONTHLY_BUDGET: "0" }, owner: "sato-pharma", isOrg: true });
+  const fromVar: Resolved = resolveBudget({ readBudgets: refused, env: { ACTIONS_MONTHLY_BUDGET: "0" }, owner: "sato-pharma", isOrg: true });
   assert.equal(fromVar.source, "variable");
   assert.equal(fromVar.amount, 0);
   assert.match(String(fromVar.why), /resource owner is sato-pharma/, "the run must say why it fell back to the variable");
-  const blind = resolveBudget({ readBudgets: refused, env: {}, owner: "sato-pharma", isOrg: true });
-  assert.match(String(blind.error), /could not be read.*ACTIONS_MONTHLY_BUDGET is unset/s, "no budget anywhere must name both halves");
+  const blind: Resolved = resolveBudget({ readBudgets: refused, env: {}, owner: "sato-pharma", isOrg: true });
+  assert.match(String(blind.error), /could not be read[\s\S]*ACTIONS_MONTHLY_BUDGET is unset/, "no budget anywhere must name both halves");
   assert.match(String(resolveBudget({ readBudgets: () => ({ budgets: [] }), env: {}, owner: "sato-pharma", isOrg: true }).error), /lists no Actions budget/);
   assert.match(String(resolveBudget({ readBudgets: refused, env: { ACTIONS_MONTHLY_BUDGET: "x" }, owner: "sato-pharma", isOrg: true }).error), /not a number/);
 
