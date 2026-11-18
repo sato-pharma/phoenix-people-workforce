@@ -66,6 +66,15 @@ Any seat other than the owner or the CEO sees "ChatGPT cannot be connected from 
 - **Limits.** 120 questions a minute per connection. Each question is cut off after 40 seconds. An answer
   is cut, with a note, past 180,000 characters.
 
+## Which ChatGPT callback may register
+
+Registration is open to anyone, so a new registration may name only ChatGPT's stable callback
+(`https://chatgpt.com/connector_platform_oauth_redirect`) or a per-connector callback
+(`https://chatgpt.com/connector/oauth/<id>`) whose id is listed in the `PHOENIX_CHATGPT_CALLBACK_IDS` environment
+variable (comma separated; ChatGPT's connector form shows the id). A stranger's own connector id is refused, so a
+stranger cannot put a connection of theirs in front of the owner on the Allow page. A connection registered
+before this rule keeps working. The Allow page also prints the return address and says the name is unverified.
+
 ## The kill switch
 
 To end every ChatGPT connection at once, run this on production:

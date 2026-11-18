@@ -38,7 +38,6 @@ export async function POST(request: Request) {
       dates: body.dates,
       detailText: body.detailText,
       displayedSummaries: summaries,
-      employeeName: typeof body.employeeName === "string" ? body.employeeName : null,
       reasonCode: body.reasonCode,
     });
     return NextResponse.json({ data: disputes, success: true });

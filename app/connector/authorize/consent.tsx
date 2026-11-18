@@ -50,6 +50,11 @@ export function ConnectorConsent({ params, clientName, role }: Props) {
         ChatGPT will answer your questions from live Phoenix data and build Excel sheets and PDFs from it, seeing exactly
         what your {role} account sees — employees, pay, attendance, leave, sales, targets and the field CRM.
       </p>
+      <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        The name “{clientName}” is typed by whoever set this connection up, and Phoenix cannot check it. Allowing sends the access to{" "}
+        <span className="break-all font-semibold text-slate-900">{params.redirect_uri ?? "an unknown address"}</span>. Allow it only if you started this
+        connection yourself in ChatGPT just now.
+      </p>
       <ul className="mt-4 space-y-2 border-l-2 border-slate-200 pl-3 text-sm leading-relaxed text-slate-600">
         <li>It can only read. It cannot change, approve, send or publish anything.</li>
         <li>Every question it asks is written to the Phoenix audit log under your name.</li>

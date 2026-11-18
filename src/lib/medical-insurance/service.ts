@@ -6,6 +6,7 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
 import { todayInCairo } from "@/lib/date-only";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { employeeExitDay, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -208,8 +209,10 @@ async function loadCategoryChoices(policyId: string): Promise<Map<string, Medica
 
 /** "Active" is the record's own status: the sole Super Admin is on the policy and is hidden from the directory's active list. */
 function toEmployeeFacts(row: EmployeeDirectoryRow): EmployeeFacts {
+  const status = String(row.employmentStatus ?? "").trim().toLowerCase();
   return {
-    active: String(row.employmentStatus ?? "").trim().toLowerCase() === "active",
+    // The repo-wide lifecycle set: on leave is still an employee, and a record with no status counts as active.
+    active: status === "" || ACTIVE_EMPLOYMENT_STATUSES.has(status),
     employmentStatus: row.employmentStatus,
     exitDay: employeeExitDay(row),
     hireDate: row.hireDate ? row.hireDate.slice(0, 10) : null,
@@ -704,6 +707,23 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
   }
 
   if (input.action === "reinstate") {
+    // One open row per employee: asked BEFORE the family is reopened, so a refusal cannot leave open family
+    // under an ended employee.
+    if (member.member_type === "employee" && member.hr_id) {
+      const { data: openRows, error: openError } = await supabase
+        .from("medical_insurance_members")
+        .select("id")
+        .eq("policy_id", policy.id)
+        .eq("member_type", "employee")
+        .eq("hr_id", member.hr_id)
+        .is("coverage_ends_on", null)
+        .neq("id", memberId)
+        .limit(1);
+      fail(openError);
+      if ((openRows ?? []).length > 0) {
+        throw new MedicalInsuranceInputError(`${member.full_name} is already on the register again on another row, so this one cannot be put back.`);
+      }
+    }
     // The family the end took with them comes back with them: exactly the rows that end wrote — the same day
     // and its "<employee>: <reason>" — so a family member ended on their own keeps their end. Put back first,
     // so a failure leaves the employee ended and a retry still finds them.
@@ -720,6 +740,21 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
       familyBack = (back ?? []).length;
     }
     fail((await supabase.from("medical_insurance_members").update({ ...stamp, coverage_ends_on: null, end_reason: null }).eq("id", memberId)).error);
+    // Putting someone back undoes an Exclude that ended them: a live keep_out would list them "Excluded" while
+    // their row is open and priced.
+    if (member.member_type === "employee" && member.hr_id) {
+      fail(
+        (
+          await supabase
+            .from("medical_insurance_exceptions")
+            .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: hrIdForStorage(access.hrId) })
+            .eq("policy_id", policy.id)
+            .eq("hr_id", member.hr_id)
+            .eq("decision", "keep_out")
+            .is("revoked_at", null)
+        ).error,
+      );
+    }
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: memberId,
@@ -788,6 +823,23 @@ export async function addMedicalInsuranceException(access: AccessContext, input:
   if (!hrId) throw new MedicalInsuranceInputError("Choose the employee.");
   if (input.decision !== "keep_in" && input.decision !== "keep_out") throw new MedicalInsuranceInputError("Choose keep on or keep off the policy.");
   if (!reason) throw new MedicalInsuranceInputError("Enter the reason for this exception.");
+
+  // The rule engine honours keep_out only for someone not on the register. Someone already on it is excluded by
+  // ending their cover with "keep off", which writes this exception after the end — so refuse the bare exception.
+  if (input.decision === "keep_out") {
+    const { data: onRegister, error: onRegisterError } = await getSupabaseAdmin()
+      .from("medical_insurance_members")
+      .select("id")
+      .eq("policy_id", policy.id)
+      .eq("member_type", "employee")
+      .eq("hr_id", hrId)
+      .is("coverage_ends_on", null)
+      .limit(1);
+    fail(onRegisterError);
+    if ((onRegister ?? []).length > 0) {
+      throw new MedicalInsuranceInputError("This person is already on the register. End their cover and choose keep off to exclude them.");
+    }
+  }
 
   const { data, error } = await getSupabaseAdmin()
     .from("medical_insurance_exceptions")
