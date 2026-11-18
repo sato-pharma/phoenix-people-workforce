@@ -43,6 +43,26 @@ export function isChatGptRedirect(uri: unknown): uri is string {
 }
 
 /**
+ * The per-connector callback ids Phoenix accepts on a NEW registration, from PHOENIX_CHATGPT_CALLBACK_IDS
+ * (comma separated; ChatGPT's own form shows the id). Registration is open, so anyone's own connector callback
+ * would otherwise register and could be put in front of the owner on the Allow page. The stable callback needs no id.
+ */
+function configuredCallbackIds(): ReadonlySet<string> {
+  return new Set(
+    String(process.env.PHOENIX_CHATGPT_CALLBACK_IDS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+}
+
+function registrableRedirect(uri: unknown, callbackIds: ReadonlySet<string>): boolean {
+  if (!isChatGptRedirect(uri)) return false;
+  const perConnector = /^https:\/\/chatgpt\.com\/connector\/oauth\/([A-Za-z0-9_-]{1,128})$/.exec(uri);
+  return !perConnector || callbackIds.has(perConnector[1]);
+}
+
+/**
  * Phoenix's own public address. Never taken from a request header (a forged Host would otherwise name
  * the issuer). APP_URL is set on every Railway environment; production falls back to its known domain.
  */
@@ -221,6 +241,8 @@ export function createConnectorOAuth(options: {
   checkSubject: LiveSubjectCheck;
   origin?: string;
   now?: () => number;
+  /** Per-connector callback ids a new registration may name. Default: PHOENIX_CHATGPT_CALLBACK_IDS. */
+  callbackIds?: ReadonlySet<string>;
 }) {
   const { store, checkSubject } = options;
   const now = options.now ?? (() => Date.now());
@@ -231,8 +253,9 @@ export function createConnectorOAuth(options: {
   async function register(body: unknown) {
     const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const redirectUris = Array.isArray(input.redirect_uris) ? input.redirect_uris : [];
-    if (redirectUris.length === 0 || redirectUris.length > MAX_REDIRECTS || !redirectUris.every(isChatGptRedirect)) {
-      throw new OAuthError("invalid_redirect_uri", "Only ChatGPT's own return addresses can register.");
+    const callbackIds = options.callbackIds ?? configuredCallbackIds();
+    if (redirectUris.length === 0 || redirectUris.length > MAX_REDIRECTS || !redirectUris.every((uri) => registrableRedirect(uri, callbackIds))) {
+      throw new OAuthError("invalid_redirect_uri", "Only ChatGPT's own return addresses can register, and a per-connector address only when its id is listed in PHOENIX_CHATGPT_CALLBACK_IDS.");
     }
     const authMethod = input.token_endpoint_auth_method ?? "none";
     if (authMethod !== "none") throw new OAuthError("invalid_client_metadata", "Public clients only (token_endpoint_auth_method none).");
