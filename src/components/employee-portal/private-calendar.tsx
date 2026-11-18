@@ -781,8 +781,10 @@ export function PrivateCalendar({
   const explainConfirmers = useExplainConfirmers(disputeFormOpen);
 
   // The day on the grid is always sent, so it can never also be an extra: clicking a ticked extra on the grid would
-  // otherwise make the button count a day that the send folds into the first.
-  const explainExtraDatesToSend = explainExtraDates.filter((date) => date !== selectedDate);
+  // otherwise make the button count a day that the send folds into the first. And only a day the picker still LISTS
+  // is sent: stepping to another month leaves earlier ticks in state while the picker shows only that month's days,
+  // so without this the button counted, and the request carried, days the person could no longer see.
+  const explainExtraDatesToSend = explainExtraDates.filter((date) => date !== selectedDate && explainableDays.includes(date));
 
   function openExplainForm() {
     setDisputeFormOpen((open) => !open);

@@ -6,7 +6,6 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
 import { todayInCairo } from "@/lib/date-only";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { employeeExitDay, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -25,6 +24,7 @@ import {
   buildMedicalInsuranceActions,
   buildMedicalInsuranceMovements,
   buildPolicyYearCost,
+  isActiveEmploymentStatus,
   planFamilyMove,
   type EmployeeFacts,
   type ExceptionFacts,
@@ -209,10 +209,8 @@ async function loadCategoryChoices(policyId: string): Promise<Map<string, Medica
 
 /** "Active" is the record's own status: the sole Super Admin is on the policy and is hidden from the directory's active list. */
 function toEmployeeFacts(row: EmployeeDirectoryRow): EmployeeFacts {
-  const status = String(row.employmentStatus ?? "").trim().toLowerCase();
   return {
-    // The repo-wide lifecycle set: on leave is still an employee, and a record with no status counts as active.
-    active: status === "" || ACTIVE_EMPLOYMENT_STATUSES.has(status),
+    active: isActiveEmploymentStatus(row.employmentStatus),
     employmentStatus: row.employmentStatus,
     exitDay: employeeExitDay(row),
     hireDate: row.hireDate ? row.hireDate.slice(0, 10) : null,
@@ -570,6 +568,12 @@ export async function addMedicalInsuranceMember(access: AccessContext, input: Ad
   if (error?.code === "23505") throw new MedicalInsuranceInputError(`${fullName} is already on the policy.`);
   fail(error);
 
+  // Adding someone IS the answer to an Exclude: a live keep_out left beside the new open, priced row would list a
+  // covered person "Excluded" on the Exceptions tab. Revoked only once the row is in, so a refused add keeps it.
+  if (memberType === "employee" && hrId) {
+    await revokeLiveKeepOuts(access, policy.id, hrId, `${fullName} was added to the register`);
+  }
+
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? null,
     entityId: (data as { id: string }).id,
@@ -724,6 +728,13 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
         throw new MedicalInsuranceInputError(`${member.full_name} is already on the register again on another row, so this one cannot be put back.`);
       }
     }
+    // Putting someone back undoes an Exclude that ended them: a live keep_out would list them "Excluded" while
+    // their row is open and priced. Revoked FIRST, and each revoke audited like the Exceptions tab's own: if a
+    // later write fails the employee is still ended (so "Put back" is still offered and a retry finds them), whereas
+    // revoking last stranded an open, priced row beside a live keep_out with no button left to repair it.
+    if (member.member_type === "employee" && member.hr_id) {
+      await revokeLiveKeepOuts(access, policy.id, member.hr_id, `${member.full_name} was put back`);
+    }
     // The family the end took with them comes back with them: exactly the rows that end wrote — the same day
     // and its "<employee>: <reason>" — so a family member ended on their own keeps their end. Put back first,
     // so a failure leaves the employee ended and a retry still finds them.
@@ -740,21 +751,6 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
       familyBack = (back ?? []).length;
     }
     fail((await supabase.from("medical_insurance_members").update({ ...stamp, coverage_ends_on: null, end_reason: null }).eq("id", memberId)).error);
-    // Putting someone back undoes an Exclude that ended them: a live keep_out would list them "Excluded" while
-    // their row is open and priced.
-    if (member.member_type === "employee" && member.hr_id) {
-      fail(
-        (
-          await supabase
-            .from("medical_insurance_exceptions")
-            .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: hrIdForStorage(access.hrId) })
-            .eq("policy_id", policy.id)
-            .eq("hr_id", member.hr_id)
-            .eq("decision", "keep_out")
-            .is("revoked_at", null)
-        ).error,
-      );
-    }
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: memberId,
@@ -812,6 +808,32 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
     },
     summary: `Changed ${member.full_name}'s medical insurance record`,
   });
+}
+
+/**
+ * Revokes every live keep_out for this person on the policy and writes the same audit row the Exceptions tab's own
+ * Remove writes, one per exception. An exception is revoked and stays, never deleted. Returns how many were revoked.
+ */
+async function revokeLiveKeepOuts(access: AccessContext, policyId: string, hrId: string, why: string): Promise<number> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("medical_insurance_exceptions")
+    .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: hrIdForStorage(access.hrId) })
+    .eq("policy_id", policyId)
+    .eq("hr_id", hrId)
+    .eq("decision", "keep_out")
+    .is("revoked_at", null)
+    .select("id, reason");
+  fail(error);
+  const revoked = (data ?? []) as Array<{ id: string; reason: string }>;
+  for (const row of revoked) {
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: row.id,
+      entityType: "medical_insurance_exception",
+      summary: `Removed a medical insurance exception (${why}). It read: ${row.reason}`,
+    });
+  }
+  return revoked.length;
 }
 
 // ── Exceptions ──────────────────────────────────────────────────────────────────────────────

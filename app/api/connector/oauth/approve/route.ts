@@ -61,7 +61,9 @@ export async function POST(request: Request) {
         entityType: "chatgpt_connector",
         entityId: "connected",
         summary: `ChatGPT was allowed into Phoenix as ${subject.role}`,
-        newValues: { clientName: validated.clientName, role: subject.role },
+        // The registrant-typed name proves nothing; the client id and the address the one-time code was sent to
+        // are what say WHICH connection this was, and what to list in PHOENIX_CHATGPT_CLIENT_IDS or revoke.
+        newValues: { clientName: validated.clientName, clientId: validated.clientId, redirectUri: validated.redirectUri, role: subject.role },
       }),
     );
     return NextResponse.json({ redirectTo }, { headers: NO_STORE });

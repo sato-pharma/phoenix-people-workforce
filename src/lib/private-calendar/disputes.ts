@@ -7,6 +7,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { conflictError, validationError } from "@/lib/http/api-errors";
 import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -162,12 +163,17 @@ export async function submitPrivateCalendarDataDispute(
   const employeeHrId = resolveEmployeeIdentityId(access);
   if (!employeeHrId) throw new Error("Your employee profile is not linked. Contact HR.");
   // Named from the sender's own record: a name in the request body could put anyone's name on the confirmer's card.
-  const { data: ownRecord } = await getSupabaseAdmin()
+  // The DISPLAY name (nickname-aware, `resolveEmployeeDisplayName`) is what the calendar and the old client value
+  // carried, so a nickname holder reads the same on the confirmer's card and the Super Admin's notice. A failed
+  // read stops the request — a retry is free — instead of storing a request with no name on it.
+  const { data: ownRecord, error: ownRecordError } = await getSupabaseAdmin()
     .from("employees")
-    .select("full_name")
+    .select("full_name, nickname, hr_id")
     .ilike("hr_id", privateCalendarHrIdPattern(employeeHrId))
     .limit(1);
-  const employeeName = tidyDisputeText(String((ownRecord as Array<{ full_name: string | null }> | null)?.[0]?.full_name ?? "")) || null;
+  if (ownRecordError) throw ownRecordError;
+  const own = (ownRecord as Array<{ full_name: string | null; nickname: string | null; hr_id: string | null }> | null)?.[0];
+  const employeeName = own?.full_name ? tidyDisputeText(resolveEmployeeDisplayName(own.full_name, own.nickname, own.hr_id)) || null : null;
 
   const explanation = checkExplanation(
     { confirmerHrId: input.confirmerHrId, dates: input.dates, detailText: input.detailText, reasonCode: input.reasonCode },

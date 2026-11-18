@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
-type Props = { params: Record<string, string | undefined>; clientName: string; role: string };
+type Props = { params: Record<string, string | undefined>; clientName: string | null; role: string };
 
 /**
  * Allow / Cancel. Posts to /api/connector/oauth/approve and then navigates to the ChatGPT address it
@@ -45,13 +45,21 @@ export function ConnectorConsent({ params, clientName, role }: Props) {
 
   return (
     <div>
-      <h1 className="text-lg font-bold text-slate-900">Allow {clientName} to read Phoenix for you?</h1>
+      <h1 className="break-words text-lg font-bold text-slate-900">Allow {clientName ?? "ChatGPT"} to read Phoenix for you?</h1>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">
         ChatGPT will answer your questions from live Phoenix data and build Excel sheets and PDFs from it, seeing exactly
         what your {role} account sees — employees, pay, attendance, leave, sales, targets and the field CRM.
       </p>
       <p className="mt-3 text-sm leading-relaxed text-slate-600">
-        The name “{clientName}” is typed by whoever set this connection up, and Phoenix cannot check it. Allowing sends the access to{" "}
+        {clientName ? (
+          <>
+            The name <span className="break-words font-semibold text-slate-900">{clientName}</span> was typed by whoever set this connection up, and
+            Phoenix cannot check it.
+          </>
+        ) : (
+          "This connection gave no name, and Phoenix cannot check who set it up."
+        )}{" "}
+        Allowing sends the access to{" "}
         <span className="break-all font-semibold text-slate-900">{params.redirect_uri ?? "an unknown address"}</span>. Allow it only if you started this
         connection yourself in ChatGPT just now.
       </p>

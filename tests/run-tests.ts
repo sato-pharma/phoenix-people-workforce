@@ -193,6 +193,7 @@ import { runTelegramWebhookSecretTests } from "./telegram-webhook-secret.test.ts
 import { runWhatsAppConnectLinkTests } from "./whatsapp-connect-link.test.ts";
 import { runCspReportOnlyTests } from "./csp-report-only.test.ts";
 import { runPageCacheControlNoTransformTests } from "./page-cache-control-no-transform.test.ts";
+import { runErrorForwardProofTests } from "./error-forward-proof.test.ts";
 import { runNewErrorAlertTests } from "./new-error-alert.test.ts";
 import { runSupabaseUnreachableTests } from "./supabase-unreachable.test.ts";
 import { runPostDeployErrorsTests } from "./post-deploy-errors.test.ts";
@@ -12244,6 +12245,10 @@ await runTest(
 await runTest(
   "a new error reaches the Super Admin's Telegram once — ids, numbers and HR ids fold into one signature while another source or other words stay apart, production only by APP_ENV (staging builds as NODE_ENV=production), browser noise and the browser's redacted copy of a server render error never send, the message is scrubbed of HR ids, addresses, bot tokens and ids in paths and cut to 300 characters, ten messages per process per ten minutes at most, and the alert rides behind the written error row, Telegram only, on the technical-health audience, once per error and recipient",
   runNewErrorAlertTests,
+);
+await runTest(
+  "the new-error Telegram is raised only by a server error carrying the proof instrumentation.ts signs (an HMAC with a one-minute expiry, never the secret) or by a browser crash from a signed-in reporter: a cookie-less cron or webhook error still alerts, and an employee typing source server does not",
+  runErrorForwardProofTests,
 );
 await runTest(
   "a Supabase outage is ONE named issue — the Cloudflare 52x page (521 Web server is down, 525 SSL handshake failed) is recognised bare, JSON-wrapped and flattened into a log line, only that exact page matches (Failed to fetch, the client's own timeout and a PostgREST error keep their names), the new-error Telegram treats every outage page as one error and sends its readable line, the error table stores the readable line instead of the markup, the heartbeat answers 503 for it, and the classifier stays import-free for the edge and browser bundles",

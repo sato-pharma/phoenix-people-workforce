@@ -26,8 +26,19 @@ const HR_ID = /\b[A-Za-z]{1,3}-\d{1,8}\b/g;
 // A uuid is one long token (36 characters of hex and hyphens), so it is folded here whole, before the numbers in it.
 // Only a token that carries a digit is an id; a long table or function name is what tells two errors apart.
 const LONG_TOKEN = /\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{24,}\b/g;
-// A number that NAMES the error stays: "error #418" and "#423", "/errors/418", "status 403" and "status 500".
-const NUMBER = /(?<![\d#]|\/errors\/|\b(?:status|code|http|error) )\d+(?:[.,]\d+)?/gi;
+const NUMBER = /\d+(?:[.,]\d+)?/g;
+// What comes right before a number that NAMES the error, so it stays: "/errors/418", the word status, code, http or
+// error with only a colon, equals sign, space or quote between ("status 403", "status: 500", `"code":"42501"`), and the
+// version in "HTTP/1.1 502". An error number after `#` stays only while it is a React-sized number of up to three
+// digits ("Minified React error #418"): an id such as "#4821" is a record, and each of those would be its own alert.
+const NAMING_CONTEXT = /(?:\/errors\/|\b(?:status|code|http|error)\b["']?\s*[:=]?\s*["']?|\bhttp\/\d(?:\.\d)?\s+)$/i;
+
+function foldNumber(digits: string, offset: number, whole: string): string {
+  const before = whole.slice(Math.max(0, offset - 24), offset);
+  if (NAMING_CONTEXT.test(before)) return digits;
+  if (before.endsWith("#") && /^\d{1,3}$/.test(digits)) return digits;
+  return "#";
+}
 
 /** The message with every part that changes between occurrences replaced by `#`, lower-cased and bounded. */
 export function normalizeErrorMessage(message: string | null | undefined): string {
@@ -36,7 +47,7 @@ export function normalizeErrorMessage(message: string | null | undefined): strin
   return text
     .replace(LONG_TOKEN, "#")
     .replace(HR_ID, "#")
-    .replace(NUMBER, "#")
+    .replace(NUMBER, foldNumber)
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase()

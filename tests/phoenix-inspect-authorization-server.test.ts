@@ -298,6 +298,41 @@ export async function runPhoenixInspectAuthorizationServerTests() {
     assert.ok(lines.some((line) => line.route === "token" && line.reason === "invalid_grant"));
     assert.ok(lines.some((line) => line.route === "mcp" && line.reason === "revoked"));
 
+    // ── 4b. The grant cap: the sign-in that goes over it is never the one that is thrown away ─────
+    // The server keeps at most 20 grants. A new grant is born with refreshExpiresAt 0 (issue() sets it next), so an
+    // eviction that judged it like any other found it "expired" while every older grant was live and removed IT: the
+    // 21st sign-in answered 200 with a token whose grant no longer existed.
+    const capStateDir = path.join(dir, "state-cap");
+    const capAuthorization = ({ issuer: capIssuer, resource }: { issuer: string; resource: string }) =>
+      createAuthorizationServer({ issuer: capIssuer, resource, stateDir: capStateDir, google: GOOGLE, ownerEmails: new Set([OWNER]), tunnelId: TUNNEL, fetchImpl: fakeGoogle as never });
+    const cap = await startHttpServer({ runner, ownerSubjects: [OWNER], authorization: capAuthorization, repoRoot: dir, auditFile: null });
+    servers.push(cap);
+    const capRegistered = await raw(cap.url, "POST", "/register", { "content-type": "application/json" }, JSON.stringify({ redirect_uris: [CHATGPT], client_name: "ChatGPT", token_endpoint_auth_method: "client_secret_post" }));
+    assert.equal(capRegistered.status, 201, capRegistered.body);
+    let lastAccess = "";
+    const GRANT_CAP = 20;
+    for (let signIn21 = 1; signIn21 <= GRANT_CAP + 1; signIn21 += 1) {
+      const verifier = randomBytes(40).toString("base64url");
+      const params = { response_type: "code", client_id: String(capRegistered.json?.client_id), redirect_uri: CHATGPT, state: "cap-state", code_challenge: s256(verifier), code_challenge_method: "S256", scope: INSPECT_SCOPE, resource: cap.resource };
+      const toGoogle = new URL(String((await raw(cap.url, "GET", `/authorize?${form(params)}`, {})).headers.location));
+      googleIdentity = google(String(toGoogle.searchParams.get("nonce")));
+      const back = await raw(cap.url, "GET", `/oauth/google/callback?${form({ state: String(toGoogle.searchParams.get("state")), code: "google-code-1" })}`, {});
+      const code = String(new URL(String(back.headers.location)).searchParams.get("code"));
+      const exchanged = await raw(
+        cap.url,
+        "POST",
+        "/token",
+        FORM,
+        form({ client_id: String(capRegistered.json?.client_id), client_secret: String(capRegistered.json?.client_secret), resource: cap.resource, grant_type: "authorization_code", code, redirect_uri: CHATGPT, code_verifier: verifier }),
+      );
+      assert.equal(exchanged.status, 200, `sign-in ${signIn21}: ${exchanged.body}`);
+      lastAccess = String(exchanged.json?.access_token);
+    }
+    const afterCap = await raw(cap.url, "POST", "/mcp", { ...MCP_HEADERS, authorization: `Bearer ${lastAccess}` }, JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }));
+    assert.equal(afterCap.status, 200, `the sign-in that went over the cap of ${GRANT_CAP} still works: ${afterCap.body}`);
+    assert.equal(revokeAllGrants(capStateDir), GRANT_CAP, "and the oldest was the one dropped: exactly the cap is left");
+    assert.ok(readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "scripts/phoenix-inspect/lib/authorization-server.mjs"), "utf8").includes("item !== grant &&"), "the eviction never counts the grant just created as expired");
+
     // ── 5. The hard time limit and the result-size cap ──────────────────────────────────────────
     let sawAbort = false;
     let release: () => void = () => {};

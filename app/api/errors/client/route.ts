@@ -10,6 +10,7 @@ import {
   sanitizeClientErrorReport,
 } from "@/lib/error-monitor/client-error-intake";
 import { issueErrorScreenshotTicket } from "@/lib/error-monitor/screenshot-ticket";
+import { SERVER_FORWARD_PROOF_HEADER, verifyServerErrorForward } from "@/lib/error-monitor/server-forward-proof";
 import { logAppError } from "@/lib/error-monitor/service";
 import { getDeployRevisionTag } from "@/lib/observability/deploy-identity";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
@@ -82,10 +83,14 @@ export async function POST(request: Request) {
     if (report.message) {
       const access = await resolveAccessContext(request);
       const activityModule = resolveActivityModule(report.route);
+      // Anyone can post here, so the Super Admin's new-error Telegram needs more than a claim. A server error
+      // is believed only with the proof instrumentation.ts signs (a cron hit or webhook has no cookie, and an
+      // employee can type `source: "server"`); a browser crash is believed from a signed-in reporter.
+      const forwardedByThisServer = await verifyServerErrorForward(request.headers.get(SERVER_FORWARD_PROOF_HEADER));
+      const alert = forwardedByThisServer || (report.source === "client" && Boolean(access.hrId || access.loginId));
 
       eventId = await logAppError({
-        // Anyone can post here, so only a signed-in reporter may raise the Super Admin's new-error Telegram.
-        alert: Boolean(access.hrId || access.loginId),
+        alert,
         clientContext: report.clientContext,
         componentStack: report.componentStack,
         digest: report.digest,
