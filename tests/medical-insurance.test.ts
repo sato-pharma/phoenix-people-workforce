@@ -36,6 +36,7 @@ import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
   buildLibanoMemberFileWorkbook,
   libanoDay,
+  libanoLineGaps,
   libanoMemberCells,
   LIBANO_MEMBER_FILE_HEADERS,
   splitLibanoName,
@@ -311,6 +312,35 @@ function testTheServiceFixesCannotBeRevertedQuietly() {
   assert.match(helper, /for \(const row of revoked\) \{\s*await writeRequiredAuditLog\(/, "each revoked exception leaves its own audit row, as the Exceptions tab's Remove does");
   const add = service.slice(service.indexOf("export async function addMedicalInsuranceMember("), service.indexOf("export type UpdateMemberInput"));
   assert.ok(add.indexOf('.from("medical_insurance_members")\n    .insert(') < add.indexOf("revokeLiveKeepOuts(access, policy.id, hrId"), "Add someone revokes the keep_out only AFTER the row is in, so a refused add keeps the exclusion");
+
+  // Put back on a spouse or child is refused while their employee is still ended, before anything is written.
+  const principalRead = reinstate.indexOf('.eq("id", member.principal_member_id)');
+  const firstReinstateWrite = reinstate.indexOf(".update(");
+  assert.ok(principalRead > -1 && principalRead < firstReinstateWrite, "Put back on a spouse or child reads their employee before the first write");
+  assert.match(reinstate, /member\.member_type !== "employee"[\s\S]*?coverage_ends_on[\s\S]*?cannot be put back under it/, "a family member is never put back under an ended employee");
+
+  // Editing a family member's start is held to their employee's start, as adding one is.
+  const edit = service.slice(
+    service.indexOf('const coverageStart = cleanDay(input.coverageStart, "The start of cover") ?? member.coverage_starts_on;'),
+    service.indexOf("const patch = {"),
+  );
+  assert.match(edit, /member\.principal_member_id[\s\S]*?Cover cannot start before the employee's own cover/, "a family member's start cannot move before their employee's");
+  assert.ok(edit.includes("coverageStart !== member.coverage_starts_on"), "asked only when the start changes, so an already-early row can still have its notes corrected");
+
+  // Exclude asks for a live exception BEFORE it ends anyone, so a refusal writes nothing.
+  const end = service.slice(service.indexOf('input.action === "end"'), service.indexOf('input.action === "move_under"'));
+  const liveRead = end.indexOf('.from("medical_insurance_exceptions")');
+  const firstEndWrite = end.indexOf("coverage_ends_on: endsOn, end_reason: reason");
+  assert.ok(liveRead > -1 && liveRead < firstEndWrite, "Exclude reads the live exception before the first write");
+  assert.match(end, /liveDecision === "keep_in"[\s\S]*?Remove it on the Exceptions tab first/, "a live keep-on is refused with nothing written");
+  assert.ok(end.includes("!alreadyKeptOut &&"), "a live keep-off is not inserted twice");
+
+  // The additions file names everyone the insurer's sheet would take blank, instead of writing blank mandatory cells.
+  assert.match(
+    service.slice(service.indexOf("export async function prepareLibanoMemberFile(")),
+    /libanoLineGaps\([\s\S]*?needs a date of birth and sex for everyone/,
+    "the additions file refuses a line with no date of birth or sex",
+  );
 }
 
 /** The contract's age limits: over 64 for an employee or spouse, over 18 for a child, and no birth date. */
@@ -463,6 +493,11 @@ async function testTheMemberFileIsTheInsurersOwnSheet() {
     principalNumber: "899",
     staffNumber: "34-1",
   };
+  // The two cells the insurer's sheet marks mandatory and that a record can leave blank: named, never written blank.
+  assert.deepEqual(libanoLineGaps(child), [], "a complete line has no gaps");
+  assert.deepEqual(libanoLineGaps({ ...child, birthDate: null, gender: null }), ["date of birth", "sex"]);
+  assert.deepEqual(libanoLineGaps({ ...child, gender: "x" }), ["sex"], "anything but M or F is blank in the file");
+  assert.deepEqual(libanoLineGaps({ ...child, birthDate: "" }), ["date of birth"]);
   const cells = libanoMemberCells(child);
   assert.equal(cells.length, 39);
   assert.equal(cells[0], "C", "Plan Code");
