@@ -15,17 +15,22 @@ import { z } from "zod";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { storeConnectorFile } from "@/lib/chatgpt-connector/files";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { capRows, cappedNote, normalizeSearchText } from "@/lib/chatgpt-connector/tools/helpers";
 import {
   TABLE_EXPORT_MAX_ROWS,
   TABLE_FILTER_OPS,
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
+  holdsTypedSignInText,
+  maskUnrecognizedIdentifiers,
+  exportRowCap,
   orderTiebreakers,
   planTableRead,
   readableTables,
   rowsThatFit,
   schemaFromOpenApi,
+  signInMaskExtraColumns,
   type TableReadPlan,
 } from "@/lib/chatgpt-connector/tools/table-guard";
 import { addPhoenixTableSheet, type ExportRow } from "@/lib/export/table-workbook";
@@ -101,8 +106,39 @@ export function stableOrder(plan: TableReadPlan, known: readonly string[]): { co
   return { column: plan.columns[0], ascending: true };
 }
 
+let accountKeysCache: { at: number; keys: Set<string> } | null = null;
+
+/** Every login id and HR id of an account, lower-cased — what a sign-in name must match to be shown as typed. */
+async function loadAccountKeys(): Promise<ReadonlySet<string>> {
+  if (accountKeysCache && Date.now() - accountKeysCache.at < SCHEMA_TTL_MS) return accountKeysCache.keys;
+  let rows: Array<{ login_id: string | null; hr_id: string | null }>;
+  try {
+    rows = await fetchAllRows<{ login_id: string | null; hr_id: string | null }>(() => getSupabaseAdmin().from("app_auth_users").select("login_id, hr_id"), "login_id");
+  } catch {
+    // Fail closed: with no list of accounts nothing can be told from a typed password.
+    throw new ToolRefusal("The account list could not be read, so the sign-in names in this table cannot be checked. Try again.");
+  }
+  const keys = new Set<string>();
+  for (const row of rows) {
+    for (const value of [row.login_id, row.hr_id]) {
+      const text = String(value ?? "").trim().toLowerCase();
+      if (text) keys.add(text);
+    }
+  }
+  accountKeysCache = { at: Date.now(), keys };
+  return keys;
+}
+
 /** One page of a guarded plan, with PostgREST's row count (exact on small tables, the planner's estimate on huge ones). */
 async function readPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number) {
+  const page = await readPageRows(plan, known, offset, size);
+  if (!holdsTypedSignInText(plan.table)) return page;
+  // Text a person typed into the sign-in box is shown only when it names an account (see maskUnrecognizedIdentifiers).
+  const extra = signInMaskExtraColumns(plan.table, plan.columns);
+  return { ...page, rows: maskUnrecognizedIdentifiers(plan.table, page.rows, await loadAccountKeys(), extra) };
+}
+
+async function readPageRows(plan: TableReadPlan, known: readonly string[], offset: number, size: number) {
   const ties = orderTiebreakers(stableOrder(plan, known), plan, known);
   try {
     return await readOrderedPage(plan, known, offset, size, ties);
@@ -117,7 +153,8 @@ async function readPage(plan: TableReadPlan, known: readonly string[], offset: n
 }
 
 async function readOrderedPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number, ties: readonly string[]) {
-  let query = getSupabaseAdmin().from(plan.table).select(plan.columns.join(","), { count: "estimated" });
+  const selected = [...plan.columns, ...signInMaskExtraColumns(plan.table, plan.columns)];
+  let query = getSupabaseAdmin().from(plan.table).select(selected.join(","), { count: "estimated" });
   for (const filter of plan.filters) {
     switch (filter.op) {
       case "eq":
@@ -210,7 +247,9 @@ export const readTableTool = defineTool({
 /** Excel holds at most 32,767 characters in one cell. */
 const EXCEL_CELL_MAX_CHARS = 32_000;
 /** Stop reading pages here and hand over what was read, so the call finishes inside its 40-second limit. */
-const EXPORT_READ_BUDGET_MS = 25_000;
+const EXPORT_READ_BUDGET_MS = 15_000;
+/** If reading and building the file took longer than this, nothing is saved: the call's own 40 s limit does not cancel work. */
+const EXPORT_BUILD_DEADLINE_MS = 30_000;
 const EXPORT_PAGE_ROWS = TABLE_READ_MAX_ROWS;
 
 export function exportCell(value: unknown, cut: { count: number }): string | number | null {
@@ -241,16 +280,18 @@ export const exportTableTool = defineTool({
     title: z.string().max(150).optional().describe("The workbook's title. Default: the table's name."),
   },
   async run(ctx, input) {
+    // Taken first: a cold schema read can itself spend seconds of the budget.
+    const started = Date.now();
     const schema = await loadPublicSchema();
     const plan = planTableRead({ ...input, limit: TABLE_EXPORT_MAX_ROWS }, schema, TABLE_EXPORT_MAX_ROWS);
+    const rowCap = exportRowCap(plan.columns.length);
     const known = schema.get(plan.table) ?? [];
-    const started = Date.now();
     const rows: Record<string, unknown>[] = [];
     let total: number | null = null;
     let offset = plan.offset;
     let exhausted = false;
-    while (rows.length < TABLE_EXPORT_MAX_ROWS && Date.now() - started < EXPORT_READ_BUDGET_MS) {
-      const size = Math.min(EXPORT_PAGE_ROWS, TABLE_EXPORT_MAX_ROWS - rows.length);
+    while (rows.length < rowCap && Date.now() - started < EXPORT_READ_BUDGET_MS) {
+      const size = Math.min(EXPORT_PAGE_ROWS, rowCap - rows.length);
       const page = await readPage(plan, known, offset, size);
       if (total === null) total = page.count;
       rows.push(...page.rows);
@@ -285,6 +326,11 @@ export const exportTableTool = defineTool({
       theme: "house",
     });
     const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    // Building the file after a slow read can run past the call's own 40 s limit, which answers "too long" without cancelling
+    // this work — and a file saved after that answer is an orphan the retry then duplicates. Nothing is saved instead.
+    if (Date.now() - started > EXPORT_BUILD_DEADLINE_MS) {
+      throw new ToolRefusal(`Building the file took too long, so nothing was saved. Export again with fewer columns or a filter, from offset ${plan.offset}.`);
+    }
     const file = await storeConnectorFile(ctx, { kind: "xlsx", title, body });
     const nextOffset = exhausted ? null : last;
     return {

@@ -4,6 +4,7 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { readJobHeartbeats } from "@/lib/observability/job-heartbeat";
 import {
   assessJobHeartbeats,
+  previousScheduledFire,
   type JobHeartbeatProblem,
   type JobHeartbeatRow,
 } from "@/lib/observability/job-heartbeat-assess";
@@ -93,6 +94,8 @@ function shortHash(text: string): string {
 
 type PersonInfo = { hrIdDisplay?: string | null; name?: string | null; role?: string | null };
 
+const latestIso = (left: string, right: string) => (Date.parse(left) >= Date.parse(right) ? left : right);
+
 /**
  * Pure: heartbeat problems and failed queue rows → ledger rows. Exported for the test.
  */
@@ -104,6 +107,8 @@ export function buildJobFailureFindings(input: {
   backgroundJobs: readonly BackgroundJobRow[];
   people: Map<string, PersonInfo>;
   nowIso: string;
+  /** The latest scheduled fire at or before tonight, for a job that has a cron declaration; null for any other. */
+  lastFireAt?: (slug: string) => string | null;
   label: (route: string | null, jobName: string) => { label: string; shell: AuditOccurrenceInput["shell"]; route: string | null };
 }): { issues: AuditIssueInput[]; occurrences: AuditOccurrenceInput[] } {
   const issues = new Map<string, AuditIssueInput>();
@@ -174,10 +179,18 @@ export function buildJobFailureFindings(input: {
       route: where.route,
       occurredAt,
       occurredAtKind,
-      // A stranded or misdeclared job is a STATE, re-found every night on the same row: its last
-      // event is tonight, so the verifier (which judges by the last event) never calls a job that is
-      // still stranded fixed. A failure is one event, dated by itself.
-      lastEventAt: kind === "failing" ? occurredAt : input.nowIso,
+      // A stranded or misdeclared job is a STATE, re-found every night on the same row, and the verifier judges a
+      // recurrence by the LAST event. A STRANDED row's last event is its latest scheduled fire that went unanswered
+      // (never later than that): a fix that went live after the fire it missed has not been tried yet, so tonight's
+      // re-find must not count as it happening again, while a fire AFTER the fix that is still unanswered does. A
+      // MISDECLARED row is judged against today's code every night, so tonight is a true event. A failure is one
+      // event, dated by itself. Without a cron declaration to read a fire from, tonight stays the last event.
+      lastEventAt:
+        kind === "failing"
+          ? occurredAt
+          : kind === "stranded"
+            ? latestIso(occurredAt, input.lastFireAt?.(problem.slug) ?? input.nowIso)
+            : input.nowIso,
       userMessage: SILENT_DATA_MESSAGE,
       isSilent: true,
       technicalMessage: problem.detail,
@@ -336,6 +349,11 @@ export function createJobFailuresDetector(deps: JobFailuresDetectorDeps = {}): A
         backgroundJobs,
         people,
         nowIso,
+        lastFireAt: (slug) => {
+          const declaration = JOB_SCHEDULES.find((entry) => entry.slug === slug);
+          if (declaration?.kind !== "cron" || !declaration.schedule) return null;
+          return previousScheduledFire(declaration.schedule, now)?.toISOString() ?? null;
+        },
         label: defaultLabel,
       });
 

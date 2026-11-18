@@ -10,6 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -259,6 +260,21 @@ async function refreshRotationAndReplay() {
   await expectOAuth(gated.oauth.token({ grant_type: "refresh_token", client_id: gated.client.client_id, refresh_token: gPair.refresh_token }), "invalid_grant");
   assert.equal(await gated.oauth.verifyAccessToken(gPair.access_token), null);
 
+  // …but an OUTAGE of that check keeps the connection: the blip answers 503 and the same refresh token works next time.
+  let down = false;
+  const flaky = await connected(async () => (down ? { ok: false, reason: "Phoenix could not check the account just now. Try again.", unavailable: true } : { ok: true }));
+  const fPair = await flaky.oauth.token({ grant_type: "authorization_code", client_id: flaky.client.client_id, redirect_uri: REDIRECT, code: flaky.code, code_verifier: flaky.verifier });
+  down = true;
+  await assert.rejects(
+    flaky.oauth.token({ grant_type: "refresh_token", client_id: flaky.client.client_id, refresh_token: fPair.refresh_token }),
+    (error: unknown) => error instanceof OAuthError && error.code === "temporarily_unavailable" && error.status === 503,
+    "a read blip during a refresh is a 503, never a revocation",
+  );
+  assert.ok(await flaky.oauth.verifyAccessToken(fPair.access_token), "the connection is still there after the blip");
+  down = false;
+  const refreshed = await flaky.oauth.token({ grant_type: "refresh_token", client_id: flaky.client.client_id, refresh_token: fPair.refresh_token });
+  assert.ok(refreshed.access_token, "the same refresh token works once the database answers again");
+
   await expectOAuth(gated.oauth.token({ grant_type: "password" }), "unsupported_grant_type");
   assert.equal(bearerFrom("Bearer phxat_abc"), "phxat_abc");
   assert.equal(bearerFrom("Basic abc"), null);
@@ -290,6 +306,15 @@ function liveAccountDecisions() {
   assert.deepEqual(decideLiveSubject({ ...OWNER, hrId: null }, { ...account, hr_id: null }, active, today), { ok: true });
   assert.match(refused({ ...account, hr_id: null }), /different employee/);
   assert.match(refused(account, { lookupFailed: true, row: null }), /could not check/);
+  // An outage is flagged, a verdict never is: /api/mcp answers 503 and a refresh keeps its family only for the outage.
+  const outage = decideLiveSubject(OWNER, account, { lookupFailed: true, row: null }, today);
+  assert.equal(outage.ok === false && outage.unavailable, true, "a failed employee read is an outage, not a verdict");
+  const resigned = decideLiveSubject(OWNER, account, { lookupFailed: false, row: { employment_status: "Resigned", last_working_date: "2026-10-01" } }, today);
+  assert.equal(resigned.ok === false && resigned.unavailable, undefined, "a real verdict carries no outage flag");
+  const switchedOff = decideLiveSubject(OWNER, { ...account, is_active: false }, active, today);
+  assert.equal(switchedOff.ok === false && switchedOff.unavailable, undefined, "neither does a switched-off account");
+  const mcpRoute = readFileSync("app/api/mcp/route.ts", "utf8");
+  assert.ok(mcpRoute.includes('access.unavailable ? refuse(503, access.reason)'), "an outage answers 503, not a 401 that starts a refresh");
   assert.match(refused(account, { lookupFailed: false, row: { employment_status: "Resigned", last_working_date: "2026-10-01" } }), /no longer active/);
 }
 

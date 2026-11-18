@@ -243,6 +243,35 @@ function runVacantDistrictAndRegionalManagerTests() {
     regionalManagers.reduce((sum, member) => sum + member.totalTarget, 0),
     rows.filter((candidate) => candidate.dmHrId).reduce((sum, candidate) => sum + (candidate.targetValue ?? 0), 0),
   );
+  // A district that sold in a month nobody targeted it is NOT graded into the Regional Manager just because a sibling
+  // district under him had a target that month: his figure is the sum of his districts' own gradings, as on Sales vs Target.
+  const edge = regionalManagerMembersFromRows(
+    [
+      pediaRow({ repHrId: "M-1", dmSeatId: "DM-D1", dmHrId: "D-1", period: "2026-07", actualValue: 50, targetValue: 100 }),
+      pediaRow({ repHrId: "M-2", dmSeatId: "DM-D2", dmHrId: "D-2", period: "2026-07", actualValue: 30, targetValue: null, hasTarget: false }),
+    ],
+    seats,
+    names,
+    products,
+    { hrId: "N-1", name: "Nadia National" },
+  );
+  assert.equal(
+    edge.find((member) => member.hrId === "R-1")!.achievementPercent,
+    50,
+    "the Regional Manager row is the sum of his districts' own gradings: D-2's untargeted July sales are not graded into it",
+  );
+  const mirror = regionalManagerMembersFromRows(
+    [
+      pediaRow({ repHrId: "M-1", dmSeatId: "DM-D1", dmHrId: "D-1", period: "2026-08", actualValue: 40, targetValue: null, hasTarget: false }),
+      pediaRow({ repHrId: "M-2", dmSeatId: "DM-D2", dmHrId: "D-2", period: "2026-08", actualValue: 60, targetValue: 120 }),
+    ],
+    seats,
+    names,
+    products,
+    { hrId: "N-1", name: "Nadia National" },
+  );
+  assert.equal(mirror.find((member) => member.hrId === "R-1")!.achievementPercent, 50, "the same, the other district untargeted");
+
   // Two numbered districts of one region are ONE row; the Others bucket and a vacant district are none.
   const upperEgyptSeats = indexSalesSeats([
     seat("SEAT-NSM", null, "NSM", null, "N-1"),

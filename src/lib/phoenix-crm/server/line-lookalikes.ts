@@ -321,7 +321,12 @@ export async function answerLineLookalike(viewer: PhoenixCrmViewer, raw: unknown
   const areaCode = viewer.org.seats.get(String(waitingRow.seat_id))?.areaCode ?? null;
   if (!areaCode) throw conflictError(LOOKALIKE_REFUSAL_TEXT.not_comparable);
   const seatIds = [...viewer.org.seats.values()].filter((seat) => seat.areaCode === areaCode).map((seat) => seat.seatId);
-  const answers = (await loadAnswers()).filter((held) => held.waitingCustomerId === waitingCustomerId && held.sourceCustomerId === sourceCustomerId);
+  // Either way round, as the join path reads them: the pair may have been answered from the other customer's card.
+  const answers = (await loadAnswers()).filter(
+    (held) =>
+      (held.waitingCustomerId === waitingCustomerId && held.sourceCustomerId === sourceCustomerId) ||
+      (held.waitingCustomerId === sourceCustomerId && held.sourceCustomerId === waitingCustomerId),
+  );
   const plan = planLookalikeConfirm(await loadInput(viewer.org, { isTest: false, seatIds }, answers), waitingCustomerId, sourceCustomerId);
   if (!plan.ok) throw conflictError(LOOKALIKE_REFUSAL_TEXT[plan.refusal]);
 

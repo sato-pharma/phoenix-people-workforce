@@ -17,6 +17,17 @@ export const TABLE_READ_MAX_ROWS = POSTGREST_ROW_CEILING;
 export const TABLE_READ_DEFAULT_ROWS = 200;
 /** A whole-table export reads at most this many rows into one workbook. */
 export const TABLE_EXPORT_MAX_ROWS = 50_000;
+/**
+ * Cells a single export file may hold (rows x columns), because the web process builds the whole workbook in memory: a table of
+ * 200 columns would otherwise ask it for 10 million cells. A narrow table keeps its 50,000 rows a file; wider ones give fewer
+ * rows and the answer already says where the next file starts. Owner's choice, 18 Nov 2026.
+ */
+export const TABLE_EXPORT_MAX_CELLS = 500_000;
+
+/** How many rows one export file may carry for this many columns (never below 1, never above TABLE_EXPORT_MAX_ROWS). */
+export function exportRowCap(columnCount: number): number {
+  return Math.max(1, Math.min(TABLE_EXPORT_MAX_ROWS, Math.floor(TABLE_EXPORT_MAX_CELLS / Math.max(1, columnCount))));
+}
 
 export const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 
@@ -141,6 +152,56 @@ export type TableReadPlan = {
 export function orderTiebreakers(order: { column: string }, plan: Pick<TableReadPlan, "columns">, known: readonly string[]): string[] {
   if (known.includes("id")) return order.column === "id" ? [] : ["id"];
   return plan.columns.filter((column) => column !== order.column);
+}
+
+/** What a sign-in name that matches no account reads as. */
+export const NOT_AN_ACCOUNT_TEXT = "(not an account)";
+
+/** The two places sign-in text a person TYPED is stored: the attempts table and the audit rows of an auth_session. */
+export function holdsTypedSignInText(table: string): boolean {
+  return table === "auth_login_attempts" || table === "audit_logs";
+}
+
+/**
+ * Columns the mask needs to judge a row that the caller did not ask for (an audit row is a sign-in row by its
+ * `entity_type`, and its entity is typed text only when it equals its actor). Read internally, dropped from the answer.
+ */
+export function signInMaskExtraColumns(table: string, columns: readonly string[]): string[] {
+  if (table !== "audit_logs" || !(columns.includes("actor_login_id") || columns.includes("entity_id"))) return [];
+  return ["entity_type", "actor_login_id"].filter((column) => !columns.includes(column));
+}
+
+/**
+ * A wrong sign-in name is stored as typed — a password pasted into the login-id box is stored as text — and the table
+ * tools read every table, so what matches no account is shown as "(not an account)" instead. Real login ids and HR ids
+ * (`accounts`, lower-cased) stay visible, so "who failed to sign in" still works; only text that proves nobody is hidden.
+ * An audit row's entity is masked only when it IS its actor's typed text: another auth row's entity (a blocked address)
+ * is not a sign-in name. `extraColumns` are removed from the answer.
+ */
+export function maskUnrecognizedIdentifiers(
+  table: string,
+  rows: readonly Record<string, unknown>[],
+  accounts: ReadonlySet<string>,
+  extraColumns: readonly string[] = [],
+): Record<string, unknown>[] {
+  const matchesAnAccount = (value: unknown) => {
+    const text = String(value ?? "").trim().toLowerCase();
+    return text === "" || text === "system" || accounts.has(text);
+  };
+  return rows.map((row) => {
+    const next: Record<string, unknown> = { ...row };
+    if (table === "auth_login_attempts") {
+      if (typeof next.login_id === "string" && !matchesAnAccount(next.login_id)) next.login_id = NOT_AN_ACCOUNT_TEXT;
+    } else if (table === "audit_logs" && row.entity_type === "auth_session") {
+      const actor = row.actor_login_id;
+      if (typeof actor === "string" && !matchesAnAccount(actor)) {
+        next.actor_login_id = NOT_AN_ACCOUNT_TEXT;
+        if (typeof row.entity_id === "string" && row.entity_id.trim().toLowerCase() === actor.trim().toLowerCase()) next.entity_id = NOT_AN_ACCOUNT_TEXT;
+      }
+    }
+    for (const column of extraColumns) delete next[column];
+    return next;
+  });
 }
 
 function isScalar(value: unknown): value is TableScalar {

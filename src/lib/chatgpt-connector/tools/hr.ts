@@ -174,7 +174,7 @@ export const attendanceTool = defineTool({
     return {
       summary:
         `${monthLabel(month)} (${data.dateFrom} to ${data.dateTo}): ${t.employees} employees, ${t.presentDays} present days, ` +
-        `${t.absentDays} absent days (${(t.absenceRate * 100).toFixed(1)}%), ${t.lateCount} late arrivals, ${t.totalDeductionDays} deduction days.` +
+        `${t.absentDays} absent days (${t.absenceRate.toFixed(1)}%), ${t.lateCount} late arrivals, ${t.totalDeductionDays} deduction days.` +
         outage +
         (data.holidayCalendarReachable ? "" : " The holiday calendar could not be read, so absences may be overcounted.") +
         cappedNote(capped.total, capped.rows.length),

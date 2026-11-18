@@ -51,7 +51,8 @@ export async function POST(request: Request) {
   if (!subject) return refuse(401, "The Phoenix connection expired or was removed. Sign in again.", "invalid_token");
 
   const access = await connectorAccessContext(subject);
-  if (!access.ok) return refuse(401, access.reason, "invalid_token");
+  // An outage answers 503, like the rate-limit check below: a 401 invalid_token makes ChatGPT start a refresh.
+  if (!access.ok) return access.unavailable ? refuse(503, access.reason) : refuse(401, access.reason, "invalid_token");
 
   try {
     await assertApiRateLimit({ identifier: subject.familyId, limit: 120, scope: "chatgpt-connector:mcp", windowMs: 60_000 });

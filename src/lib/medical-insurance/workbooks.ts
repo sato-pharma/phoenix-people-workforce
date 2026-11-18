@@ -184,6 +184,18 @@ function sexLetter(gender: string | null | undefined): string {
   return "";
 }
 
+/**
+ * What a member-file line lacks that the insurer's sheet marks mandatory (its headings: date of birth "mandatory field",
+ * gender "mandatory field, the values are M or F"). A blank would go out as an empty cell the insurer's loader may reject
+ * or take wrongly, so the additions file names these people instead of writing them blank.
+ */
+export function libanoLineGaps(line: Pick<LibanoMemberLine, "birthDate" | "gender">): string[] {
+  const gaps: string[] = [];
+  if (!libanoDay(line.birthDate)) gaps.push("date of birth");
+  if (!sexLetter(line.gender)) gaps.push("sex");
+  return gaps;
+}
+
 /** One person as the 39 cells of the insurer's sheet, every one text, in their order. */
 export function libanoMemberCells(line: LibanoMemberLine): string[] {
   const name = splitLibanoName(line.fullName);

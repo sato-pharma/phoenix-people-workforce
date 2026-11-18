@@ -100,6 +100,27 @@ function testHeartbeatRows() {
   // carry tonight as its last event, or it would be verified as fixed while it is still stranded.
   assert.equal(stranded.lastEventAt, NOW_ISO, "A job still stranded tonight carries tonight as its last event");
   assert.equal(built.occurrences[2].lastEventAt, NOW_ISO, "A misdeclared job is re-found tonight, so tonight is its last event");
+  // A cron job's last event is its latest UNANSWERED FIRE, not the night it was re-found. A fix that went live after the
+  // fire it missed must not read as "it happened again" just because tonight's sweep still finds it overdue.
+  const base = {
+    stranded: [problem()],
+    failing: [],
+    misdeclared: [],
+    heartbeats: [heartbeat()],
+    backgroundJobs: [],
+    people: new Map(),
+    nowIso: NOW_ISO,
+    label: LABEL,
+  };
+  const beforeTheFix = buildJobFailureFindings({ ...base, lastFireAt: () => "2026-10-22T05:00:00.000Z" }).occurrences[0];
+  assert.equal(beforeTheFix.lastEventAt, "2026-10-22T07:00:00.000Z", "no later fire has come: the last event is the missed fire's own time");
+  assert.ok(
+    Date.parse(beforeTheFix.lastEventAt) < Date.parse("2026-10-22T12:00:00.000Z"),
+    "a fix that went live after the missed fire is not recurred by tonight's re-find",
+  );
+  const afterTheFix = buildJobFailureFindings({ ...base, lastFireAt: () => "2026-10-23T01:00:00.000Z" }).occurrences[0];
+  assert.equal(afterTheFix.lastEventAt, "2026-10-23T01:00:00.000Z", "a fire after the fix that is still unanswered IS a recurrence, so a still-stranded job never verifies");
+  assert.equal(buildJobFailureFindings(base).occurrences[0].lastEventAt, NOW_ISO, "a job with no cron declaration keeps tonight as its last event");
   assert.equal(built.occurrences[1].lastEventAt, "2026-10-22T05:00:00.000Z", "A failure is one event, dated by itself");
   const misdeclared = built.issues[2];
   assert.equal(misdeclared.rootCauseLevel, "confirmed", "A declaration that cannot be evaluated is a confirmed cause");
