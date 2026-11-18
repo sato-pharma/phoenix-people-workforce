@@ -29,12 +29,34 @@
 import type { AttendanceDayClassification } from "@/lib/attendance/working-days";
 import type { EmployeeDayPunches } from "@/lib/attendance/punch-minutes";
 import type { CompanyActivityCrmDay } from "@/lib/company-activity-report/crm-detail";
-import type { CompanyActivityDayOutcome, CompanyActivityDayRow, CompanyActivityLeaveDetail } from "@/lib/company-activity-report/types";
+import type {
+  CompanyActivityDayOutcome,
+  CompanyActivityDayRow,
+  CompanyActivityInterviewDetail,
+  CompanyActivityLeaveDetail,
+  CompanyActivityVisitDetail,
+} from "@/lib/company-activity-report/types";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function weekdayName(dateIso: string): string {
   return WEEKDAY_NAMES[new Date(`${dateIso}T00:00:00Z`).getUTCDay()];
+}
+
+/**
+ * What a CRM field-visit day actually holds, in words. A day with a real customer visit says so; a day
+ * made only of day activities (Interviews, Admin work, Meeting, Training…) names them, so a Phoenix CRM
+ * Interviews day no longer reads as "CRM field visit recorded" with no sign of what was done.
+ */
+export function crmFieldVisitReason(visits: readonly CompanyActivityVisitDetail[]): string {
+  if (visits.length === 0 || visits.some((visit) => (visit.visitType ?? 0) === 0)) return "CRM field visit recorded.";
+  const labels = [...new Set(visits.map((visit) => visit.label.trim()).filter(Boolean))];
+  return labels.length > 0 ? `CRM day activity recorded: ${labels.join(", ")}.` : "CRM field visit recorded.";
+}
+
+function interviewReason(interviews: readonly CompanyActivityInterviewDetail[]): string {
+  const count = interviews.length;
+  return `${count} interview${count === 1 ? "" : "s"} recorded — no office punch, CRM visit or leave that day.`;
 }
 
 export type CompanyActivityDayInputs = {
@@ -44,6 +66,8 @@ export type CompanyActivityDayInputs = {
   punches: EmployeeDayPunches | undefined;
   crmDay: CompanyActivityCrmDay | undefined;
   leave: CompanyActivityLeaveDetail | undefined;
+  /** Every interview this person sat in that day (interview-detail.ts). Optional: none when omitted. */
+  interviews?: CompanyActivityInterviewDetail[];
   hasOutage: boolean;
   hasAttendanceChannel: boolean;
   hasCrmChannel: boolean;
@@ -57,6 +81,7 @@ export function reconcileCompanyActivityDay(input: CompanyActivityDayInputs): Co
   const { classification } = input;
   const weekday = weekdayName(input.dateIso);
   const crmVisits = input.crmDay?.visits ?? [];
+  const interviews = input.interviews ?? [];
   const hasOfficePunch = Boolean(input.punches && input.punches.visiblePunchCount > 0);
   const hasCrmFieldVisit = Boolean(input.crmDay?.isFieldVisitDay);
   const hasCrmLeave = Boolean(input.crmDay?.isLeaveDay);
@@ -93,7 +118,7 @@ export function reconcileCompanyActivityDay(input: CompanyActivityDayInputs): Co
       reason = "Office attendance recorded.";
     } else if (hasCrmFieldVisit) {
       outcome = "crm_field_visit";
-      reason = "CRM field visit recorded.";
+      reason = crmFieldVisitReason(crmVisits);
     } else if (hasCrmLeave) {
       outcome = "crm_leave";
       reason = "CRM recorded as Annual Vacation.";
@@ -103,6 +128,13 @@ export function reconcileCompanyActivityDay(input: CompanyActivityDayInputs): Co
     } else if (leavePending) {
       outcome = "leave_pending";
       reason = `Leave pending — status: ${input.leave?.status ?? "pending"}.`;
+    } else if (interviews.length > 0) {
+      // Below presence and every leave signal, so it never hides one of them; above the outage, no-signal
+      // and no-entry readings, because a day with an interview on record is not a day with nothing on it.
+      // Display only — this report drives no deduction (types.ts), and the private calendar's No Activity
+      // Recorded still ignores interviews by its own rule.
+      outcome = "interview";
+      reason = interviewReason(interviews);
     } else if (input.hasOutage) {
       // Checked only once every INDEPENDENT signal (punch, CRM visit, CRM leave, Phoenix leave) is
       // ruled out — a device outage explains a missing PUNCH, never a missing leave record, so it
@@ -134,6 +166,8 @@ export function reconcileCompanyActivityDay(input: CompanyActivityDayInputs): Co
     hasOfficePunch,
     firstPunchMinutes: input.punches?.firstPunchMinutes ?? null,
     lastPunchMinutes: input.punches?.lastPunchMinutes ?? null,
+    interviews,
+    interviewCount: interviews.length,
     leave: input.leave ?? null,
     hasNoSignal,
     conflict,

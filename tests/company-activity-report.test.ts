@@ -145,6 +145,8 @@ function dayRow(overrides: Partial<CompanyActivityDayRow> = {}): CompanyActivity
     firstPunchMinutes: null,
     hasNoSignal: false,
     hasOfficePunch: false,
+    interviewCount: 0,
+    interviews: [],
     lastPunchMinutes: null,
     leave: null,
     outcome: "no_entry",

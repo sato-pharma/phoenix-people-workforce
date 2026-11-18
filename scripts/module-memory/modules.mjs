@@ -1477,6 +1477,22 @@ export const MODULES = [
     keywords: ["my districts", "serving roster", "team roster", "team calendar", "regional manager", "district manager board", "managers on leave"],
     tables: ["phx_monthly_achievement"],
   },
+  // 🔴 SPLIT 2026-11-18, FOR THE REASON `phoenix-crm-approvals` RECORDS: `portal` measured a 4,026-byte pointer
+  // against the 4,000 margin with the "every interview is a daily record" rule. The Company Activity Report
+  // rules live here; `portal` keeps every glob it had, so a report file loads the PAIR.
+  {
+    id: "company-activity-report",
+    title: "The Company Activity Report and its export",
+    scope: "The Company Activity Report: each employee's day reconciled from attendance, CRM visits, leave and interviews, its outcomes, the summary, the per-person day view and the Excel export.",
+    globs: [
+      "src/lib/company-activity-report/**",
+      "src/components/company-activity-report/**",
+      "app/**/company-activity-report/**",
+      "tests/company-activity-report*",
+    ],
+    keywords: ["company activity report", "activity report", "no entry day", "daily detail"],
+    tables: ["phoenix_crm_day_interviews"],
+  },
   {
     id: "notifications",
     title: "Email, notifications and messaging",
