@@ -107,7 +107,8 @@ function rootOf(folder) {
 /**
  * The folder this session belongs to.
  *
- * @param {{ cwd?: string, transcript_path?: string } | null | undefined} input  the hook payload
+ * @param {{ cwd?: string, transcript_path?: string, [field: string]: unknown } | null | undefined} input  the hook
+ *   payload, which carries other fields too (session_id, hook_event_name, tool_input); only these two are read
  * @param {{ env?: Record<string, string | undefined>, cwd?: string }} [options]  for tests
  * @returns {string} an absolute path; never empty when the working directory is known
  */
