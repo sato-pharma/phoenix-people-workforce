@@ -236,7 +236,7 @@ try {
   const url = m
     ? `${m[1]}://${m[2]}.${m[4]}:${m[3]}@${process.env.PHOENIX_POOLER_HOST?.trim() || PRODUCTION_POOLER_HOST}:5432/${m[6]}`
     : raw;
-  const sql = postgres(url, { max: 1, prepare: false });
+  const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });
   const [{ db, usr }] = await sql`select current_database() as db, current_user as usr`;
   await sql.end();
   console.log(`verified: connected to production as ${usr}, database ${db}`);

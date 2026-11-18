@@ -1033,7 +1033,7 @@ async function main(): Promise<void> {
   const outputPath = resolve(process.argv[2] ?? `xlsx/customer-pharmacy-areas-${cairoTodayKey()}.xlsx`);
   const marker = MARKETING_MANUAL_HOLD_MARKER;
 
-  const sql = postgres(connectionString, { max: 1, prepare: false });
+  const sql = postgres(connectionString, { max: 1, prepare: false, ssl: "require" });
   type Snapshot = [LinkRow[], CustomerRow[], NamedRow[], NamedRow[], CustomerLinkRow[], QueueRow[], { name: string }[]];
   let snapshot: Snapshot;
   try {

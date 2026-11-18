@@ -363,7 +363,7 @@ async function verifyReadOnlyDatabaseAlignment() {
     return;
   }
 
-  const sql = postgres(dbUrl, { max: 1, prepare: false });
+  const sql = postgres(dbUrl, { max: 1, prepare: false, ssl: "require" });
   try {
     const authRoleRows = await sql<{ role: string }[]>`
       select distinct role

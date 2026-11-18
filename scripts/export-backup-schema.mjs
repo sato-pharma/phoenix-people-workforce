@@ -58,7 +58,7 @@ async function main() {
 
   const rawUrl = envVar("PHOENIX_PRODUCTION_DATABASE_URL");
   if (refOf(rawUrl) !== PRODUCTION_REF) throw new Error(`the production URL does not resolve to ${PRODUCTION_REF}`);
-  const sql = postgres(toPooler(rawUrl, "aws-1-eu-central-1.pooler.supabase.com"), { max: 1, prepare: false });
+  const sql = postgres(toPooler(rawUrl, "aws-1-eu-central-1.pooler.supabase.com"), { max: 1, prepare: false, ssl: "require" });
 
   const dir = path.join(root, schema);
   mkdirSync(dir, { recursive: true });

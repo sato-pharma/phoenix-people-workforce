@@ -447,6 +447,9 @@ async function guard() {
         if (pushed.status !== 0) {
           // A refused lease means someone else moved the branch; anything else is a real failure (a
           // GitHub error, a token that may not push a workflow file) and the fix is OFF production.
+          // Since 19 Nov 2026 the ruleset on urgent-deploy/** lets only admins push, and GitHub refuses
+          // GitHub Actions as a bypass actor, so this push is refused by design: the alarm below fires and
+          // the fix goes back with a fresh `launch` from the laptop (docs/deployment.md, "The urgent route").
           const after = branchVerdict({ remote: remoteBranchSha(), expected: branchSha });
           if (after === "gone" || after === "replaced") {
             console.log("[urgent-deploy] the urgent branch moved under the guard (a newer launch, or stop) — it stands down.");

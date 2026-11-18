@@ -51,6 +51,15 @@ name: Production Deploy Failure Alert
 # with its own `timeout-minutes`, and the job ceiling sits above their sum so the job cannot conclude
 # `cancelled`. A delivery failure is therefore a failed STEP on the run page, never a red commit.
 #
+# 🔴 THE MESSAGE IS SENT FROM A SECOND RUN, ON main (credentials audit, 19 Nov 2026, the owner's "fix those"). The
+# Telegram pair lives only in the main-only `main-secrets` environment, and a `deployment_status` run cannot stand in
+# it: Railway creates each deployment with a bare commit sha as its ref, so the run has no branch for the
+# environment's "only main" rule to match. So the `alert` job reads no secret. It works out the message as before, then
+# HANDS IT OFF: it dispatches this same workflow on `main` with `relay_text`, and the `send` job there, inside
+# `main-secrets`, posts it. A dispatch made with GITHUB_TOKEN does start a run (GitHub's one exception, with
+# repository_dispatch), which is why the job asks for `actions: write`. The self-test takes the same two hops, so a
+# passing self-test proves the hand-off as well as the channel. A failed hand-off is an `::error::` on the run page.
+#
 # COST. No checkout, no Node, no install: curl, jq and the preinstalled gh. Every other status Railway
 # reports (in progress, success, inactive) starts a run whose job is skipped by the `if:` below, which
 # bills nothing.
@@ -62,10 +71,14 @@ on:
         description: "Send a test Telegram alert and stop (proves the alarm still works)"
         type: boolean
         default: false
+      relay_text:
+        description: "Filled in by this workflow's own hand-off: the message the send job posts. Leave empty."
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
-  deployments: read # the deployment's own status history, to alert once per deployment
 
 # One run at a time per deployment, queued rather than cancelled: cancelling a run would leave a
 # `cancelled` suite on the deployment's commit, and the second failure status needs to see the first.
@@ -78,9 +91,15 @@ jobs:
     # `secrets` cannot appear in an `if:` (tests/github-workflow-validity.test.ts), so the secret check
     # lives in the step. The environment is named "<Railway project> / production"; the staging app is
     # stopped, and a name that merely CONTAINS `production` is the only shape that has ever been seen.
-    if: ${{ github.event_name == 'workflow_dispatch' || ((github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error') && contains(github.event.deployment.environment, 'production')) }}
+    # A dispatch that carries `relay_text` is the hand-off below arriving, and belongs to `send` alone; letting it in
+    # here would hand off again, for ever.
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.relay_text == '') || ((github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error') && contains(github.event.deployment.environment, 'production')) }}
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 14
+    permissions:
+      contents: read
+      deployments: read # the deployment's own status history, to alert once per deployment
+      actions: write # the hand-off dispatches this workflow on main, where the Telegram pair lives
     steps:
       - name: Read what failed and where production stands
         id: facts
@@ -211,21 +230,46 @@ jobs:
 
           Railway: ${LOG_URL:-no link in the event}"
 
-      - name: Notify Telegram
-        # Sent unless the facts step positively decided this is a repeat. If that step itself broke, SEND
+      - name: Hand the message to the send job on main
+        # Handed off unless the facts step positively decided this is a repeat. If that step itself broke, SEND
         # is unset and a bare alert goes out: an alarm must never be worth less than nothing.
         if: ${{ always() && env.SEND != 'no' }}
         continue-on-error: true
         timeout-minutes: 3
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           DEPLOY_SHA: ${{ github.event.deployment.sha }}
           LOG_URL: ${{ github.event.deployment_status.log_url || github.event.deployment_status.target_url }}
         run: |
           if [ -z "${TEXT:-}" ]; then
             TEXT=$(printf 'PRODUCTION DEPLOY FAILED\n\nCommit %s. The details could not be read, so look at Railway first.\n\nRailway: %s' "${DEPLOY_SHA:0:9}" "${LOG_URL:-no link in the event}")
           fi
+          # The text goes in as JSON built by jq, so a newline or a quote in a commit subject cannot break the call.
+          if jq -n --arg t "$TEXT" '{ref: "main", inputs: {relay_text: $t}}' \
+            | gh api --method POST "repos/${REPO}/actions/workflows/deploy-failure-alert.yml/dispatches" --input - >/dev/null; then
+            echo "Handed off: the send job on main posts the message to Telegram."
+          else
+            echo "::error::The hand-off to the send job FAILED, so this failed production deployment reached nobody. Read Railway now."
+            exit 1
+          fi
+
+  send:
+    # Only the hand-off above starts this job. It stands in main-secrets, which only main may use, so a dispatch with
+    # relay_text from any other branch is refused at the door.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.relay_text != '' }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # the Telegram pair lives only in this main-only environment (credentials audit, 19 Nov 2026; docs/security/secret-rotation.md)
+    timeout-minutes: 5
+    steps:
+      - name: Notify Telegram
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          TEXT: ${{ inputs.relay_text }}
+        run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
             echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. A failed production deployment went UNDETECTED-BY-A-HUMAN, which is the condition this workflow exists to end."
             exit 0

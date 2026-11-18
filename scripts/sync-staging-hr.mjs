@@ -180,8 +180,8 @@ async function main() {
   const orderProblems = dependencyOrderProblems();
   if (orderProblems.length) throw new Error(`TABLES is out of dependency order:\n  ${orderProblems.join("\n  ")}`);
 
-  const prod = postgres(toPooler(productionUrl, "aws-1-eu-central-1.pooler.supabase.com"), { max: 1, prepare: false });
-  const stg = postgres(toPooler(stagingUrl, "aws-0-eu-central-1.pooler.supabase.com"), { max: 1, prepare: false });
+  const prod = postgres(toPooler(productionUrl, "aws-1-eu-central-1.pooler.supabase.com"), { max: 1, prepare: false, ssl: "require" });
+  const stg = postgres(toPooler(stagingUrl, "aws-0-eu-central-1.pooler.supabase.com"), { max: 1, prepare: false, ssl: "require" });
 
   async function meta(schema, table) {
     const [pkRow] = await prod`
