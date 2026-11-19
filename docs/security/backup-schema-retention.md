@@ -439,8 +439,21 @@ advisor's `rls_enabled_no_policy` and that drop lowers the count by 2.
 | `vacancies_backup_20261026` | 1 · 1 | one Pedia rep vacancy as it stood before its missing manager was filled in on 26 Oct; the manager is filled in today. Holds HR IDs and a manager's name |
 | `weekly_backup_20261026` | 2 · 68 | the 12 direct-order weekly batches and 56 region-only rows from before `20261026160001` rebuilt them so every direct order carries its pharmacy's area. None of the 56 is live now; the rebuild's 81 rows replaced them with every month's value and units unchanged |
 
-The next snapshot to reach 90 days with no decision is `sos_backup_20261027_archives`, on 25 Jan 2027.
-After it comes `phoenix_crm_merge_backup_20261028`, on 26 Jan 2027.
+**The 27 October customer-map archives snapshot, decided on 20 Nov 2026.** "Export, then drop", and it
+was exported that day (7 files, 14,878 rows, every checksum matching its manifest). It reaches 90 days
+on 25 Jan 2027. It is a whole snapshot schema, so the drop is `drop schema … cascade`. No migration
+created it, so staging has none and the schema baseline names none. Nothing depends on it or reads it:
+no foreign key, view, trigger, policy, function or cron job names it, and no role, `service_role`
+included, can use the schema. Row security is off on all seven tables, so the advisor count does not
+move.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `sos_backup_20261027_archives` | 7 · 14,878 | the undo record of the 27 Oct customer-map archive work ([`pharmacy-database-sync-runs-only-by-hand.md`](../../.claude/cloud-context/memory-mirror/pharmacy-database-sync-runs-only-by-hand.md)): the ids of the 14,417 archive pharmacies added to the map that night (all still in the map), the 95 old-shop EPDA rows switched off on the owner's word (all still off), the before-picture of 74 EPDA rows aligned to their twin's brick (68 still moved; 6 were restored that night), the old values of 287 pharmacy-database copies refreshed in place, and 5 smaller before-pictures. Holds pharmacy names and addresses |
+
+The next snapshot to reach 90 days with no decision is `phoenix_crm_merge_backup_20261028`, on
+26 Jan 2027. After it come `phoenix_crm_backup_20261101` and the table
+`au.bak_20261101_pedia_sharkia_line_area_map`, on 30 Jan 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,

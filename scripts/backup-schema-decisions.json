@@ -1213,6 +1213,13 @@
       "decidedBy": "owner",
       "why": "2 tables, 68 rows: the 12 direct-order weekly batches and 56 region-only rows from before 20261026160001 rebuilt them so every direct order carries its pharmacy's area. None of the 56 is live now; the rebuild's 81 rows replaced them with every month's value and units unchanged. Made by hand, so staging holds none.",
       "sheet": "20 November 2026, the five 26 October snapshots, in chat"
+    },
+    "sos_backup_20261027_archives": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "7 tables, 14,878 rows: the undo record of the 27 Oct customer-map archive work (.claude/cloud-context/memory-mirror/pharmacy-database-sync-runs-only-by-hand.md). The ids of the 14,417 archive pharmacies added to the map that night (all still in the map), the 95 old-shop EPDA rows switched off on the owner's word (all still off), the before-picture of 74 EPDA rows aligned to their twin's brick (68 still moved; 6 were restored that night), the old values of 287 pharmacy-database copies refreshed in place, and 5 smaller before-pictures (2 moved rows, 3 rows switched back on). Made by hand, so staging holds none. Row security off, so not in the advisor count. Holds pharmacy names and addresses.",
+      "sheet": "20 November 2026, the 27 October customer-map archives snapshot, in chat"
     }
   }
 }
