@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertInterviewBookingVisible } from "@/lib/recruitment/workspace/fence";
-import { interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
+import { assertSignedInToChangeCalendar, interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
 import {
   emailInterviewInvitation,
   getInterviewInvitationPlan,
@@ -40,6 +40,7 @@ export async function POST(request: Request, { params }: Context) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     await assertInterviewBookingVisible(access, id);
