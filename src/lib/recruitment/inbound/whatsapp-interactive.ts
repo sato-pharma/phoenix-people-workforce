@@ -22,7 +22,7 @@ import type { OutboundLogContext } from "@/lib/recruitment/inbound/whatsapp-outb
 import { buildOutboundLogRow, recordOutboundMessage } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 import { addressedForGraph } from "@/lib/recruitment/inbound/whatsapp-recipient";
 import { isApprovalsLine } from "@/lib/whatsapp-inbox/lines";
-import { recordInboxOutbound, type InboxSendDetail } from "@/lib/whatsapp-inbox/record";
+import { APPROVALS_WHATSAPP_STORE, recordInboxOutbound, type InboxSendDetail } from "@/lib/whatsapp-inbox/record";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 const SEND_TIMEOUT_MS = 8_000;
@@ -71,10 +71,28 @@ async function postToGraph(
 ): Promise<WhatsAppSendResult> {
   const result = await sendToGraph(phoneNumberId, token, payload, event);
 
-  // 🔴 THE THIRD NUMBER HAS ITS OWN LEDGER (owner, 3 Nov 2026). An approver's reminder must not appear in the recruitment
-  // outbound report or the WhatsApp Inbox, and neither filters by line. Nothing goes unrecorded: the job claims a row in
-  // `approval_whatsapp_reminders` before it sends and writes this result back to it.
-  if (isApprovalsLine(phoneNumberId)) return result;
+  const inboxDetail = context?.detail?.inbox;
+  const inbox = inboxDetail && typeof inboxDetail === "object" ? (inboxDetail as InboxSendDetail) : null;
+
+  // 🔴 THE THIRD NUMBER HAS ITS OWN STORE (owner, 3 Nov 2026; kept on his screen since 19 Nov 2026). An approver's
+  // reminder, and every send from the Approvals WhatsApp screen, must not appear in the recruitment outbound report or the
+  // WhatsApp Inbox, and neither filters by line. So the send is filed in the approvals store alone, where the Super Admin's
+  // screen shows it with its ticks; the reminder job also keeps its own row in `approval_whatsapp_reminders`.
+  if (isApprovalsLine(phoneNumberId)) {
+    const broadcastId = context?.detail?.broadcastId;
+    await recordInboxOutbound(
+      {
+        event,
+        extra: { broadcast_id: typeof broadcastId === "string" && broadcastId ? broadcastId : null },
+        inbox,
+        payload,
+        phoneNumberId,
+        result,
+      },
+      APPROVALS_WHATSAPP_STORE,
+    );
+    return result;
+  }
 
   // `to` is read back off the payload rather than passed separately: both callers set it from the
   // same value, and a second parameter is a second thing that can drift out of step with what was
@@ -92,10 +110,9 @@ async function postToGraph(
 
   // The same send, filed into the WhatsApp Inbox thread for that person, so an automated menu and a
   // human's reply both show where they were said. Never throws either.
-  const inboxDetail = context?.detail?.inbox;
   await recordInboxOutbound({
     event,
-    inbox: inboxDetail && typeof inboxDetail === "object" ? (inboxDetail as InboxSendDetail) : null,
+    inbox,
     payload,
     phoneNumberId,
     result,

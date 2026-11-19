@@ -22,7 +22,10 @@ import {
   formatByteSize,
   formatDayDivider,
   formatMessageTime,
+  deliveryTickCount,
   isNewCairoDay,
+  RECRUITMENT_INBOX_SURFACE,
+  type InboxSurface,
 } from "./inbox-format";
 import {
   InboxAvatar,
@@ -35,8 +38,8 @@ import { InboxPeoplePicker } from "./inbox-people-picker";
 
 type Panel = { kind: "none" } | { kind: "link" } | { kind: "save"; messageId: string };
 
-function mediaUrl(messageId: string, download = false) {
-  return `/api/whatsapp-inbox/media/${encodeURIComponent(messageId)}${download ? "?download=1" : ""}`;
+function mediaUrl(apiBase: string, messageId: string, download = false) {
+  return `${apiBase}/media/${encodeURIComponent(messageId)}${download ? "?download=1" : ""}`;
 }
 
 function originLine(message: InboxMessageView): string | null {
@@ -49,7 +52,7 @@ function originLine(message: InboxMessageView): string | null {
   return "Sent from Phoenix";
 }
 
-function MessageMedia({ message }: { message: InboxMessageView }) {
+function MessageMedia({ apiBase, message }: { apiBase: string; message: InboxMessageView }) {
   if (!message.hasMedia) return null;
   if (message.mediaProblem) {
     return <p className="text-[12px] leading-snug text-phx-warn">{message.mediaProblem}</p>;
@@ -58,22 +61,22 @@ function MessageMedia({ message }: { message: InboxMessageView }) {
   const type = message.messageType;
   if (type === "image" || type === "sticker" || /^image\/(jpeg|png|webp|gif)/.test(mime)) {
     return (
-      <a href={mediaUrl(message.id)} rel="noreferrer" target="_blank" title="Open the full photo">
+      <a href={mediaUrl(apiBase, message.id)} rel="noreferrer" target="_blank" title="Open the full photo">
         {/* eslint-disable-next-line @next/next/no-img-element -- a private, authenticated route; next/image cannot proxy it */}
         <img
           alt={message.body ?? "Photo"}
           className="block max-h-72 w-auto max-w-full border border-phx-line bg-phx-surface-2 object-contain"
           loading="lazy"
-          src={mediaUrl(message.id)}
+          src={mediaUrl(apiBase, message.id)}
         />
       </a>
     );
   }
   if (type === "video" || mime.startsWith("video/")) {
-    return <video className="block max-h-72 w-full max-w-full bg-phx-ink" controls preload="metadata" src={mediaUrl(message.id)} />;
+    return <video className="block max-h-72 w-full max-w-full bg-phx-ink" controls preload="metadata" src={mediaUrl(apiBase, message.id)} />;
   }
   if (type === "audio" || mime.startsWith("audio/")) {
-    return <audio className="block w-full max-w-full" controls preload="none" src={mediaUrl(message.id)} />;
+    return <audio className="block w-full max-w-full" controls preload="none" src={mediaUrl(apiBase, message.id)} />;
   }
   const size = formatByteSize(message.mediaByteSize);
   return (
@@ -85,18 +88,24 @@ function MessageMedia({ message }: { message: InboxMessageView }) {
         {message.mediaFileName ?? "File"}
         {size ? <span className="block text-[11px] font-normal text-slate-500">{size}</span> : null}
       </span>
-      <ActionLink href={mediaUrl(message.id)} rel="noreferrer" target="_blank" tone="ghost">
+      <ActionLink href={mediaUrl(apiBase, message.id)} rel="noreferrer" target="_blank" tone="ghost">
         Open
       </ActionLink>
     </div>
   );
 }
 
-/** The delivery state as WhatsApp's own marks, with the word beside them so nobody has to decode ticks. */
-function DeliveryTick({ status, text }: { status: string; text: string }) {
-  const Icon = status === "accepted" ? Clock3 : status === "sent" ? Check : CheckCheck;
+/**
+ * The delivery state as WhatsApp's own marks, with the word beside them so nobody has to decode ticks: one grey tick
+ * sent, two grey delivered, two coloured read (WhatsApp's blue on the Approvals WhatsApp screen, the inbox's orange
+ * elsewhere). A failed message is drawn in red with Meta's reason, in the bubble, not here.
+ */
+function DeliveryTick({ blueRead, status, text }: { blueRead: boolean; status: string; text: string }) {
+  const ticks = deliveryTickCount(status);
+  const Icon = ticks === 0 ? Clock3 : ticks === 1 ? Check : CheckCheck;
+  const readTone = blueRead ? "text-[#1D9BD1]" : "text-orange-600";
   return (
-    <span className={cn("inline-flex items-center gap-1 font-semibold", status === "read" ? "text-orange-600" : "text-slate-500")}>
+    <span className={cn("inline-flex items-center gap-1 font-semibold", status === "read" ? readTone : "text-slate-500")}>
       <Icon aria-hidden className="h-3.5 w-3.5" />
       {text}
     </span>
@@ -107,10 +116,12 @@ function MessageBubble({
   busy,
   message,
   onSave,
+  surface,
 }: {
   busy: boolean;
   message: InboxMessageView;
   onSave: (messageId: string) => void;
+  surface: InboxSurface;
 }) {
   const outbound = message.direction === "outbound";
   const text = message.body;
@@ -140,7 +151,7 @@ function MessageBubble({
             failed ? "bg-red-400" : outbound ? "bg-orange-400" : "bg-slate-400",
           )}
         />
-        <MessageMedia message={message} />
+        <MessageMedia apiBase={surface.apiBase} message={message} />
         {message.templateName ? (
           <span className="w-fit border border-orange-200 bg-white/70 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-[0.1em] text-orange-700">
             Template
@@ -168,11 +179,11 @@ function MessageBubble({
           ) : null}
           {origin ? <span className="font-medium">{origin}</span> : null}
           <span className="tabular-nums">{formatMessageTime(message.sentAt)}</span>
-          {status && !failed ? <DeliveryTick status={message.status} text={status} /> : null}
+          {status && !failed ? <DeliveryTick blueRead={surface.blueReadTicks} status={message.status} text={status} /> : null}
         </div>
         {message.hasMedia && !message.mediaProblem ? (
           <div className="flex flex-wrap items-center justify-end gap-1">
-            {message.savedToCandidate ? (
+            {!surface.saveToCandidate ? null : message.savedToCandidate ? (
               <ActionLink href={`/recruitment?candidate=${encodeURIComponent(message.savedToCandidate.id)}`} tone="ghost">
                 Saved to {message.savedToCandidate.name}
               </ActionLink>
@@ -182,7 +193,7 @@ function MessageBubble({
                 Save to candidate
               </Action>
             ) : null}
-            <ActionLink href={mediaUrl(message.id, true)} title="Download this file" tone="ghost">
+            <ActionLink href={mediaUrl(apiBase, message.id, true)} title="Download this file" tone="ghost">
               <Download aria-hidden className="h-3.5 w-3.5" />
               Download
             </ActionLink>
@@ -197,6 +208,7 @@ export function InboxThreadView({
   onBack,
   onChanged,
   onMarkUnread,
+  surface = RECRUITMENT_INBOX_SURFACE,
   thread,
 }: {
   onBack: () => void;
@@ -204,6 +216,8 @@ export function InboxThreadView({
   onChanged: () => Promise<void>;
   /** Mark as unread: puts the chat back in the Unread pile and closes it. */
   onMarkUnread: () => void;
+  /** Which screen this chat is drawn on — its API and which recruitment-only actions it offers. */
+  surface?: InboxSurface;
   thread: InboxThread;
 }) {
   const [panel, setPanel] = useState<Panel>({ kind: "none" });
@@ -235,16 +249,16 @@ export function InboxThreadView({
 
   function link(person: InboxPersonOption) {
     const body = person.kind === "candidate" ? { candidateId: person.id } : { employeeHrId: person.id };
-    void act(() => patchJson(`/api/whatsapp-inbox/conversations/${conversation.id}/link`, body), `Linked this chat to ${person.name}.`);
+    void act(() => patchJson(`${surface.apiBase}/conversations/${conversation.id}/link`, body), `Linked this chat to ${person.name}.`);
   }
 
   function unlink() {
-    void act(() => patchJson(`/api/whatsapp-inbox/conversations/${conversation.id}/link`, {}), "This chat is no longer linked to anyone.");
+    void act(() => patchJson(`${surface.apiBase}/conversations/${conversation.id}/link`, {}), "This chat is no longer linked to anyone.");
   }
 
   function save(messageId: string, person: InboxPersonOption, kind: "cv" | "other") {
     void act(
-      () => postJson(`/api/whatsapp-inbox/messages/${messageId}/save-to-candidate`, { candidateId: person.id, kind }),
+      () => postJson(`${surface.apiBase}/messages/${messageId}/save-to-candidate`, { candidateId: person.id, kind }),
       `Saved the file to ${person.name}'s record${kind === "cv" ? " as their CV" : ""}.`,
     );
   }
@@ -290,11 +304,13 @@ export function InboxThreadView({
               Employee: {conversation.employee.name}
             </span>
           ) : null}
-          <Action disabled={busy} onClick={() => setPanel(panel.kind === "link" ? { kind: "none" } : { kind: "link" })} tone="ghost">
-            <Link2 aria-hidden className="h-3.5 w-3.5" />
-            {linked ? "Link to someone else" : "Link to a candidate or employee"}
-          </Action>
-          {linked ? (
+          {surface.linking ? (
+            <Action disabled={busy} onClick={() => setPanel(panel.kind === "link" ? { kind: "none" } : { kind: "link" })} tone="ghost">
+              <Link2 aria-hidden className="h-3.5 w-3.5" />
+              {linked ? "Link to someone else" : "Link to a candidate or employee"}
+            </Action>
+          ) : null}
+          {surface.linking && linked ? (
             <Action disabled={busy} onClick={unlink} title="Phoenix will not link this chat by phone number again" tone="ghost">
               <Unlink aria-hidden className="h-3.5 w-3.5" />
               Unlink
@@ -316,7 +332,7 @@ export function InboxThreadView({
         </Band>
       ) : null}
 
-      {panel.kind === "link" ? (
+      {surface.linking && panel.kind === "link" ? (
         <div className="shrink-0 border-b border-slate-200 bg-[#F8F7F4] p-2 shadow-[inset_0_2px_4px_rgba(15,23,42,0.05)] sm:p-3">
           <InboxPeoplePicker
             busy={busy}
@@ -328,7 +344,7 @@ export function InboxThreadView({
         </div>
       ) : null}
 
-      {panel.kind === "save" ? (
+      {surface.saveToCandidate && panel.kind === "save" ? (
         <SaveToCandidatePanel
           busy={busy}
           conversationId={conversation.id}
@@ -355,7 +371,7 @@ export function InboxThreadView({
                   <span aria-hidden className="h-px flex-1 bg-[linear-gradient(90deg,rgba(148,163,184,0.45)_0%,rgba(148,163,184,0)_100%)]" />
                 </div>
               ) : null}
-              <MessageBubble busy={busy} message={message} onSave={(messageId) => setPanel({ kind: "save", messageId })} />
+              <MessageBubble busy={busy} message={message} onSave={(messageId) => setPanel({ kind: "save", messageId })} surface={surface} />
             </div>
           ))}
         </div>
@@ -363,6 +379,7 @@ export function InboxThreadView({
       </div>
 
       <InboxComposer
+        apiBase={surface.apiBase}
         canSend={thread.canSend}
         cannotSendReason={thread.cannotSendReason}
         conversationId={conversation.id}

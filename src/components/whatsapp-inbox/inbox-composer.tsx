@@ -18,7 +18,7 @@ import { postJson } from "@/components/recruitment/recruitment-fetch";
 import { INBOX_UPLOAD_MAX_BYTES, mediaLimitProblem, outboundMediaTypeFor } from "@/lib/whatsapp-inbox/graph";
 import { cn } from "@/lib/utils";
 
-import { formatByteSize, formatWindowLeft, isWindowClosingSoon } from "./inbox-format";
+import { formatByteSize, formatWindowLeft, isWindowClosingSoon, RECRUITMENT_INBOX_SURFACE } from "./inbox-format";
 import { InboxTemplateForm, type TemplateSendInput } from "./inbox-template-form";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
@@ -47,6 +47,7 @@ export function outboundFileProblem(file: { size: number; type: string }): strin
 }
 
 export function InboxComposer({
+  apiBase = RECRUITMENT_INBOX_SURFACE.apiBase,
   canSend,
   cannotSendReason,
   conversationId,
@@ -54,6 +55,8 @@ export function InboxComposer({
   onSent,
   windowClosesAt,
 }: {
+  /** The API root the send goes to (the inbox's, or the Approvals WhatsApp screen's). */
+  apiBase?: string;
   canSend: boolean;
   cannotSendReason: string | null;
   conversationId: string;
@@ -93,7 +96,7 @@ export function InboxComposer({
   async function sendText() {
     const body = text.trim();
     if (!body || busy) return;
-    const ok = await run(() => postJson(`/api/whatsapp-inbox/conversations/${conversationId}/messages`, { kind: "text", text: body }));
+    const ok = await run(() => postJson(`${apiBase}/conversations/${conversationId}/messages`, { kind: "text", text: body }));
     if (ok) setText("");
   }
 
@@ -102,7 +105,7 @@ export function InboxComposer({
     const form = new FormData();
     form.set("file", file);
     if (text.trim()) form.set("caption", text.trim().slice(0, CAPTION_MAX_LENGTH));
-    const ok = await run(() => postForm(`/api/whatsapp-inbox/conversations/${conversationId}/messages`, form));
+    const ok = await run(() => postForm(`${apiBase}/conversations/${conversationId}/messages`, form));
     if (ok) {
       setFile(null);
       setText("");
@@ -110,7 +113,7 @@ export function InboxComposer({
   }
 
   async function sendTemplate(input: TemplateSendInput) {
-    const ok = await run(() => postJson(`/api/whatsapp-inbox/conversations/${conversationId}/messages`, { kind: "template", ...input }));
+    const ok = await run(() => postJson(`${apiBase}/conversations/${conversationId}/messages`, { kind: "template", ...input }));
     if (ok) setMode("text");
   }
 
@@ -130,6 +133,7 @@ export function InboxComposer({
     <div className="relative z-[1] shrink-0 border-t border-slate-200 bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFAF8_100%)] px-3 py-2.5 shadow-[0_-1px_0_rgba(15,23,42,0.03),0_-8px_20px_rgba(15,23,42,0.05)] sm:px-4">
       {mode === "template" ? (
         <InboxTemplateForm
+          apiBase={apiBase}
           busy={busy}
           key={lineId}
           line={lineId}

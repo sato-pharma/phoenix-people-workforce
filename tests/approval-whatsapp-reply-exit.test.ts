@@ -34,6 +34,7 @@ function testAReplyGoesNowhere() {
 
   const split = splitApprovalsLineDelivery(reply, THIRD);
   assert.equal(split.droppedChanges, 1);
+  assert.deepEqual(parseInboxDelivery(split.approvalsPayload).messages.map((message) => message.wamid), ["wamid.reply"], "it is handed to the Approvals WhatsApp store instead");
   assert.equal(split.droppedMessages, 1, "it is logged as dropped");
   assert.equal(parseWhatsAppWebhookDelivery(split.payload).messages.length, 0, "the applicant bot and Talent Acquisition never see it");
   assert.equal(parseInboxDelivery(split.payload).messages.length, 0, "HR Resourcing never sees it");
@@ -54,6 +55,7 @@ function testAnApplicantInTheSameDeliveryStillGetsThrough() {
 function testUnsetOrUnrelatedChangesNothing() {
   const other = delivery(change(RECRUITMENT, textFrom("201112345678", "wamid.applicant", "hello")));
   assert.equal(splitApprovalsLineDelivery(other, null).payload, other, "with no third number set up, the very same delivery goes on");
+  assert.equal(splitApprovalsLineDelivery(other, null).approvalsPayload, null, "and nothing is handed to the approvals store");
   assert.equal(splitApprovalsLineDelivery(other, "  ").payload, other);
   assert.equal(splitApprovalsLineDelivery(other, THIRD).payload, other, "a delivery with nothing on it is untouched");
   for (const strange of [null, "text", 7, [], {}, { entry: "no" }, { entry: [null, { changes: "no" }, { changes: [null, {}] }] }]) {
@@ -96,10 +98,13 @@ function testTheOrderInTheWebhook() {
 function testTheOutboundSideKeepsItsOwnLedger() {
   const source = stripComments(readFileSync("src/lib/recruitment/inbound/whatsapp-interactive.ts", "utf8"));
   const body = source.slice(source.indexOf("async function postToGraph"), source.indexOf("async function sendToGraph"));
-  const guard = body.indexOf("if (isApprovalsLine(phoneNumberId)) return result;");
+  const guard = body.indexOf("if (isApprovalsLine(phoneNumberId)) {");
   assert.ok(guard > 0, "the shared sender knows the third number");
-  assert.ok(guard < body.indexOf("recordOutboundMessage("), "before the recruitment outbound report");
-  assert.ok(guard < body.indexOf("recordInboxOutbound("), "and before the WhatsApp Inbox");
+  const leaves = body.indexOf("return result;", guard);
+  assert.ok(leaves > guard, "and returns inside that branch");
+  assert.ok(body.slice(guard, leaves).includes("APPROVALS_WHATSAPP_STORE"), "filing the send in the Approvals WhatsApp store (owner, 19 Nov 2026)");
+  assert.ok(leaves < body.indexOf("recordOutboundMessage("), "before the recruitment outbound report");
+  assert.ok(leaves < body.indexOf("recordInboxOutbound({"), "and before the WhatsApp Inbox");
 }
 
 async function withEnv(values: Record<string, string | undefined>, run: () => Promise<void> | void) {

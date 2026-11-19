@@ -583,7 +583,8 @@ export const config = {
   //
   // The list is the device APK upload (Headwind) and the six other multipart routes
   // whose OWN limit is above 10 MB (audit, 2026-10-04): hiring documents (15 MB), custom hiring-pack
-  // templates (15 MB a page), personal-mailbox send (15 MB of attachments), the WhatsApp inbox (25 MB),
+  // templates (15 MB a page), personal-mailbox send (15 MB of attachments), the WhatsApp inbox (25 MB)
+  // and the Super Admin's Approvals WhatsApp screen (25 MB, same sender),
   // an employee's CV and its staging draft (15 MB). Routes capped at 10 MB or less stay behind the
   // proxy, and so do PUBLIC ones (`/api/public/apply`): excluding a route removes the proxy's 10 MB
   // ceiling, which is only safe once the route turns an anonymous caller away BEFORE it reads the body.
@@ -601,6 +602,6 @@ export const config = {
   // is read: a Content-Length cap, a per-address rate limit and the slot the address names; then the
   // single-use recording token.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/recordings/upload$|api/hiring-documents/files$|api/medical-insurance/documents$|api/medical-insurance/invoices$|api/medical-insurance/invoices/documents$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|api/devices/headwind/upload$|api/devices/recordings/upload$|api/hiring-documents/files$|api/medical-insurance/documents$|api/medical-insurance/invoices$|api/medical-insurance/invoices/documents$|api/hiring-pack/custom-templates$|api/messages/mailbox/send$|api/whatsapp-inbox/conversations/[^/]+/messages$|api/admin/approvals-whatsapp/conversations/[^/]+/messages$|api/employees/[^/]+/cv$|api/employees/cv-staging$).*)",
   ],
 };

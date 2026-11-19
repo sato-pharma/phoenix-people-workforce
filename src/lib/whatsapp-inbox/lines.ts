@@ -1,4 +1,5 @@
-// The WhatsApp Inbox — the company's two WhatsApp lines, and what each one can do.
+// The WhatsApp Inbox — the company's two WhatsApp lines, and what each one can do. A third company number, the approvals
+// line, is NOT one of them: it is read only on the Super Admin's Approvals WhatsApp screen (see the end of this file).
 //
 // Both numbers are on the Cloud API and feed the same webhook, so a message only says which line it
 // belongs to through Meta's `phone_number_id`. This module turns that id into a name a person reads.
@@ -72,15 +73,18 @@ export function whatsAppInboxLineLabel(phoneNumberId: string | null | undefined,
 
 // ── The third number (owner, 3 Nov 2026) ──
 //
-// The number the approval reminders go out from (src/lib/approvals/urgent-whatsapp-rules.ts). 🔴 IT IS DELIBERATELY NOT
-// IN whatsAppInboxLines ABOVE, and it has no default: HR Resourcing reads that list, and nobody reads this number.
-// `postToGraph` and the webhook both ask isApprovalsLine, because neither the inbox nor the outbound report filters by
-// line on its own.
+// The number the approval reminders go out from (src/lib/approvals/urgent-whatsapp-rules.ts), +20 10 40631155. 🔴 IT IS
+// DELIBERATELY NOT IN whatsAppInboxLines ABOVE, and it has no default: HR Resourcing reads that list. Since 19 Nov 2026
+// (owner: "Keep them, my screen only", "Super Admin only") its replies, ticks and every send from it — the reminders
+// included — are kept in the Approvals WhatsApp store (`approvals_whatsapp_*`, src/lib/approvals-whatsapp/), read only at
+// /admin/approvals-whatsapp. `postToGraph` and the webhook both ask isApprovalsLine, because neither the inbox nor the
+// recruitment outbound report filters by line on its own.
 
 /**
- * 🔴 NEVER A LINE PEOPLE WRITE TO. The webhook drops everything delivered to this number and still answers 200, so Meta
- * never redelivers. Set by mistake to a line in use, it would silently lose every applicant, so such a value reads as
- * unset: the reminders stay off, which is the loud and harmless failure.
+ * 🔴 NEVER A RECRUITMENT OR HANDSET LINE. The webhook takes everything delivered to this number out of the recruitment
+ * pipeline and the WhatsApp Inbox (keeping it in the Approvals WhatsApp store) and still answers 200, so Meta never
+ * redelivers. Set by mistake to a line in use, applicants would vanish from recruitment, so such a value reads as unset:
+ * the reminders and the Approvals WhatsApp sends stay off, which is the loud and harmless failure.
  */
 export function approvalsLinePhoneNumberId(): string | null {
   const id = process.env.WHATSAPP_APPROVALS_PHONE_NUMBER_ID?.trim();
