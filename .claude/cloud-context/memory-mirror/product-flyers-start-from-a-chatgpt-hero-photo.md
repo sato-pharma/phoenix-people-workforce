@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 21f0c779-a0cb-4588-acf8-2bc3502486eb
-  modified: 2026-11-19T12:47:05.619Z
+  modified: 2026-11-19T13:11:12.405Z
 ---
 
 On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid out in HTML/CSS with cut-out can photos, a baby photo and a teal field. The owner scored them 0/10, 2/10 and 0.5/10. His complaints, picked from a multiple-choice question: "looks cheap / like a webpage", "cans look pasted on", "two halves don't connect", and "back page is a boring table". He then picked "ChatGPT hero image" as the base for the next version.
@@ -95,5 +95,22 @@ On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid
   - Pedia merge request !6 got commit 9f890c7: the gold "?" sits 1 px after the title (the shared Why-slide rule gave 4 px), and "2′-FL" uses a true prime. The app's Playfair-700.woff has U+2032 but not U+2011. fontTools isn't installed; read a WOFF's cmap by hand with `zlib` + `struct`.
   - Left open: the front (yellow bodysuit) and back (E's green bodysuit) are two different children. I handed him a ChatGPT prompt for the same baby crawling on white, with `Downloads\Lacto-Advanced-baby-reference.png` as the reference.
   - Superseded packages were moved aside, never deleted, to `lacto-flyer-ls\superseded-package-r1-panel` and `...-r2-segoe-hyphen` in the scratchpad.
+- **Round 3 (19 Nov ~15:00 Cairo, in Arabic).** He asked for: the 3 ingredients as stacked points with a mark beside each; bigger cans and a slightly smaller baby; 2′-FL written as "0.02 g/100ml water"; the whole "Lacto Advanced" name bigger. The result, packaged from r6:
+  - Front logo 51 mm (was 46).
+  - Headline 20 pt (was 21).
+  - Three points (2′-FL HMO, DHA and ARA, Nucleotides), each behind a flat teal disc with a white tick, then "In both stages, / from birth to 12 months."
+  - Cans 26 mm wide (was 22.5), bottoms at 104. The baby is 84 mm tall (was 90) at 328 dpi.
+  - The field moved to 120 mm and the base to 138.4 mm, to give the can lids air under the headline.
+  - The measured gaps are even: logo to headline 4.15 mm, headline to points 3.6 mm, points to the stages line 3.4 mm. Stage 2's can to her forearm is 9 mm.
+  - In r6 I left "water" off the 2′-FL tile, arguing from the label (20 mg per 100 ml of ready-to-feed formula). **He refused that** ("FOLLOW THIS FUCKEN DIRECTIOINS"). When he dictates wording, print it exactly as he wrote it and do not argue the claim.
+- **Round 3b, r7 (19 Nov ~15:10 Cairo), done literally and made clearly visible.** This build is the one now in `Downloads\Lacto-Advanced-A5-landscape`; r6 was moved aside to `superseded-package-r6-subtle`.
+  - Front logo 60 mm wide (it was 46 mm originally). The headline now stands to the RIGHT of the logo, centred on it (x 78 mm, 20 pt).
+  - The points are 11 pt with 4.2 mm ticks.
+  - The cans are 30 mm wide, bottoms at 105.
+  - The baby is 76.4 mm tall at 361 dpi, her forearms at 105.5.
+  - The 2′-FL tile reads "0.02 g /100 ml water" over "human-milk oligosaccharide".
+  - Back logo 40 mm wide (it was 34); everything from the back's field down moved 1.5 mm lower.
+  - Measured gaps: can 2 to the baby 7 mm; the logo pill to can 1's lid 4 mm.
+  - Pedia merge request !6 was MERGED at his word at 14:59 Cairo (merge 5b19d83, carries 9f890c7 and the other session's palette-check fix 9a33f27). The branch is deleted; new Pedia work starts from main. Nothing has been deployed to the web or to Play.
 
 Related: [[the-next-step-box-must-not-manufacture-the-next-task]]
