@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { OUTSTATION_CLAIM_CHANGED_CODE, isOutstationClaimChangedError } from "@/lib/outstation/claim-revision";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { addOutstationJourneyStopAsAdmin } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { cairoWallClockToIso } from "@/lib/format/cairo-zone";
 
 export const runtime = "nodejs";
@@ -17,6 +19,7 @@ export const dynamic = "force-dynamic";
  * (addOutstationJourneyStopAsAdmin), which starts with assertOutstationAdminAccess.
  */
 function adminStopStatus(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return 401;
   if (isForbiddenError(error)) return 403;
   if (isOutstationClaimChangedError(error)) return 409;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
@@ -54,6 +57,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the id and the body — the service's own first gate, repeated here.
+    assertSignedIn(access);
+    await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     const id = parseOutstationRequestId(rawId);
     if (id === null) {

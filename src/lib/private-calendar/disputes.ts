@@ -127,8 +127,9 @@ async function withExplanations(disputes: PrivateCalendarDataDispute[]): Promise
 
 // Decisions are Super Admin only, per owner instruction — a narrower gate
 // than the generic `deductions`/`attendance` permission matrix, so it is
-// enforced explicitly here rather than through assertPermission.
-function assertDisputeDecisionActor(access: Pick<AccessContext, "role">) {
+// enforced explicitly here rather than through assertPermission. Exported so the decide routes ask it
+// before they read the body (REC-080).
+export function assertDisputeDecisionActor(access: Pick<AccessContext, "role">) {
   if (access.role !== "Super Admin") {
     throw new Error("Forbidden: only Super Admin can review private calendar data disputes.");
   }

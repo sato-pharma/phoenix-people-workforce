@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { listDisputeAssistEntries, runDisputeAssist } from "@/lib/dispute-center/assist.ts";
 import { disputeCenterError } from "@/lib/dispute-center/http.ts";
@@ -32,6 +33,8 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    // REC-080: a signed-out caller is refused before the path's kind is judged.
+    assertSignedIn(access);
     const { kind, ref } = await context.params;
     if (!isDisputeCaseKind(kind)) throw validationError("That kind of dispute does not exist.");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import { setCarryLateExpenses } from "@/lib/automated-payroll/late-expenses";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
     const body = (await request.json().catch(() => ({}))) as { on?: unknown };
     if (typeof body.on !== "boolean") {
       return jsonError(new Error("Validation: say whether the switch is on or off."));

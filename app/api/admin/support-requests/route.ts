@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -9,7 +11,7 @@ import {
   type SupportRequestListFilter,
   type SupportRequestStatus,
 } from "@/lib/support-requests/service";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +50,9 @@ export async function PATCH(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the body — the same gate updateSupportRequestStatus opens with.
+    assertSignedIn(access);
+    await assertPermission(access, "support_requests", "update");
     const body = (await request.json().catch(() => ({}))) as {
       id?: unknown;
       status?: unknown;
@@ -68,6 +73,9 @@ export async function PATCH(request: Request) {
         { error: "forbidden", message: "You do not have permission to update support requests." },
         { status: 403 },
       );
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ error: error.code, message: error.message }, { status: 401 });
     }
     const message = clientSafeErrorMessage(error, "Support request update failed.");
     return NextResponse.json({ error: "support_request_update_failed", message }, { status: 400 });

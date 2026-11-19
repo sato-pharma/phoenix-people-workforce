@@ -1,9 +1,11 @@
 import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isDevelopment } from "@/lib/env";
+import { ApiError } from "@/lib/http/api-errors";
 import {
   getMailboxOffboardingDashboardData,
   isMailboxBulkStep,
@@ -31,6 +33,7 @@ export const dynamic = "force-dynamic";
  * a later reader widens without understanding what he is widening.
  */
 function mailboxApiError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return { message: error.message, status: 401 };
   if (isForbiddenError(error)) return { message: mailboxOffboardingErrorMessage(error), status: 403 };
   if (isMailboxOffboardingSchemaMissing(error)) {
     return {
@@ -66,6 +69,12 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: `open` asserts mailbox_offboarding create and both records assert update, so a caller
+    // holding neither is refused before the body is read. Each action still asserts its own.
+    assertSignedIn(access);
+    if (!(await canAccess(access, "mailbox_offboarding", "create"))) {
+      await assertPermission(access, "mailbox_offboarding", "update");
+    }
     const payload = (await request.json()) as {
       action?: "open" | "record" | "record_bulk";
       employeeHrId?: string;

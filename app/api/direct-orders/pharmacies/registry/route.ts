@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertPharmacyRegistryAccess } from "@/lib/direct-orders/registry-access";
 import {
   acknowledgeDirectOrderPharmacy,
   listDirectOrderPharmacyRegistry,
@@ -55,6 +57,10 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: asked before the body is judged. register / updateDetails / replaceCodes ask exactly this,
+    // and confirm's System-Admin-only gate implies it; each service function still asks its own.
+    assertPharmacyRegistryAccess(access);
     const body = (await request.json().catch(() => ({}))) as {
       action?: string;
       pharmacyId?: string;

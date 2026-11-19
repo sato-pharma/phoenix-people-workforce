@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertSameOriginMutation, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertInterviewBookingVisible } from "@/lib/recruitment/workspace/fence";
-import { interviewCalendarCaller, setInterviewOutcome } from "@/lib/recruitment/interview-calendar";
+import { assertSignedInToChangeCalendar, interviewCalendarCaller, setInterviewOutcome } from "@/lib/recruitment/interview-calendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +15,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    // REC-080: refuse a signed-out caller before the body is judged (canSetInterviewOutcome requires it too).
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     await assertInterviewBookingVisible(access, id);
