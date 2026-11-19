@@ -259,3 +259,11 @@ The collection's and the cancel's breaks (§2b), each watched to fire and restor
 | model: the collection's records written outside the transaction | ONE audit row |
 | the cancel's audit row written by the app after the call | the cancel and its audit row were written by the one call |
 | model: the cancel's audit row written outside the transaction | ONE cancel audit row |
+
+The late-trip reservation's breaks (§5 item 2), each watched to fire and restored green:
+
+| Break | Assertion that fired |
+| --- | --- |
+| the release goes back before the one call | RACE: no release or insert of its own outside the one call |
+| model: the function keeps its delete when its insert fails | RESERVE LOSES A RACE: HEADLINE: the stored reservations are exactly as they were |
+| a lost race is not named as another run's hold | RACE: the loser is told with a LateExpenseRefusal |
