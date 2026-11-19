@@ -1573,6 +1573,9 @@ export type PrivateCalendarInterviewRow = {
   /** What the interview came to, when someone recorded it — the Company Activity Report prints it beside
    * the interview. Optional so a caller that builds a row by hand need not name it. */
   outcome?: InterviewOutcome | null;
+  /** Who put it on the calendar, when that was AFTER it had started (an interview recorded after the
+   * fact); null when it was booked ahead. Optional so a caller that builds a row by hand need not name it. */
+  bookedLateByHrId?: string | null;
 };
 
 /**
@@ -1601,6 +1604,7 @@ export async function listInterviewsForPrivateCalendar(from: Date, to: Date): Pr
       line: row.interview_line ?? null,
       panelHrIds: (row.panelist_hr_ids ?? []).filter(Boolean),
       outcome: readInterviewOutcome(row.outcome),
+      bookedLateByHrId: Date.parse(row.created_at) > Date.parse(row.starts_at) ? (row.created_by_hr_id ?? null) : null,
       platform: session ? asPlatform(session.platform) : asPlatform(row.platform),
       startsAt: row.starts_at,
     };

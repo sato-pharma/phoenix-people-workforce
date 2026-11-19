@@ -13,6 +13,7 @@ import { assertAttendanceMonthlySummaryPermission, assertPermission, getPayrollS
 import { hrIdsMatch } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { findSalaryBatchForPeriod, getSalaryBatchExport } from "@/lib/payroll/service";
+import { summarizeVacationRequests } from "@/lib/vacation/metrics";
 import { getEmployeeAnnualLeaveBalanceDays, getVacationReportData } from "@/lib/vacation/service";
 import { VACATION_STATUSES, type VacationRequestStatus } from "@/lib/vacation/types";
 import {
@@ -57,6 +58,9 @@ const VACATION_ROW_FIELDS = [
 
 const VACATION_STATUS_VALUES = VACATION_STATUSES.map((status) => status.value) as [VacationRequestStatus, ...VacationRequestStatus[]];
 
+/** The statuses the Vacation Report filters by itself (vacation/service.ts cleanFilters); the others are filtered here, never widened to "all". */
+const REPORT_STATUS_FILTERS: readonly VacationRequestStatus[] = ["approved", "rejected", "pending_manager", "pending_hr"];
+
 export const leaveTool = defineTool({
   name: "phoenix_leave",
   title: "Leave",
@@ -74,13 +78,19 @@ export const leaveTool = defineTool({
     if (input.from && !isIsoDate(input.from)) throw new ToolRefusal("from must be written YYYY-MM-DD.");
     if (input.to && !isIsoDate(input.to)) throw new ToolRefusal("to must be written YYYY-MM-DD.");
     // app/(admin)/leave-management/vacation-report/page.tsx — the service asserts leave:read and scopes rows.
+    // The report windows by START date, so it is asked only for requests starting by `to`; a request that began before
+    // `from` and is still running overlaps the window, which its end date settles here.
     const report = await getVacationReportData(ctx, {
-      dateFrom: input.from,
       dateTo: input.to,
       employee: input.hrId,
-      status: input.status,
+      status: input.status && REPORT_STATUS_FILTERS.includes(input.status) ? input.status : undefined,
     });
-    const rows = input.hrId ? report.rows.filter((row) => hrIdsMatch(row.employeeHrId, input.hrId)) : report.rows;
+    const rows = report.rows.filter(
+      (row) =>
+        (!input.hrId || hrIdsMatch(row.employeeHrId, input.hrId)) &&
+        (!input.status || row.status === input.status) &&
+        (!input.from || (row.endDate || row.startDate) >= input.from),
+    );
     const capped = capRows(rows);
     const requests = capped.rows.map((row) => pickFields(row, VACATION_ROW_FIELDS));
 
@@ -116,7 +126,8 @@ export const leaveTool = defineTool({
       };
     }
 
-    const s = report.summary;
+    // Counted over the rows above (the window and status as asked), with the report's own summary rule.
+    const s = summarizeVacationRequests(rows);
     return {
       summary:
         `${s.total} leave requests: ${s.approved} approved, ${s.pending} pending, ${s.rejected} rejected; ` +

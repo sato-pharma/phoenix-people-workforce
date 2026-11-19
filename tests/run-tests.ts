@@ -3199,6 +3199,7 @@ import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declar
 import { runSyntheticJourneySignInStepTests } from "./synthetic-journey-sign-in-step.test.ts";
 import { runSyntheticJourneysRunHistoryFitTests } from "./synthetic-journeys-run-history-fit.test.ts";
 import { runStoredContentTypeTests } from "./stored-content-type.test.ts";
+import { runReviewFindings20261119Tests } from "./review-findings-2026-11-19.test.ts";
 import { runEmailTemplateKeepsRecordPayloadTests } from "./email-template-keeps-record-payload.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -12690,6 +12691,7 @@ await runTest("smoke check that skips itself shows its real page (the Outstation
 await runTest("smoke-suite sign-in step is saved under its own code (sign-in, not the test runner's internal hash), with its /login page and Super Admin role; every other check keeps its own code", runSyntheticJourneySignInStepTests);
 await runTest("Synthetic Journeys Run History fits a phone: the table is the desktop's alone and a phone gets cards with every run's facts and its View button, never a sideways scroll", runSyntheticJourneysRunHistoryFitTests);
 await runTest("the WhatsApp inbox and held-email buckets take exact type lists, and a file of any other type is kept as a plain download, never refused, so no file is lost and no held email becomes unapprovable", runStoredContentTypeTests);
+await runTest("the 19 Nov 2026 review fixes: leave decided earliest start first, an interview that did not happen proves no half, a waiting mailbox is never mailed, no password hash in the audit copy, every companion credited once, an interview-only half day charged its other half, the error alert only where a Telegram reaches", runReviewFindings20261119Tests);
 await runTest("an email template body may not drop the details table its default carries (the only way a sender's record reaches the email), and a resignation notice shows a readable status", runEmailTemplateKeepsRecordPayloadTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

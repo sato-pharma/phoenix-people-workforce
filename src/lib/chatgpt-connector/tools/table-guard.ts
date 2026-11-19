@@ -56,6 +56,7 @@ const DENIED_TABLE_PATTERNS: readonly RegExp[] = [
   /_shares$/,
   /preview_links?$/,
   /calendar_links?$/,
+  /enrollment_template/, // device-enrollment templates: the QR payload enrolls a device as the owner
 ];
 
 /**
@@ -102,6 +103,21 @@ const DENIED_TABLE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 function isDeniedTableColumn(table: string | undefined, column: string): boolean {
   if (!table) return false;
   return (DENIED_TABLE_COLUMNS[table.trim().toLowerCase()] ?? []).includes(column.trim().toLowerCase());
+}
+
+/** What a secret key inside a json value reads as. */
+export const HIDDEN_SECRET_TEXT = "[hidden]";
+
+/**
+ * A json column is readable as a whole, but it can carry a secret under its own key — an audit row's `old_values`
+ * held the account's `password_hash`. Every key, at any depth, that the column deny list would refuse is replaced.
+ */
+export function redactSecretJsonKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactSecretJsonKeys(item));
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, isDeniedColumn(key) ? HIDDEN_SECRET_TEXT : redactSecretJsonKeys(item)]),
+  );
 }
 
 /** The columns of a table that may be read: well-formed names, none on the deny lists. */
@@ -202,6 +218,51 @@ export function maskUnrecognizedIdentifiers(
     for (const column of extraColumns) delete next[column];
     return next;
   });
+}
+
+/** The columns that can hold sign-in text a person typed (see maskUnrecognizedIdentifiers). */
+const TYPED_SIGN_IN_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  auth_login_attempts: ["login_id"],
+  audit_logs: ["actor_login_id", "entity_id"],
+};
+
+/** An audit read held to another entity_type never reaches an auth_session row, the only audit row with typed text. */
+function readSkipsSignInRows(plan: Pick<TableReadPlan, "table" | "filters">): boolean {
+  if (plan.table !== "audit_logs") return false;
+  return plan.filters.some((filter) => {
+    if (filter.column !== "entity_type") return false;
+    if (filter.op === "eq") return filter.value !== "auth_session";
+    if (filter.op === "neq") return filter.value === "auth_session";
+    if (filter.op === "in") return Array.isArray(filter.value) && !filter.value.includes("auth_session");
+    return false;
+  });
+}
+
+/**
+ * The mask hides typed sign-in text in the rows, but a filter or an order on its column would read it back one guess
+ * at a time (`ilike 'a%'`, `gte 'm'` and a row count, or where the masked rows sort). So on those columns only an exact
+ * real login id or HR id may be asked for, and nothing is sorted by them, unless the read is held to rows that are
+ * not sign-ins.
+ */
+export function assertNoTypedSignInProbe(plan: Pick<TableReadPlan, "table" | "filters" | "orderBy">, accounts: ReadonlySet<string>): void {
+  const typed = TYPED_SIGN_IN_COLUMNS[plan.table] ?? [];
+  if (typed.length === 0 || readSkipsSignInRows(plan)) return;
+  const namesAnAccount = (value: unknown) => {
+    const text = String(value ?? "").trim().toLowerCase();
+    return text === "system" || accounts.has(text);
+  };
+  const held = plan.table === "audit_logs" ? ", or hold the read to another entity_type" : "";
+  if (plan.orderBy && typed.includes(plan.orderBy.column)) {
+    throw new ToolRefusal(`${plan.table} is never sorted by ${plan.orderBy.column}: it can hold a password someone typed by mistake${held ? `; filter entity_type to another type to sort by it` : ""}.`);
+  }
+  for (const filter of plan.filters) {
+    if (!typed.includes(filter.column) || filter.op === "is") continue;
+    const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+    if ((filter.op === "eq" || filter.op === "in") && values.every(namesAnAccount)) continue;
+    throw new ToolRefusal(
+      `${plan.table}.${filter.column} can hold a password someone typed by mistake, so it is filtered only by an exact login id or HR id (eq or in)${held}.`,
+    );
+  }
 }
 
 function isScalar(value: unknown): value is TableScalar {
