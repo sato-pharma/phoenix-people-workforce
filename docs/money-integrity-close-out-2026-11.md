@@ -29,7 +29,7 @@ nothing when the model raises — exactly as Postgres does.
 | Leave decisions (#333) | added (step and paid approval) | added (manager twice; two Super Admins, balance used once) | `hr-decisions-rollback-and-race.test.ts` |
 | Deduction decisions (#333) | added (stale revision, lock trigger on all three write paths) | added, a real race | `deductions-money-paths-behaviour.test.ts` |
 | Deduction disputes (#333) | already covered | already covered | `dispute-and-deduction-atomic.test.ts` |
-| Second approve of an accepted outstation claim (#315) | added — **NOT all or nothing, see §5** | added | `outstation-reapprove-rollback-and-race.test.ts` |
+| Outstation claim approval and its second approve (#315) | added — **one database call since 19 Nov, see §2a** | added | `outstation-reapprove-rollback-and-race.test.ts` |
 | Cancel, Reopen Part 2, Reopen Part 1 (#341, #343) | added — **cancel and Reopen Part 2 FIXED, see §2** | added | `payroll-run-money-paths-behaviour.test.ts` |
 | Late-approved expense carry (#337) | added | added | `late-expenses-rollback-and-race.test.ts` |
 
@@ -54,6 +54,37 @@ Reopen Part 1 was made one call on 14 Nov 2026 (`20261114170804`). Two writes st
 of reserved late trips (empty in the normal state — a run in Part 2 holds none) and the override record when a reason
 is given. Neither moves money; folding them into the function needs a new function signature and was left for its own
 change.
+
+## 2a. Approving an outstation claim is one database call (REC-038)
+
+Owner, 19 Nov 2026: "fix the outstation approval so it is one step". `approveOutstationRequestForPayroll` made three
+separate calls: the claim's status update (pinned to the reviewer's revision), the push into payroll (a report row, then
+the trip's `outstation_expenses` row), then the required records. A failed push left the claim reading accepted with an
+empty report row; a failed record left the money queued while the approver was told the approval had failed.
+
+It now makes ONE call, `phx_accept_outstation_claim_for_payroll` (migration
+`20261119132423_outstation_accept_claim_for_payroll_atomically.sql`). Before it, nothing is written:
+`planPayrollExpenseSave` (`src/lib/outstation/expenses.ts`) runs the payroll save's own code — every read, refusal and
+figure — and stops before its first write, handing back the report values and the rows. The function then, in one
+transaction: updates the claim only while it still carries the `updated_at` the reviewer saw (else it raises
+`outstation_claim_changed`, the 409 the screens already show); updates the trip's report row, or inserts one; upserts the
+trip's row on `trip_id` exactly as planned; and inserts both audit rows. After it commits, `finishPayrollExpenseSave`
+pushes the moved decision into any open payroll run (it never throws and has its own retry queue). The same rows are
+written with the same figures: no amount, rate or formula moves. A claim the evidence gate holds is accepted by the same
+call with no payroll row and its "HELD out of payroll" record.
+
+**The migration must be applied before this code is merged.** Until it is, approving a claim refuses and changes
+nothing ("The claim could not be approved, so nothing was changed").
+
+The other two pushes — the release of a held claim once its evidence lands, and the system's own acceptance — still use
+`pushAcceptedOutstationExpenseToPayroll`; neither moves a claim the reviewer is looking at.
+
+`tests/outstation-reapprove-rollback-and-race.test.ts` models the function statement by statement from its migration and
+runs the real approval against it: a payroll row or a record failing inside the call (every table equals before, the app
+writes nothing outside the call, the refusal says nothing changed, and approving again from the same screen pays once);
+two approvals at once (one applies, the other gets "the claim changed", one row, one report, one record each); a change
+landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); and a held
+claim (accepted with no payroll row). Its breaks are in §7.
 
 ## 3. F-PAY-014 — publish works out its figures under its claim
 
@@ -89,15 +120,7 @@ judged on the step alone, as before. No database change.
 
 ## 5. Found and NOT fixed here
 
-1. **Approving an outstation claim is not all or nothing.** `approveOutstationRequestForPayroll` makes three separate
-   calls: the status update (pinned to the reviewer's revision), the push into payroll (a report row, then the trip's
-   `outstation_expenses` row, then the open payroll runs' Expenses steps reopened), then the required records. If the
-   push fails, the claim still reads accepted and an empty report row is left; a re-approve heals it (an accepted claim
-   missing its payroll row runs again). If the record fails, the money is queued and the record is queued in the outbox,
-   but the approver is told the approval failed. The two-caller test passes. A real fix is one database function over
-   the status, the report row, the payroll row and the record, with the payroll resync after it — a rewrite of the push
-   three screens share, so it is its own change. The test that shows it (failing today) is kept out of the run and is
-   in the appendix below.
+1. ~~**Approving an outstation claim is not all or nothing.**~~ **Fixed on 19 Nov 2026 — one database call, see §2a.**
 2. **`reserveLateExpenses` deletes a run's earlier reservations before it inserts the new ones.** If the insert fails,
    the earlier rows stay gone. A run reaching Part 2 confirm normally holds none, and an unconfirmed run pays no carried
    trip, so the risk is low. The switch starts OFF and stays the owner's.
@@ -107,8 +130,8 @@ judged on the step alone, as before. No database change.
    collection (or the cancel) stands, the record is queued in the outbox and not lost, but the person is told the save
    failed and the order's event row and sheet ping are skipped. A retry from the same screen is refused by the
    compare-and-set, so no money is doubled. The fix is to write the record inside the function, or to answer "saved"
-   once the database step committed and the record is queued. The outstation approval's record failure (item 1) is the
-   same shape.
+   once the database step committed and the record is queued. The outstation approval had the same shape until it wrote
+   its records inside its one call (§2a).
 5. **The Payroll Copilot's Holiday Bridging tab looks broken today**: its GET leaves `requestId` out of each row, so its
    Exclude / Include post answers 400. The schema keeps `requestId` optional, so nothing about that answer changed.
 
@@ -151,23 +174,16 @@ watched to fire, then restored green. The payroll-run suite's eleven breaks, for
 | Reopen Part 1 skips the bank-file check | a Part 1 download refuses Reopen Part 1 without a reason |
 | Reopen Part 2 releases its trips outside the call | after a failure at write 1: still ready, trips still reserved, ledger untouched |
 
-## Appendix — the outstation test kept out of the run (fails today)
+The outstation approval's breaks (§2a), each watched to fire and restored green:
 
-Written for `tests/outstation-reapprove-rollback-and-race.test.ts`; it goes into the exported run function in the
-change that makes the approval one database call.
-
-```ts
-async function approveIsAllOrNothingWhenThePushFails(): Promise<void> {
-  const tables = outstationTables("needs_review");
-  const before = snapshot(tables);
-  await withStandIn({ failWrites: { outstation_expenses: DB_TIMEOUT }, tables }, async () => {
-    generateIds("outstation_expense_reports", "report");
-    await approveOutstationRequestForPayroll(CLAIM_ID, admin("B-10"), { expectedRevision: SCREEN_REVISION }).catch(() => undefined);
-    await settle();
-    assert.deepEqual([tables.outstation_expense_requests[0].status, tables.outstation_expense_requests[0].updated_at], ["needs_review", STORED_AT],
-      "(a) push: a failed push leaves the claim exactly as the reviewer saw it — status and version unchanged");
-    assert.deepEqual(tables.outstation_expense_reports, [], "(a) push: no payroll report row is left behind without its trip");
-    assert.deepEqual(stored(tables), stored(before), "(a) push: every table afterwards equals the tables before");
-  });
-}
-```
+| Break | Assertion that fired |
+| --- | --- |
+| the claim's status is written before the call (the old shape) | HEADLINE: the app wrote nothing outside the one call |
+| the plan writes the report row | HEADLINE: the app wrote nothing outside the one call |
+| the records are left out of the call | the call carried both records |
+| the gate is ignored, so a held claim is planned into payroll | held: HEADLINE: the call carries no payroll row and no report |
+| a moved claim is not reported as changed | the losing approval is refused as "the claim changed" |
+| the call carries a version read again just before it | the call carried the version that was CHECKED |
+| model: the claim's update ignores `updated_at` | HEADLINE: exactly one of two simultaneous approvals applies |
+| model: a raise keeps what ran | HEADLINE: every table afterwards equals the tables before |
+| the version check is skipped | (in `outstation-stale-approval.test.ts`) approve must check the version and then write |

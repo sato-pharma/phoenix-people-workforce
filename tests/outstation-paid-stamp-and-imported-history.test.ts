@@ -171,7 +171,8 @@ export function runOutstationPaidStampAndImportedHistoryTests() {
   );
 
   const expenses = readFileSync("src/lib/outstation/expenses.ts", "utf8");
-  const saveBody = expenses.slice(expenses.indexOf("export async function savePayrollExpenseApprovals"));
+  // The save's body is payrollExpenseSaveCore since REC-038 (19 Nov 2026); savePayrollExpenseApprovals writes through it.
+  const saveBody = expenses.slice(expenses.indexOf("async function payrollExpenseSaveCore("));
   assert.match(saveBody, /planImportedHistoryWrites\(/, "the approvals save enforces values-only history on the server");
   assert.match(saveBody, /throw new Error\(describeImportedHistoryRefusal/);
 

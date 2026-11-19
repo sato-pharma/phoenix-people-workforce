@@ -310,7 +310,8 @@ export async function runOutstationExpenseDownloadReuploadKeepsHrDecisionTests()
     "the approvals-decision route must NOT preserve — it IS the decision the screen just made",
   );
 
-  const saveBody = saveSource.slice(saveSource.indexOf("export async function savePayrollExpenseApprovals"));
+  // The save's body is payrollExpenseSaveCore since REC-038 (19 Nov 2026); savePayrollExpenseApprovals writes through it.
+  const saveBody = saveSource.slice(saveSource.indexOf("async function payrollExpenseSaveCore("));
   assert.match(
     saveBody,
     /recordPreservesDecision\(record\)/,

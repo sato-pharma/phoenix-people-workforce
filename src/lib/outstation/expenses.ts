@@ -1176,7 +1176,7 @@ export async function getApprovedExpenseTotalsForPayroll(
   return totals;
 }
 
-export async function savePayrollExpenseApprovals(input: {
+async function payrollExpenseSaveCore(input: {
   fileName: string;
   records: Array<ExpenseTripRecord & {
     approvedAmount?: number | null;
@@ -1232,7 +1232,7 @@ export async function savePayrollExpenseApprovals(input: {
    * ordered by construction, not by two calls a route could reorder.
    */
   replaceReportRowsFirst?: string;
-}) {
+}, planOnly = false): Promise<{ plan?: PlannedPayrollExpenseSave; saved?: ReturnType<typeof mapExpense>[] }> {
   // FIRST, before any read and before the report row is minted: a refusal here writes nothing.
   if (!options?.allowWorkflowTripIds) {
     assertNoWorkflowTripIds(input.records);
@@ -1392,39 +1392,32 @@ export async function savePayrollExpenseApprovals(input: {
     },
   );
   let reportId = input.reportId ?? input.records.find((record) => record.reportId)?.reportId ?? null;
+  const reportValues = {
+    approved_rows: reportTotals.approvedRows,
+    file_name: input.fileName,
+    row_count: reportTotals.rowCount,
+    total_expenses: roundCurrency(reportTotals.totalExpenses),
+    trip_date_from: reportTotals.tripDateFrom,
+    trip_date_to: reportTotals.tripDateTo,
+    updated_at: now,
+  };
 
-  if (reportId) {
-    const { error } = await supabase
-      .from("outstation_expense_reports")
-      .update({
-        approved_rows: reportTotals.approvedRows,
-        file_name: input.fileName,
-        row_count: reportTotals.rowCount,
-        total_expenses: roundCurrency(reportTotals.totalExpenses),
-        trip_date_from: reportTotals.tripDateFrom,
-        trip_date_to: reportTotals.tripDateTo,
-        updated_at: now,
-      })
-      .eq("id", reportId);
-
-    if (error) throw error;
-  } else {
-    const { data: report, error } = await supabase
-      .from("outstation_expense_reports")
-      .insert({
-        approved_rows: reportTotals.approvedRows,
-        file_name: input.fileName,
-        row_count: reportTotals.rowCount,
-        total_expenses: roundCurrency(reportTotals.totalExpenses),
-        trip_date_from: reportTotals.tripDateFrom,
-        trip_date_to: reportTotals.tripDateTo,
-        updated_at: now,
-      })
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    reportId = String(report.id);
+  // Planning only (the outstation approval, REC-038): nothing is written here — the caller hands the report
+  // and the rows to its one database call, so the claim's status, the report, the rows and the records land
+  // together or not at all. The rows carry the stored report id, or null for a report that call creates.
+  if (!planOnly) {
+    if (reportId) {
+      const { error } = await supabase.from("outstation_expense_reports").update(reportValues).eq("id", reportId);
+      if (error) throw error;
+    } else {
+      const { data: report, error } = await supabase
+        .from("outstation_expense_reports")
+        .insert(reportValues)
+        .select("id")
+        .single();
+      if (error) throw error;
+      reportId = String(report.id);
+    }
   }
 
   const payload = input.records.map((record, index) => {
@@ -1491,6 +1484,10 @@ export async function savePayrollExpenseApprovals(input: {
     };
   });
 
+  if (planOnly) {
+    return { plan: { before, report: reportValues, reportId, rows: payload } };
+  }
+
   // `before` was read at the top of this function, so the resync below is limited to the rows
   // this save actually moved. This screen submits a report's full record set on every save, so
   // without the diff one save would clear a hand-typed wizard figure for every employee in the
@@ -1523,7 +1520,55 @@ export async function savePayrollExpenseApprovals(input: {
   options?.onPayrollResync?.(payrollResync);
 
   invalidateExecutiveDashboardCache("expense approvals saved", ["expenses", "payroll"]);
-  return saved;
+  return { saved };
+}
+
+/** What a planned save would write (planPayrollExpenseSave): read and judged exactly as a real save, written by nobody yet. */
+export type PlannedPayrollExpenseSave = {
+  /** The stored rows' decisions before the save, for the payroll resync after the write (finishPayrollExpenseSave). */
+  before: ExpenseDecisionSnapshot[];
+  /** The report row's values; written to `reportId`, or inserted when that is null. */
+  report: Record<string, unknown>;
+  reportId: string | null;
+  /** The `outstation_expenses` rows, upserted on `trip_id`; each `report_id` is `reportId` (or the report the write creates). */
+  rows: Array<Record<string, unknown>>;
+};
+
+/** Save expense decisions and trips to payroll: the report, the rows (upserted on `trip_id`), then the payroll resync. */
+export async function savePayrollExpenseApprovals(
+  input: Parameters<typeof payrollExpenseSaveCore>[0],
+  accessContext: AccessContext,
+  options?: Parameters<typeof payrollExpenseSaveCore>[2],
+) {
+  const outcome = await payrollExpenseSaveCore(input, accessContext, options, false);
+  return outcome.saved ?? [];
+}
+
+/**
+ * The same save, worked out and judged in full but WRITTEN BY NOBODY (REC-038, 19 Nov 2026): every read, refusal and
+ * figure is the real save's own, so a caller that must land the rows inside a larger database transaction — the
+ * outstation approval's phx_accept_outstation_claim_for_payroll — writes exactly what the real save would have.
+ * A report replace is a write before the rows and cannot be planned.
+ */
+export async function planPayrollExpenseSave(
+  input: Parameters<typeof payrollExpenseSaveCore>[0],
+  accessContext: AccessContext,
+  options?: Parameters<typeof payrollExpenseSaveCore>[2],
+): Promise<PlannedPayrollExpenseSave> {
+  if (options?.replaceReportRowsFirst) throw new Error("A report replace clears rows first, so it cannot be planned.");
+  const outcome = await payrollExpenseSaveCore(input, accessContext, options, true);
+  if (!outcome.plan) throw new Error("The payroll expense save could not be planned.");
+  return outcome.plan;
+}
+
+/** After a planned save landed: push the moved decisions into any open payroll run, and drop the dashboard cache. Never throws. */
+export async function finishPayrollExpenseSave(
+  before: ExpenseDecisionSnapshot[],
+  written: Array<Record<string, unknown>>,
+): Promise<ExpenseResyncOutcome[]> {
+  const outcomes = await resyncPayrollExpenseStepForRows(before, written.map((row) => toExpenseDecisionSnapshot(row)));
+  invalidateExecutiveDashboardCache("expense approvals saved", ["expenses", "payroll"]);
+  return outcomes;
 }
 
 /** Row shape the expense→payroll resync diffs on. Kept narrow: this runs on every approval save. */
