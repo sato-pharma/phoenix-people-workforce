@@ -19,10 +19,10 @@ name: Schema Restore Check
 # job reads a secret — the Telegram pair, in the main-only main-secrets environment.
 #
 # WEEKLY, NOT ON EVERY PULL REQUEST. The file changes when a migration is applied and the baseline is
-# refreshed, a few times a week; a restore takes a few minutes of a hosted runner. Mondays 04:30 UTC
-# (06:30 Cairo), after the Sunday-night refreshes and clear of the shared firing minutes. The repository
-# is public, so hosted minutes are not billed; the measured run length is in
-# tests/github-workflow-validity.test.ts beside SCHEDULED_RUNS_CEILING.
+# refreshed, a few times a week. Mondays 04:30 UTC (06:30 Cairo), clear of the shared firing minutes.
+# Measured 19 Nov 2026: 48 seconds a run (6 s restoring 8,054 objects, 1 s dumping them), 0 minutes
+# billed, because the repository is public; recorded beside SCHEDULED_RUNS_CEILING in
+# tests/github-workflow-validity.test.ts.
 on:
   schedule:
     - cron: "30 4 * * 1" # Mondays 04:30 UTC = 06:30 Cairo
@@ -32,10 +32,11 @@ on:
         description: "Send a test Telegram alert and stop (proves the alarm still works)"
         type: boolean
         default: false
-  # TEMPORARY — registers the workflow from its branch so its first runs can be read before the PR.
-  # Removed before the pull request opens.
+  # On main only, and only when the check itself changes. Production's workflow watch reads each scheduled
+  # check's last success on main and alerts once a day while there is none, so the merge records the first
+  # success here instead of four mornings of "no success on record" before the first Monday.
   push:
-    branches: [codex/schema-restore-check]
+    branches: [main]
     paths:
       - ".github/workflows/schema-restore-check.yml"
       - "scripts/schema-baseline.mjs"
