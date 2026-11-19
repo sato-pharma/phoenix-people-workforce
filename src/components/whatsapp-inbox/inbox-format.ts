@@ -118,3 +118,40 @@ export function conversationTitle(conversation: {
 }): string {
   return conversation.contactName?.trim() || conversation.contactPhone || (conversation.contactUsername ? `@${conversation.contactUsername}` : "Unknown contact");
 }
+
+/**
+ * Which screen the inbox parts are drawn on. The recruitment inbox and the Super Admin's Approvals WhatsApp screen
+ * share these components (owner, 19 Nov 2026: "parametrise them, don't fork them"); this says which API they call
+ * and which of the recruitment-only actions they offer.
+ */
+export type InboxSurface = {
+  /** The API root every call goes to: `${apiBase}/conversations/…`, `${apiBase}/media/…`, `${apiBase}/templates`. */
+  apiBase: string;
+  /** Link a chat to a candidate or employee by hand (recruitment only; the approvals line matches by number). */
+  linking: boolean;
+  /** Save an inbound file to a candidate's record (recruitment only). */
+  saveToCandidate: boolean;
+  /** Read ticks in WhatsApp's own blue (the approvals screen) instead of the inbox's orange. */
+  blueReadTicks: boolean;
+};
+
+export const RECRUITMENT_INBOX_SURFACE: InboxSurface = {
+  apiBase: "/api/whatsapp-inbox",
+  blueReadTicks: false,
+  linking: true,
+  saveToCandidate: true,
+};
+
+export const APPROVALS_INBOX_SURFACE: InboxSurface = {
+  apiBase: "/api/admin/approvals-whatsapp",
+  blueReadTicks: true,
+  linking: false,
+  saveToCandidate: false,
+};
+
+/** One tick for sent, two for delivered and read, a clock while sending — the marks WhatsApp itself shows. */
+export function deliveryTickCount(status: string): 0 | 1 | 2 {
+  if (status === "sent") return 1;
+  if (status === "delivered" || status === "read") return 2;
+  return 0;
+}

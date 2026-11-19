@@ -9418,6 +9418,19 @@ CV can arrive in the same one. The shared sender returns before the recruitment 
 not in `WHATSAPP_PHONE_NUMBER_IDS`, so a fault on it cannot read as the intake being down. The Needs You read asks about
 it directly.
 
+**Since 19 Nov 2026 its replies are kept, on his screen alone.** The number is +20 10 40631155 (phone number id
+1500950553091663, business account 2265574670642375). Asked four questions, he answered "Keep them, my screen only",
+"Super Admin only", "Phoenix people + pasted" and "Submit from the screen". So what the webhook takes out is no longer
+thrown away: `splitApprovalsLineDelivery` hands that number's changes on as `approvalsPayload`, and the webhook files
+them in the Approvals WhatsApp store (`approvals_whatsapp_conversations` and `approvals_whatsapp_messages`, ticks applied
+by wamid), still answering 200 if that write fails. The shared sender files every send from the number there, the
+reminders included. The screen is `/admin/approvals-whatsapp`: chats with ticks, single sends inside the 24-hour window,
+bulk sends to employees and pasted numbers (refused whole past Meta's TIER_250), saved lists, a report per send, and new
+wordings submitted to Meta. The page and every route under `/api/admin/approvals-whatsapp` check `role === "Super
+Admin"` themselves (`canUseApprovalsWhatsApp`), never a permission-matrix grant, and the five tables plus the two chat
+tables are RLS on, service role only. Migration `20261119141357_approvals_whatsapp_module.sql`; his local session
+applies it.
+
 **Off until he says, by three locks that need no merge:** the switch on the recipients screen, the number being set up,
 and Meta's approval of the message. Production-only and the working-day window sit beside them. The working days, Sunday
 to Thursday, were my decision. 🔴 No test send is ever fired; `?dryRun=1` counts and sends nothing.
@@ -9429,10 +9442,10 @@ failed. A failed read or every send refused turns the job red rather than report
 **His parts:** the SIM and the number in WhatsApp Manager, his word to submit the message
 (`scripts/approvals/submit-urgent-reminder-template.ts`, dry run unless told otherwise), Meta's expectation that each
 recipient agreed to messages, and the switch. 🔴 Set `WHATSAPP_APPROVALS_PHONE_NUMBER_ID` before anyone can message the
-number, because its replies are dropped only once it is known.
+number, because its replies are kept apart from recruitment only once it is known.
 
-**Pinned by** `tests/approval-whatsapp-rules.test.ts`, `tests/approval-whatsapp-send.test.ts` and
-`tests/approval-whatsapp-reply-exit.test.ts`.
+**Pinned by** `tests/approval-whatsapp-rules.test.ts`, `tests/approval-whatsapp-send.test.ts`,
+`tests/approval-whatsapp-reply-exit.test.ts` and `tests/approvals-whatsapp.test.ts`.
 
 ## The doctor-list check (owner, 2026-10-27 and 2026-11-03)
 

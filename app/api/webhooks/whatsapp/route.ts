@@ -29,7 +29,7 @@ import {
 import { recordUnattributedWhatsAppMessage } from "@/lib/recruitment/inbound/whatsapp-unattributed-sender";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
 import { approvalsLinePhoneNumberId } from "@/lib/whatsapp-inbox/lines";
-import { recordInboxDelivery } from "@/lib/whatsapp-inbox/record";
+import { APPROVALS_WHATSAPP_STORE, recordInboxDelivery } from "@/lib/whatsapp-inbox/record";
 import { extractFtpSubmissionIds } from "@/lib/whatsapp-videos/handoff-contract";
 import { captureInboundSubmissionId, captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
 
@@ -125,15 +125,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Invalid WhatsApp webhook JSON." }, { status: 400 });
   }
 
-  // 🔴 THE THIRD NUMBER LEAVES BEFORE ANYTHING READS THE DELIVERY (owner, 3 Nov 2026). The approval reminders' number
-  // does not read replies, and the inbox below files every line it is handed, so a reply left in would reach HR
-  // Resourcing, the applicant bot and Talent Acquisition. Per change, not per delivery: the number sits under the
-  // recruitment business account, so an applicant's CV can arrive in the same delivery and must still go through.
+  // 🔴 THE THIRD NUMBER LEAVES BEFORE ANYTHING READS THE DELIVERY (owner, 3 Nov 2026). The inbox below files every line
+  // it is handed, so a reply left in would reach HR Resourcing, the applicant bot and Talent Acquisition. Per change, not
+  // per delivery: the number sits under the recruitment business account, so an applicant's CV can arrive in the same
+  // delivery and must still go through. Since 19 Nov 2026 ("Keep them, my screen only") its replies and ticks are KEPT —
+  // in the Approvals WhatsApp store, which only the Super Admin's screen reads. Never throws; the webhook still answers 200.
   const approvalsLine = splitApprovalsLineDelivery(payload, approvalsLinePhoneNumberId());
   payload = approvalsLine.payload;
   if (approvalsLine.droppedChanges > 0) {
-    logInfo("WhatsApp delivery on the approvals line was dropped", {
-      context: { messages: approvalsLine.droppedMessages, statuses: approvalsLine.statuses.length },
+    const kept = await recordInboxDelivery(approvalsLine.approvalsPayload, APPROVALS_WHATSAPP_STORE).catch((approvalsError: unknown) => {
+      logError("Approvals WhatsApp failed to record a webhook delivery", {
+        error: approvalsError,
+        labels: { event: "approvals_whatsapp_record_threw", webhook: "whatsapp" },
+      });
+      return null;
+    });
+    logInfo("WhatsApp delivery on the approvals line kept apart from recruitment", {
+      context: {
+        messages: approvalsLine.droppedMessages,
+        recorded: kept?.recorded ?? null,
+        statuses: approvalsLine.statuses.length,
+        ticksApplied: kept?.statusesApplied ?? null,
+      },
       labels: { event: "whatsapp_approvals_line_dropped", webhook: "whatsapp" },
     });
     await applyApprovalsLineStatuses(approvalsLine.statuses);

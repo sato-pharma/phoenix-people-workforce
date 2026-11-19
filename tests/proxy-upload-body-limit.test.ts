@@ -40,6 +40,8 @@ const EXCLUDED = [
   { pattern: "api/hiring-pack/custom-templates$", sample: "/api/hiring-pack/custom-templates", file: "app/api/hiring-pack/custom-templates/route.ts", auth: 'assertPermission(access, "employee_documents", "update")' },
   { pattern: "api/messages/mailbox/send$", sample: "/api/messages/mailbox/send", file: "app/api/messages/mailbox/send/route.ts", auth: "resolveMailboxOwner(access)" },
   { pattern: "api/whatsapp-inbox/conversations/[^/]+/messages$", sample: "/api/whatsapp-inbox/conversations/abc123/messages", file: "app/api/whatsapp-inbox/conversations/[id]/messages/route.ts", auth: 'requireRecruitmentAccess(request, "recruitment", "update")' },
+  // The Approvals WhatsApp screen sends a file of up to 25 MB on the approvals line (19 Nov 2026), Super Admin only.
+  { pattern: "api/admin/approvals-whatsapp/conversations/[^/]+/messages$", sample: "/api/admin/approvals-whatsapp/conversations/abc123/messages", file: "app/api/admin/approvals-whatsapp/conversations/[id]/messages/route.ts", auth: "approvalsWhatsAppForbidden(access)" },
   { pattern: "api/employees/[^/]+/cv$", sample: "/api/employees/B-10/cv", file: "app/api/employees/[hrId]/cv/route.ts", auth: "assertCanManage(request, hrId)" },
   { pattern: "api/employees/cv-staging$", sample: "/api/employees/cv-staging", file: "app/api/employees/cv-staging/route.ts", auth: 'assertPermission(access, "employees", "update")' },
 ] as const;
@@ -111,6 +113,8 @@ export function runProxyUploadBodyLimitTests() {
     "/api/hiring-documents/files/extra",
     "/api/messages/mailbox",
     "/api/whatsapp-inbox/conversations/abc123",
+    "/api/admin/approvals-whatsapp/conversations/abc123",
+    "/api/admin/approvals-whatsapp/conversations/abc123/messages/extra",
     "/api/whatsapp-inbox/conversations/abc123/messages/extra",
     // PUBLIC and 10 MB-or-less upload routes keep the proxy's ceiling
     "/api/public/apply",

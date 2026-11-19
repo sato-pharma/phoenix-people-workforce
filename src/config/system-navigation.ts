@@ -311,6 +311,11 @@ export const adminNavigationSectionSeeds = [
       // taken away on 2026-10-16 at the owner's word ("remove needs you and hide from ta account") —
       // the page itself refuses her now, so the row is the Super Admin's alone again.
       { href: "/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["Super Admin"] },
+      // Approvals WhatsApp — the third number (+20 10 40631155): its chats, single and bulk sends, saved lists, reports
+      // and new wordings (app/(admin)/admin/approvals-whatsapp/page.tsx). SUPER ADMIN ONLY, owner 2026-11-19 ("Super
+      // Admin only"): the page and every route under /api/admin/approvals-whatsapp test the role itself, so this row
+      // names that one role and carries no `permissions` (that list is OR-ed and would widen past the gate).
+      { href: "/admin/approvals-whatsapp", icon: MessageCircle, label: "Approvals WhatsApp", roles: ["Super Admin"] },
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
       // `roles` alone already keeps this off the CEO's sidebar, but NOT off Super Admin's — the
       // system-administrator workspace bypasses role gating. excludedRoles is now honoured through

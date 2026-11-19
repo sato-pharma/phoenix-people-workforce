@@ -2990,6 +2990,7 @@ import { runNeedsYouVendorAccountsTests } from "./needs-you-vendor-accounts.test
 import { runApprovalWhatsAppRulesTests } from "./approval-whatsapp-rules.test.ts";
 import { runApprovalWhatsAppSendTests } from "./approval-whatsapp-send.test.ts";
 import { runApprovalWhatsAppReplyExitTests } from "./approval-whatsapp-reply-exit.test.ts";
+import { runApprovalsWhatsAppTests } from "./approvals-whatsapp.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
 import { runNeedsYouDisputesAndStoppedEmailsTests } from "./needs-you-disputes-and-stopped-emails.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
@@ -11915,6 +11916,10 @@ await runTest(
 await runTest(
   "the third WhatsApp number never reaches HR Resourcing, the applicant bot or the recruitment report",
   runApprovalWhatsAppReplyExitTests,
+);
+await runTest(
+  "Approvals WhatsApp keeps the third number's replies and ticks in its own store, waits on the 24-hour window, normalises and dedupes pasted numbers, refuses a batch over TIER_250, and every route checks the Super Admin role itself",
+  runApprovalsWhatsAppTests,
 );
 await runTest(
   "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",

@@ -387,6 +387,12 @@ export type ApprovalsLineStatus = { wamid: string; status: string; errorCode: st
 export type ApprovalsLineSplit = {
   /** The delivery with this number's traffic removed. The very same object when there was none. */
   payload: unknown;
+  /**
+   * ONLY this number's traffic, as a delivery of its own, for the Approvals WhatsApp store (owner, 19 Nov 2026: "Keep
+   * them, my screen only"). Null when there was none. "Dropped" below means taken out of the recruitment pipeline and the
+   * WhatsApp Inbox; this is where it goes instead.
+   */
+  approvalsPayload: unknown | null;
   droppedChanges: number;
   droppedMessages: number;
   statuses: ApprovalsLineStatus[];
@@ -402,7 +408,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
  * reminder, and the CV must still reach the pipeline. Never throws on a strange body: it hands it back untouched.
  */
 export function splitApprovalsLineDelivery(payload: unknown, approvalsPhoneNumberId: string | null): ApprovalsLineSplit {
-  const untouched: ApprovalsLineSplit = { droppedChanges: 0, droppedMessages: 0, payload, statuses: [] };
+  const untouched: ApprovalsLineSplit = { approvalsPayload: null, droppedChanges: 0, droppedMessages: 0, payload, statuses: [] };
   const id = approvalsPhoneNumberId?.trim();
   const root = asRecord(payload);
   if (!id || !root || !Array.isArray(root.entry)) return untouched;
@@ -410,12 +416,15 @@ export function splitApprovalsLineDelivery(payload: unknown, approvalsPhoneNumbe
   let droppedChanges = 0;
   let droppedMessages = 0;
   const statuses: ApprovalsLineStatus[] = [];
+  const approvalsEntries: unknown[] = [];
   const entry = root.entry.map((rawEntry) => {
     const entryRecord = asRecord(rawEntry);
     if (!entryRecord || !Array.isArray(entryRecord.changes)) return rawEntry;
+    const taken: unknown[] = [];
     const kept = entryRecord.changes.filter((rawChange) => {
       const value = asRecord(asRecord(rawChange)?.value);
       if (String(asRecord(value?.metadata)?.phone_number_id ?? "").trim() !== id) return true;
+      taken.push(rawChange);
       droppedChanges += 1;
       if (Array.isArray(value?.messages)) droppedMessages += value.messages.length;
       for (const rawStatus of Array.isArray(value?.statuses) ? value.statuses : []) {
@@ -431,11 +440,18 @@ export function splitApprovalsLineDelivery(payload: unknown, approvalsPhoneNumbe
       }
       return false;
     });
+    if (taken.length > 0) approvalsEntries.push({ ...entryRecord, changes: taken });
     return kept.length === entryRecord.changes.length ? rawEntry : { ...entryRecord, changes: kept };
   });
 
   if (droppedChanges === 0) return untouched;
-  return { droppedChanges, droppedMessages, payload: { ...root, entry }, statuses };
+  return {
+    approvalsPayload: { ...root, entry: approvalsEntries },
+    droppedChanges,
+    droppedMessages,
+    payload: { ...root, entry },
+    statuses,
+  };
 }
 
 export type ApprovalReminderStatusPatch = {
