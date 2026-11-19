@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
+import { assertSignedInToChangeCalendar, interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
 import { cancelInterviewRequest, getInterviewRequest } from "@/lib/recruitment/interview-requests";
 import { assertInterviewRequestVisible, fenceInterviewRequest } from "@/lib/recruitment/workspace/fence";
 
@@ -31,6 +31,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     // Asked BEFORE the cancel, so a request only about HR applicants cannot be withdrawn by her either.

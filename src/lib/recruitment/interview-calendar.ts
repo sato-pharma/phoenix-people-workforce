@@ -184,6 +184,17 @@ export function isSignedInCaller(access: AccessContext): boolean {
 }
 
 /**
+ * Every change to the calendar needs a person signed in to Phoenix. A copy link opens the calendar to a
+ * signed-out holder as a Viewer only (`linkRole`), and a Viewer changes nothing: every write asks for
+ * comment or book rights, or for the caller's own HR id. So each write route asks this FIRST, before it
+ * reads a copy-link token or looks the booking, session, poll or request up. Refused only after the
+ * lookup, "not found" against "forbidden" told a stranger which ids are real (REC-080, 19 Nov 2026).
+ */
+export function assertSignedInToChangeCalendar(access: AccessContext): void {
+  if (!isSignedInCaller(access)) throw new Error("Forbidden: sign in to Phoenix to change the interview calendar.");
+}
+
+/**
  * Whether the calendar's owner chose this person to conduct at least one interview — and they are a
  * District Manager or above. That, and only that, gives the `interviewer` role: a Medical Rep chosen
  * before the rule existed holds nothing, and neither does anyone chosen for no interview.
