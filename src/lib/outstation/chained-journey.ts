@@ -637,8 +637,13 @@ export function readJourneyStops(raw: unknown): OutstationJourneyStop[] {
     if (!Number.isInteger(stopNumber) || stopNumber < 2) continue;
     if (latitude == null || longitude == null || (latitude === 0 && longitude === 0)) continue;
     if (!capturedAt || instantMs(capturedAt) == null) continue;
-    // An administrator's stop stored before the kinds holds a marker in place of a photo.
-    const evidence = row.addedByAdmin ? "location" : readStopEvidence(row.evidence, photoPath);
+    // An administrator's stop holds a marker in place of a photo: it is never a live photo. Since
+    // 2026-11-19 it may carry the leg's ticket, and reads as that kind; one from before reads as location.
+    const evidence = row.addedByAdmin
+      ? row.evidence === "location_ticket"
+        ? "location_ticket"
+        : "location"
+      : readStopEvidence(row.evidence, photoPath);
     if (!evidence) continue;
     const legFrom = LEG_ORIGINS.has(row.legFrom as JourneyLegOrigin) ? (row.legFrom as JourneyLegOrigin) : "stop";
     stops.push({

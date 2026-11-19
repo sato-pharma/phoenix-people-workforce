@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { cairoWallClockToIso } from "@/lib/format/cairo-zone";
+import { adminJourneyStopNoticeMessage, adminStopNoticeKey } from "@/lib/outstation/admin-stop-notice";
 import {
   ADMIN_ADDED_STOP_PHOTO_PATH,
   adminAddedStopNotes,
@@ -29,7 +30,9 @@ import { stripComments } from "./support/comment-strip.ts";
 //   4. the form's Cairo time becomes the right instant in winter and in summer;
 //   5. Expense Approvals offers it only where the service would take it, under the cap;
 //   6. without a car HR adds the leg's ticket with the stop — on a National Sales Manager's claim the
-//      system accepted too (owner, 2026-11-19: Amr Naguib, Cairo to Sohag, Sohag to Assiut, home).
+//      system accepted too (owner, 2026-11-19: Amr Naguib, Cairo to Sohag, Sohag to Assiut, home);
+//   7. the employee is TOLD - in-app, Telegram and email - after the stop is saved (owner, 2026-11-19:
+//      "AMR IS NOT INFORMED WHY ?"), and a ticket stop reads back as a ticket stop.
 
 const root = process.cwd();
 const service = stripComments(readFileSync(join(root, "src/lib/outstation/service.ts"), "utf8"));
@@ -150,4 +153,71 @@ export function runOutstationAdminMissedStopTests(): void {
   assert.match(admin, /paysFuel: rule\.paysFuel,/);
   assert.match(admin, /ticket: \{ amount: stopTicketAmount, uploaded: uploadedTickets \}/);
   assert.match(stopRoute, /parseOutstationTicketAttachmentDataUrl\(/);
+
+  // ── 7. The employee is told, after the stop is saved ─────────────────────────────────────────────
+  const notifyCall = admin.indexOf("notifyEmployeeOfAdminJourneyStop({ request: updated, stop })");
+  assert.ok(notifyCall > write, "HEADLINE: HR's stop tells the employee, and only once it is written");
+  assert.match(
+    admin,
+    /await afterResponse\("outstation_notice:admin_stop", \(\) => notifyEmployeeOfAdminJourneyStop\(\{ request: updated, stop \}\)\);/,
+    "the notice runs after the reply, so the stop never waits on it",
+  );
+  const notice = functionBody(service, "export async function notifyEmployeeOfAdminJourneyStop(");
+  assert.match(notice, /channels: \["in_app", "telegram", "email"\]/, "the owner's three channels: in-app, Telegram, email");
+  assert.match(notice, /eventType: "journey_stop_added_by_hr"/);
+  assert.match(notice, /templateKey: "general"/, "the email is the plain template, never the submit one");
+  assert.match(notice, /subjectHrId: r\.employeeHrId/, "without the subject the email half is refused");
+  assert.match(notice, /\[r\.employeeHrId\],?\s*\)/, "it goes to the employee alone");
+  assert.match(notice, /\} catch \(error\) \{\s*logError\(/, "a failed notice never undoes the saved stop");
+  assert.match(
+    readFileSync(join(root, "src/lib/notifications/notification-types.ts"), "utf8"),
+    /eventType: "journey_stop_added_by_hr"/,
+    "the event is registered in the notice catalogue",
+  );
+  const message = adminJourneyStopNoticeMessage({
+    claimedTotal: 1974,
+    stop: {
+      addedByAdmin: { by: "Omar Gawish", reason: "Sohag to Assiut, then the 16:50 train to Cairo." },
+      capturedAt: "2026-11-04T12:00:00.000Z",
+      governorate: "Assiut",
+      locationLabel: "55JM+896, Asyut 1, Assiut Governorate",
+      stopNumber: 2,
+      ticketAmount: 250,
+    },
+    tripEndDate: "2026-11-04",
+    tripStartDate: "2026-11-02",
+  });
+  assert.match(message, /^HR added stop 2, Assiut, to your trip of /, "where");
+  assert.match(message, /2:00\sPM/, "when, in Cairo time (12:00 UTC is 14:00 in Cairo in November)");
+  assert.match(message, /with its ticket of 250 EGP/, "the leg's ticket");
+  assert.match(message, /Your claim is now 1,974 EGP\./, "the new total");
+  assert.match(message, /Reason: Sohag to Assiut, then the 16:50 train to Cairo\.$/, "why");
+  assert.doesNotMatch(
+    adminJourneyStopNoticeMessage({
+      claimedTotal: 900,
+      stop: { capturedAt: "2026-11-04T12:00:00.000Z", governorate: null, locationLabel: null, stopNumber: 3, ticketAmount: 0 },
+      tripEndDate: "2026-11-04",
+      tripStartDate: "2026-11-04",
+    }),
+    /ticket|Reason/,
+    "a car stop names no ticket, and no reason when none was kept",
+  );
+  assert.equal(adminStopNoticeKey(338, 2, " b-122 "), "outstation:338:journey_stop_added_by_hr:2:B-122", "told once per stop");
+
+  // A stop HR added with its ticket reads back as a ticket stop, so both screens show the 250.
+  const [ticketStop] = readJourneyStops([
+    {
+      addedByAdmin: { by: "Omar Gawish", reason: "Sohag to Assiut." },
+      capturedAt: "2026-11-04T12:00:00.000Z",
+      evidence: "location_ticket",
+      latitude: 27.1809,
+      longitude: 31.1837,
+      photoPath: ADMIN_ADDED_STOP_PHOTO_PATH,
+      stopNumber: 2,
+      ticketAmount: 250,
+      ticketPaths: ["tickets/B-122/outstation-stop-x/1-1.jpg"],
+    },
+  ]);
+  assert.equal(ticketStop?.evidence, "location_ticket", "HEADLINE: HR's ticket stop is not read back as location only");
+  assert.equal(ticketStop?.ticketAmount, 250);
 }

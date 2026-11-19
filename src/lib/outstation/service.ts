@@ -39,6 +39,7 @@ import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { mergeWorkloadEvidence } from "@/lib/outstation/workload-evidence";
 import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
+import { adminJourneyStopNoticeMessage, adminStopNoticeKey, adminStopPlace } from "@/lib/outstation/admin-stop-notice";
 import { validateLiveArrivalEvidence } from "@/lib/outstation/car-evidence";
 import {
   formatOutstationDescriptionInline,
@@ -2136,6 +2137,75 @@ async function notifyOutstationDecision(input: {
     ]);
   } catch (error) {
     logError("Outstation decision notification dispatch failed (non-blocking)", { labels: { event: "outstation_decision_notification_dispatch_failed" }, error });
+  }
+}
+
+/**
+ * Tell the employee that HR added a stop to their trip (owner, 2026-11-19: "AMR IS NOT INFORMED WHY ?").
+ * The stop moves their money, so they hear it by in-app, Telegram and email — his choice of the three.
+ * Keyed by the trip and the stop number, so it is told once per stop. Never throws: the stop is already
+ * saved and the answer never depends on the notice.
+ */
+export async function notifyEmployeeOfAdminJourneyStop(input: {
+  request: OutstationExpenseRequest;
+  stop: OutstationJourneyStop;
+}): Promise<void> {
+  try {
+    const r = await withLiveRequestName(input.request);
+    const total = r.claimedTotalAmount || r.expectedTotalAmount;
+    const place = adminStopPlace(input.stop);
+    const message = adminJourneyStopNoticeMessage({
+      claimedTotal: total,
+      stop: input.stop,
+      tripEndDate: r.tripEndDate,
+      tripStartDate: r.tripStartDate,
+    });
+    await createSystemNotificationForRecipients(
+      {
+        actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+        category: "general",
+        channels: ["in_app", "telegram", "email"],
+        email: {
+          ctaHref: OUTSTATION_EMPLOYEE_PORTAL_URL,
+          ctaLabel: "Open your expenses",
+          metrics: [
+            { label: "Employee", value: r.employeeName },
+            { label: "Trip", value: `${formatPhoenixLongDate(r.tripStartDate)} to ${formatPhoenixLongDate(r.tripEndDate)}` },
+            { label: "Stop added", value: `Stop ${input.stop.stopNumber}, ${place}` },
+            { label: "When", value: formatPhoenixDateTime(input.stop.capturedAt) },
+            ...(input.stop.ticketAmount > 0 ? [{ label: "Ticket for this leg", value: formatEgp(input.stop.ticketAmount) }] : []),
+            { label: "Claim total now", value: formatEgp(total) },
+          ],
+          // Pinned: module "outstation" otherwise frames the email in the submit template.
+          templateKey: "general",
+          tone: "neutral" as const,
+        },
+        eventType: "journey_stop_added_by_hr",
+        message,
+        metadata: {
+          actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+          employeeHrId: r.employeeHrId,
+          employeeName: r.employeeName,
+          idempotencyKey: adminStopNoticeKey(r.id, input.stop.stopNumber, r.employeeHrId),
+          requestId: String(r.id),
+          stopNumber: input.stop.stopNumber,
+          ticketAmount: input.stop.ticketAmount,
+          total,
+        },
+        module: "outstation",
+        priority: "normal",
+        recordId: String(r.id),
+        subjectHrId: r.employeeHrId,
+        telegram: { buttons: [{ label: "Open Phoenix", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
+        title: "HR added a stop to your trip",
+      },
+      [r.employeeHrId],
+    );
+  } catch (error) {
+    logError("Outstation admin stop notification failed (non-blocking)", {
+      error,
+      labels: { event: "outstation_admin_stop_notification_failed", requestId: String(input.request.id) },
+    });
   }
 }
 
@@ -6785,6 +6855,8 @@ export async function addOutstationJourneyStopAsAdmin(
     token: token as { updated_at: string },
     writtenAt: new Date().toISOString(),
   });
+  // After the reply: the stop is saved; the employee is told it moved their claim.
+  await afterResponse("outstation_notice:admin_stop", () => notifyEmployeeOfAdminJourneyStop({ request: updated, stop }));
   return { payrollSynced, pricing, request: updated, stop };
 }
 
