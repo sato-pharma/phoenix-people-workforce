@@ -156,12 +156,20 @@ export const salesAchievementTool = defineTool({
 
     if (input.area) {
       const wanted = normalizeSearchText(input.area);
-      rows = rows.filter((row) => {
-        if (!row.areaCode) return false;
-        const label = normalizeSearchText(names.areaName(row.areaCode));
-        return label === wanted || label.includes(wanted) || normalizeSearchText(row.areaCode) === wanted;
-      });
-      if (rows.length === 0) throw new ToolRefusal(`No area you can see matches "${input.area}".`);
+      if (!wanted) throw new ToolRefusal(`"${input.area}" is not an area name.`);
+      const labelOf = (code: string) => normalizeSearchText(names.areaName(code));
+      // The whole name or the code only: a part of a name is never taken as the area ("Cairo" is not Heliopolis's sales,
+      // and "Beni Suef" is not the merged "Fayoum - Beni Suef").
+      const matching = rows.filter((row) => Boolean(row.areaCode) && (labelOf(row.areaCode as string) === wanted || normalizeSearchText(row.areaCode) === wanted));
+      if (matching.length === 0) {
+        const close = [...new Set(rows.filter((row) => row.areaCode && labelOf(row.areaCode).includes(wanted)).map((row) => names.areaName(row.areaCode as string)))].sort();
+        throw new ToolRefusal(
+          close.length > 0
+            ? `No area is called "${input.area}". Areas whose name contains it: ${close.join(", ")}. Ask for one of them by its full name.`
+            : `No area you can see matches "${input.area}".`,
+        );
+      }
+      rows = matching;
       filters.push(`area ${input.area}`);
     }
 

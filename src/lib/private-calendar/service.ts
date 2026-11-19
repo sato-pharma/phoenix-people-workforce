@@ -613,6 +613,12 @@ export async function getPrivateCalendarWorkspace(input: {
 
 
 export type CompanyNoActivityDay = {
+  /**
+   * Only when the caller asked for `interviewHalfDays`: nothing but interviews covers this day, so the
+   * calendar shows it covered and it is NOT a No Activity Recorded day. The Daily Deductions No Records
+   * tab charges its uncovered half at 0.5 when the interview fold agrees exactly one half is covered.
+   */
+  coveredOnlyByInterviews?: boolean;
   date: string;
   description: string;
   employeeHrId: string;
@@ -652,6 +658,8 @@ function monthsTouchedByRange(start: string, end: string): Array<{ year: number;
 export async function getCompanyNoActivityDays(input: {
   access: AccessContext;
   end: string;
+  /** Also return the days nothing but interviews covers, marked `coveredOnlyByInterviews`. */
+  interviewHalfDays?: boolean;
   start: string;
 }): Promise<CompanyNoActivityDay[]> {
   await assertPermission(input.access, "deductions", "read");
@@ -722,24 +730,43 @@ export async function getCompanyNoActivityDays(input: {
   const items = suppressFieldVisitAttendanceProblems(allItems);
 
   const mappedEmployees = employees.map(mapPrivateCalendarEmployee);
-  const exceptions = derivePrivateCalendarExceptions({
+  // One pass for both runs of the engine below (the second takes the interviews out), so each applies the
+  // employment window through the one resolver.
+  const enginePass = {
     employees: mappedEmployees,
     end: input.end,
     isExpectedWorkday: expectedWorkdayResolver(employees, attendancePolicyRows),
-    items,
     start: input.start,
-  });
+  };
+  const exceptions = derivePrivateCalendarExceptions({ ...enginePass, items });
 
   // These days become deduction lines, which store the full name, not the name the calendar prints.
   const fullNameByHrId = new Map(employees.map((employee) => [employee.hrId, employee.fullName]));
-  return exceptions
-    .filter((exception) => exception.title === "No Activity Recorded" && exception.employeeHrId)
-    .map((exception) => ({
-      date: exception.date,
-      description: exception.description,
-      employeeHrId: exception.employeeHrId as string,
-      employeeName: fullNameByHrId.get(exception.employeeHrId as string) || (exception.employeeName ?? exception.employeeHrId as string),
-    }));
+  const noActivityDays = (list: typeof exceptions): CompanyNoActivityDay[] =>
+    list
+      .filter((exception) => exception.title === "No Activity Recorded" && exception.employeeHrId)
+      .map((exception) => ({
+        date: exception.date,
+        description: exception.description,
+        employeeHrId: exception.employeeHrId as string,
+        employeeName: fullNameByHrId.get(exception.employeeHrId as string) || (exception.employeeName ?? exception.employeeHrId as string),
+      }));
+  const days = noActivityDays(exceptions);
+  if (!input.interviewHalfDays) return days;
+
+  // The same engine with the interviews taken out: a day it reports that the full pass did not is a day
+  // nothing but interviews covers. Two or more in one half are that half worked and the other half is
+  // owed (owner, 2026-11-18), so the Daily Deductions No Records tab asks for these to charge that half
+  // at 0.5 — the Half Day (CRM) tab judges only reps and district managers. Never the weekly gap notice.
+  const reported = new Set(days.map((day) => `${day.employeeHrId}|${day.date}`));
+  const withoutInterviews = derivePrivateCalendarExceptions({
+    ...enginePass,
+    items: items.filter((item) => item.source !== "interview"),
+  });
+  for (const day of noActivityDays(withoutInterviews)) {
+    if (!reported.has(`${day.employeeHrId}|${day.date}`)) days.push({ ...day, coveredOnlyByInterviews: true });
+  }
+  return days;
 }
 
 // ── What Phoenix already holds for one disputed day ──────────────────────────────────────────────

@@ -192,7 +192,15 @@ export const exportCustomerListTool = defineTool({
     const db = getSupabaseAdmin();
     const [customers, seats, people] = await Promise.all([
       fetchAllRows<CustomerRow>(
-        () => db.from("phoenix_crm_customers").select(CUSTOMER_COLUMNS).eq("is_test", false).in("list_type", [...CUSTOMER_LIST_TYPES[kind]]),
+        // A "Campaign visit N" holder carries imported visit history only and is never a customer: Phoenix's own list
+        // leaves it out (phoenix-crm/server/list.ts), and so does this one.
+        () =>
+          db
+            .from("phoenix_crm_customers")
+            .select(CUSTOMER_COLUMNS)
+            .eq("is_test", false)
+            .eq("campaign_visit_holder", false)
+            .in("list_type", [...CUSTOMER_LIST_TYPES[kind]]),
         "id",
       ),
       fetchAllRows<SeatRow>(

@@ -13,6 +13,12 @@
  * comment). A rejection carries ONE written reason, because the employee reads it. Requests are
  * decided one after another, never in parallel, so two decisions never race on one balance. One
  * failure never stops the rest. The caller gets back, request by request, what happened.
+ *
+ * 🔴 LEAVE IS DECIDED EARLIEST START FIRST, not in the order the cards were ticked. A request is priced
+ * when it is approved, against the paid days already approved in its balance (earlier-waiting.ts), so
+ * approving December's leave before November's let December take the balance and November came out
+ * unpaid — the single decision page warns about that, and a bulk decision cannot. A start date that
+ * cannot be read stops the whole batch before anything is decided.
  */
 import type { AccessContext } from "@/lib/auth/permissions";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -35,7 +41,25 @@ export type BulkDecisionResult = { id: string; ok: boolean; message: string | nu
 export type BulkDecisionDeps = {
   decideLeave: (access: AccessContext, id: string, decision: BulkDecisionVerb, comment: string | null) => Promise<unknown>;
   decideExcuse: (access: AccessContext, id: string, decision: BulkDecisionVerb, comment: string | null) => Promise<unknown>;
+  /** Each leave request's start date by id, so the earliest is decided first. THROWS when it cannot read. */
+  leaveStartDates?: (ids: readonly string[]) => Promise<ReadonlyMap<string, string | null>>;
 };
+
+/**
+ * The ticked leave requests, earliest START first. Pure. Two with the same start, or a request whose
+ * start is unknown, keep the ticked order; an unknown start goes last.
+ */
+export function orderLeaveIdsByStart(ids: readonly string[], startDates: ReadonlyMap<string, string | null>): string[] {
+  return ids
+    .map((id, index) => ({ id, index, start: startDates.get(id) || null }))
+    .sort((left, right) => {
+      if (left.start && right.start && left.start !== right.start) return left.start < right.start ? -1 : 1;
+      if (left.start && !right.start) return -1;
+      if (!left.start && right.start) return 1;
+      return left.index - right.index;
+    })
+    .map((row) => row.id);
+}
 
 /** Reads a request body into a bulk decision, or names the one thing wrong with it. */
 export function parseBulkDecisionInput(
@@ -66,8 +90,19 @@ export function parseBulkDecisionInput(
 }
 
 async function defaultDeps(): Promise<BulkDecisionDeps> {
-  const [vacation, excuses] = await Promise.all([import("@/lib/vacation/service"), import("@/lib/excuses/service")]);
+  const [vacation, excuses, supabase] = await Promise.all([
+    import("@/lib/vacation/service"),
+    import("@/lib/excuses/service"),
+    import("@/lib/supabase/server"),
+  ]);
   return {
+    leaveStartDates: async (ids) => {
+      const { data, error } = await supabase.getSupabaseAdmin().from("v2_vacation_requests").select("id,start_date").in("id", [...ids]);
+      if (error) throw new Error(error.message);
+      return new Map(
+        ((data ?? []) as Array<{ id: unknown; start_date: unknown }>).map((row) => [String(row.id), row.start_date ? String(row.start_date) : null]),
+      );
+    },
     decideLeave: (access, id, decision, comment) =>
       // `override` is never set: a bulk decision only ever answers the viewer's own turn.
       vacation.decideVacationRequest(access, { decision, decisionComment: comment, requestId: id }),
@@ -83,9 +118,14 @@ export async function bulkDecideApprovals(
 ): Promise<BulkDecisionResult[]> {
   const resolved = deps ?? (await defaultDeps());
   const decide = input.module === "leave" ? resolved.decideLeave : resolved.decideExcuse;
+  // Leave: earliest start first — see the header. A failed read throws here, before anything is decided.
+  const ids =
+    input.module === "leave" && resolved.leaveStartDates
+      ? orderLeaveIdsByStart(input.ids, await resolved.leaveStartDates(input.ids))
+      : input.ids;
   const results: BulkDecisionResult[] = [];
   // One after another on purpose — see the header.
-  for (const id of input.ids) {
+  for (const id of ids) {
     try {
       await decide(access, id, input.decision, input.comment);
       results.push({ id, message: null, ok: true });

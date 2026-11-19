@@ -403,7 +403,11 @@ export function runCrmNewHireKeyingTests() {
 
     // The IO reads that moved to hr ids. Source pins, because each is a live database read.
     const workload = readFileSync("src/lib/crm/visit-workload.ts", "utf8");
-    assert.match(workload, /\{ participantHrIds: \[hrId\] \}/, "C7: outstation workload reads a no-CRM-id person by hr id");
+    assert.match(
+      workload,
+      /\n\s+participantHrIds: \[hrId\],\r?\n/,
+      "C7: outstation workload reads a no-CRM-id person by hr id (since 19 Nov 2026 everyone, beside the CRM id, so a chain's third companion is found too)",
+    );
     assert.doesNotMatch(
       workload,
       /return emptyWorkload\(dates, "This rep has no CRM id, so their visits can't be matched\.", "unmapped"\)/,

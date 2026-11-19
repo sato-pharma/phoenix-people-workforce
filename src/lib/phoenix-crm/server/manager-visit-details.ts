@@ -275,22 +275,27 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
     const customerListType = customer?.listType ? parseListType(customer.listType) : null;
     // Logged on a With my manager half-day: a visit with that manager, who is named beside him. Anything else is alone.
     const senior = withSenior.get(textOrNull(row.plan_slot_id) ?? "") ?? null;
-    // Everyone on it: the people the half-day planned (one or more — owner, 2026-11-17), then anyone else he ticked
-    // under "Who went with you", each once and each under the title the planner gave them.
+    // Everyone on it. 🔴 WHO HE TICKED UNDER "Who went with you" IS WHO WENT (phoenix_crm_visit_companions is the
+    // truth): the form opens with the planned people ticked and he unticks anyone who did not come, so a planned
+    // manager he unticked is never credited. Only a visit with no stored companions falls back to the people the
+    // half-day planned (one or more — owner, 2026-11-17). Each once; a planned person under the planner's title.
     const planned = managerSeniorPeople(senior);
     const roleOf = (person: { role: "manager" | "product_manager"; title: string | null }) => person.title ?? (person.role === "product_manager" ? "Product manager" : "Manager");
+    const plannedByKey = new Map(planned.map((person) => [person.hrId, person] as const));
+    const stored = companionsByVisit.get(String(row.id)) ?? [];
+    const wentWith = stored.length > 0 ? stored : planned.map((person) => person.hrId);
     const withPeople: ManagerDayVisit["withPeople"] = [];
     const seenPeople = new Set<string>();
-    for (const person of planned) {
-      if (seenPeople.has(person.hrId)) continue;
-      seenPeople.add(person.hrId);
-      withPeople.push({ hrId: person.hrId, name: nameOf(seniorNames, person.hrId, "Manager"), role: roleOf(person) });
-    }
-    for (const hrId of companionsByVisit.get(String(row.id)) ?? []) {
+    for (const hrId of wentWith) {
       const key = personKey(hrId);
       if (!key || seenPeople.has(key)) continue;
       seenPeople.add(key);
-      withPeople.push({ hrId: key, name: nameOf(seniorNames, key, "A colleague"), role: "Manager" });
+      const plannedPerson = plannedByKey.get(key);
+      withPeople.push(
+        plannedPerson
+          ? { hrId: key, name: nameOf(seniorNames, key, "Manager"), role: roleOf(plannedPerson) }
+          : { hrId: key, name: nameOf(seniorNames, key, "A colleague"), role: "Manager" },
+      );
     }
     out.push({
       address,

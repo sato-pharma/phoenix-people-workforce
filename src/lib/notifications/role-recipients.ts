@@ -329,6 +329,8 @@ export async function resolveNotificationRoleEnabled(key: NotificationRoleKey): 
 export type NotificationRoleRecipient = {
   hrId: string;
   userId: string | null;
+  /** The chosen account holds a connected Telegram chat. Set by the person resolver; absent where nothing read it. */
+  hasTelegram?: boolean;
 };
 
 /** An auth account plus the channel bindings that decide whether it can reach the human behind it. */
@@ -393,7 +395,7 @@ export function dedupeRecipientsByPerson(
   }
   return Array.from(bestByPerson.values())
     .sort((left, right) => left.hrId.localeCompare(right.hrId))
-    .map((account) => ({ hrId: account.hrId, userId: account.userId }));
+    .map((account) => ({ hasTelegram: account.hasTelegram, hrId: account.hrId, userId: account.userId }));
 }
 
 /**

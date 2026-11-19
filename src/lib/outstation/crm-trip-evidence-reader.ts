@@ -84,10 +84,11 @@ async function rowsOf(query: PromiseLike<{ data: unknown; error: { message: stri
   return (data ?? []) as Row[];
 }
 
-/** Visits he saved, rode along on, or joined as the senior — three reads, merged by id. */
+/** Visits he saved or came on in any place — rep, manager, senior, product manager, or any companion
+ * past them — merged by id. */
 async function loadTripVisits(hrId: string, start: string, end: string): Promise<Row[]> {
   const columns = "id, visit_date, captured_at, lat, lon, place_id, customer_id, location_flag, is_unplanned";
-  const read = (column: "manager_hr_id" | "rep_hr_id" | "senior_hr_id") =>
+  const read = (column: "manager_hr_id" | "product_manager_hr_id" | "rep_hr_id" | "senior_hr_id") =>
     rowsOf(
       getSupabaseAdmin()
         .from("phoenix_crm_visits")
@@ -98,9 +99,28 @@ async function loadTripVisits(hrId: string, start: string, end: string): Promise
         .gte("visit_date", start)
         .lte("visit_date", end),
     );
+  // A third or later companion on a chain stands in none of those columns, only in
+  // `phoenix_crm_visit_companions` (2026-10-27, "Everything is applicable").
+  const asCompanion = () =>
+    rowsOf(
+      getSupabaseAdmin()
+        .from("phoenix_crm_visits")
+        .select(`${columns}, companion:phoenix_crm_visit_companions!inner(hr_id)`)
+        .eq("is_test", false)
+        .is("imported_from_ireports360_at", null)
+        .eq("companion.hr_id", hrId)
+        .gte("visit_date", start)
+        .lte("visit_date", end),
+    );
   const byId = new Map<string, Row>();
-  for (const rows of await Promise.all([read("rep_hr_id"), read("manager_hr_id"), read("senior_hr_id")])) {
-    for (const row of rows) byId.set(String(row.id), row);
+  for (const rows of await Promise.all([
+    read("rep_hr_id"),
+    read("manager_hr_id"),
+    read("senior_hr_id"),
+    read("product_manager_hr_id"),
+    asCompanion(),
+  ])) {
+    for (const row of rows) if (!byId.has(String(row.id))) byId.set(String(row.id), row);
   }
   return [...byId.values()];
 }
