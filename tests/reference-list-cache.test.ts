@@ -51,6 +51,7 @@ const LIMITS = { maxEntries: 2, maxRowsTotal: 100 };
 
 /** Every file that may import the module, and which half of it each one uses. */
 const ADOPTERS: ReadonlyArray<{ file: string; what: string }> = [
+  { file: "src/lib/approvals-whatsapp/store.ts", what: "departments and areas, for the department and area labels on the Approvals WhatsApp recipient picker (who is messaged is chosen by the Super Admin; the employees themselves are read uncached)" },
   { file: "src/lib/business-review/sources/field-link.ts", what: "lines and areas, for the field link's name maps" },
   { file: "src/lib/business-review/sources/roles.ts", what: "the review directory and the line id by code" },
   { file: "src/lib/crm/contact-trade.ts", what: "areas, for the trade badge's area code" },

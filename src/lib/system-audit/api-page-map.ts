@@ -143,6 +143,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/recruitment/whatsapp-applicants": { admin: "/recruitment/whatsapp-applicants", hr: "/hr/recruitment/whatsapp-applicants" },
   "/api/recruitment/whatsapp-templates": { admin: "/recruitment/whatsapp-templates", hr: "/hr/recruitment/whatsapp-templates" },
   "/api/whatsapp-inbox": { admin: "/recruitment/whatsapp-inbox", hr: "/hr/recruitment/whatsapp-inbox" },
+  "/api/admin/approvals-whatsapp": { admin: "/admin/approvals-whatsapp" },
   "/api/reports/organogram": { admin: "/organogram", hr: "/hr/organogram", portal: "/employee-portals/organogram" },
   "/api/reports/vacancies": { admin: "/reports/vacancies", hr: "/hr/reports/vacancies", portal: "/employee-portals/vacancies" },
   "/api/probation": { admin: "/probation", hr: "/hr/probation", portal: "/employee-portals/probation" },

@@ -12,6 +12,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { getJson } from "@/components/recruitment/recruitment-fetch";
 import { missingTemplateFields, renderInboxTemplate, type InboxTemplate } from "@/lib/whatsapp-inbox/graph";
+
+import { RECRUITMENT_INBOX_SURFACE } from "./inbox-format";
 import {
   phxFieldClassName,
   phxSelectClassName,
@@ -33,12 +35,15 @@ function templateTitle(template: InboxTemplate): string {
 }
 
 export function InboxTemplateForm({
+  apiBase = RECRUITMENT_INBOX_SURFACE.apiBase,
   busy,
   line,
   onCancel,
   onSend,
   submitLabel,
 }: {
+  /** The API root the templates are read from (the inbox's, or the Approvals WhatsApp screen's). */
+  apiBase?: string;
   busy: boolean;
   /** The sending number's phone number id. */
   line: string;
@@ -52,13 +57,16 @@ export function InboxTemplateForm({
 
   useEffect(() => {
     let cancelled = false;
-    getJson(`/api/whatsapp-inbox/templates?line=${encodeURIComponent(line)}`)
+    getJson(`${apiBase}/templates?line=${encodeURIComponent(line)}`)
       .then((data) => {
         if (cancelled) return;
+        // The Approvals WhatsApp screen answers every wording with Meta's status under `templates` and the sendable
+        // ones under `approved`; only the approved ones may reach this form.
+        const sendable = Array.isArray(data.approved) ? data.approved : data.templates;
         setState({
           emptyReason: typeof data.emptyReason === "string" ? data.emptyReason : null,
           kind: "ready",
-          templates: Array.isArray(data.templates) ? (data.templates as InboxTemplate[]) : [],
+          templates: Array.isArray(sendable) ? (sendable as InboxTemplate[]) : [],
         });
       })
       .catch((error: unknown) => {
@@ -68,7 +76,7 @@ export function InboxTemplateForm({
     return () => {
       cancelled = true;
     };
-  }, [line]);
+  }, [apiBase, line]);
 
   const templates = useMemo(() => (state.kind === "ready" ? state.templates : []), [state]);
   const selected = useMemo(() => templates.find((template) => templateKey(template) === selectedKey) ?? null, [selectedKey, templates]);

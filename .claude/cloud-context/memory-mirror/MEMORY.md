@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [The spare laptop is out the week of 19 Nov](the-spare-laptop-is-out-the-week-of-19-nov.md) - owner 19 Nov 11:27 "forget the spare for this week its in a issue": never ask him to switch it on, queue nothing on it; phone check and screenshots parked until ~26 Nov.
 
 
 
