@@ -137,13 +137,27 @@ place, naming the test that replaced it):
 
 - `tests/hr-atomic-writes.test.ts` §5 — the reads of `applyVacationDecisionSequential` and
   `applyVacationDecisionLegacy` for the single call, the 409 mapping in both branches, Sick leave's
-  step values and the event/audit order. The SQL pins, the whitelist check and three pins for paths
-  the new test does not drive stay.
+  step values and the event/audit order; on the second pass (19 Nov 2026) also Sick leave's
+  finality, the override column's `hrIdForStorage` and the decision route's 409 — now run by the
+  same test's §6–§8 (the stalled-approver override, Sick leave's final HR approval, and the real
+  route called through the dev sign-in headers). The SQL pins, the whitelist check and the pin that
+  no path in the service decides a step by a separate update stay.
 - `tests/resignation-complete-order.test.ts` §7 — the reads of `runResignationWorkflow`'s text for
-  the ordered path and the absent inline stamp. The route's answer pin stays.
+  the ordered path and the absent inline stamp, and on the second pass the route's answer, now run
+  by `tests/resignation-complete-behaviour.test.ts` §4.
 - `tests/org-tree-cache-invalidation.test.ts` — the reads of `invalidateExecutiveDashboardCache` for
   the org-tree branch, its `{ expire: 0 }` and its try/catch. The read-tag, seat-transfer and
   hub-imports pins stay.
+
+Not retired, on purpose: the hire DOOR pins in `tests/hire-handoff-steps.test.ts` (`doorTests`) — that
+Add Employee and the joining form wrap each follow-up step in the ledger. Driving either door against
+the stand-in means a signed offer link, the organogram seat check, a new HR id, the employee save,
+photo storage, login provisioning and two announcements; the ledger and the retry under them are run
+by `tests/hire-handoff-database-behaviour.test.ts`, and the doors stay read until one of them is
+driven whole.
+
+A real route handler is called in-process with `devAuthRequest(method, path, { role, hrId }, body)`
+and `withPostgrestStandIn(…, { env: DEV_AUTH_ENV })`; `RATE_LIMIT_ALLOWS` answers the shared limiter.
 
 No lock test was touched: the Office golden-rule lock, the form-design and square-edge ratchets and
 every other ratchet are exactly as they were.

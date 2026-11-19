@@ -472,16 +472,10 @@ export async function runHrAtomicWritesTests() {
     /\.from\(vacationApprovalStepsTable\)\s*\.update\(\{\s*decided_at: now/,
     "no step row is decided by a separate update anywhere in the service (resubmission's reset to pending is not a decision)",
   );
-  assert.match(
-    sick,
-    /const stepsAfterDecision = steps\.map\(\(candidate\) =>\s+candidate\.id === step\.id \? \{ \.\.\.candidate, status: decisionValue \} : candidate\s+\);/,
-    "Sick leave's finality rules read the step as it will be once the call commits",
-  );
-  assert.match(
-    sequential,
-    /const stepOverriddenByHrId = overrideContext \? hrIdForStorage\(input\.actorHrId\) \|\| null : null;/,
-    "the override column is stored through hrIdForStorage",
-  );
+  // Also retired 19 Nov 2026 (phase 2, second pass): the pins on Sick leave's finality reading the
+  // step as it will be (stepsAfterDecision) and on the override column going through hrIdForStorage.
+  // tests/leave-decision-behaviour.test.ts §6 and §7 now run both: the stalled-approver override
+  // records "B-10" on the stalled step, and HR's approval of a Sick request is final.
 
   // ── 6. A lost race on a leave decision is 409, never 500 or 400 ────────────────────────────────
   for (const code of ["40001", "55000"]) {
@@ -491,10 +485,6 @@ export async function runHrAtomicWritesTests() {
   }
   const other = vacationDecisionWriteError({ code: "23514", message: "check constraint" });
   assert.ok(!(other instanceof ApiError), "any other database error stays a plain error");
-  const decisionRoute = ts("app/api/vacations/requests/[id]/decision/route.ts");
-  assert.match(
-    decisionRoute,
-    /if \(error instanceof ApiError && error\.status === 409\) \{\s+return NextResponse\.json\(\{ error: error\.code, message, success: false \}, \{ status: 409 \}\);/,
-    "the decision route answers a lost race with 409",
-  );
+  // The decision ROUTE's 409 is run, not read, since 19 Nov 2026: tests/leave-decision-behaviour.test.ts
+  // §8 calls the real POST handler through the dev sign-in headers and reads 409 vacation_decision_conflict.
 }
