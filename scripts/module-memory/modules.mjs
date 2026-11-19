@@ -1571,6 +1571,26 @@ export const MODULES = [
     keywords: ["email composer", "sato composer", "ceo composer", "ceo email", "composer", "dictation", "closing line"],
     tables: ["ceo_email", "sato_email"],
   },
+  // 🔴 SPLIT AGAIN 2026-11-19: `notifications` measured a 4,058-byte pointer against the 4,000 margin with
+  // its 36th rule (a named recipient list is the whole audience). The twelve rules about the queues, the
+  // stored notices and the deliveries move together. This module carries EXACTLY the globs `notifications`
+  // has, and `notifications` keeps every one of them, so any file that loaded those rules before loads them
+  // now; only the pointer is split.
+  {
+    id: "notifications-delivery",
+    title: "Email, notifications and messaging — queues, stored notices and deliveries",
+    scope: "How a notice is stored and delivered: the outbox and retry drains and the lease they run under, the stored notice and its event key, delivery status writes, notices after the reply, credential sealing, internal messages, and the home-page push and Telegram cards.",
+    globs: [
+      "src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,ceo-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**",
+      "src/components/{notifications,conversations,mailbox-offboarding}/**",
+      "src/emails/**",
+      "app/**/{email-control-center,email-notifications,email-reply-composer,email-templates,notifications,notification-confidence,notification-recipients,distribution-lists,sato-email,ceo-email,mailbox-offboarding,messages,access-communication}/**",
+      "tests/*{email,notification,telegram,outbox,mailbox,distribution-list,digest}*",
+      "supabase/migrations/*{email,notification,outbox,mailbox}*",
+    ],
+    keywords: ["notification", "notifications", "outbox", "drain", "notification_events", "notification_deliveries", "event_key", "stored notice", "afterResponse", "internal messages", "push", "telegram home card"],
+    tables: ["notification", "outbox", "internal_message"],
+  },
   // ── The Turbify console is ONE console driven by TWO robots, so it gets its own module ──
   //
   // Found 2026-10-02: `src/lib/turbify/**` was claimed by NO module, so the four files holding the
