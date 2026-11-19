@@ -22,6 +22,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type UnreadModuleNotice = {
   actionUrl: string | null;
   createdAt: string;
+  /** The row's own `event_key`, which a module may read its record ids back from. */
+  eventKey: string | null;
   eventType: string;
   id: string;
   /** The seat the notice was raised about (`metadata.seatId`), when its module records one. */
@@ -33,6 +35,7 @@ type EventRow = {
   action_url?: string | null;
   created_at?: string | null;
   employee_hr_id?: string | null;
+  event_key?: string | null;
   event_type?: string | null;
   id?: string | number | null;
   metadata?: unknown;
@@ -71,7 +74,7 @@ export async function listUnreadModuleNotices(
   // finds the viewer's own.
   const { data, error } = await supabase
     .from("notification_events")
-    .select("id,subject,event_type,action_url,created_at,employee_hr_id,recipients,metadata,scheduled_for,test_login_id")
+    .select("id,subject,event_key,event_type,action_url,created_at,employee_hr_id,recipients,metadata,scheduled_for,test_login_id")
     .eq("module", input.module)
     .eq("employee_hr_id", identity.hrId.toUpperCase())
     .gte("created_at", since)
@@ -124,6 +127,7 @@ export async function listUnreadModuleNotices(
     .map((row) => ({
       actionUrl: row.action_url ?? null,
       createdAt: String(row.created_at ?? ""),
+      eventKey: row.event_key ? String(row.event_key) : null,
       eventType: String(row.event_type ?? ""),
       id: String(row.id ?? ""),
       seatId: seatIdOf(row.metadata),

@@ -1809,3 +1809,38 @@ export async function countReopenedCustomersWaiting(): Promise<{ count: number; 
   const first = ((oldest.data ?? []) as Row[])[0];
   return { count: waiting.count ?? 0, oldestAt: first ? String(first.reopened_at) : null };
 }
+
+/**
+ * The photo each "Validate again" notice is about, for the "New for you" strip (owner, 19 Nov 2026:
+ * "render those validation photos here"). The notice's key carries the review id — or, for a refused
+ * polyclinic or centre, the building's own id (`notifyRepsOfRefusedSharedPlace`) — so both are asked
+ * for at once and whichever answers gives the photo: the place's signboard, or the building's door.
+ *
+ * It is the rep's OWN picture, the one the notice already tells him to take again — never a distance, a
+ * reading or a decider (golden rule #1). At most a handful of ids (the strip names four), so three tiny
+ * reads; the caller still checks every path against the viewer's reach before it is drawn.
+ */
+export async function loadValidateAgainPhotoPaths(ids: readonly string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.filter((id) => isUuid(id)))];
+  const photos = new Map<string, string>();
+  if (wanted.length === 0) return photos;
+  const [reviews, buildings] = await Promise.all([
+    selectByIds<{ id: string; place_id: string | null }>("phoenix_crm_validation_reviews", "id, place_id", "id", wanted),
+    selectByIds<{ id: string; photo_path: string | null }>("phoenix_crm_shared_places", "id, photo_path", "id", wanted),
+  ]);
+  for (const building of buildings) {
+    if (building.photo_path) photos.set(String(building.id), building.photo_path);
+  }
+  const places = await selectByIds<{ id: string; photo_path: string | null }>(
+    "phoenix_crm_places",
+    "id, photo_path",
+    "id",
+    reviews.map((review) => review.place_id),
+  );
+  const placePhoto = new Map(places.map((place) => [String(place.id), place.photo_path]));
+  for (const review of reviews) {
+    const path = review.place_id ? placePhoto.get(String(review.place_id)) : null;
+    if (path) photos.set(String(review.id), path);
+  }
+  return photos;
+}
