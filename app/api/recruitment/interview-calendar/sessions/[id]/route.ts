@@ -4,6 +4,7 @@ import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@
 import { resolveAccessContext } from "@/lib/auth/server";
 import { fenceInterviewBookings } from "@/lib/recruitment/workspace/fence";
 import {
+  assertSignedInToChangeCalendar,
   cancelInterviewSession,
   getInterviewSession,
   interviewCalendarCaller,
@@ -36,6 +37,7 @@ export async function PATCH(request: Request, { params }: Context) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     const body = await readJsonObject(request);
@@ -59,6 +61,7 @@ export async function DELETE(request: Request, { params }: Context) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     const result = await cancelInterviewSession(caller, id);

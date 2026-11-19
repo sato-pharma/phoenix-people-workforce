@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertSameOriginMutation, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { interviewCalendarCaller, retryInterviewSessionZoom } from "@/lib/recruitment/interview-calendar";
+import { assertSignedInToChangeCalendar, interviewCalendarCaller, retryInterviewSessionZoom } from "@/lib/recruitment/interview-calendar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     const session = await retryInterviewSessionZoom(caller, id);
