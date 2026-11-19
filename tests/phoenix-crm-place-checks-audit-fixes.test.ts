@@ -113,8 +113,10 @@ function checkDecisionPaths() {
   // ── B1: a recommendation is the district manager's word alone ────────────────────────────────────
   const notes = code("src/lib/phoenix-crm/server/place-notes.ts");
   assert.ok(
-    fn(notes, "export async function savePlaceRecommendation(").includes('if (source !== "manager") throw forbiddenError('),
-    "🔴 a decider's hand-built request is refused, never stored under his own HR id",
+    fn(notes, "export async function savePlaceRecommendation(").includes(
+      'source === "manager" ? "district_manager" : recommendsOnCompanyPlaceChecks(viewer) ? "sfe_manager" : null;',
+    ) && fn(notes, "export async function savePlaceRecommendation(").includes("if (!writerRole) throw forbiddenError("),
+    "🔴 a decider's hand-built request is refused, never stored under his own HR id — only a district manager or the SFE Manager recommends (owner, 2026-11-19)",
   );
 
   // ── B2: the team board is the territories under his district seats, not every manager seat ───────
@@ -201,10 +203,11 @@ function checkWording() {
     "🔴 the Needs You row counts place checks, held or not, never \"places are held\"",
   );
 
-  // ── C4: the Same place tab is both deciders' ─────────────────────────────────────────────────────
+  // ── C4: the Same place tab is read by both, answered by the Super Admin alone (owner, 2026-11-19) ──
   const rules = read(".claude/rules/phoenix-crm-place-checks.md");
   assert.ok(!/SAME PLACE, SEVERAL REPS[^\n]*THE SUPER ADMIN'S ALONE/.test(rules), "🔴 the rule no longer names the Super Admin alone");
-  assert.ok(/SAME PLACE, SEVERAL REPS[^\n]*THE DECIDERS' ALONE[^\n]*\(the Super Admin and the SFE Manager, `canReadPlaceMatches`/.test(rules), "it names both, as `canReadPlaceMatches` has since 19 Oct");
+  assert.ok(/SAME PLACE, SEVERAL REPS[^\n]*\(read by the Super Admin and the SFE Manager, `canReadPlaceMatches` = `readsCompanyPlaceChecks`; answered by the Super Admin alone since 19 Nov 2026/.test(rules), "it names both readers, as `canReadPlaceMatches` has since 19 Oct, and the Super Admin as the one who answers");
+  assert.ok(code("src/lib/phoenix-crm/server/place-match-groups.ts").includes("return readsCompanyPlaceChecks(viewer);"), "🔴 the readers' gate is the company board's readers, never the decider's");
   assert.ok(code("src/lib/phoenix-crm/server/place-match-groups.ts").includes("if (!canReadPlaceMatches(viewer)) throw forbiddenError("), "and the code still asks that gate");
   assert.ok(!read("app/api/phoenix-crm/place-notes/route.ts").includes("refuses the RSM, the NSM and the SFE Manager"), "the note route no longer says the SFE Manager is refused");
 

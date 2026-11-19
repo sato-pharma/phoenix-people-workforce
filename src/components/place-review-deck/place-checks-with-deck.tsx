@@ -10,14 +10,26 @@
 
 import type { ComponentProps } from "react";
 
+import { PlaceCheckDecidesProvider } from "@/components/phoenix-crm/place-check-decides";
 import { PlaceReviewDeckButton } from "@/components/place-review-deck/review-deck-button";
 import { ValidationReviewsBoard } from "@/components/phoenix-crm/validation-reviews-board";
 import type { DeckTab } from "@/lib/place-review-deck/slides";
 
 type BoardProps = Omit<ComponentProps<typeof ValidationReviewsBoard>, "mode" | "reviewDeck">;
 
-export function PlaceChecksWithDeck({ openOn, ...board }: BoardProps & { openOn: DeckTab | null }) {
+/**
+ * `decides` is false for the SFE Manager (owner, 2026-11-19: "only able to recommend validation or not
+ * recommend, never able to take a decision"): the board leaves out every decision control and the
+ * one-by-one review, which is nothing but decisions, and draws his two recommendation buttons instead.
+ */
+export function PlaceChecksWithDeck({ decides, openOn, ...board }: BoardProps & { decides: boolean; openOn: DeckTab | null }) {
   return (
-    <ValidationReviewsBoard {...board} mode="company" reviewDeck={(input, rows) => <PlaceReviewDeckButton input={input} openOn={openOn} rows={rows} />} />
+    <PlaceCheckDecidesProvider decides={decides}>
+      <ValidationReviewsBoard
+        {...board}
+        mode="company"
+        reviewDeck={decides ? (input, rows) => <PlaceReviewDeckButton input={input} openOn={openOn} rows={rows} /> : undefined}
+      />
+    </PlaceCheckDecidesProvider>
   );
 }

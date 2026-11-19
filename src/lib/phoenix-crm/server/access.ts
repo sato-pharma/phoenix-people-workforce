@@ -921,15 +921,14 @@ export function doubleVisitReportAudience(viewer: PhoenixCrmViewer): DoubleVisit
 }
 
 /**
- * The Super Admin and the SFE Manager decide a place check (owner, 2026-10-03: "only system admin can
- * approve or reject"; widened 2026-10-19: "show check place to sfe manager exactly as it in the admin
- * account to be able validate approve and refuse"). Never a test account, and never the district
- * manager, who READS his own team's board and writes a recommendation on it (2026-10-13).
+ * The Super Admin ALONE decides a place check (owner, 2026-10-03: "only system admin can approve or
+ * reject"). The SFE Manager decided too from 2026-10-19 until the owner took it back on 2026-11-19: he
+ * now READS the company board (`readsCompanyPlaceChecks`) and RECOMMENDS, and his recommendation waits on
+ * the Super Admin's "SFE recommendations" page. Never a test account, and never the district manager, who
+ * READS his own team's board and writes a recommendation on it (2026-10-13).
  *
- * The Super Admin holds `phoenix_crm` `update`; the SFE Manager holds `approve` and no `update`, so the
- * gate is each role's own grant rather than a new `update` handed to the SFE Manager (which would also
- * open every other `update` route in the module to him). The decision routes are gated on `approve` for
- * the same reason — see `access-registry.ts`.
+ * The decision routes stay gated on `approve` in `access-registry.ts` (the Super Admin holds it); this
+ * service gate is what refuses the SFE Manager, who holds `approve` too.
  *
  * 🔴 WHAT THIS DOES NOT WIDEN, each its own ruling and each still the Super Admin's alone: settling a
  * location-integrity case (`canSettleIntegrityCases`, 2026-10-09) and seating a standalone customer in a
@@ -947,8 +946,28 @@ export function doubleVisitReportAudience(viewer: PhoenixCrmViewer): DoubleVisit
  */
 export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
   if (viewer.isTestPersona) return false;
+  return viewer.isSuperAdmin && viewer.canUpdate;
+}
+
+/**
+ * Who READS the company Place checks board: the Super Admin, who decides it, and the SFE Manager, who
+ * recommends on it (owner, 2026-11-19: "in place checks make Khaled Bedair only able to recommend
+ * validation or not recommend, never able to take a decision, and the recommended by him goes separately
+ * in a separate page for admin decision"). Never a test account.
+ *
+ * 🔴 READING IS NOT DECIDING. Every read of the company board — the page, its sections, the evidence, the
+ * "everything" route — asks this; every decision asks `canDecideValidationReviews`, the Super Admin alone.
+ * The SFE Manager's rows land on the Super Admin's "SFE recommendations" page (`sfe-recommendations.ts`).
+ */
+export function readsCompanyPlaceChecks(viewer: PhoenixCrmViewer): boolean {
+  if (viewer.isTestPersona) return false;
   if (viewer.isSuperAdmin) return viewer.canUpdate;
   return viewer.isSfeManager && viewer.canApprove;
+}
+
+/** The SFE Manager on the company board: he reads it and writes a recommendation, and decides nothing. */
+export function recommendsOnCompanyPlaceChecks(viewer: PhoenixCrmViewer): boolean {
+  return readsCompanyPlaceChecks(viewer) && !canDecideValidationReviews(viewer);
 }
 
 /**
@@ -990,11 +1009,11 @@ export function canUseSfeFieldControls(viewer: PhoenixCrmViewer): boolean {
  * somebody it must not draw for at all, and read as "nothing waiting" rather than as a refusal.
  *
  * It does not widen the decider by one person: `canDecideValidationReviews` is unchanged by it, and a
- * manager's board renders none of the decision controls. A decider (Super Admin or SFE Manager) reads
- * the whole company.
+ * manager's board renders none of the decision controls. The Super Admin and the SFE Manager
+ * (`readsCompanyPlaceChecks`) read the whole company; only the Super Admin decides on it.
  */
 export function placeChecksSeatScope(viewer: PhoenixCrmViewer): string[] | null {
-  if (canDecideValidationReviews(viewer)) return null;
+  if (readsCompanyPlaceChecks(viewer)) return null;
   const seats = teamPlaceChecksSeats(viewer);
   if (seats.length === 0) throw forbiddenError("These place checks are not yours to read.");
   return seats.map((seat) => seat.seatId);

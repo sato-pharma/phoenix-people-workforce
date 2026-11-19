@@ -28,6 +28,7 @@
 import { useId, useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
@@ -422,12 +423,15 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
  */
 function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
+  // Approve and Refuse are decisions — the Super Admin's alone since 2026-11-19, never the SFE Manager's.
+  const decides = usePlaceCheckDecides();
+  const decider = mode !== "team" && decides;
   return (
     <div className="min-w-0 space-y-2">
-      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the company board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
-      {mode === "team" ? null : <Approve row={row} />}
-      {mode === "team" ? null : <Refuse row={row} scope={scope} />}
+      {decider ? <Approve row={row} /> : null}
+      {decider ? <Refuse row={row} scope={scope} /> : null}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -486,7 +490,8 @@ export function ValidatedPlaceList({
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const bulk = mode === "company";
+  const decides = usePlaceCheckDecides();
+  const bulk = mode === "company" && decides;
   const canRestore = useCanRestoreValidation();
 
   const found = useMemo(() => {
@@ -558,7 +563,7 @@ export function ValidatedPlaceList({
                 <th className={crmThClassName}>Photo</th>
                 <th className={crmThClassName}>Customer and rep</th>
                 <th className={crmThClassName}>The place they saved</th>
-                <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Approve or refuse"}</th>
+                <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Approve or refuse" : "Your recommendation"}</th>
               </tr>
             </thead>
             <tbody>

@@ -38,7 +38,7 @@ import {
 } from "@/lib/phoenix-crm/schedule-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { waitingIsLong, waitingOldestFirst, waitingText } from "@/lib/phoenix-crm/waiting-rules";
-import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { approvalLockFor } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -96,7 +96,7 @@ const REJECTED_SHOWN_DAYS = 90;
  * `server/shared-places.ts`, which this file imports from, so declaring them here and importing them
  * there would close a cycle.
  */
-export { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope } from "@/lib/phoenix-crm/server/access";
+export { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, readsCompanyPlaceChecks, recommendsOnCompanyPlaceChecks } from "@/lib/phoenix-crm/server/access";
 
 function text(value: unknown): string | null {
   const cleaned = typeof value === "string" ? value.trim() : "";
@@ -708,7 +708,7 @@ export async function loadValidationReviews(
   } = {},
 ): Promise<ValidationBoardRead<ValidationReviewRow>> {
   const seats = placeChecksSeatScope(viewer);
-  const decides = canDecideValidationReviews(viewer);
+  const decides = readsCompanyPlaceChecks(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
   const rejectedSince = new Date(Date.now() - REJECTED_SHOWN_DAYS * 86_400_000).toISOString();
   // Phoenix CRM validation audit, 14 Nov 2026: the waiting reviews and the decided ones were ONE read
@@ -931,7 +931,7 @@ export async function decideValidationReview(
   viewer: PhoenixCrmViewer,
   raw: unknown,
 ): Promise<{ reviewId: string; status: "approved" | "rejected"; waitingForBuilding: boolean; reopened: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the place to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
@@ -1189,7 +1189,7 @@ export type ValidatedPlaceRow = {
  */
 export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
   const seats = placeChecksSeatScope(viewer);
-  const decides = canDecideValidationReviews(viewer);
+  const decides = readsCompanyPlaceChecks(viewer);
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()
@@ -1410,7 +1410,7 @@ function isRecord(value: unknown): value is Row {
  * the first 24 refusals.
  */
 export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; reopened: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to refuse.");
   // What is wrong with the photo, required because the rep is always told it (2026-10-08). The comment
@@ -1523,7 +1523,7 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
  * is approved on its own review, keeping the evidence it was held on.
  */
 export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; approved: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to approve.");
   const note = cleanText(body.note, 500);
@@ -1656,7 +1656,7 @@ export function sentBackRepName(input: {
 
 export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ReopenedCustomerRow>> {
   const seats = placeChecksSeatScope(viewer);
-  const decides = canDecideValidationReviews(viewer);
+  const decides = readsCompanyPlaceChecks(viewer);
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()

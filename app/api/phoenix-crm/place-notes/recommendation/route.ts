@@ -10,8 +10,9 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = record, or change, one manager's recommendation on a place check: validate it, or do not
-// validate it (owner, 2026-10-13).
+// POST = record, or change, one recommendation on a place check: validate it, or do not validate it —
+// a district manager's on his own team (owner, 2026-10-13), or the SFE Manager's on the company board
+// (owner, 2026-11-19), which then waits on the Super Admin's SFE recommendations page.
 //
 // 🔴 IT DECIDES NOTHING. No status moves, no place is retired, no customer is reopened, nothing is
 // notified, and phoenix_crm_validation_reviews is not touched. The decision is the Super Admin's alone

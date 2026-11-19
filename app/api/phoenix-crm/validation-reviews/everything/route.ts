@@ -7,7 +7,7 @@ import type { PlaceChecksEverything } from "@/lib/phoenix-crm/place-checks-on-de
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { placeChecksHandoffKey, takePlaceChecksForTheClick } from "@/lib/phoenix-crm/server/place-checks-handoff";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
-import { canDecideValidationReviews, loadValidatedPlaces, loadValidationReviews } from "@/lib/phoenix-crm/server/validation-reviews";
+import { loadValidatedPlaces, loadValidationReviews, readsCompanyPlaceChecks } from "@/lib/phoenix-crm/server/validation-reviews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 // picks a filter or a decider, taps a count, or opens the one-by-one review — never with the page, which
 // used to send all of it (12.5 MB) and froze the server building it (`place-checks-on-demand.ts`).
 // The Super Admin and the SFE Manager, exactly as the page: `approve` is gate one and
-// `canDecideValidationReviews` gate two, both before a row is read. A district manager's board is drawn
+// `readsCompanyPlaceChecks` gate two, both before a row is read. It READS — the SFE Manager reads the
+// company board and recommends, the Super Admin alone decides (owner, 2026-11-19). A district manager's board is drawn
 // whole by its own page and never asks this route.
 async function readEverything(viewer: PhoenixCrmViewer): Promise<PlaceChecksEverything> {
   const [reviews, validated] = await Promise.all([loadValidationReviews(viewer, { everyDecision: true }), loadValidatedPlaces(viewer)]);
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
-    if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager read this.");
+    if (!readsCompanyPlaceChecks(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager read this.");
     // The rows the page read for this person a moment ago, when they are still there (`place-checks-handoff.ts`);
     // otherwise the same two reads the page makes.
     const everything: PlaceChecksEverything = takePlaceChecksForTheClick(placeChecksHandoffKey(viewer)) ?? (await readEverything(viewer));

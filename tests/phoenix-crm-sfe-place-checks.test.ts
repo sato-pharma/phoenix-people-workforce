@@ -9,12 +9,13 @@ import { stripComments } from "./support/comment-strip.ts";
  * Place checks for the SFE Manager (owner, 2026-10-19: "show check place to sfe manager exactly as it
  * in the admin account to be able validate approve and refuse").
  *
- * The Super Admin was the only decider since 2026-10-03. The SFE Manager now sees the same page and
- * takes the same decisions — approve, refuse, restore, a polyclinic's approve and reject, the
- * same-place answer — and NOTHING else moves. The rulings this widening must leave alone are pinned
- * here beside it, because each is a one-line edit away from being widened by accident:
+ * The Super Admin was the only decider since 2026-10-03. The SFE Manager sees the same page — and since
+ * 2026-11-19 he RECOMMENDS on it and decides nothing (owner: "in place checks make Khaled Bedair only able
+ * to recommend validation or not recommend, never able to take a decision, and the recommended by him goes
+ * separately in a separate page for admin decision"). The rulings this must leave alone are pinned here
+ * beside it, because each is a one-line edit away from being widened by accident:
  *
- *   1. who the decider admits is a BEHAVIOUR, pinned by evaluating the predicate itself;
+ *   1. who READS the board and who DECIDES on it are two BEHAVIOURS, pinned by evaluating each predicate;
  *   2. the SFE Manager holds `phoenix_crm` read + approve and no `update`, so the seven decision routes
  *      are gated on `approve` — and he was not handed `update`, which would open every other `update`
  *      route in the module to him;
@@ -69,16 +70,28 @@ const DECISION_ROUTES = [
 export function runPhoenixCrmSfePlaceChecksTests() {
   const access = read("src/lib/phoenix-crm/server/access.ts");
 
-  // ── 1. WHO DECIDES ───────────────────────────────────────────────────────────
+  // ── 1. WHO DECIDES — THE SUPER ADMIN ALONE (owner, 2026-11-19) ───────────────
   const decides = predicate(access, "canDecideValidationReviews");
   assert.equal(decides({ ...NOBODY, isSuperAdmin: true, canUpdate: true, canApprove: true }), true, "the Super Admin decides");
   assert.equal(decides({ ...NOBODY, isSuperAdmin: true, canApprove: true }), false, "a Super Admin without `update` does not — his own grant is unchanged");
-  assert.equal(decides({ ...NOBODY, isSfeManager: true, canApprove: true }), true, "🔴 the SFE Manager decides on `approve` alone — he holds no `update`");
-  assert.equal(decides({ ...NOBODY, isSfeManager: true, canUpdate: true }), false, "and a role named SFE Manager without `approve` does not");
-  assert.equal(decides({ ...NOBODY, isSfeManager: true }), false, "nor one with no grant at all");
+  assert.equal(decides({ ...NOBODY, isSfeManager: true, canApprove: true }), false, "🔴 the SFE Manager does NOT decide — he recommends (owner, 2026-11-19)");
+  assert.equal(decides({ ...NOBODY, isSfeManager: true, canApprove: true, canUpdate: true }), false, "not even if he were ever given `update`");
   assert.equal(decides({ ...NOBODY, isSuperAdmin: true, isTestPersona: true, canUpdate: true, canApprove: true }), false, "a test account never decides — Super Admin");
-  assert.equal(decides({ ...NOBODY, isSfeManager: true, isTestPersona: true, canApprove: true }), false, "a test account never decides — SFE Manager");
   assert.equal(decides({ ...NOBODY, canUpdate: true, canApprove: true }), false, "🔴 a district manager, a regional or national manager or the CEO holding `approve` does NOT decide");
+
+  // ── 1a. WHO READS THE BOARD — THE SUPER ADMIN AND THE SFE MANAGER ────────────
+  const reads = predicate(access, "readsCompanyPlaceChecks");
+  assert.equal(reads({ ...NOBODY, isSuperAdmin: true, canUpdate: true, canApprove: true }), true, "the Super Admin reads the company board");
+  assert.equal(reads({ ...NOBODY, isSfeManager: true, canApprove: true }), true, "🔴 the SFE Manager still reads it, on `approve` alone — he holds no `update`");
+  assert.equal(reads({ ...NOBODY, isSfeManager: true, canUpdate: true }), false, "and a role named SFE Manager without `approve` does not");
+  assert.equal(reads({ ...NOBODY, isSfeManager: true }), false, "nor one with no grant at all");
+  assert.equal(reads({ ...NOBODY, isSfeManager: true, isTestPersona: true, canApprove: true }), false, "a test account never reads it — SFE Manager");
+  assert.equal(reads({ ...NOBODY, canUpdate: true, canApprove: true }), false, "nor a manager holding the grants");
+  // Whoever reads and does not decide is the recommender — so the SFE Manager, and never the Super Admin.
+  const recommends = (viewer: Viewer) => reads(viewer) && !decides(viewer);
+  assert.ok(/export function recommendsOnCompanyPlaceChecks\(viewer: PhoenixCrmViewer\): boolean \{\s*return readsCompanyPlaceChecks\(viewer\) && !canDecideValidationReviews\(viewer\);/.test(access), "the recommender is exactly a reader who does not decide");
+  assert.equal(recommends({ ...NOBODY, isSfeManager: true, canApprove: true }), true, "🔴 the SFE Manager recommends");
+  assert.equal(recommends({ ...NOBODY, isSuperAdmin: true, canUpdate: true, canApprove: true }), false, "the Super Admin decides instead");
 
   // ── 1b. TAKING A REJECTION BACK IS THE SUPER ADMIN'S ALONE (owner, 2026-11-10) ──────────────────
   // "make the administrator able to approve a rejected validation from the SFE in place checks but the SFE
@@ -114,7 +127,9 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   // ── 3. THE PAGE AND THE CARD ─────────────────────────────────────────────────
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.ok(page.includes('canAccess(access, "phoenix_crm", "approve")'), "the page's first gate is `approve`");
-  assert.match(page, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\);/, "and its second is the decider, by redirect");
+  assert.match(page, /if \(!viewer \|\| !readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\);/, "and its second is the board's reader, by redirect");
+  const sfePage = read("app/(admin)/admin/field-crm/sfe-recommendations/page.tsx");
+  assert.match(sfePage, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\);/, "🔴 the SFE recommendations page is the decider's alone, by redirect");
 
   const navigation = read("src/config/system-navigation.ts");
   const card = /href: "\/admin\/field-crm\/validation-reviews",[\s\S]*?\n  \},/.exec(navigation)?.[0] ?? "";

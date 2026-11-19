@@ -249,7 +249,8 @@ function checkHisApprove(): void {
   assert.ok(read("src/lib/security/access-registry.ts").includes('pattern: "/api/phoenix-crm/validation-reviews/approve"'), "and it is in the access registry");
 
   const list = stripComments(read("src/components/phoenix-crm/validated-place-list.tsx"));
-  assert.match(list, /mode === "team" \? null : <Approve row=\{row\} \/>/, "🔴 a district manager's board approves nothing");
+  assert.match(list, /const decider = mode !== "team" && decides;/, "🔴 a district manager's board approves nothing, nor the SFE Manager's (owner, 2026-11-19)");
+  assert.match(list, /\{decider \? <Approve row=\{row\} \/> : null\}/, "and Approve is drawn behind that one test");
   assert.ok(list.includes('"/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: answer.note }'), "ticked rows approve through the same route");
 
   const queue = stripComments(read("src/components/phoenix-crm/validation-review-queue.tsx"));

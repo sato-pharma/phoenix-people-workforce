@@ -191,9 +191,9 @@ function checkTheWiring() {
   assert.equal(PLACE_CHECKS_EVERYTHING_ROUTE, "/api/phoenix-crm/validation-reviews/everything", "the board asks the route that exists");
   const handler = route.slice(route.indexOf("export async function GET("));
   const gate = handler.indexOf('assertPermission(access, "phoenix_crm", "approve")');
-  const decider = handler.indexOf("if (!canDecideValidationReviews(viewer)) throw forbiddenError(");
+  const decider = handler.indexOf("if (!readsCompanyPlaceChecks(viewer)) throw forbiddenError(");
   const firstRow = handler.indexOf("takePlaceChecksForTheClick(placeChecksHandoffKey(viewer)) ?? (await readEverything(viewer))");
-  assert.ok(gate > 0 && decider > gate && firstRow > decider, "🔴 the route asks `approve`, then the decider, before a row is taken or read — the page's own two gates");
+  assert.ok(gate > 0 && decider > gate && firstRow > decider, "🔴 the route asks `approve`, then the board's reader, before a row is taken or read — the page's own two gates");
   assert.match(
     page,
     /keepPlaceChecksForTheClick\(placeChecksHandoffKey\(viewer\), \{ validated, olderDecided: reviews\.rows\.filter\(\(row\) => !row\.recent\) \}\)/,

@@ -26,6 +26,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { CrmButton, CrmNote, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import {
@@ -107,7 +108,11 @@ function Evidence({ cases }: { cases: PlaceCheckIntegrityView[] }) {
 
 /**
  * The recommendation. On a manager's board it is the two buttons; on the Super Admin's it is what the
- * managers have said, read-only — he has his own Approve and Reject above.
+ * managers and the SFE Manager have said, read-only — he has his own Approve and Reject above.
+ *
+ * 🔴 ON THE COMPANY BOARD THE SFE MANAGER GETS THE TWO BUTTONS TOO (owner, 2026-11-19: "only able to
+ * recommend validation or not recommend, never able to take a decision"), with the district managers'
+ * recommendations listed above them as the Super Admin reads them.
  */
 function Recommendations({
   mode,
@@ -121,11 +126,13 @@ function Recommendations({
   subjectKind: PlaceNoteSubjectKind;
 }) {
   const router = useRouter();
+  const decides = usePlaceCheckDecides();
   const [saving, setSaving] = useState<PlaceRecommendation | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  // On a manager's own board every row here is his own, because the board shows his team alone — so
-  // the first one is "what I said last", and it highlights the button he pressed.
-  const mine = recommendations[0] ?? null;
+  // The server marks the viewer's own row (`mine`). On a manager's own board every row is his anyway —
+  // the board shows his team alone and drops the SFE Manager's — so the first one stands in for it.
+  const mine = recommendations.find((row) => row.mine) ?? (mode === "team" ? (recommendations[0] ?? null) : null);
+  const others = recommendations.filter((row) => row !== mine);
 
   async function recommend(recommendation: PlaceRecommendation) {
     if (saving) return;
@@ -142,22 +149,24 @@ function Recommendations({
     }
   }
 
-  if (mode === "company") {
-    if (recommendations.length === 0) return null;
-    return (
+  const said = (rows: PlaceRecommendationView[]) =>
+    rows.length === 0 ? null : (
       <div className="min-w-0 space-y-1">
-        {recommendations.map((row) => (
+        {rows.map((row) => (
           <p key={`${row.managerName}-${row.decidedAtText}`} className="break-words text-xs text-slate-600">
-            <span className="font-black text-slate-800">{row.managerName}</span> {placeRecommendationMadeLabel(row.recommendation).toLowerCase()} ·{" "}
+            <span className="font-black text-slate-800">{row.managerName}</span>
+            {row.writerRole === "sfe_manager" ? " (SFE Manager)" : ""} {placeRecommendationMadeLabel(row.recommendation).toLowerCase()} ·{" "}
             {row.decidedAtText}
           </p>
         ))}
       </div>
     );
-  }
+
+  if (mode === "company" && decides) return said(recommendations);
 
   return (
     <div className="min-w-0 space-y-2">
+      {mode === "company" ? said(others) : null}
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton
           busy={saving === "validate"}

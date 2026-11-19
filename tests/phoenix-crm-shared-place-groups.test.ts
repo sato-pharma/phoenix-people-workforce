@@ -516,7 +516,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.match(customersSource, /armed \?/, "a rejection is confirmed before it is sent");
   assert.match(customersSource, /disabled=\{reason === "" \|\| saving\}/, "and cannot be armed before a reason is chosen");
   assert.doesNotMatch(customersSource, /note\.trim\(\)\.length === 0/, "never gated on the free-text note — it is optional");
-  assert.match(customersSource, /mode === "team" \? null : <Decision customer=\{customer\} noTimetable=\{noTimetable\} scope=\{scope\} \/>/, "🔴 a manager's board renders no decision control");
+  assert.match(customersSource, /mode === "team" \|\| !decides \? null : <Decision customer=\{customer\} noTimetable=\{noTimetable\} scope=\{scope\} \/>/, "🔴 a manager's board renders no decision control, nor the SFE Manager's (owner, 2026-11-19)");
   assert.ok(customersSource.includes("<CrmCardsOnPhone") && !customersSource.includes("<CrmTable") && !/colSpan/.test(customersSource), "phone cards, then plain blocks inside the building's own cell — never a table nested in a table");
   assert.ok(!/colSpan/.test(list) && (list.match(/<tbody/g) ?? []).length === 1, "🔴 one row per building: the header and its seated customers sit in the first cell, no second row");
   assert.doesNotMatch(customersSource, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp|text-ellipsis/, "square, no sideways scroll, no ellipsis");

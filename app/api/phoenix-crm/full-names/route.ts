@@ -11,9 +11,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST = approve or reject a PM customer's full name that matched the board under 60% (owner, 2026-11-07).
-// `approve` here is gate one; the service refuses everyone but the Super Admin and the SFE Manager
-// (`canDecideValidationReviews`) before anything is read. A CORRECTED name (`nameParts`, owner 2026-11-08) is the
-// same two deciders' (`canCorrectHeldFullName`), refused from anybody else before the database is called. One permission per route is this module's rule (tests/phoenix-crm-boundary.test.ts).
+// `approve` here is gate one; the service refuses everyone but the Super Admin (`canDecideValidationReviews`; the SFE
+// Manager recommends and never decides since 2026-11-19) before anything is read. A CORRECTED name (`nameParts`, owner
+// 2026-11-08) is the same decider's (`canCorrectHeldFullName`), refused from anybody else before the database is called. One permission per route is this module's rule (tests/phoenix-crm-boundary.test.ts).
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

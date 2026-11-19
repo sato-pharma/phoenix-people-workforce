@@ -424,10 +424,10 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
 
   // ── The server: the deciders' alone, read in full, a seated customer never a subject ──────
   const server = read("src/lib/phoenix-crm/server/place-match-groups.ts");
-  assert.match(server, /export function canReadPlaceMatches\(viewer: PhoenixCrmViewer\): boolean \{\s*return canDecideValidationReviews\(viewer\);/, "🔴 the same decider as every Place check — the Super Admin and the SFE Manager");
+  assert.match(server, /export function canReadPlaceMatches\(viewer: PhoenixCrmViewer\): boolean \{\s*return readsCompanyPlaceChecks\(viewer\);/, "🔴 the same readers as every Place check — the Super Admin and the SFE Manager");
   assert.equal(server.split("throw forbiddenError(").length - 1, 2, "both the read and the answer refuse everyone else");
   assert.ok(/export async function loadPlaceMatchBoard[\s\S]*?if \(!canReadPlaceMatches\(viewer\)\) throw forbiddenError/.test(server), "the read checks first");
-  assert.ok(/export async function answerPlaceMatch[\s\S]*?if \(!canReadPlaceMatches\(viewer\)\) throw forbiddenError/.test(server), "and so does the answer");
+  assert.ok(/export async function answerPlaceMatch[\s\S]*?if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError\("Only the Super Admin answers this\."\)/.test(server), "🔴 and the answer is the decider's alone — the SFE Manager reads the groups and answers none (owner, 2026-11-19)");
   assert.ok(server.split("readEveryPage<Row>(").length - 1 >= 3, "🔴 places, polyclinics and answers are each read in full — a bare read stops at 1,000 rows without saying so");
   assert.ok(server.includes('.eq("status", "active").eq("is_test", false)'), "only places in use, never a test row");
   assert.ok(server.includes('.in("status", ["active", "held"])'), "polyclinics in use or waiting for a decision");

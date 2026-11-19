@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 //
 // POST = approve one, or reject it. A rejection retires the venue, retires every place seated in it and
 // sends each of those customers back to To validate (owner, 2026-10-09: the administrator has the right
-// to review the schedule). The Super Admin and the SFE Manager, as above (`approve` here is gate one).
+// to review the schedule). The Super Admin alone, as above (`approve` here is gate one).
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
