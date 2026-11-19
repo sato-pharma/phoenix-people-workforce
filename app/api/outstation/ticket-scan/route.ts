@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
@@ -13,6 +15,20 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * What the ticket reader sends (train-ticket-scan.tsx): the picked file as a data URL — any size, the upload
+ * parser caps it — and its name, with either the claim's id (a late upload) or the wizard's arrival time
+ * and trip days. The dates are still judged below, with the route's own words.
+ */
+const TicketScanBodySchema = z.object({
+  arrivalAt: z.string().nullable().optional(),
+  dataUrl: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  requestId: z.union([z.number(), z.string()]).nullable().optional(),
+  tripEndDate: z.string().nullable().optional(),
+  tripStartDate: z.string().nullable().optional(),
+});
 
 /**
  * Reads one train ticket the moment the employee picks it (owner, 2026-11-07; ticket-scan-rules.ts), and
@@ -36,7 +52,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "not_linked", message: "Your session is not linked to an employee. Please sign in again." }, { status: 400 });
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, TicketScanBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const ticket = parseOutstationTicketAttachmentDataUrl({ dataUrl: String(body.dataUrl ?? ""), fileName: String(body.name ?? "") });
 
     let context: TicketDateContext;

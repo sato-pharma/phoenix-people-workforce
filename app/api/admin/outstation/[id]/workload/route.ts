@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -10,9 +11,24 @@ import {
   setOutstationWorkloadManually,
 } from "@/lib/outstation/service";
 import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A visit count as typed or as a number; read with Number(... ?? 0) below exactly as before. */
+const workloadCountField = z.union([z.number(), z.string()]).nullable().optional();
+
+/**
+ * What Held Requests sends (held-requests-panel.tsx): `{ action: "retry" }` or
+ * `{ action: "manual", amWorkload, pmWorkload, reason }`. The action word is still judged below, with its own 400.
+ */
+const WorkloadRepairBodySchema = z.object({
+  action: z.string().nullable().optional(),
+  amWorkload: workloadCountField,
+  pmWorkload: workloadCountField,
+  reason: z.string().nullable().optional(),
+});
 
 /**
  * Repair the workload on a request the gate is holding.
@@ -62,7 +78,11 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, WorkloadRepairBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const action = String(body.action ?? "retry");
 
     if (action === "manual") {

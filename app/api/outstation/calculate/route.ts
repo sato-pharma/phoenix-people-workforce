@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
@@ -17,9 +18,48 @@ import {
 } from "@/app/api/outstation/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A figure as a number, or as text — or null, which is what a blank box (NaN) becomes in JSON. */
+const calculateNumberField = z.union([z.number(), z.string()]).nullable().optional();
+const calculateTextField = z.string().nullable().optional();
+const calculateFlagField = z.boolean().nullable().optional();
+
+/**
+ * What Submit Expense prices (mobile-outstation-wizard.tsx, its requestPayload). Loose: the body is handed whole
+ * to parseOutstationTypeFields and parseCarEvidenceMetadata, which judge the two taxonomies and the arrival
+ * photo's metadata with their own words, so every key still reaches them.
+ */
+const CalculateBodySchema = z.looseObject({
+  amWorkload: calculateNumberField,
+  attachmentCount: calculateNumberField,
+  capturedAccuracyMeters: calculateNumberField,
+  capturedAt: calculateTextField,
+  capturedLatitude: calculateNumberField,
+  capturedLongitude: calculateNumberField,
+  carEvidenceMetadata: z.looseObject({}).nullable().optional(),
+  claimedTotalAmount: calculateNumberField,
+  expenseType: calculateTextField,
+  goTicketAmount: calculateNumberField,
+  hasTicketAttachments: calculateFlagField,
+  kilometerReading: calculateNumberField,
+  meetingAmount: calculateNumberField,
+  medicalTripHrId: calculateTextField,
+  medicalTripName: calculateTextField,
+  notes: calculateTextField,
+  offlineCaptured: calculateFlagField,
+  otherAmount: calculateNumberField,
+  pmWorkload: calculateNumberField,
+  returnTicketAmount: calculateNumberField,
+  transportationType: calculateTextField,
+  travelCostAmount: calculateNumberField,
+  tripEndDate: calculateTextField,
+  tripStartDate: calculateTextField,
+  tripType: calculateTextField,
+});
 
 function optionalNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return undefined;
@@ -39,7 +79,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, CalculateBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const outstationTypes = parseOutstationTypeFields(body);
     if (!outstationTypes.ok) {
       return NextResponse.json(

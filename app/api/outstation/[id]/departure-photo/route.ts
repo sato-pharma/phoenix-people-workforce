@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -6,6 +7,7 @@ import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence"
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
@@ -19,6 +21,21 @@ export const dynamic = "force-dynamic";
  * the caller is the submitting employee or an outstation admin. The permission check below only
  * establishes that the caller may touch the outstation module at all.
  */
+/** A GPS coordinate as a number, or as text; readDeparturePhotoPosition reads both, and null is no fix. */
+const departureCoordinateField = z.union([z.number(), z.string()]).nullable().optional();
+
+/**
+ * What the departure-photo card sends (departure-photo-card.tsx): the stamped JPEG as a data URL — never capped
+ * here, the service judges its size — and the position it was taken at. A missing photo still gets the
+ * route's own words, and a missing position the service's.
+ */
+const DeparturePhotoBodySchema = z.object({
+  imageDataUrl: z.string().nullable().optional(),
+  latitude: departureCoordinateField,
+  locationLabel: z.string().nullable().optional(),
+  longitude: departureCoordinateField,
+});
+
 function departurePhotoStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
@@ -60,7 +77,11 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, DeparturePhotoBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const imageDataUrl = String(body.imageDataUrl ?? "");
     if (!imageDataUrl) {
       return NextResponse.json(

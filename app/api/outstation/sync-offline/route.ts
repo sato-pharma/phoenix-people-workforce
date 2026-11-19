@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import {
@@ -15,9 +16,43 @@ import { NoTicketFareUnavailableError } from "@/lib/outstation/train-fare";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * A claim saved on the phone with no signal and replayed later (mobile-outstation-wizard.tsx), or posted here
+ * when the phone reports itself offline. The replayed draft can come from an OLDER version of the app, so the
+ * schema holds it only to being an object: every field below is read by the same permissive readers as
+ * before (readCapturedPosition, readAccuracyInput, Number, String, typeof), and a field this route never reads
+ * is accepted and ignored. Listed so the accepted body is visible here; the subset rule further down decides
+ * what may be read, never this list.
+ */
+const SyncOfflineBodySchema = z.looseObject({
+  attachmentCount: z.unknown().optional(),
+  capturedAccuracyMeters: z.unknown().optional(),
+  capturedAt: z.unknown().optional(),
+  capturedLatitude: z.unknown().optional(),
+  capturedLongitude: z.unknown().optional(),
+  carEvidenceImageDataUrl: z.unknown().optional(),
+  carEvidenceMetadata: z.unknown().optional(),
+  claimedTotalAmount: z.unknown().optional(),
+  expenseType: z.unknown().optional(),
+  goTicketAmount: z.unknown().optional(),
+  hasTicketAttachments: z.unknown().optional(),
+  kilometerReading: z.unknown().optional(),
+  medicalTripHrId: z.unknown().optional(),
+  medicalTripName: z.unknown().optional(),
+  meetingAmount: z.unknown().optional(),
+  notes: z.unknown().optional(),
+  otherAmount: z.unknown().optional(),
+  returnTicketAmount: z.unknown().optional(),
+  ticketAttachments: z.unknown().optional(),
+  transportationType: z.unknown().optional(),
+  tripEndDate: z.unknown().optional(),
+  tripStartDate: z.unknown().optional(),
+});
 
 function optionalNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return undefined;
@@ -33,7 +68,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, SyncOfflineBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const outstationTypes = parseOutstationTypeFields(body);
     if (!outstationTypes.ok) {
       return NextResponse.json(

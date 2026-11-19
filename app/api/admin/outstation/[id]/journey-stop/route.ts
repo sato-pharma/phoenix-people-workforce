@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -8,6 +9,7 @@ import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { addOutstationJourneyStopAsAdmin } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { cairoWallClockToIso } from "@/lib/format/cairo-zone";
 
 export const runtime = "nodejs";
@@ -45,6 +47,18 @@ function adminStopStatus(error: unknown) {
   return 500;
 }
 
+/** A coordinate as the form's text box holds it ("30.05"), or a number; numberOrNull reads both as before. */
+const coordinateField = z.union([z.number(), z.string()]).nullable().optional();
+
+/** What Expense Approvals' "Add a missed stop" sends (trip-attachments.tsx). Every rule stays the service's. */
+const AdminJourneyStopBodySchema = z.object({
+  expectedRevision: z.string().nullable().optional(),
+  latitude: coordinateField,
+  longitude: coordinateField,
+  reason: z.string().nullable().optional(),
+  stoppedAtCairo: z.string().nullable().optional(),
+});
+
 function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -66,7 +80,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "invalid_outstation_id", message: "Request id is invalid." }, { status: 400 });
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, AdminJourneyStopBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const result = await addOutstationJourneyStopAsAdmin(id, access, {
       expectedRevision: typeof body.expectedRevision === "string" ? body.expectedRevision : "",
       latitude: numberOrNull(body.latitude),

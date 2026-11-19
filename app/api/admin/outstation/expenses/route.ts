@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import {
   isPayrollExpensesSchemaMissing,
@@ -27,6 +28,7 @@ import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { logAppError } from "@/lib/error-monitor/service";
 // Was a private copy in this file (#2062). Shared now because instrumentation.ts's app-wide
 // onRequestError needed the identical logic and had kept the broken `String(error)` version —
@@ -35,6 +37,27 @@ import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * What Save posts, one report at a time (use-expense-review.ts, expenses-review-workspace.tsx): the batch's file
+ * name, its report id and the rows. Each row travels WHOLE — the trip as the screen loaded it plus its decision —
+ * to the request-decision and payroll writes, which re-validate the contents, so a row is only required to be
+ * an object and every key on it reaches them as before.
+ */
+/** One saved row as the two write paths read it: the trip plus the decision the screen made on it. */
+type ApprovalSaveRecord = ExpenseTripRecord & {
+  approvedAmount?: number | null;
+  hrApproved?: boolean;
+  hrComment?: string;
+  hrId?: string | null;
+  reportId?: string | null;
+};
+
+const ApprovalsSaveBodySchema = z.object({
+  fileName: z.string().nullable().optional(),
+  records: z.array(z.looseObject({})).nullable().optional(),
+  reportId: z.string().nullable().optional(),
+});
 
 export async function GET(request: Request) {
   // Hoisted so the catch below can attribute the failure to a person, the same reason
@@ -151,21 +174,18 @@ export async function POST(request: Request) {
     if (unauthenticated) return unauthenticated;
     assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
-    const body = await request.json();
+    const parsedBody = await parseJsonBody(request, ApprovalsSaveBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const fileName = String(body.fileName ?? "expenses-upload.xls");
     const reportId = typeof body.reportId === "string" ? body.reportId : null;
-    // Annotated, not inferred: `body` is `any`, and an unannotated `records` makes the generic in
-    // `partitionExpenseApprovalRecords` resolve to its own `{ tripId }` constraint — which then
-    // fails to satisfy either write path. `savePayrollExpenseApprovals` re-validates the contents.
-    const records: Array<
-      ExpenseTripRecord & {
-        approvedAmount?: number | null;
-        hrApproved?: boolean;
-        hrComment?: string;
-        hrId?: string | null;
-        reportId?: string | null;
-      }
-    > = Array.isArray(body.records) ? body.records : [];
+    // Typed here, not inferred: the schema holds each row only to being an object, and an untyped
+    // `records` makes the generic in `partitionExpenseApprovalRecords` resolve to its own `{ tripId }`
+    // constraint — which then fails to satisfy either write path. `savePayrollExpenseApprovals`
+    // re-validates the contents.
+    const records = (body.records ?? []) as ApprovalSaveRecord[];
 
     if (records.length === 0) {
       return NextResponse.json(
