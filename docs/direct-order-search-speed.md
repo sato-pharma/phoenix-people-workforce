@@ -80,9 +80,60 @@ change (start searching at three characters). Neither is done here.
 - The existing `customer_code` trigram index (`search-direct-order-customer-code-trgm-live-on-prod-2026-08-14`)
   stays: it still serves every probe of three or more characters.
 
+## The name is matched word by word (19 Nov 2026)
+
+**What was wrong.** A rep (Mohamed Ramadan) could find two pharmacies by code but not by name. The
+name test was "the whole typed text, spaces removed, is one unbroken piece of the normalised name",
+and the distributor names are bare ("رياض طهطا ن", "خالد عبدالرحيم-قوص ن م"). So typing the word
+"pharmacy" first, or the words in another order, found nothing. Measured on production: "صيدلية رياض",
+"صيدليه رياض" and "صيدلية خالد عبدالرحيم" returned 0 rows; "رياض طهطا" and both codes found them.
+
+**What the search does now** (`20261119234441_direct_order_search_word_by_word.sql`):
+
+- The typed text is split into words on spaces and punctuation. Every word must appear somewhere in
+  the normalised name, in any order.
+- The generic words are left out: صيدلية, الصيدلية, صيدليات, ص, د, دكتور, دكتورة, pharmacy, dr. A probe made
+  only of them falls back to the old whole-text test.
+- Each word drops a leading "ال" when two or more letters remain, so "صيدلية الرياض" finds "رياض طهطا ن".
+- Hamza on alef (أ إ آ ٱ), ى and ئ against ي, ة against ه, tashkeel and tatweel were already folded by
+  `phx_normalize_arabic` on both sides. That function is NOT changed: three indexes are built on it.
+
+**Nothing that was found before is lost, or moved down.** The new test is a superset of the old one,
+because the normaliser works one character at a time. Every row carries `old_match` (the old test
+would have returned it), and that is the first ranking key. So the first N rows always hold the old
+first N rows in the old order, and the extra matches come after them. Proven on production with 17
+probes against a temporary copy of the old function: every old answer is kept, in the same order.
+
+**Speed** (production, the generic plan a SQL function gets):
+
+| Probe | Old | New |
+| --- | --- | --- |
+| محمد (18,173 names) | 318 ms | 309–322 ms |
+| مصطفى | 62–119 ms | 68–105 ms |
+| محمد علي | 22–32 ms (found only "محمدعلي" written together) | 54–117 ms |
+| صيدلية محمد | 9 ms (3 rows) | 850–950 ms (every محمد, the 3 first) |
+| the two pharmacies, by name or code | 7–12 ms | 9–21 ms |
+
+Three things in the SQL hold that speed; the test refuses each of them changing:
+
+- A one-word probe keeps the name test alone on `p.lead`. A `p.norm is not null` beside it can no
+  longer be proven from the `ilike`, so the planner adds a Filter that repeats the whole OR, and the
+  plpgsql normaliser runs twice per row (688–880 ms on "محمد" in the drafts).
+- A probe of two or more words tests its two LONGEST words as index conditions, so the trigram index
+  intersects them. `ilike all` over the array, which no GIN index can use, only re-checks a third word.
+- The two directory arms are split on word count, and they never both return a row.
+
+**The app's own cut.** `searchDirectOrderPharmacyDirectory` asks SQL for its full 100 rows and applies the
+caller's limit after the area and wholesaler filters. Before, it cut to 30 first, so a common word could
+fill the page with other areas' pharmacies, which the area filter then removed.
+
 ## Rollback
 
-`create or replace` the two functions back to the bodies in `20260807120000_direct_order_search_arabic_space_fold.sql`
+For the word-by-word match only: `create or replace` the search with the body in
+`20261016210000_direct_order_search_short_probe_fast_path.sql` (section 3), and put the `p_limit` and the
+`.slice` in `searchDirectOrderPharmacyDirectory` back.
+
+For everything: `create or replace` the two functions back to the bodies in `20260807120000_direct_order_search_arabic_space_fold.sql`
 (the normaliser) and `20260804183000_direct_order_customer_directory_search.sql` (the search), then
 `drop index public.source_of_sales_customer_map_search_keys_idx` and
 `drop function public.phx_direct_order_search_keys(text, text)`. Nothing else depends on the new objects.

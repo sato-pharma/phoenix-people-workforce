@@ -42528,8 +42528,23 @@ CREATE FUNCTION public.phx_search_direct_order_customers(p_query text, p_distrib
       p0.norm,
       (p0.raw ~ U&'^[0-9A-Za-z\0621-\064A]{1,2}$') as short_probe,
       array['c:' || lower(p0.raw)]
-        || case when p0.norm is not null then array['n:' || lower(p0.norm)] else array[]::text[] end as keys
+        || case when p0.norm is not null then array['n:' || lower(p0.norm)] else array[]::text[] end as keys,
+      coalesce(w.lead, p0.norm)                        as lead,
+      coalesce(w.patterns, array['%' || p0.norm || '%']) as patterns
     from probe p0
+    left join lateral (
+      select
+        (array_agg(t.word order by char_length(t.word) desc, t.word))[1] as lead,
+        array_agg('%' || t.word || '%' order by char_length(t.word) desc, t.word) as patterns
+      from (
+        select case when n.w like U&'\0627\0644%' and char_length(n.w) >= 4
+                    then substr(n.w, 3) else n.w end as word
+        from regexp_split_to_table(p0.raw, U&'[[:space:][:punct:]\060C\061B]+') as piece
+        cross join lateral (select public.phx_normalize_arabic(piece) as w) n
+      ) t
+      where t.word is not null
+        and t.word <> all (array['صيدليه', 'الصيدليه', 'صيدليات', 'ص', 'د', 'دكتور', 'دكتوره', 'pharmacy', 'dr'])
+    ) w on true
   ),
   hits as (
     select
@@ -42544,17 +42559,20 @@ CREATE FUNCTION public.phx_search_direct_order_customers(p_query text, p_distrib
       null::text            as phoenix_pharmacy_code,
       null::text            as verification_status,
       (m.customer_code = p.raw)              as exact_code,
-      (m.customer_code ilike p.raw || '%')   as prefix_code
+      (m.customer_code ilike p.raw || '%')   as prefix_code,
+      case when p.lead = p.norm then true
+           else (m.customer_code ilike '%' || p.raw || '%'
+                 or public.phx_normalize_arabic(m.customer_name) ilike '%' || p.norm || '%') end as old_match
     from public.source_of_sales_customer_map m, probe_kind p
     where m.active
       and p.raw <> ''
       and not p.short_probe
+      and cardinality(p.patterns) <= 1
       and (p_distributor_code is null or m.distributor_code = p_distributor_code)
       and (
         m.customer_code ilike p.raw || '%'
         or m.customer_code ilike '%' || p.raw || '%'
-        or (p.norm is not null
-            and public.phx_normalize_arabic(m.customer_name) ilike '%' || p.norm || '%')
+        or public.phx_normalize_arabic(m.customer_name) ilike '%' || p.lead || '%'
       )
 
     union all
@@ -42571,7 +42589,40 @@ CREATE FUNCTION public.phx_search_direct_order_customers(p_query text, p_distrib
       null::text            as phoenix_pharmacy_code,
       null::text            as verification_status,
       (m.customer_code = p.raw)              as exact_code,
-      (m.customer_code ilike p.raw || '%')   as prefix_code
+      (m.customer_code ilike p.raw || '%')   as prefix_code,
+      (m.customer_code ilike '%' || p.raw || '%'
+       or public.phx_normalize_arabic(m.customer_name) ilike '%' || p.norm || '%') as old_match
+    from public.source_of_sales_customer_map m, probe_kind p
+    where m.active
+      and p.raw <> ''
+      and not p.short_probe
+      and cardinality(p.patterns) > 1
+      and (p_distributor_code is null or m.distributor_code = p_distributor_code)
+      and (
+        m.customer_code ilike p.raw || '%'
+        or m.customer_code ilike '%' || p.raw || '%'
+        or (public.phx_normalize_arabic(m.customer_name) ilike p.patterns[1]
+            and public.phx_normalize_arabic(m.customer_name) ilike p.patterns[2]
+            and (cardinality(p.patterns) = 2
+                 or public.phx_normalize_arabic(m.customer_name) ilike all (p.patterns)))
+      )
+
+    union all
+
+    select
+      'directory'::text     as source,
+      m.distributor_code,
+      m.customer_code,
+      m.customer_name,
+      m.address,
+      m.brick_id,
+      m.area_code,
+      m.region_code,
+      null::text            as phoenix_pharmacy_code,
+      null::text            as verification_status,
+      (m.customer_code = p.raw)              as exact_code,
+      (m.customer_code ilike p.raw || '%')   as prefix_code,
+      true                                   as old_match
     from public.source_of_sales_customer_map m, probe_kind p
     where m.active
       and p.raw <> ''
@@ -42593,7 +42644,10 @@ CREATE FUNCTION public.phx_search_direct_order_customers(p_query text, p_distrib
       ph.phoenix_pharmacy_code,
       ph.verification_status,
       (c.customer_code = p.raw)              as exact_code,
-      (c.customer_code ilike p.raw || '%')   as prefix_code
+      (c.customer_code ilike p.raw || '%')   as prefix_code,
+      coalesce(c.customer_code ilike '%' || p.raw || '%'
+               or ph.phoenix_pharmacy_code ilike '%' || p.raw || '%'
+               or public.phx_normalize_arabic(ph.pharmacy_name) ilike '%' || p.norm || '%', false) as old_match
     from public.direct_order_pharmacies ph
     left join public.direct_order_pharmacy_distributor_codes c on c.pharmacy_id = ph.id
     cross join probe_kind p
@@ -42605,13 +42659,14 @@ CREATE FUNCTION public.phx_search_direct_order_customers(p_query text, p_distrib
         or c.customer_code ilike '%' || p.raw || '%'
         or ph.phoenix_pharmacy_code ilike '%' || p.raw || '%'
         or (p.norm is not null
-            and public.phx_normalize_arabic(ph.pharmacy_name) ilike '%' || p.norm || '%')
+            and public.phx_normalize_arabic(ph.pharmacy_name) ilike all (p.patterns))
       )
   )
   select h.source, h.distributor_code, h.customer_code, h.customer_name, h.address,
          h.brick_id, h.area_code, h.region_code, h.phoenix_pharmacy_code, h.verification_status
   from hits h
   order by
+    h.old_match desc nulls last,
     (h.source = 'phoenix') desc,
     h.exact_code desc nulls last,
     h.prefix_code desc nulls last,
@@ -42627,7 +42682,7 @@ ALTER FUNCTION public.phx_search_direct_order_customers(p_query text, p_distribu
 -- Name: FUNCTION phx_search_direct_order_customers(p_query text, p_distributor_code text, p_limit integer); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_search_direct_order_customers(p_query text, p_distributor_code text, p_limit integer) IS 'Type-ahead over the SoS customer directory for the direct-order form. Matches customer_code (prefix, then contains) OR the Arabic-normalized customer_name. Unnamed customers ARE returned -- the caller labels them "(no name on file)" rather than hiding them. The direct-orders service applies the caller''s area scope to these rows; this function does not.';
+COMMENT ON FUNCTION public.phx_search_direct_order_customers(p_query text, p_distributor_code text, p_limit integer) IS 'Direct Orders customer picker. Matches the customer code (prefix, then contains) or the name word by word: every typed word, Arabic-normalised, anywhere in the normalised name, in any order, with the generic words pharmacy/doctor left out and a leading al- dropped. A 1-2 character probe is answered from source_of_sales_customer_map_search_keys_idx. SECURITY INVOKER: callers reach it with the service role.';
 
 --
 -- Name: phx_seat_start_follows_hire_date(); Type: FUNCTION; Schema: public; Owner: postgres
