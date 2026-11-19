@@ -52,6 +52,7 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import { parseListSheetHours } from "@/lib/phoenix-crm/list-sheet-hours";
 import { parseListType, type PhoenixListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
 import type { PhoenixCrmGrade, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
 /** The sheet the fillable table lives on. Single word: a formula or a validation needs no quoting. */
@@ -351,7 +352,8 @@ export function parseTemplateRow(row: number, cells: Partial<Record<TemplateColu
       row,
       listType,
       name,
-      speciality: text(raw.speciality, 120),
+      // Folded into the one list name a sheet's spelling means ("Pedia", "اطفال" → Pediatrics).
+      speciality: normalizeSpeciality(text(raw.speciality, 120)),
       grade,
       potentialGrade,
       phone: phone.value,

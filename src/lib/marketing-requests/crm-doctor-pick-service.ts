@@ -28,6 +28,7 @@ import { personKey, territoriesInScope, type OrgSeat } from "@/lib/phoenix-crm/s
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -54,7 +55,7 @@ async function loadListRows(seatIds: ReadonlyArray<string>, extra?: { ids: Reado
         () => {
           let query = getSupabaseAdmin()
             .from("phoenix_crm_customers")
-            .select("id, seat_id, name, speciality, list_type, status")
+            .select("id, seat_id, name, speciality, customer_type, list_type, status")
             .in("seat_id", part)
             .eq("is_test", false)
             .in("status", ["active", "pending"])
@@ -95,7 +96,7 @@ export async function loadCrmDoctorsForArea(access: AccessContext, areaSeatId: u
         {
           crmCustomerId,
           name,
-          speciality: textOrNull(row.speciality),
+          speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
           listType,
           repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
           lineName: seat.lineName,

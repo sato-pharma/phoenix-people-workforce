@@ -32,6 +32,7 @@ import {
   type MasterVisit,
 } from "@/lib/phoenix-crm/master-list";
 import { territoryName } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
@@ -125,7 +126,7 @@ export async function loadMasterList(viewer: PhoenixCrmViewer): Promise<MasterLi
   const places = placeRead.rows.filter((row) => !inScope || inScope.has(String(row.seat_id)));
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
   const [customers, names] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
+    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality, customer_type", "id", customerIds),
     loadPeopleNames([...places.map((row) => text(row.created_by_hr_id)), ...decisionRead.rows.map((row) => text(row.decided_by_hr_id))]),
   ]);
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
@@ -141,7 +142,7 @@ export async function loadMasterList(viewer: PhoenixCrmViewer): Promise<MasterLi
       seatId: String(row.seat_id),
       title,
       listType: String(customer.list_type ?? ""),
-      speciality: text(customer.speciality),
+      speciality: customerKindText(text(customer.customer_type), text(customer.speciality)),
       nameWords: personNameWords(title).map((word) => word.word),
       point: anchor?.point ?? null,
       // The anchor is the photograph's own fix whenever that fix is usable (matchAnchorOf's order).

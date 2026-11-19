@@ -43,7 +43,9 @@ const ADD_PATH_MIGRATION = "supabase/migrations/20261015135844_the_add_path_writ
 /** Re-creates the trigger with one more WHEN condition: a campaign-visit holder names nobody. */
 const HOLDER_MIGRATION = "supabase/migrations/20261029212200_phoenix_crm_imports_ireports360_history.sql";
 /** Every file that creates the trigger, oldest first. The last is the live one, and the one read below. */
-const TRIGGER_MIGRATIONS = [ADD_PATH_MIGRATION, HOLDER_MIGRATION];
+/** Re-creates it once more to fire on the customer's type too (owner, 2026-11-19: type apart from speciality). */
+const CUSTOMER_TYPE_MIGRATION = "supabase/migrations/20261119151229_phoenix_crm_customer_type_apart_from_speciality.sql";
+const TRIGGER_MIGRATIONS = [ADD_PATH_MIGRATION, HOLDER_MIGRATION, CUSTOMER_TYPE_MIGRATION];
 
 /**
  * The refresh migration to compare against is the NEWEST migration that re-creates the function, found
@@ -129,7 +131,7 @@ export function runPhoenixCrmAddPathNameRowTests() {
   );
   assert.match(
     trigger,
-    /create or replace trigger phoenix_crm_customers_write_contact_name_row\s+after insert or update of status, name, speciality, phone\s+on public\.phoenix_crm_customers\s+for each row/,
+    /create or replace trigger phoenix_crm_customers_write_contact_name_row\s+after insert or update of status, name, speciality, customer_type, phone\s+on public\.phoenix_crm_customers\s+for each row/,
     "the add path's name row is written by an AFTER INSERT OR UPDATE trigger on public.phoenix_crm_customers — " +
       "without it the only writer of crm_contacts is the hourly refresh again, and a doctor a rep just " +
       "added has no name row for minutes",

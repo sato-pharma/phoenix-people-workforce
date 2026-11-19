@@ -42,6 +42,7 @@ import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { SIGNBOARD_SYSTEM_ACTOR } from "@/lib/phoenix-crm/server/signboard-holds";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import type { PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -55,7 +56,7 @@ function text(value: unknown): string | null {
 }
 
 const CUSTOMER_COLUMNS =
-  "id, seat_id, line_code, list_type, name, speciality, phone, status, validated_at, validated_by_hr_id, full_name_held, reference_contact_crm_id";
+  "id, seat_id, line_code, list_type, name, speciality, customer_type, phone, status, validated_at, validated_by_hr_id, full_name_held, reference_contact_crm_id";
 const PLACE_COLUMNS = "id, customer_id, seat_id, point_source, lat, lon, accuracy_meters, captured_at";
 const LOCATION_COLUMNS =
   "id, status, lat, lon, accuracy_meters, address, zone, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name";
@@ -142,7 +143,7 @@ export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<T
       isTest: scope.isTest,
       listType: String(row.list_type),
       name: String(row.name ?? ""),
-      speciality: text(row.speciality),
+      speciality: customerKindText(text(row.customer_type), text(row.speciality)),
       status: String(row.status),
       validatedAt: text(row.validated_at),
       validatedByHrId: text(row.validated_by_hr_id),

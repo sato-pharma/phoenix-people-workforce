@@ -20,6 +20,7 @@ import { TABLE_TOOL_ROLES } from "@/lib/chatgpt-connector/tools/table-guard";
 import { addPhoenixTableSheet, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 import { defineTool } from "@/lib/chatgpt-connector/types";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 
 export type CustomerListKind = "doctors" | "pharmacies" | "all";
 
@@ -46,6 +47,7 @@ export type CustomerRow = {
   name: string;
   full_name_held: string | null;
   speciality: string | null;
+  customer_type?: string | null;
   grade: string | null;
   potential_grade: string | null;
   status: string;
@@ -75,7 +77,7 @@ export type SeatRow = {
 export type PersonRow = { hr_id: string; full_name: string | null };
 
 const CUSTOMER_COLUMNS =
-  "id, seat_id, line_code, list_type, name, full_name_held, speciality, grade, potential_grade, status, origin, phone, primary_pharmacy_name, " +
+  "id, seat_id, line_code, list_type, name, full_name_held, speciality, customer_type, grade, potential_grade, status, origin, phone, primary_pharmacy_name, " +
   "pharmacy_pin_address, pharmacy_pin_governorate, pharmacy_pin_area_name, pharmacy_pin_brick_name, validated_at, dropped_reason, dropped_note, created_at, status_changed_at";
 
 export const CUSTOMER_LIST_COLUMNS: ExportColumn[] = [
@@ -138,7 +140,7 @@ export function nameCustomerRows(customers: readonly CustomerRow[], seats: reado
     const row: ExportRow = {
       name: customer.name,
       full_name_held: customer.full_name_held ?? "",
-      speciality: customer.speciality ?? "",
+      speciality: customerKindText(customer.customer_type, customer.speciality) ?? "",
       grade: customer.grade ?? "",
       potential_grade: customer.potential_grade ?? "",
       list: customer.list_type,

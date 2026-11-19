@@ -65,6 +65,7 @@ import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components
 import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
 import { decidersText, logVisitTypeLabel, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
 import { saveDayActivity, UnplannedChoice, VisitStart } from "@/components/phoenix-crm/visit-start";
+import { VisitKindGate } from "@/components/phoenix-crm/visit-kind-gate";
 import { VisitRecordingGate } from "@/components/phoenix-crm/visit-recording-gate";
 import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-store";
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
@@ -927,6 +928,14 @@ function AddFlow({
     </CrmPanel>
   );
 
+  // Owner, 2026-11-19: a customer still owing his type, or a clinic its speciality, is asked for it by the
+  // territory's own rep before the visit; a manager logging on the seat is never asked. The save reloads
+  // the form, the customer no longer owes it, and the same step carries on.
+  const kindFirst = (customer: VisitCustomerOption) => (
+    <VisitKindGate back={back} customer={customer} key={customer.customerId} onSaved={resource.reload} seatId={seatId} test={test} />
+  );
+  const owesKind = (customer: VisitCustomerOption) => customer.kindMissing && loaded.enteredAs === "rep";
+
   // 🔴 A REP THE SUPER ADMIN SWITCHED ON RECORDS THE VISIT BEFORE ANY STEP OF LOGGING IT (owner,
   // 2026-10-16). The first screen stays reachable — it also carries the day's activity, which is not a
   // visit — and every road from it to a customer or the form passes through the recorder first. A rep
@@ -966,6 +975,7 @@ function AddFlow({
     // Owner, 2026-11-07: a doctor he added with one or two names is not visited until the full name is written.
     if (customer.validateFirst) return validateFirst(customer);
     if (customer.needsFullName) return fullNameFirst(customer);
+    if (owesKind(customer)) return kindFirst(customer);
     current = routeFor(customer);
   }
 
@@ -1113,6 +1123,7 @@ function AddFlow({
       if (customer.waitingToSend) return alreadyWaiting(customer);
       if (customer.validateFirst) return validateFirst(customer);
       if (customer.needsFullName) return fullNameFirst(customer);
+      if (owesKind(customer)) return kindFirst(customer);
       return shell(
         formStep,
         <VisitLogForm
