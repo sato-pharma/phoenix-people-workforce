@@ -108,6 +108,8 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   // ── Deductions ──────────────────────────────────────────────────────────────────────────────
   { module: "deductions", eventType: "deduction_pushed", label: "A payroll deduction was recorded against you", sentFrom: ["src/lib/deductions/notify-deduction.ts"] },
   { module: "deductions", eventType: "deduction_pushed_cc", label: "A payroll deduction was recorded for your team member", sentFrom: ["src/lib/deductions/notify-deduction.ts"] },
+  // Owner, 2026-11-19: Hany Saad is emailed the rep's deduction detail for every rep under him.
+  { module: "deductions", eventType: "deduction_pushed_manager_copy", label: "A payroll deduction was recorded for a rep on your team (email copy)", sentFrom: ["src/lib/deductions/notify-deduction.ts"] },
   { module: "deductions", eventType: "deductions_comment", label: "A new comment on a deduction", sentFrom: ["src/lib/deductions/comments.ts"] },
   { module: "deductions", eventType: "dispute_center_opened", label: "An employee disputed a daily deduction", sentFrom: [DISPUTE_CENTER] },
   { module: "deductions", eventType: "dispute_center_message", label: "A new message on a deduction dispute", sentFrom: [DISPUTE_CENTER] },

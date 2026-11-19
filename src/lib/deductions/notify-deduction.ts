@@ -27,6 +27,14 @@
 //     a manager cannot open a self-only portal, and his decision was about the employee's own
 //     email, not about widening who sees the figure.
 //
+// ONE NAMED EXCEPTION to "the manager is never emailed" — the owner, 2026-11-19: "in deduction
+// notifications to reps reporting to manager reporting to hany saad make hany saad informed with the
+// deductions emails and notifications". Hany Saad (Regional Sales Manager) is ALSO emailed the same
+// detail the rep's own email carries — amount, reason, days — for every Medical Rep whose territory
+// sits under him. It is a rule about WHO, kept as data (DEDUCTION_EMAIL_COPY_RECIPIENTS), never a
+// widening of the CC: every other manager, and Hany himself for anyone who is not a rep under him,
+// still gets the bare in-app + Telegram heads-up only.
+//
 // Managers are named by NAME, never by HR code, on every channel.
 //
 // Everything is INJECTABLE so the tests never touch production: the real senders would notify real
@@ -108,6 +116,40 @@ export function resolveDeductionNotificationCc(input: {
   }
 
   return cc;
+}
+
+/**
+ * The managers who are EMAILED a copy of a Medical Rep's deduction (amount, reason, days) for every
+ * rep under them — the owner's 2026-11-19 instruction for Hany Saad. Data, not a title rule: adding
+ * a second person is his decision, one row here.
+ */
+export const DEDUCTION_EMAIL_COPY_RECIPIENTS: readonly { hrId: string; label: string }[] = [
+  { hrId: "PD-0001", label: "Hany Saad Mohamed Omar" },
+];
+
+/**
+ * Who gets the emailed copy of `employeeHrId`'s deduction: each DEDUCTION_EMAIL_COPY_RECIPIENTS
+ * person who sits in the manager chain above a Medical Rep territory the employee holds. A District
+ * Manager's own deduction, or anyone without a rep territory, yields nobody. Pure.
+ */
+export function resolveDeductionEmailCopyRecipients(input: {
+  employeeHrId: string;
+  orgIndex: OrgIndex;
+  recipients?: readonly { hrId: string }[];
+}): string[] {
+  const self = personKey(input.employeeHrId);
+  const territories = ownTerritories(input.orgIndex, input.employeeHrId);
+  if (territories.length === 0) return [];
+  const chain = new Set(
+    territories.flatMap((territory) => managerChain(input.orgIndex, territory.seatId).map((member) => personKey(member.hrId))),
+  );
+  const out: string[] = [];
+  for (const recipient of input.recipients ?? DEDUCTION_EMAIL_COPY_RECIPIENTS) {
+    const key = personKey(recipient.hrId);
+    if (!key || key === self || !chain.has(key) || out.includes(key)) continue;
+    out.push(key);
+  }
+  return out;
 }
 
 async function loadDirectManagerHrIdDefault(employeeHrId: string): Promise<string | null> {
@@ -223,11 +265,35 @@ export function buildDeductionEmailSummary(line: DeductionPushNoticeLine, monthL
   return `${opening} Reason: ${reason}. Open your Deductions page for the full record, and speak to your manager or HR if you believe this is wrong.`;
 }
 
+/** The opening of the named manager's email copy — the same figure, in the third person. */
+export function buildDeductionManagerCopySummary(
+  line: DeductionPushNoticeLine,
+  monthLabel: string,
+  employeeName: string,
+): string {
+  const reason = deductionCategoryName(line.category);
+  const amount =
+    typeof line.amount === "number" && Number.isFinite(line.amount)
+      ? formatCurrencyValue(line.amount, null, { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+      : null;
+  const days =
+    typeof line.daysCount === "number" && Number.isFinite(line.daysCount) && line.daysCount > 0
+      ? formatDaysCharged(line.daysCount)
+      : null;
+  const charged = [amount, days && `${days} deducted`].filter(Boolean).join(" · ");
+  const opening = charged
+    ? `A payroll deduction of ${charged} has been recorded for ${employeeName}, a Medical Representative on your team, for ${monthLabel}.`
+    : `A payroll deduction has been recorded for ${employeeName}, a Medical Representative on your team, for ${monthLabel}.`;
+  return `${opening} Reason: ${reason}. This copy is for your information; the employee has been told directly.`;
+}
+
 export type DeductionPushNotificationResult = {
   /** What to stamp on the line's notification_status. */
   status: "sent" | "failed" | "skipped";
   employeeNotified: boolean;
   ccHrIds: string[];
+  /** Who was emailed the named manager copy (DEDUCTION_EMAIL_COPY_RECIPIENTS). */
+  emailCopyHrIds?: string[];
   error?: string;
 };
 
@@ -317,8 +383,10 @@ export async function notifyDeductionPushed(input: {
   // channel here, so a manager's inbox cannot carry a colleague's deduction even if a template were
   // added later. His decision widened what the EMPLOYEE's own email says, not who sees the figure.
   let ccHrIds: string[] = [];
+  let orgIndexForCopy: OrgIndex | null = null;
   try {
     const orgIndex = await loadOrg();
+    orgIndexForCopy = orgIndex;
     const directManagerHrId = await loadDirectManagerHrId(line.employeeHrId);
     ccHrIds = resolveDeductionNotificationCc({
       employeeHrId: line.employeeHrId,
@@ -350,11 +418,51 @@ export async function notifyDeductionPushed(input: {
     logNotificationSendFailure("deductions.notifyManagers", error);
   }
 
+  // The named email copy (owner, 2026-11-19 — Hany Saad for every rep under him). EMAIL ONLY: he
+  // already has the in-app + Telegram heads-up from the CC above, so this adds the paper trail the
+  // rep's own email carries — amount, reason, days — without a second bell. No action link: the
+  // Deductions page is self-only and he cannot open the rep's.
+  let emailCopyHrIds: string[] = [];
+  try {
+    const orgIndex = orgIndexForCopy ?? (await loadOrg());
+    emailCopyHrIds = resolveDeductionEmailCopyRecipients({ employeeHrId: line.employeeHrId, orgIndex });
+    for (const recipientHrId of emailCopyHrIds) {
+      await send({
+        module: "deductions",
+        eventType: "deduction_pushed_manager_copy",
+        channels: ["email"],
+        recipientHrId,
+        subjectHrId: line.employeeHrId,
+        actorId: input.actorHrId ?? null,
+        title: "Deduction recorded for a team member",
+        message: `A payroll deduction has been recorded for ${employeeName} for ${monthLabel}.`,
+        email: {
+          metrics: buildDeductionEmailMetrics(line, monthLabel),
+          subject: `Payroll deduction recorded — ${employeeName} — ${monthLabel}`,
+          summary: buildDeductionManagerCopySummary(line, monthLabel, employeeName),
+          templateKey: "general",
+          title: "Deduction recorded for a team member",
+          tone: "warning",
+        },
+        metadata: {
+          authorizedRecipient: true,
+          idempotencyKey: `deduction-pushed-copy:${line.noticeKey ?? line.id}:${recipientHrId}`,
+          monthKey: line.monthKey,
+          lineId: line.id,
+          subjectEmployeeName: employeeName,
+        },
+      });
+    }
+  } catch (error) {
+    logNotificationSendFailure("deductions.notifyEmailCopy", error);
+  }
+
   const status = statusFromResult(employeeResult);
   return {
     status,
     employeeNotified: status === "sent",
     ccHrIds,
+    emailCopyHrIds,
     error: employeeResult ? undefined : "employee notification did not run",
   };
 }
