@@ -1,18 +1,33 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { acknowledgmentTokenFromError } from "@/lib/automated-payroll/acknowledgment-token";
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
+import { assertAutomatedPayrollHrActor } from "@/lib/automated-payroll/permissions";
 import {
   confirmPart2,
   DATA_QUALITY_ACK_REQUIRED,
   OVERPAID_ACK_REQUIRED,
   POPULATION_DIFF_ACK_REQUIRED,
 } from "@/lib/automated-payroll/run-service";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The wizard sends each server-minted token it has earned (null for the rest) and the "Email them too"
+ * box (REC-060). Any other key (an old boolean flag) is dropped by the schema and is no acknowledgement.
+ */
+const Part2ConfirmBodySchema = z.object({
+  acknowledgeOverpaidToken: z.string().nullable().optional(),
+  acknowledgeDataIssuesToken: z.string().nullable().optional(),
+  acknowledgePopulationDiffToken: z.string().nullable().optional(),
+  sendEmail: z.boolean().optional(),
+});
 
 export async function POST(request: Request, { params }: { params: Promise<{ runId: string }> }) {
   try {
@@ -20,15 +35,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     if (csrf) return csrf;
     const { runId } = await params;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: the service's own gate, asked before the body is judged.
+    assertAutomatedPayrollHrActor(access);
     // Acknowledgements are SERVER-MINTED TOKENS, never booleans (audit finding 53): a caller cannot
     // say yes to a warning this server never showed it. A body that still sends the old
     // `acknowledgeOverpaid: true` flag is simply not an acknowledgement, and the gate fires.
-    const body = (await request.json().catch(() => ({}))) as {
-      acknowledgeOverpaidToken?: unknown;
-      acknowledgeDataIssuesToken?: unknown;
-      acknowledgePopulationDiffToken?: unknown;
-      sendEmail?: unknown;
-    };
+    const parsed = await parseJsonBody(request, Part2ConfirmBodySchema, { fallback: {} });
+    if (!parsed.ok) return jsonError(new Error(`Validation: ${parsed.message}`));
+    const body = parsed.data;
     const token = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : null);
     const run = await confirmPart2(access, runId, {
       acknowledgeOverpaidToken: token(body.acknowledgeOverpaidToken),

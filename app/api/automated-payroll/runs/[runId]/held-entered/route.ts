@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import {
@@ -7,10 +8,23 @@ import {
   recordEnteredHeld,
 } from "@/lib/automated-payroll/held-settlements";
 import { assertAutomatedPayrollHrActor } from "@/lib/automated-payroll/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * `{ heldRunId, hrId, amount, note }` from the held-entered panel and the Held Salary Release step
+ * (REC-060). The amount may arrive as a number or a typed string; the service judges its value.
+ */
+const EnteredHeldBodySchema = z.object({
+  heldRunId: z.string().optional(),
+  hrId: z.string().optional(),
+  amount: z.union([z.number(), z.string()]).nullable().optional(),
+  note: z.string().optional(),
+});
 
 /**
  * Held in a month that did not record names (owner decision, 2026-11-09: HR types the held amount).
@@ -41,13 +55,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const { runId } = await params;
-    const body = (await request.json().catch(() => ({}))) as {
-      heldRunId?: string;
-      hrId?: string;
-      amount?: number | string;
-      note?: string;
-    };
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: the service's own gate, asked before the body is judged.
+    assertAutomatedPayrollHrActor(access);
+    const parsed = await parseJsonBody(request, EnteredHeldBodySchema, { fallback: {} });
+    if (!parsed.ok) return jsonError(new Error(`Validation: ${parsed.message}`));
+    const body = parsed.data;
     const entry = await recordEnteredHeld(access, runId, {
       heldRunId: String(body.heldRunId ?? ""),
       hrId: String(body.hrId ?? ""),
