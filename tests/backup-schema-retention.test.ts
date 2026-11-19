@@ -301,6 +301,11 @@ export function runBackupSchemaRetentionTests() {
     assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: "2026-02-30" } })), /use one real date/);
     assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: "20260926" } })), /use one real date/);
     assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: 20260926 } })), /use one real date/);
+    // A table key must name a schema the table sweep reads, and exactly one table.
+    assert.deepEqual(Object.keys(readDecisions(write({ "au.bak_20261008_luxor_notes_fix": good }))), ["au.bak_20261008_luxor_notes_fix"]);
+    assert.throws(() => readDecisions(write({ "sos.bak_20261008_x": good })), /decided as <schema>\.<table>/, "sos is not swept for tables");
+    assert.throws(() => readDecisions(write({ "au.a.b_20261008": good })), /decided as <schema>\.<table>/);
+    assert.throws(() => readDecisions(write({ "au.": good })), /decided as <schema>\.<table>/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -309,13 +314,20 @@ export function runBackupSchemaRetentionTests() {
   // A schema need not carry a date in its OWN name: `ops_backup`, `marketing_rollback` and
   // `map_audit_baseline` are aged by the dates on their tables (snapshotDateOf), and all three were
   // put to him on the December 2026 sheet.
+  // A dated snapshot TABLE in `public` or `au` is decided under `<schema>.<table>` (2026-11-19).
   const real = readDecisions();
-  for (const [schema, entry] of Object.entries(real)) {
-    assert.match(schema, /^[a-z_][a-z0-9_]*$/, `${schema} is not a schema name`);
-    assert.ok(!STANDARD_SCHEMAS.has(schema), `${schema} is a standard schema — never a snapshot to decide`);
-    assert.ok(entry.decidedBy && entry.sheet, `${schema}: decidedBy and the sheet that put it to him`);
+  for (const [key, entry] of Object.entries(real)) {
+    if (key.includes(".")) {
+      const [owner, table] = key.split(".");
+      assert.ok(SNAPSHOT_TABLE_SCHEMAS.includes(owner), `${key}: a table decision names a schema the table sweep reads`);
+      assert.equal(isSnapshotTableName(table), true, `${key}: the table sweep must actually claim this table, or the decision does nothing`);
+    } else {
+      assert.match(key, /^[a-z_][a-z0-9_]*$/, `${key} is not a schema name`);
+      assert.ok(!STANDARD_SCHEMAS.has(key), `${key} is a standard schema — never a snapshot to decide`);
+    }
+    assert.ok(entry.decidedBy && entry.sheet, `${key}: decidedBy and the sheet that put it to him`);
   }
-  assert.ok(Object.keys(real).length >= 105, "the November nine, the December 92 and the four of 19 Nov are all recorded");
+  assert.ok(Object.keys(real).length >= 108, "the November nine, the December 92, the four of 19 Nov and the three tables of 19 Nov are all recorded");
 
   // ------------------------------------------------- export, then drop
   //
@@ -326,6 +338,11 @@ export function runBackupSchemaRetentionTests() {
     auditSource,
     /decision === "export-then-drop" && !existsSync\(manifest\)\) \{[\s\S]{0,300}?continue;/,
     "an export-then-drop schema must get NO drop statement until its export manifest is on disk",
+  );
+  assert.match(
+    auditSource,
+    /decision === "export-then-drop" && !existsSync\(tableManifest\)\) \{[\s\S]{0,300}?continue;/,
+    "an export-then-drop TABLE must get NO drop statement until its own export manifest is on disk",
   );
 
   const exportSource = readFileSync(new URL("../scripts/export-backup-schema.mjs", import.meta.url), "utf8");
@@ -400,10 +417,18 @@ export function runBackupSchemaRetentionTests() {
     VERDICT.PINNED,
     "A VIEW MUST BEAT AGE — five years old against a one-day retention and it still stays",
   );
+  // The age rules for tables are asserted WITH a "drop" decision in hand, as for schemas above, so
+  // EXPIRED still means "the age rule let it through"; "no decision, no drop" has its own block below.
+  const dropTable = drop("public.address_brick_moves_20261013");
   assert.equal(
-    classifyTable({ ...pinnedTable, blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    classifyTable({ ...pinnedTable, blockers: [] }, { today: "2031-01-01", retentionDays: 1, decisions: dropTable }).verdict,
     VERDICT.EXPIRED,
     "without the view the same table expires — so the check above is load-bearing",
+  );
+  assert.equal(
+    classifyTable(pinnedTable, { today: "2031-01-01", retentionDays: 1, decisions: dropTable }).verdict,
+    VERDICT.PINNED,
+    "the owner's drop decision never beats a live view either",
   );
 
   // The owner's exemption mechanism, exercised rather than assumed. It ships empty on purpose.
@@ -412,7 +437,7 @@ export function runBackupSchemaRetentionTests() {
   EXEMPT_SNAPSHOT_TABLES[exemptKey] = { why: "test-only entry" };
   try {
     assert.equal(
-      classifyTable({ schema: "public", table: "address_brick_moves_20261013", blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+      classifyTable({ schema: "public", table: "address_brick_moves_20261013", blockers: [] }, { today: "2031-01-01", retentionDays: 1, decisions: dropTable }).verdict,
       VERDICT.PROTECTED,
       "an exempt table must never expire on age alone",
     );
@@ -421,15 +446,64 @@ export function runBackupSchemaRetentionTests() {
   }
   // Negative control: with the entry gone it expires again, so the exemption did the work.
   assert.equal(
-    classifyTable({ schema: "public", table: "address_brick_moves_20261013", blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    classifyTable({ schema: "public", table: "address_brick_moves_20261013", blockers: [] }, { today: "2031-01-01", retentionDays: 1, decisions: dropTable }).verdict,
     VERDICT.EXPIRED,
   );
 
-  const atTable = (date: string, retentionDays: number) =>
-    classifyTable(
-      { schema: "public", table: `x_backup_${date.split("-").join("")}`, blockers: [] },
-      { today: TODAY, retentionDays },
-    );
+  // 🔴 NO DECISION, NO DROP — for a table exactly as for a schema (2026-11-19). Until then a dated
+  // table went EXPIRED on age alone, so `au.zz_brick_backfill_snapshot_20260827` would have been
+  // printed for dropping on 25 Nov 2026 with no decision of the owner's behind it.
+  const brick = { schema: "au", table: "zz_brick_backfill_snapshot_20260827", blockers: [] };
+  assert.equal(
+    classifyTable(brick, { today: "2026-11-25", decisions: {} }).verdict,
+    VERDICT.UNDECIDED,
+    "a table past 90 days with no recorded decision is UNDECIDED, never EXPIRED",
+  );
+  assert.equal(classifyTable(brick, { today: "2026-11-25" }).verdict, VERDICT.UNDECIDED, "no decisions passed at all is no decision");
+  assert.equal(classifyTable(brick, { today: "2026-11-24", decisions: {} }).verdict, VERDICT.YOUNG, "the day before 90 days it is still young");
+  // A decision recorded for the SCHEMA `au` or for another table is not a decision for this one.
+  assert.equal(
+    classifyTable(brick, { today: "2026-11-25", decisions: { ...drop("au"), ...drop("au.bak_20260828_d3_seats") } }).verdict,
+    VERDICT.UNDECIDED,
+    "only an entry under au.<this table> decides it",
+  );
+  // Negative control: his entry under the table's own key is what moves it.
+  assert.equal(
+    classifyTable(brick, { today: "2026-11-25", decisions: drop("au.zz_brick_backfill_snapshot_20260827") }).verdict,
+    VERDICT.EXPIRED,
+  );
+  const keepTable = (until?: string) => ({
+    "au.zz_brick_backfill_snapshot_20260827": {
+      decision: "keep" as const, decidedOn: "2026-11-19", decidedBy: "owner", why: "test", ...(until ? { until } : {}),
+    },
+  });
+  assert.equal(classifyTable(brick, { today: "2027-06-01", decisions: keepTable() }).verdict, VERDICT.PROTECTED, "a keep with no date is for good");
+  assert.equal(classifyTable(brick, { today: "2026-12-01", decisions: keepTable("2027-02-23") }).verdict, VERDICT.PROTECTED);
+  assert.equal(
+    classifyTable(brick, { today: "2027-02-23", decisions: keepTable("2027-02-23") }).verdict,
+    VERDICT.UNDECIDED,
+    "a keep that runs out goes back to him, never straight to a drop",
+  );
+
+  // His three answers of 19 Nov 2026 are recorded under the tables' own keys, and they are the
+  // ones that take effect on 25 and 26 Nov.
+  const realTables = readDecisions();
+  for (const [key, date] of [
+    ["au.zz_brick_backfill_snapshot_20260827", "2026-11-25"],
+    ["au.bak_20260828_d3_line_area_map", "2026-11-26"],
+    ["au.bak_20260828_d3_seats", "2026-11-26"],
+  ] as const) {
+    assert.equal(realTables[key]?.decision, "export-then-drop", `${key}: the owner's 19 Nov answer`);
+    const [schema, table] = key.split(".");
+    const verdict = classifyTable({ schema, table, blockers: [] }, { today: date, decisions: realTables });
+    assert.equal(verdict.verdict, VERDICT.EXPIRED, `${key} is due on ${date} by his decision`);
+    assert.equal(verdict.decision?.decision, "export-then-drop", `${key}: the export comes first`);
+  }
+
+  const atTable = (date: string, retentionDays: number) => {
+    const table = `x_backup_${date.split("-").join("")}`;
+    return classifyTable({ schema: "public", table, blockers: [] }, { today: TODAY, retentionDays, decisions: drop(`public.${table}`) });
+  };
   assert.equal(atTable("2026-08-31", 30).verdict, VERDICT.YOUNG, "29 days old under a 30-day retention");
   assert.equal(atTable("2026-08-30", 30).verdict, VERDICT.EXPIRED, "exactly at the retention age is expired");
   assert.equal(atTable("2027-01-01", 30).verdict, VERDICT.YOUNG, "a future date is not 'very old'");

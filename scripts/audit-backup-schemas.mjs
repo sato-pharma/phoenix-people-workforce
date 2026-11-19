@@ -100,6 +100,11 @@ export const VERDICT = {
  * its `until` date, or for good when it has none. Each entry is one schema, decided by record and
  * never by sweep — the review sheet that put each one to him is named in `sheet`.
  *
+ * A dated snapshot TABLE in `public` or `au` (see SNAPSHOT_TABLE_SCHEMAS) is decided the same way,
+ * keyed `<schema>.<table>` — the same rule, because until 2026-11-19 a table went EXPIRED on age
+ * alone, so `au.zz_brick_backfill_snapshot_20260827` would have been offered for dropping on
+ * 25 Nov 2026 with no decision of his behind it.
+ *
  * `dated` (optional, YYYY-MM-DD) is the day a snapshot was taken, recorded by hand for a schema
  * whose name and table names carry no date at all. Without it such a schema is UNDATED forever and
  * his decision can never take effect. It is a FALLBACK only: a date in the schema or table names
@@ -126,6 +131,14 @@ export function readDecisions(file = DECISIONS_FILE) {
     if (entry.dated !== undefined
       && !(typeof entry.dated === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.dated) && datesIn(entry.dated).length === 1)) {
       throw new Error(`${file}: ${schema} has dated ${JSON.stringify(entry.dated)}; use one real date, YYYY-MM-DD`);
+    }
+    // A table is decided as `<schema>.<table>` in a schema the table sweep reads; any other dotted
+    // key is a typo that would never match a table, so the decision would silently do nothing.
+    if (schema.includes(".")) {
+      const [owner, table, ...rest] = schema.split(".");
+      if (rest.length > 0 || !SNAPSHOT_TABLE_SCHEMAS.includes(owner) || !/^[a-z_][a-z0-9_]*$/.test(table ?? "")) {
+        throw new Error(`${file}: ${schema} — a snapshot table is decided as <schema>.<table>, in ${SNAPSHOT_TABLE_SCHEMAS.join(" or ")}`);
+      }
     }
     out[schema] = entry;
   }
@@ -242,8 +255,26 @@ export function classify(entry, options) {
     };
   }
 
-  const ageDays = daysBetween(date, today);
   const recordNote = named === null ? ` · dated ${date} by record, not by name` : "";
+  return verdictByDecision({ date, today, retentionDays, decided, recordNote });
+}
+
+/** The key a snapshot TABLE is decided under in scripts/backup-schema-decisions.json. */
+export function tableKey(schema, table) {
+  return `${schema}.${table}`;
+}
+
+/**
+ * The owner's decision applied to a snapshot whose date is known — the ONE ladder `classify` (a
+ * schema) and `classifyTable` (a dated table in `public` or `au`) share, so a table can never be
+ * dropped on rules a schema is not. Age alone makes nothing droppable: past retention, no entry is
+ * UNDECIDED; a keep is PROTECTED until it runs out; drop or export-then-drop is EXPIRED.
+ *
+ * @param {{ date: string, today: string, retentionDays: number, decided?: SnapshotDecision, recordNote?: string }} input
+ * @returns {{ verdict: string, reason: string, date: string, ageDays: number, decision: SnapshotDecision | null }}
+ */
+function verdictByDecision({ date, today, retentionDays, decided, recordNote = "" }) {
+  const ageDays = daysBetween(date, today);
   const decidedNote = decided
     ? ` · owner decided ${decided.decision} on ${decided.decidedOn}${decided.until ? ` (until ${decided.until})` : ""}${recordNote}`
     : "";
@@ -352,13 +383,19 @@ export function isSnapshotTableName(name) {
  * from `deductions_governance_backup_20260830`, which a live foreign key pinned at a month old; a
  * table in `public` is MORE exposed to that, not less, because the live tables sit beside it.
  *
+ * 🔴 AND THE SAME OWNER'S-DECISION RULE (2026-11-19). Past retention a table with no entry under
+ * `<schema>.<table>` in scripts/backup-schema-decisions.json is UNDECIDED and gets no drop
+ * statement. Until then a table went EXPIRED on age alone, which REC-040 forbids for a schema —
+ * and the first three, `au.zz_brick_backfill_snapshot_20260827` and the two `au.bak_20260828_d3_*`,
+ * were six and seven days from it when this was found.
+ *
  * @param {{ schema: string, table: string, blockers?: string[] }} entry
- * @param {{ today: string, retentionDays?: number }} options
- * @returns {{ verdict: string, reason: string, date: string | null, ageDays: number | null }}
+ * @param {{ today: string, retentionDays?: number, decisions?: Record<string, SnapshotDecision> }} options
+ * @returns {{ verdict: string, reason: string, date: string | null, ageDays: number | null, decision?: SnapshotDecision | null }}
  */
 export function classifyTable(entry, options) {
   const { schema, table, blockers = [] } = entry;
-  const { today, retentionDays = RETENTION_DAYS } = options;
+  const { today, retentionDays = RETENTION_DAYS, decisions = {} } = options;
 
   if (blockers.length > 0) {
     return { verdict: VERDICT.PINNED, reason: blockers.join("; "), date: null, ageDays: null };
@@ -379,11 +416,7 @@ export function classifyTable(entry, options) {
     };
   }
 
-  const ageDays = daysBetween(date, today);
-  if (ageDays < retentionDays) {
-    return { verdict: VERDICT.YOUNG, reason: `${retentionDays - ageDays} days left`, date, ageDays };
-  }
-  return { verdict: VERDICT.EXPIRED, reason: `${ageDays} days old, retention is ${retentionDays}`, date, ageDays };
+  return verdictByDecision({ date, today, retentionDays, decided: decisions[tableKey(schema, table)] });
 }
 
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
@@ -628,12 +661,13 @@ async function main() {
       .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
     const tableRows = (await readSnapshotTables(sql))
-      .map((entry) => ({ ...entry, ...classifyTable(entry, { today, retentionDays }) }))
+      .map((entry) => ({ ...entry, ...classifyTable(entry, { today, retentionDays, decisions }) }))
       .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
     const expired = rows.filter((r) => r.verdict === VERDICT.EXPIRED);
     const undecided = rows.filter((r) => r.verdict === VERDICT.UNDECIDED);
     const expiredTables = tableRows.filter((r) => r.verdict === VERDICT.EXPIRED);
+    const undecidedTables = tableRows.filter((r) => r.verdict === VERDICT.UNDECIDED);
 
     if (asJson) {
       console.log(JSON.stringify(
@@ -641,7 +675,7 @@ async function main() {
         null,
         2,
       ));
-      return expired.length + undecided.length + expiredTables.length > 0 ? 2 : 0;
+      return expired.length + undecided.length + expiredTables.length + undecidedTables.length > 0 ? 2 : 0;
     }
 
     const totalBytes = rows.reduce((n, r) => n + r.sizeBytes, 0);
@@ -680,14 +714,17 @@ async function main() {
       console.log("");
     }
 
-    if (undecided.length > 0) {
-      console.log(`NEEDS THE OWNER — ${undecided.length} schema(s) past ${retentionDays} days with no recorded decision.`);
+    if (undecided.length + undecidedTables.length > 0) {
+      console.log(
+        `NEEDS THE OWNER — ${undecided.length} schema(s) and ${undecidedTables.length} snapshot table(s) ` +
+        `past ${retentionDays} days with no recorded decision.`,
+      );
       console.log("  Nothing is printed to drop for these. Put each one to him (keep, export then drop, or drop)");
-      console.log("  and record the answer in scripts/backup-schema-decisions.json.\n");
+      console.log("  and record the answer in scripts/backup-schema-decisions.json (a table as <schema>.<table>).\n");
     }
 
     if (expired.length + expiredTables.length === 0) {
-      if (undecided.length > 0) return 2;
+      if (undecided.length + undecidedTables.length > 0) return 2;
       console.log(
         `NOTHING HAS EXPIRED. ${rows.length} schemas and ${tableRows.length} snapshot tables, ` +
         `none past ${retentionDays} days with no dependency on it.`,
@@ -713,7 +750,14 @@ async function main() {
     // whatever had come to depend on it. Without it the statement simply refuses, which is the
     // answer a human wants at that moment.
     for (const r of expiredTables) {
-      console.log(`-- ${r.schema}.${r.table}: ${formatBytes(r.sizeBytes)}, ${r.reason}`);
+      const key = tableKey(r.schema, r.table);
+      console.log(`-- ${key}: ${formatBytes(r.sizeBytes)}, ${r.reason}`);
+      // The same file-copy-first rule as a schema: no drop statement until the table's own manifest is on disk.
+      const tableManifest = path.join(EXPORT_ROOT, key, "manifest.json");
+      if (r.decision?.decision === "export-then-drop" && !existsSync(tableManifest)) {
+        console.log(`--   NOT YET: export it first — node scripts/export-backup-schema.mjs ${key}`);
+        continue;
+      }
       console.log(`drop table if exists ${r.schema}.${r.table};`);
     }
     const reclaimable = [...expired, ...expiredTables].reduce((n, r) => n + r.sizeBytes, 0);
