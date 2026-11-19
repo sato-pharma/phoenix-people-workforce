@@ -293,7 +293,15 @@ export function runPhoenixCrmExceptionsTests(): void {
     assert.ok(service.includes('callPhoenixCrm<unknown>("phoenix_crm_plan_item_counts", { p_plan_ids: part })'), "the items are counted per plan, in the database");
     assert.equal(service.includes('from("phoenix_crm_plan_items")'), false, "and never read row by row to be counted here");
     assert.ok(service.includes("loadReadiness(seatIds)"), "readiness is asked for every seat in one call");
-    assert.ok(service.includes(": sharedReadiness(seatIds),"), "shared with the adoption report when the pack opens both at once");
+    assert.ok(
+      service.includes(": sharedReadiness(seatIds, { reuseRecent: input.reuseRecentReadiness === true }),"),
+      "shared with the adoption report when the pack opens both at once",
+    );
+    // The screen opts into the minute-old copy; the 06:55 digest is a notification and never does.
+    const screen = service.slice(service.indexOf("export async function loadExceptionsBoard("));
+    assert.ok(screen.includes("reuseRecentReadiness: true,"), "the exceptions screen reads the minute-old readiness copy");
+    const digest = readFileSync("src/lib/phoenix-crm/server/daily-digest.ts", "utf8");
+    assert.ok(!digest.includes("reuseRecentReadiness"), "REGRESSION: the digest is a notification, so it measures readiness live");
     assert.ok(service.includes("fetchAllRowsKeyset"), "and each one pages, like every other read in the module");
     // The visits keep the walk's own rows and order, read in groups four at a time.
     assert.ok(service.includes("readSeatGroups(seatIds, 150, (part) =>"), "the visits are read over groups of territories, not one walk per batch");

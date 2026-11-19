@@ -43,7 +43,7 @@ import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { managerPlanReach } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import {
-  loadReadiness,
+  loadReadinessShared,
   loadRequestRows,
   mapRequestRow,
   requestPeople,
@@ -408,7 +408,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
 
   const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, dayStartBySeat, visitAsks, vendorLeftovers] =
     await Promise.all([
-      isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
+      // A display figure, so a copy up to a minute old (loadReadinessShared); a list write drops it.
+      isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadinessShared(seatIds),
       seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
       loadUnplannedRows(seatIds, isTest),
       loadPlanEditRows(seatIds, isTest, viewer.cairoToday),

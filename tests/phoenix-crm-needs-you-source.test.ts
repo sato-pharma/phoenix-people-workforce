@@ -148,9 +148,9 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     assert.ok(crmNeedsYou.includes("countPhoenixCrmOffPlanVisitsWaitingForYou("));
     assert.ok(crmNeedsYou.includes("countPhoenixCrmWeeklyPlansWaitingForYou("), "and the weekly plans, which it did not count at all before 2026-10-08");
     assert.ok(!crmNeedsYou.includes(".from("), "it writes no query of its own");
-    assert.ok(crmNeedsYou.includes("loadReadiness("), "and the validation figure is the Team tab's own readiness read");
+    assert.ok(crmNeedsYou.includes("loadReadinessShared("), "and the validation figure is the Team tab's own readiness read, the same minute-old copy");
     assert.ok(
-      !/loadReadiness\([^)]*,\s*true/.test(crmNeedsYou),
+      !/loadReadiness(?:Shared)?\([^)]*,\s*true/.test(crmNeedsYou),
       "`loadReadiness` can STAMP a territory ready; the board reads and never writes, so it is called with the default",
     );
   }

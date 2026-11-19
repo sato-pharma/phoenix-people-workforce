@@ -65,7 +65,7 @@
  */
 
 import { isDayActivity, dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
-import { fetchAllRows } from "@/lib/supabase/paginated";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** `phoenix_crm_visits` — every visit Phoenix CRM holds, started team or not. */
@@ -161,11 +161,13 @@ type VisitRow = {
   product_manager_hr_id: string | null;
   /** Everyone on the visit (`phoenix_crm_visit_companions`): a chain's second manager above stands in no fixed place. */
   companions?: ReadonlyArray<{ hr_id: string | null }> | null;
+  /** The keyset walk's cursor — read only by the loader, never by the fold. */
+  id?: unknown;
 };
 
-type ActivityRow = { activity_date: string | null; rep_hr_id: string | null; activity_type: string | null };
+type ActivityRow = { activity_date: string | null; rep_hr_id: string | null; activity_type: string | null; id?: unknown };
 
-type StartRow = { started_on: string | null; rep_hr_id: string | null };
+type StartRow = { started_on: string | null; rep_hr_id: string | null; id?: unknown };
 
 function isoDay(value: string | null | undefined): string | null {
   const day = String(value ?? "").slice(0, 10);
@@ -251,12 +253,27 @@ export async function loadPhoenixWorkEvidenceDays(input: {
 
   // PAGED, every one of them. PostgREST stops a read at 1,000 rows, and production logged 8,146 real
   // Phoenix CRM visits in October 2026 alone — an unpaged read silently kept the first 1,000, so most
-  // provably worked days never reached the suppression and could be charged. `fetchAllRows` walks the
-  // whole window on a stable `id` order and throws on any page error, never a short list.
+  // provably worked days never reached the suppression and could be charged. `fetchAllRowsKeyset` walks
+  // the whole window on the `id` order and throws on any page error, never a short list.
+  //
+  // A KEYSET WALK, NOT AN OFFSET WALK (performance audit, 19 Nov 2026). The visits page was the
+  // database's busiest work-evidence statement (22,214 calls, 32.9 ms and 2,787 blocks each): an
+  // OFFSET page re-reads every row before it, so each page of a month cost the whole month. A seek on
+  // `id > last id` reads only what is left, about half the blocks over a month's walk, and a row
+  // written while the walk runs can no longer shift a page and drop a worked day. Every row the offset
+  // walk returned, this returns.
   const supabase = getSupabaseAdmin();
-  const read = async <T>(label: string, buildQuery: () => unknown): Promise<T[]> => {
+  const read = async <T extends { id?: unknown }>(label: string, buildQuery: () => unknown): Promise<T[]> => {
     try {
-      return await fetchAllRows<T>(buildQuery, "id");
+      return await fetchAllRowsKeyset<T>(buildQuery, {
+        cursorColumn: "id",
+        // A row with no id would END the walk early and hand back a short list that reads as whole —
+        // the very failure that charges a worked day — so it throws instead.
+        cursorOf: (row) => {
+          if (typeof row.id === "string" && row.id) return row.id;
+          throw new Error("a row came back without its id, so the walk cannot continue past it");
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
       throw new Error(
@@ -269,7 +286,7 @@ export async function loadPhoenixWorkEvidenceDays(input: {
     read<VisitRow>("visits", () =>
       supabase
         .from(PHOENIX_CRM_VISITS_TABLE)
-        .select("visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id,companions:phoenix_crm_visit_companions(hr_id)")
+        .select("id,visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id,companions:phoenix_crm_visit_companions(hr_id)")
         .eq("is_test", false)
         .is("imported_from_ireports360_at", null)
         .gte("visit_date", start)
@@ -278,7 +295,7 @@ export async function loadPhoenixWorkEvidenceDays(input: {
     read<ActivityRow>("day activities", () =>
       supabase
         .from(PHOENIX_CRM_DAY_ACTIVITIES_TABLE)
-        .select("activity_date,rep_hr_id,activity_type")
+        .select("id,activity_date,rep_hr_id,activity_type")
         .eq("is_test", false)
         .gte("activity_date", start)
         .lte("activity_date", end),
@@ -286,7 +303,7 @@ export async function loadPhoenixWorkEvidenceDays(input: {
     read<StartRow>("day starts", () =>
       supabase
         .from(PHOENIX_CRM_DAY_STARTS_TABLE)
-        .select("started_on,rep_hr_id")
+        .select("id,started_on,rep_hr_id")
         .eq("is_test", false)
         .gte("started_on", start)
         .lte("started_on", end),
