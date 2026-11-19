@@ -123,9 +123,12 @@ takes the records' words from the app and writes the rows itself, in the same tr
 The rows carry the same words and values the app wrote before. The sheet ping stays after the commit. A collection that
 committed is now answered as saved even when the read-back after it fails (it answers from the figures written).
 
-**The earlier forms stay**, so the code serving before the merge keeps working between the apply and the deploy; neither
-form has a default, so PostgREST picks each by the arguments sent. A later migration drops the earlier forms once this
-code is live.
+**The earlier forms stayed** until this code was live, so the code serving before the merge kept working between the apply
+and the deploy; neither form has a default, so PostgREST picked each by the arguments sent. #614 went live at 15:18 Cairo,
+and `20261119153902_drop_superseded_collection_and_cancel_forms.sql` (owner: "drop the old collection and cancel function
+forms") drops both earlier forms: nothing called them, and left in place they were a way to collect or cancel without
+writing the record. `tests/direct-orders-and-marketing-atomic.test.ts` §10 pins the drop and refuses a later migration
+that brings either back.
 
 **Migration `20261119145916` must be applied before this code is merged.** Until it is, a collection and a cancel
 refuse and change nothing.
