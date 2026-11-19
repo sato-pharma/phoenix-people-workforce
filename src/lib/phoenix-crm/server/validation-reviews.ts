@@ -24,6 +24,7 @@ import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guar
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
+import { doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -636,6 +637,12 @@ export type ValidationReviewRow = {
    */
   restorable: boolean;
   /**
+   * A rejection whose place is still retired, but the customer was captured again at the same door since
+   * (another active place of his in the same building or within 150 m): the database refuses the take-back
+   * (`restore_door_captured_again`), so `restorable` is false and the row says why instead (19 Nov 2026).
+   */
+  capturedAgain?: boolean;
+  /**
    * Whether this APPROVAL can still be taken back (owner, 2026-10-15: "make admin able to reject
    * validation even if approved before"): the place it approved is still active, so rejecting it now
    * has something to retire. The mirror image of `restorable`, and the same test the database makes.
@@ -681,6 +688,57 @@ function listingsOf(google: Row, point: GeoPoint): Array<GoogleListing & { dista
     });
   }
   return listings.sort((left, right) => left.distanceMeters - right.distanceMeters);
+}
+
+/**
+ * "Approve it after all" is drawn only where the database will take it (19 Nov 2026: the Super Admin pressed
+ * it on a customer captured again at the same door and met `restore_door_captured_again`). For every
+ * rejection still `restorable`, reads the customer's ACTIVE places once and asks `doorCapturedAgain` — the
+ * restore function's own test. A captured-again row loses `restorable` and carries `capturedAgain`, so it
+ * shows the reason, offers no button and no tick, and drops back under the ordinary 14-day window like any
+ * rejection with nothing left to undo.
+ *
+ * 🔴 A FAILED READ CHANGES NOTHING — the row keeps its button and the database still refuses by name, which
+ * is how the board behaved before; the page never fails over this.
+ */
+async function markDoorsCapturedAgain(rows: ValidationReviewRow[], reviews: Row[], placeById: Map<string, Row>): Promise<void> {
+  const customerByReview = new Map(reviews.map((review) => [String(review.id), String(review.customer_id)]));
+  const candidates = rows.filter((row) => row.restorable && customerByReview.has(row.reviewId));
+  if (candidates.length === 0) return;
+  let active: Row[];
+  try {
+    active = await selectByIds<Row>(
+      "phoenix_crm_places",
+      "id, customer_id, lat, lon, shared_place_id",
+      "customer_id",
+      candidates.map((row) => customerByReview.get(row.reviewId)),
+      (query) => query.eq("status", "active"),
+    );
+  } catch (error) {
+    logError("Phoenix CRM captured-again read failed", { error, labels: { event: "phoenix_crm_captured_again_read_failed" } });
+    return;
+  }
+  const doorOf = (row: Row): DoorPlace => ({
+    id: String(row.id),
+    customerId: String(row.customer_id),
+    lat: numberOrNull(row.lat),
+    lon: numberOrNull(row.lon),
+    sharedPlaceId: text(row.shared_place_id),
+  });
+  const activeByCustomer = new Map<string, DoorPlace[]>();
+  for (const row of active) {
+    const door = doorOf(row);
+    activeByCustomer.set(door.customerId, [...(activeByCustomer.get(door.customerId) ?? []), door]);
+  }
+  for (const row of candidates) {
+    const customerId = customerByReview.get(row.reviewId) ?? "";
+    const place = placeById.get(row.placeId);
+    if (!place) continue;
+    if (doorCapturedAgain(doorOf({ ...place, id: row.placeId, customer_id: customerId }), activeByCustomer.get(customerId) ?? [])) {
+      row.restorable = false;
+      row.capturedAgain = true;
+    }
+  }
 }
 
 /** A read the page presents, and whether it stopped at its ceiling so the page can say so honestly. */
@@ -883,6 +941,7 @@ export async function loadValidationReviews(
       recent: true,
     };
   });
+  await markDoorsCapturedAgain(rows, reviews, placeById);
   // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
   // 14 days is kept only while it can still be taken back — its place still retired. One whose place
   // is active again, or gone, has nothing left to reverse, so it drops back under the ordinary window
