@@ -14,6 +14,11 @@ import {
   recordHolidayBridgingDecision,
 } from "@/lib/payroll/copilot/holiday-bridging";
 import {
+  HOLIDAY_BRIDGING_DECISION_FIELDS_REQUIRED,
+  readHolidayBridgingDecisionFields,
+  toHolidayBridgingScreenRow,
+} from "@/lib/payroll/copilot/holiday-bridging-row";
+import {
   buildHolidayBridgingReportWorkbook,
   formatPeriodLabel,
   getHireDateMap,
@@ -59,22 +64,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
       return xlsxResponse(buffer, `Holiday_Bridging_Deductions_${periodFileSlug(period)}.xlsx`);
     }
 
+    // Each row through the one shared builder (holiday-bridging-row.ts): it carries the requestId the tab posts back
+    // with Exclude and Include. Built by hand here it was left out, and every press answered 400 (19 Nov 2026).
     return NextResponse.json({
       autoAppliesUnlessExcluded: true,
-      candidates: candidates.map((c) => ({
-        id: c.id,
-        employeeHrId: c.employeeHrId,
-        employeeName: c.employeeName,
-        hireDate: hireDates.get(compactHrKey(c.employeeHrId)) ?? null,
-        vacationType: c.vacationType,
-        bridgingDate: c.bridgingDate,
-        adjacentTo: c.adjacentTo,
-        holidayName: c.holidayName,
-        holidayStartDate: c.holidayStartDate,
-        holidayEndDate: c.holidayEndDate,
-        salaryDeductionAmount: c.salaryDeductionAmount,
-        excluded: c.excluded,
-      })),
+      candidates: candidates.map((c) => toHolidayBridgingScreenRow(c, hireDates.get(compactHrKey(c.employeeHrId)) ?? null)),
     });
   } catch (error) {
     return copilotErrorResponse(error);
@@ -95,21 +89,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
       return NextResponse.json({ error: "invalid_request", message: parsed.message }, { status: 400 });
     }
     const body = parsed.data;
-    const requestId = String(body.requestId ?? "").trim();
-    const employeeHrId = String(body.employeeHrId ?? "").trim();
-    const bridgingDate = String(body.bridgingDate ?? "").trim();
-    if (!requestId || !employeeHrId || !bridgingDate) {
-      return NextResponse.json(
-        { error: "invalid_request", message: "requestId, employeeHrId, and bridgingDate are required." },
-        { status: 400 },
-      );
+    const fields = readHolidayBridgingDecisionFields(body);
+    if (!fields) {
+      return NextResponse.json({ error: "invalid_request", message: HOLIDAY_BRIDGING_DECISION_FIELDS_REQUIRED }, { status: 400 });
     }
 
     await recordHolidayBridgingDecision({
       runId,
-      requestId,
-      employeeHrId,
-      bridgingDate,
+      ...fields,
       action: body.action,
       decidedBy: resolveCopilotActor(access),
     });

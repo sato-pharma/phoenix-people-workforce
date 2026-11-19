@@ -182,8 +182,12 @@ judged on the step alone, as before. No database change.
    the switch is put back but the reopened steps stay reopened. No money moves; HR re-confirms the step.
 4. ~~**A collection or a marketing cancel whose record fails after the database step committed reads as failed.**~~
    **Fixed on 19 Nov 2026 — each writes its records inside its one call, see §2b.**
-5. **The Payroll Copilot's Holiday Bridging tab looks broken today**: its GET leaves `requestId` out of each row, so its
-   Exclude / Include post answers 400. The schema keeps `requestId` optional, so nothing about that answer changed.
+5. ~~**The Payroll Copilot's Holiday Bridging tab looks broken today**~~ **Fixed on 19 Nov 2026** (owner: "fix the Payroll
+   Copilot Holiday Bridging tab's Exclude and Include"). Its GET built each row by hand and left `requestId` out, so every
+   Exclude and Include posted a blank request id and was refused 400. The row and the decision body are now built by one
+   client-safe module, `src/lib/payroll/copilot/holiday-bridging-row.ts`, which the route and the tab both use;
+   `tests/payroll-copilot-holiday-bridging-roundtrip.test.ts` posts a body built from a screen row through the real route
+   and sees the exclusion recorded against the right request, and Include lift it.
 
 ## 6. REC-060 — every money route judges its body with a schema
 
