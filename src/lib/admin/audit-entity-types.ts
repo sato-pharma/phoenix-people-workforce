@@ -102,6 +102,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   distribution_list: true,
   doctor_coverage_config: true,
   double_visit_import: true,
+  email_reply_bulk_send: true,
   employee_decline_offer: true,
   employee_resignation: true,
   excuse_request: true,

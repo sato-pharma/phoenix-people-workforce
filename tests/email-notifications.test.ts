@@ -89,6 +89,12 @@ export function runEmailNotificationTests() {
     // confidence gate; see tests/ceo-email-composer.test.ts.
     "src/lib/ceo-email/service.ts",
     "src/lib/email-templates/service.ts",
+    // The Email Reply Composer's distribution-list send, added 2026-11-19 (owner: "add distrbution
+    // list to be able to send bulk emails but with phx identity"). The same hand-written reply as
+    // app/api/admin/email-reply/send/route.ts above, in the same Phoenix HR template, cut into emails
+    // of 25 in Bcc — no wording of its own for the catalogue. Super Admin only, no origin, never a
+    // confidence-gate bypass; see tests/email-reply-lists.test.ts.
+    "src/lib/email/email-reply-lists.ts",
     "src/lib/email/send-phoenix-email.ts",
     // The Marketing Manager's "Approved requests" email from CEO Approvals, added 2026-11-08. It
     // replaces the email he wrote by hand each week: sent only on his own press of "Send now", in his

@@ -1520,6 +1520,8 @@ export const MODULES = [
       "src/components/admin/{sato-email-composer,ceo-email-composer,email-body-editor}.tsx",
       "app/**/{sato-email,ceo-email}/**",
       "tests/{sato-email,ceo-email}*",
+      "src/lib/email/email-reply-lists*.ts",
+      "tests/email-reply-lists*",
     ],
     keywords: ["email composer", "sato composer", "ceo composer", "ceo email", "composer", "dictation", "closing line"],
     tables: ["ceo_email", "sato_email"],
