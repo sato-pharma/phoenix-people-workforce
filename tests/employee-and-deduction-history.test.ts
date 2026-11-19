@@ -506,16 +506,26 @@ export async function runEmployeeAndDeductionHistoryTests() {
       `${table}: the channel holds one of three names, or NULL on a row from before 19 Nov 2026`,
     );
   }
+  // CREATE OR REPLACE VIEW can only APPEND a column, so a later column sits after the five. The one
+  // allowed so far is the salary view's actor_hr_id (20261119111338), which the Employee Master's
+  // Change History panel names the editor by; any other must be added here on purpose.
+  const viewSelects: Record<string, string> = {};
   for (const view of ["v_employee_change_log", "v_employee_salary_change_log"]) {
     const definers = files.filter((name) => read(name).includes(`create or replace view public.${view}`));
     const sql = read(definers[definers.length - 1]);
     const body = sql.slice(sql.indexOf(`create or replace view public.${view}`));
+    viewSelects[view] = body.slice(0, body.indexOf(";"));
     assert.match(
-      body.slice(0, body.indexOf(";")),
-      /l\.write_channel,\s+l\.write_db_user,\s+l\.write_application,\s+l\.write_api_role,\s+l\.write_api_path\s+from/,
+      viewSelects[view],
+      /l\.write_channel,\s+l\.write_db_user,\s+l\.write_application,\s+l\.write_api_role,\s+l\.write_api_path(?:,\s+l\.actor_hr_id)?\s+from/,
       `${view} must show the five write columns`,
     );
   }
+  assert.match(
+    viewSelects.v_employee_salary_change_log,
+    /l\.write_api_path,\s+l\.actor_hr_id\s+from/,
+    "v_employee_salary_change_log must show actor_hr_id: the Change History panel names a salary editor by it (display name, not the view's full name)",
+  );
 
   // ---- Every write names its person, whichever code path makes it ---------------------------------
   // Code review, 14 Nov 2026: only upsertEmployee sent the x-phoenix-actor-* headers, so a manager moved

@@ -3229,6 +3229,7 @@ import { runSyntheticJourneysRunHistoryFitTests } from "./synthetic-journeys-run
 import { runStoredContentTypeTests } from "./stored-content-type.test.ts";
 import { runReviewFindings20261119Tests } from "./review-findings-2026-11-19.test.ts";
 import { runEmailTemplateKeepsRecordPayloadTests } from "./email-template-keeps-record-payload.test.ts";
+import { runEmployeeChangeHistoryTests } from "./employee-change-history.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12761,6 +12762,7 @@ await runTest("route guard harness, part 16 of 16 (REC-080): refused before the 
 await runTest("the held-salary ledger never answers \"nobody is held\" by accident (REC-078, F-PAY-002): run against a stand-in database, loadHeldBalances reads who is held from the newest publish of each run, refuses by name a published run whose record of who was held is missing, refuses an unreadable or missing ledger table, and markRunPublished hands the held list to the one database call that publishes and says plainly when it did not land", runHeldSalaryRecordBehaviourTests);
 await runTest("a deduction decision is refused before it is written when it must be (REC-078, F-PAY-003/004): only the Super Admin decides and a refused role reads nothing, a candidate a publication locked is refused before any write, the database trigger's late lock refusal reaches the reviewer as a Conflict with no audit row, and an open candidate still saves with the amount derived from the candidate on record", runDeductionDecisionGateBehaviourTests);
 await runTest("the permission lookups behave (REC-078): a deny row in role_permission_overrides takes a compiled grant away through assertPermission, a later failed reload keeps the last matrix that loaded (no revoked grant comes back, no other grant is lost), a module lock suspends a grant for that one account until its unlock time, and a signed-out caller gets the signed-out refusal without a database read", runPermissionLookupBehaviourTests);
+await runTest("the Employee Master change history panel never shows a value the log did not keep, never shows pay (or that pay moved) to a seat the master withholds it from, reads ids back as names, and opens only to a reader the directory lets see that person", runEmployeeChangeHistoryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
