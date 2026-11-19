@@ -64,8 +64,12 @@ export const EXEMPT_SCHEMAS = {
   recovery: { kind: "migration", why: "the hourly recovery undo log; permanent, never expires" },
 
   // The owner's own decisions. Each has a condition, not a date — none expires on its own.
-  hr_backup_20260829: { kind: "owner", why: "C13 pre-image; retire only once September payroll proves the 08-29 fixes" },
-  crm_backup_20260828: { kind: "owner", why: "C13 pre-image; retire only once September payroll proves the 08-29 fixes" },
+  //
+  // `hr_backup_20260829` and `crm_backup_20260828` were here until 19 Nov 2026 on the condition
+  // "retire only once September payroll proves the 08-29 fixes". September was published 9 Oct and
+  // October 14 Nov, so the condition was met; he decided both export-then-drop that day and they
+  // now live in scripts/backup-schema-decisions.json like every other snapshot. Never put them back
+  // here: an exempt schema is PROTECTED whatever its decision says, so the decision would be dead.
   delta3_defer_backup_20260829: { kind: "owner", why: "holds line_area_map_pre — the owner's standing instruction is to keep it" },
 };
 
@@ -96,8 +100,14 @@ export const VERDICT = {
  * its `until` date, or for good when it has none. Each entry is one schema, decided by record and
  * never by sweep — the review sheet that put each one to him is named in `sheet`.
  *
+ * `dated` (optional, YYYY-MM-DD) is the day a snapshot was taken, recorded by hand for a schema
+ * whose name and table names carry no date at all. Without it such a schema is UNDATED forever and
+ * his decision can never take effect. It is a FALLBACK only: a date in the schema or table names
+ * always wins, so a stray `dated` can never make a dated schema look older than it is. Record the
+ * evidence for the day in `why` (the row's own timestamp, the migration that first names it).
+ *
  * @typedef {{ decision: "drop" | "export-then-drop" | "keep", until?: string, decidedOn: string,
- *   decidedBy: string, why: string, sheet?: string }} SnapshotDecision
+ *   decidedBy: string, why: string, sheet?: string, dated?: string }} SnapshotDecision
  */
 export const DECISIONS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "backup-schema-decisions.json");
 
@@ -111,6 +121,11 @@ export function readDecisions(file = DECISIONS_FILE) {
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.decidedOn ?? "") || !entry.decidedBy || !entry.why) {
       throw new Error(`${file}: ${schema} needs decidedOn (YYYY-MM-DD), decidedBy and why`);
+    }
+    // A real calendar day in exactly YYYY-MM-DD: `2026-02-30` is no day, and datesIn skips it.
+    if (entry.dated !== undefined
+      && !(typeof entry.dated === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.dated) && datesIn(entry.dated).length === 1)) {
+      throw new Error(`${file}: ${schema} has dated ${JSON.stringify(entry.dated)}; use one real date, YYYY-MM-DD`);
     }
     out[schema] = entry;
   }
@@ -214,7 +229,10 @@ export function classify(entry, options) {
     return { verdict: VERDICT.PROTECTED, reason: exempt.why, date: null, ageDays: null };
   }
 
-  const date = snapshotDateOf(schema, tables);
+  const decided = decisions[schema];
+  const named = snapshotDateOf(schema, tables);
+  // The recorded day is a fallback for a name with no date anywhere — never an override.
+  const date = named ?? decided?.dated ?? null;
   if (date === null) {
     return {
       verdict: VERDICT.UNDATED,
@@ -225,9 +243,9 @@ export function classify(entry, options) {
   }
 
   const ageDays = daysBetween(date, today);
-  const decided = decisions[schema];
+  const recordNote = named === null ? ` · dated ${date} by record, not by name` : "";
   const decidedNote = decided
-    ? ` · owner decided ${decided.decision} on ${decided.decidedOn}${decided.until ? ` (until ${decided.until})` : ""}`
+    ? ` · owner decided ${decided.decision} on ${decided.decidedOn}${decided.until ? ` (until ${decided.until})` : ""}${recordNote}`
     : "";
   if (ageDays < retentionDays) {
     return { verdict: VERDICT.YOUNG, reason: `${retentionDays - ageDays} days left${decidedNote}`, date, ageDays, decision: decided ?? null };
@@ -261,7 +279,7 @@ export function classify(entry, options) {
   }
   return {
     verdict: VERDICT.EXPIRED,
-    reason: `${ageDays} days old, retention is ${retentionDays}; owner decided ${decided.decision} on ${decided.decidedOn}`,
+    reason: `${ageDays} days old, retention is ${retentionDays}; owner decided ${decided.decision} on ${decided.decidedOn}${recordNote}`,
     date,
     ageDays,
     decision: decided,

@@ -38,6 +38,32 @@ the same fingerprint as the committed baseline. **110 since 13 Nov 2026:** the e
 `geo_bricks` and `probation_feedback_comments` were dropped on the owner's decision (migration
 `20261113191017`), and their two keys went with them; `MIN_EMPLOYEE_KEYS` followed.
 
+## The orphan count, 19 Nov 2026
+
+Read on production on 19 Nov 2026 (REC-037): **25** keys named `<table>_phx_employee_fkey`, all
+validated, and **0** orphans on every keyed money, leave and attendance column.
+
+The employee columns still without a key are the candidates for the next keys (phase 3):
+
+| Column | Rows | Orphans |
+| --- | --- | --- |
+| `daily_deductions_disputes.employee_hr_id` | 4 | 0 |
+| `dispute_explanations.employee_hr_id` | 2 | **1** that matches an employee only when case is ignored: repair its case before keying |
+| `medical_insurance_members.hr_id` | 135 | 0 |
+| `medical_insurance_exceptions.hr_id` | 4 | 0 |
+| `medical_insurance_category_choices.hr_id` | 0 | 0 |
+| `employee_salary_change_log.employee_hr_id` (append-only trail) | 73 | 0 |
+
+The `*_hr_id_compact` columns read as all orphans. They hold the compact form of an id, not an id,
+and are never keyed. The actor columns below are not candidates; they name `system` and old ids by
+design, as the last section says:
+
+- `deductions_audit.actor_hr_id`: 1,400 of 1,729 rows name nobody, even ignoring case
+- `v2_vacation_request_events.actor_hr_id`: 1,200 of 2,151
+- `expense_claims.decided_by_hr_id`: 41 of 459
+- `automated_payroll_audit.actor_hr_id`: 3 of 400
+- `v2_vacation_approval_steps.overridden_by_hr_id`: 1 of 1
+
 ## Adding a key
 
 1. Count the orphans, and repair them first. The count must be zero.
