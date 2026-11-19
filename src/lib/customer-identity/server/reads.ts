@@ -432,7 +432,7 @@ async function typedPharmacyCandidates(): Promise<IdentityCandidate[]> {
     if (rows.length < PAGE) break;
     // A page without its last id cannot say where the next one starts; stopping would drop the rest.
     const last = text(rows[rows.length - 1]?.id);
-    if (!last) throw new Error("customer-identity: a phoenix_crm_visits page came back without its id");
+    if (!last) throw new Error("customer-identity: a page of typed pharmacy visits came back without its id");
     after = last;
   }
   if (named.length === 0) return [];
