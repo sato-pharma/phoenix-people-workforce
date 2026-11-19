@@ -391,8 +391,24 @@ published on Anti Infective.
 | `au.bak_20261015b_aif_kfs2_july_line_area_map` | 1 · 58 | the same map from before that move was re-dated to July; 56 rows are unchanged |
 | `au.bak_20261015c_aif_rollup_jul_sep` | 1 · 306 | the July to September Anti Infective attribution rollup from before the move reached it; 300 rows are unchanged, and the 6 that differ are that area's share |
 
-The next snapshot to reach 90 days with no decision is `recruitment_backup_20261016`, on 14 Jan 2027.
-After it come `ats_backup_20261017_manager_folders` and `phx_backup_20261017`, on 15 Jan 2027.
+**The 16 and 17 October snapshots, decided on 20 Nov 2026.** All three questions "export, then drop",
+and all three were exported that day (45 files, 7,895 rows, every checksum matching its manifest). The
+16 October schema reaches 90 days on 14 Jan 2027, the two 17 October schemas on 15 Jan 2027. Each is a
+whole snapshot schema, so each drop is `drop schema … cascade`. No migration created any of them, so
+staging has none and the schema baseline names none. Nothing depends on any of the three or reads them:
+no foreign key, view, trigger, policy, function or cron job names them, and no role, `service_role`
+included, can use the schemas. The Phoenix CRM copy's tables still carry `service_role` table grants
+from before they were moved out of `public`, which reach nothing without the schema.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `recruitment_backup_20261016` | 1 · 9 | the requisitions as they stood just before the hourly requisition autopilot ([`recruitment-automation.md`](../recruitment-automation.md)) began opening and closing them. All 9 still exist and 3 have changed since; no salary band is filled in any of them |
+| `ats_backup_20261017_manager_folders` | 2 · 139 | 72 CV sends to 14 managers made between 26 Aug and 1 Sep under the old placement rule, and the matching manager stamps on 67 candidates, from before the folders became empty shelves filled only by what a person sends ([`recruitment-manager-cv-folders.md`](../recruitment-manager-cv-folders.md)). None of the 72 sends exists now and only 2 of the 68 candidates remain, so the export is the only record of those sends. Holds managers' names |
+| `phx_backup_20261017` | 42 · 7,747 | the Phoenix CRM test data cleared on 17 Oct: test customers, list events, plans, visits and screen taps written between 10 and 17 Oct, 16 of the tables empty. Every row is marked `is_test` and none is in the live tables now |
+
+The next snapshot to reach 90 days with no decision is `notification_backup_20261023`, on 21 Jan 2027.
+After it come the five 26 October schemas (`brick_move_backup_20261026`, `phoenix_crm_backup_20261026`,
+`sos_backup_20261026_ibnsina`, `vacancies_backup_20261026` and `weekly_backup_20261026`), on 24 Jan 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
