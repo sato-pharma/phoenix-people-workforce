@@ -372,6 +372,42 @@ anon POST /rest/v1/rpc/phx_ci_recovery_health -> 401   42501 permission denied f
 **404, not 403** — without `USAGE` on the schema PostgREST does not know the tables exist at all,
 which is the stronger of the two answers. Re-run this probe after any grant change here.
 
+## The recovery decision (REC-036), read 19 Nov 2026
+
+Production, read 19 Nov 2026 between 05:30 and 06:30 Cairo: `recovery.protected_tables` holds **50**
+tables, and the `phoenix-recovery-snapshot` job (minute 5 of every hour) is active. In the last
+24 hours it ran **24** times with **0** errors, about 2.5 seconds each. The audit's acceptance, "the
+snapshot set covers every money and people table", is met.
+
+What is not decided is whether to add point-in-time recovery. That costs money, so it is the
+owner's decision, taken on the provider's own screen, never in chat. The options, at the prices in
+Supabase's documentation that day:
+
+| Option | What a bad write costs | Price |
+| --- | --- | --- |
+| **A. Today's set-up** | The 50 tables: back to the last hour, by `recovery.restore_table`. Any other table: back to last night's backup, restored into a separate project. | nothing new |
+| **B. Point-in-time recovery, 7 days** | Any table, back to any second, losing at most about 2 minutes. | $0.137 an hour, about $100 a month |
+| **B. 14 days** | the same, two weeks back | about $200 a month |
+| **B. 28 days** | the same, four weeks back | about $400 a month |
+
+Point-in-time recovery is billed by the hour and is **not** held by the spend cap. It needs at least
+the Small compute add-on, and the daily backups stop while it is on. It is switched on at Supabase,
+project **Phoenix HR**, **Project Settings → Add-ons → Point in time recovery**.
+
+**The rehearsal, whichever option he picks.** At Supabase, project **Phoenix HR**, **Database →
+Backups → Restore to a New Project** restores a backup into a separate new project in the same
+region, shows its cost before it starts, and never touches production. Creating a project is his
+approval, so he clicks it. Then a session:
+
+1. times it, from the click to a healthy project;
+2. compares the row counts of the 50 protected tables against the backup's time;
+3. runs a `recovery.restore_table` dry run for a named minute inside the clone.
+
+Before that, the clone was checked for anything that could reach outside it. It carries the eight
+`pg_cron` jobs, but none makes an HTTP call and `pg_net` is not installed, so nothing leaves the
+clone. It copies the sign-in users but not the stored files. He deletes the project afterwards
+(**Project Settings → General**).
+
 ## Limits worth knowing before you rely on it
 
 - **Single-table restore cannot fix cross-table consistency.** Restoring `salary_records` to Sunday

@@ -45,6 +45,33 @@ schemas), the second "Snapshot review — December 2026" (92 schemas in four gro
 decided export-then-drop on 2026-11-13. Each answer is written into the decisions
 file by schema name, in a pull request.
 
+**19 November 2026: the last four.** After the 101, a full inventory of production (164 non-standard
+schemas) left exactly four with no decision, and the owner answered all four in chat, each
+"export, then drop":
+
+| Schema | What it holds | Why it was undecided | Reaches 90 days |
+| --- | --- | --- | --- |
+| `crm_backup_20260828` | CRM brick resolutions before the 28-29 Aug fixes | exempt: kept until September payroll proved the fixes | 26 Nov 2026 |
+| `hr_backup_20260829` | hire-date and probation rows before the 29 Aug fixes | the same exemption | 27 Nov 2026 |
+| `plan_backups` | one weekly plan (week 39), deleted 26 Sep | no date in any name | 25 Dec 2026 |
+| `zz_search_proof` | a scratch search-speed test from October, no business data | no date in any name | 21 Jan 2027 |
+
+September payroll was published on 9 Oct and October on 14 Nov, so the two C13 pre-images' condition
+was met; they left the exemption list (see "What is never dropped" below). The two undated ones are
+aged by a recorded day, below.
+
+**`dated`: the day a snapshot was taken, recorded by hand.** A schema whose name and table names
+carry no date is `UNDATED` for ever, so a decision on it could never take effect. An entry may carry
+`dated: "YYYY-MM-DD"`, with the evidence for that day in `why`, and `classify()` ages the schema from
+it. It is a fallback only: a date in the schema or table names always wins, so a stray `dated` can
+never make a dated schema look older than it is. `readDecisions()` refuses anything but one real day
+in that exact shape, and the report says `dated … by record, not by name` wherever it was used.
+
+- `plan_backups`: `2026-09-26`, from its one row's own deletion time, 25 Sep 22:12 UTC (26 Sep in
+  Cairo).
+- `zz_search_proof`: `2026-10-23`, from migration `20261023043536`, the first that names it (it pinned
+  `zz_search_proof.run_phase`'s search path).
+
 **Export, then drop.** `node scripts/export-backup-schema.mjs <schema>` reads production only, and
 only a schema decided `export-then-drop`. It writes one CSV per table and a `manifest.json` (rows,
 columns, bytes, SHA-256, the production ref, the export time, the decision) to
@@ -111,8 +138,11 @@ before age, so nothing is ever called expired while something references it.
 3. **Migration-owned schemas.** `internal` (in the schema baseline) and `_au_rollback` (named by
    `20260719220000_advisor_center_primary_keys`).
 4. **The owner's own decisions**, which have conditions rather than dates and so never expire on
-   their own: `hr_backup_20260829` and `crm_backup_20260828` (C13 pre-images, retire only once
-   September payroll proves the 08-29 fixes) and `delta3_defer_backup_20260829`.
+   their own: `delta3_defer_backup_20260829` (it holds `line_area_map_pre`, his standing keep).
+   `hr_backup_20260829` and `crm_backup_20260828` were here until 19 Nov 2026 on the condition "retire
+   only once September payroll proves the 08-29 fixes"; that condition was met and he decided both
+   export-then-drop. An exempt schema is `PROTECTED` whatever its decision says, so a decided schema
+   must never be put back on this list.
 
 Categories 1, 3 and 4 are a list in `scripts/audit-backup-schemas.mjs`; category 2 is measured.
 **Adding to the list is how you hold something back** — never by editing the age.
@@ -136,9 +166,11 @@ Three of the five are rescued by their **table** names —
 `ops_backup` does not — so the script falls back to the newest date among the tables. The newest
 is the right one: a schema reused for a later snapshot is only as expired as its latest contents.
 
-What survives that is reported under **LOOK** and never auto-proposed. Today that is
-`plan_backups`, whose single table `deleted_employee_plans` names no date at all. Fix one of
-these by dating it or dropping it deliberately — not by guessing an age for it.
+What survives that is reported under **LOOK** and never auto-proposed. Fix one of these by dating it
+or dropping it deliberately — not by guessing an age for it. Dating it means a decision entry with
+`dated` and the evidence for the day (see "The owner decides each one"). That is how `plan_backups`
+(whose single table `deleted_employee_plans` names no date) and `zz_search_proof` were dated on
+19 Nov 2026; since then no schema on production is `UNDATED`.
 
 ## The snapshot that has no schema at all
 

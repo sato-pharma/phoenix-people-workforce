@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
+  PAGE_TIMING_DIGIT_PAGE_NAMES,
+  PAGE_TIMING_SECTIONS,
   PAGE_TIMING_SOFT_BATCH_LIMIT,
   deviceClassOf,
   isPageDataRequest,
+  normalisePagePath,
   sanitizePageTimings,
 } from "../src/lib/observability/page-timing-intake.ts";
 import { flushPageTimings, type PageTimingsRpcClient } from "../src/lib/observability/page-timing-flush.ts";
@@ -63,7 +66,7 @@ export function runPageTimingsTests() {
     "the first beacon's shape (path and two numbers at the top level) is still read, with the device unknown",
   );
   assert.deepEqual(sanitizePageTimings({ device: "tablet", hard: { path: "/admin", ttfb: 300 } })[0]?.device, "unknown", "a device class the intake does not know is unknown, never a guess");
-  assert.deepEqual(sanitizePageTimings({ hard: { path: "/login", ttfb: 300 } }), [], "a page outside the portal and the admin shell is refused");
+  assert.deepEqual(sanitizePageTimings({ hard: { path: "/login", ttfb: 300 } }), [], "a public page is refused: only signed-in pages are timed");
   assert.deepEqual(sanitizePageTimings({ hard: { path: "/admin", ttfb: -5, lcp: 9_999_999 } }), [], "negative and absurd numbers are dropped");
   assert.deepEqual(sanitizePageTimings([{ path: "/admin", ttfb: 300 }]), [], "an array body is refused");
 
@@ -78,8 +81,54 @@ export function runPageTimingsTests() {
   assert.deepEqual(
     sanitizePageTimings({ soft: [{ path: "/login", ms: 50 }, { path: "/admin" }, { path: "/admin", ms: 70 }, "x"] }),
     [{ device: "unknown", kind: "soft", metrics: { soft: 70 }, path: "/admin" }],
-    "a tap outside the portal, without a number, or not an object is skipped; the rest are kept",
+    "a tap on a public page, without a number, or not an object is skipped; the rest are kept",
   );
+
+  // ── Every signed-in page is timed, the office pages included (enterprise audit F-PLT-015) ───────────
+  // Until 19 Nov 2026 only /employee-portals and /admin were kept, three parts deep, and any part with a
+  // digit was an id: 106 office pages were never timed and the Employee 360 pages were filed as `:id`.
+  assert.equal(normalisePagePath("/sales/monthly-closing"), "/sales/monthly-closing", "an office page is timed");
+  assert.equal(normalisePagePath("/workspace/marketing-requests/decision/5f1c2d3e-aaaa"), "/workspace/marketing-requests/decision/:id", "an office page's id becomes :id");
+  assert.equal(normalisePagePath("/admin/field-crm/day/SEAT-PED-REP-GZ2/2026-11-17"), "/admin/field-crm/day/:id/:id", "the deepest pages (a rep's day) are timed");
+  assert.equal(normalisePagePath("/employee-portals/employee-360/B-10"), "/employee-portals/employee-360/:id", "Employee 360 is a page name, not an id; the person after it is an id");
+  assert.equal(normalisePagePath("/customer-360"), "/customer-360", "Customer 360 is a page name");
+  assert.equal(normalisePagePath("/employee-portals/a/b/c/d/e/f"), null, "a path deeper than the application goes is refused");
+  for (const publicPage of ["/login", "/password-reset", "/share/abc", "/print/offer/12", "/join/x", "/privacy", "/api/healthz", "/"]) {
+    assert.equal(normalisePagePath(publicPage), null, `${publicPage} is not a signed-in page and is not timed`);
+  }
+
+  // The list of sections is the app's own: a section added to app/ without it would go untimed, and a
+  // name left in it after its section went would let a script fill the table with a page that is not there.
+  const PUBLIC_SECTIONS = [".well-known", "api","connector", "dev", "join", "login", "password-reset", "password-setup", "print", "privacy", "share", "terms", "whatsapp-connect"];
+  const appRoot = new URL("../app/", import.meta.url);
+  const directories = (dir: URL) => readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  const sections = directories(appRoot).flatMap((name) => (/^\(.*\)$/.test(name) ? directories(new URL(`${name}/`, appRoot)) : [name]));
+  assert.deepEqual(
+    sections.filter((name) => !PUBLIC_SECTIONS.includes(name) && !PAGE_TIMING_SECTIONS.includes(name)),
+    [],
+    "every signed-in section of app/ is in PAGE_TIMING_SECTIONS (or is public and named in this test)",
+  );
+  assert.deepEqual(PAGE_TIMING_SECTIONS.filter((name) => !sections.includes(name)), [], "every name in PAGE_TIMING_SECTIONS is a section of app/");
+  const digitNames = new Set<string>();
+  const walk = (dir: URL) => {
+    for (const name of directories(dir)) {
+      if (name === "api" || name === "node_modules") continue;
+      if (/\d/.test(name) && !/^[[(]/.test(name)) digitNames.add(name);
+      walk(new URL(`${name}/`, dir));
+    }
+  };
+  walk(appRoot);
+  assert.deepEqual([...digitNames].sort(), [...PAGE_TIMING_DIGIT_PAGE_NAMES].sort(), "every page name in app/ that holds a digit is kept as a name, never filed as an id");
+
+  // The table's own check must take every shape the intake can make, or the hour's flush is refused.
+  const widened = stripSqlComments(read("supabase/migrations/20261119033509_page_timings_every_signed_in_page.sql"));
+  const tableShape = /path ~ '(\^[^']+\$)'/.exec(widened)?.[1];
+  assert.ok(tableShape, "the widening migration states the table's path check");
+  for (const shaped of ["/admin/field-crm/day/:id/:id", "/employee-portals/employee-360/:id", "/customer-360", "/sales/monthly-closing", "/employee-portals"]) {
+    assert.match(shaped, new RegExp(tableShape!), `the table's check takes ${shaped}`);
+  }
+  assert.doesNotMatch("/admin/a/b/c/d/e/f", new RegExp(tableShape!), "the table's check still refuses a path deeper than the application goes");
+  assert.doesNotMatch("/admin/Not A Page", new RegExp(tableShape!), "the table's check still refuses a part that is neither a page name nor an id");
 
   assert.equal(deviceClassOf({ hardwareConcurrency: 8, deviceMemory: 8 }), "high");
   assert.equal(deviceClassOf({ hardwareConcurrency: 4, deviceMemory: 8 }), "low", "four cores is a phone");
