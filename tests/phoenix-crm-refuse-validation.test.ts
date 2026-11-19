@@ -79,10 +79,13 @@ function checkService(): void {
   assert.match(refuse, /created_by_hr_id: String\(place\.created_by_hr_id\)/, "in the REP's name, exactly as a held review is");
   assert.match(refuse, /decision: "reject"/, "the decision is a reject");
 
-  // A retired place changes what every visit to that customer is measured against.
-  const restamp = refuse.indexOf("restampVisitLocationsQuietly");
-  assert.ok(restamp > decided, "the customer's visits are measured again AFTER the place is retired");
-  assert.match(refuse, /scope: "all"/, "every visit of his, not only the unplaced ones");
+  // 🔴 A SEND-BACK KEEPS EVERY VISIT'S EARLIER DISTANCE (owner, 19 Nov 2026: "Keep earlier distances").
+  // Both reject paths used to measure all of the customer's visits again against the places he had left,
+  // which turned a doctor's visits at the refused clinic "far" from his second one (ماريان مدحت كرم 4,
+  // اسامة سعيد عبدالوهاب 10, put back from a backup by hand). Neither measures anything now.
+  assert.doesNotMatch(refuse, /restampVisitLocations/, "a hand refusal measures none of the customer's visits again");
+  const decide = functionBody(service, "decideValidationReview");
+  assert.doesNotMatch(decide, /restampVisitLocations/, "and neither does a reject on the review board, which the refusal of an approved place runs");
 
   // The list the page offers.
   const load = functionBody(service, "loadValidatedPlaces");

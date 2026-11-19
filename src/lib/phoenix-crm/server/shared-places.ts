@@ -895,16 +895,11 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
       for (const customerId of validatedNow) await shareAcrossLinesQuietly(customerId);
     });
   }
-  // Phoenix CRM validation audit, 14 Nov 2026: a rejected building retires every place seated in it,
-  // and every visit to those customers was measured against one of them. Refusing a single place
-  // measures the customer's visits again (`decideValidationReview`); refusing a whole building did not,
-  // so its visits kept a distance from a place that no longer counts. After the reply: a building can
-  // seat many customers.
-  if (decision === "reject") {
-    await afterResponse("phoenix-crm: measure a rejected venue's visits again", () =>
-      restampSeatedCustomersQuietly(viewer, String(result.shared_place_id), "retired"),
-    );
-  }
+  // 🔴 A REJECTED BUILDING MEASURES NO VISIT AGAIN — a send-back keeps every visit's earlier distance
+  // (owner, 19 Nov 2026: "Keep earlier distances"). From 14 Nov to 19 Nov a rejected building measured
+  // again every visit to the customers seated in it, as a refused single place then did, and a customer
+  // with a clinic of his own had every visit in the building turned "far" from that clinic. Taking the
+  // rejection back (`restoreSharedPlace`) is what measures them again.
   return {
     sharedPlaceId: String(result.shared_place_id),
     name: String(result.name),
@@ -919,14 +914,14 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
 }
 
 /**
- * Measure again every visit to the customers seated in one venue, after the venue's places were retired
- * (`retired`, a rejection) or brought back (`active`, a rejection taken back).
+ * Measure again every visit to the customers seated in one venue, after the venue's places were brought
+ * back (`active`, a rejection taken back). A rejection calls it no more (owner, 19 Nov 2026: a send-back
+ * keeps the visits' earlier distances).
  *
- * Phoenix CRM validation audit, 14 Nov 2026. The function that decides a venue returns only the
- * customers whose STATUS changed; a customer who kept another place of his own lost or regained a
- * measuring point all the same, so the seated places are read here and each customer is measured once.
- * After a rejection the read also meets a seating retired earlier on its own, whose customer is simply
- * measured again to the same answer. Never throws: the decision it follows is already committed.
+ * Phoenix CRM validation audit, 14 Nov 2026. The function that brings a venue back returns only the
+ * customers whose STATUS changed; a customer who kept another place of his own regained a measuring
+ * point all the same, so the seated places are read here and each customer is measured once. Never
+ * throws: the decision it follows is already committed.
  */
 async function restampSeatedCustomersQuietly(viewer: PhoenixCrmViewer, sharedPlaceId: string, seated: "active" | "retired"): Promise<void> {
   try {

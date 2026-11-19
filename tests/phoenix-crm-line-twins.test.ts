@@ -307,11 +307,23 @@ function runSourceTests(): void {
   const placeMove = read("src/lib/phoenix-crm/server/place-move.ts");
   assert.match(placeMove, /followLineTwinCopiesQuietly\(\[moved\.placeId\], viewer\.config\.settings\)/, "a moved place's copies are measured again");
   assert.match(placeMove, /followLineTwinCopiesQuietly\(\[retired\.placeId\], viewer\.config\.settings, \{ retired: true \}\)/, "a removed place's copies go with it");
+  // 🔴 A SEND-BACK KEEPS THE VISITS' EARLIER DISTANCES (owner, 19 Nov 2026: "Keep earlier distances"): the
+  // rejection and the refusal carry the copies WITHOUT measuring their doctors' visits again. The mover's
+  // removal above still measures them again — it is a change of where the customer is, not a send-back.
   assert.equal(
-    (read("src/lib/phoenix-crm/server/validation-reviews.ts").match(/followLineTwinCopiesQuietly\(\[[a-zA-Z]+\], viewer\.config\.settings, \{ retired: true \}\)/g) ?? []).length,
+    (read("src/lib/phoenix-crm/server/validation-reviews.ts").match(/followLineTwinCopiesQuietly\(\[[a-zA-Z]+\], viewer\.config\.settings, \{ retired: true, keepDistances: true \}\)/g) ?? []).length,
     2,
-    "a rejection and a refusal carry the copies",
+    "a rejection and a refusal carry the copies, and keep their visits' distances",
   );
+  assert.doesNotMatch(placeMove, /keepDistances/, "a move and a mover's removal still measure the copies' visits again");
+  const follow = read("src/lib/phoenix-crm/server/line-twins.ts");
+  const followBody = follow.slice(follow.indexOf("export async function followLineTwinCopiesQuietly("), follow.indexOf("// ── After one validation"));
+  assert.match(
+    followBody,
+    /if \(!options\.keepDistances\) \{\s*await restampVisitLocationsQuietly\(\{/,
+    "the copies' visits are measured again only when the caller did not ask to keep their distances",
+  );
+  assert.match(followBody, /if \(options\.retired\) reshare\.add\(/, "and a removed copy's doctor is still offered to the twins either way");
 
   // Every way a doctor becomes validated shares it.
   for (const path of [

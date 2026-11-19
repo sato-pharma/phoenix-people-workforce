@@ -276,11 +276,15 @@ export async function applyLineTwinShares(plan: LineTwinSharePlan, settings: Set
  * (`phoenix_crm_places_line_twin_follow`); their customers' visits are measured again here. A removed
  * source sends its copies' doctors back to To validate, so each is then offered to the twins that are
  * still validated — validated on one line is validated on all three. Never throws.
+ *
+ * 🔴 `keepDistances` IS A SEND-BACK'S (owner, 19 Nov 2026: "Keep earlier distances"). A rejected place
+ * measures none of its customer's visits again, and neither does it measure its copies' doctors' visits:
+ * they keep the distances they were measured with. A MOVE and a mover's REMOVAL still measure them again.
  */
 export async function followLineTwinCopiesQuietly(
   placeIds: ReadonlyArray<string>,
   settings: Settings,
-  options: { retired?: boolean } = {},
+  options: { retired?: boolean; keepDistances?: boolean } = {},
 ): Promise<void> {
   try {
     const reshare = new Set<string>();
@@ -293,14 +297,16 @@ export async function followLineTwinCopiesQuietly(
         .in("trusted_basis->>source_place_id", part);
       throwIfError(error);
       for (const row of (data ?? []) as Row[]) {
-        await restampVisitLocationsQuietly({
-          seatId: String(row.seat_id),
-          isTest: row.is_test === true,
-          customerId: String(row.customer_id),
-          actorHrId: SIGNBOARD_SYSTEM_ACTOR,
-          settings,
-          scope: "all",
-        });
+        if (!options.keepDistances) {
+          await restampVisitLocationsQuietly({
+            seatId: String(row.seat_id),
+            isTest: row.is_test === true,
+            customerId: String(row.customer_id),
+            actorHrId: SIGNBOARD_SYSTEM_ACTOR,
+            settings,
+            scope: "all",
+          });
+        }
         if (options.retired) reshare.add(String(row.customer_id));
       }
     }
