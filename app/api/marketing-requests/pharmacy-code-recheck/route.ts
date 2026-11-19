@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { confirmMasterMatch, keepCodeAsDecided, listCodesAwaitingConfirmation } from "@/lib/marketing-requests/master-recheck";
@@ -29,6 +30,7 @@ export async function PATCH(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: the caller is judged before the body.
     const body = (await request.json().catch(() => ({}))) as { action?: unknown; codeId?: unknown };
     const codeId = String(body.codeId ?? "");
     if (body.action !== "confirm" && body.action !== "keep") {

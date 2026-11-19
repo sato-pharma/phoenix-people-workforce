@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { recalculateOutstationDistanceOnly } from "@/lib/outstation/distance-backfill";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -31,6 +33,9 @@ export async function POST(
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the id and the body — the service's own first gate, repeated here.
+    assertSignedIn(access);
+    await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
     const id = parseOutstationRequestId(rawId);
@@ -62,7 +67,7 @@ export async function POST(
         error: isForbiddenError(error) ? "forbidden" : "outstation_distance_backfill_failed",
         message: clientSafeErrorMessage(error, "Unable to recalculate the distance."),
       },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: error instanceof ApiError && error.status === 401 ? 401 : isForbiddenError(error) ? 403 : 500 },
     );
   }
 }

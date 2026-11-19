@@ -4,6 +4,7 @@ import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import { getStepRecommendation, saveStep } from "@/lib/automated-payroll/run-service";
 import type { StepEditInput } from "@/lib/automated-payroll/types";
 import { isStepKey, type StepInputMode } from "@/lib/automated-payroll/types";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -33,9 +34,10 @@ export async function PUT(
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
+    const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: a signed-out caller is refused before the path is judged.
     const { runId, stepKey } = await params;
     if (!isStepKey(stepKey)) return jsonError(new Error("Validation: unknown step."));
-    const access = await resolveAccessContext(request);
     const body = (await request.json().catch(() => ({}))) as {
       edits?: StepEditInput[];
       inputMode?: StepInputMode;

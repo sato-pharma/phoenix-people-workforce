@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
+  assertHeldDeskAccess,
   keepDirectOrderHeld,
   linkDirectOrderPharmacyCode,
   releaseHeldDirectOrdersForPharmacy,
@@ -25,14 +27,17 @@ export const dynamic = "force-dynamic";
  * Keyed by PHARMACY, not request: a ruling about a pharmacy has to cover its sibling orders and the
  * next one submitted, or every reorder re-freezes behind the same unanswered question.
  *
- * Zero authorization logic here — the service asserts Held Desk access, exactly as the cancel route
- * delegates to cancelHeldDirectOrder.
+ * Zero authorization logic of its own here — the service asserts Held Desk access, exactly as the cancel
+ * route delegates to cancelHeldDirectOrder; the route only asks the service's same gate early (REC-080).
  */
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: the gate all three rulings ask first, asked before the body is judged; each still asks it.
+    assertHeldDeskAccess(access);
     const body = (await request.json().catch(() => ({}))) as {
       decision?: string;
       pharmacyId?: string;

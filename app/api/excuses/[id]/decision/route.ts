@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import {
   decideExcuseRequestAsManager,
@@ -7,6 +8,7 @@ import {
   isExcusesSchemaMissing,
   parseExcuseDecision,
 } from "@/lib/excuses/service";
+import { ApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -34,6 +36,8 @@ export async function POST(
     if (csrf) return csrf;
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    // REC-080: a signed-out caller is refused before the decision is judged.
+    assertSignedIn(access);
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const decision = parseExcuseDecision(body.decision);
     if (!decision) {
@@ -50,9 +54,10 @@ export async function POST(
       ? "Excuse database tables are not deployed yet."
       : excuseErrorMessage(error) || "Unable to decide excuse request.";
     const isForbidden = message.startsWith("Forbidden") || message.includes("not the assigned manager");
+    const isSignedOut = error instanceof ApiError && error.status === 401;
     return NextResponse.json(
       { error: "decision_failed", message, success: false },
-      { status: isForbidden ? 403 : 400 },
+      { status: isSignedOut ? 401 : isForbidden ? 403 : 400 },
     );
   }
 }

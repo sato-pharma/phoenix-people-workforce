@@ -3,9 +3,10 @@ import { NextResponse } from "next/server";
 
 import { deleteSalesBatch, updateSalesBatchStatus } from "@/lib/sales/service";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,10 @@ type RouteContext = {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: every action below needs sales:approve (approve, reject) or sales:delete (delete), so a
+    // caller holding neither is refused before the action is judged. Each branch still asks its own.
+    if (!(await canAccess(access, "sales", "approve"))) await assertPermission(access, "sales", "delete");
     const { action, id } = await context.params;
     const actorUsername = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const actorDisplayName = access.loginId ?? access.hrId ?? access.role;
@@ -71,6 +76,9 @@ export async function POST(request: Request, context: RouteContext) {
           : "Sales batch rejected.",
     });
   } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 401 });
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },

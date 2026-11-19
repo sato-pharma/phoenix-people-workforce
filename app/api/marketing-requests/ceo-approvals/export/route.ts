@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { todayInCairo } from "@/lib/date-only";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: the caller is judged before the body.
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:marketing:ceo-approvals" });
     const body = ((await request.json().catch(() => null)) ?? {}) as {
       carry?: unknown;

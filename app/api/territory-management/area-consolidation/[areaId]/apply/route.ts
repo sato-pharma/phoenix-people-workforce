@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -18,11 +19,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ are
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
 
+    const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: a signed-out caller is refused before the path is judged.
+
     const { areaId } = await params;
     const sourceAreaId = Number(areaId);
     if (!Number.isInteger(sourceAreaId)) throw validationError("That is not a valid area.");
 
-    const access = await resolveAccessContext(request);
     const body = (await request.json().catch(() => ({}))) as {
       targetAreaId?: number | string | null;
       notes?: string | null;

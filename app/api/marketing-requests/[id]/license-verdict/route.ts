@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import {
@@ -29,6 +30,7 @@ export async function POST(
 
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: the caller is judged before the body.
     const body = (await request.json()) as { matchesSign?: unknown; pharmacyId?: unknown };
 
     const result = await recordMarketingPharmacyLicenseVerdict(access, {

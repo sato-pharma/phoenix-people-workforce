@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { customerPharmacyMappingApiError } from "@/lib/customer-pharmacy-mapping/api-error";
 import {
@@ -22,6 +23,7 @@ export async function POST(
 
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
     const body = await request.json().catch(() => ({}) as Record<string, unknown>);
 
     if (body?.decision === "approve") {

@@ -460,7 +460,8 @@ export function isAllVacationVisibility(access: AccessContext) {
   return isAllVacationVisibilityAccess(access);
 }
 
-async function assertVacationAdminManagement(access: AccessContext, action: "create" | "update" | "delete") {
+// Exported so the approver-assignment route asks it before it reads the body (REC-080).
+export async function assertVacationAdminManagement(access: AccessContext, action: "create" | "update" | "delete") {
   await assertPermission(access, "leave", action);
   if (!isAllVacationVisibility(access)) {
     throw new Error("Forbidden: only HR or Super Admin can manage company vacation records.");
