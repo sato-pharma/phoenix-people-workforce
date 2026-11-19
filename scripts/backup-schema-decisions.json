@@ -835,6 +835,34 @@
       "decidedBy": "owner",
       "why": "4 rows: the two areas in both lines before the same move. All four are still live; only the 1 Oct end date the move gave them differs.",
       "sheet": "19 November 2026, the 23 September snapshot tables, in chat"
+    },
+    "au.bak_20261002_luxor_rep_seat_revert": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 row: Pedia Luxor's area row while it shared the Qena 2 rep seat (a direct write on 11 Sep), before the owner's 2 Oct separation removed the link (20261002184148). The live row no longer has the link, so the export is the lasting record of it and the migration's undo. September and October are published.",
+      "sheet": "19 November 2026, the 2 October snapshot tables, in chat"
+    },
+    "au.bak_20261002_ped_d16_occupancy": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "3 rows: the seat-holder history of the Pedia Kafr El-Sheikh 1 rep seat, taken by hand on 2 Oct (no migration). All three rows are still live; their dates and the current holder's region were corrected since.",
+      "sheet": "19 November 2026, the 2 October snapshot tables, in chat"
+    },
+    "au.bak_20261002_ped_ue_split_occupancy": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "4 rows: the seat-holder history of three Pedia Upper Egypt rep seats from the split, taken by hand on 2 Oct (no migration). All four rows are still live; only their dates were corrected since.",
+      "sheet": "19 November 2026, the 2 October snapshot tables, in chat"
+    },
+    "au.monthly_targets_pedia_oct2026_backup_20261002": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "144 rows: Pedia's October 2026 targets as first uploaded on 1 Oct (36 areas x 4 products), which left the live table by 2 Oct with no row in the drop ledger. October was uploaded again 14-30 Oct and published 10 Nov; none of the 144 rows match the live ones, so the export is the lasting record of the first upload.",
+      "sheet": "19 November 2026, the 2 October snapshot tables, in chat"
     }
   }
 }
