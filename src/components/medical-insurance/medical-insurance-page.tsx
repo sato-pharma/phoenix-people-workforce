@@ -28,7 +28,7 @@ type Props = {
 };
 
 /**
- * THE GROUP MEDICAL POLICY, END TO END (owner, 2026-11-04; Libano-Suisse from 15 November 2026). Who should be in, who should be out, what it
+ * THE GROUP MEDICAL POLICY, END TO END (owner, 2026-11-04; Libano-Suisse from 22 November 2026). Who should be in, who should be out, what it
  * should cost, what the insurer billed against that, and the papers and emails behind it. It sends nothing
  * and pays nothing: the form goes to the insurer by a person's hand, and a difference is a person's to act on.
  */
