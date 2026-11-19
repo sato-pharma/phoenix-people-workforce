@@ -30,9 +30,11 @@ import { canAccessSystemAdministratorWorkspace, type AccessContext } from "@/lib
  * exists to catch, so this file is listed there with its verdict rather than arriving unnoticed.
  *
  * It grants nothing beyond those lists. A list sends nothing by itself: the Sato Email Composer is
- * the only thing that reads one (owner 2026-09-11, "I don't want this distribution list to be
- * linked with anything except the email composer"), and the alias register cannot touch a mailbox
- * at all, because Turbify has no API.
+ * the only thing that resolves one (owner 2026-09-11, "I don't want this distribution list to be
+ * linked with anything except the email composer"). Since 2026-11-19 the Email Reply Composer can
+ * send to a list too ("add distrbution list to be able to send bulk emails but with phx
+ * identity"), for the Super Admin alone and through the Sato composer's resolver. The alias
+ * register cannot touch a mailbox at all, because Turbify has no API.
  */
 // The HR Business Partner lost this when the owner retired the HR Business Partner seat on 2026-10-08 ("Leave it for system
 // administrator now"). The screen is the Super Admin's alone again.

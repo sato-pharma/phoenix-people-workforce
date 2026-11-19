@@ -19,6 +19,11 @@ export type SatoEmailRecipient = {
   email: string;
   hrId: string | null;
   name: string;
+  /**
+   * Where this address came from — a list's label, "Picked by name", "Typed address". Display only:
+   * the Email Reply Composer's preview counts its audience by it. Nothing decides who is mailed by it.
+   */
+  source?: string;
 };
 
 export type SatoEmailSendPlan = {

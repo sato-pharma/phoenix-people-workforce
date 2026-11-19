@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, Copy, Eye, Loader2, Mail, Send, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Copy, Eye, Layers, Loader2, Mail, Send, Sparkles, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -17,10 +17,12 @@ import {
   htmlToPlainText,
   type EmailBodyEditorHandle,
 } from "@/components/admin/email-body-editor";
+import { SatoEmailListPicker } from "@/components/admin/sato-email-list-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { PhoenixHrEmailTone } from "@/lib/email/phoenix-hr-reply-template";
+import type { SatoListGroupItem } from "@/lib/sato-email/list-groups";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -65,8 +67,12 @@ type ComposerOptions = {
     sent30d: number;
     skipped30d: number;
   };
+  /** Distribution lists are offered to the Super Admin seat only; the server makes the same check on send. */
+  canUseLists?: boolean;
   employeeOptions: EmployeeOption[];
   groups: GroupOption[];
+  listWarning?: string | null;
+  lists?: SatoListGroupItem[];
   maxRecipients: number;
   templates: Array<{ description: string; isActive: boolean; templateKey: string; templateName: string }>;
   tones: Array<{ label: string; value: PhoenixHrEmailTone }>;
@@ -80,6 +86,8 @@ type ComposerForm = {
   ccSelections: RecipientSelection[];
   clientRequestId: string;
   externalJustification: string;
+  /** Picked distribution lists. Any pick turns the send into a bulk send in the Phoenix identity. */
+  listKeys: string[];
   recipientName: string;
   replyMessage: string;
   replyMessageHtml: string;
@@ -91,7 +99,27 @@ type ComposerForm = {
   tone: PhoenixHrEmailTone;
 };
 
+type BulkSummary = {
+  emailCount: number;
+  listKeys: string[];
+  recipientCount: number;
+  skipped: Array<{ displayName: string; hrId: string; reason: string }>;
+  sources: Array<{ count: number; source: string }>;
+  visibleTo: string;
+};
+
+type BulkSendResult = {
+  emailCount: number;
+  outcomes: Array<{ batchIndex: number; reason: string | null; recipients: number; status: "sent" | "skipped" }>;
+  recipientCount: number;
+  sentEmails: number;
+  status: "failed" | "partial" | "sent" | "skipped";
+  stoppedReason: string | null;
+};
+
 type PreviewState = {
+  /** Present only for a distribution-list send. */
+  bulk?: BulkSummary;
   html: string;
   plainText: string;
   recipientPolicy: {
@@ -126,6 +154,7 @@ function defaultForm(): ComposerForm {
     ccSelections: [],
     clientRequestId: newClientRequestId(),
     externalJustification: "",
+    listKeys: [],
     recipientName: "",
     replyMessage: htmlToPlainText(defaultBodyHtml),
     replyMessageHtml: defaultBodyHtml,
@@ -177,6 +206,9 @@ export function EmailReplyComposer() {
   const [showBcc, setShowBcc] = useState(false);
   const [aiInstruction, setAiInstruction] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  const [showLists, setShowLists] = useState(false);
+  // A list send asks twice: the first press shows how many people and emails, the second sends.
+  const [confirmBulk, setConfirmBulk] = useState(false);
   const richCopyRef = useRef<HTMLDivElement>(null);
   const bodyEditorRef = useRef<EmailBodyEditorHandle | null>(null);
   // The editor pulls external values only when they did not originate from typing; bump
@@ -186,11 +218,16 @@ export function EmailReplyComposer() {
   const externalRecipients = preview?.recipientPolicy.externalRecipients ?? [];
   const policyIssues = preview?.recipientPolicy.issues ?? [];
   const busy = loading || aiBusy;
+  const bulkMode = form.listKeys.length > 0;
+  const listLabels = useMemo(
+    () => new Map((options?.lists ?? []).map((list) => [list.listKey, list.label])),
+    [options?.lists],
+  );
   // Variables only resolve when the backend can find an employee context (matches the
   // server's firstSelectedEmployee lookup across all channels + raw TO).
   const variablesAvailable =
-    [...form.toSelections, ...form.ccSelections, ...form.bccSelections].some((selection) => selection.type === "employee") ||
-    form.to.trim().length > 0;
+    !bulkMode && ([...form.toSelections, ...form.ccSelections, ...form.bccSelections].some((selection) => selection.type === "employee") ||
+    form.to.trim().length > 0);
 
   const editorVariables = useMemo(
     () => (options?.variables ?? []).map((variable) => ({
@@ -205,14 +242,24 @@ export function EmailReplyComposer() {
     void loadOptions();
   }, []);
 
+  function invalidatePreview() {
+    setPreview(null);
+    setConfirmBulk(false);
+  }
+
+  function updateListKeys(next: string[]) {
+    setForm((current) => ({ ...current, listKeys: next }));
+    invalidatePreview();
+  }
+
   function updateField<Key extends keyof ComposerForm>(key: Key, value: ComposerForm[Key]) {
     setForm((current) => ({ ...current, [key]: value }));
-    setPreview(null);
+    invalidatePreview();
   }
 
   function updateBody(html: string) {
     setForm((current) => ({ ...current, replyMessage: htmlToPlainText(html), replyMessageHtml: html }));
-    setPreview(null);
+    invalidatePreview();
   }
 
   async function loadOptions(query = "") {
@@ -245,12 +292,12 @@ export function EmailReplyComposer() {
       const exists = current[channel].some((item) => JSON.stringify(item) === JSON.stringify(selection));
       return exists ? current : { ...current, [channel]: [...current[channel], selection] };
     });
-    setPreview(null);
+    invalidatePreview();
   }
 
   function removeSelection(channel: RecipientChannel, index: number) {
     setForm((current) => ({ ...current, [channel]: current[channel].filter((_item, itemIndex) => itemIndex !== index) }));
-    setPreview(null);
+    invalidatePreview();
   }
 
   function insertVariable(token: string) {
@@ -279,7 +326,7 @@ export function EmailReplyComposer() {
         templateKey,
       }));
       setBodyVersion((current) => current + 1);
-      setPreview(null);
+      invalidatePreview();
     } catch (templateError) {
       setError(templateError instanceof Error ? templateError.message : "Template failed to load.");
     } finally {
@@ -334,7 +381,7 @@ export function EmailReplyComposer() {
         subject: aiDraft.subject?.trim() ? aiDraft.subject : current.subject,
       }));
       setBodyVersion((current) => current + 1);
-      setPreview(null);
+      invalidatePreview();
       setMessage(
         warnings.length > 0
           ? `AI draft applied. ${warnings.join(" ")}`
@@ -384,8 +431,20 @@ export function EmailReplyComposer() {
         setError(payload.result.reason ?? "Email sending is not configured.");
         return;
       }
-      setMessage(payload.result?.id ? `Email accepted by provider. Resend ID: ${payload.result.id}` : "Email accepted by provider.");
+      const bulk = payload.result?.bulk as BulkSendResult | undefined;
+      if (bulk) {
+        const notSent = bulk.outcomes.filter((outcome) => outcome.status !== "sent");
+        const summary = `Sent ${bulk.sentEmails} of ${bulk.emailCount} email(s) to ${bulk.recipientCount} people.`;
+        if (notSent.length > 0) {
+          setError(`${summary} Not sent: ${notSent.map((outcome) => `email ${outcome.batchIndex + 1} (${outcome.recipients} people) - ${outcome.reason ?? "refused"}`).join("; ")}`);
+        } else {
+          setMessage(summary);
+        }
+      } else {
+        setMessage(payload.result?.id ? `Email accepted by provider. Resend ID: ${payload.result.id}` : "Email accepted by provider.");
+      }
       setForm((current) => ({ ...current, clientRequestId: newClientRequestId() }));
+      setConfirmBulk(false);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Email send failed.");
     } finally {
@@ -421,6 +480,23 @@ export function EmailReplyComposer() {
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  function pressSend() {
+    if (bulkMode && !confirmBulk) {
+      setConfirmBulk(true);
+      return;
+    }
+    void sendEmail();
+  }
+
+  const bulkCount = preview?.bulk ? `${preview.bulk.recipientCount} people in ${preview.bulk.emailCount} email(s)` : null;
+  const sendLabel = !bulkMode
+    ? null
+    : confirmBulk && bulkCount
+      ? `Confirm: send to ${bulkCount}`
+      : preview?.bulk
+        ? `Send to ${preview.bulk.recipientCount} people`
+        : "Send to lists";
+
   const needsJustification = externalRecipients.length > 0 || policyIssues.some((issue) => issue.code === "external_justification_required");
 
   return (
@@ -433,9 +509,9 @@ export function EmailReplyComposer() {
                 <Eye className="mr-2 h-4 w-4" />
                 Preview &amp; Check
               </Button>
-              <Button className="h-11 rounded-xl bg-phx-accent px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
+              <Button className="h-11 rounded-xl bg-phx-accent px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={pressSend} type="button">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Send Email
+                {sendLabel ?? "Send Email"}
               </Button>
             </>
           }
@@ -501,7 +577,51 @@ export function EmailReplyComposer() {
                   onSearch={(query) => void loadOptions(query)}
                 />
               ) : null}
+              {options?.canUseLists ? (
+                <div className="flex min-h-[46px] flex-wrap items-center gap-1.5 border-t border-phx-paper-2 py-2">
+                  <span className="w-12 shrink-0 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Lists</span>
+                  {form.listKeys.map((listKey) => (
+                    <span className="inline-flex items-center gap-1 border border-[#C7D2FE] bg-[#EEF2FF] px-2.5 py-1 text-xs font-black text-[#3730A3]" key={listKey}>
+                      {listLabels.get(listKey) ?? listKey}
+                      <button
+                        aria-label={`Remove ${listLabels.get(listKey) ?? listKey}`}
+                        className="text-phx-ink-faint hover:text-[#DC2626]"
+                        onClick={() => updateListKeys(form.listKeys.filter((key) => key !== listKey))}
+                        type="button"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <button
+                    className="inline-flex items-center gap-1.5 border border-phx-line bg-white px-2.5 py-1 text-xs font-black text-phx-ink-2 hover:border-phx-accent-line"
+                    onClick={() => setShowLists((current) => !current)}
+                    type="button"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                    {showLists ? "Hide distribution lists" : form.listKeys.length > 0 ? "Change lists" : "Add distribution lists"}
+                  </button>
+                </div>
+              ) : null}
             </div>
+
+            {options?.canUseLists && showLists ? (
+              <div className="border-b border-[#E8EDF3] bg-phx-paper px-5 py-4">
+                {options.listWarning ? <p className="mb-3 text-sm font-semibold text-[#9A3412]">{options.listWarning}</p> : null}
+                <SatoEmailListPicker lists={options.lists ?? []} onChange={updateListKeys} selected={form.listKeys} />
+              </div>
+            ) : null}
+
+            {bulkMode ? (
+              <div className="flex items-start gap-2 border-b border-[#C7D2FE] bg-[#EEF2FF] px-5 py-3 text-sm font-semibold text-[#3730A3]">
+                <Layers className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  Bulk send in the Phoenix HR identity. Everyone on the lists and every name in To, Cc and Bcc gets
+                  their own copy, in emails of {options?.maxRecipients ?? 25}, hidden from each other. Variables are off, and
+                  the greeting reads &quot;Dear {form.recipientName.trim() || "colleagues"},&quot;.
+                </p>
+              </div>
+            ) : null}
 
             <div className="flex items-center gap-3 border-b border-[#E8EDF3] px-5 py-1.5">
               <input
@@ -528,7 +648,7 @@ export function EmailReplyComposer() {
               <input
                 className={cn(phxFieldClassName, "w-48")}
                 onChange={(event) => updateField("recipientName", event.target.value)}
-                placeholder="auto from recipient"
+                placeholder={bulkMode ? "colleagues" : "auto from recipient"}
                 value={form.recipientName}
               />
               <span className="font-semibold text-phx-ink-2">,</span>
@@ -592,10 +712,15 @@ export function EmailReplyComposer() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E8EDF3] bg-phx-paper px-5 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Button className="h-10 rounded-xl bg-phx-accent px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
+                <Button className="h-10 rounded-xl bg-phx-accent px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={pressSend} type="button">
                   {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Send
+                  {sendLabel ?? "Send"}
                 </Button>
+                {confirmBulk ? (
+                  <Button className="h-10 border border-phx-line bg-white px-3 text-phx-ink" disabled={busy} onClick={() => setConfirmBulk(false)} type="button" variant="secondary">
+                    Cancel
+                  </Button>
+                ) : null}
                 <Button className="h-10 rounded-xl border border-phx-line bg-white px-3 text-phx-ink" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
                   <Eye className="mr-2 h-4 w-4" />
                   Preview &amp; Check
@@ -666,6 +791,8 @@ export function EmailReplyComposer() {
                     ))}
                   </div>
                 </>
+              ) : bulkMode ? (
+                <p className="text-sm leading-6 text-phx-ink-soft">Variables are off for a distribution-list email: it goes to many people at once, so one person&apos;s details cannot be filled in.</p>
               ) : (
                 <p className="text-sm leading-6 text-phx-ink-soft">Choose an employee recipient first so the backend can fill variable values.</p>
               )}
@@ -909,9 +1036,14 @@ function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
       {preview ? (
         <>
           <div className={cn(adminSoftPanelClassName, "grid gap-3 p-3 md:grid-cols-2")}>
-            <Metric label="Recipients" value={String(preview.recipientPolicy.totalRecipients)} />
-            <Metric label="External" value={String(preview.recipientPolicy.externalRecipients.length)} />
+            <Metric label={preview.bulk ? "People" : "Recipients"} value={String(preview.recipientPolicy.totalRecipients)} />
+            {preview.bulk ? (
+              <Metric label="Emails" value={String(preview.bulk.emailCount)} />
+            ) : (
+              <Metric label="External" value={String(preview.recipientPolicy.externalRecipients.length)} />
+            )}
           </div>
+          {preview.bulk ? <BulkBreakdown bulk={preview.bulk} /> : null}
           {preview.warnings.length > 0 ? preview.warnings.map((warning) => (
             <div className="rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-sm font-semibold text-[#9A3412]" key={warning}>
               <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
@@ -928,6 +1060,39 @@ function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
         </p>
       )}
     </Card>
+  );
+}
+
+function BulkBreakdown({ bulk }: { bulk: BulkSummary }) {
+  return (
+    <div className="space-y-3">
+      <div className="border border-phx-line bg-white p-3">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Who it reaches</p>
+        <div className="mt-2 space-y-1.5">
+          {bulk.sources.map((entry) => (
+            <div className="flex items-start justify-between gap-3 text-sm" key={entry.source}>
+              <span className="min-w-0 break-words font-semibold text-phx-ink">{entry.source}</span>
+              <span className="shrink-0 font-black text-phx-ink">{entry.count}</span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 break-words text-xs font-semibold text-phx-ink-soft">
+          Every copy shows {bulk.visibleTo} in its To line; each person is in Bcc.
+        </p>
+      </div>
+      {bulk.skipped.length > 0 ? (
+        <div className="border border-[#FED7AA] bg-phx-accent-soft p-3">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#9A3412]">Left out ({bulk.skipped.length})</p>
+          <div className="mt-2 space-y-1">
+            {bulk.skipped.map((entry) => (
+              <p className="break-words text-sm font-semibold text-[#9A3412]" key={`${entry.hrId}-${entry.reason}`}>
+                {entry.displayName} - {entry.reason}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

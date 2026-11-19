@@ -3,6 +3,7 @@ import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidCommunicationEmails } from "@/lib/communication/metrics";
 import { getDistributionListSpecs, resolveDistributionListByKey } from "@/lib/distribution-lists/service";
+import type { DistributionListSpec } from "@/lib/distribution-lists/spec";
 import { validateManualEmailRecipientPolicy } from "@/lib/email/email-safety";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { loadSatoEmailAttachments, resolveSatoEmailAttachments, type SatoEmailAttachmentSummary } from "@/lib/sato-email/media";
@@ -260,6 +261,30 @@ function isAddressableList(spec: { allEmployees: boolean; enabled: boolean }): b
   return spec.enabled && !spec.allEmployees;
 }
 
+/** The lists a composer may offer, with the rule-based "already covered by" hint on each. */
+function addressableListOptions(specs: readonly DistributionListSpec[]): SatoEmailListOption[] {
+  const addressable = specs.filter(isAddressableList);
+  // Coverage is computed over the OFFERED lists only, so a hint can never point at a list the
+  // sender cannot see or pick.
+  const coverage = computeListCoverage(addressable);
+  return addressable.map((spec) => ({
+    coveredBy: coverage.get(spec.listKey) ?? [],
+    description: spec.description,
+    label: spec.label,
+    listKey: spec.listKey,
+  }));
+}
+
+/**
+ * The same offered lists, for the Email Reply Composer (owner, 2026-11-19: "add distribution list to
+ * be able to send bulk emails but with phx identity"). One set of lists, one rule about which may be
+ * addressed — the reply composer offers exactly what this composer offers, and resolves a pick
+ * through resolveSatoEmailAudience below, never on its own.
+ */
+export async function getSatoEmailListOptions(): Promise<SatoEmailListOption[]> {
+  return addressableListOptions(await getDistributionListSpecs());
+}
+
 export async function getSatoEmailComposerOptions(): Promise<SatoEmailComposerOptions> {
   const warnings: string[] = [];
 
@@ -269,20 +294,9 @@ export async function getSatoEmailComposerOptions(): Promise<SatoEmailComposerOp
     getEmployeeDirectory(),
   ]);
 
-  const lists: SatoEmailListOption[] = [];
+  let lists: SatoEmailListOption[] = [];
   if (specsResult.status === "fulfilled") {
-    const addressable = specsResult.value.filter(isAddressableList);
-    // Coverage is computed over the OFFERED lists only, so a hint can never point at a list the
-    // sender cannot see or pick.
-    const coverage = computeListCoverage(addressable);
-    for (const spec of addressable) {
-      lists.push({
-        coveredBy: coverage.get(spec.listKey) ?? [],
-        description: spec.description,
-        label: spec.label,
-        listKey: spec.listKey,
-      });
-    }
+    lists = addressableListOptions(specsResult.value);
   } else {
     warnings.push("The distribution lists could not be loaded.");
   }
@@ -356,10 +370,10 @@ export async function resolveSatoEmailAudience(input: {
       continue;
     }
     for (const member of resolved.members) {
-      recipients.push({ email: member.email, hrId: member.hrId, name: member.displayName });
+      recipients.push({ email: member.email, hrId: member.hrId, name: member.displayName, source: resolved.label });
     }
     for (const external of resolved.externalEmails) {
-      recipients.push({ email: external, hrId: null, name: external });
+      recipients.push({ email: external, hrId: null, name: external, source: resolved.label });
     }
     for (const entry of resolved.skipped) {
       skipped.push({
@@ -390,14 +404,14 @@ export async function resolveSatoEmailAudience(input: {
         skipped.push({ displayName, hrId: employee.hrId, reason: "Picked by name: no work email on record" });
         continue;
       }
-      recipients.push({ email, hrId: employee.hrId, name: displayName });
+      recipients.push({ email, hrId: employee.hrId, name: displayName, source: "Picked by name" });
     }
   }
 
   // Typed by hand. Each is its own recipient, deduped against the lists and the named colleagues by
   // the send plan — so an address that is also on a picked list is counted, and mailed, once.
   for (const email of new Set(input.emails.map((value) => value.trim().toLowerCase()).filter(Boolean))) {
-    recipients.push({ email, hrId: null, name: email });
+    recipients.push({ email, hrId: null, name: email, source: "Typed address" });
   }
 
   return { recipients, skipped, warnings };
