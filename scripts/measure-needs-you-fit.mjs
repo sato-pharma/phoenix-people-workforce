@@ -2,7 +2,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./scripts/needs-you-fit-loader.mjs scripts/measure-needs-you-fit.mjs
+//     --import ./scripts/register-needs-you-fit-loader.mjs scripts/measure-needs-you-fit.mjs
 //
 // (`pnpm run ui:measure-needs-you-fit` from the PRIMARY checkout; never `pnpm` inside a worktree —
 // AGENTS.md §5, and `bash-guard.mjs` C6 denies it.)

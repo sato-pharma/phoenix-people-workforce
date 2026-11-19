@@ -20,7 +20,7 @@
  *
  *   railway run --service phoenix-people-workforce -- \
  *     node --experimental-strip-types --experimental-specifier-resolution=node \
- *          --experimental-loader ./tests/alias-loader.mjs \
+ *          --import ./tests/register-alias-loader.mjs \
  *          scripts/headwind-push-apk.ts --apk ./phoenix.apk --config rep
  *
  * 🔴 `railway run` RESOLVES ITS LINK FROM THE CURRENT DIRECTORY, and a worktree answers

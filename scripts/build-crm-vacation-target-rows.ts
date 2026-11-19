@@ -32,7 +32,7 @@
  *
  * Usage:
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./scripts/register-alias-loader.mjs \
  *     scripts/build-crm-vacation-target-rows.ts --month 9 --year 2026 --out <path>
  */
 import fs from "node:fs";

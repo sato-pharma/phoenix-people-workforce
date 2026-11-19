@@ -10,7 +10,7 @@
 // them — the same non-negotiable that `backfill-cvs-to-drive.mjs` documents:
 //
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//        --experimental-loader ./tests/alias-loader.mjs scripts/build-cv-cabinet.mjs --dry-run
+//        --import ./tests/register-alias-loader.mjs scripts/build-cv-cabinet.mjs --dry-run
 //
 // WHAT IT DOES NOT TOUCH. The existing "Phoenix CVs" tree, at all. Owner, 2026-09-07: "don't fix.
 // Create a new folder and reroute." Nothing here reads its paths, moves its files or deletes

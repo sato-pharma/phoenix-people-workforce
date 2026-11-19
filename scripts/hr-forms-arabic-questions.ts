@@ -19,7 +19,7 @@
  *   3. The Arabic qualifications that nobody has confirmed.
  *
  * Run:  node --experimental-strip-types --experimental-specifier-resolution=node \
- *         --experimental-loader ./tests/alias-loader.mjs scripts/hr-forms-arabic-questions.ts
+ *         --import ./tests/register-alias-loader.mjs scripts/hr-forms-arabic-questions.ts
  *
  * NO IMAGES AND NO OUTLINE GROUPS, deliberately. ExcelJS writes two schema-invalid OOXML fragments
  * that make Excel silently "repair" a workbook, and both are triggered by things this sheet does not

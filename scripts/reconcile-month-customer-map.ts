@@ -39,7 +39,7 @@
  * Usage (from the repo root; it reads and writes the database .env.local points at, which is
  * PRODUCTION):
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/reconcile-month-customer-map.ts [--apply] [--period=2026-09] [--line=cns] \
  *     [--actor=B-10] [--preimage=<path.csv>]
  *

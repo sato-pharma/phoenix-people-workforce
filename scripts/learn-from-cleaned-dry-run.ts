@@ -4,7 +4,7 @@
 // src/lib/sales/normalizer/service.ts::learnFromCleanedFile.
 //
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//        --experimental-loader ./tests/alias-loader.mjs \
+//        --import ./tests/register-alias-loader.mjs \
 //        scripts/learn-from-cleaned-dry-run.ts [CODE] ["path.xlsx"]
 
 import { existsSync, readFileSync } from "node:fs";

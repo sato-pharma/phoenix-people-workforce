@@ -2,7 +2,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./scripts/needs-you-fit-loader.mjs scripts/measure-cv-lookup-fit.mjs
+//     --import ./scripts/register-needs-you-fit-loader.mjs scripts/measure-cv-lookup-fit.mjs
 //
 // (`pnpm run ui:measure-cv-lookup-fit` from the PRIMARY checkout; never `pnpm` inside a worktree —
 // AGENTS.md §5, and `bash-guard.mjs` C6 denies it.)

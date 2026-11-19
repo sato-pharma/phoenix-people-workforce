@@ -26,7 +26,7 @@
  *
  * Usage:
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./scripts/register-alias-loader.mjs \
  *     scripts/import-crm-vacation-backfill.ts --input <path> --marker <YYYY-MM-DD[-suffix]> [--execute] [--limit N]
  *
  * Without --execute it is a dry run: it resolves and guards every row but writes nothing.

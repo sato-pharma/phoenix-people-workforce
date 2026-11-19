@@ -29,7 +29,7 @@ import { COMPETITOR_TERMS, PRODUCT_VOCABULARY } from "../src/lib/phoenix-crm/dic
  *
  * Regenerate the fixture with:
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *        --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *        --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *        scripts/dictation-corrector-eval.ts --freeze tests/fixtures/dictation-corpus-tokens.json
  */
 

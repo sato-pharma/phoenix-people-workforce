@@ -193,7 +193,7 @@ and apply rules 1–4. Known findings, worst first:
    then `git push origin HEAD:codex/tables-said-once-fit`. Never force-push. If the push to that branch is refused,
    push to your own branch and NAME it in your final message.
 4. Run the tests for what you touched. One test file:
-   `node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs -e "import('./tests/<file>.test.ts').then((m) => m.<exportedRunFunction>())"`.
+   `node --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs -e "import('./tests/<file>.test.ts').then((m) => m.<exportedRunFunction>())"`.
    A typecheck is fine in the cloud (`pnpm run typecheck`; prefix `PHX_TYPECHECK_OK=1` if a hook refuses it).
 5. Never open a pull request, never merge, never touch production data, never send an email. The control session
    opens the one PR when every builder has pushed.

@@ -1,7 +1,7 @@
 // Does every sales surface print the same number for the same area? Read-only.
 //
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+//     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
 //     scripts/check-sales-truth.ts [YYYY-MM]
 //
 // Or: pnpm run sales:check-truth            (EVERY month that has closing data)

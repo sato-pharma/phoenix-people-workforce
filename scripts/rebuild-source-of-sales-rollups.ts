@@ -15,7 +15,7 @@
  * Usage (from the repo root; it reads and writes the database .env.local points at, which is
  * PRODUCTION):
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/rebuild-source-of-sales-rollups.ts [--apply] [batch id ...]
  *
  * Without --apply it lists the batches it would rebuild and writes NOTHING. With batch ids it

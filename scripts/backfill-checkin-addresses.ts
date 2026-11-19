@@ -13,7 +13,7 @@
  *
  * Usage (from the repo root, with a populated .env.local — this hits PRODUCTION Supabase):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/backfill-checkin-addresses.ts <dateFrom YYYY-MM-DD> [dateTo YYYY-MM-DD]
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";

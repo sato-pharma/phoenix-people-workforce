@@ -15,7 +15,7 @@
  *
  * Usage (repo root, `.env.local` names the project — on this machine that is PRODUCTION):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/normalize-employee-photos.ts [--apply] [--hr-id <id>]
  */
 import crypto from "node:crypto";
