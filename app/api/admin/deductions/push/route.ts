@@ -1,24 +1,32 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsPublishActor } from "@/lib/deductions/permissions.ts";
 import { pushDeduction, pushForEmployee, withdrawDeduction } from "@/lib/deductions/push.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PushBody = {
-  monthKey?: unknown;
-  candidateId?: unknown;
-  employeeHrIdCompact?: unknown;
-  candidateIds?: unknown;
-};
+/**
+ * The Deductions workspace's Push sends `{ monthKey, candidateId }`. The per-employee shape
+ * `{ monthKey, employeeHrIdCompact, candidateIds? }` has no screen today; its list is kept as sent and
+ * filtered to non-empty strings below, as before.
+ */
+const PushBodySchema = z.object({
+  monthKey: z.string().nullish(),
+  candidateId: z.string().nullish(),
+  employeeHrIdCompact: z.string().nullish(),
+  candidateIds: z.array(z.unknown()).nullish(),
+});
 
-type WithdrawBody = {
-  lineId?: unknown;
-};
+/** The Deductions workspace's Withdraw sends `{ lineId }` — the pushed line's id. */
+const WithdrawBodySchema = z.object({
+  lineId: z.string().nullish(),
+});
 
 /**
  * Push a deduction — one candidate, or some/all of one employee's candidates.
@@ -38,7 +46,11 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "approve");
     assertDeductionsPublishActor(access);
 
-    const body = (await request.json()) as PushBody;
+    const parsed = await parseJsonBody(request, PushBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (typeof body.monthKey !== "string" || !body.monthKey.trim()) {
       throw new Error("Validation: monthKey is required (YYYY-MM).");
     }
@@ -81,7 +93,11 @@ export async function DELETE(request: Request) {
     await assertPermission(access, "deductions", "approve");
     assertDeductionsPublishActor(access);
 
-    const body = (await request.json()) as WithdrawBody;
+    const parsed = await parseJsonBody(request, WithdrawBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (typeof body.lineId !== "string" || !body.lineId.trim()) {
       throw new Error("Validation: lineId is required.");
     }

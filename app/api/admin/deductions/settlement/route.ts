@@ -1,22 +1,32 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { DEDUCTION_COLLECTORS, isDeductionCollectorKey } from "@/lib/deductions/collect.ts";
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { collectSettlementForLeaver, resolveSettlementEligibility } from "@/lib/deductions/settlement.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-type SettlementBody = {
-  month?: unknown;
-  year?: unknown;
-  connector?: unknown;
-  employeeHrId?: unknown;
-};
+/** A month or year as the route has always taken it: a number, or text it reads with Number(). */
+const NumberLike = z.union([z.number(), z.string()]).nullish();
+
+/**
+ * The leaver-settlement panel sends `{ month, year, employeeHrId }` for the dry check, then the same
+ * with `connector` once per connector — month and year as numbers. Ranges, the HR id and the connector
+ * key are still checked below with the route's own words.
+ */
+const SettlementBodySchema = z.object({
+  month: NumberLike,
+  year: NumberLike,
+  connector: z.string().nullish(),
+  employeeHrId: z.string().nullish(),
+});
 
 /**
  * Final-settlement collection for ONE leaver, in the month they left.
@@ -41,7 +51,11 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "create");
     assertDeductionsDecisionActor(access);
 
-    const body = (await request.json().catch(() => ({}))) as SettlementBody;
+    const parsed = await parseJsonBody(request, SettlementBodySchema, { fallback: {} });
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     const month = Number(body.month);
     const year = Number(body.year);
     if (!Number.isInteger(month) || month < 1 || month > 12) {

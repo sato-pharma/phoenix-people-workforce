@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { chargeDeductionToLeaveBalance, previewLeaveBalanceCharge, returnDeductionToSalary } from "@/lib/deductions/leave-balance.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -24,12 +26,17 @@ export async function GET(request: Request) {
   }
 }
 
-type LeaveBalanceBody = {
-  action?: unknown;
-  candidateId?: unknown;
-  comment?: unknown;
-  reason?: unknown;
-};
+/**
+ * The Deductions workspace sends `{ candidateId, action: "charge", comment }` or
+ * `{ candidateId, action: "return" }`. Which action, and the comment a charge requires, are still
+ * checked below and in the service with their own words.
+ */
+const LeaveBalanceBodySchema = z.object({
+  action: z.string().nullish(),
+  candidateId: z.string().nullish(),
+  comment: z.string().nullish(),
+  reason: z.string().nullish(),
+});
 
 /**
  * `charge` takes a deduction in one of LEAVE_BALANCE_CATEGORIES from the employee's annual leave (the
@@ -45,7 +52,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "deductions", "approve");
 
-    const body = (await request.json()) as LeaveBalanceBody;
+    const parsed = await parseJsonBody(request, LeaveBalanceBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (typeof body.candidateId !== "string" || !body.candidateId.trim()) {
       throw new Error("Validation: candidateId is required.");
     }
