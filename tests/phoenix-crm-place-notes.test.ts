@@ -36,7 +36,7 @@ import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/sour
  *      `.in("seat_id", …)`), and the scope helper THROWS rather than handing back `[]` — a PostgREST
  *      `.in()` on an empty array answers zero rows with no error, which would draw an empty board for
  *      a viewer who may not open it at all.
- *   2. HE DECIDES NOTHING. `canDecideValidationReviews` still gates all three decision services, and
+ *   2. HE DECIDES NOTHING. `canDecideValidationReviews` (the Super Admin alone) still gates all three decision services, and
  *      the board renders no decision control in `mode="team"`.
  *   3. THE VISIBILITY IS CHOSEN, NEVER DEFAULTED. `rep_visible` is NOT NULL with no default in the
  *      table and a required boolean on the wire, and the screen's only way to save is one of the two
@@ -130,7 +130,7 @@ function checkTeamScope(): void {
   // 🔴 THE SCOPE THROWS. An empty array would be served to PostgREST as `.in("seat_id", [])`, which
   // answers ZERO ROWS WITH NO ERROR — an empty board for somebody who may not open it.
   const scope = functionBody(access, "placeChecksSeatScope");
-  assert.match(scope, /if \(canDecideValidationReviews\(viewer\)\) return null/, "the Super Admin reads the company");
+  assert.match(scope, /if \(readsCompanyPlaceChecks\(viewer\)\) return null/, "the Super Admin and the SFE Manager read the company");
   assert.match(scope, /if \(seats\.length === 0\) throw forbiddenError\(/, "and anybody with no team of his own is REFUSED, never served an empty list");
   assert.ok(scope.indexOf("return null") < scope.indexOf("seats.length === 0"), "the company branch is answered before the team one is measured");
 
@@ -159,7 +159,7 @@ function checkHeDecidesNothing(): void {
   const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
   for (const name of ["decideValidationReview", "refuseValidatedPlace"]) {
     const body = functionBody(reviews, name);
-    assert.match(body, /if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, `${name} is still the deciders' alone`);
+    assert.match(body, /if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, `${name} is still the Super Admin's alone`);
   }
   // Taking a rejection back is narrower still — the Super Admin alone (owner, 2026-11-10).
   assert.match(functionBody(reviews, "restoreValidation"), /if \(!canRestoreValidation\(viewer\)\) throw forbiddenError/, "restoreValidation is the Super Admin's alone");
@@ -333,7 +333,12 @@ function checkWriteGate(): void {
   const testGate = subject[0].search(/if \(viewer\.isTestPersona && !subject\.isTest\) \{\s*throw forbiddenError\(/);
   assert.ok(testGate > -1, "a test account is refused a write on a real place");
   assert.ok(testGate < subject[0].indexOf("return {"), "and refused before the resolver can hand back a subject");
-  assert.match(subject[0], /if \(canDecideValidationReviews\(viewer\)\) return \{ source: "system_admin", subject \}/, "the Super Admin writes as the administrator");
+  assert.match(subject[0], /if \(readsCompanyPlaceChecks\(viewer\)\) return \{ source: "system_admin", subject \}/, "the company board's readers write as the administrator");
+  // 🔴 THE SFE MANAGER RECOMMENDS, THE SUPER ADMIN NEVER DOES (owner, 2026-11-19): each row says who wrote it.
+  const recommend = functionBody(notes, "savePlaceRecommendation");
+  assert.match(recommend, /source === "manager" \? "district_manager" : recommendsOnCompanyPlaceChecks\(viewer\) \? "sfe_manager" : null/, "a district manager writes as one, the SFE Manager as himself, and nobody else");
+  assert.match(recommend, /if \(!writerRole\) throw forbiddenError\(/, "and the Super Admin is refused a recommendation");
+  assert.match(recommend, /writer_role: writerRole/, "and the row records who wrote it");
   for (const name of ["savePlaceNote", "savePlaceRecommendation"]) {
     assert.match(functionBody(notes, name), /await subjectFor\(viewer, kind, subjectId\)/, `${name} writes only through the gated resolver`);
   }
@@ -409,12 +414,24 @@ function checkPrivateAdminNotesStayOffAManagersScreen(): void {
     .sort();
   assert.deepEqual(
     callers,
-    ["app/(admin)/admin/field-crm/validation-reviews/page.tsx", "app/employee-portals/place-checks/page.tsx", "src/lib/phoenix-crm/server/place-notes.ts"],
+    [
+      "app/(admin)/admin/field-crm/sfe-recommendations/page.tsx",
+      "app/(admin)/admin/field-crm/validation-reviews/page.tsx",
+      "app/employee-portals/place-checks/page.tsx",
+      "src/lib/phoenix-crm/server/place-notes.ts",
+    ],
     "a new caller of the note index must choose its audience here",
   );
   assert.match(read("app/employee-portals/place-checks/page.tsx"), /loadPlaceNoteIndex\(subjects, \{ managerBoard: true \}\)/, "the manager's page asks for the manager's view");
   const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(company, /loadPlaceNoteIndex\(subjects\)/, "the deciders' page keeps every note");
+  assert.match(company, /loadPlaceNoteIndex\(subjects, \{ viewerHrId: viewer\.hrId \}\)/, "the company page keeps every note, and marks the viewer's own recommendation");
+  assert.match(
+    read("app/(admin)/admin/field-crm/sfe-recommendations/page.tsx"),
+    /loadPlaceNoteIndex\(subjects, \{ viewerHrId: viewer\.hrId \}\)/,
+    "and so does the SFE recommendations page",
+  );
+  // 🔴 THE SFE MANAGER'S WORD NEVER REACHES A DISTRICT MANAGER'S BOARD, which names nobody above him.
+  assert.match(load, /\.filter\(\(row\) => !options\.managerBoard \|\| writerRoleOf\(row\.writer_role\) === "district_manager"\)/, "the manager's board drops the SFE Manager's recommendations");
   assert.ok(!company.includes("managerBoard"), "and never narrows it: the one-by-one review sorts on these notes");
 
   // The Visit Report's "Place notes" column is a second door to the same table.
@@ -612,7 +629,7 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   ] as const;
   for (const [name, source, fields] of loaders) {
     const body = functionBody(source, name);
-    assert.match(body, /const decides = canDecideValidationReviews\(viewer\);/, `${name} asks the one predicate that decides who may read a decider`);
+    assert.match(body, /const decides = readsCompanyPlaceChecks\(viewer\);/, `${name} asks the one predicate that decides who may read a decider`);
     const written = [...body.matchAll(/\b(decidedByName|refusedByName|decisionNote|byName|declaredByName): ([^\n]*)/g)];
     assert.deepEqual(written.map((match) => match[1]).sort(), [...fields].sort(), `${name} writes exactly these decider fields`);
     for (const [line, field, value] of written) {
@@ -629,7 +646,7 @@ function checkAManagersPayloadCarriesNoDecider(): void {
 
   // The one line of this table a manager's screen really drew: the closed case keeps its status, never its closer.
   const integrity = functionBody(evidence, "loadPlaceCheckIntegrity");
-  assert.match(integrity, /const decides = canDecideValidationReviews\(viewer\);/, "the evidence read asks the same predicate");
+  assert.match(integrity, /const decides = readsCompanyPlaceChecks\(viewer\);/, "the evidence read asks the same predicate");
   assert.match(
     integrity,
     /settledText: settlement\s*\? `\$\{decides \? `Settled by \$\{settlement\.byName\}` : "Settled"\} · \$\{formatPhoenixDateTime\(settlement\.at\)\}`/,
@@ -637,9 +654,9 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   );
   assert.equal([...integrity.matchAll(/settlement\.byName/g)].length, 1, "and the closer's name appears nowhere else in this read");
 
-  // The deciders keep all of it: their page admits nobody else, so `decides` is true for every row it reads.
+  // The company board's readers keep all of it: their page admits nobody else, so `decides` is true for every row it reads.
   const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(company, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the deciders' page gates on the same predicate");
+  assert.match(company, /if \(!viewer \|\| !readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\)/, "the company page gates on the same predicate");
   assert.match(company, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "and reads through the same loaders");
   // The board's filter lists are built by `placeCheckOptions`, which the page also runs on the server to
   // count the opening figures (2026-11-14, "Load lists on demand") — one list, never a second copy.

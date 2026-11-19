@@ -242,7 +242,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   // separates reading this board from deciding on it.
   const access = stripComments(readFileSync("src/lib/phoenix-crm/server/access.ts", "utf8"));
   // Who the decider admits is a BEHAVIOUR, pinned by evaluating the function in
-  // `tests/phoenix-crm-sfe-place-checks.test.ts` (the Super Admin and the SFE Manager since 2026-10-19,
+  // `tests/phoenix-crm-sfe-place-checks.test.ts` (the Super Admin alone since 2026-11-19, the SFE Manager recommending,
   // never a test account, never a district manager) — here only that it is declared once, in this file.
   assert.match(access, /export function canDecideValidationReviews\(viewer: PhoenixCrmViewer\): boolean \{\s*if \(viewer\.isTestPersona\) return false;/, "the decider refuses a test account first");
   const reviews = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
@@ -250,7 +250,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.doesNotMatch(reviews, /function canDecideValidationReviews\(/, "nothing re-declares it where it used to live");
   assert.match(reviews, /export async function decideValidationReview\([\s\S]*?if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, "the decision refuses everyone else");
   const page = stripComments(readFileSync("app/(admin)/admin/field-crm/validation-reviews/page.tsx", "utf8"));
-  assert.match(page, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\);/, "and so does the page");
+  assert.match(page, /if \(!viewer \|\| !readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\);/, "and the page admits its readers — the decider and the SFE Manager, who recommends");
 
   // ── §11. A refusal nobody can pass by standing anywhere is not a dead end ────
   //

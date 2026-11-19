@@ -92,7 +92,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
   // ── The read ──────────────────────────────────────────────────────────────────────────────────
   const server = code("src/lib/phoenix-crm/server/failing-timetables.ts");
   const load = server.slice(server.indexOf("export async function loadFailingTimetables("), server.indexOf("export type NoTimetableDeclaration"));
-  assert.ok(load.includes("if (!canDecideValidationReviews(viewer)) return EMPTY;"), "🔴 the list is the deciders' alone — anybody else is handed nothing");
+  assert.ok(load.includes("if (!readsCompanyPlaceChecks(viewer)) return EMPTY;"), "🔴 the list is the board's readers' alone — anybody else is handed nothing");
   assert.ok(load.includes('.in("reason", ["timetable_unreadable", "timetable_missing"])'), "only the two timetable refusals are read");
   assert.ok(load.includes('.eq("is_test", false)'), "a test entry is never listed");
   assert.match(

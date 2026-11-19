@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { PlaceCheckDecisionState } from "@/components/phoenix-crm/place-check-decides";
 import { isAlreadyDecided, PlaceCheckSaved, useSavedOutcome, type PlaceCheckOutcome } from "@/components/phoenix-crm/place-check-done";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
@@ -49,7 +50,7 @@ const FIRST_NAMES = 5;
  * (or, seated in a polyclinic, the timetable) and what the system read off it, where the rep stood and when.
  * The photo is asked for only when the row is opened.
  */
-export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: boolean; rows: HeldFullName[] }) {
+export function FullNameChecks({ canCorrect = false, decides = true, rows }: { canCorrect?: boolean; decides?: boolean; rows: HeldFullName[] }) {
   const shown = rows.filter((row) => !row.isTest);
   const [showAll, setShowAll] = useState(false);
   const listed = showAll ? shown : shown.slice(0, FIRST_NAMES);
@@ -64,7 +65,9 @@ export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: bool
 
   if (shown.length === 0) return null;
 
-  const actions = (row: HeldFullName) => <FullNameDecision canCorrect={canCorrect} row={row} />;
+  // The SFE Manager reads the held names and decides none of them (owner, 2026-11-19).
+  const actions = (row: HeldFullName) =>
+    decides ? <FullNameDecision canCorrect={canCorrect} row={row} /> : <PlaceCheckDecisionState decided={null} />;
   const match = (row: HeldFullName) => (row.percent === null ? "No board read" : `${row.percent}%`);
   const board = (row: HeldFullName) => (row.boardNames.length ? row.boardNames.join(" · ") : "Nothing was read off the board");
 

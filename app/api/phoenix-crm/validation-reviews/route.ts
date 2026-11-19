@@ -10,9 +10,10 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = approve or reject a place the Google Maps check could not confirm. The Super Admin and the SFE Manager (owner,
-// 2026-10-03: "only system admin can approve or reject"; widened 2026-10-19): `approve` here is gate one, and the service
-// refuses everyone but those two before anything is read (`canDecideValidationReviews`).
+// POST = approve or reject a place the Google Maps check could not confirm. The Super Admin alone (owner, 2026-10-03:
+// "only system admin can approve or reject"; the SFE Manager decided from 2026-10-19 and recommends instead since
+// 2026-11-19): `approve` here is gate one, and the service refuses everyone else before anything is read
+// (`canDecideValidationReviews`).
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

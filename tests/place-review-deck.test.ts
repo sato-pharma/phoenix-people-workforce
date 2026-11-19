@@ -421,7 +421,8 @@ export function runPlaceReviewDeckTests(): void {
     for (const line of imports) assert.match(line, /^import type /, `the board imports types only from the review: ${line}`);
     const page = stripComments(read("app/(admin)/admin/field-crm/validation-reviews/page.tsx"));
     assert.match(page, /<PlaceChecksWithDeck/, "the Super Admin's page is the one that hands the review in");
-    assert.match(page, /canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "and that page is his alone");
+    assert.match(page, /readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\)/, "and that page is the board's readers' alone");
+    assert.match(page, /<PlaceChecksWithDeck[\s\S]*?decides=\{decides\}/, "🔴 and the review deck is handed the decider's flag — the SFE Manager, who recommends, gets no deck");
     const wrapper = stripComments(read("src/components/place-review-deck/place-checks-with-deck.tsx"));
     assert.match(wrapper, /mode="company"/, "the wrapper draws the company board only");
     const integrity = stripComments(read("app/(admin)/admin/phoenix-crm/integrity/page.tsx"));

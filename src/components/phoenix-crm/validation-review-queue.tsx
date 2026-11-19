@@ -16,6 +16,7 @@
 import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { PlaceCheckDecisionState, usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
@@ -389,11 +390,25 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
  */
 function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidationReviewRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
+  // The SFE Manager reads the company board and decides nothing on it (owner, 2026-11-19).
+  const decides = usePlaceCheckDecides();
   return (
     <div className="min-w-0 space-y-2">
-      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the company board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnReview(row)} />}
-      {mode === "team" ? <Settled row={row} /> : <Decision row={row} scope={scope} />}
+      {mode === "team" ? (
+        <Settled row={row} />
+      ) : decides ? (
+        <Decision row={row} scope={scope} />
+      ) : (
+        <PlaceCheckDecisionState
+          by={row.decidedByName}
+          decided={row.status === "pending" ? null : row.status === "approved" ? { label: "Approved", tone: "good" } : { label: "Rejected", tone: "bad" }}
+          note={row.decisionNote}
+          repWasTold={row.refusalLabel}
+          when={row.decidedAtText}
+        />
+      )}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -487,7 +502,9 @@ export function ValidationReviewQueue({
   /** Which set this is drawing — it decides what a bulk answer can be. */
   section: "waiting" | "decided";
 }) {
-  const bulk = mode === "company";
+  // No bulk bar for the SFE Manager: every answer it gives is a decision (owner, 2026-11-19).
+  const decides = usePlaceCheckDecides();
+  const bulk = mode === "company" && decides;
   // Taking a rejection back is the Super Admin's alone (owner, 2026-11-10: "the SFE cannot") — the SFE
   // Manager's board neither ticks a rejected row nor offers "Approve after all".
   const canRestore = useCanRestoreValidation();
@@ -527,7 +544,7 @@ export function ValidationReviewQueue({
             <th className={crmThClassName}>Photo</th>
             <th className={crmThClassName}>Customer and rep</th>
             <th className={crmThClassName}>Where they stood, and Google</th>
-            <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
+            <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Decision" : "Your recommendation"}</th>
           </tr>
         </thead>
         <tbody>

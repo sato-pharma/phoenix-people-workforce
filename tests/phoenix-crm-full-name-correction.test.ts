@@ -5,15 +5,17 @@ import { canCorrectHeldFullName, correctsHeldFullName, decideHeldFullName } from
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
- * Phoenix CRM — the Super Admin and the SFE Manager correct a PM customer's held full name; nobody else does.
+ * Phoenix CRM — the Super Admin corrects a PM customer's held full name; nobody else does.
  *
  * Owner, 2026-11-08, on Place checks' "PM full names to check": "make an option to the admin only, not the
  * SFE, to edit the name by the reps to correct it, or add the third name"; then, the same evening, "make the edit
- * names appear to sfe manager".
+ * names appear to sfe manager". Since 2026-11-19 the SFE Manager decides nothing on Place checks ("only able to
+ * recommend validation or not recommend, never able to take a decision"), so the correction, which rides on a
+ * decision, is the Super Admin's alone again; the SFE Manager still READS the held names.
  *
  * What must hold:
- *   * `canCorrectHeldFullName` is whoever decides these — the Super Admin on `update`, the SFE Manager on
- *     `approve` — never a district manager, never a test account;
+ *   * `canCorrectHeldFullName` is whoever decides these — the Super Admin on `update` — never the SFE
+ *     Manager, never a district manager, never a test account;
  *   * a corrected name from anybody else is refused BEFORE the database is called, and so is one sent with
  *     Reject, and one that breaks the rep's own three-box rules (a title, an empty box);
  *   * the route asks its one permission (`approve`) and hands the body to the service, whose correction gate
@@ -47,9 +49,8 @@ async function refusal(run: () => Promise<unknown>): Promise<string> {
 export async function runPhoenixCrmFullNameCorrectionTests(): Promise<void> {
   // ── 1 · WHO MAY CORRECT ───────────────────────────────────────────────────────────────────────
   assert.equal(canCorrectHeldFullName(SUPER_ADMIN), true, "the Super Admin corrects a held name");
-  assert.equal(canCorrectHeldFullName(SFE_MANAGER), true, "🔴 RED the SFE Manager corrects one too — his word: \"make the edit names appear to sfe manager\"");
-  assert.equal(canCorrectHeldFullName(viewer({ isSfeManager: true, canApprove: true, isTestPersona: true })), false, "never an SFE test account");
-  assert.equal(canCorrectHeldFullName(viewer({ isSfeManager: true, canApprove: false })), false, "never an SFE Manager without approve");
+  assert.equal(canCorrectHeldFullName(SFE_MANAGER), false, "🔴 RED the SFE Manager does NOT — he recommends and decides nothing (owner, 2026-11-19)");
+  assert.equal(canCorrectHeldFullName(viewer({ isSfeManager: true, canApprove: true, canUpdate: true })), false, "not even if he were ever given update");
   assert.equal(canCorrectHeldFullName(viewer({ hrId: "B-77", canApprove: true, canUpdate: true })), false, "never anybody else, a district manager included");
   assert.equal(canCorrectHeldFullName(viewer({ isSuperAdmin: true, canApprove: true, canUpdate: true, isTestPersona: true })), false, "never a test account");
   assert.equal(canCorrectHeldFullName(viewer({ isSuperAdmin: true, canApprove: true, canUpdate: false })), false, "and never without update");
@@ -60,9 +61,9 @@ export async function runPhoenixCrmFullNameCorrectionTests(): Promise<void> {
 
   // ── 2 · REFUSED BEFORE THE DATABASE ───────────────────────────────────────────────────────────
   assert.equal(
-    await refusal(() => decideHeldFullName(SFE_MANAGER, { customerId: CUSTOMER, decision: "reject", nameParts: GOOD_NAME })),
-    "A corrected name is saved with Approve.",
-    "the SFE Manager passes the correction gate and meets the same approve-only rule",
+    await refusal(() => decideHeldFullName(SFE_MANAGER, { customerId: CUSTOMER, decision: "approve", nameParts: GOOD_NAME })),
+    "Only the Super Admin decides these.",
+    "🔴 the SFE Manager is refused before anything is read — a held name is the Super Admin's decision",
   );
   assert.equal(
     await refusal(() => decideHeldFullName(SUPER_ADMIN, { customerId: CUSTOMER, decision: "reject", nameParts: GOOD_NAME })),
@@ -84,13 +85,13 @@ export async function runPhoenixCrmFullNameCorrectionTests(): Promise<void> {
   const route = stripComments(read("app/api/phoenix-crm/full-names/route.ts"));
   assert.ok(route.includes("decideHeldFullName(viewer, await request.json())"), "the route hands every decision, corrections included, to the one service");
   const service = stripComments(read("src/lib/phoenix-crm/server/full-name-reviews.ts"));
-  const gate = service.indexOf('if (!canCorrectHeldFullName(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager correct a name.");');
+  const gate = service.indexOf('if (!canCorrectHeldFullName(viewer)) throw forbiddenError("Only the Super Admin corrects a name.");');
   assert.ok(gate > -1, "🔴 RED the service gates a corrected name on canCorrectHeldFullName");
   assert.ok(gate < service.indexOf('callPhoenixCrm<Row>("phoenix_crm_decide_full_name"'), "before the database is called");
   assert.match(service, /export function canCorrectHeldFullName\(viewer: PhoenixCrmViewer\): boolean \{\s+return canDecideValidationReviews\(viewer\);/, "and that gate is exactly who decides these");
 
   const page = stripComments(read("app/(admin)/admin/field-crm/validation-reviews/page.tsx"));
-  assert.ok(page.includes("<FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} rows={heldFullNames} />"), "the page hands the screen the server's own answer");
+  assert.ok(page.includes("<FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} decides={decides} rows={heldFullNames} />"), "the page hands the screen the server's own answer");
 
   const screen = stripComments(read("src/components/phoenix-crm/full-name-checks.tsx"));
   const editButton = screen.indexOf(">\n            Edit name\n");

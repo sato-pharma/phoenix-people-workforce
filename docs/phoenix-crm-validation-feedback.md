@@ -827,6 +827,34 @@ back wording for the SFE Manager"*.
 - A timetable photographed on a phone or computer screen is now saved and held for him on the first try, as `timetable_on_a_screen`. No try is spent, because a retake cannot fix it. The rep reads: "The timetable was photographed on a screen, so it is held for admin approval."
 - It still never validates by itself. In Place checks the system says what it saw and recommends nothing ("look"); he checks the customer's name on the screen and decides. Until then the doctor stays out of the KPIs, like every held seating.
 
+
+### Amendment, 2026-11-19 — the SFE Manager recommends, the Super Admin decides
+
+Owner, 19 November 2026: *"in place checks make Khaled Bedair only able to recommend validation or not
+recommend, never able to take a decision, and the recommended by him goes separately in a separate page
+for admin decision."* This narrows the 19 October widening above.
+
+- **Two predicates where there was one.** `readsCompanyPlaceChecks` (`server/access.ts`) opens the company
+  board — the Super Admin on `update`, the SFE Manager on `approve`, never a test account. Every read path
+  that used to ask `canDecideValidationReviews` asks it now. `canDecideValidationReviews` is the Super
+  Admin alone and gates every decision service: approve, reject, refuse, a polyclinic's decision, the held
+  full name and its correction, and the same-place answer. The seven routes keep their `approve` gate; the
+  services refuse the SFE Manager ("Only the Super Admin decides these.").
+- **His word is a recommendation.** `recommendsOnCompanyPlaceChecks` (a reader who does not decide) gives
+  him the two buttons a district manager has on his own team's board, on every place and polyclinic of the
+  company board. The row is written with `writer_role = 'sfe_manager'` (migration `20261119081316`,
+  default `district_manager`, every earlier row kept); the Super Admin is refused a recommendation.
+- **A separate page.** A check he recommended on leaves the Super Admin's Needs you list and waits on
+  `/admin/field-crm/sfe-recommendations`, in two lists — recommended to validate, not recommended — with
+  the board's own controls. Both pages take their rows through `src/lib/phoenix-crm/sfe-recommendations.ts`,
+  so a check is on exactly one of the two. The SFE Manager still sees every check on the board, with a
+  "Waiting for the administrator's decision" state where the controls were.
+- **Never on a district manager's board.** The manager board drops `sfe_manager` rows, because that board
+  names nobody above the manager.
+- **Unchanged:** moving a validated place (`canMovePlaces`, its own 2026-09-29 ruling), the device
+  evidence on this screen, and everything listed under "Not widened" above.
+
+Pinned by `tests/phoenix-crm-sfe-place-checks.test.ts` and `tests/phoenix-crm-sfe-recommendations.test.ts`.
 ## The comment written with a decision (2026-11-01)
 
 Owner: "when sfe or admin reject or approve validation and write the comment this comment appear to the rep and his maanger".

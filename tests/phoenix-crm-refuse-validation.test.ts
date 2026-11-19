@@ -51,7 +51,7 @@ function checkService(): void {
   assert.ok(gate > -1, "refuseValidatedPlace asks who is refusing");
   assert.ok(firstRead > -1, "refuseValidatedPlace reads the place");
   assert.ok(gate < firstRead, "and it asks BEFORE it reads — the deciders alone, as the queue beside it");
-  assert.match(refuse, /throw forbiddenError\("Only the Super Admin and the SFE Manager decide these\."\)/, "with the queue's own refusal");
+  assert.match(refuse, /throw forbiddenError\("Only the Super Admin decides these\."\)/, "with the queue's own refusal — the Super Admin alone since 2026-11-19");
 
   // A hand refusal carries no Google evidence, so the one sentence the REP is told is the record.
   assert.match(refuse, /if \(!refusalReason\) throw validationError\(VALIDATION_REASON_REQUIRED\)/, "a refusal with no chosen reason is refused");
@@ -332,7 +332,7 @@ function checkRoute(): void {
 
 function checkScreens(): void {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(page, /canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the page stays the deciders' alone — the Super Admin and the SFE Manager");
+  assert.match(page, /readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\)/, "the page stays the board's readers' alone — the Super Admin, who decides, and the SFE Manager, who recommends");
   assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
   // The prop names rather than one literal line: the sixth set (the polyclinics, 2026-10-09) made the
   // call multi-line, and a single-line fingerprint would go red on formatting alone.

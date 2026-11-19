@@ -2241,6 +2241,7 @@ import { runPhoenixCrmNoVisitStreakTests } from "./phoenix-crm-no-visit-streak.t
 import { runPhoenixCrmFailingTimetablesTests } from "./phoenix-crm-failing-timetables.test.ts";
 import { runPhoenixCrmWaitingOldestFirstTests } from "./phoenix-crm-waiting-oldest-first.test.ts";
 import { runPhoenixCrmSfePlaceChecksTests } from "./phoenix-crm-sfe-place-checks.test.ts";
+import { runPhoenixCrmSfeRecommendationsTests } from "./phoenix-crm-sfe-recommendations.test.ts";
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
@@ -8603,8 +8604,13 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM Place checks for the SFE Manager (owner, 2026-10-19): the Super Admin and the SFE Manager decide and nobody else does, on `approve` because the SFE Manager holds no `update`; seating a customer in a polyclinic and settling an integrity case stay the Super Admin's; the mock-location evidence is his on this screen too (2026-10-19) and still the Super Admin's on the integrity board and the visit report; the notice of a new hold is still the Super Admin's alone",
+  "Phoenix CRM Place checks for the SFE Manager (owner, 2026-10-19; 2026-11-19): he reads the board on `approve` and recommends, and the Super Admin alone decides; seating a customer in a polyclinic and settling an integrity case stay the Super Admin's; the mock-location evidence is his on this screen too (2026-10-19) and still the Super Admin's on the integrity board and the visit report; the notice of a new hold is still the Super Admin's alone",
   runPhoenixCrmSfePlaceChecksTests,
+);
+
+await runTest(
+  "Phoenix CRM SFE recommendations (owner, 2026-11-19): a check the SFE Manager recommended on leaves the Place checks board for the Super Admin's own page, split by what he recommended — one rule, so every check is on exactly one of the two",
+  runPhoenixCrmSfeRecommendationsTests,
 );
 
 await runTest(

@@ -4,8 +4,9 @@
  *
  * The rule is `place-match-groups.ts`; this file is only what feeds it and what stores what he says.
  *
- * 🔴 THE DECIDERS' ALONE — the same decider as every Place check (`canDecideValidationReviews`: the Super
- * Admin, and the SFE Manager since 2026-10-19). The
+ * 🔴 THE COMPANY BOARD'S ALONE — read by the same readers as every Place check (`readsCompanyPlaceChecks`:
+ * the Super Admin and the SFE Manager), answered by the Super Admin alone (`canDecideValidationReviews`,
+ * owner 2026-11-19: the SFE Manager recommends and decides nothing). The
  * comparison sets one rep's readings beside another's, across teams, so a district manager's own board
  * never carries it: it would show him a colleague's work.
  *
@@ -40,7 +41,7 @@ import {
 import { LINE_TWIN_MOVE_REASON, twinNameWords } from "@/lib/phoenix-crm/line-twins";
 import { parseSharedPlaceKind, sharedPlaceKindLabel } from "@/lib/phoenix-crm/shared-place-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
-import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canDecideValidationReviews, placeChecksSeatScope, readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -54,9 +55,9 @@ function text(value: unknown): string | null {
 }
 
 
-/** The Super Admin and the SFE Manager, and nobody else. Named here so the page, the route and the test say one thing. */
+/** The Super Admin and the SFE Manager READ it, and nobody else. Named here so the page, the route and the test say one thing. */
 export function canReadPlaceMatches(viewer: PhoenixCrmViewer): boolean {
-  return canDecideValidationReviews(viewer);
+  return readsCompanyPlaceChecks(viewer);
 }
 
 /** A stored signboard verdict, read defensively: anything unrecognised is "not read". */
@@ -299,7 +300,8 @@ function pairsOf(rawPairs: unknown[]): Array<[string, string]> {
  * subject that no longer exists is inert.
  */
 export async function answerPlaceMatch(viewer: PhoenixCrmViewer, raw: unknown): Promise<PlaceMatchAnswerResult> {
-  if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager answer this.");
+  // 🔴 READING IS NOT ANSWERING (owner, 2026-11-19): whether two readings are one place is a decision, the Super Admin's alone.
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin answers this.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   const answer =
     body.answer === "same" ? "same" : body.answer === "different" ? "different" : body.answer === "forget" ? "forget" : body.answer === "split" ? "split" : null;

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { Building2, CheckCircle2, ChevronDown, EyeOff, Hourglass, MapPinCheck } from "lucide-react";
+import Link from "next/link";
+import { Building2, CheckCircle2, ChevronDown, EyeOff, Hourglass, MapPinCheck, MessageSquareQuote } from "lucide-react";
 
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
@@ -10,7 +11,8 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { placeChecksSummary, seatedPlacesInUse, withoutDecisionNotesThatAreComments } from "@/lib/phoenix-crm/place-checks-on-demand";
-import { canRestoreValidation, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canRestoreValidation, readsCompanyPlaceChecks, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { SFE_RECOMMENDATIONS_PATH, sfeRecommendationOf, withoutSfeRecommended } from "@/lib/phoenix-crm/sfe-recommendations";
 import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
@@ -37,9 +39,13 @@ export const dynamic = "force-dynamic";
  * (a moved hospital) — which the owner ruled "held for review and only system admin can approve or
  * reject".
  *
- * 🔴 THE SUPER ADMIN'S AND THE SFE MANAGER'S (owner, 2026-10-19: "show check place to sfe manager exactly
- * as it in the admin account to be able validate approve and refuse"): `canDecideValidationReviews` gates
- * the page and the routes. The gate here is `approve`, which both hold — the SFE Manager has no `update`
+ * 🔴 THE SUPER ADMIN DECIDES, THE SFE MANAGER READS AND RECOMMENDS (owner, 2026-11-19: "make Khaled Bedair
+ * only able to recommend validation or not recommend, never able to take a decision, and the recommended by
+ * him goes separately in a separate page for admin decision"). `readsCompanyPlaceChecks` gates the page;
+ * `canDecideValidationReviews` (the Super Admin alone) gates every decision route and every decision
+ * control the board draws. A check the SFE Manager has recommended on leaves the Super Admin's lists here
+ * and waits on `SFE_RECOMMENDATIONS_PATH` (`sfe-recommendations.ts`). From 2026-10-19 until that day the SFE
+ * Manager decided here too ("show check place to sfe manager exactly as it in the admin account"). The gate here is `approve`, which both hold — the SFE Manager has no `update`
  * in this module and was not given one, because that would open every other `update` route to him. The
  * redirect rather than a message is the integrity board's shape — a page that does not describe itself to
  * somebody who may not read it.
@@ -53,10 +59,11 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   const access = await resolveAccessContextFromPage();
   if (!(await canAccess(access, "phoenix_crm", "approve"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
-  if (!viewer || !canDecideValidationReviews(viewer)) redirect("/admin");
+  if (!viewer || !readsCompanyPlaceChecks(viewer)) redirect("/admin");
+  const decides = canDecideValidationReviews(viewer);
 
   // `loadSharedPlaceBoard` narrows by `placeChecksSeatScope`, which answers for exactly the viewers
-  // `canDecideValidationReviews` above admits — so it cannot 403 a viewer this page has already
+  // `readsCompanyPlaceChecks` above admits — so it cannot 403 a viewer this page has already
   // admitted, and it needs no second redirect.
   // 🔴 THE COMMENTS AND THE EVIDENCE START THE MOMENT THE THREE LISTS THAT NAME THE SUBJECTS ARE IN
   // (owner, 2026-11-08: "places checks is … slow"). They used to wait for all five reads — the reopened
@@ -84,7 +91,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
         placeIds: [...reviewRows.rows.map((row) => row.placeId), ...validatedRows.rows.map((row) => row.placeId)],
         sharedPlaceIds: sharedRows.rows.map((row) => row.sharedPlaceId),
       };
-      return Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
+      return Promise.all([loadPlaceNoteIndex(subjects, { viewerHrId: viewer.hrId }), loadPlaceCheckIntegrity(viewer, subjects)]);
     }),
   ]);
   const validated = validatedRead.rows;
@@ -99,10 +106,24 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // A comment written with a decision is on the row as a comment too (`tellDecisionComment`), so it is
   // drawn there, under "The rep can read this", and not a second time beside the decision.
   const rows = withoutDecisionNotesThatAreComments(reviews.rows, notes.notes);
-  const sharedPlaces = sharedRead.rows.map((row) =>
+  const everySharedPlace = sharedRead.rows.map((row) =>
     decisionNoteIsAComment(row.decisionNote, notes.notes[placeNoteSubjectKey("shared_place", row.sharedPlaceId)] ?? []) ? { ...row, decisionNote: null } : row,
   );
-  const waiting = rows.filter((row) => row.status === "pending");
+  // 🔴 WHAT THE SFE MANAGER RECOMMENDED WAITS ON ITS OWN PAGE, NOT HERE (owner, 2026-11-19) — for the Super
+  // Admin. The SFE Manager keeps every row, so he can see and change what he recommended.
+  const everyWaiting = rows.filter((row) => row.status === "pending");
+  const waiting = decides ? withoutSfeRecommended(everyWaiting, (row) => placeNoteSubjectKey("place", row.placeId), notes.recommendations) : everyWaiting;
+  const heldVenues = everySharedPlace.filter((row) => row.status === "held");
+  const keptHeldVenues = new Set(
+    (decides ? withoutSfeRecommended(heldVenues, (row) => placeNoteSubjectKey("shared_place", row.sharedPlaceId), notes.recommendations) : heldVenues).map(
+      (row) => row.sharedPlaceId,
+    ),
+  );
+  const sharedPlaces = everySharedPlace.filter((row) => row.status !== "held" || keptHeldVenues.has(row.sharedPlaceId));
+  // The real checks on the SFE recommendations page — the same rule that took them out above.
+  const sfeRecommendedCount =
+    everyWaiting.filter((row) => !row.isTest && sfeRecommendationOf(notes.recommendations, placeNoteSubjectKey("place", row.placeId)) !== null).length +
+    heldVenues.filter((row) => !row.isTest && sfeRecommendationOf(notes.recommendations, placeNoteSubjectKey("shared_place", row.sharedPlaceId)) !== null).length;
   const decided = rows.filter((row) => row.status !== "pending");
   // 🔴 THE CARDS COUNT WHAT THE BOARD DRAWS (owner, 2026-10-17: "is this a report that really shows me
   // data?"): a test entry is nobody's work and the board never draws one, and a rejected building is not
@@ -142,7 +163,11 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
       <AdminPageHero
         eyebrow="CRM"
         title="Place checks"
-        description="The places the system could not settle by itself, each waiting for your decision. The rep is told only that the system is checking."
+        description={
+          decides
+            ? "The places the system could not settle by itself, each waiting for your decision. The rep is told only that the system is checking."
+            : "The places the system could not settle by itself. Recommend each one to validate or not; the administrator decides. The rep is told only that the system is checking."
+        }
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
       <details className="group min-w-0 border border-slate-200 bg-white">
@@ -160,7 +185,14 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
       </details>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-        <AdminStatCard icon={<Hourglass className="h-5 w-5" />} label="Waiting for you" value={realWaiting.length} description="Saved at the door, not validated yet" tone="orange" size="compact" />
+        <AdminStatCard
+          icon={<Hourglass className="h-5 w-5" />}
+          label={decides ? "Waiting for you" : "Waiting for a decision"}
+          value={realWaiting.length}
+          description="Saved at the door, not validated yet"
+          tone="orange"
+          size="compact"
+        />
         <AdminStatCard
           icon={<CheckCircle2 className="h-5 w-5" />}
           label="Approved, last 14 days"
@@ -205,12 +237,25 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
         />
       </div>
 
-      <FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} rows={heldFullNames} />
+      {decides ? (
+        <Link className="block min-w-0 border border-slate-200 bg-white px-4 py-3 hover:border-slate-400" href={SFE_RECOMMENDATIONS_PATH}>
+          <span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900">
+            <MessageSquareQuote aria-hidden className="h-4 w-4 shrink-0" />
+            SFE recommendations: {sfeRecommendedCount} waiting for your decision
+          </span>
+          <span className="mt-0.5 block break-words text-xs text-slate-500">
+            The checks the SFE Manager recommended to validate or not. They wait there, not in Needs you below.
+          </span>
+        </Link>
+      ) : null}
+
+      <FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} decides={decides} rows={heldFullNames} />
 
       {/* Taking a rejection back — the Super Admin alone, never the SFE Manager (owner, 2026-11-10). */}
       <PlaceCheckRestoreProvider canRestore={canRestoreValidation(viewer)}>
         <PlaceChecksWithDeck
           capped={capped}
+          decides={decides}
           decided={recentDecided}
           failingTimetables={failingTimetables}
           noteIndex={noteIndex}

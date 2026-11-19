@@ -67,6 +67,7 @@ import {
   PauseCircle,
   Megaphone,
   MessageCircle,
+  MessageSquareQuote,
   MessageSquareText,
   MessageSquareWarning,
   Network,
@@ -4869,9 +4870,10 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
   },
   {
     // Places the Google Maps check could not confirm (owner, 2026-10-03: "held for review and only
-    // system admin can approve or reject"; the SFE Manager added 2026-10-19: "show check place to sfe
-    // manager exactly as it in the admin account to be able validate approve and refuse"). The enforcing
-    // gate is `canDecideValidationReviews` inside the page and the routes; this card only draws the link.
+    // system admin can approve or reject"). The SFE Manager reads it and recommends (2026-10-19, narrowed
+    // 2026-11-19: "only able to recommend validation or not recommend, never able to take a decision").
+    // The enforcing gates are `readsCompanyPlaceChecks` (the page) and `canDecideValidationReviews` (every
+    // decision route) — this card only draws the link.
     // The rep reads the outcome as the system's, never a person's.
     //
     // 🔴 `approve`, NOT `update`: the SFE Manager holds `phoenix_crm` read + approve and no `update`, and
@@ -4883,6 +4885,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Validations Google Maps had no listing for. Each waits for you to approve or reject; the rep is told only that the system is checking.",
     permissions: [{ resource: "phoenix_crm", action: "approve" }],
     roles: ["Super Admin", "SFE Manager"],
+  },
+  {
+    // The place checks the SFE Manager recommended to validate or not, waiting for the Super Admin's decision
+    // apart from Needs you (owner, 2026-11-19: "the recommended by him goes separately in a separate page for
+    // admin decision"). The Super Admin's alone: `canDecideValidationReviews` is the enforcing gate inside the
+    // page and every decision route; this card only draws the link.
+    href: "/admin/field-crm/sfe-recommendations",
+    icon: MessageSquareQuote,
+    label: "SFE Recommendations",
+    description: "The place checks the SFE Manager recommended to validate or not, each waiting for your decision.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
   },
   {
     // The reps who must record each visit before logging it (owner, 2026-10-16: "this only works to who
@@ -5573,6 +5587,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/visits-archive",
           // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.
           "/admin/field-crm/validation-reviews",
+          // What the SFE Manager recommended on those checks, waiting for the Super Admin: the same band.
+          "/admin/field-crm/sfe-recommendations",
           // The visit recordings a chosen rep makes: field evidence, the Super Admin's alone.
           "/admin/field-crm/visit-recording",
           // A rep's polyclinics and their daily number: the same Super Admin's own controls over a rep's field work.

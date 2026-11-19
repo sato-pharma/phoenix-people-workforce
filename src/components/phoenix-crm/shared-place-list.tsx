@@ -27,6 +27,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { PlaceCheckDecisionState, usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
@@ -111,7 +112,8 @@ type VenueScope = "cards" | "table" | "deck";
  * that somebody rejected it (owner, 2026-10-13) — it says what is true of the building.
  */
 function VenueStatus({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlaceBoardRow }) {
-  if (row.status === "held") return <CrmPill tone="warn">{mode === "team" ? "Being checked" : "Waiting for you"}</CrmPill>;
+  const decides = usePlaceCheckDecides();
+  if (row.status === "held") return <CrmPill tone="warn">{mode === "team" ? "Being checked" : decides ? "Waiting for you" : "Waiting for the administrator"}</CrmPill>;
   if (row.status === "retired") return <CrmPill tone="bad">{mode === "team" ? "No longer in use" : "Rejected"}</CrmPill>;
   return <CrmPill tone="good">In use</CrmPill>;
 }
@@ -509,12 +511,26 @@ function NoTimetableDeclaration({ row }: { row: SharedPlaceBoardRow }) {
  */
 function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: SharedPlaceBoardRow; scope: VenueScope }) {
   const key = placeNoteSubjectKey("shared_place", row.sharedPlaceId);
+  // The SFE Manager reads the building's state and recommends; the decision and the no-timetable
+  // declaration are the Super Admin's alone (owner, 2026-11-19).
+  const decides = usePlaceCheckDecides();
   return (
     <div className="min-w-0 space-y-2">
-      {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
+      {/* The system's recommendation and its reason (owner, 2026-10-17) — the company board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnBuilding(row)} />}
-      {mode === "team" ? null : <Decision row={row} scope={scope} />}
-      {mode === "team" ? null : <NoTimetableDeclaration row={row} />}
+      {mode === "team" ? null : decides ? (
+        <Decision row={row} scope={scope} />
+      ) : (
+        <PlaceCheckDecisionState
+          by={row.decidedByName}
+          decided={
+            row.status === "held" ? null : row.status === "retired" ? { label: "Rejected", tone: "bad" } : row.decidedAtText ? { label: "Approved", tone: "good" } : null
+          }
+          note={row.decisionNote}
+          when={row.decidedAtText}
+        />
+      )}
+      {mode === "team" || !decides ? null : <NoTimetableDeclaration row={row} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -592,7 +608,8 @@ export function SharedPlaceList({
   mode: PlaceCheckNotesMode;
   noteIndex: PlaceNoteIndex;
 }) {
-  const bulk = mode === "company";
+  const decides = usePlaceCheckDecides();
+  const bulk = mode === "company" && decides;
   const rows = useMemo(() => groups.map((group) => group.venue), [groups]);
   // A rejected building is ticked and brought back by the Super Admin alone (owner, 2026-11-10).
   const canRestore = useCanRestoreValidation();
@@ -638,7 +655,7 @@ export function SharedPlaceList({
             <th className={crmThClassName}>The sign on the building</th>
             <th className={crmThClassName}>The timetable inside</th>
             <th className={crmThClassName}>Where it was captured</th>
-            <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
+            <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Decision" : "Your recommendation"}</th>
           </tr>
         </thead>
         <tbody>

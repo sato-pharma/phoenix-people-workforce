@@ -27,6 +27,7 @@
 import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
@@ -73,6 +74,7 @@ function decidesOnReview(customer: SeatedCustomer): boolean {
 }
 
 function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNotesMode }) {
+  const decides = usePlaceCheckDecides();
   const dated = customer.state === "sent_back" ? "Sent back" : customer.state === "in_use" ? "Seated" : "Held";
   // Who approved or refused him and when (owner, 2026-10-20) — the company board only. A rejected row
   // that can be taken back already prints the same two facts on its own card (`RestoreSeated`).
@@ -97,7 +99,7 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
       </p>
       {stamp ? <p className="break-words text-xs font-semibold text-slate-700">{stamp}</p> : null}
       <div className="flex min-w-0 flex-wrap gap-1">
-        {customer.state === "waiting" ? <CrmPill tone="warn">{mode === "team" ? "Still being checked" : "Waiting for you"}</CrmPill> : null}
+        {customer.state === "waiting" ? <CrmPill tone="warn">{mode === "team" ? "Still being checked" : decides ? "Waiting for you" : "Waiting for the administrator"}</CrmPill> : null}
         {customer.waitingText ? <CrmPill tone={customer.waitingLong ? "warn" : "neutral"}>{customer.waitingText}</CrmPill> : null}
         {customer.state === "rejected" ? <CrmPill tone="bad">{mode === "team" ? "Settled" : "Rejected"}</CrmPill> : null}
         {customer.state === "sent_back" ? <CrmPill tone="neutral">Waiting to be captured again</CrmPill> : null}
@@ -419,12 +421,15 @@ function LastColumn({
   scope: string;
 }) {
   const key = customer.placeId ? placeNoteSubjectKey("place", customer.placeId) : null;
+  // A seated customer's decision is the Super Admin's alone (owner, 2026-11-19); the SFE Manager reads
+  // where it stands in the pill beside the name and recommends below.
+  const decides = usePlaceCheckDecides();
   return (
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only,
           and never on a customer already sent back, where there is nothing left to decide. */}
       {mode === "team" || customer.state === "sent_back" || (noTimetable && customer.state !== "waiting") ? null : <SystemAdvice advice={adviseOnTimetable(customer.timetable, noTimetable)} />}
-      {mode === "team" ? null : <Decision customer={customer} noTimetable={noTimetable} scope={scope} />}
+      {mode === "team" || !decides ? null : <Decision customer={customer} noTimetable={noTimetable} scope={scope} />}
       {customer.placeId && key ? (
         <PlaceCheckNotes
           integrity={noteIndex.integrity[key] ?? []}

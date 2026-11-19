@@ -1,12 +1,14 @@
 ---
 name: the-sfe-manager-decides-place-checks-on-approve-not-update
-description: "owner 2026-10-19 — the SFE Manager sees the admin Place checks page and approves, refuses and restores exactly as the Super Admin does, mock-location evidence included on that screen; gated on phoenix_crm approve because he holds no update — never hand him update; seating in a polyclinic, settling integrity cases and the new-hold notice stay the Super Admin's, and the integrity board and visit report still hide the position cases from him."
+description: "SUPERSEDED 2026-11-19 — the SFE Manager (Khaled Bedair) now only RECOMMENDS on Place checks and decides nothing; the Super Admin alone decides, and his recommendations wait on /admin/field-crm/sfe-recommendations. History: from 2026-10-19 he approved, refused and restored exactly as the Super Admin; gated on phoenix_crm approve because he holds no update — never hand him update."
 metadata:
   node_type: memory
   type: project
   originSessionId: 7c4e4a75-daf8-493b-a046-5ba699077a25
   modified: 2026-10-19T08:48:41.399Z
 ---
+
+🔴 **SUPERSEDED 2026-11-19 (owner, ~08:10 Cairo):** *"in place checks make Khaled Bedair only able to recommend validation or not recommend, never able to take a decision, and the recommended by him goes separately in a separate page for admin decision."* `readsCompanyPlaceChecks` opens the board to him; `canDecideValidationReviews` is the Super Admin alone; his two buttons write `writer_role = 'sfe_manager'`; a check he recommended on moves to `/admin/field-crm/sfe-recommendations`. The rest below is history. Rules: `.claude/rules/phoenix-crm-place-decisions.md`.
 
 Owner, 2026-10-19: *"show check place to sfe manager exactly as it in the admin account to be able validate approve and refuse"* — widening his own 2026-10-03 "only system admin can approve or reject". Same day, asked what the SFE Manager should get next, he picked *"Mock-location evidence"*: the phone's mock answer and the position cases are now in his evidence on the Place Checks screen.
 
