@@ -451,8 +451,19 @@ move.
 | --- | --- | --- |
 | `sos_backup_20261027_archives` | 7 · 14,878 | the undo record of the 27 Oct customer-map archive work ([`pharmacy-database-sync-runs-only-by-hand.md`](../../.claude/cloud-context/memory-mirror/pharmacy-database-sync-runs-only-by-hand.md)): the ids of the 14,417 archive pharmacies added to the map that night (all still in the map), the 95 old-shop EPDA rows switched off on the owner's word (all still off), the before-picture of 74 EPDA rows aligned to their twin's brick (68 still moved; 6 were restored that night), the old values of 287 pharmacy-database copies refreshed in place, and 5 smaller before-pictures. Holds pharmacy names and addresses |
 
-The next snapshot to reach 90 days with no decision is `phoenix_crm_merge_backup_20261028`, on
-26 Jan 2027. After it come `phoenix_crm_backup_20261101` and the table
+**The 28 October Phoenix CRM doctor-merge snapshot, decided on 20 Nov 2026.** "Export, then drop", and
+it was exported that day (14 files, 584 rows, every checksum matching its manifest). It reaches 90 days
+on 26 Jan 2027. It is a whole snapshot schema, so the drop is `drop schema … cascade`. No migration
+created it, so staging has none and the schema baseline names none. Nothing depends on it or reads it:
+no foreign key, view, trigger, policy, function or cron job names it, and no role, `service_role`
+included, can use the schema. Row security is off on all fourteen tables, so the advisor count does not
+move.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `phoenix_crm_merge_backup_20261028` | 14 · 584 | the before-picture of the 28 Oct duplicate-doctor merge behind the owner's "Merge and hide" ([`phoenix-crm-manager-ride-alongs.md`](../../.claude/rules/phoenix-crm-manager-ride-alongs.md)): 126 doctor rows (50 of them test rows) with their places, visits, plan items, list events and list requests, and the record of the 63 duplicate groups (61 merged; two on one approved day were only hidden). 62 of the 63 extra rows are gone from the live list today. Four of the tables are empty. Holds doctor names and phone numbers |
+
+The next snapshots to reach 90 days with no decision are `phoenix_crm_backup_20261101` and the table
 `au.bak_20261101_pedia_sharkia_line_area_map`, on 30 Jan 2027.
 
 The emitted statement is
