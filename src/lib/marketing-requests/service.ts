@@ -10454,19 +10454,24 @@ function assertMarketingFinanceEvidenceAccess(params: {
   throw forbiddenError("Forbidden: this invoice can only be uploaded by the responsible request owner or manager.");
 }
 
+/**
+ * Who may upload finance evidence: system scope, a marketing creator role, or the Finance Manager.
+ * The upload route asks this BEFORE it reads the multipart body, so a refused caller is answered 403
+ * instead of the body parse failing first (REC-080, 19 Nov 2026); the upload itself asks it again.
+ */
+export function assertCanUploadMarketingFinanceEvidence(access: AccessContext): void {
+  if (access.scope !== "system" && !marketingCreatorRoles.has(access.role) && access.role !== "Finance Manager") {
+    throw forbiddenError(`Forbidden: ${access.role} cannot upload marketing finance evidence.`);
+  }
+}
+
 export async function uploadMarketingFinanceEvidence(params: {
   access: AccessContext;
   evidenceType: MarketingFinanceEvidenceType;
   file: File;
   requestId: string;
 }): Promise<MarketingApprovedRequestRow> {
-  if (
-    params.access.scope !== "system" &&
-    !marketingCreatorRoles.has(params.access.role) &&
-    params.access.role !== "Finance Manager"
-  ) {
-    throw forbiddenError(`Forbidden: ${params.access.role} cannot upload marketing finance evidence.`);
-  }
+  assertCanUploadMarketingFinanceEvidence(params.access);
 
   const requestId = cleanText(params.requestId);
   if (!requestId) throw validationError("Request ID is required.");

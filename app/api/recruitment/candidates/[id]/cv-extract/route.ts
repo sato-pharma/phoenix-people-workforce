@@ -40,9 +40,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { status: 403 },
       );
     }
-    // The Talent Acquisition fence's "not found" (owner, 2026-10-20), never an extraction failure.
-    if (error instanceof ApiError && error.status === 404) {
-      return NextResponse.json({ error: error.code, message: error.message, success: false }, { status: 404 });
+    // A signed-out caller (401, REC-080: it used to fall through to the 500 "ai_failed" below) and the
+    // Talent Acquisition fence's "not found" (owner, 2026-10-20) — never an extraction failure.
+    if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
+      return NextResponse.json({ error: error.code, message: error.message, success: false }, { status: error.status });
     }
     if (isApiRateLimitError(error)) {
       return NextResponse.json(

@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertCandidateVisible, fenceInterviewBookings } from "@/lib/recruitment/workspace/fence";
 import {
   CV_UPLOAD_LIMIT_BYTES,
+  assertSignedInToChangeCalendar,
   createInterviewBooking,
   interviewCalendarCaller,
   listInterviewCalendarDay,
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { body, cv } = await readBookingRequest(request);
     // A hidden person cannot be booked by a viewer who may not see them: the id answers as unknown.
