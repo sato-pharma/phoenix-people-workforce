@@ -1,6 +1,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { getUserLineScopeOverride } from "@/lib/auth/scope-visibility";
-import { describeUnexpectedError, errorMessageOf, notFoundError } from "@/lib/http/api-errors";
+import { describeUnexpectedError, errorMessageOf, forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -11,6 +12,7 @@ import { lastFinishedCairoMonth, pickLoadedFrontier } from "@/lib/marketing-requ
 import { sharedAttributionOverlap } from "@/lib/marketing-requests/roi-attribution-overlap";
 import {
   assertMarketingWorkspaceAccess,
+  companyMarketingRoles,
   normalizeHrId,
   resolveStoredEmployeeHrId,
 } from "@/lib/marketing-requests/service";
@@ -391,6 +393,31 @@ export async function resolveOwnedProductScope(
 export async function resolveLineRouteOverride(access: AccessContext): Promise<string[] | null> {
   if (access.role !== LINE_ROUTE_ROLE) return null;
   return getUserLineScopeOverride(access.loginId ?? "");
+}
+
+/**
+ * Who may open the ROI and Coverage reports. Their five routes (roi-tracking, roi-tracker, coverage-report
+ * and the two exports) ask this before the rate limit or the body, so the caller is judged first:
+ *
+ *   1. signed out → 401 (`assertSignedIn`);
+ *   2. a role outside the marketing workspace → 403 (`assertMarketingWorkspaceAccess`, the gate
+ *      `buildRoiIndex` asks again before a row is read);
+ *   3. a role whose reach is decided by WHO they are (everyone outside `companyMarketingRoles`: the rep,
+ *      the managers, the product roles) on a login with no HR id → 403. Their scope is built from that
+ *      HR id, so without one the report could only ever be empty. A National Sales Manager is the one
+ *      exception: his line override is keyed by his login (`resolveLineRouteOverride`), so a login alone
+ *      can still reach rows.
+ *
+ * Nobody who could see a row loses it. Before this (REC-080, 19 Nov 2026), a Medical Rep login with no
+ * HR id got 200 and an empty report from all five, and the route guard harness excused it.
+ */
+export function assertRoiReportViewer(access: AccessContext): void {
+  assertSignedIn(access);
+  assertMarketingWorkspaceAccess(access);
+  if (access.scope === "system" || companyMarketingRoles.has(access.role)) return;
+  if (normalizeHrId(access.hrId)) return;
+  if (access.role === LINE_ROUTE_ROLE && access.loginId) return;
+  throw forbiddenError(`Forbidden: ${access.role} sees only their own marketing requests, and this login is not linked to an employee record.`);
 }
 
 /**
