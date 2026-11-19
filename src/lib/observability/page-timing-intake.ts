@@ -9,6 +9,8 @@
 //
 // Pure, so every rule is tested without a request. No node: imports; the browser beacon imports it too.
 
+import { hrNamespaceRemainder, isHrRewritablePath } from "@/lib/navigation/shell-headers";
+
 /** A hard-load beacon is ~200 bytes; a batch of ten taps is ~700. */
 export const PAGE_TIMING_MAX_BODY_BYTES = 1_024;
 /** Distinct page shapes the process will keep; the application has about 520 pages. */
@@ -91,11 +93,18 @@ const PAGE_NAME = /^[a-z][a-z-]{0,48}$/;
  * `/employee-portals/phoenix-crm/visits?x=1` -> `/employee-portals/phoenix-crm/visits`; ids -> `:id`.
  * Null if the page is not a signed-in page, is deeper than the application goes, or has a part that is
  * neither a page name nor an id.
+ *
+ * An `/hr` address is filed as the page it serves: the HR seats (HR Operations, HR Resourcing) browse
+ * every page under `/hr/…`, which `proxy.ts` rewrites to the bare page, so `/hr/employees/record-gaps`
+ * is `/employees/record-gaps`. Until 19 Nov 2026 the `hr` part was read as an unknown section and every
+ * HR seat's page was dropped — 11 page views that morning, none timed. `/hr/api/…` is not a page and
+ * stays refused, and `/hr/login` is still the public login.
  */
 export function normalisePagePath(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > 200) return null;
-  const bare = raw.split(/[?#]/)[0]!.toLowerCase().replace(/\/+$/, "");
-  if (!bare.startsWith("/")) return null;
+  const asked = raw.split(/[?#]/)[0]!.toLowerCase().replace(/\/+$/, "");
+  if (!asked.startsWith("/")) return null;
+  const bare = isHrRewritablePath(asked) ? hrNamespaceRemainder(asked) : asked;
   const [section, ...rest] = bare.slice(1).split("/");
   if (!section || !SECTIONS.has(section) || rest.length > PAGE_TIMING_MAX_DEPTH) return null;
   const shaped = [section];
