@@ -71,8 +71,16 @@ container:
 
 ## After a real rebuild
 
-Run the prelude, then the file, exactly as the check does. Then refresh the baseline at once
-(`node scripts/schema-baseline.mjs --write`). The rebuilt database holds the folded form of the
+Run the prelude, then the file, exactly as the check does. Then:
+
+1. **Put back production's global default privileges.** `pg_dump -n` writes only schema-scoped ones (the
+   baseline holds 7, every one naming a schema), never a global one. Production has one: migration
+   `20261113194017` makes a new function executable by its owner and `service_role` only. Every function
+   in the file already carries its own grants, so nothing restored is affected, but without that
+   migration a function created after the rebuild would be executable by everyone. Re-run its two
+   statements (`alter default privileges for role postgres revoke execute on functions from public;` and
+   `… grant execute on functions to service_role;`).
+2. **Refresh the baseline** (`node scripts/schema-baseline.mjs --write`). The rebuilt database holds the folded form of the
 re-bracketed expressions, while the committed file still holds production's old brackets. Without a
 refresh, the nightly drift check would report them as changes that no migration explains. On 19 Nov 2026
 there were 11 such objects: 10 CHECK constraints and 1 trigger `WHEN`.
@@ -113,6 +121,7 @@ events, and its test reads the job list from `ci.yml` itself.
 | 44442413703 | 0 | 8,054 of 8,054 | 11 | Every role, extension and default privilege the prelude adds was enough: nothing failed to load. |
 | 44442738138 | 0 | 8,054 of 8,054 | 11 | The line diff showed all 11 were Postgres's own brackets (10 CHECK constraints, 1 trigger `WHEN`). |
 | 44443204241 | 0 | 8,054 of 8,054 | 0 | Green; the 11 listed as the same expression. |
+| 44443489815 | 0 | 8,054 of 8,054 | 0 | The dispatch on the pull request's head `6c7bc227b`: green in 51 seconds (restore job 46 s), notify skipped. |
 
 ## Running it locally
 
