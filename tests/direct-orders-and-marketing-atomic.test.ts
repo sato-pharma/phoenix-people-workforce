@@ -621,9 +621,11 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
   // still executable by the service role — a way to collect or cancel without writing the record. Once #614 was live
   // nothing called them, and 20261119153902 drops both; no later migration may bring either back.
   const dropSql = squash(stripSqlComments(readMigration(DROP_EARLIER_FORMS_MIGRATION)));
+  // `params` is each earlier form's exact argument count: the record-writing collection takes 7 and the record-writing
+  // cancel 5, and a later redefinition of THOSE must stay possible.
   const earlierForms = [
-    { name: "phx_record_direct_order_collection", sig: "phx_record_direct_order_collection(uuid, numeric, date, numeric, date)" },
-    { name: "phx_cancel_marketing_request", sig: "phx_cancel_marketing_request(uuid, text, text, timestamptz)" },
+    { name: "phx_record_direct_order_collection", params: 5, sig: "phx_record_direct_order_collection(uuid, numeric, date, numeric, date)" },
+    { name: "phx_cancel_marketing_request", params: 4, sig: "phx_cancel_marketing_request(uuid, text, text, timestamptz)" },
   ];
   for (const form of earlierForms) {
     assert.ok(dropSql.includes(`drop function if exists public.${form.sig};`), `HEADLINE: the earlier form is dropped: ${form.sig}`);
@@ -634,7 +636,11 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
   for (const name of laterFiles) {
     const later = squash(stripSqlComments(readMigration(name)));
     for (const form of earlierForms) {
-      const recreated = new RegExp(`create (or replace )?function public\\.${form.name}\\(\\s*p_\\w+ \\w+,\\s*p_\\w+ \\w+,\\s*p_\\w+ \\w+,\\s*p_\\w+ \\w+(,\\s*p_\\w+ \\w+)?\\s*\\)`, "i");
+      const argument = "\\s*p_\\w+ \\w+\\s*";
+      const recreated = new RegExp(
+        `create (or replace )?function public\\.${form.name}\\(${Array.from({ length: form.params }, () => argument).join(",")}\\)`,
+        "i",
+      );
       assert.ok(!recreated.test(later), `${name} must not bring back the dropped ${form.sig}`);
     }
   }
