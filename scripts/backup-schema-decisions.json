@@ -1171,6 +1171,13 @@
       "decidedBy": "owner",
       "why": "42 tables, 7,747 rows (16 tables empty): the Phoenix CRM test data cleared on 17 Oct, test customers, list events, plans, visits and screen taps written between 10 and 17 Oct. Every row is marked is_test and none is in the live tables now.",
       "sheet": "20 November 2026, the 16 and 17 October snapshots, in chat"
+    },
+    "notification_backup_20261023": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "3 tables, 824 rows: the before-image of the 23 Oct in-app notification repair (docs/notification-bell-reconciliation.md, migration 20261023082524), whose rollback statements read it. 386 in-app deliveries to logins with no HR ID (all now skipped), 202 events whose earlier approver had been overwritten (all now name them again) and the 236 read-and-archived states the repair wrote (all still exist). The repair still stands in full. Holds recipient HR IDs. The migration created it, so staging holds a smaller copy too; the 26 Oct note that it is kept as the rollback was written under the keep-all rule retired on 19 Nov.",
+      "sheet": "20 November 2026, the 23 October notification snapshot, in chat"
     }
   }
 }
