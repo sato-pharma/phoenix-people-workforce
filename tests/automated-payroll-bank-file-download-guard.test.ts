@@ -447,7 +447,7 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
   const noopAt = approve.indexOf("isUnchangedOutstationReapproval(");
   assert.ok(noopAt > approve.indexOf("assertOutstationClaimUnchanged("), "the no-op still answers to the revision the reviewer saw");
   // One database step since REC-038 (19 Nov 2026): the payroll save is planned, then one call writes it all.
-  for (const write of ["await planPayrollExpenseSave(", 'rpc("phx_accept_outstation_claim_for_payroll"']) {
+  for (const write of ["await planAcceptedClaimPayrollRow(", "await writeClaimToPayrollInOneStep("]) {
     assert.ok(noopAt > 0 && noopAt < approve.indexOf(write), `HEADLINE: the unchanged re-approve returns before ${write}`);
   }
   assert.match(approve.slice(noopAt, noopAt + 600), /alreadyApproved: true/, "and says it was already approved");
@@ -493,13 +493,17 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
     "HEADLINE: the payroll write is an upsert keyed on trip_id",
   );
   assert.doesNotMatch(save, /\.from\("outstation_expenses"\)\s*\.insert\(/, "and never a plain insert of a trip row");
-  const pushFn = bodyOf(service, "async function pushAcceptedOutstationExpenseToPayroll(");
-  assert.match(pushFn, /if \(isOutstationExpenseInPayroll\(linkedPayroll\)\) \{\s*return 0;/, "a trip already paid is not pushed at all");
-  assert.match(pushFn, /reportId: linkedPayroll\?\.reportId \?\? null/, "a re-push reuses the trip's report");
-  // The approval writes the planned row through its one database call, which upserts on trip_id too.
-  assert.match(approve, /const linkedReportId = linkedPayroll\?\.reportId \?\? null;/, "the approval reuses the trip's report");
-  const acceptSql = readFileSync("supabase/migrations/20261119132423_outstation_accept_claim_for_payroll_atomically.sql", "utf8").replace(/--[^\n]*/g, "");
-  assert.match(acceptSql, /insert into public\.outstation_expenses \([\s\S]*?on conflict \(trip_id\) do update set/, "HEADLINE: the approval's database step upserts the trip's row on trip_id");
+  // Since REC-038 (19 Nov 2026) the approval and the release share one planned row and one database call. A trip
+  // already paid in a payroll batch is refused before either plans anything, and a re-push reuses the trip's report.
+  const release = bodyOf(service, "export async function releaseOutstationRequestToPayrollIfReady(");
+  assert.match(release, /if \(isOutstationExpenseInPayroll\(linked\)\) \{\s*return \{ reason: "The request is already in payroll\.", released: false \};/, "a trip already paid is not released at all");
+  assert.match(release, /planAcceptedClaimPayrollRow\(request, linked\?\.reportId \?\? null, access\)/, "a release reuses the trip's report");
+  assert.match(approve, /planAcceptedClaimPayrollRow\(accepted, linkedPayroll\?\.reportId \?\? null, access\)/, "the approval reuses the trip's report");
+  const planRow = bodyOf(service, "async function planAcceptedClaimPayrollRow(");
+  assert.match(planRow, /records: \[mapOutstationRequestToPayrollExpenseRecord\(request, \{ reportId: linkedReportId \}\)\],\s*reportId: linkedReportId,/, "the planned row and its report carry the trip's report");
+  // The one database call upserts on trip_id, in its latest body.
+  const acceptSql = readFileSync("supabase/migrations/20261119143529_outstation_release_claim_to_payroll_atomically.sql", "utf8").replace(/--[^\n]*/g, "");
+  assert.match(acceptSql, /insert into public\.outstation_expenses \([\s\S]*?on conflict \(trip_id\) do update set/, "HEADLINE: the one database call upserts the trip's row on trip_id");
   assert.equal((acceptSql.match(/insert into public\.outstation_expenses/g) ?? []).length, 1, "and has no other insert of a trip row");
   const baseline = readFileSync("supabase/migrations/20260711135352_phoenix_production_schema_baseline.sql", "utf8");
   assert.match(baseline, /ADD CONSTRAINT payroll_expenses_trip_id_key UNIQUE \(trip_id\);/, "HEADLINE: the table holds trip_id unique");

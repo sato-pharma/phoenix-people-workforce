@@ -255,11 +255,12 @@ export async function runOutstationWorkflowReportDeleteGuardTests() {
   // The name the workflow writes and the name the guard reads come from one function.
   const service = readFileSync("src/lib/outstation/service.ts", "utf8");
   assert.doesNotMatch(service, /\.workflow`/, "service.ts never spells the workflow report name by hand");
-  // 4 since REC-038 (19 Nov 2026): the approval plans its payroll save for its one database call, a fourth writer.
+  // Still 3 since REC-038 (19 Nov 2026): the approval and the release now share one planned row
+  // (planAcceptedClaimPayrollRow) in place of the push they used.
   assert.equal(
     service.split("fileName: workflowExpenseReportFileName(").length - 1,
-    4,
-    "each of the workflow's four payroll writes (three pushes and the approval's planned save) names its report through workflowExpenseReportFileName",
+    3,
+    "each of the workflow's three payroll writes names its report through workflowExpenseReportFileName",
   );
 
   // -- The uploads list shows LIVE counts, so an emptied header is not a full look-alike -----------
