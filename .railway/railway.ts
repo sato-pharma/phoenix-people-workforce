@@ -79,13 +79,6 @@ export default defineRailway(() => {
   // and every tablet download answers 404 until the entrypoint re-fetches — WhatsApp it can never re-fetch,
   // because whatsapp.com refuses Railway's addresses (it was copied onto this disk by hand).
   const phoenixHeadwindVolume = volume("phoenix-headwind-volume", { alerts: { usage: { "100": {}, "80": {}, "95": {} } }, allowOnlineResize: true, region: "europe-west4-drams3a", sizeMB: 50000 });
-  const phoenixCron = service("phoenix-cron", {
-    source: image("alpine:3"),
-    start: "apk add --no-cache curl >/dev/null 2>&1; M=$(date -u +%M); H=$(date -u +%H); D=$(date -u +%u); echo \"cron tick ${H}:${M} dow=${D}\"; h(){ curl -sS -m 300 -o /dev/null -w \"$1 -> %{http_code}\\n\" -H \"Authorization: Bearer $CRON_SECRET\" \"$APP_URL/$1\"; }; h \"api/notifications/process?limit=50\"; h \"api/cron/inbound-intake\"; case \"$M\" in 00|10|20|30|40|50) h \"api/cron/recruitment-email-intake\";; esac; if [ \"$H\" = \"06\" ] && [ \"$M\" = \"35\" ]; then h \"api/notifications/daily\"; fi; if [ \"$D\" = \"5\" ] && [ \"$H\" = \"03\" ] && [ \"$M\" = \"00\" ]; then h \"api/cron/background-jobs?limit=10\"; fi; echo \"cron done\"; exit 0",
-    replicas: { "sfo": 1 },
-    deploy: { restartPolicyType: "NEVER" },
-    env: { APP_URL: preserve(), CRON_REBUILD: preserve(), CRON_SECRET: preserve() },
-  });
   const phoenixPeopleWorkforce = service("phoenix-people-workforce", {
     // 🔴 THE LIVE SOURCE ALSO CARRIES `branch: "main"`, AND THIS LINE DOES NOT SAY SO. Read from
     // `config pull` on 2026-10-10. It is left as the pull rendered it rather than written in by
@@ -207,6 +200,6 @@ export default defineRailway(() => {
   // delete omitted resources", and `phoenixCodeBackup` was declared but missing from this list until the
   // 2026-11-18 Railway audit — one whole-project apply away from deleting the nightly backups.
   return project("Phoenix-HR-Workforce", {
-    resources: [phoenixCron, phoenixPeopleWorkforce, phoenixWorkforceWorker, phoenixWorkforceRobot, phoenixHeadwind, phoenixCodeBackup, headwindDbEu, headwindDbEuVolume, phoenixHeadwindVolume],
+    resources: [phoenixPeopleWorkforce, phoenixWorkforceWorker, phoenixWorkforceRobot, phoenixHeadwind, phoenixCodeBackup, headwindDbEu, headwindDbEuVolume, phoenixHeadwindVolume],
   });
 });

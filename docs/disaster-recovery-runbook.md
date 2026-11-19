@@ -16,7 +16,7 @@
 > | Deploy trigger | push/merge to `main` (GitHub-connected auto-deploy), **gated on that commit's Actions check suites** (Railway Wait for CI) — the merge plus a green CI is the deploy: then full traffic, within minutes, no staged rollout, no smoke test. 🔴 **The gate fails by NOT shipping, silently** — red/cancelled/queued withholds the deploy and a 2-hour timeout abandons it with nothing red. Never read the merge; read `revision` below. See [deployment.md](deployment.md), "The deploy gate" |
 > | Confirm what's live | `curl https://phoenix-hr.satopharma.com/api/healthz` → read `revision` |
 > | Migrations | applied by hand, **before** the merge — the Railway build runs none |
-> | Scheduler | third-party **cron-job.org**, outside this repo (§7) — not GCP Cloud Scheduler (still fires, always 401s, ignore it) and not Railway's own `phoenix-cron` (disabled, never worked) |
+> | Scheduler | third-party **cron-job.org**, outside this repo (§7) — not GCP Cloud Scheduler (still fires, always 401s, ignore it) and not Railway's own `phoenix-cron` (never worked, deleted 19 Nov 2026) |
 > | Alerting | 🔴 **nothing pages the owner.** Healthchecks.io (cron liveness only) is the one survivor — see §1 |
 > | Staging | Railway env `staging` of the same service — `https://phoenix-people-workforce-staging.up.railway.app`, on the staging Supabase project `cifwmndunmlxjhyjugxa`. Tracks `main`, so it is **not** a preview of an unmerged branch and is **not** a second copy of production data (see deployment.md § Staging Environment) |
 >
@@ -28,7 +28,6 @@
 > | Project | `Phoenix-HR-Workforce` | `dc218ad3-99b7-4aff-be38-953a57524a71` |
 > | Environment | `production` | `cd5600e6-99dd-4b1c-80b2-16af8770abef` |
 > | Service (app) | `phoenix-people-workforce` | `30356676-116b-4886-ac6e-89041d80185e` |
-> | Service (cron — disabled, ignore) | `phoenix-cron` | `179e6a73-d891-4fbc-a89e-ac53ef461821` |
 >
 > Re-confirm the topology yourself before trusting the table above — it has drifted once already:
 > ```bash
@@ -260,10 +259,10 @@ rotation must also be updated in the Resend dashboard (§8).
 | **cron-job.org → crons** | inbound | `CRON_SECRET` bearer | `/api/notifications/*`, `/api/cron/*` | per-job |
 | GitHub → Railway | deploy | Railway's own GitHub App connection (no repo secret) | configured in the Railway dashboard, not this repo | — |
 
-🔴 Two other callers still hit the cron routes and both are noise, not signal: **GCP Cloud
+🔴 One other caller still hits the cron routes and it is noise, not signal: **GCP Cloud
 Scheduler**'s 8 jobs still fire but 401 on every route (secret mismatch against a dead project —
-don't chase it), and Railway's own `phoenix-cron` service is disabled and never reached the app
-while it ran. Tell them apart in `railway logs --http --json` by `clientUa`: a `cron-job.org` UA
+don't chase it). Railway's own `phoenix-cron` service never reached the app and was deleted on
+19 November 2026. Tell them apart in `railway logs --http --json` by `clientUa`: a `cron-job.org` UA
 from a Hetzner IP is real; `Google-Cloud-Scheduler` is not.
 
 ## 8. Owner-gated verifications (external consoles)

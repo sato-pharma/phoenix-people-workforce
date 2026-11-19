@@ -741,7 +741,7 @@ The project holds four services — `phoenix-cron`, `phoenix-people-workforce`, 
 `headwind-db-eu` — so "linked to production" never identifies one. (Read live 2026-09-28. It was
 `headwind-db` until that database was deleted for `headwind-db-eu`; a service list in a doc goes
 stale the moment one is added or removed, so re-read it with `railway status --json` rather than
-quoting this line.)
+quoting this line. `phoenix-cron` was deleted on 19 November 2026.)
 
 **Why this is worse than a wrong default.** `railway run -- <cmd>` from the primary injects only the
 `RAILWAY_*` built-ins: 119 variables reach the child and `CRON_SECRET` and `CRONJOB_API_KEY` both

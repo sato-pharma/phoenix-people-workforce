@@ -151,7 +151,7 @@ export function runRailwayDeploySettingsDriftTests() {
   // check would compare nothing and report OK.
   const real = parseAuthoringFile(readFileSync(resolve(".railway/railway.ts"), "utf8")) as Declared;
   const names = Object.keys(real.services);
-  for (const name of ["phoenix-people-workforce", "phoenix-workforce-worker", "phoenix-headwind", "phoenix-cron", "headwind-db-eu"]) {
+  for (const name of ["phoenix-people-workforce", "phoenix-workforce-worker", "phoenix-headwind", "headwind-db-eu"]) {
     assert.ok(names.includes(name), `the parser did not read ${name} out of .railway/railway.ts, so it would go unchecked`);
   }
   assert.equal(real.services["phoenix-people-workforce"].healthcheckPath, "/api/readyz");
