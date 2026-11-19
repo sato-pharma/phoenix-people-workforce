@@ -40,8 +40,9 @@ const egp = (value: number): string =>
  *
  * DO NOT MAKE THIS ACCUMULATE. A review proposed adding the input to the stored figure instead;
  * that was withdrawn, and must stay withdrawn — it would store 700 the moment Finance corrected a
- * typo from 200 to 500. The control pre-fills with the current total precisely so that editing is
- * the normal case.
+ * typo from 200 to 500. The "Correct the total" mode pre-fills with the current total precisely so
+ * that editing is the normal case. Adding an instalment is a SEPARATE, named input
+ * (resolveAddedDirectOrderPayment, `addAmount`), which works out the total before it reaches here.
  *
  * The model's full shape and its limits — no instalment ledger, no per-payment proof, no refunds,
  * no overpayment, and the pharmacy-probation signal that rides on `payment_date` — are documented
@@ -110,6 +111,113 @@ export function deriveDirectOrderCollection(input: {
     remainingAmount: round2(orderValue - paidRounded - offsetTotal),
     paymentDate,
   };
+}
+
+/**
+ * "Add a payment" (owner, 19 Nov 2026: "understand what he wants and tailor it in the system").
+ *
+ * Finance records instalments as they arrive, and on production he had been doing the sum by hand —
+ * 25,000 then 74,246 then 109,246 on one order, one total saved twice. So the screen's default, once
+ * anything is recorded, asks for THIS payment and the server adds it to the total the screen LOADED
+ * (the same figure the compare-and-set checks, so a stale page loses with a 409, never adds twice).
+ *
+ * This is NOT the accumulate-on-edit that was withdrawn: that read the ONE total field as a delta, so
+ * a typo corrected from 200 to 500 stored 700. Here the two meanings are two named modes on the
+ * screen and two keys in the body: `addAmount` adds, `paidAmount` replaces ("Correct the total"), and
+ * sending both is refused. The total that results still goes through deriveDirectOrderCollection.
+ */
+export function resolveAddedDirectOrderPayment(input: {
+  /** The total the screen showed (or, for an older tab, the server read) — null when nothing is recorded. */
+  alreadyPaid: number | null;
+  addAmount: number | null | undefined;
+  salesValue: number;
+  offsetTotal?: number | null;
+}): { ok: true; addAmount: number; paidAmount: number } | { ok: false; message: string } {
+  const add = Number(input.addAmount);
+  if (input.addAmount == null || !Number.isFinite(add) || add <= 0) {
+    return { ok: false, message: "Enter the payment received as a number greater than zero." };
+  }
+  const addRounded = round2(add);
+  const already = round2(Number(input.alreadyPaid) || 0);
+  const total = round2(already + addRounded);
+  const orderValue = round2(Number(input.salesValue));
+  const offsetTotal = round2(Number(input.offsetTotal) || 0);
+  const owed = round2(orderValue - already - offsetTotal);
+  if (Number.isFinite(orderValue) && orderValue > 0 && round2(total + offsetTotal) > orderValue) {
+    return {
+      ok: false,
+      message:
+        `This payment of ${egp(addRounded)} is more than the ${egp(Math.max(0, owed))} still outstanding ` +
+        `(${egp(already)} is already recorded).`,
+    };
+  }
+  return { ok: true, addAmount: addRounded, paidAmount: total };
+}
+
+/** One line of the order's payment history, read from its `collection_recorded` / `collection_cleared` events. */
+export type DirectOrderCollectionHistoryEntry = {
+  recordedAt: string;
+  paymentDate: string | null;
+  /** payment = the total went up; correction = it went down or only the date changed; cleared = reset to nothing. */
+  kind: "payment" | "correction" | "cleared";
+  /** What this entry moved the total by — positive for a payment, null when cleared. */
+  amount: number | null;
+  /** The total collected after this entry. */
+  total: number | null;
+  remaining: number | null;
+  byHrId: string | null;
+};
+
+/**
+ * The payment history, oldest first. Every collection event carries the total it replaced
+ * (`previousPaidAmount`) and the total it wrote (`paidAmount`) — all 205 on production did on
+ * 19 Nov 2026 — so each instalment is the difference, and nothing has to be inferred from order.
+ */
+export function buildDirectOrderCollectionHistory(
+  rows: ReadonlyArray<{
+    event_type: string | null;
+    created_at: string | null;
+    actor_hr_id?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }>,
+): DirectOrderCollectionHistoryEntry[] {
+  const num = (value: unknown): number | null => {
+    if (value == null || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? round2(n) : null;
+  };
+  return rows
+    .filter((row) => row.event_type === "collection_recorded" || row.event_type === "collection_cleared")
+    .slice()
+    .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+    .map((row) => {
+      const meta = row.metadata ?? {};
+      const total = num(meta.paidAmount);
+      const previous = num(meta.previousPaidAmount);
+      const remaining = num(meta.remainingAmount);
+      const paymentDate = typeof meta.paymentDate === "string" && meta.paymentDate ? meta.paymentDate : null;
+      if (row.event_type === "collection_cleared" || total == null) {
+        return {
+          recordedAt: String(row.created_at ?? ""),
+          paymentDate: null,
+          kind: "cleared" as const,
+          amount: null,
+          total: null,
+          remaining,
+          byHrId: row.actor_hr_id ?? null,
+        };
+      }
+      const amount = round2(total - (previous ?? 0));
+      return {
+        recordedAt: String(row.created_at ?? ""),
+        paymentDate,
+        kind: amount > 0 ? ("payment" as const) : ("correction" as const),
+        amount,
+        total,
+        remaining,
+        byHrId: row.actor_hr_id ?? null,
+      };
+    });
 }
 
 /** Today in Cairo as YYYY-MM-DD. At 01:00 Cairo, UTC still reads yesterday. */

@@ -432,6 +432,80 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
     "a loss under the lock writes nothing else",
   );
 
+  // ── 4c. "Add a payment" (19 Nov 2026): the total is the screen's total plus this payment ────────
+  // Finance saw 200 collected on 1 November and adds a 300 instalment received on 2 November. The function is
+  // asked to write 500 — compared against the 200 the screen showed — and the order's records name the payment
+  // and the new total. A stale page therefore loses the compare-and-set; it never adds 300 to a total that moved.
+  const added = await withFakeSupabase(
+    (request) => {
+      if (request.path === RPC_PATH) {
+        return {
+          status: 200,
+          json: { paidAmount: 500, paymentDate: "2026-11-02", previousPaidAmount: 200, previousPaymentDate: "2026-11-01", remainingAmount: 500 },
+        };
+      }
+      if (request.method === "GET" && request.path.endsWith("/direct_order_requests")) return { status: 200, json: [ORDER_ROW] };
+      if (request.method === "GET") return { status: 200, json: [] };
+      return { status: 201, json: undefined };
+    },
+    async () => {
+      const after = await recordDirectOrderCollection(FINANCE, {
+        addAmount: 300,
+        expected: { paidAmount: 200, paymentDate: "2026-11-01" },
+        paidAmount: null,
+        paymentDate: "2026-11-02",
+        requestId: ORDER_ID,
+      });
+      assert.equal(after.paidAmount, 500, "the caller gets the new total");
+    },
+  );
+  const addedRpc = added.find((r) => r.path === RPC_PATH)?.body as Record<string, unknown>;
+  assert.equal(addedRpc.p_paid_amount, 500, "THE HEADLINE: an added payment of 300 on 200 already collected writes the total 500");
+  assert.equal(addedRpc.p_expected_paid_amount, 200, "compared against the total the screen showed");
+  assert.equal(
+    (addedRpc.p_event as Record<string, unknown>).message_outstanding,
+    "Payment of 300 EGP received on 2026-11-02; 500 EGP collected in total, {remaining} EGP still outstanding.",
+    "the order's timeline names the payment and the new total",
+  );
+  // A payment above what is still owed is refused before the call, in words, and nothing is asked of the database.
+  const tooMuch = await withFakeSupabase(
+    (request) => {
+      if (request.method === "GET" && request.path.endsWith("/direct_order_requests")) return { status: 200, json: [ORDER_ROW] };
+      if (request.method === "GET") return { status: 200, json: [] };
+      return { status: 201, json: undefined };
+    },
+    async () => {
+      await assert.rejects(
+        recordDirectOrderCollection(FINANCE, {
+          addAmount: 900,
+          expected: { paidAmount: 200, paymentDate: "2026-11-01" },
+          paidAmount: null,
+          paymentDate: "2026-11-02",
+          requestId: ORDER_ID,
+        }),
+        /more than the 800\.00 EGP still outstanding/,
+      );
+      // Sending a payment AND a corrected total is refused: the two meanings never share one save.
+      await assert.rejects(
+        recordDirectOrderCollection(FINANCE, {
+          addAmount: 100,
+          paidAmount: 500,
+          paymentDate: "2026-11-02",
+          requestId: ORDER_ID,
+        }),
+        /either the payment to add or the corrected total, not both/,
+      );
+    },
+  );
+  assert.equal(tooMuch.filter((r) => r.path === RPC_PATH).length, 0, "a refused payment never reaches the database");
+  const addRoute = stripComments(read("../app/api/direct-orders/[id]/collection/route.ts"));
+  assert.ok(addRoute.includes("addAmount: body.addAmount ?? null,"), "the route hands the payment to the service");
+  const addControl = stripComments(read("../src/components/direct-orders/direct-order-collection-control.tsx"));
+  assert.ok(
+    addControl.includes("save({ addAmount: Number(payment), paymentDate: paymentOn })"),
+    "the screen's Add a payment sends the payment alone, never a total it added up itself",
+  );
+
   // ── 5. And a win records what the FUNCTION wrote, not what TypeScript guessed ──────────────────
   // TypeScript read no offsets; by the time the lock was taken, a 100 EGP settlement had landed.
   // The remainder the function computed under the lock (400) is the one recorded everywhere.

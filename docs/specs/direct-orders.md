@@ -108,6 +108,21 @@ control — the arithmetic was always right, the words were not.
 > and must stay withdrawn**: accumulating would store 700 the moment Finance corrected a typo from
 > 200 to 500.
 
+**"Add a payment" — added 19 Nov 2026, for Finance** (owner: "understand what he wants and tailor
+it in the system"). Production showed Ahmed El Maraghy adding instalments up by hand — 25,000 then
+74,246 then 109,246 on one order, one total saved twice, a few orders left a pound or a few
+piastres short. The column is still a running total; what changed is the screen. Once anything is
+recorded it opens on **Add a payment**: he types this payment and its date, and the server adds it
+to the total the screen LOADED (`resolveAddedDirectOrderPayment`, body key `addAmount`). Because the
+base is the screen's own figure — the one the compare-and-set checks under the row lock — a payment
+added on a stale page is refused with a 409, never added to a total that has moved. **Correct the
+total** is the second mode, pre-filled, and replaces the total exactly as before, so a typo is
+fixed by editing it; sending both keys is refused. The detail page lists the **payment history**
+from the order's `collection_recorded` / `collection_cleared` events — each carries the total it
+replaced and the total it wrote, so every instalment and its date is shown (all 205 events on
+production carried both on 19 Nov 2026). It is still not a payments table: no per-payment proof,
+and a small remainder is never settled automatically — that is Finance's decision on the screen.
+
 **What it therefore cannot represent:**
 
 | Not supported | Consequence |
