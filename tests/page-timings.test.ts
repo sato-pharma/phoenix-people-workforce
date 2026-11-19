@@ -97,6 +97,17 @@ export function runPageTimingsTests() {
     assert.equal(normalisePagePath(publicPage), null, `${publicPage} is not a signed-in page and is not timed`);
   }
 
+  // ── The HR seats' pages, served under /hr/… (proxy.ts rewrites them to the bare page) ───────────────
+  // Until 19 Nov 2026 `hr` was read as an unknown section, so every page HR Operations and HR Resourcing
+  // opened was dropped: the 11 /hr page views of that morning reached the beacon and none was timed.
+  assert.equal(normalisePagePath("/hr/admin/hr-command-center"), "/admin/hr-command-center", "an HR seat's landing page is timed as the page it serves");
+  assert.equal(normalisePagePath("/hr/employees/record-gaps"), "/employees/record-gaps", "an HR seat's office page is timed as the page it serves");
+  assert.equal(normalisePagePath("/hr/employee-360/B-10?tab=leave"), "/employee-360/:id", "an HR seat's Employee 360 keeps the page name and hides the person");
+  assert.equal(normalisePagePath("/hr/admin/field-crm/day/SEAT-PED-REP-GZ2/2026-11-17"), "/admin/field-crm/day/:id/:id", "the /hr prefix does not count against the depth");
+  for (const notAPage of ["/hr", "/hr/", "/hr/login", "/hr/password-reset", "/hr/api/healthz", "/hr/hr/employees", "/hrx/employees"]) {
+    assert.equal(normalisePagePath(notAPage), null, `${notAPage} is not a signed-in page and is not timed`);
+  }
+
   // The list of sections is the app's own: a section added to app/ without it would go untimed, and a
   // name left in it after its section went would let a script fill the table with a page that is not there.
   const PUBLIC_SECTIONS = [".well-known", "api","connector", "dev", "join", "login", "password-reset", "password-setup", "print", "privacy", "share", "terms", "whatsapp-connect"];
