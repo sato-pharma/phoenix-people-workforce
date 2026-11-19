@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmailComposerOptions, searchComposerEmployees } from "@/lib/email/email-composer-service";
+import { canSendReplyComposerToLists, getReplyComposerListOptions } from "@/lib/email/email-reply-lists";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -14,10 +15,18 @@ export async function GET(request: Request) {
     await assertPermission(access, "communication", "read");
     const url = new URL(request.url);
     const query = url.searchParams.get("q") ?? "";
-    const options = await getEmailComposerOptions();
+    // Distribution lists are offered to the Super Admin seat only — the same check the preview and
+    // send routes make, so a seat that is not offered them cannot reach them by hand either.
+    const canUseLists = canSendReplyComposerToLists(access);
+    const [options, listOptions] = await Promise.all([
+      getEmailComposerOptions(),
+      canUseLists ? getReplyComposerListOptions() : Promise.resolve({ lists: [], warning: null }),
+    ]);
     const employeeOptions = query.trim() ? await searchComposerEmployees(query) : options.employeeOptions;
 
-    return NextResponse.json({ options: { ...options, employeeOptions } });
+    return NextResponse.json({
+      options: { ...options, canUseLists, employeeOptions, listWarning: listOptions.warning, lists: listOptions.lists },
+    });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email composer options." }, { status: 403 });

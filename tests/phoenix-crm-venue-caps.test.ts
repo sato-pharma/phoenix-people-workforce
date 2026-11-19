@@ -162,28 +162,33 @@ function runMigrationRules(): void {
 
 function runGateRules(): void {
   const service = read("src/lib/phoenix-crm/server/venue-caps.ts");
-  assert.match(service, /export function canManageVenueCaps\(viewer: PhoenixCrmViewer\): boolean \{\s*return canUseSfeFieldControls\(viewer\);/, "🔴 the Super Admin and the SFE Manager (owner, 2026-11-03)");
+  assert.match(service, /export function canManageVenueCaps\(viewer: PhoenixCrmViewer\): boolean \{\s*if \(viewer\.isTestPersona\) return false;\s*return viewer\.isSuperAdmin && viewer\.canUpdate;/, "🔴 the Super Admin alone, never a test account (owner, 19 Nov 2026)");
+  assert.ok(!service.includes("canUseSfeFieldControls"), "🔴 the SFE Manager's shared gate no longer opens this page");
+  const manager = service.slice(service.indexOf("function assertManager("), service.indexOf("function assertManager(") + 400);
+  assert.match(manager, /if \(canManageVenueCaps\(viewer\)\) return;\s*if \(seesFieldControlOutage\(viewer\.role\)\) throw new ApiError\(503, "service_unavailable", FIELD_CONTROL_OUTAGE_MESSAGE\);\s*throw forbiddenError\(/, "🔴 a save from the SFE Manager answers that the server is down, never that he was refused (owner, 19 Nov 2026)");
   assert.ok(service.includes("p_seats: viewer.org.territories.map((seat) => seat.seatId)"), "🔴 the exceptions are read over every territory, a vacant one included");
   for (const fn of ["loadVenueCapsAdmin", "setVenueCap"]) {
     const body = service.slice(service.indexOf(`export async function ${fn}(`));
-    assert.match(body.slice(0, 200), /assertManager\(viewer\);/, `${fn} refuses everybody but those two itself`);
+    assert.match(body.slice(0, 200), /assertManager\(viewer\);/, `${fn} refuses everybody but the Super Admin itself`);
   }
   assert.ok(service.includes("seatsByPerson(viewer).get(hrId)"), "🔴 the seats are read here, never taken from the page");
   assert.ok(!/notifyPhoenixCrm|sendEmail/.test(service), "no message and no email goes to anybody");
 
   const page = read("app/(admin)/admin/field-crm/venue-caps/page.tsx");
+  assert.match(page, /if \(seesFieldControlOutage\(access\.role\)\) return <FieldControlOutage \/>;/, "🔴 the SFE Manager opening the page meets the server-down screen (owner, 19 Nov 2026)");
+  assert.ok(page.indexOf("seesFieldControlOutage(access.role)") < page.indexOf('canAccess(access, "phoenix_crm", "approve")'), "🔴 before any gate or read, so he is never redirected and nothing is loaded for him");
   assert.match(page, /if \(!viewer \|\| !canManageVenueCaps\(viewer\)\) redirect\("\/admin"\);/, "the page redirects anybody else");
   assert.ok(page.indexOf("canManageVenueCaps(viewer)") < page.indexOf("loadVenueCapsAdmin("), "the gate runs before the read");
 
   const route = read("app/api/phoenix-crm/venue-caps/route.ts");
   assert.match(route, /assertSameOriginMutation\(request\)/, "a same-origin POST");
-  assert.match(route, /await assertPermission\(access, "phoenix_crm", "approve"\)/, "it asks approve, which the SFE Manager holds and update is not");
+  assert.match(route, /await assertPermission\(access, "phoenix_crm", "approve"\)/, "it asks approve; the service then answers the SFE Manager as a server outage");
 
   assert.ok(read("src/lib/security/access-registry.ts").includes('pattern: "/api/phoenix-crm/venue-caps"'), "the route is on the registry");
   assert.ok(read("src/lib/system-audit/api-page-map.ts").includes('"/api/phoenix-crm/venue-caps": { admin: "/admin/field-crm/venue-caps" }'), "an error on it names its page");
   const nav = read("src/config/system-navigation.ts");
   const card = nav.slice(nav.indexOf('href: "/admin/field-crm/venue-caps"'), nav.indexOf('href: "/admin/field-crm/venue-caps"') + 400);
-  assert.ok(card.includes('roles: ["Super Admin", "SFE Manager"]'), "🔴 the card draws for those two");
+  assert.ok(card.includes('roles: ["Super Admin", "SFE Manager"]'), "🔴 the card still draws for both: the SFE Manager opens it onto the server-down screen (owner, 19 Nov 2026)");
   assert.ok(card.includes('{ resource: "phoenix_crm", action: "approve" }'), "🔴 and asks the verb the SFE Manager holds");
 }
 

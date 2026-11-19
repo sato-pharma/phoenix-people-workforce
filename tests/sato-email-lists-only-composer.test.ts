@@ -98,14 +98,20 @@ export function runSatoEmailListsOnlyComposerTests() {
       "published closing reaches, and a sent closing cannot be recalled",
   );
 
-  // --- 3. The older HR reply composer is untouched -----------------------------------------------
-  // It has its own HR and Finance groups and the owner left it alone: "the other one, leave it now."
-  const oldComposer = readFileSync(path.join(REPO_ROOT, "src/lib/email/email-composer-service.ts"), "utf8");
-  assert.ok(
-    !oldComposer.includes("distribution-lists"),
-    "the older HR reply composer must not read a distribution list — the owner asked for a NEW composer, " +
-      "not for the lists to reach into the old one",
-  );
+  // --- 3. The Email Reply Composer reaches a list only THROUGH the Sato composer ------------------
+  // The owner left it alone on 2026-09-11 ("the other one, leave it now") and lifted that for this
+  // screen on 2026-11-19: "in this module add distrbution list to be able to send bulk emails but
+  // with phx identity". Its list send (src/lib/email/email-reply-lists.ts) asks the Sato composer's
+  // resolveSatoEmailAudience for the addresses, so it is NOT on the allowlist above and must never
+  // import the lists directly — one place turns a list into addresses. Its own pins:
+  // tests/email-reply-lists.test.ts.
+  for (const file of ["src/lib/email/email-composer-service.ts", "src/lib/email/email-reply-lists.ts"]) {
+    const source = readFileSync(path.join(REPO_ROOT, file), "utf8");
+    assert.ok(
+      !source.includes("distribution-lists/"),
+      `${file} must not read a distribution list itself — it goes through the Sato composer's resolver`,
+    );
+  }
 
   // --- 4. A composer send is a manual email, and is NEVER waved past a guard ---------------------
   // 🔴 THE ASSERTION THIS FILE EXISTS FOR. The owner ruled that the Notification Confidence Gate's

@@ -1247,6 +1247,7 @@ import {
   runSatoEmailRenderTests,
 } from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
+import { runEmailReplyListsTests } from "./email-reply-lists.test.ts";
 import { runSatoEmailListGroupsTests } from "./sato-email-list-groups.test.ts";
 import { runSatoEmailTypedRecipientsTests } from "./sato-email-typed-recipients.test.ts";
 import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
@@ -1369,6 +1370,30 @@ import { runInternalMessagesTests } from "./internal-messages.test.ts";
 import { runRetentionSentFiguresAndRecordingsTests } from "./retention-sent-figures-and-recordings.test.ts";
 import { runPermissionChecksS01Tests } from "./permission-checks-s01.test.ts";
 import { runEarlyBirdsDecisionPermissionTests } from "./early-birds-decision-permission.test.ts";
+import {
+  runRouteGuardHarnessPart1Tests,
+  runRouteGuardHarnessPart2Tests,
+  runRouteGuardHarnessPart3Tests,
+  runRouteGuardHarnessPart4Tests,
+  runRouteGuardHarnessPart5Tests,
+  runRouteGuardHarnessPart6Tests,
+  runRouteGuardHarnessPart7Tests,
+  runRouteGuardHarnessPart8Tests,
+  runRouteGuardHarnessPart9Tests,
+  runRouteGuardHarnessPart10Tests,
+  runRouteGuardHarnessPart11Tests,
+  runRouteGuardHarnessPart12Tests,
+  runRouteGuardHarnessPart13Tests,
+  runRouteGuardHarnessPart14Tests,
+  runRouteGuardHarnessPart15Tests,
+  runRouteGuardHarnessPart16Tests,
+  runRouteGuardHarnessRatchetTests,
+} from "./route-guard-harness.test.ts";
+import {
+  runDeductionDecisionGateBehaviourTests,
+  runHeldSalaryRecordBehaviourTests,
+  runPermissionLookupBehaviourTests,
+} from "./payroll-ledger-and-permission-behaviour.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
 import { runGcloudMigrationHardeningTests } from "./gcloud-migration-hardening.test.ts";
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
@@ -10700,6 +10725,11 @@ await runTest(
 );
 
 await runTest(
+  "the Email Reply Composer sends to distribution lists for the Super Admin alone, gated on the server before anything resolves, as manual Bcc mail with no origin, no confidence-gate bypass and no variables",
+  runEmailReplyListsTests,
+);
+
+await runTest(
   "the CEO assistant has no mode buttons, so a STRUCTURAL floor sits under the model's own report of what it was doing — a 'write' that silently dropped figures he had written is judged strictly anyway, losing one of his figures is refused under either guard, and an unknown intent falls back to the strict one",
   runCeoEmailAssistTests,
 );
@@ -12693,6 +12723,26 @@ await runTest("Synthetic Journeys Run History fits a phone: the table is the des
 await runTest("the WhatsApp inbox and held-email buckets take exact type lists, and a file of any other type is kept as a plain download, never refused, so no file is lost and no held email becomes unapprovable", runStoredContentTypeTests);
 await runTest("the 19 Nov 2026 review fixes: leave decided earliest start first, an interview that did not happen proves no half, a waiting mailbox is never mailed, no password hash in the audit copy, every companion credited once, an interview-only half day charged its other half, the error alert only where a Telegram reaches", runReviewFindings20261119Tests);
 await runTest("an email template body may not drop the details table its default carries (the only way a sender's record reaches the email), and a resignation notice shows a readable status", runEmailTemplateKeepsRecordPayloadTests);
+await runTest("the route guard harness covers every route file that changes data exactly once (REC-080): at least 800 files, sixteen parts that partition them, each part registered here, a refused role that the matrix really refuses for at least 400 calls, the Early Birds decision refused before it reads anything, its permission line kept (F-CRM-016), and a driver that decides nothing and reads no environment file", runRouteGuardHarnessRatchetTests);
+await runTest("route guard harness, part 1 of 16 (REC-080): every POST, PATCH, PUT and DELETE handler is called through Next's own request scope as a signed-out visitor and as a role its access-registry entry refuses, and each is refused (401/403, or 400+ where the registry declares no permission or a secret) with zero writes and zero calls out — the database is a recording stand-in and no environment file is read", runRouteGuardHarnessPart1Tests);
+await runTest("route guard harness, part 2 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart2Tests);
+await runTest("route guard harness, part 3 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart3Tests);
+await runTest("route guard harness, part 4 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart4Tests);
+await runTest("route guard harness, part 5 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart5Tests);
+await runTest("route guard harness, part 6 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart6Tests);
+await runTest("route guard harness, part 7 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart7Tests);
+await runTest("route guard harness, part 8 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart8Tests);
+await runTest("route guard harness, part 9 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart9Tests);
+await runTest("route guard harness, part 10 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart10Tests);
+await runTest("route guard harness, part 11 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart11Tests);
+await runTest("route guard harness, part 12 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart12Tests);
+await runTest("route guard harness, part 13 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart13Tests);
+await runTest("route guard harness, part 14 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart14Tests);
+await runTest("route guard harness, part 15 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart15Tests);
+await runTest("route guard harness, part 16 of 16 (REC-080): refused before the first write, signed out and as a refused role", runRouteGuardHarnessPart16Tests);
+await runTest("the held-salary ledger never answers \"nobody is held\" by accident (REC-078, F-PAY-002): run against a stand-in database, loadHeldBalances reads who is held from the newest publish of each run, refuses by name a published run whose record of who was held is missing, refuses an unreadable or missing ledger table, and markRunPublished hands the held list to the one database call that publishes and says plainly when it did not land", runHeldSalaryRecordBehaviourTests);
+await runTest("a deduction decision is refused before it is written when it must be (REC-078, F-PAY-003/004): only the Super Admin decides and a refused role reads nothing, a candidate a publication locked is refused before any write, the database trigger's late lock refusal reaches the reviewer as a Conflict with no audit row, and an open candidate still saves with the amount derived from the candidate on record", runDeductionDecisionGateBehaviourTests);
+await runTest("the permission lookups behave (REC-078): a deny row in role_permission_overrides takes a compiled grant away through assertPermission, a later failed reload keeps the last matrix that loaded (no revoked grant comes back, no other grant is lost), a module lock suspends a grant for that one account until its unlock time, and a signed-out caller gets the signed-out refusal without a database read", runPermissionLookupBehaviourTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

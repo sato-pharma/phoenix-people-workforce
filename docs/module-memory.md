@@ -159,7 +159,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `portal-manager-boards` — A manager's team boards on the portal home | `src/components/employee-portal/dashboards/**` and 4 more |
 | `company-activity-report` — The Company Activity Report and its export | `src/lib/company-activity-report/**` and 3 more |
 | `notifications` — Email, notifications and messaging | `src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,ceo-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**` and 5 more |
-| `email-composers` — The two email composers — Sato and CEO | `src/lib/{sato-email,ceo-email}/**` and 3 more |
+| `email-composers` — The two email composers — Sato and CEO | `src/lib/{sato-email,ceo-email}/**` and 5 more |
 | `turbify` — Turbify mailbox console — the shared browser driver | `src/lib/turbify/**` and 3 more |
 | `turbify-provisioning` — Turbify provisioning — creating a mailbox, its invitation and its app password | `src/lib/new-hire-mailbox/**` and 3 more |
 | `coaching` — Coaching, training and visual aids | `src/lib/{coaching,visual-aids}/**` and 4 more |

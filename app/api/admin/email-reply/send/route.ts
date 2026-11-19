@@ -17,6 +17,7 @@ import {
   resolveComposerRecipients,
   type ComposerPayload,
 } from "@/lib/email/email-composer-service";
+import { canSendReplyComposerToLists, isReplyBulkPayload, sendReplyBulk } from "@/lib/email/email-reply-lists";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { buildPhoenixHrReplyEmail } from "@/lib/email/phoenix-hr-reply-template";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
@@ -80,6 +81,36 @@ export async function POST(request: Request) {
     await assertPermission(access, "communication", "update");
 
     const body = (await request.json().catch(() => ({}))) as ComposerPayload;
+
+    // Distribution lists picked: a bulk send in the Phoenix identity (owner, 2026-11-19). Checked
+    // here, on the server, before anything is resolved — the screen offering no lists is not the gate.
+    if (isReplyBulkPayload(body)) {
+      if (!canSendReplyComposerToLists(access)) {
+        return NextResponse.json(
+          { error: "forbidden", message: "Only the system administrator can send to distribution lists." },
+          { status: 403 },
+        );
+      }
+      const from = process.env.HR_REPLY_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
+      if (!from) {
+        return NextResponse.json({ result: { reason: "HR_REPLY_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing.", skipped: true } });
+      }
+      const bulk = await sendReplyBulk({
+        access,
+        body,
+        from,
+        replyTo: systemEmail.seatReplyTo[access.role],
+        signatureImageSrc: emailSignatureUrl(request.url),
+      });
+      if (bulk.stoppedReason) {
+        const status = bulk.status === "skipped" ? 200 : 400;
+        return status === 200
+          ? NextResponse.json({ result: { bulk, reason: bulk.stoppedReason, skipped: true } })
+          : NextResponse.json({ bulk, error: "bulk_refused", message: bulk.stoppedReason }, { status });
+      }
+      return NextResponse.json({ result: { bulk } });
+    }
+
     const normalized = normalizeComposerBody(body);
     const resolved = await resolveComposerRecipients(body);
     const to = resolved.emails.to;

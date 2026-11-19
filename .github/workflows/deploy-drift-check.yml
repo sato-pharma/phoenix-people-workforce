@@ -51,6 +51,12 @@ name: Deploy Drift Check
 # recipient. migration-drift-check.yml's own header documents why this step exists at all: "a
 # failing scheduled workflow notifies no one — GitHub emails the run author, and a cron run has
 # none." A schedule-triggered failure with no notification step is invisible by construction.
+#
+# ONE ALERT PER COMMIT (REC-082, 19 Nov 2026). A main commit that has not become the serving revision
+# 15 minutes after merging raises ONE Telegram alert, keyed on that commit; later runs that find the
+# same commit still unshipped stay quiet, and a new merge that also fails to ship raises its own. Never
+# email. The build stays out of the release gate (owner, 4 Nov 2026) — this alert is what notices a
+# build that never shipped. The mechanism is in the "Notify Telegram on failure" step.
 on:
   schedule:
     - cron: "9,39 * * * *" # every 30 min, offset from the shared :00/:15/:30/:45 firing minute
@@ -228,6 +234,9 @@ jobs:
           echo "suite verdict: $SUITE_VERDICT"
 
           echo "DRIFT_SCOPE=PRODUCTION" >> "$GITHUB_ENV"
+          # The commit this finding is ABOUT. The alert step keys "already told him" on it, so one
+          # commit that never ships raises ONE alert, not one every 30 minutes (REC-082).
+          echo "DRIFT_PRODUCTION_REF=$REF_SHA" >> "$GITHUB_ENV"
           # Multiline-safe delimiter form: a bare `K=V` breaks the file if the value ever gains a newline.
           {
             echo "DRIFT_SUITES<<DRIFT_SUITES_EOF"
@@ -321,6 +330,7 @@ jobs:
           fi
 
           echo "DRIFT_SCOPE=STAGING" >> "$GITHUB_ENV"
+          echo "DRIFT_STAGING_REF=$REF_SHA" >> "$GITHUB_ENV"
           echo "::error::Staging is NOT serving a ${BRANCH} commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA ${BRANCH}=$HEAD_SHA staging=${LIVE_SHA:-<unreachable>}. The staging-branch-sync workflow was retired 2026-10-14, so this leg should be dormant: check why STAGING_TRACKS_BRANCH is set, then git ls-remote origin refs/heads/${BRANCH}."
           exit 1
 
@@ -398,6 +408,36 @@ jobs:
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
             echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. Production deploy drift went UNDETECTED-BY-A-HUMAN, which is the condition this step exists to prevent."
             exit 0
+          fi
+          # ── ONE ALERT PER COMMIT THAT NEVER SHIPS (REC-082, 19 Nov 2026) ─────────────────────────
+          # Until now a commit that never became the serving revision paged him every 30 minutes for as
+          # long as it stayed unshipped. The acceptance the audit set is "a commit that fails to deploy
+          # raises one alert", so the alert is keyed on the SETTLED COMMIT the finding is about: the first
+          # run that finds it sends, and the save step below remembers the key as a tiny Actions cache
+          # entry. A later run finding the same commit still unshipped stays quiet (the finding is still
+          # on the run page and in the step annotation). A NEW merge that also fails to ship is a new
+          # settled commit, so it raises its own one alert, carrying the streak line below.
+          #
+          # 🔴 FAILS TOWARD SENDING. An unreadable cache list, an empty key or a non-number all send, so
+          # the de-duplication can only ever cost a repeat alert, never a missing one. A cache entry is
+          # evicted after 7 days unused, so a commit still unshipped a week later pages him again.
+          ALERT_KEY=""
+          if [ "$IS_TEST" != "true" ]; then
+            if [ "${DRIFT_SCOPE:-PRODUCTION}" = "STAGING" ]; then
+              ALERT_REF="${DRIFT_STAGING_REF:-}"
+              ALERT_SCOPE="staging"
+            else
+              ALERT_REF="${DRIFT_PRODUCTION_REF:-}"
+              ALERT_SCOPE="production"
+            fi
+            if printf '%s' "$ALERT_REF" | grep -Eq '^[0-9a-f]{40}$'; then
+              ALERT_KEY="deploy-drift-alerted-${ALERT_SCOPE}-${ALERT_REF}"
+              SEEN=$(gh api "repos/${REPO}/actions/caches?key=${ALERT_KEY}&per_page=100" 2>/dev/null | jq -r --arg k "$ALERT_KEY" '[.actions_caches[]? | select(.key == $k)] | length' 2>/dev/null || true)
+              if [ "${SEEN:-0}" -gt 0 ] 2>/dev/null; then
+                echo "::notice::Already alerted for ${ALERT_SCOPE} commit ${ALERT_REF:0:9} — still not serving, no second message (one alert per commit that never ships). The finding is in the comparison step above."
+                exit 0
+              fi
+            fi
           fi
           # ── How old is this failure? ──────────────────────────────────────────────────────
           # An alert that has fired identically for three weeks looks exactly like one firing for
@@ -509,3 +549,20 @@ jobs:
             exit 1
           fi
           echo "Telegram alert delivered."
+          if [ -n "$ALERT_KEY" ]; then
+            mkdir -p "${RUNNER_TEMP}/deploy-drift-alerted"
+            echo "$ALERT_KEY alerted $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${RUNNER_TEMP}/deploy-drift-alerted/key.txt"
+            echo "DRIFT_ALERT_KEY=${ALERT_KEY}" >> "$GITHUB_ENV"
+          fi
+
+      # Remembers that the commit above has been alerted, so the next run stays quiet about it.
+      # No `continue-on-error`: actions/cache/save reports a failed save as a WARNING, never a red step
+      # (only an invalid key is fatal, and the key is checked to be `[a-z-]` plus a 40-character sha).
+      # A save that does not land costs one repeat alert on the next run, never a missing one.
+      - name: Remember the commit this alert named
+        if: ${{ always() && env.DRIFT_ALERT_KEY != '' }}
+        timeout-minutes: 2
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/deploy-drift-alerted
+          key: ${{ env.DRIFT_ALERT_KEY }}

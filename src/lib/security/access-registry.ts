@@ -497,7 +497,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/data-backup", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["GET"], pattern: "/api/admin/data-backup/status/:jobId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/data-backup/download/:jobId", permission: null, guard: "domain-helper" }),
-  sessionApi({ methods: ["POST"], pattern: "/api/exports/table", permission: { resource: "overview", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013 (19 Nov 2026): the route checks sign-in only — a login id or HR id, else 401 — and
+  // formats the rows the caller already sees into a workbook; it reads and writes no table. It never
+  // asked for overview:read, so the entry no longer names a permission it does not check.
+  sessionApi({ methods: ["POST"], pattern: "/api/exports/table", permission: null, guard: "domain-helper", csrfRequired: true }),
   // The identity-resolution utility behind the CRM hub (/admin/crm); checks access.role === "Super Admin"
   // directly rather than the permission matrix. (Its sibling, the iReports360 backfill, was removed with
   // the vendor on 6 November 2026.)
@@ -629,7 +632,8 @@ export const accessRegistry = [
   // call, while `permission` still records the resource a normal user is checked against, so
   // this registry keeps saying what actually gates the route.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/screening-questions", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/question-prompts", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013: assertScreeningQuestionsAccess lets recruitment:update through, and otherwise asks admin:update.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/question-prompts", permission: [{ resource: "recruitment", action: "update" }, { resource: "admin", action: "update" }], guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/screening-questions/settings", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   // The third editor on the same screen: the automatic WhatsApp replies the bot sends by itself.
   // Same helper, same gate, same reason the two above carry `guard: "domain-helper"`.
@@ -869,7 +873,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "marketing_roi_refresh", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing/roi-refresh", permission: { resource: "marketing_roi_refresh", action: "update" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/:id/view-sales/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   // CEO Approvals' ticked rows as a house-style XLSX or PDF (owner, 2026-11-15). The page's own gate,
@@ -890,11 +894,16 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/drafts", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/bulk-upload", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/reverse-geocode", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only: resolves caller-supplied coordinates via the Google reverse-geocode proxy and persists nothing." }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only filtered ROI report; uses POST only to carry a complex filter body, persists nothing." }),
+  // The ROI and Coverage reports, their exports and their presets (seven entries, here and below) check no
+  // matrix permission: the gate is assertMarketingWorkspaceAccess (src/lib/marketing-requests/service.ts), the
+  // marketing creator roles plus the company-wide ones (Finance Manager and Financial Advisor included), inside
+  // the domain service. Until 19 Nov 2026 they were labelled expenses:read, which the Financial Advisor lacks
+  // yet is rightly let in (F-PLT-013, found by the route guard harness).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only filtered ROI report; uses POST only to carry a complex filter body, persists nothing." }),
   // Customer Validation's area → doctor pick: reads the reps' Phoenix CRM lists inside the viewer's reach (crm-doctor-pick-service.ts).
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/crm-doctors", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/validation", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/roi-tracking/presets", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/roi-tracking/presets", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Direct Orders module — the service enforces the precise permission + per-step approver binding (domain-helper guard).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/submit", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/decision", permission: { resource: "direct_orders", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
@@ -954,14 +963,18 @@ export const accessRegistry = [
   // The pilot's own visit entry, on-behalf entry, roster and plans routes that used to sit here are
   // retired (2026-09-25, once nothing called any of them any more) — the vacation-day-work feature
   // is the only one left in this family, and crm_visit_entry now gates nothing else.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: null, guard: "domain-helper", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013: assertVacationDayAccess lets in a caller holding ANY of these three — a rep asks
+  // (crm_visit_entry:create), his manager answers (crm_visit_entry:approve), HR answers (leave:approve,
+  // and only for the HR decider roles).
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: [{ resource: "crm_visit_entry", action: "create" }, { resource: "crm_visit_entry", action: "approve" }, { resource: "leave", action: "approve" }], guard: "domain-helper", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: [{ resource: "crm_visit_entry", action: "create" }, { resource: "crm_visit_entry", action: "approve" }, { resource: "leave", action: "approve" }], guard: "domain-helper", csrfRequired: true }),
   // Doctor lists maintained in Phoenix (CRM phase 7). `guard: "domain-helper"` — the gate is
   // assertContactListAccess(): a rep asks for his own list (create), the stored manager answers for a
   // rep beneath him (approve), and the SFE Manager or administrator edits directly (update). Each action
   // re-checks its own permission inside the service. Changes open on the CRM cutover date.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/contact-lists", permission: null, guard: "domain-helper", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/contact-lists", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013: the entry names the three actions assertContactListAccess accepts (any one of them).
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/contact-lists", permission: [{ resource: "crm_contact_lists", action: "create" }, { resource: "crm_contact_lists", action: "approve" }, { resource: "crm_contact_lists", action: "update" }], guard: "domain-helper", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/contact-lists", permission: [{ resource: "crm_contact_lists", action: "create" }, { resource: "crm_contact_lists", action: "approve" }, { resource: "crm_contact_lists", action: "update" }], guard: "domain-helper", csrfRequired: true }),
   // Phoenix CRM — the field force's own module, built clean (the owner, 2026-09-16). Its own resource,
   // `phoenix_crm`, and its own tables; none of these routes touches the pilot above or iReports360.
   // Every permission is narrowed AGAIN inside src/lib/phoenix-crm/server by the organogram: a
@@ -1351,7 +1364,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/template/import", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013 / F-CRM-016 (19 Nov 2026): the route asserts early_birds:approve before it reads anything
+  // (pull request 566); decideEarlyBirdsCandidate then checks WHICH district the caller's scope owns. The
+  // route guard harness (tests/route-guard-harness.test.ts) demands 401/403 from it and fails if the line goes.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by
   // canCancelHeldDirectOrder inside the service. The coarse permission alone would let any
@@ -1467,14 +1483,16 @@ export const accessRegistry = [
   // is not the real gate — rejectDirectOrderPharmacy requires Super Admin or the system context,
   // and refuses without a written reason.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/:id/reject", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/direct-orders/report/export", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfExemptReason: "read-only report export; request body carries no mutation" }),
+  // F-PLT-013: getDirectOrderReport asserts direct_orders:read — the download is the report screen's
+  // own rows in the caller's own scope — so the entry names read, not the export it never checked.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/direct-orders/report/export", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfExemptReason: "read-only report export; request body carries no mutation" }),
   // Minting and revoking the live links above. Gated on `export` — publishing the report outside
   // the login wall is the export permission's strongest form, not a lesser read.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/report/share-links", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/caps", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/variances", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only Coverage Report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only filtered Coverage Report; uses POST only to carry a complex filter body, persists nothing." }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report/export", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only Coverage Report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only filtered Coverage Report; uses POST only to carry a complex filter body, persists nothing." }),
   // Manager Scorecard — the ROI report grouped by the person who raised each request. Read-only
   // GET, no body: the viewer's own scope is the only filter, resolved server-side.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/manager-scorecard", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
@@ -1487,7 +1505,7 @@ export const accessRegistry = [
   // Finance Ageing's Excel. `expenses:read` is the base; the route then admits only the page's own
   // three roles (canViewMarketingFinanceAgeing), which is why it is no export key.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/finance-ageing/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
 
   // Make It Happen — the forecast planner. `sales:read` is the ROLE gate; canUseMakeItHappen then
@@ -1535,6 +1553,30 @@ export const accessRegistry = [
   // Super-Admin-only direct-sales tracking toggle (Phase D). GET reads the flag; POST is
   // the mutation (Super-Admin gate enforced in the service). csrf is applied to the POST.
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/marketing-requests/:id/track-direct-sales", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013 (19 Nov 2026): ten writes that used to fall to the blanket below, which named
+  // expenses:read — a permission every seat holds and none of these checks as its gate. Each now says
+  // what really decides it. permission: null means the gate is a role or identity rule in the domain
+  // service, not the permission matrix.
+  // Cancel: Super Admin only (viewerMayCancelMarketingRequests in the domain module).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/cancel", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // A message on the request's conversation: posted under the caller's own HR id, on a request the caller may see.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/conversation", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The licence verdict: only the approver the request's decision summary names for the licence step.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/license-verdict", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Reopen: Super Admin only (viewerMayReopenMarketingRequests in the domain service).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/reopen", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The CEO approvals email: the Marketing Manager only.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/ceo-approvals/email", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Placing or releasing the finance hold by hand: a Super Admin or the system scope.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/finance-hold", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Accepting a pharmacy code the sales master now matches (REC-077): Super Admin only.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/marketing-requests/pharmacy-code-recheck", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The ROI tracker: a read-only report scoped inside getMarketingRoiTracker; POST only carries the filter
+  // body. Same shape as /api/marketing-requests/roi-tracking.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracker", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only ROI tracker report; uses POST only to carry a filter body, persists nothing." }),
+  // Moving a validated customer to another rep, and reverting a move: assertValidatedCustomerTransferAccess.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/validated-customers/:id/transfer", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/validated-customers/transfers/:transferId/revert", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/marketing-requests/**", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   // Verified Captures gallery — the Super-Admin oversight of field-captured customers (direct orders
   // and validated marketing requests), read-only. The role gate lives in the domain helper
@@ -1649,6 +1691,9 @@ export const accessRegistry = [
   // service (assertAutomatedPayroll*Actor: Super Admin builds/publishes; CEO/Financial Advisor/
   // Finance Manager download the locked finance sheet), so guard: "domain-helper" — the same
   // pattern as the Payroll Copilot routes above. A separate namespace from /api/payroll/**.
+  // F-PLT-013 (19 Nov 2026): permission stays null on purpose — assertAutomatedPayrollHrActor,
+  // assertAutomatedPayrollPublisher and assertAutomatedPayrollFinanceActor decide by ROLE, so a seat the
+  // matrix grants payroll to is still refused here unless it is one of those roles.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/runs/:runId/cancel", permission: null, guard: "domain-helper", csrfRequired: true }),
@@ -2594,6 +2639,8 @@ export const accessRegistry = [
   // The two writes. Both rewrite area_id on live current-assignment rows, so both are mutations —
   // never reads — and both declare CSRF required, which the handlers already satisfy with
   // assertSameOriginMutation(request) rather than claiming the blanket session exemption.
+  // F-PLT-013: permission stays null because the gate is a ROLE rule, canRunAreaConsolidation — a
+  // Super Admin or the system scope, and nobody else, whatever the matrix grants.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/area-consolidation/:areaId/apply", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/area-consolidation/reverts/:consolidationId", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Mints and revokes the passwordless preview links below. Gated on EXPORT, never on read:
@@ -2714,6 +2761,8 @@ export const accessRegistry = [
   // guard: "domain-helper" — gated via assertWeeklyMappingTemplatePermission, which is `update` PLUS
   // a route-scoped CEO exception (the CEO is already cleared for the Head Office line but holds
   // read+export only; see src/lib/auth/permissions.ts). Same shape as the fingerprint report.
+  // F-PLT-013: weekly_sales:update is the matrix half of canAccessWeeklyMappingTemplate; the CEO, who
+  // holds read+export only, passes by role. The entry cannot name a role, so this line does.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/template", permission: { resource: "weekly_sales", action: "update" }, guard: "domain-helper", csrfExemptReason: "Read-only export: lists the distinct unmapped item codes and branches from the uploaded raw weekly sheet as a fill-in XLSX; persists nothing." }),
   // Sales Targets (au monthly targets/achievement) — Super Admin + SFE Manager via sales:import.
   // The per-area drill-down READ is sales:read so the scoped read-only Targets view can expand a
@@ -2748,12 +2797,39 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/:id", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/support/**", permission: { resource: "support_requests", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/business-card-requests", permission: { resource: "business_card_requests", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // F-PLT-013 (19 Nov 2026): every vacation write used to fall to the blanket below, which named
+  // leave:read — held by every seat, and the gate of none of them. Each write now names what decides it.
+  // Filing a request, and its documents: the route itself asserts leave:create.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests", permission: { resource: "leave", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/attachments/upload-url", permission: { resource: "leave", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Adding documents later: leave:create in the route, then addVacationRequestAttachments lets only the
+  // person who filed it, or HR / Super Admin, add to it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/:id/attachments", permission: { resource: "leave", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Resubmitting a returned request: leave:create, and only by the person who filed it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/:id/resubmit", permission: { resource: "leave", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // An approver's decision: decideVacationRequest asserts leave:approve, then checks the step is the caller's.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/:id/decision", permission: { resource: "leave", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // Reviewing sick-leave evidence: leave:approve, and only HR or Super Admin.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/:id/evidence-review", permission: { resource: "leave", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // The weekly-off policy: leave:update, and only an HR authority role (assertVacationControlAuthority).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/control", permission: { resource: "leave", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  // Closing a stranded request: leave:read, then assertStrandedVacationAccess — Super Admin only.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/:id/close-orphaned", permission: { resource: "leave", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // HR's own management of company vacation records — assertVacationAdminManagement asks leave:<action>,
+  // then refuses anyone without company-wide vacation visibility (HR or Super Admin).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/admin", permission: { resource: "leave", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacations/requests/:id/assign", permission: { resource: "leave", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/vacations/requests/:id", permission: { resource: "leave", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/vacations/requests/:id", permission: { resource: "leave", action: "delete" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: allMethods, pattern: "/api/vacations/**", permission: { resource: "leave", action: "read" }, csrfRequired: true, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/activity/track", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget activity beacon: records ONLY the authenticated caller's own page view. Identity is taken from the session cookie, never the request body, so there is no cross-site mutation surface." }),
   // Self-hosted crash-report beacon (Error Monitor). Must also accept guests
   // (e.g. a crash on the login page before any session exists) — identity is
   // read from the session cookie when present, never trusted from the body.
-  sessionApi({ methods: ["POST"], pattern: "/api/errors/client", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, so there is no state-changing or cross-site mutation surface." }),
+  // F-PLT-013 (19 Nov 2026): declared as the public door it is. It was a session entry, which said a
+  // signed-out caller is refused — and a guest's report is filed by design. Its bounds are its own:
+  // 64 KB a body, 30 reports a minute per address, every stored field capped (client-error-intake.ts).
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/errors/client", reason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, capped at 64 KB a body and 30 reports a minute per address, so there is no state-changing or cross-site mutation surface. A screenshot ticket is minted only for a signed-in reporter." }),
   // Page-timing beacon (performance roadmap phase 3): a painted page reports two durations and its page shape,
   // kept in process memory only. It reads no session, so it is a public route rather than a session one.
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/telemetry/page-timing", reason: "Fire-and-forget timing beacon sent with sendBeacon, open to guests too (the login page is timed as well). It reads no cookie and takes no identity: the body is reduced to a page shape (ids replaced) and two durations, kept in process memory for the per-minute health log. Capped at 1 KB and 60 a minute per address. Nothing is written to the database, so there is no state-changing or cross-site mutation surface." }),
@@ -2863,6 +2939,11 @@ export function findAccessRegistryEntry(route: string, method?: HttpMethod) {
     if (method && !(entry.methods as readonly HttpMethod[]).includes(method)) return false;
     return routeMatchesPattern(route, entry.pattern);
   });
+  // A route's own entry wins over any blanket: `/api/messages/**` also matches `/api/messages` and is the
+  // longer pattern, so the longest-first rule alone judged the inbox by communication:read instead of its
+  // own internal_messages entry (found by the route guard harness, 19 Nov 2026).
+  const exact = matches.find((entry) => entry.pattern === route);
+  if (exact) return exact;
   return matches.sort((left, right) => right.pattern.length - left.pattern.length)[0] ?? null;
 }
 

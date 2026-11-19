@@ -220,10 +220,10 @@ const ROUTE_GATES: RouteGate[] = [
   // before a row is read.
   post("full-names", "approve"),
   // The Polyclinic Caps page (owner, 2026-11-02): one switch or one number on one rep's venue. `approve` at the route,
-  // and `setVenueCap` narrows it to the Super Admin and the SFE Manager before a row is read.
+  // and `setVenueCap` narrows it to the Super Admin (alone since 19 Nov 2026) before a row is read.
   post("venue-caps", "approve"),
   // The Rep Exceptions page (owner, 2026-11-03): one switch or one change of dates for one rep. `approve` at the route,
-  // and `setRepException` narrows it to the Super Admin and the SFE Manager before a row is read.
+  // and `setRepException` narrows it to the Super Admin (alone since 19 Nov 2026) before a row is read.
   post("rep-exceptions", "approve"),
   // The third tab of Place checks (owner, 2026-10-17): places several reps validated, side by side, and
   // his answer to "are these the same place?". `read` to open it and `approve` to answer, the Super Admin and the SFE Manager
