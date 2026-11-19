@@ -7,12 +7,20 @@ import {
   PG_DUMP_ARGS,
   PG_DUMP_DOCKER_IMAGE,
   PG_DUMP_MAJOR,
+  CLEAR_DEFAULT_PRIVILEGES,
+  PRODUCTION_EXTENSIONS,
+  RESTORE_PG_MAJOR,
   assertProductionUrl,
+  assertScratchUrl,
   toPooler,
   compareDumps,
   explainDrift,
+  freshnessQuery,
   normalizeDump,
   objectWord,
+  restorableBaseline,
+  restorePrelude,
+  rolesNamedIn,
   splitObjects,
 } from "../scripts/lib/schema-baseline.mjs";
 
@@ -31,11 +39,15 @@ import {
  *   - an object is found by pg_dump's own table of contents, and a change in its body reads as changed;
  *   - drift a newer migration names is a warning; drift nothing names is red;
  *   - the committed file is normalised, LF, carries the header and holds no secret;
- *   - the nightly leg is wired: it runs, reds the verdict and has its own budget.
+ *   - the nightly leg is wired: it runs, reds the verdict and has its own budget;
+ *   - the weekly restore check (docs/security/schema-restore-check.md) creates what pg_dump never carries
+ *     (the roles the file names, the extensions it uses, empty default privileges), refuses any target
+ *     that is not a throwaway database on the runner, and runs at production's own Postgres major.
  */
 
 const BASELINE = "supabase/schema/production.sql";
 const WORKFLOW = ".github/workflows/migration-drift-check.yml";
+const RESTORE_WORKFLOW = ".github/workflows/schema-restore-check.yml";
 
 const PROD = "postgresql://postgres.ozucdzovmcqvepbozvqf:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres";
 const STAGING = "postgresql://postgres.cifwmndunmlxjhyjugxa:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres";
@@ -196,4 +208,117 @@ export function runSchemaBaselineTests() {
 
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
   assert.equal(pkg.scripts["check:schema-baseline"], "node scripts/schema-baseline.mjs --check", "the package script the leg runs");
+
+  // ── the restore check: can the file REBUILD production? ───────────────────────────────────────────
+  // Roles belong to the cluster, so pg_dump never creates one: the rebuild must, for every role the file
+  // makes an owner, grants to or names in a policy — read from pg_dump's own objects, keywords left out.
+  const ROLES_FIXTURE = [
+    "--",
+    "-- Name: t; Type: TABLE; Schema: public; Owner: postgres",
+    "--",
+    "",
+    "CREATE TABLE public.t (id integer);",
+    "",
+    "",
+    "ALTER TABLE public.t OWNER TO app_owner;",
+    "",
+    "--",
+    "-- Name: t p; Type: POLICY; Schema: public; Owner: postgres",
+    "--",
+    "",
+    'CREATE POLICY p ON public.t FOR SELECT TO authenticated, "Odd Role" USING (true);',
+    "",
+    "--",
+    "-- Name: TABLE t; Type: ACL; Schema: public; Owner: postgres",
+    "--",
+    "",
+    "REVOKE ALL ON TABLE public.t FROM PUBLIC;",
+    "GRANT SELECT ON TABLE public.t TO metabase;",
+    "GRANT ALL ON TABLE public.t TO service_role WITH GRANT OPTION;",
+    "",
+    "--",
+    "-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: analytics; Owner: postgres",
+    "--",
+    "",
+    "ALTER DEFAULT PRIVILEGES FOR ROLE grantor_role IN SCHEMA analytics GRANT SELECT ON TABLES TO analytics_readonly;",
+    "",
+  ].join("\n");
+  assert.deepEqual(
+    rolesNamedIn(ROLES_FIXTURE),
+    ["Odd Role", "analytics_readonly", "app_owner", "authenticated", "grantor_role", "metabase", "service_role"],
+    "every owner, grantee, policy role and FOR ROLE is found, quoted names unquoted, PUBLIC left out",
+  );
+  const committedRoles = rolesNamedIn(committed);
+  for (const role of ["postgres", "anon", "authenticated", "service_role"]) {
+    assert.ok(committedRoles.includes(role), `the committed file names the platform role ${role}`);
+  }
+  assert.ok(committedRoles.includes("metabase"), "production's own roles are found too (metabase reads analytics)");
+  assert.ok(!committedRoles.some((role) => ["PUBLIC", "CURRENT_USER", "CURRENT_ROLE", "SESSION_USER"].includes(role)), "no grantee keyword reads as a role");
+
+  // The prelude: the missing roles (no login, no password), the extensions, then empty default privileges.
+  const prelude = restorePrelude(["metabase", 'we"ird']);
+  assert.match(prelude, /^CREATE ROLE "metabase" NOLOGIN;$/m, "a missing role is created");
+  assert.match(prelude, /^CREATE ROLE "we""ird" NOLOGIN;$/m, "a role name is quoted as an identifier");
+  assert.doesNotMatch(prelude, /\bPASSWORD\b|(?<!NO)LOGIN\b/, "a rebuilt role can never sign in");
+  for (const { name, schema } of PRODUCTION_EXTENSIONS) {
+    assert.ok(prelude.includes(`CREATE EXTENSION IF NOT EXISTS "${name}" WITH SCHEMA "${schema}";`), `the prelude creates ${name} in ${schema}`);
+  }
+  assert.ok(
+    prelude.indexOf("CREATE ROLE") < prelude.indexOf("CREATE EXTENSION") &&
+      prelude.indexOf("CREATE EXTENSION") < prelude.indexOf(CLEAR_DEFAULT_PRIVILEGES),
+    "roles, then extensions, then the default privileges are cleared, all before the file",
+  );
+  assert.match(CLEAR_DEFAULT_PRIVILEGES, /RAISE EXCEPTION 'default privileges remain/, "a default privilege left behind stops the restore");
+  assert.match(CLEAR_DEFAULT_PRIVILEGES, /FROM pg_default_acl a CROSS JOIN LATERAL aclexplode\(a\.defaclacl\)/, "every grantee of every default privilege is read");
+  if (committed.includes("extensions.gin_trgm_ops")) {
+    assert.ok(PRODUCTION_EXTENSIONS.some((e) => e.name === "pg_trgm" && e.schema === "extensions"), "the file uses pg_trgm, so the rebuild creates it");
+  }
+
+  // The file as psql is fed it: one line changes, so a psql error's line number is the file's own.
+  const restorable = restorableBaseline(committed);
+  const baseLines = committed.split("\n");
+  const restoredLines = restorable.split("\n");
+  assert.equal(restoredLines.length, baseLines.length, "the line count is kept");
+  assert.deepEqual(
+    restoredLines.flatMap((line, i) => (line === baseLines[i] ? [] : [line])),
+    ["CREATE SCHEMA IF NOT EXISTS public;"],
+    "the only change is that public, which every Supabase database already has, is created IF NOT EXISTS",
+  );
+  assert.throws(() => restorableBaseline("CREATE TABLE x ();"), /exactly one "CREATE SCHEMA public;" line/, "a file without it is refused, never fed half-changed");
+
+  // It writes, so it runs only against a throwaway database on the runner itself.
+  assert.doesNotThrow(() => assertScratchUrl("postgresql://supabase_admin@127.0.0.1:5432/postgres"), "the job's own container");
+  assert.doesNotThrow(() => assertScratchUrl("postgresql://postgres@localhost:54322/postgres"), "a local supabase start");
+  assert.throws(() => assertScratchUrl(PROD), /throwaway database on this machine/, "production's pooler is refused");
+  assert.throws(() => assertScratchUrl(STAGING), /throwaway database on this machine/, "staging's pooler is refused");
+  assert.throws(() => assertScratchUrl("postgresql://postgres:x@db.ozucdzovmcqvepbozvqf.supabase.co:5432/postgres"), /throwaway/, "production's direct host is refused");
+  assert.throws(() => assertScratchUrl("postgresql://postgres.ozucdzovmcqvepbozvqf:pw@127.0.0.1:5432/postgres"), /names production/, "a tunnel to production on 127.0.0.1 is refused");
+  assert.throws(() => assertScratchUrl(""), /SCHEMA_RESTORE_URL/, "no URL is refused, never defaulted");
+  const fresh = freshnessQuery();
+  for (const schema of BASELINE_SCHEMAS.filter((s) => s !== "public")) {
+    assert.ok(fresh.includes(`'${schema}'`), `a database that already has ${schema} is not fresh`);
+  }
+  assert.ok(fresh.includes("relnamespace = 'public'::regnamespace"), "a database with anything in public is not fresh");
+
+  // The weekly job: production's Postgres major, never on a pull request, no secret near the restore.
+  const restoreWf = readFileSync(RESTORE_WORKFLOW, "utf8").replace(/\r\n/g, "\n");
+  const image = /^\s+image: supabase\/postgres:(\d+)\.[\d.]+$/m.exec(restoreWf);
+  assert.ok(image, "the restore runs in a pinned supabase/postgres image");
+  assert.equal(Number(image[1]), RESTORE_PG_MAJOR, "the image runs production's Postgres major (move both when Supabase upgrades production)");
+  const triggers = /^on:\n([\s\S]*?)\n(?=\S)/m.exec(restoreWf)?.[1] ?? "";
+  assert.match(triggers, /^ {2}schedule:\n {4}- cron: "\d+ \d+ \* \* [0-6]"/m, "weekly: one fixed day of the week");
+  assert.match(triggers, /^ {2}workflow_dispatch:/m, "it can be run by hand");
+  assert.doesNotMatch(triggers, /pull_request/, "never on a pull request");
+  assert.match(triggers, /^ {2}push:\n {4}branches: \[main\]\n {4}paths:\n/m, "a push runs it only on main, and only for the check's own files");
+  const restoreJob = /^ {2}restore:\n([\s\S]*?)\n {2}notify:\n/m.exec(restoreWf)?.[1] ?? "";
+  assert.match(restoreJob, /run: node scripts\/schema-baseline\.mjs --restore-check/, "the job runs the restore check");
+  assert.match(restoreJob, /SCHEMA_BASELINE_DOCKER: "1"/, "with the pinned pg_dump image, the same one that wrote the file");
+  assert.match(restoreJob, /SCHEMA_RESTORE_URL: postgresql:\/\/[^:@\s]+@127\.0\.0\.1:5432\//, "against the job's own container, no password in the URL");
+  assert.doesNotMatch(restoreJob, /secrets\.|environment:/, "the restore job reads no secret");
+  assert.doesNotMatch(restoreJob, /continue-on-error/, "a red restore turns the run red");
+  const notifyJob = restoreWf.slice(restoreWf.indexOf("\n  notify:\n"));
+  assert.match(notifyJob, /^ {4}needs: restore$/m, "the alarm waits for the restore");
+  assert.match(notifyJob, /needs\.restore\.result != 'success'/, "and fires when it did not pass");
+  assert.match(notifyJob, /^ {4}environment: main-secrets\b/m, "the Telegram pair is read in the main-only environment");
+  assert.match(notifyJob, /TELEGRAM_ALERT_CHAT_ID: \$\{\{ secrets\.TELEGRAM_ALERT_CHAT_ID \}\}/, "the same channel as every scheduled alarm");
 }

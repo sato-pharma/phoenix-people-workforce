@@ -60,6 +60,9 @@ export const GITHUB_WORKFLOW_WATCHES: readonly GithubWorkflowWatch[] = [
   { file: "staging-hr-drift-check.yml", label: "Staging HR drift check", maxAgeHours: 36 },
   // Weekly, Sunday 23:30 Cairo (owner, 2026-11-09): a week plus the daily checks' 36-hour allowance.
   { file: "codeql-weekly.yml", label: "CodeQL weekly scan", maxAgeHours: 7 * 24 + 36 },
+  // Weekly, Monday 06:30 Cairo (REC-041, 19 Nov 2026), and on a push to main that changes the check itself,
+  // so the merge records its first success; a week plus the same 36-hour allowance.
+  { file: "schema-restore-check.yml", label: "Schema restore check", maxAgeHours: 7 * 24 + 36 },
 ];
 
 export type GithubWorkflowRead =
