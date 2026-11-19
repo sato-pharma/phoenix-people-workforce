@@ -57,7 +57,7 @@ function deny(reason) {
 // ── the verdict (copied from phoenix-workforce scripts/merge-checks-verdict.mjs) ────────────────────
 
 const FAILED = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale']);
-const FOREVER_QUEUED_APPS = new Set(['sentry', 'claude', 'vercel', 'railway-app']);
+const FOREVER_QUEUED_APPS = new Set(['claude', 'vercel', 'railway-app']);
 
 function stateOf(entry) {
   if (entry.kind === 'status') return entry.state === 'success' ? 'pass' : entry.state === 'pending' ? 'pending' : 'fail';

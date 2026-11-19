@@ -88,7 +88,18 @@ const ROOTS = ["scripts", "hooks"];
  */
 const FILES = ["CLAUDE.md", "settings.json", "docs/standing-rules-account.md", "hooks/dispatch.json"];
 const EXTS = new Set([".mjs", ".js", ".cjs", ".ps1", ".py", ".sh", ".bat", ".cmd"]);
-const LOG = path.join(HOME, "scripts", "claude-scripts-backup.log");
+/**
+ * 🔴 FOLDERS THAT ARE NOT THIS LAPTOP'S SOURCE, skipped whole (2026-11-19). The restore drill
+ * keeps a copy of the repo's `infra/code-backup/restore-drill.sh` under restore-drill/checkout/,
+ * byte-identical to origin/main, so git already holds it. Its usage line documents a connection
+ * string as `user[:password]@host`, which the gate below rightly reads as a password shape — and
+ * from 13 Nov 23:35 Cairo every hourly run refused and pushed NOTHING for six days, while
+ * Task Scheduler showed success. Skip the copy, never loosen the gate. The drill's own scripts
+ * beside it (fetch.sh, run-drill.sh, tonight.sh) still travel; its encrypted database dumps
+ * never did (no source extension).
+ */
+const SKIP_DIRS = ["scripts/restore-drill/checkout"];
+const LOG =path.join(HOME, "scripts", "claude-scripts-backup.log");
 const LOG_MAX_LINES = 800;
 
 /**
@@ -241,7 +252,11 @@ function collect() {
     const walk = (dir) => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const abs = path.join(dir, e.name);
-        if (e.isDirectory()) { walk(abs); continue; }
+        if (e.isDirectory()) {
+          const relDir = (root + "/" + path.relative(base, abs)).split(path.sep).join("/");
+          if (!SKIP_DIRS.includes(relDir)) walk(abs);
+          continue;
+        }
         if (!e.isFile()) continue;
         if (!EXTS.has(path.extname(e.name).toLowerCase())) continue;
         out.push({ abs, rel: (root + "/" + path.relative(base, abs)).split(path.sep).join("/") });

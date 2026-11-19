@@ -62,6 +62,48 @@ export function foldPlain(result) {
   return { ...result, stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: body } }) };
 }
 
+// THE CAP (2026-11-18, desktop-app audit). Claude Code shows a hook's context inline only up to about
+// 10,000 characters; past that it saves the text to a file and shows the session a 2 KB preview. After a
+// compaction this runner printed 13,814 characters, so the session saw the relay's first lines and
+// nothing of the history, the machine state or the rules below them. So the blocks are put in order of
+// what a session cannot work without — live state, machine pressure, recent history — and the total is
+// held under CONTEXT_CAP; a block that does not fit is cut, and says how much was left out.
+export const CONTEXT_CAP = 9000;
+const PRIORITY = ['relay-inject', 'session-census', 'phoenix-context-anywhere', 'memory-guard', 'task-rules-reminder', 'suggestion-context'];
+
+function hookName(result) {
+  const m = String(result?.command ?? '').match(/([\w.-]+)\.mjs/);
+  return m ? m[1] : 'a start hook';
+}
+
+/** Results reordered by PRIORITY (unknown hooks last, table order kept), contexts held under the cap. */
+export function capStartContext(results, cap = CONTEXT_CAP) {
+  const rank = (r) => {
+    const i = PRIORITY.indexOf(hookName(r));
+    return i < 0 ? PRIORITY.length : i;
+  };
+  const ordered = results.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r);
+  let used = 0;
+  return ordered.map((r) => {
+    if (r.code !== 0) return r;
+    let out;
+    try { out = JSON.parse(String(r.stdout ?? '').trim()); } catch { return r; }
+    const ctx = out?.hookSpecificOutput?.additionalContext;
+    if (typeof ctx !== 'string' || !ctx) return r;
+    const join = used ? 2 : 0;
+    if (used + join + ctx.length <= cap) {
+      used += join + ctx.length;
+      return r;
+    }
+    const note = (n) => `[${hookName(r)}: ${n} more characters left out — the start-up context is held under ${cap} characters]`;
+    const room = cap - used - join - note(ctx.length).length - 1;
+    const kept = room > 200 ? ctx.slice(0, room).replace(/\s+\S*$/, '') : '';
+    const text = kept ? `${kept}\n${note(ctx.length - kept.length)}` : note(ctx.length);
+    used += join + text.length;
+    return { ...r, stdout: JSON.stringify({ ...out, hookSpecificOutput: { ...out.hookSpecificOutput, additionalContext: text } }) };
+  });
+}
+
 /** Last resort when hook-dispatch.mjs cannot be loaded: every hook as its own process, outputs joined. */
 function runAllAsProcesses(table, payload) {
   const hooks = (table.hooks.SessionStart ?? []).flatMap((g) => g.hooks ?? []);
@@ -98,7 +140,7 @@ function runAllAsProcesses(table, payload) {
       }
     }
     const merged = {};
-    if (contexts.length) merged.hookSpecificOutput = { hookEventName: 'SessionStart', additionalContext: contexts.join('\n\n') };
+    if (contexts.length) merged.hookSpecificOutput = { hookEventName: 'SessionStart', additionalContext: contexts.join('\n\n').slice(0, CONTEXT_CAP) };
     if (messages.length) merged.systemMessage = messages.join('\n');
     return { code: 0, stdout: Object.keys(merged).length ? JSON.stringify(merged) : '', stderr: '' };
   });
@@ -120,7 +162,7 @@ export async function runStart({ table, payload, processes = false }) {
     return runAllAsProcesses(cut, payload);
   }
   const results = await d.runHooks({ event: 'SessionStart', payload, table: cut, processes });
-  return d.mergeHookResults(results.map(foldPlain), 'SessionStart');
+  return d.mergeHookResults(capStartContext(results.map(foldPlain)), 'SessionStart');
 }
 
 async function selftest() {
@@ -136,6 +178,14 @@ async function selftest() {
   check('compact runs only the every-source hooks', tableFor(table, 'compact').hooks.SessionStart.flatMap((g) => g.hooks).length === 4);
   check('startup runs all six', tableFor(table, 'startup').hooks.SessionStart.flatMap((g) => g.hooks).length === 6);
   check('plain stdout becomes context', JSON.parse(foldPlain({ code: 0, stdout: 'hello' }).stdout).hookSpecificOutput.additionalContext === 'hello');
+  {
+    const ctx = (cmd, text) => ({ command: `node C:/x/${cmd}.mjs`, code: 0, stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text } }) });
+    const capped = capStartContext([ctx('suggestion-context', 's'.repeat(4000)), ctx('relay-inject', 'r'.repeat(3000)), ctx('phoenix-context-anywhere', 'h '.repeat(2500))]);
+    const texts = capped.map((r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext);
+    check('the relay comes first, the history second, the suggestion rules last', capped.map(hookName).join() === 'relay-inject,phoenix-context-anywhere,suggestion-context');
+    check('the capped total stays under CONTEXT_CAP', texts.join('\n\n').length <= CONTEXT_CAP, String(texts.join('\n\n').length));
+    check('a cut block says how much was left out', /more characters left out/.test(texts[2]) && texts[0].length === 3000 && texts[1].length === 5000);
+  }
   check('JSON stdout is left alone', foldPlain({ code: 0, stdout: '{"a":1}' }).stdout === '{"a":1}');
   // Each source, both ways, from a scratch session id, must give the same merged answer. The runner is
   // started fresh for each source, as Claude Code starts it: a module runs once per process, so a
@@ -152,7 +202,7 @@ async function selftest() {
     const payload = JSON.stringify({ session_id: `start-dispatch-selftest-${source}`, cwd: os.homedir(), hook_event_name: 'SessionStart', source });
     const inProc = await runnerOnce(payload);
     const cut = tableFor(table, source);
-    const asProc = d.mergeHookResults((await Promise.all(cut.hooks.SessionStart.flatMap((g) => g.hooks).map((h) => d.runAsProcess({ command: d.commandOf(h), timeout: h.timeout ?? 60 }, payload)))).map(foldPlain), 'SessionStart');
+    const asProc = d.mergeHookResults(capStartContext((await Promise.all(cut.hooks.SessionStart.flatMap((g) => g.hooks).map((h) => d.runAsProcess({ command: d.commandOf(h), timeout: h.timeout ?? 60 }, payload)))).map(foldPlain)), 'SessionStart');
     // Live figures move between the two runs (free RAM, the relay's "2m ago"); the shape must not.
     const norm = (o) =>
       String(o.stdout).replace(/\d+ MB/g, 'N MB').replace(/\b\d+(\.\d+)?%/g, 'N%').replace(/\b\d+\s*[smhd] ago\b/g, 'N ago');

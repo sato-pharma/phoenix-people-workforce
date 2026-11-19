@@ -372,7 +372,6 @@
     "supabase@inline": false,
     "vercel@inline": false,
     "figma@inline": false,
-    "sentry-skills@inline": false,
     "cowork-plugin-management@inline": false,
     "data@inline": false,
     "expo@claude-plugins-official": false,

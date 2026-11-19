@@ -30,7 +30,7 @@ param([ValidateSet('main', 'production')][string]$Target = 'production')
 $ErrorActionPreference = 'Continue'
 $repo = 'F:\Phoenix Workforce\phoenix-workforce'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
-$spare = 'TransferUser@192.168.1.53'
+$spare = 'TransferUser@' + "$(& "$PSScriptRoot\spare-address.ps1" | Select-Object -Last 1)".Trim()   # found, never written here (2026-11-14)
 $sshExe = "$env:SystemRoot\System32\OpenSSH\ssh.exe"; $scpExe = "$env:SystemRoot\System32\OpenSSH\scp.exe"   # Windows OpenSSH even when called from Git Bash
 $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=ERROR', '-i', $key)
 $log = Join-Path $env:USERPROFILE '.claude\logs\spare-follow-production.log'
@@ -44,6 +44,40 @@ function Log($m) { $l = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $
 # starts it again when it is done).
 $srv = @(& "$PSScriptRoot\spare.ps1" -Command 'if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { "SRV up" } elseif (Get-CimInstance Win32_Process -Filter "Name=''node.exe''" | Where-Object { $_.CommandLine -match "pnpm.*install" }) { "SRV installing" } elseif (-not (Test-Path D:\Phoenix\phoenix-workforce\node_modules\.bin\next.cmd)) { "SRV no-packages" } else { Start-ScheduledTask -TaskName "Phoenix Dev Server"; "SRV started" }' -ConnectTimeout 20)
 if ("$srv" -match 'SRV started') { Log 'dev server was not running on the spare (a restart or a power cut) - started it' }
+
+# THE BROWSER GUARD IS KEPT RUNNING ON THE SPARE (owner, 2026-11-14 about 20:00: "Yes, guard it" - browser jobs stop
+# on the spare while its memory is low, after the 19:07-19:23 freeze). spare-browser-guard.ps1 beside this file is
+# the source; the spare runs its copy D:\Phoenix\browser-guard.ps1 as "Phoenix Spare Browser Guard" (at startup,
+# as SYSTEM, restarted if it stops). Every run reads that task's state and the copy's hash; a missing task, a
+# stopped one or an old copy is put right here, and only then is anything logged. A spare that does not answer
+# returns nothing, so this says nothing (the checks below log that).
+$guardSrc = Join-Path $PSScriptRoot 'spare-browser-guard.ps1'
+if (Test-Path -LiteralPath $guardSrc) {
+  $guardHash = (Get-FileHash -LiteralPath $guardSrc -Algorithm SHA256).Hash
+  $guardNow = "$(@(& "$PSScriptRoot\spare.ps1" -Command '$t = Get-ScheduledTask -TaskName "Phoenix Spare Browser Guard" -ErrorAction SilentlyContinue; $h = if (Test-Path D:\Phoenix\browser-guard.ps1) { (Get-FileHash D:\Phoenix\browser-guard.ps1 -Algorithm SHA256).Hash } else { "none" }; "GUARD " + $(if ($t) { $t.State } else { "missing" }) + " " + $h' -ConnectTimeout 20) | Where-Object { "$_" -like 'GUARD *' } | Select-Object -First 1)".Trim()
+  if ($guardNow -and $guardNow -ne "GUARD Running $guardHash") {
+    $was = ($guardNow -split ' ')[1] + $(if ($guardNow -notmatch [regex]::Escape($guardHash)) { ', old or no copy' } else { '' })
+    & $scpExe @sshOpts $guardSrc "${spare}:D:/Phoenix/inbox/browser-guard.ps1"
+    if ($LASTEXITCODE) { Log "browser guard on the spare was '$was' and its copy could not be sent" }
+    else {
+      $guardInstall = @'
+$n = 'Phoenix Spare Browser Guard'
+Stop-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.ProcessId -ne $PID -and "$($_.CommandLine)" -match 'browser-guard\.ps1' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Move-Item -Force D:\Phoenix\inbox\browser-guard.ps1 D:\Phoenix\browser-guard.ps1
+$a = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File D:\Phoenix\browser-guard.ps1'
+$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 99 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable
+$p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask -TaskName $n -Action $a -Trigger (New-ScheduledTaskTrigger -AtStartup) -Settings $s -Principal $p -Force | Out-Null
+Start-ScheduledTask -TaskName $n
+Start-Sleep 4
+'task ' + (Get-ScheduledTask -TaskName $n).State + '; ' + ((Get-Content D:\Phoenix\browser-guard.log -Tail 1 -ErrorAction SilentlyContinue) -join '')
+'@
+      $inst = @(& "$PSScriptRoot\spare.ps1" -Command $guardInstall -ConnectTimeout 20)
+      Log "browser guard on the spare was '$was' - installed: $(($inst | Where-Object { $_ }) -join ' | ')"
+    }
+  }
+}
 
 if ($Target -eq 'production') {
   # Three tries, 15 s each (2026-11-13): from this home network about one connection in three to production's
