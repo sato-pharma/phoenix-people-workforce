@@ -1,0 +1,161 @@
+name: Schema Restore Check
+
+# CAN supabase/schema/production.sql REBUILD PRODUCTION FROM NOTHING? (REC-041, the rebuild half;
+# added 2026-11-19). Production has no point-in-time recovery: seven daily backups are the whole
+# recovery story, and the baseline file is what a fresh database is rebuilt from the day they are not
+# enough. The nightly Migration Drift Check proves the file still DESCRIBES production. Nothing proved it
+# LOADS, and a file that describes everything and loads nothing is found out on the worst day there is.
+#
+# WHAT IT DOES. Starts a throwaway supabase/postgres container at production's own Postgres major, then
+# runs `node scripts/schema-baseline.mjs --restore-check`. That creates the roles and extensions the file
+# names and pg_dump never carries, clears the image's default privileges, restores the file, dumps the
+# restored database with the same pinned pg_dump and normalising, and compares it with the file using
+# the same compareDumps the nightly check uses — one set of rules, never a second copy. Any restore
+# error, any object missing, added or different, or a check that could not run, turns the run red and
+# alerts Telegram. Account: docs/security/schema-restore-check.md.
+#
+# IT NEVER TOUCHES PRODUCTION. The restore job reads no secret and has no database URL but its own
+# container's; the script refuses any target that is not 127.0.0.1 (assertScratchUrl). Only the notify
+# job reads a secret — the Telegram pair, in the main-only main-secrets environment.
+#
+# WEEKLY, NOT ON EVERY PULL REQUEST. The file changes when a migration is applied and the baseline is
+# refreshed, a few times a week. Mondays 04:30 UTC (06:30 Cairo), clear of the shared firing minutes.
+# Measured 19 Nov 2026: 48 seconds a run (6 s restoring 8,054 objects, 1 s dumping them), 0 minutes
+# billed, because the repository is public; recorded beside SCHEDULED_RUNS_CEILING in
+# tests/github-workflow-validity.test.ts.
+on:
+  schedule:
+    - cron: "30 4 * * 1" # Mondays 04:30 UTC = 06:30 Cairo
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a test Telegram alert and stop (proves the alarm still works)"
+        type: boolean
+        default: false
+  # On main only, and only when the check itself changes. Production's workflow watch reads each scheduled
+  # check's last success on main and alerts once a day while there is none, so the merge records the first
+  # success here instead of four mornings of "no success on record" before the first Monday.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/schema-restore-check.yml"
+      - "scripts/schema-baseline.mjs"
+      - "scripts/lib/schema-baseline.mjs"
+
+permissions:
+  contents: read
+  actions: read # the notify job reads this workflow's own past runs, to count the failure streak
+
+# One at a time, never cancelled: a dispatch beside the weekly run queues behind it, and a cancelled
+# run says nothing about the file (tests/scheduled-alarms-never-withhold.test.ts).
+concurrency:
+  group: schema-restore-check
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI_NODE_VERSION: "24"
+
+jobs:
+  restore:
+    # Never on a self-hosted box: the job starts a supabase/postgres service container and the pinned
+    # pg_dump image, and a service container needs the hosted runner's Docker.
+    runs-on: ubuntu-latest # hosted-only: starts a supabase/postgres service container and the pinned pg_dump image with Docker
+    if: ${{ !inputs.test_alert }}
+    timeout-minutes: 20
+    outputs:
+      headline: ${{ steps.restore.outputs.headline }}
+    services:
+      # Production's own version (list_projects, 19 Nov 2026: 17.6.1.141). The major is pinned to
+      # RESTORE_PG_MAJOR in scripts/lib/schema-baseline.mjs by tests/schema-baseline.test.ts; when
+      # Supabase upgrades production, move both.
+      db:
+        image: supabase/postgres:17.6.1.141
+        env:
+          POSTGRES_PASSWORD: postgres # a throwaway container that lives for this job only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Node only — the script imports nothing outside node: and scripts/lib/, so no install.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Restore the baseline into the throwaway database and compare
+        id: restore
+        timeout-minutes: 15
+        env:
+          SCHEMA_BASELINE_DOCKER: "1"
+          SCHEMA_RESTORE_URL: postgresql://supabase_admin@127.0.0.1:5432/postgres
+          PGPASSWORD: postgres
+        run: node scripts/schema-baseline.mjs --restore-check
+
+  notify:
+    needs: restore
+    # A red restore, a cancelled one, or a self-test. Never on a pass, and never for a skipped restore
+    # (the self-test skips it on purpose).
+    if: ${{ always() && (inputs.test_alert || (needs.restore.result != 'success' && needs.restore.result != 'skipped')) }}
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    environment: main-secrets # its secrets live only in this main-only environment (credentials audit, 18 Nov 2026; docs/security/secret-rotation.md)
+    timeout-minutes: 5
+    steps:
+      - name: Notify Telegram on failure
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          IS_TEST: ${{ inputs.test_alert }}
+          RESULT: ${{ needs.restore.result }}
+          HEADLINE: ${{ needs.restore.outputs.headline }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          WF_FILE: schema-restore-check.yml
+        run: |
+          set -uo pipefail
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::error::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset, so a schema baseline that cannot rebuild production reached nobody."
+            exit 1
+          fi
+          # How many weekly runs in a row have been red (this run is still in progress, so it is not
+          # in the list). Same event only, so a dispatch cannot reset the weekly streak. Best-effort.
+          STREAK_LINE=""
+          CONCLUSIONS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=20&status=completed&event=${EVENT}" --jq '.workflow_runs[].conclusion' 2>/dev/null || true)
+          STREAK=1
+          while read -r c; do
+            [ "$c" = "failure" ] || break
+            STREAK=$((STREAK + 1))
+          done <<< "$CONCLUSIONS"
+          if [ "$STREAK" -gt 1 ]; then
+            STREAK_LINE=$(printf 'Red %s runs in a row. A climbing number means nobody is acting on this.' "$STREAK")
+          fi
+          if [ "$IS_TEST" = "true" ]; then
+            TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the schema restore check with the test flag to confirm this channel still works.\n\nIf you are reading this, a schema baseline that cannot rebuild production would also reach you.\n\n%s' "$RUN_URL")
+          else
+            DETAIL="${HEADLINE:-the restore job ended ${RESULT} before it could say why — read the run}"
+            TEXT=$(printf 'SCHEMA BASELINE CANNOT REBUILD PRODUCTION\n%s\n\nThe weekly check restored supabase/schema/production.sql into a fresh Supabase database and it did not come back as production.\n\n%s\n\nProduction has no point-in-time recovery, so this file is the rebuild plan. Read docs/security/schema-restore-check.md.\n\n%s' "$STREAK_LINE" "$DETAIL" "$RUN_URL")
+          fi
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). Response: $(head -c 500 /tmp/tg-response.json 2>/dev/null)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."
