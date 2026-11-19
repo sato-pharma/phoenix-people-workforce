@@ -408,7 +408,10 @@ export function runNotificationRecipientIsolationTests() {
   );
 
   // Wiring: the bell renders the subject-first model.
-  const n2bBellSource = readFileSync(new URL("../src/components/layout/in-app-notifications-bell.tsx", import.meta.url), "utf8");
+  // The bell and the panel body it loads on first use, read as one component.
+  const n2bBellSource = ["in-app-notifications-bell.tsx", "in-app-notifications-panel.tsx"]
+    .map((name) => readFileSync(new URL(`../src/components/layout/${name}`, import.meta.url), "utf8"))
+    .join("\n");
   assert.match(n2bBellSource, /notification\.primaryText/, "bell renders primaryText as the prominent line");
   assert.match(n2bBellSource, /notification\.statusLabel/, "bell renders the status badge");
 
@@ -434,7 +437,7 @@ export function runNotificationRecipientIsolationTests() {
   assert.match(metricsSource, /isUuidLike/, "mapper must suppress raw UUID identifiers from details");
 
   // Wiring: the bell UI premium states + recipient clarity.
-  const bellSource = readFileSync(new URL("../src/components/layout/in-app-notifications-bell.tsx", import.meta.url), "utf8");
+  const bellSource = n2bBellSource;
   assert.match(bellSource, /You&rsquo;re all caught up\.|You're all caught up\./, "empty state present");
   assert.match(bellSource, /Try again/, "error state has a retry control");
   assert.match(bellSource, /animate-pulse/, "loading skeleton present");

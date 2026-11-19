@@ -674,8 +674,10 @@ export function runReact418HydrationSafeTextTests() {
     "src/components/employee-portal/private-calendar.tsx": 1,
     "src/components/field-workforce-compliance/field-workforce-compliance-workspace.tsx": 1,
     "src/components/field-workforce-compliance/field-workforce-route-map.tsx": 1,
-    "src/components/layout/in-app-notifications-bell.tsx": 1,
-    "src/components/layout/internal-messages-menu.tsx": 1,
+    // Moved, not added, on 19 Nov 2026: the two panel bodies left the bell and the envelope to load
+    // on first use, and took their one time format each with them. Both load with `ssr: false`.
+    "src/components/layout/in-app-notifications-panel.tsx": 1,
+    "src/components/layout/internal-messages-panel.tsx": 1,
     "src/components/phoenix-signature-card/PhoenixIdentityNotices.tsx": 1,
   };
   const twelveHourCalls = new Map<string, number>();

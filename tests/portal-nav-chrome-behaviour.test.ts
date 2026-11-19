@@ -58,6 +58,9 @@ const LAYOUT = "src/components/employee-portal/employee-portal-layout.tsx";
 const BOTTOM_NAV = "src/components/employee-portal/employee-portal-bottom-nav.tsx";
 const BELL = "src/components/layout/in-app-notifications-bell.tsx";
 const MESSAGES = "src/components/layout/internal-messages-menu.tsx";
+// The two panels' bodies, loaded on first use (lazy-topbar-panel.tsx): the times are printed there.
+const BELL_PANEL = "src/components/layout/in-app-notifications-panel.tsx";
+const MESSAGES_PANEL = "src/components/layout/internal-messages-panel.tsx";
 const PANEL_POSITION = "src/lib/navigation/panel-position.ts";
 const GLOBALS = "app/globals.css";
 const DISMISS_HOOK = "src/hooks/use-dismiss-on-outside-interaction.ts";
@@ -183,7 +186,7 @@ export function runPortalNavChromeBehaviourTests() {
   );
 
   // ── 5. Header panel times read in Cairo ─────────────────────────────────────────────────────
-  for (const file of [BELL, MESSAGES]) {
+  for (const file of [BELL_PANEL, MESSAGES_PANEL]) {
     const source = stripComments(readFileSync(file, "utf8"));
     const formatters = Array.from(source.matchAll(/new Intl\.DateTimeFormat\([\s\S]*?\}\)/g)).map((m) => m[0]);
     assert.ok(formatters.length > 0, `${file} must still format its times with Intl.DateTimeFormat`);
@@ -275,7 +278,7 @@ export function runPortalNavChromeBehaviourTests() {
   );
 
   // ── 11. The bell names modules, never prints their codes ───────────────────────────────────
-  const bell = stripComments(readFileSync(BELL, "utf8"));
+  const bell = stripComments(readFileSync(BELL_PANEL, "utf8"));
   assert.doesNotMatch(bell, /\.replace\(\/_\/g, " "\)/, "The bell must not print a module or category code with its underscores swapped for spaces.");
   assert.match(bell, /\{notificationCodeLabel\(moduleName\)\}/, "The module filter must show names.");
   assert.match(bell, /\{notificationCodeLabel\(notification\.category\)\}/, "The category chip must show a name.");

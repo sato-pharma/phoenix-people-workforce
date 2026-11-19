@@ -62,8 +62,11 @@ export const EXEMPT = [
   'src/components/ui/form-kit',
   'src/components/ui/input.tsx',
   'src/components/layout/nav-row-add-button.tsx',
-  'src/components/layout/internal-messages-menu.tsx',
-  'src/components/layout/in-app-notifications-bell.tsx',
+  // The topbar's two dark menus. Their fields moved on 19 Nov 2026 from internal-messages-menu.tsx
+  // and in-app-notifications-bell.tsx into the panel bodies those load on first use, and the
+  // exemption moved with them.
+  'src/components/layout/internal-messages-panel.tsx',
+  'src/components/layout/in-app-notifications-panel.tsx',
 ];
 
 export const TOKEN_NAMES = [
