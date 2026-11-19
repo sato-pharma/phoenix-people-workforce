@@ -18,8 +18,9 @@
 //
 // WHAT IT CHECKS, and the invariant is DERIVED rather than listed, so it cannot rot as services come
 // and go: every service instance whose source is a GIT REPOSITORY must have a deployment trigger in
-// ITS OWN environment. An instance deployed from an IMAGE is exempt by definition — phoenix-cron
-// (alpine:3) and headwind-db-eu (a postgres image) have no git source and are correctly untriggered.
+// ITS OWN environment. An instance deployed from an IMAGE is exempt by definition — headwind-db-eu
+// (a postgres image) has no git source and is correctly untriggered, as phoenix-cron (alpine:3) was
+// until it was deleted on 19 Nov 2026.
 // It also names a trigger pointing at a different repository than the instance deploys from, a trigger
 // with no branch, and a trigger for an environment/service pair that has no git source at all.
 //

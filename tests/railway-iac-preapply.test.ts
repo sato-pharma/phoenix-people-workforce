@@ -34,8 +34,9 @@ export function runRailwayIacPreapplyTests() {
   const headwind = byService.get("phoenix-headwind");
   assert.ok(headwind && headwind.has("SQL_PASS"), "the Headwind DB password must be seen");
 
-  const cron = byService.get("phoenix-cron");
-  assert.ok(cron && cron.has("CRON_SECRET"), "the cron secret must be seen");
+  // phoenix-cron was DELETED from Railway on 19 Nov 2026 (owner: "delete phoenix-cron"). It never reached the app,
+  // so an apply from a file that still declares it would only bring an idle service back.
+  assert.equal(byService.has("phoenix-cron"), false, "phoenix-cron was deleted from Railway and must not be declared again");
 
   // 2. POSITIVE CONTROL — the guard's reason to exist. A live variable absent from the committed
   //    block is reported as a would-delete. If this assertion ever stops firing, the guard is inert.

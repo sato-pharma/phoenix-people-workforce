@@ -575,22 +575,12 @@ Two things `pull` confirmed that are worth knowing on their own:
 - **`phoenix-people-workforce`'s source carried `checkSuites: true`** on 10 Oct (it reads `false` since the
   release gate went live, 19 Oct). That was the Wait-for-CI deploy gate of "The deploy gate" above, visible in
   configuration rather than inferred from behaviour.
-- 🔴 **`phoenix-cron` is switched off, and its cron secret is dead on purpose.** It is an `alpine:3`
-  one-shot container (`restartPolicyType: NEVER`) with no schedule. Read live on 14 November 2026, its
-  only deployments were three from 1 August 2026, all removed, so it calls nothing. cron-job.org is the
-  scheduler of record (§ Cron Jobs). Its live start command is still the August one. If the service were
-  started, that command would call `notifications/process`, `cron/inbound-intake` and
-  `cron/recruitment-email-intake` (the worker's routes since 16 October), `notifications/daily`,
-  `cron/background-jobs` and three iReports360 routes removed with the vendor on 6 November 2026. It reads
-  the hour in UTC but its hour lists are Cairo hours, so every timed call would land three hours off.
-  - **Since 14 November 2026 its `CRON_SECRET` is the placeholder
-    `removed-2026-11-14-this-service-is-switched-off`**, so a start would be refused (401) on every
-    route. The name stays because `.railway/railway.ts` declares it with `preserve()` and
-    `tests/railway-iac-preapply.test.ts` expects it there. Never put the live secret back.
-  - **Never set a variable on it without `--skip-deploys`:** a deployment starts the container, which
-    then runs its command once.
-  - An audit on 2026-09-30 listed it as a leftover to delete. Whether to delete it is the owner's
-    decision; it is not a clean-up.
+- 🔴 **`phoenix-cron` WAS DELETED on 19 November 2026 at about 02:00 Cairo** (owner: "delete phoenix-cron"). It was a
+  switched-off `alpine:3` one-shot container (`restartPolicyType: NEVER`) in `sfo`, with no schedule, no domain and no
+  volume; its last deployments were three from 1 August 2026, all removed, so it never called anything, and since
+  14 November its `CRON_SECRET` had been a dead placeholder. cron-job.org is the scheduler of record (§ Cron Jobs).
+  `.railway/railway.ts` no longer declares it, and `tests/railway-iac-preapply.test.ts` refuses a declaration coming
+  back, so neither an apply nor the daily deploy-settings comparison can bring it back or report it missing.
 
 ### The first apply, 2026-10-10
 
@@ -1417,7 +1407,7 @@ Two other schedulers still point at production and neither works:
 
 - **Google Cloud Scheduler** — the 8 jobs still fire but **401 on every route** (secret mismatch).
   A red herring, not evidence of an outage.
-- **Railway `phoenix-cron`** — never reached the app; disabled.
+- **Railway `phoenix-cron`** — never reached the app; deleted on 19 November 2026.
 
 `scripts/setup-gcp-cron.sh` is **not** the schedule source of truth any more, and
 `src/lib/cron-control/*` (the `/admin/cron-control` dashboard) is a UI over the dead GCP scheduler
@@ -1697,8 +1687,8 @@ production for `phoenix-people-workforce`, `phoenix-workforce-worker`, `phoenix-
 (14 Nov), `phoenix-headwind` and `phoenix-code-backup` (3 Nov), and staging for
 `phoenix-people-workforce`, every one on branch `main` with `checkSuites: false` (Wait for CI is off
 on every service since 2026-10-20 — "The release gate" above). It read four when this section was
-written on 2026-10-23. `phoenix-cron` (`alpine:3`) and
-`headwind-db-eu` (a postgres image) deploy from IMAGES and correctly have none.
+written on 2026-10-23. `headwind-db-eu` (a postgres image) deploys from an IMAGE and correctly has none, as
+`phoenix-cron` (`alpine:3`) did until it was deleted on 19 November 2026.
 
 **What now catches it: `scripts/check-railway-deploy-triggers.mjs`, a fourth leg of the daily
 `secret-drift-check.yml`** (the one scheduled job holding `RAILWAY_API_TOKEN`). 🔴 **Its invariant is
