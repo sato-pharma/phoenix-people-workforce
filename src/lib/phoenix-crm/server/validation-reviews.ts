@@ -944,17 +944,12 @@ export async function decideValidationReview(
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
     p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision, note: cleanText(body.note, 500), refusal_reason: refusalReason },
   });
-  // A retired place changes what every visit to the customer is measured against.
-  if (decision === "reject") {
-    await restampVisitLocationsQuietly({
-      seatId: String(result.seat_id),
-      isTest: result.is_test === true,
-      customerId: String(result.customer_id),
-      actorHrId: viewer.hrId,
-      settings: viewer.config.settings,
-      scope: "all",
-    });
-  }
+  // 🔴 A SEND-BACK KEEPS EVERY VISIT'S EARLIER DISTANCE (owner, 19 Nov 2026: "Keep earlier distances").
+  // A reject used to measure all of the customer's visits again against whatever places he had left, so
+  // a doctor with a second clinic had every visit he was seen at in the first one turned "far" from the
+  // second: 4 of ماريان مدحت كرم's and 10 of اسامة سعيد عبدالوهاب's that night, put back from a backup
+  // by hand. The visits stay exactly as they were measured; taking the rejection back
+  // (`restoreValidation`) is what measures them again, against the place that came back.
   // An approved doctor is validated on the other two lines of his area too (owner, 2026-11-12;
   // line-twins.ts), after the reply.
   if (decision === "approve") {
@@ -974,12 +969,13 @@ export async function decideValidationReview(
   // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
   if (decision === "reject") await tellRepValidateAgain(viewer, result);
   // A rejected place takes its copies on the other lines with it (the database trigger); their doctors
-  // are measured again and offered to any twin still validated, after the reply (owner, 2026-11-12).
+  // are offered to any twin still validated, after the reply (owner, 2026-11-12). Their visits keep their
+  // distances, as this customer's do (owner, 19 Nov 2026).
   if (decision === "reject") {
     await afterResponse("phoenix-crm: follow a rejected place's line copies", async () => {
       const { data: rejected } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("place_id").eq("id", reviewId).maybeSingle();
       const rejectedPlace = text((rejected as Row | null)?.place_id);
-      if (rejectedPlace) await followLineTwinCopiesQuietly([rejectedPlace], viewer.config.settings, { retired: true });
+      if (rejectedPlace) await followLineTwinCopiesQuietly([rejectedPlace], viewer.config.settings, { retired: true, keepDistances: true });
     });
   }
   // The comment written with it, which the RPC's answer does not name the place of.
@@ -1498,22 +1494,16 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
     p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "reject", note, refusal_reason: refusalReason },
   });
-  // A retired place changes what every visit to the customer is measured against.
-  await restampVisitLocationsQuietly({
-    seatId: String(result.seat_id),
-    isTest: result.is_test === true,
-    customerId: String(result.customer_id),
-    actorHrId: viewer.hrId,
-    settings: viewer.config.settings,
-    scope: "all",
-  });
+  // 🔴 NO VISIT IS MEASURED AGAIN — a send-back keeps every visit's earlier distance (owner, 19 Nov
+  // 2026; the reason is above the same step in `decideValidationReview`).
   // He is told what is wrong with his photo, exactly as an automatic hold's rejection tells him — one
   // notice, one wording, and nothing in it says a person looked.
   await tellRepValidateAgain(viewer, result);
   await tellDecisionComment(viewer, "place", placeId, note);
-  // Its copies on the other lines were removed with it (the database trigger), after the reply.
+  // Its copies on the other lines were removed with it (the database trigger), after the reply; their
+  // visits keep their distances too.
   await afterResponse("phoenix-crm: follow a refused place's line copies", () =>
-    followLineTwinCopiesQuietly([placeId], viewer.config.settings, { retired: true }),
+    followLineTwinCopiesQuietly([placeId], viewer.config.settings, { retired: true, keepDistances: true }),
   );
   return { placeId, reopened: result.reopened === true };
 }
