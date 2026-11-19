@@ -455,6 +455,7 @@ export const DEFAULT_POLICY_ACKNOWLEDGED: Readonly<Record<string, { eventTypes: 
     eventTypes: [
       "deduction_pushed",
       "deduction_pushed_cc",
+      "deduction_pushed_manager_copy",
       "deductions_comment",
       "dispute_center_opened",
       "dispute_center_message",

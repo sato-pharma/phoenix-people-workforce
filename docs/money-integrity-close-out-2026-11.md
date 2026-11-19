@@ -22,8 +22,8 @@ nothing when the model raises — exactly as Postgres does.
 | Operation | (a) forced failure | (b) two callers | File |
 | --- | --- | --- | --- |
 | Held-salary record at publish (#312) | added | added | `payroll-ledger-and-permission-behaviour.test.ts` (`runHeldRecordAtomicityBehaviourTests`) |
-| Direct-order collection (#333) | see the orders file | see the orders file | `direct-orders-marketing-rollback-and-race.test.ts` |
-| Marketing decision and cancel (#333) | see the orders file | see the orders file | `direct-orders-marketing-rollback-and-race.test.ts` |
+| Direct-order collection (#333) | added — **its records inside the call since 19 Nov, see §2b** | added | `direct-orders-marketing-rollback-and-race.test.ts` |
+| Marketing decision and cancel (#333) | added — **the cancel's record inside the call since 19 Nov, see §2b** | added | `direct-orders-marketing-rollback-and-race.test.ts` |
 | Candidate merge (#333) | see the merge file | see the merge file | `candidate-merge-rollback-and-race.test.ts` |
 | Retention conversations (#333) | added | added (update; a second create is a second conversation by design) | `hr-decisions-rollback-and-race.test.ts` |
 | Leave decisions (#333) | added (step and paid approval) | added (manager twice; two Super Admins, balance used once) | `hr-decisions-rollback-and-race.test.ts` |
@@ -76,15 +76,66 @@ call with no payroll row and its "HELD out of payroll" record.
 **The migration must be applied before this code is merged.** Until it is, approving a claim refuses and changes
 nothing ("The claim could not be approved, so nothing was changed").
 
-The other two pushes — the release of a held claim once its evidence lands, and the system's own acceptance — still use
-`pushAcceptedOutstationExpenseToPayroll`; neither moves a claim the reviewer is looking at.
+**The release is the same one call** (owner, 19 Nov 2026: "move the release path onto the one-call approval too";
+migration `20261119143529_outstation_release_claim_to_payroll_atomically.sql`). `releaseOutstationRequestToPayrollIfReady`
+delivers a held claim's payroll row once its missing photo or workload lands. It made separate calls (the report row, the
+trip's row, then two records), so a failure part-way left an empty report row, or the money queued with no record saying
+so. It now calls the same function with no status: the claim is left exactly as it is (no column and no `updated_at`
+moves), locked, pinned to the version the release read, and required to still read accepted — so a claim rejected in
+between is never pushed, even by a writer that forgot to move the version. The report, the trip's row and both records
+("expense pushed to payroll", "released into payroll — evidence complete") land together or not at all; a failure leaves
+the claim held and the next capture tries again. The redefinition also reuses the trip's own report when no report id is
+passed, read under the claim's lock, so two releases landing together leave one report row rather than an empty second
+one. The system's automatic acceptance already ran through `approveOutstationRequestForPayroll`, so with the release moved
+the old push (`pushAcceptedOutstationExpenseToPayroll`) had no caller and is gone; the approval and the release share
+`planAcceptedClaimPayrollRow` and `writeClaimToPayrollInOneStep` in `src/lib/outstation/service.ts`.
+
+**Migration `20261119143529` must be applied before that code is merged.** Until it is, a release refuses and changes
+nothing; the claim stays held. The live approval never passes a null status, so applying it first changes nothing it does.
 
 `tests/outstation-reapprove-rollback-and-race.test.ts` models the function statement by statement from its migration and
 runs the real approval against it: a payroll row or a record failing inside the call (every table equals before, the app
 writes nothing outside the call, the refusal says nothing changed, and approving again from the same screen pays once);
 two approvals at once (one applies, the other gets "the claim changed", one row, one report, one record each); a change
-landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); and a held
-claim (accepted with no payroll row). Its breaks are in §7.
+landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); a held
+claim (accepted with no payroll row); and the release — a failure inside its call (every table as before, the claim left
+held, the next release pays once and leaves the claim untouched), two releases at once (one payroll row, one report row),
+a claim rejected after the release read it, with and without a moved version (never pushed), and a claim re-priced
+between the release's read and its pin (refused, then released at the new figure). Its breaks are in §7.
+
+## 2b. The direct-order collection and the marketing cancel write their records inside their one call (REC-038)
+
+Owner, 19 Nov 2026: "fix the direct-order collection and marketing cancel the same way". Both were already one database
+function each (#333): `phx_record_direct_order_collection` and `phx_cancel_marketing_request`. But each committed first,
+and the app wrote the record afterwards — the collection's required audit row, then the order's event row, then the sheet
+ping; the cancel's required audit row. A record that failed left the collection (or the cancel) standing while the person
+was told the save had failed, and the collection's event row and sheet ping were skipped.
+
+Migration `20261119145916_direct_order_collection_and_marketing_cancel_write_records.sql` gives each function a form that
+takes the records' words from the app and writes the rows itself, in the same transaction, after the act:
+
+- **the collection** (7 arguments): the lock, the compare-and-set, the offsets under the lock, the money checks and the
+  one update, line for line as before; then the audit row (old and new paid amount, date and remainder) and the order's
+  event (the remainder the function computed fills the "still outstanding" sentence's `{remaining}`);
+- **the cancel** (5 arguments): the lock, the compare-and-set, the flip and the rungs closed as before; then the audit
+  row naming the status it replaced and the rungs it closed.
+
+The rows carry the same words and values the app wrote before. The sheet ping stays after the commit. A collection that
+committed is now answered as saved even when the read-back after it fails (it answers from the figures written).
+
+**The earlier forms stay**, so the code serving before the merge keeps working between the apply and the deploy; neither
+form has a default, so PostgREST picks each by the arguments sent. A later migration drops the earlier forms once this
+code is live.
+
+**Migration `20261119145916` must be applied before this code is merged.** Until it is, a collection and a cancel
+refuse and change nothing.
+
+`tests/direct-orders-marketing-rollback-and-race.test.ts` models both forms statement by statement: a record failing
+inside the call keeps nothing (the act included), the records land with the act in the app's own words (a remainder
+still owed, paid in full, cleared; a cancel's summary and values), a committed collection whose read-back fails is
+answered as saved, and the two-caller races write one record each. `tests/direct-orders-and-marketing-atomic.test.ts`
+pins that the new forms keep every lock, compare-and-set and money rule of the earlier ones, and that the app writes no
+record of its own after either call.
 
 ## 3. F-PAY-014 — publish works out its figures under its claim
 
@@ -126,12 +177,8 @@ judged on the step alone, as before. No database change.
    trip, so the risk is low. The switch starts OFF and stays the owner's.
 3. **`setCarryLateExpenses` reopens open runs' Expenses steps before the switch moves.** When its audit row then fails,
    the switch is put back but the reopened steps stay reopened. No money moves; HR re-confirms the step.
-4. **A collection or a marketing cancel whose record fails after the database step committed reads as failed.** The
-   collection (or the cancel) stands, the record is queued in the outbox and not lost, but the person is told the save
-   failed and the order's event row and sheet ping are skipped. A retry from the same screen is refused by the
-   compare-and-set, so no money is doubled. The fix is to write the record inside the function, or to answer "saved"
-   once the database step committed and the record is queued. The outstation approval had the same shape until it wrote
-   its records inside its one call (§2a).
+4. ~~**A collection or a marketing cancel whose record fails after the database step committed reads as failed.**~~
+   **Fixed on 19 Nov 2026 — each writes its records inside its one call, see §2b.**
 5. **The Payroll Copilot's Holiday Bridging tab looks broken today**: its GET leaves `requestId` out of each row, so its
    Exclude / Include post answers 400. The schema keeps `requestId` optional, so nothing about that answer changed.
 
@@ -187,3 +234,20 @@ The outstation approval's breaks (§2a), each watched to fire and restored green
 | model: the claim's update ignores `updated_at` | HEADLINE: exactly one of two simultaneous approvals applies |
 | model: a raise keeps what ran | HEADLINE: every table afterwards equals the tables before |
 | the version check is skipped | (in `outstation-stale-approval.test.ts`) approve must check the version and then write |
+| the release writes its records outside the call | (c) release: and both records |
+| the release updates the claim (passes a status) | (c) release: as a release — no status, so the claim is not updated |
+| the release skips comparing the version it pins with the claim it read | (c) re-priced: HEADLINE: the release refuses rather than push figures the claim no longer holds |
+| the release reports a moved claim as released | (c) rejected under the release: HEADLINE: never released |
+| model: the release does not require the claim to read accepted | (c) rejected by a writer that forgot the version: HEADLINE: never released |
+| model: no report lookup under the lock | (c) and one report row |
+
+The collection's and the cancel's breaks (§2b), each watched to fire and restored green:
+
+| Break | Assertion that fired |
+| --- | --- |
+| the collection's audit row written by the app after the call | ONE audit row |
+| a read-back failure after a committed collection refuses again | READ-BACK: HEADLINE: Finance is never refused for a collection that committed |
+| the "still outstanding" sentence loses its `{remaining}` placeholder | RECORDS (outstanding): one event on the order's timeline, in the words the app used to write |
+| model: the collection's records written outside the transaction | ONE audit row |
+| the cancel's audit row written by the app after the call | the cancel and its audit row were written by the one call |
+| model: the cancel's audit row written outside the transaction | ONE cancel audit row |

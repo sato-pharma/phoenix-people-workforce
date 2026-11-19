@@ -78,6 +78,18 @@ A manager's inbox is deliberately **not** in that table: the `sendToRecipients` 
 channel and no `email` block at all, so it cannot carry a colleague's figure even if a template were
 added later. His decision widened what the EMPLOYEE's own copy says, not who sees the figure.
 
+**The one named exception — Hany Saad (owner, 2026-11-19).** His words: *"in deduction notifications
+to reps reporting to manager reporting to hany saad make hany saad informed with the deductions emails
+and notifications"*. Hany Saad (Regional Sales Manager, over three District Managers) already had the
+in-app and Telegram heads-up through the manager chain — production shows five `deduction_pushed_cc`
+notices to him in the 30 days before. What he lacked was the email. So a third, **email-only** send
+(`deduction_pushed_manager_copy`) carries the same amount, reason and days the rep's own email states,
+to every person in `DEDUCTION_EMAIL_COPY_RECIPIENTS` who sits in the manager chain above a Medical Rep
+territory the employee holds. Today that list is Hany Saad alone. A District Manager's own deduction,
+a rep in another region, and every other manager still get no email. Adding a second person takes the
+owner's word and one row in that list. The rule is pinned by `tests/deductions-per-line-push.test.ts`
+(section 1b) and by the channel count in `tests/daily-deductions-release-notice.test.ts`.
+
 What the email states comes off the **stored row**, never off the candidate the screen showed —
 `loadReleasedLinesForNotice` reads `amount` and `days_count` back after the RPC wrote them, and
 `pushOneCandidate` takes `applied_amount` / `applied_value` off the returned line. An employee is

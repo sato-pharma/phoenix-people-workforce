@@ -180,9 +180,18 @@ async function aFailedReadBackIsReportedAndNeverThrows(): Promise<void> {
 function theEmployeeIsEmailedAndTheManagerChainIsNot(): void {
   const notifier = readFileSync(new URL("../src/lib/deductions/notify-deduction.ts", import.meta.url), "utf8");
   const channelLines = notifier.split("\n").filter((text) => text.trimStart().startsWith("channels:"));
-  assert.equal(channelLines.length, 2, "exactly two sends: the employee's notice and the manager CC");
+  assert.equal(
+    channelLines.length,
+    3,
+    "exactly three sends: the employee's notice, the manager CC, and the named email copy (owner, 2026-11-19 — Hany Saad)",
+  );
 
-  const [employeeChannels, ccChannels] = channelLines;
+  const [employeeChannels, ccChannels, copyChannels] = channelLines;
+  assert.equal(
+    copyChannels.trim(),
+    'channels: ["email"],',
+    "the named manager copy is email ONLY — he already has the in-app and Telegram heads-up from the CC",
+  );
   assert.ok(
     employeeChannels.includes('"in_app"') && employeeChannels.includes('"telegram"') && employeeChannels.includes('"email"'),
     "the employee's notice carries all three channels — the email is the owner's 2026-10-12 decision",
@@ -194,7 +203,16 @@ function theEmployeeIsEmailedAndTheManagerChainIsNot(): void {
 
   // The employee's send is the only one with an `email` block, and the generic in-app/Telegram
   // message beside it still names no amount and no category.
-  assert.equal((notifier.match(/^\s{6}email: \{/gm) ?? []).length, 1, "one email block, on the employee's send");
+  assert.equal(
+    (notifier.match(/^\s{6}email: \{/gm) ?? []).length,
+    1,
+    "one email block at the employee's send depth — the CC (same depth, inside its own call) carries none",
+  );
+  assert.equal(
+    (notifier.match(/^\s{8}email: \{/gm) ?? []).length,
+    1,
+    "and one inside the named-copy loop — the only manager who is ever emailed the figure",
+  );
   const message = /message: `A payroll deduction has been recorded on your account for \$\{monthLabel\}\./.exec(notifier);
   assert.ok(message, "in-app and Telegram keep the generic sentence — a lock screen is read by whoever holds the phone");
 }

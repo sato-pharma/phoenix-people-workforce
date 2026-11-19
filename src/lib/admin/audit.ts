@@ -510,6 +510,12 @@ export type AuditEntityType =
   // for the company or moves a person's documents, so each is a required row.
   | "whatsapp_inbox_conversation"
   | "whatsapp_inbox_message"
+  // Added 2026-11-19 with the Approvals WhatsApp screen (/admin/approvals-whatsapp, Super Admin only): a send from the
+  // approvals number, a bulk send started or resumed, a saved list changed, and a wording submitted to Meta.
+  | "approvals_whatsapp_message"
+  | "approvals_whatsapp_broadcast"
+  | "approvals_whatsapp_list"
+  | "approvals_whatsapp_template"
   | "workflow_registry";
 
 export type AuditLogInput = {

@@ -2604,6 +2604,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // from the speciality they held before. Re-applying is a no-op (every row already split; `if not exists`,
   // `create or replace`, and the view rebuild stops if its old text is no longer there).
   "20261119151229_phoenix_crm_customer_type_apart_from_speciality.sql",
+  // Applied 19 Nov 2026 through the production MCP's apply_migration on the owner's word ("Apply it, then merge"), in
+  // four parts because the whole file was declined: the six tables with their indexes, RLS and service-role policies
+  // (ledger 20261119134332 approvals_whatsapp_module_tables); the bucket, its storage policy and
+  // approvals_whatsapp_template_contacts_since (20261119134401 approvals_whatsapp_module_bucket_and_contacts); the
+  // conversation trigger and its function (20261119134413 approvals_whatsapp_module_conversation_trigger); and
+  // approvals_whatsapp_apply_status, whose call answered "declined" yet whose function is live with NO ledger row. The
+  // `drop ... if exists` and `revoke` lines were left out: on a database with none of these objects they do nothing,
+  // and a new table or function there grants only to its owner and service_role. Verified on ozucdzovmcqvepbozvqf
+  // (project name Phoenix HR) straight after: six approvals_whatsapp_* tables, RLS on, one policy each, no grant to
+  // anon, authenticated or PUBLIC; md5(prosrc) equal to this file's bodies as-is LF — attach_conversation
+  // dc62b3a3231ec6db52f33c8e47628668 (2,563 chars), apply_status 7da2438430400f855d543b89b8a965e7 (1,150),
+  // template_contacts_since fa9eecc4e2b359aeafe5b85dcd585acd (243), each executable by postgres and service_role only;
+  // trigger approvals_whatsapp_attach_conversation present; bucket approvals-whatsapp-media private. Staging takes the
+  // whole file through staging-migrate on the merge. Re-applying is a no-op (`if not exists` / `create or replace`).
+  "20261119141357_approvals_whatsapp_module.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
@@ -3016,6 +3031,24 @@ export const ACKNOWLEDGED_LEDGER_ORPHANS = new Map<string, string>([
     "20261026034703 reassign_ownership_adopts_unowned_vacancies",
     "staging. The same change as production's 20261026034726, applied 23 seconds earlier; the same capture file "
       + "and the same md5 cover it.",
+  ],
+  [
+    "20261119134332 approvals_whatsapp_module_tables",
+    "production. One of four parts of 20261119141357_approvals_whatsapp_module.sql, applied through the "
+      + "production MCP on 19 Nov 2026 after the whole file was declined; that file's ACKNOWLEDGED_EXCEPTIONS "
+      + "entry carries the md5 evidence.",
+  ],
+  [
+    "20261119134401 approvals_whatsapp_module_bucket_and_contacts",
+    "production. One of four parts of 20261119141357_approvals_whatsapp_module.sql, applied through the "
+      + "production MCP on 19 Nov 2026 after the whole file was declined; that file's ACKNOWLEDGED_EXCEPTIONS "
+      + "entry carries the md5 evidence.",
+  ],
+  [
+    "20261119134413 approvals_whatsapp_module_conversation_trigger",
+    "production. One of four parts of 20261119141357_approvals_whatsapp_module.sql, applied through the "
+      + "production MCP on 19 Nov 2026 after the whole file was declined; that file's ACKNOWLEDGED_EXCEPTIONS "
+      + "entry carries the md5 evidence.",
   ],
 ]);
 

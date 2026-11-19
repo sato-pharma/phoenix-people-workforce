@@ -310,3 +310,77 @@ export async function readTemplateStatus(
   if (status === "REJECTED" || status === "DISABLED" || status === "PAUSED") return "rejected";
   return "pending";
 }
+
+// ── Every template on an account, whatever its status (Approvals WhatsApp, owner 19 Nov 2026) ──
+
+export type TemplateListing = {
+  name: string;
+  language: string;
+  category: string | null;
+  /** Meta's own word: APPROVED, PENDING, REJECTED, PAUSED, DISABLED, IN_APPEAL … */
+  status: string;
+  /** Meta's reason for a rejection, as Meta words it; null otherwise. */
+  rejectedReason: string | null;
+  bodyText: string;
+  /** The mapped template when it is APPROVED — the only state the composer may offer. */
+  approved: InboxTemplate | null;
+};
+
+/** Every template on a business account with its status and Meta's rejection reason. Throws with a readable message. */
+export async function listAllTemplates(businessAccountId: string): Promise<TemplateListing[]> {
+  const listings: TemplateListing[] = [];
+  let url: string | null =
+    `https://graph.facebook.com/${graphApiVersion()}/${businessAccountId}/message_templates` +
+    "?fields=name,language,status,category,parameter_format,components,rejected_reason&limit=100";
+  let pages = 0;
+  while (url && pages < 5) {
+    pages += 1;
+    const response: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken()}` },
+      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+    });
+    const body = (await response.json().catch(() => null)) as
+      | { data?: Array<RawTemplate & { rejected_reason?: string }>; paging?: { next?: string }; error?: { message?: string } }
+      | null;
+    if (!response.ok) {
+      throw new Error(`WhatsApp did not return the templates: ${body?.error?.message ?? `status ${response.status}`}`);
+    }
+    for (const raw of body?.data ?? []) {
+      if (!raw.name || !raw.language) continue;
+      const status = String(raw.status ?? "").toUpperCase() || "UNKNOWN";
+      const reason = raw.rejected_reason && raw.rejected_reason.toUpperCase() !== "NONE" ? raw.rejected_reason : null;
+      const bodyText = (raw.components ?? []).find((c) => c.type?.toUpperCase() === "BODY")?.text ?? "";
+      listings.push({
+        approved: status === "APPROVED" ? mapInboxTemplate(raw) : null,
+        bodyText,
+        category: raw.category ?? null,
+        language: raw.language,
+        name: raw.name,
+        rejectedReason: status === "REJECTED" ? (reason ?? "Meta gave no reason.") : null,
+        status,
+      });
+    }
+    url = body?.paging?.next ?? null;
+  }
+  return listings.sort((a, b) => a.name.localeCompare(b.name) || a.language.localeCompare(b.language));
+}
+
+/** Submits one new template for Meta's review. Returns Meta's id and first status. Throws with Meta's own words. */
+export async function submitWhatsAppTemplate(
+  businessAccountId: string,
+  request: Record<string, unknown>,
+): Promise<{ id: string | null; status: string | null }> {
+  const response = await fetch(`https://graph.facebook.com/${graphApiVersion()}/${businessAccountId}/message_templates`, {
+    body: JSON.stringify(request),
+    headers: { Authorization: `Bearer ${accessToken()}`, "Content-Type": "application/json" },
+    method: "POST",
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = (await response.json().catch(() => null)) as
+    | { id?: string; status?: string; error?: { message?: string; error_user_msg?: string } }
+    | null;
+  if (!response.ok) {
+    throw new Error(`Meta refused the wording: ${body?.error?.error_user_msg ?? body?.error?.message ?? `status ${response.status}`}`);
+  }
+  return { id: body?.id ?? null, status: body?.status ?? null };
+}

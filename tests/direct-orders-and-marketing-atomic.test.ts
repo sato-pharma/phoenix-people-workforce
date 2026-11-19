@@ -31,6 +31,7 @@ const MIGRATIONS = new URL("../supabase/migrations/", import.meta.url);
 const COLLECTION_MIGRATION = "20261113161617_direct_order_collection_atomic.sql";
 const DECIDE_MIGRATION = "20261113161619_marketing_decide_requires_pending_request.sql";
 const PREVIOUS_DECIDE_MIGRATION = "20260829180000_marketing_finance_requirement_on_approval.sql";
+const RECORDS_MIGRATION = "20261119145916_direct_order_collection_and_marketing_cancel_write_records.sql";
 
 const readMigration = (name: string) => readFileSync(new URL(name, MIGRATIONS), "utf8");
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -311,13 +312,20 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
   assert.deepEqual(
     lostRpc,
     {
+      p_audit: { actor_login_id: "B-10", summary: "Direct order collection of 500 EGP recorded by B-10." },
+      p_event: {
+        actor_hr_id: "B-10",
+        event_type: "collection_recorded",
+        message: "Collected 500 EGP on 2026-11-02 — paid in full.",
+        message_outstanding: "Collected 500 EGP on 2026-11-02; {remaining} EGP still outstanding.",
+      },
       p_expected_paid_amount: 200,
       p_expected_payment_date: "2026-11-01",
       p_order_id: ORDER_ID,
       p_paid_amount: 500,
       p_payment_date: "2026-11-02",
     },
-    "an older tab (no expectation sent): the function is compared against the server's own read",
+    "an older tab (no expectation sent): the function is compared against the server's own read, and the collection's records travel with the one call",
   );
 
   // ── 4b. A save from a screen opened before someone else's save: 409, and nothing is written ────
@@ -454,16 +462,16 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
       assert.equal(after.salesMonth, "2026-10", "and the sales month is untouched");
     },
   );
-  const event = won.find((r) => r.method === "POST" && r.path.endsWith("/direct_order_events"))?.body as
-    | Record<string, unknown>
-    | undefined;
-  assert.ok(event, "a won write still records its direct_order_events row");
-  assert.equal(event?.event_type, "collection_recorded");
-  assert.equal((event?.metadata as Record<string, unknown>).remainingAmount, 400, "the event carries the locked remainder");
-  assert.equal((event?.metadata as Record<string, unknown>).previousPaidAmount, 200);
-  assert.ok(
-    won.some((r) => r.method === "POST" && r.path.endsWith("/audit_logs")),
-    "and its audit row",
+  // Since REC-038 (19 Nov 2026) a won write's records travel INSIDE the one call: the function writes the event (with
+  // the remainder it computed under the lock) and the audit row. What the rows contain is checked against a model of
+  // the function in tests/direct-orders-marketing-rollback-and-race.test.ts (collectionRecordsLandWithIt).
+  const wonCall = won.find((r) => r.path === RPC_PATH)?.body as Record<string, unknown> | undefined;
+  assert.equal((wonCall?.p_event as Record<string, unknown> | undefined)?.event_type, "collection_recorded", "a won write hands its event to the call");
+  assert.ok((wonCall?.p_audit as Record<string, unknown> | undefined)?.summary, "and its audit row");
+  assert.deepEqual(
+    won.filter((r) => r.method !== "GET" && r.path !== RPC_PATH),
+    [],
+    "and writes no table of its own — no event row and no audit row after the call",
   );
 
   // ── 6. The decision: request locked, still pending, both request writes guarded ────────────────
@@ -550,6 +558,62 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
     /if \(request\.status !== "pending_approval"\) \{\s*throw conflictError\("This marketing request is no longer pending approval\."\);/,
     "and that pre-check is still there",
   );
+
+  // ── 9. The forms that write their own records (REC-038 close-out, 19 Nov 2026) ───────────────────
+  // The collection and the cancel each gained a form that writes the act's audit row (and, for the collection, the
+  // order's event) inside its own transaction. The new forms keep every lock, compare-and-set and money rule of the
+  // forms above, line for line, and the app writes no record of its own after the call any more.
+  const recordsSql = stripSqlComments(readMigration(RECORDS_MIGRATION));
+  const recordsCollection = squash(sqlFunction(recordsSql, "phx_record_direct_order_collection"));
+  for (const rule of [
+    "select * into v_order from public.direct_order_requests where id = p_order_id for update;",
+    "if v_order.paid_amount is distinct from p_expected_paid_amount or v_order.payment_date is distinct from p_expected_payment_date then raise exception 'direct_order_collection_conflict",
+    "from public.direct_order_marketing_offsets where direct_order_id = p_order_id;",
+    "v_value := round(coalesce(v_order.sales_value, 0)::numeric, 2);",
+    "if v_offsets <= 0 then v_remaining := null; else v_remaining := greatest(0, round(v_value - v_offsets, 2));",
+    "if coalesce(v_order.status, '') <> 'approved' then",
+    "if p_paid_amount <= 0 then",
+    "if v_value <= 0 then",
+    "v_paid := round(p_paid_amount, 2);",
+    "if v_paid > v_value then",
+    "if v_offsets > 0 and round(v_paid + v_offsets, 2) > v_value then",
+    "if p_payment_date is null then",
+    "v_remaining := round(v_value - v_paid - v_offsets, 2);",
+    "set paid_amount = v_paid, payment_date = v_date, remaining_amount = v_remaining, updated_at = now() where id = p_order_id;",
+  ]) {
+    assert.ok(recordsCollection.includes(rule), `the record-writing collection keeps the earlier form's rule: ${rule}`);
+  }
+  const updateAt = recordsCollection.indexOf("update public.direct_order_requests");
+  const auditAt = recordsCollection.indexOf("insert into public.audit_logs");
+  const eventAt = recordsCollection.indexOf("insert into public.direct_order_events");
+  assert.ok(updateAt > 0 && auditAt > updateAt && eventAt > auditAt, "HEADLINE: the collection, then its audit row, then its event — one transaction");
+  assert.ok(!/update public\.direct_order_requests[^;]*sales_month/.test(recordsCollection), "a collection still never writes sales_month");
+  const recordsCancel = squash(sqlFunction(recordsSql, "phx_cancel_marketing_request"));
+  for (const rule of [
+    "from marketing_requests r where r.id = p_request_id for update;",
+    "if v_status is distinct from p_expected_status then",
+    "update marketing_request_approval_steps set status = 'skipped', updated_at = p_cancelled_at where request_id = p_request_id and status in ('current', 'pending') and is_cc = false;",
+  ]) {
+    assert.ok(recordsCancel.includes(rule), `the record-writing cancel keeps the earlier form's rule: ${rule}`);
+  }
+  assert.ok(
+    recordsCancel.indexOf("insert into audit_logs") > recordsCancel.indexOf("update marketing_request_approval_steps"),
+    "HEADLINE: the cancel's audit row is written after the rungs are closed, inside the same transaction",
+  );
+  for (const sig of [
+    "phx_record_direct_order_collection(uuid, numeric, date, numeric, date, jsonb, jsonb)",
+    "phx_cancel_marketing_request(uuid, text, text, timestamptz, jsonb)",
+  ]) {
+    assert.ok(squash(recordsSql).includes(`revoke execute on function public.${sig} from public, anon, authenticated;`), `${sig}: closed to the browser roles`);
+    assert.ok(squash(recordsSql).includes(`grant execute on function public.${sig} to service_role;`), `${sig}: open to the service role`);
+  }
+  assert.ok(recordBody.includes("p_audit: {") && recordBody.includes("p_event: {"), "the collection hands its records to the one call");
+  assert.ok(
+    !recordBody.includes("writeRequiredAuditLog(") && !recordBody.includes("insertEvent("),
+    "HEADLINE: recordDirectOrderCollection writes no audit row and no event of its own after the call",
+  );
+  assert.ok(cancelBody.includes("p_audit: {"), "the cancel hands its audit row to the one call");
+  assert.ok(!cancelBody.includes("writeRequiredAuditLog("), "HEADLINE: cancelMarketingRequest writes no audit row of its own after the call");
 
   console.log("  direct-order collection and marketing decision: locked, compare-and-set, guarded");
 }
