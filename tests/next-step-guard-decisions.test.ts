@@ -88,8 +88,8 @@ export function runNextStepGuardDecisionsTests() {
   const source = readFileSync(HOOK, "utf8");
   const code = stripComments(source);
   assert.ok(
-    code.includes("systemMessage") && code.includes("nextStepVerdict"),
-    "the pinned copy must be the real Stop hook — its warning plumbing (systemMessage / nextStepVerdict) is " +
+    code.includes("VERDICT_DIR") && code.includes("nextStepVerdict"),
+    "the pinned copy must be the real Stop hook — its warning plumbing (VERDICT_DIR / nextStepVerdict) is " +
       "gone, so either the mirror picked up the wrong file or the hook stopped reporting a bad line at all.",
   );
   // 🔴 THE "NEVER BLOCKS" HALF IS PINNED BY BEHAVIOUR, NOT BY TEXT. A text test for
@@ -135,9 +135,20 @@ export function runNextStepGuardDecisionsTests() {
     "warn",
     `a reply whose opening line announces its OWN merge must be WARNED about. Got: ${JSON.stringify(emitted)}`,
   );
+  // 🔴 THE WARNING GOES TO THE NEXT TURN, NEVER TO HIS SCREEN (owner, 2026-11-19, "fix this"). A Stop
+  // hook's `systemMessage` is shown to the USER, not the model: from 2026-10-15 to 2026-11-19 every
+  // verdict landed in his chat as "Stop says: ..." and he pasted it back by hand. The hook now leaves the
+  // verdict in ~/.claude/state/next-step-verdict/<session>.txt, and task-rules-reminder.mjs hands it to
+  // the model with his next message. So: no systemMessage, and the file is there.
   assert.ok(
-    typeof emitted.systemMessage === "string" && (emitted.systemMessage as string).length > 0,
-    "the warning must reach the model as a systemMessage, or the next reply carries the same bad line.",
+    !("systemMessage" in emitted),
+    "the hook printed a systemMessage, which Claude Code shows to HIM and never to the model (owner, " +
+      `2026-11-19). The verdict belongs in the next turn's file. Got: ${JSON.stringify(emitted)}`,
+  );
+  const verdictFile = join(probeHome, ".claude", "state", "next-step-verdict", "next-step-guard-probe.txt");
+  assert.ok(
+    existsSync(verdictFile) && readFileSync(verdictFile, "utf8").length > 0,
+    `the warning must be left for the next turn at ${verdictFile}, or the next reply carries the same bad line.`,
   );
   assert.ok(
     !("decision" in emitted),
