@@ -155,7 +155,7 @@ export async function runPasskeyAddAsksPasswordTests() {
     biometricAt === -1 || secondStepAt < biometricAt
       ? null
       : page.slice(biometricAt, secondStepAt).replace(/\{\s*\}/g, "").replace(/\s+/g, " "),
-    "<BiometricDevicesCard /> {secondStepRequiredForRole(access.role) && !access.seatView ? ",
+    "<BiometricDevicesCard /> {SECOND_STEP_SWITCHED_ON && secondStepRequiredForRole(access.role) && !access.seatView ? ",
     "the passkey list sits right beside the second step's card",
   );
 }

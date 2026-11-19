@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import {
   RECOVERY_CODE_COUNT,
   SECOND_STEP_ROLES,
+  SECOND_STEP_SWITCHED_ON,
   TOTP_PERIOD_SECONDS,
   TRUSTED_DEVICE_MAX_AGE_SECONDS,
   base32Decode,
@@ -145,6 +146,9 @@ export async function runSecondSignInStepTests() {
     assert.equal(match("abcdef", null), null);
 
     // ── 3. Who is asked, and when a remembered browser counts ────────────────────────────────────
+    // 🔴 SWITCHED OFF (owner, 19 Nov 2026: "remove the auth code feature"). Nobody is asked at sign-in and the
+    // card does not show; the rules below stay tested because the module stays whole and dormant.
+    assert.equal(SECOND_STEP_SWITCHED_ON, false, '🔴 the second sign-in step is switched off: "remove the auth code feature" (19 Nov 2026)');
     assert.deepEqual([...SECOND_STEP_ROLES], ["Super Admin"], 'his choice: "Super Admin accounts only"');
     assert.equal(secondStepRequiredForRole("Super Admin"), true);
     for (const role of ["CEO", "HR Operations", "Medical Rep", "National Sales Manager", "", null, undefined]) {
@@ -451,7 +455,15 @@ export async function runSecondSignInStepTests() {
     assert.ok(gate < bridge && gate < session, "🔴 the step is asked BEFORE the bridge and before any session is opened");
     assert.equal(route.split("createAppSession(").length - 1, 1, "the route opens a session in one place");
     const gateCall = route.slice(route.lastIndexOf("const secondStep =", gate), route.indexOf("});", gate));
-    assert.match(gateCall, /const secondStep = ciSmokeMode\s*\?/, "CI smoke mode is the only sign-in left out");
+    assert.match(
+      gateCall,
+      /const secondStep = ciSmokeMode \|\| !SECOND_STEP_SWITCHED_ON\s*\?/,
+      "🔴 while the step is switched off every sign-in passes with no code and no database read; otherwise CI smoke mode is the only sign-in left out",
+    );
+    assert.ok(
+      route.includes('import { SECOND_STEP_SWITCHED_ON, trustedDeviceCookieName } from "@/lib/auth/second-step";'),
+      "the route reads the one switch, never a copy of it",
+    );
     assert.ok(!/native|isNative|x-phoenix/i.test(gateCall), '🔴 nothing the request says about itself excuses the step: "I am the native app" is a header anyone can send');
     assert.ok(gateCall.includes("loginId: user.loginId") && gateCall.includes("role: user.role"), "the step is asked of the STORED account and role, never of what was typed");
     assert.ok(gateCall.includes('canFinishSetup: payload.responseMode === "json"'), "a form posted with no script may not finish a set-up");
@@ -575,7 +587,10 @@ export async function runSecondSignInStepTests() {
     assert.ok(manage.includes('scope: "auth:second-step"') && manage.includes("limit: 10"), "ten changes in 15 minutes");
 
     const page = stripComments(readFileSync(PROFILE_PAGE, "utf8"));
-    assert.ok(page.includes("{secondStepRequiredForRole(access.role) && !access.seatView ? <SecondStepCard /> : null}"), "the card is on a Super Admin's own profile only");
+    assert.ok(
+      page.includes("{SECOND_STEP_SWITCHED_ON && secondStepRequiredForRole(access.role) && !access.seatView ? <SecondStepCard /> : null}"),
+      "🔴 the card shows only while the step is switched on, and then on a Super Admin's own profile only",
+    );
 
     const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
     assert.ok(registry.includes('pattern: "/api/auth/second-step"'), "the route is in the access registry");
