@@ -39,7 +39,7 @@ import {
   type NameCandidate,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { compareFoldedNames } from "@/lib/phoenix-crm/name-fold";
-import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
+import { customerKindProblem, splitCustomerKind } from "@/lib/phoenix-crm/speciality-list";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -82,6 +82,8 @@ export type ManagerCustomerStatus = "active" | "removal_pending" | "removal_firs
 export type ManagerCustomerView = {
   id: string;
   name: string;
+  /** Where he calls on the customer — a clinic, a hospital, a contract (owner, 2026-11-19). */
+  customerType: string | null;
   speciality: string | null;
   phone: string | null;
   contactNote: string | null;
@@ -101,7 +103,7 @@ export type ManagerCustomerView = {
 };
 
 const OWN_COLUMNS =
-  "id, manager_hr_id, line_code, name, speciality, phone, contact_note, grade, potential_grade, comment, area_seat_id, area_code, area_name, pin_lat, pin_lon, pin_address, pin_brick_name, status, removal_reason, removal_requested_at, removal_approver_hr_id, removal_second_approver_hr_id, removal_first_decided_at, removal_first_decided_by_hr_id, removal_first_decided_role, removal_decided_at, removal_decided_by_hr_id, removal_decided_role, removal_decision_note, is_test, created_at";
+  "id, manager_hr_id, line_code, name, customer_type, speciality, phone, contact_note, grade, potential_grade, comment, area_seat_id, area_code, area_name, pin_lat, pin_lon, pin_address, pin_brick_name, status, removal_reason, removal_requested_at, removal_approver_hr_id, removal_second_approver_hr_id, removal_first_decided_at, removal_first_decided_by_hr_id, removal_first_decided_role, removal_decided_at, removal_decided_by_hr_id, removal_decided_role, removal_decision_note, is_test, created_at";
 
 function statusLabelOf(status: ManagerCustomerStatus): string {
   if (status === "removal_pending") return "Waiting to come off the list";
@@ -160,6 +162,7 @@ export function managerCustomerOf(raw: unknown): (ManagerCustomerView & ManagerC
     id,
     managerHrId,
     name,
+    customerType: textOrNull(row.customer_type),
     speciality: textOrNull(row.speciality),
     phone: textOrNull(row.phone),
     contactNote: textOrNull(row.contact_note),
@@ -633,8 +636,9 @@ export async function resolveChosenPlace(writer: ManagerPlanWriter, district: Re
 
 /**
  * POST: a customer he adds to his own list. The name, the grade and the potential grade and an area of his
- * region are what it needs; the speciality, the phone, the address and the brick are all OPTIONAL (owner,
- * 2026-10-18: "make everything we did optional"), as are a contact note and a comment. The brick is one of the
+ * region are what it needs, and the customer's type — a clinic or a polyclinic also its speciality (owner,
+ * 2026-11-19: "only clinics need one", which replaces the 2026-10-18 "optional" for a clinic's speciality);
+ * the phone, the address and the brick are all OPTIONAL (owner, 2026-10-18: "make everything we did optional"), as are a contact note and a comment. The brick is one of the
  * chosen area's own bricks, picked from the drop-list, never typed. NO accuracy gate and no photo ("he is a
  * manager, not a rep at a door"). Never a validation step.
  *
@@ -647,8 +651,12 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const name = cleanText(body.name, 200, "The name");
-  // Picked from the one list, or an "Other" text — folded into the list name it spells (owner, 2026-11-19).
-  const speciality = normalizeSpeciality(cleanText(body.speciality, 120, "The speciality"));
+  // Picked from the two lists, or an "Other" text — folded into the list names they spell, and kept apart
+  // (owner, 2026-11-19). A form one release behind sends no type; its speciality still decides the pair.
+  const kind = splitCustomerKind({ customerType: cleanText(body.customerType, 120, "The type"), speciality: cleanText(body.speciality, 120, "The speciality") });
+  const kindProblem = customerKindProblem({ ...kind, listType: null });
+  if (kindProblem && (kind.customerType || "customerType" in body)) throw validationError(kindProblem);
+  const speciality = kind.speciality;
   const address = cleanText(body.address, MANAGER_CUSTOMER_ADDRESS_MAX, "The address");
   const brickId = cleanText(body.brickId, 40, "The brick");
   const contactNote = cleanText(body.contactNote, 300, "The contact note");
@@ -696,6 +704,7 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
       // A product manager sits on no seat: the customer carries the line of the area he is in.
       line_code: writer.seat?.lineCode ?? area.lineCode ?? null,
       name,
+      customer_type: kind.customerType,
       speciality,
       phone: phone.value,
       contact_note: contactNote,

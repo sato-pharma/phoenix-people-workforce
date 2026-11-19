@@ -52,6 +52,7 @@ import { readDoubleVisitPlansForReport } from "@/lib/phoenix-crm/server/double-v
 import { loadManagerOwnVisitRows, readManagerWithRepSlotsForReport } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadScopeProductManagers } from "@/lib/phoenix-crm/server/scope-product-managers";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { managerOwnVisitReportRow } from "@/lib/phoenix-crm/visit-report-own-visits";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
@@ -284,7 +285,7 @@ export async function loadVisitReportCustomers(viewer: PhoenixCrmViewer, input: 
   const rows = await fetchAllRowsKeyset<Row>(
     () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let query: any = getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, name, list_type, speciality, status");
+      let query: any = getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, name, list_type, speciality, customer_type, status");
       // A "Campaign visit N" holder only files the old system's campaign visits: it is no customer.
       query = seatScoped(query, seatIds).in("status", [...CUSTOMER_PICKER_STATUSES]).eq("campaign_visit_holder", false);
       if (!includeTest) query = query.eq("is_test", false);
@@ -300,7 +301,7 @@ export async function loadVisitReportCustomers(viewer: PhoenixCrmViewer, input: 
       const seat = seatById.get(String(row.seat_id));
       // Across a district the same name can sit on two territories, so each says whose it is.
       const territory = kind === "district" && seat ? nameOf(names, seat.occupantHrId, "Vacant seat") : null;
-      const label = [name, listType, textOrNull(row.speciality), territory, CUSTOMER_STATUS_WORDS[String(row.status)] ?? null]
+      const label = [name, listType, customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)), territory, CUSTOMER_STATUS_WORDS[String(row.status)] ?? null]
         .filter(Boolean)
         .join(" · ");
       return { id: String(row.id), label, listType, name };
@@ -649,7 +650,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   const [customers, places] = await Promise.all([
     selectByIds<Row>(
       "phoenix_crm_customers",
-      "id, name, list_type, speciality, grade, potential_grade, origin, status, validated_at, validated_by_hr_id, phone, primary_pharmacy_name, pharmacy_pin_governorate",
+      "id, name, list_type, speciality, customer_type, grade, potential_grade, origin, status, validated_at, validated_by_hr_id, phone, primary_pharmacy_name, pharmacy_pin_governorate",
       "id",
       customerIds,
     ),
@@ -660,7 +661,8 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       placeIds,
     ),
   ]);
-  const customerById = new Map(customers.map((row) => [String(row.id), row]));
+  // The report prints the customer's kind where it printed the old mixed speciality ("Hospital", "Pediatrics").
+  const customerById = new Map(customers.map((row) => [String(row.id), { ...row, speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)) }]));
   const placeById = new Map(places.map((row) => [String(row.id), row]));
 
   // ── Only what was chosen ──

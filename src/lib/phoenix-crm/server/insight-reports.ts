@@ -74,6 +74,7 @@ import { buildObjectionsByCustomer, type ObjectionsByCustomerResult, type Object
 import { resolveReportMonth, type ReportMonth, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
 import { buildSamplesReport, type SamplesReportResult } from "@/lib/phoenix-crm/samples-report";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadHeardCommentReadings } from "@/lib/phoenix-crm/server/comment-reading";
@@ -411,11 +412,11 @@ async function heardVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, 
   const customerIds = [...new Set(rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => id !== null))];
   // Four id batches at a time rather than one after another; a lookup by id, so the order is moot.
   const specialityBatches = await mapWithConcurrency(chunk(customerIds, 200), 4, async (part) => {
-    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, speciality").in("id", part);
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, speciality, customer_type").in("id", part);
     throwIfError(error);
     return (data ?? []) as Row[];
   });
-  for (const row of specialityBatches.flat()) specialities.set(String(row.id), textOrNull(row.speciality));
+  for (const row of specialityBatches.flat()) specialities.set(String(row.id), customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)));
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
   return rows.map((row) => {
@@ -732,12 +733,12 @@ export async function loadObjectionsByCustomerReport(viewer: PhoenixCrmViewer, r
 
   const customerIds = [...new Set(rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => id !== null))];
   const customerBatches = await mapWithConcurrency(chunk(customerIds, 200), 4, async (part) => {
-    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality").in("id", part);
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality, customer_type").in("id", part);
     throwIfError(error);
     return (data ?? []) as Row[];
   });
   const customers = new Map(
-    customerBatches.flat().map((row) => [String(row.id), { name: textOrNull(row.name) ?? "Unnamed customer", speciality: textOrNull(row.speciality) }]),
+    customerBatches.flat().map((row) => [String(row.id), { name: textOrNull(row.name) ?? "Unnamed customer", speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)) }]),
   );
   const people = await loadPeopleNames(rows.map((row) => textOrNull(row.rep_hr_id) ?? textOrNull(row.manager_hr_id)));
 

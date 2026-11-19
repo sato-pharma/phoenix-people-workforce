@@ -49,7 +49,8 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { capturedLocationText, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { CrmSpecialityField } from "@/components/phoenix-crm/speciality-field";
+import { CrmCustomerKindField } from "@/components/phoenix-crm/speciality-field";
+import { customerKindProblem, defaultCustomerType } from "@/lib/phoenix-crm/speciality-list";
 import {
   emptyPlaceDraft,
   PlaceEditor,
@@ -618,6 +619,7 @@ export function ValidateScreen({
   // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
+  const [customerType, setCustomerType] = useState("");
   // Optional, and saved with the validation itself (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
   const [grade, setGrade] = useState<PhoenixCrmGrade | null>(null);
@@ -687,6 +689,8 @@ export function ValidateScreen({
         if (nameProblem) return nameProblem;
       } else if (cleanName.length < 3) return "Write the customer's full name.";
       if (!grade) return "Propose a grade (A, B or C).";
+      const kindProblem = customerKindProblem({ customerType, speciality, listType });
+      if (kindProblem) return kindProblem;
     }
     if (needsFullName) {
       const nameProblem = doctorFullNameProblem(fullParts);
@@ -720,6 +724,7 @@ export function ValidateScreen({
         listType,
         name: cleanName,
         ...(doctorName ? { nameParts } : {}),
+        customerType: normalizedName(customerType) || null,
         speciality: normalizedName(speciality) || null,
         proposedGrade: grade,
       },
@@ -858,6 +863,8 @@ export function ValidateScreen({
           if (nameProblem) return nameProblem;
         } else if (cleanName.length < 3) return "Write the customer's full name.";
         if (!grade) return "Propose a grade (A, B or C).";
+        const kindProblem = customerKindProblem({ customerType, speciality, listType });
+        if (kindProblem) return kindProblem;
       }
       if (needsFullName) {
         const nameProblem = doctorFullNameProblem(fullParts);
@@ -1005,6 +1012,8 @@ export function ValidateScreen({
                     label="AM or PM"
                     onChange={(next) => {
                       setListType(next);
+                      // A PM customer is a doctor in his own clinic; the type opens on Clinic and stays his to change.
+                      setCustomerType((previous) => previous || defaultCustomerType(next));
                       setSameName(null);
                       setProblem(null);
                     }}
@@ -1043,12 +1052,20 @@ export function ValidateScreen({
                     />
                   </CrmField>
                 )}
-                <CrmSpecialityField
+                <CrmCustomerKindField
+                  customerType={customerType}
                   disabled={saving}
-                  id="phoenix-crm-new-speciality"
+                  idPrefix="phoenix-crm-new"
                   kind={listType}
-                  onChange={setSpeciality}
-                  value={speciality}
+                  onSpecialityChange={(next) => {
+                    setSpeciality(next);
+                    setProblem(null);
+                  }}
+                  onTypeChange={(next) => {
+                    setCustomerType(next);
+                    setProblem(null);
+                  }}
+                  speciality={speciality}
                 />
                 <CustomerPhoneField
                   disabled={saving}
@@ -1745,6 +1762,7 @@ export function EditDetailsScreen({
   // A clinic doctor's name is three boxes, opened on what he already wrote (owner, 2026-11-07).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(() => splitDoctorName(customer?.name));
   const [speciality, setSpeciality] = useState(customer?.speciality ?? "");
+  const [customerType, setCustomerType] = useState(customer?.customerType ?? defaultCustomerType(customer?.listType));
   const [phone, setPhone] = useState(customer?.phone ?? "");
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1761,11 +1779,13 @@ export function EditDetailsScreen({
   const nameTouched = doctorName && joinDoctorName(nameParts) !== joinDoctorName(splitDoctorName(customer.name));
   const cleanName = !doctorName ? normalizedName(name) : nameTouched ? normalizedName(joinDoctorName(nameParts)) : customer.name;
   const cleanSpeciality = normalizedName(speciality);
+  const cleanType = normalizedName(customerType);
   // Compared the way it is saved, so "010 1234 5678" against a saved 01012345678 is no change at all.
   const phoneCheck = parseCustomerPhone(phone);
   const unchanged =
     cleanName === customer.name &&
     cleanSpeciality === (customer.speciality ?? "") &&
+    cleanType === (customer.customerType ?? "") &&
     phoneCheck.ok &&
     phoneCheck.value === (customer.phone ?? null);
 
@@ -1780,8 +1800,13 @@ export function EditDetailsScreen({
       setProblem(phoneCheck.error);
       return;
     }
+    const kindProblem = customerKindProblem({ customerType: cleanType, speciality: cleanSpeciality, listType: customer.listType });
+    if (kindProblem) {
+      setProblem(kindProblem);
+      return;
+    }
     if (unchanged) {
-      setProblem("Change the name, the speciality or the phone first.");
+      setProblem("Change the name, the type, the speciality or the phone first.");
       return;
     }
     setSaving(true);
@@ -1796,6 +1821,7 @@ export function EditDetailsScreen({
           customerId: customer.customerId,
           name: cleanName,
           ...(nameTouched ? { nameParts } : {}),
+          customerType: cleanType || null,
           speciality: cleanSpeciality || null,
           // Always sent from here, so emptying the box clears the phone.
           phone: phoneCheck.value,
@@ -1825,7 +1851,7 @@ export function EditDetailsScreen({
           <Detail label="On the list from">{customer.origin === "reference" ? "The iReports360 list" : "Added in Phoenix"}</Detail>
         </CustomerHeading>
       </CrmBlock>
-      <CrmBlock className="border-t border-slate-100" title="Name, speciality and phone">
+      <CrmBlock className="border-t border-slate-100" title="Name, type, speciality and phone">
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           {doctorName ? (
             <DoctorNameFields
@@ -1855,16 +1881,20 @@ export function EditDetailsScreen({
               />
             </CrmField>
           )}
-          <CrmSpecialityField
-            className="sm:col-span-2"
+          <CrmCustomerKindField
+            customerType={customerType}
             disabled={saving}
-            id="phoenix-crm-details-speciality"
+            idPrefix="phoenix-crm-details"
             kind={customer.listType}
-            onChange={(next) => {
+            onSpecialityChange={(next) => {
               setSpeciality(next);
               setProblem(null);
             }}
-            value={speciality}
+            onTypeChange={(next) => {
+              setCustomerType(next);
+              setProblem(null);
+            }}
+            speciality={speciality}
           />
           <CustomerPhoneField
             disabled={saving}

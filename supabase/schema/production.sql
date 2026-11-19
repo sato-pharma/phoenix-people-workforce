@@ -3125,6 +3125,139 @@ $$;
 ALTER FUNCTION public.api_rate_limit_consume(p_bucket_key text, p_limit integer, p_window_ms integer) OWNER TO postgres;
 
 --
+-- Name: approvals_whatsapp_apply_status(text, text, timestamp with time zone, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.approvals_whatsapp_apply_status(p_wamid text, p_status text, p_at timestamp with time zone, p_failure_detail text DEFAULT NULL::text) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_order text[] := array['accepted', 'sent', 'delivered', 'read'];
+  v_changed integer;
+begin
+  if p_status not in ('sent', 'delivered', 'read', 'failed') then
+    return false;
+  end if;
+
+  update public.approvals_whatsapp_messages m
+  set status = p_status,
+      status_at = p_at,
+      -- A read tick can arrive without its delivered tick; a read message was delivered.
+      delivered_at = case when p_status in ('delivered', 'read') then coalesce(m.delivered_at, p_at) else m.delivered_at end,
+      read_at = case when p_status = 'read' then coalesce(m.read_at, p_at) else m.read_at end,
+      failed_at = case when p_status = 'failed' then p_at else null end,
+      failure_reason = case when p_status = 'failed' then 'failed' else null end,
+      failure_detail = case when p_status = 'failed' then p_failure_detail else null end
+  where m.wamid = p_wamid
+    and m.direction = 'outbound'
+    and (
+      (p_status = 'failed' and m.status <> 'failed' and m.status <> 'read')
+      or array_position(v_order, m.status) < array_position(v_order, p_status)
+    );
+  get diagnostics v_changed = row_count;
+  return v_changed > 0;
+end;
+$$;
+
+ALTER FUNCTION public.approvals_whatsapp_apply_status(p_wamid text, p_status text, p_at timestamp with time zone, p_failure_detail text) OWNER TO postgres;
+
+--
+-- Name: approvals_whatsapp_attach_conversation(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.approvals_whatsapp_attach_conversation() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_key text;
+  v_id uuid;
+  v_preview text;
+  v_is_live_inbound boolean;
+begin
+  if new.wamid is not null
+     and exists (select 1 from public.approvals_whatsapp_messages m where m.wamid = new.wamid) then
+    return null;
+  end if;
+
+  v_key := coalesce(nullif(new.contact_wa_id, ''), 'user:' || nullif(new.contact_user_id, ''));
+  if v_key is null then
+    raise exception 'approvals_whatsapp_messages row has no contact';
+  end if;
+
+  v_preview := left(coalesce(
+    nullif(new.body, ''),
+    case new.message_type
+      when 'image' then 'Photo'
+      when 'video' then 'Video'
+      when 'audio' then 'Voice note'
+      when 'document' then coalesce(new.media_file_name, 'File')
+      when 'sticker' then 'Sticker'
+      when 'location' then 'Location'
+      when 'contacts' then 'Contact card'
+      when 'template' then 'Template message'
+      else 'Message'
+    end
+  ), 240);
+  v_is_live_inbound := new.direction = 'inbound' and not new.historical;
+
+  insert into public.approvals_whatsapp_conversations as c (
+    phone_number_id, contact_key, contact_wa_id, contact_user_id, contact_name, contact_username,
+    last_message_at, last_inbound_at, last_message_preview, last_direction, unread_count
+  )
+  values (
+    new.phone_number_id, v_key, new.contact_wa_id, new.contact_user_id, new.contact_name, new.contact_username,
+    new.sent_at,
+    case when v_is_live_inbound then new.sent_at end,
+    v_preview,
+    new.direction,
+    case when v_is_live_inbound then 1 else 0 end
+  )
+  on conflict (phone_number_id, contact_key) do update
+  set contact_wa_id = coalesce(excluded.contact_wa_id, c.contact_wa_id),
+      contact_user_id = coalesce(excluded.contact_user_id, c.contact_user_id),
+      contact_name = coalesce(excluded.contact_name, c.contact_name),
+      contact_username = coalesce(excluded.contact_username, c.contact_username),
+      last_message_preview = case
+        when c.last_message_at is null or excluded.last_message_at >= c.last_message_at then excluded.last_message_preview
+        else c.last_message_preview end,
+      last_direction = case
+        when c.last_message_at is null or excluded.last_message_at >= c.last_message_at then excluded.last_direction
+        else c.last_direction end,
+      last_message_at = greatest(c.last_message_at, excluded.last_message_at),
+      last_inbound_at = greatest(c.last_inbound_at, excluded.last_inbound_at),
+      unread_count = c.unread_count + excluded.unread_count,
+      updated_at = now()
+  returning c.id into v_id;
+
+  new.conversation_id := v_id;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.approvals_whatsapp_attach_conversation() OWNER TO postgres;
+
+--
+-- Name: approvals_whatsapp_template_contacts_since(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.approvals_whatsapp_template_contacts_since(p_since timestamp with time zone) RETURNS SETOF text
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+  select distinct m.contact_wa_id
+  from public.approvals_whatsapp_messages m
+  where m.direction = 'outbound'
+    and m.template_name is not null
+    and m.status <> 'failed'
+    and m.sent_at >= p_since
+    and m.contact_wa_id is not null;
+$$;
+
+ALTER FUNCTION public.approvals_whatsapp_template_contacts_since(p_since timestamp with time zone) OWNER TO postgres;
+
+--
 -- Name: ats_bulk_set_candidate_status(uuid[], text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -8287,7 +8420,7 @@ CREATE FUNCTION public.phoenix_crm_contact_truth_calc(p_contact_crm_id bigint DE
   select distinct on (c.reference_contact_crm_id)
          c.reference_contact_crm_id as contact_crm_id,
          nullif(btrim(c.name), '') as name,
-         nullif(btrim(c.speciality), '') as speciality
+         public.phoenix_crm_customer_kind_label(c.speciality, c.customer_type) as speciality
     from public.phoenix_crm_customers c
    where c.reference_contact_crm_id is not null
      and c.validated_at is not null
@@ -8797,6 +8930,54 @@ $$;
 ALTER FUNCTION public.phoenix_crm_customer_counts_by_seat(p_seat_ids text[]) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_customer_kind_apart(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_customer_kind_apart() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO ''
+    AS $$
+declare
+  v_split record;
+begin
+  select * into v_split
+    from public.phoenix_crm_split_customer_kind(
+      new.customer_type,
+      new.speciality,
+      case when tg_table_name = 'phoenix_crm_customers' then to_jsonb(new) ->> 'list_type' end
+    );
+  new.customer_type := v_split.customer_type;
+  new.speciality := v_split.speciality;
+  return new;
+end
+$$;
+
+ALTER FUNCTION public.phoenix_crm_customer_kind_apart() OWNER TO postgres;
+
+--
+-- Name: phoenix_crm_customer_kind_label(text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO ''
+    AS $$
+  select case
+           when nullif(btrim(p_customer_type), '') is null or p_customer_type = 'Clinic' then nullif(btrim(p_speciality), '')
+           when p_customer_type = 'Polyclinic' then 'Polyclinics'
+           else p_customer_type
+         end
+$$;
+
+ALTER FUNCTION public.phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text) IS 'What the KPI chain classifies a Phoenix CRM customer by: a clinic''s speciality, else its type (owner, 2026-11-19).';
+
+--
 -- Name: phoenix_crm_customer_last_visits(text[], boolean, date, text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -9081,6 +9262,50 @@ $$;
 ALTER FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_customer_visit_tally(text[], boolean, date, date); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) RETURNS TABLE(seat_id text, customer_id uuid, contact_crm_id bigint, last_visit_on date, month_visits integer, total_visits integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  -- Grouped BEFORE the customer join, so the customers are looked up once per row by their key
+  -- rather than hashed whole (measured 19 Nov 2026: the six busiest territories in ~0.1 s).
+  with tally as (
+    select
+      v.seat_id,
+      v.customer_id,
+      max(v.visit_date) as last_visit_on,
+      (count(*) filter (where v.visit_date >= p_month_start))::integer as month_visits,
+      count(*)::integer as total_visits
+    from public.phoenix_crm_countable_visits_with_history v
+    where v.seat_id = any (p_seat_ids)
+      and v.is_test = p_is_test
+      and v.visit_date <= p_through
+      and v.customer_id is not null
+    group by v.seat_id, v.customer_id
+  )
+  select
+    t.seat_id,
+    t.customer_id,
+    coalesce(c.reference_contact_crm_id, c.own_contact_crm_id) as contact_crm_id,
+    t.last_visit_on,
+    t.month_visits,
+    t.total_visits
+  from tally t
+  left join public.phoenix_crm_customers c on c.id = t.customer_id
+  order by t.seat_id, t.customer_id;
+$$;
+
+ALTER FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) IS 'Per customer of each territory: last visit day, visits this month, visits in total — from phoenix_crm_countable_visits_with_history (owner, 19 Nov 2026: every rep weekly plan screen shows them).';
+
+--
 -- Name: phoenix_crm_customers_clear_import_mark(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -9223,7 +9448,7 @@ begin
   values (
     coalesce(new.reference_contact_crm_id, new.own_contact_crm_id),
     nullif(btrim(new.name), ''),
-    nullif(btrim(new.speciality), ''),
+    public.phoenix_crm_customer_kind_label(new.speciality, new.customer_type),
     nullif(btrim(new.phone), ''),
     'phoenix',
     least((new.created_at at time zone 'Africa/Cairo')::date, (now() at time zone 'Africa/Cairo')::date)
@@ -19689,6 +19914,82 @@ $$;
 ALTER FUNCTION public.phoenix_crm_shared_place_day_cap() OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_split_customer_kind(text, text, text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text) RETURNS record
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO ''
+    AS $$
+declare
+  v_places constant text[] := array[
+    'Hospital', 'Private Hospital', 'University Hospital', 'Educational Hospital', 'Armed Forces Hospital',
+    'Police Hospital', 'Contract', 'Health Insurance', 'Educational Institute', 'Pharmacy'
+  ];
+  v_medical constant text[] := array[
+    'Internal Medicine', 'Pediatrics', 'ENT', 'Neurology', 'Chest', 'General Practitioner', 'Urology',
+    'General Surgery', 'Psychiatry', 'Neuro Surgery', 'Vascular Surgery', 'Gastroenterologist',
+    'Ophthalmologist', 'Neuropedia', 'Cardiology', 'NICU', 'Orthopedic Surgery', 'Tropical Medicine',
+    'Dermatologist', 'Nephrology'
+  ];
+  v_named text;
+begin
+  customer_type := nullif(btrim(p_type), '');
+  speciality := nullif(btrim(p_speciality), '');
+
+  if customer_type is not null then
+    if lower(customer_type) in ('polyclinic', 'polyclinics', 'poly clinic', 'poly clinics') then
+      v_named := 'Polyclinic';
+    elsif lower(customer_type) in ('clinic', 'clinics') then
+      v_named := 'Clinic';
+    else
+      select x into v_named from unnest(v_places) x where lower(x) = lower(customer_type);
+    end if;
+    customer_type := coalesce(v_named, customer_type);
+  end if;
+
+  if speciality is not null then
+    v_named := null;
+    if lower(speciality) in ('polyclinic', 'polyclinics', 'poly clinic', 'poly clinics') then
+      v_named := 'Polyclinic';
+    else
+      select x into v_named from unnest(v_places) x where lower(x) = lower(speciality);
+    end if;
+    if v_named is not null then
+      if customer_type is null or customer_type = 'Clinic' then
+        customer_type := v_named;
+      end if;
+      speciality := null;
+    end if;
+  end if;
+
+  if p_list_type = 'Pharmacy' then
+    customer_type := 'Pharmacy';
+    speciality := null;
+    return;
+  end if;
+
+  if customer_type is null
+     and (p_list_type = 'PM'
+          or (speciality is not null and exists (select 1 from unnest(v_medical) m where lower(m) = lower(speciality)))) then
+    customer_type := 'Clinic';
+  end if;
+
+  if customer_type is not null and customer_type not in ('Clinic', 'Polyclinic') then
+    speciality := null;
+  end if;
+end
+$$;
+
+ALTER FUNCTION public.phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text) IS 'Keeps a Phoenix CRM customer''s type and medical speciality apart. Same rule as splitCustomerKind() in src/lib/phoenix-crm/speciality-list.ts (owner, 2026-11-19).';
+
+--
 -- Name: phoenix_crm_start_day(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -20514,12 +20815,12 @@ ALTER FUNCTION public.phoenix_crm_validate_customer(p jsonb) OWNER TO postgres;
 
 CREATE FUNCTION public.phoenix_crm_validated_place_facts(p_place_ids uuid[], p_customer_ids uuid[]) RETURNS jsonb
     LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public'
     SET statement_timeout TO '60s'
+    SET search_path TO 'public'
     AS $$
   select jsonb_build_object(
     'customers', coalesce((
-      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'list_type', c.list_type, 'speciality', c.speciality))
+      select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'list_type', c.list_type, 'speciality', c.speciality, 'customer_type', c.customer_type))
       from public.phoenix_crm_customers c
       where c.id = any(p_customer_ids)
     ), '[]'::jsonb),
@@ -50983,6 +51284,205 @@ CREATE TABLE public.approval_whatsapp_reminders (
 ALTER TABLE public.approval_whatsapp_reminders OWNER TO postgres;
 
 --
+-- Name: approvals_whatsapp_broadcast_recipients; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.approvals_whatsapp_broadcast_recipients (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    broadcast_id uuid NOT NULL,
+    wa_id text NOT NULL,
+    employee_hr_id text,
+    display_name text,
+    parameter_values jsonb DEFAULT '{}'::jsonb NOT NULL,
+    rendered_body text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    wamid text,
+    failure_detail text,
+    sent_at timestamp with time zone,
+    CONSTRAINT approvals_whatsapp_broadcast_recipients_failed_has_detail CHECK (((status = 'failed'::text) = (failure_detail IS NOT NULL))),
+    CONSTRAINT approvals_whatsapp_broadcast_recipients_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'accepted'::text, 'failed'::text]))),
+    CONSTRAINT approvals_whatsapp_broadcast_recipients_wa_id_check CHECK ((wa_id ~ '^[0-9]{8,15}$'::text))
+);
+
+ALTER TABLE public.approvals_whatsapp_broadcast_recipients OWNER TO postgres;
+
+--
+-- Name: TABLE approvals_whatsapp_broadcast_recipients; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.approvals_whatsapp_broadcast_recipients IS 'One row per recipient of an approvals WhatsApp bulk send, written before any send. pending = not sent yet (a resume sends these); accepted = Meta took it (ticks on the message by wamid); failed = Meta refused it, with its reason.';
+
+--
+-- Name: approvals_whatsapp_broadcasts; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.approvals_whatsapp_broadcasts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    template_name text NOT NULL,
+    template_language text NOT NULL,
+    body_preview text,
+    parameter_mapping jsonb DEFAULT '{}'::jsonb NOT NULL,
+    list_id uuid,
+    status text DEFAULT 'queued'::text NOT NULL,
+    recipient_count integer DEFAULT 0 NOT NULL,
+    accepted_count integer DEFAULT 0 NOT NULL,
+    failed_count integer DEFAULT 0 NOT NULL,
+    created_by_hr_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    CONSTRAINT approvals_whatsapp_broadcasts_accepted_count_check CHECK ((accepted_count >= 0)),
+    CONSTRAINT approvals_whatsapp_broadcasts_failed_count_check CHECK ((failed_count >= 0)),
+    CONSTRAINT approvals_whatsapp_broadcasts_recipient_count_check CHECK ((recipient_count >= 0)),
+    CONSTRAINT approvals_whatsapp_broadcasts_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'sending'::text, 'done'::text, 'stopped'::text])))
+);
+
+ALTER TABLE public.approvals_whatsapp_broadcasts OWNER TO postgres;
+
+--
+-- Name: TABLE approvals_whatsapp_broadcasts; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.approvals_whatsapp_broadcasts IS 'One bulk send on the approvals WhatsApp line. Its recipients are approvals_whatsapp_broadcast_recipients; read ticks come from approvals_whatsapp_messages by wamid.';
+
+--
+-- Name: approvals_whatsapp_conversations; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.approvals_whatsapp_conversations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    phone_number_id text NOT NULL,
+    contact_key text NOT NULL,
+    contact_wa_id text,
+    contact_user_id text,
+    contact_name text,
+    contact_username text,
+    last_message_at timestamp with time zone,
+    last_inbound_at timestamp with time zone,
+    last_message_preview text,
+    last_direction text,
+    unread_count integer DEFAULT 0 NOT NULL,
+    employee_hr_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT approvals_whatsapp_conversations_last_direction_check CHECK (((last_direction IS NULL) OR (last_direction = ANY (ARRAY['inbound'::text, 'outbound'::text])))),
+    CONSTRAINT approvals_whatsapp_conversations_unread_count_check CHECK ((unread_count >= 0))
+);
+
+ALTER TABLE public.approvals_whatsapp_conversations OWNER TO postgres;
+
+--
+-- Name: TABLE approvals_whatsapp_conversations; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.approvals_whatsapp_conversations IS 'One row per contact on the approvals WhatsApp line. Maintained ONLY by the approvals_whatsapp_messages insert trigger (employee_hr_id excepted). Super Admin only.';
+
+--
+-- Name: approvals_whatsapp_list_members; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.approvals_whatsapp_list_members (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    list_id uuid NOT NULL,
+    wa_id text NOT NULL,
+    employee_hr_id text,
+    display_name text,
+    added_by_hr_id text,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT approvals_whatsapp_list_members_wa_id_check CHECK ((wa_id ~ '^[0-9]{8,15}$'::text))
+);
+
+ALTER TABLE public.approvals_whatsapp_list_members OWNER TO postgres;
+
+--
+-- Name: TABLE approvals_whatsapp_list_members; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.approvals_whatsapp_list_members IS 'Who is on an approvals WhatsApp broadcast list: an employee (employee_hr_id set) or a pasted number. One number once per list.';
+
+--
+-- Name: approvals_whatsapp_lists; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.approvals_whatsapp_lists (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    description text,
+    created_by_hr_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT approvals_whatsapp_lists_name_check CHECK (((length(btrim(name)) >= 1) AND (length(btrim(name)) <= 120)))
+);
+
+ALTER TABLE public.approvals_whatsapp_lists OWNER TO postgres;
+
+--
+-- Name: TABLE approvals_whatsapp_lists; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.approvals_whatsapp_lists IS 'A named broadcast list on the approvals WhatsApp line. Super Admin only, service role only.';
+
+--
+-- Name: approvals_whatsapp_messages; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.approvals_whatsapp_messages (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid,
+    wamid text,
+    direction text NOT NULL,
+    origin text NOT NULL,
+    phone_number_id text NOT NULL,
+    line_display_number text,
+    contact_wa_id text,
+    contact_user_id text,
+    contact_name text,
+    contact_username text,
+    message_type text NOT NULL,
+    body text,
+    media_id text,
+    media_mime_type text,
+    media_file_name text,
+    media_storage_path text,
+    media_byte_size bigint,
+    media_fetched_at timestamp with time zone,
+    media_fetch_attempts integer DEFAULT 0 NOT NULL,
+    media_fetch_error text,
+    template_name text,
+    reply_to_wamid text,
+    payload jsonb,
+    historical boolean DEFAULT false NOT NULL,
+    sent_at timestamp with time zone DEFAULT now() NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text NOT NULL,
+    status_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    read_at timestamp with time zone,
+    failed_at timestamp with time zone,
+    failure_reason text,
+    failure_detail text,
+    event text,
+    sent_by_hr_id text,
+    broadcast_id uuid,
+    CONSTRAINT approvals_whatsapp_messages_direction_check CHECK ((direction = ANY (ARRAY['inbound'::text, 'outbound'::text]))),
+    CONSTRAINT approvals_whatsapp_messages_failed_has_reason CHECK (((status = 'failed'::text) = (failure_reason IS NOT NULL))),
+    CONSTRAINT approvals_whatsapp_messages_fetched_has_path CHECK (((media_fetched_at IS NULL) = (media_storage_path IS NULL))),
+    CONSTRAINT approvals_whatsapp_messages_has_contact CHECK (((contact_wa_id IS NOT NULL) OR (contact_user_id IS NOT NULL))),
+    CONSTRAINT approvals_whatsapp_messages_media_byte_size_check CHECK (((media_byte_size IS NULL) OR (media_byte_size >= 0))),
+    CONSTRAINT approvals_whatsapp_messages_media_fetch_attempts_check CHECK ((media_fetch_attempts >= 0)),
+    CONSTRAINT approvals_whatsapp_messages_origin_check CHECK ((origin = ANY (ARRAY['contact'::text, 'phoenix'::text, 'handset'::text]))),
+    CONSTRAINT approvals_whatsapp_messages_status_check CHECK ((status = ANY (ARRAY['received'::text, 'accepted'::text, 'sent'::text, 'delivered'::text, 'read'::text, 'failed'::text])))
+);
+
+ALTER TABLE public.approvals_whatsapp_messages OWNER TO postgres;
+
+--
+-- Name: TABLE approvals_whatsapp_messages; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.approvals_whatsapp_messages IS 'Every WhatsApp message on the approvals line, in and out, from 2026-11-19 on: replies, reminders, single and bulk sends. wamid UNIQUE is the idempotency. Super Admin only.';
+
+--
 -- Name: area_consolidation_moves; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -55912,6 +56412,7 @@ CREATE TABLE public.phoenix_crm_customers (
     full_name_held_board jsonb,
     full_name_refused_at timestamp with time zone,
     full_name_refused_name text,
+    customer_type text,
     CONSTRAINT phoenix_crm_customers_active_is_validated CHECK (((status <> 'active'::text) OR (validated_at IS NOT NULL))),
     CONSTRAINT phoenix_crm_customers_dropped_has_reason CHECK (((status <> 'dropped'::text) OR (dropped_reason IS NOT NULL))),
     CONSTRAINT phoenix_crm_customers_grade CHECK (((grade IS NULL) OR (grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text])))),
@@ -56018,6 +56519,12 @@ COMMENT ON COLUMN public.phoenix_crm_customers.full_name_held IS 'A doctor''s fu
 --
 
 COMMENT ON COLUMN public.phoenix_crm_customers.full_name_refused_name IS 'The last full name the Super Admin refused, with full_name_refused_at. Display only.';
+
+--
+-- Name: COLUMN phoenix_crm_customers.customer_type; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_customers.customer_type IS 'Where you call on the customer: Clinic, Polyclinic, a hospital kind, Contract, Health Insurance, Educational Institute, Pharmacy, or an Other text. Only Clinic and Polyclinic carry a speciality (owner, 2026-11-19).';
 
 --
 -- Name: CONSTRAINT phoenix_crm_customers_list_type ON phoenix_crm_customers; Type: COMMENT; Schema: public; Owner: postgres
@@ -57131,7 +57638,11 @@ UNION ALL
             c.own_contact_crm_id,
             c.name,
             c.grade,
-            c.speciality
+                CASE
+                    WHEN ((NULLIF(btrim(c.customer_type), ''::text) IS NULL) OR (c.customer_type = 'Clinic'::text)) THEN NULLIF(btrim(c.speciality), ''::text)
+                    WHEN (c.customer_type = 'Polyclinic'::text) THEN 'Polyclinics'::text
+                    ELSE c.customer_type
+                END AS speciality
            FROM public.phoenix_crm_customers c
          OFFSET 0) customer ON ((customer.id = i.customer_id)));
 
@@ -57533,7 +58044,11 @@ UNION ALL
     ((p.captured_at AT TIME ZONE 'Africa/Cairo'::text) AT TIME ZONE 'UTC'::text) AS visit_date_time,
     NULL::integer AS crm_region_id,
     NULL::text AS crm_region_name,
-    customer.speciality,
+        CASE
+            WHEN ((NULLIF(btrim(customer.customer_type), ''::text) IS NULL) OR (customer.customer_type = 'Clinic'::text)) THEN NULLIF(btrim(customer.speciality), ''::text)
+            WHEN (customer.customer_type = 'Polyclinic'::text) THEN 'Polyclinics'::text
+            ELSE customer.customer_type
+        END AS speciality,
     customer.grade AS crm_contact_grade,
     'phoenix'::text AS source,
     COALESCE(
@@ -66540,6 +67055,7 @@ CREATE TABLE public.phoenix_crm_manager_customers (
     removal_first_decided_by_hr_id text,
     removal_first_decided_role text,
     removal_first_decision_note text,
+    customer_type text,
     CONSTRAINT phoenix_crm_manager_customers_comment CHECK (((comment IS NULL) OR (char_length(comment) <= 500))),
     CONSTRAINT phoenix_crm_manager_customers_contact_note CHECK (((contact_note IS NULL) OR (char_length(contact_note) <= 300))),
     CONSTRAINT phoenix_crm_manager_customers_grade CHECK ((grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text]))),
@@ -66561,6 +67077,12 @@ ALTER TABLE public.phoenix_crm_manager_customers OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.phoenix_crm_manager_customers IS 'Manager''s own list (owner, 2026-10-16): the customers a district manager adds himself for his single visits, graded by him with no validation step. Never merged into his reps'' lists; taking one off needs his RSM/NSM''s approval. Nothing in it counts in a rep''s or the district''s coverage, call rate, frequency or target.';
+
+--
+-- Name: COLUMN phoenix_crm_manager_customers.customer_type; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_manager_customers.customer_type IS 'Where you call on the customer: Clinic, Polyclinic, a hospital kind, Contract, Health Insurance, Educational Institute, Pharmacy, or an Other text. Only Clinic and Polyclinic carry a speciality (owner, 2026-11-19).';
 
 --
 -- Name: phoenix_crm_manager_plan_customers; Type: TABLE; Schema: public; Owner: postgres
@@ -73834,6 +74356,83 @@ ALTER TABLE ONLY public.approval_whatsapp_reminders
     ADD CONSTRAINT approval_whatsapp_reminders_pkey PRIMARY KEY (id);
 
 --
+-- Name: approvals_whatsapp_broadcast_recipients approvals_whatsapp_broadcast_recipients_once; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_broadcast_recipients
+    ADD CONSTRAINT approvals_whatsapp_broadcast_recipients_once UNIQUE (broadcast_id, wa_id);
+
+--
+-- Name: approvals_whatsapp_broadcast_recipients approvals_whatsapp_broadcast_recipients_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_broadcast_recipients
+    ADD CONSTRAINT approvals_whatsapp_broadcast_recipients_pkey PRIMARY KEY (id);
+
+--
+-- Name: approvals_whatsapp_broadcasts approvals_whatsapp_broadcasts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_broadcasts
+    ADD CONSTRAINT approvals_whatsapp_broadcasts_pkey PRIMARY KEY (id);
+
+--
+-- Name: approvals_whatsapp_conversations approvals_whatsapp_conversations_line_contact_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_conversations
+    ADD CONSTRAINT approvals_whatsapp_conversations_line_contact_key UNIQUE (phone_number_id, contact_key);
+
+--
+-- Name: approvals_whatsapp_conversations approvals_whatsapp_conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_conversations
+    ADD CONSTRAINT approvals_whatsapp_conversations_pkey PRIMARY KEY (id);
+
+--
+-- Name: approvals_whatsapp_list_members approvals_whatsapp_list_members_list_wa_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_list_members
+    ADD CONSTRAINT approvals_whatsapp_list_members_list_wa_key UNIQUE (list_id, wa_id);
+
+--
+-- Name: approvals_whatsapp_list_members approvals_whatsapp_list_members_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_list_members
+    ADD CONSTRAINT approvals_whatsapp_list_members_pkey PRIMARY KEY (id);
+
+--
+-- Name: approvals_whatsapp_lists approvals_whatsapp_lists_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_lists
+    ADD CONSTRAINT approvals_whatsapp_lists_name_key UNIQUE (name);
+
+--
+-- Name: approvals_whatsapp_lists approvals_whatsapp_lists_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_lists
+    ADD CONSTRAINT approvals_whatsapp_lists_pkey PRIMARY KEY (id);
+
+--
+-- Name: approvals_whatsapp_messages approvals_whatsapp_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_messages
+    ADD CONSTRAINT approvals_whatsapp_messages_pkey PRIMARY KEY (id);
+
+--
+-- Name: approvals_whatsapp_messages approvals_whatsapp_messages_wamid_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_messages
+    ADD CONSTRAINT approvals_whatsapp_messages_wamid_key UNIQUE (wamid);
+
+--
 -- Name: area_consolidation_moves area_consolidation_move_unique; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -79367,6 +79966,60 @@ CREATE INDEX app_sessions_revoked_at_idx ON public.app_sessions USING btree (rev
 --
 
 CREATE INDEX approval_whatsapp_reminders_wamid_idx ON public.approval_whatsapp_reminders USING btree (wamid) WHERE (wamid IS NOT NULL);
+
+--
+-- Name: approvals_whatsapp_broadcast_recipients_pending_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_broadcast_recipients_pending_idx ON public.approvals_whatsapp_broadcast_recipients USING btree (broadcast_id) WHERE (status = 'pending'::text);
+
+--
+-- Name: approvals_whatsapp_broadcast_recipients_wamid_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_broadcast_recipients_wamid_idx ON public.approvals_whatsapp_broadcast_recipients USING btree (wamid) WHERE (wamid IS NOT NULL);
+
+--
+-- Name: approvals_whatsapp_broadcasts_list_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_broadcasts_list_id_fk_idx ON public.approvals_whatsapp_broadcasts USING btree (list_id);
+
+--
+-- Name: approvals_whatsapp_broadcasts_recent_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_broadcasts_recent_idx ON public.approvals_whatsapp_broadcasts USING btree (created_at DESC);
+
+--
+-- Name: approvals_whatsapp_conversations_recent_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_conversations_recent_idx ON public.approvals_whatsapp_conversations USING btree (last_message_at DESC NULLS LAST);
+
+--
+-- Name: approvals_whatsapp_messages_broadcast_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_messages_broadcast_id_fk_idx ON public.approvals_whatsapp_messages USING btree (broadcast_id);
+
+--
+-- Name: approvals_whatsapp_messages_media_pending_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_messages_media_pending_idx ON public.approvals_whatsapp_messages USING btree (received_at) WHERE ((media_id IS NOT NULL) AND (media_storage_path IS NULL));
+
+--
+-- Name: approvals_whatsapp_messages_recent_templates_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_messages_recent_templates_idx ON public.approvals_whatsapp_messages USING btree (sent_at DESC) WHERE ((direction = 'outbound'::text) AND (template_name IS NOT NULL));
+
+--
+-- Name: approvals_whatsapp_messages_thread_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX approvals_whatsapp_messages_thread_idx ON public.approvals_whatsapp_messages USING btree (conversation_id, sent_at DESC);
 
 --
 -- Name: area_consolidation_applied_at_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -87259,6 +87912,12 @@ CREATE TRIGGER trg_au_seats_sync_vacancy_managers AFTER INSERT OR DELETE OR UPDA
 CREATE TRIGGER trg_lam_region BEFORE INSERT OR UPDATE ON au.line_area_map FOR EACH ROW EXECUTE FUNCTION au.enforce_lam_region();
 
 --
+-- Name: approvals_whatsapp_messages approvals_whatsapp_attach_conversation; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER approvals_whatsapp_attach_conversation BEFORE INSERT ON public.approvals_whatsapp_messages FOR EACH ROW EXECUTE FUNCTION public.approvals_whatsapp_attach_conversation();
+
+--
 -- Name: ats_candidate_comments ats_candidate_comments_no_update; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -87691,6 +88350,12 @@ CREATE CONSTRAINT TRIGGER phoenix_crm_customers_born_validated_has_place AFTER I
 CREATE TRIGGER phoenix_crm_customers_clear_import_mark BEFORE UPDATE OF status ON public.phoenix_crm_customers FOR EACH ROW WHEN ((old.imported_from_ireports360_at IS NOT NULL)) EXECUTE FUNCTION public.phoenix_crm_customers_clear_import_mark();
 
 --
+-- Name: phoenix_crm_customers phoenix_crm_customers_kind_apart; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER phoenix_crm_customers_kind_apart BEFORE INSERT OR UPDATE OF speciality, customer_type, list_type ON public.phoenix_crm_customers FOR EACH ROW EXECUTE FUNCTION public.phoenix_crm_customer_kind_apart();
+
+--
 -- Name: phoenix_crm_customers phoenix_crm_customers_no_double_add; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -87718,13 +88383,19 @@ CREATE CONSTRAINT TRIGGER phoenix_crm_customers_validated_has_place AFTER UPDATE
 -- Name: phoenix_crm_customers phoenix_crm_customers_write_contact_name_row; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
-CREATE TRIGGER phoenix_crm_customers_write_contact_name_row AFTER INSERT OR UPDATE OF status, name, speciality, phone ON public.phoenix_crm_customers FOR EACH ROW WHEN (((new.reference_contact_crm_id IS NULL) AND (NOT new.is_test) AND (new.status = ANY (ARRAY['active'::text, 'pending'::text, 'dropped'::text])) AND (NOT new.campaign_visit_holder))) EXECUTE FUNCTION public.phoenix_crm_customers_write_contact_name_row();
+CREATE TRIGGER phoenix_crm_customers_write_contact_name_row AFTER INSERT OR UPDATE OF status, name, speciality, customer_type, phone ON public.phoenix_crm_customers FOR EACH ROW WHEN (((new.reference_contact_crm_id IS NULL) AND (NOT new.is_test) AND (new.status = ANY (ARRAY['active'::text, 'pending'::text, 'dropped'::text])) AND (NOT new.campaign_visit_holder))) EXECUTE FUNCTION public.phoenix_crm_customers_write_contact_name_row();
 
 --
 -- Name: phoenix_crm_list_requests phoenix_crm_list_requests_with_rep_guard; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
 CREATE TRIGGER phoenix_crm_list_requests_with_rep_guard BEFORE UPDATE ON public.phoenix_crm_list_requests FOR EACH ROW EXECUTE FUNCTION public.phoenix_crm_list_requests_with_rep_guard();
+
+--
+-- Name: phoenix_crm_manager_customers phoenix_crm_manager_customers_kind_apart; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER phoenix_crm_manager_customers_kind_apart BEFORE INSERT OR UPDATE OF speciality, customer_type ON public.phoenix_crm_manager_customers FOR EACH ROW EXECUTE FUNCTION public.phoenix_crm_customer_kind_apart();
 
 --
 -- Name: phoenix_crm_places phoenix_crm_places_line_twin_follow; Type: TRIGGER; Schema: public; Owner: postgres
@@ -88437,6 +89108,41 @@ ALTER TABLE ONLY public.app_auth_users
 
 ALTER TABLE ONLY public.app_auth_users
     ADD CONSTRAINT app_auth_users_test_persona_of_hr_id_fkey FOREIGN KEY (test_persona_of_hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+--
+-- Name: approvals_whatsapp_broadcast_recipients approvals_whatsapp_broadcast_recipients_broadcast_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_broadcast_recipients
+    ADD CONSTRAINT approvals_whatsapp_broadcast_recipients_broadcast_id_fkey FOREIGN KEY (broadcast_id) REFERENCES public.approvals_whatsapp_broadcasts(id) ON DELETE CASCADE;
+
+--
+-- Name: approvals_whatsapp_broadcasts approvals_whatsapp_broadcasts_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_broadcasts
+    ADD CONSTRAINT approvals_whatsapp_broadcasts_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.approvals_whatsapp_lists(id) ON DELETE SET NULL;
+
+--
+-- Name: approvals_whatsapp_list_members approvals_whatsapp_list_members_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_list_members
+    ADD CONSTRAINT approvals_whatsapp_list_members_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.approvals_whatsapp_lists(id) ON DELETE CASCADE;
+
+--
+-- Name: approvals_whatsapp_messages approvals_whatsapp_messages_broadcast_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_messages
+    ADD CONSTRAINT approvals_whatsapp_messages_broadcast_id_fkey FOREIGN KEY (broadcast_id) REFERENCES public.approvals_whatsapp_broadcasts(id) ON DELETE SET NULL;
+
+--
+-- Name: approvals_whatsapp_messages approvals_whatsapp_messages_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.approvals_whatsapp_messages
+    ADD CONSTRAINT approvals_whatsapp_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.approvals_whatsapp_conversations(id) ON DELETE CASCADE;
 
 --
 -- Name: area_consolidation_moves area_consolidation_moves_consolidation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -92375,6 +93081,42 @@ CREATE POLICY app_sessions_service_role_all ON public.app_sessions TO service_ro
 --
 
 ALTER TABLE public.approval_whatsapp_reminders ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approvals_whatsapp_broadcast_recipients; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.approvals_whatsapp_broadcast_recipients ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approvals_whatsapp_broadcasts; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.approvals_whatsapp_broadcasts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approvals_whatsapp_conversations; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.approvals_whatsapp_conversations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approvals_whatsapp_list_members; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.approvals_whatsapp_list_members ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approvals_whatsapp_lists; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.approvals_whatsapp_lists ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: approvals_whatsapp_messages; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.approvals_whatsapp_messages ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: area_consolidation_moves; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -96811,6 +97553,42 @@ CREATE POLICY phx_access_scopes_service_role ON public.access_scopes TO service_
 CREATE POLICY phx_app_auth_users_service_role ON public.app_auth_users TO service_role USING ((( SELECT auth.role() AS role) = 'service_role'::text)) WITH CHECK ((( SELECT auth.role() AS role) = 'service_role'::text));
 
 --
+-- Name: approvals_whatsapp_broadcast_recipients phx_approvals_whatsapp_broadcast_recipients_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_approvals_whatsapp_broadcast_recipients_service_role ON public.approvals_whatsapp_broadcast_recipients TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: approvals_whatsapp_broadcasts phx_approvals_whatsapp_broadcasts_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_approvals_whatsapp_broadcasts_service_role ON public.approvals_whatsapp_broadcasts TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: approvals_whatsapp_conversations phx_approvals_whatsapp_conversations_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_approvals_whatsapp_conversations_service_role ON public.approvals_whatsapp_conversations TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: approvals_whatsapp_list_members phx_approvals_whatsapp_list_members_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_approvals_whatsapp_list_members_service_role ON public.approvals_whatsapp_list_members TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: approvals_whatsapp_lists phx_approvals_whatsapp_lists_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_approvals_whatsapp_lists_service_role ON public.approvals_whatsapp_lists TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: approvals_whatsapp_messages phx_approvals_whatsapp_messages_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_approvals_whatsapp_messages_service_role ON public.approvals_whatsapp_messages TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: areas phx_areas_service_role; Type: POLICY; Schema: public; Owner: postgres
 --
 
@@ -99252,6 +100030,27 @@ GRANT ALL ON FUNCTION public.api_rate_limit_consume(p_bucket_key text, p_limit i
 GRANT ALL ON FUNCTION public.api_rate_limit_consume(p_bucket_key text, p_limit integer, p_window_ms integer) TO service_role;
 
 --
+-- Name: FUNCTION approvals_whatsapp_apply_status(p_wamid text, p_status text, p_at timestamp with time zone, p_failure_detail text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.approvals_whatsapp_apply_status(p_wamid text, p_status text, p_at timestamp with time zone, p_failure_detail text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.approvals_whatsapp_apply_status(p_wamid text, p_status text, p_at timestamp with time zone, p_failure_detail text) TO service_role;
+
+--
+-- Name: FUNCTION approvals_whatsapp_attach_conversation(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.approvals_whatsapp_attach_conversation() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.approvals_whatsapp_attach_conversation() TO service_role;
+
+--
+-- Name: FUNCTION approvals_whatsapp_template_contacts_since(p_since timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.approvals_whatsapp_template_contacts_since(p_since timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.approvals_whatsapp_template_contacts_since(p_since timestamp with time zone) TO service_role;
+
+--
 -- Name: FUNCTION ats_bulk_set_candidate_status(p_candidate_ids uuid[], p_status text, p_note text, p_actor_hr_id text); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -99998,6 +100797,20 @@ REVOKE ALL ON FUNCTION public.phoenix_crm_customer_counts_by_seat(p_seat_ids tex
 GRANT ALL ON FUNCTION public.phoenix_crm_customer_counts_by_seat(p_seat_ids text[]) TO service_role;
 
 --
+-- Name: FUNCTION phoenix_crm_customer_kind_apart(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_customer_kind_apart() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_customer_kind_apart() TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_customer_kind_label(p_speciality text, p_customer_type text) TO service_role;
+
+--
 -- Name: FUNCTION phoenix_crm_customer_last_visits(p_seat_ids text[], p_is_test boolean, p_since date, p_hr_id text); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -100031,6 +100844,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_customer_pharmacy_feedback(p_seat_id te
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_customers_clear_import_mark(); Type: ACL; Schema: public; Owner: postgres
@@ -100763,6 +101583,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_share_line_validation(p jsonb) TO servi
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_shared_place_day_cap() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_shared_place_day_cap() TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_split_customer_kind(p_type text, p_speciality text, p_list_type text, OUT customer_type text, OUT speciality text) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_start_day(p jsonb); Type: ACL; Schema: public; Owner: postgres
@@ -103895,6 +104722,42 @@ GRANT ALL ON TABLE public.app_sessions TO service_role;
 --
 
 GRANT ALL ON TABLE public.approval_whatsapp_reminders TO service_role;
+
+--
+-- Name: TABLE approvals_whatsapp_broadcast_recipients; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.approvals_whatsapp_broadcast_recipients TO service_role;
+
+--
+-- Name: TABLE approvals_whatsapp_broadcasts; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.approvals_whatsapp_broadcasts TO service_role;
+
+--
+-- Name: TABLE approvals_whatsapp_conversations; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.approvals_whatsapp_conversations TO service_role;
+
+--
+-- Name: TABLE approvals_whatsapp_list_members; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.approvals_whatsapp_list_members TO service_role;
+
+--
+-- Name: TABLE approvals_whatsapp_lists; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.approvals_whatsapp_lists TO service_role;
+
+--
+-- Name: TABLE approvals_whatsapp_messages; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.approvals_whatsapp_messages TO service_role;
 
 --
 -- Name: TABLE area_consolidation_moves; Type: ACL; Schema: public; Owner: postgres

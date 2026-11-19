@@ -100,6 +100,7 @@ import { placeChecksSeatScope, readsCompanyPlaceChecks, type PhoenixCrmViewer } 
 import { selectByIds, selectByIdsFewestRequests, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -767,7 +768,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // non-fatal: a chunk that fails leaves its own customers unnamed and nothing else.
   const readCustomers = async (): Promise<Row[]> => {
     const pages = await inChunksOf50(customerIds.length, async (index) =>
-      await supabase.from("phoenix_crm_customers").select("id, name, speciality, list_type").in("id", customerIds.slice(index, index + 50)),
+      await supabase.from("phoenix_crm_customers").select("id, name, speciality, customer_type, list_type").in("id", customerIds.slice(index, index + 50)),
     );
     return pages.flatMap((page) => (page.data ?? []) as Row[]);
   };
@@ -1065,7 +1066,8 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   for (const row of customerRows) {
     customerNames.set(String(row.id), String(row.name ?? ""));
     if (row.list_type) customerLists.set(String(row.id), String(row.list_type));
-    if (row.speciality) customerSpecialities.set(String(row.id), String(row.speciality));
+    const kind = customerKindText(typeof row.customer_type === "string" ? row.customer_type : null, typeof row.speciality === "string" ? row.speciality : null);
+    if (kind) customerSpecialities.set(String(row.id), kind);
   }
 
   /** A number only when the row really carries one — `0` is a coordinate and `null` is not a zero. */

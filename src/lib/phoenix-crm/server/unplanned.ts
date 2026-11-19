@@ -15,6 +15,7 @@ import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-e
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { assertUnplannedVisitApprover, canDecideUnplannedVisit, canOverrideDecision, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
@@ -53,7 +54,7 @@ function record(raw: unknown): Row {
 const UNPLANNED_COLUMNS =
   "visit_id, seat_id, rep_hr_id, entered_by_hr_id, customer_id, visit_date, clarification, status, version, created_at, " +
   "manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, " +
-  "customer:phoenix_crm_customers!customer_id(name, list_type, speciality), " +
+  "customer:phoenix_crm_customers!customer_id(name, list_type, speciality, customer_type), " +
   "visit:phoenix_crm_visits!visit_id(photo_path, location_flag, distance_meters, products, comment, captured_at, " +
   "manager_hr_id, senior_hr_id, product_manager_hr_id, companions:phoenix_crm_visit_companions(hr_id, position))";
 
@@ -242,7 +243,7 @@ export function mapUnplannedRow(row: Row, names: PeopleNames): UnplannedVisitVie
     repName: nameOf(names, textOrNull(row.rep_hr_id)),
     customerName: textOrNull(customer.name) ?? "Customer",
     customerListType: parseListType(customer.list_type),
-    speciality: textOrNull(customer.speciality),
+    speciality: customerKindText(textOrNull(customer.customer_type), textOrNull(customer.speciality)),
     visitDate: String(row.visit_date),
     raisedAt: String(row.created_at),
     clarification: textOrNull(row.clarification) ?? "",

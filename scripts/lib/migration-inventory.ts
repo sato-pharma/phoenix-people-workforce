@@ -2589,6 +2589,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // (v_keeps_decision) beside the new guard. Staging took it through staging-migrate run 94 on the #535 merge
   // (4ca93e74), which succeeded. Re-applying is a no-op (`create or replace` with the same body).
   "20261118220000_phoenix_crm_building_reject_respects_super_admin_seats.sql",
+  // Applied 19 Nov 2026 about 15:45 Cairo by scripts/apply-sql-file.mjs, the standing route, after BOTH MCP doors
+  // declined it ({"status":"declined"} on staging and on production): staging first, then production through the
+  // aws-1 session pooler. It writes NO ledger row. It adds customer_type to phoenix_crm_customers and
+  // phoenix_crm_manager_customers, splits every row (pre-image phoenix_crm_backup_20261119.kind_before, 28,179 rows on
+  // production = every row of the two tables), adds two BEFORE triggers (*_kind_apart), and rebuilds
+  // phoenix_crm_contact_truth_calc, phoenix_crm_customers_write_contact_name_row and the Phoenix halves of
+  // crm_visits_unified and crm_plan_entries_unified to read the kind label. Read back on BOTH cifwmndunmlxjhyjugxa
+  // and ozucdzovmcqvepbozvqf straight after, equal on both: md5(prosrc) phoenix_crm_split_customer_kind
+  // 5f381e4b688eead8ad0f9db04d490410 (2,179 chars, this file's body as-is CRLF), phoenix_crm_customer_kind_apart
+  // 84a80e7b8534500cf34ddb1b3671eeca, phoenix_crm_customer_kind_label 4adc2a2438c65e241035874f4f7d2da2,
+  // phoenix_crm_contact_truth_calc e0b594f036e93005949733cb18d371a3, phoenix_crm_customers_write_contact_name_row
+  // a3fe7134be3aeaac0d292b3f176474ad; all four triggers enabled; 0 non-pharmacy customers whose kind label differs
+  // from the speciality they held before. Re-applying is a no-op (every row already split; `if not exists`,
+  // `create or replace`, and the view rebuild stops if its old text is no longer there).
+  "20261119151229_phoenix_crm_customer_type_apart_from_speciality.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

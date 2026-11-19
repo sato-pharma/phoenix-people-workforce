@@ -1807,9 +1807,10 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   for (const label of ["Phone", "Address", "Brick"]) {
     assert.match(customerForm, new RegExp(`label="${label}"`), `${label} carries no star: it is optional`);
   }
-  // The speciality is the one pick-list since 2026-11-19, drawn by CrmSpecialityField — still optional.
-  assert.match(customerForm, /<CrmSpecialityField [^>]*kind="manager"/, "the speciality is picked from the manager's own list");
-  assert.match(source("src/components/phoenix-crm/speciality-field.tsx"), /label="Speciality"/, "Speciality carries no star: it is optional");
+  // The type and the speciality are two pick-lists since 2026-11-19, drawn by CrmCustomerKindField; a clinic's
+  // speciality is now required (the owner's "only clinics need one"), refused through customerKindProblem.
+  assert.match(customerForm, /<CrmCustomerKindField[\s\S]*?kind="manager"/, "the type and speciality are picked from the manager's own lists");
+  assert.match(source("src/components/phoenix-crm/speciality-field.tsx"), /label="Speciality"/, "the field is labelled Speciality");
   assert.match(customerForm, /label="Area \*"/, "the area stays chosen");
   assert.equal(/areas\.length > 1/.test(customerForm), false, "the area drop-list is always shown: the brick cascades from it");
   assert.equal(/\b(doctors?|accounts?)\b/i.test(customerForm), false, "the form says customers, never doctors or accounts");

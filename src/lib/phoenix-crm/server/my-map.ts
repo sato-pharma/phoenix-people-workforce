@@ -51,10 +51,11 @@ import {
   type OrgSeat,
 } from "@/lib/phoenix-crm/scope";
 import { canReadMyMap, readWorldFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { dedupeIds, selectByIds } from "@/lib/phoenix-crm/server/db";
+import { dedupeIds, selectByIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
 import { plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import type { PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { addDays } from "@/lib/phoenix-crm/visit-report-compute";
 
@@ -93,13 +94,13 @@ function customerFact(row: Row): MyMapCustomerFact {
     seatId: String(row.seat_id),
     listType: row.list_type,
     name: row.name,
-    speciality: row.speciality,
+    speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
     grade: row.grade,
     validatedOn: validatedAt ? cairoDayOfInstant(validatedAt) : null,
   };
 }
 
-const CUSTOMER_COLUMNS = "id, seat_id, name, list_type, speciality, grade, validated_at";
+const CUSTOMER_COLUMNS = "id, seat_id, name, list_type, speciality, customer_type, grade, validated_at";
 
 /** One world's places, customers and this month's countable visits of these territories, every page of each. */
 async function readWorldFacts(seatIds: ReadonlyArray<string>, isTest: boolean, visitDay: string): Promise<MyMapWorldFacts> {

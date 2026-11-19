@@ -3,7 +3,9 @@
 /**
  * Phoenix CRM — "Add a customer" to a district manager's own list (owner, 2026-10-16).
  *
- * Name, the grade AND the potential grade, and the area of his region are what it needs. The speciality, the
+ * Name, the grade AND the potential grade, the area of his region and the customer's TYPE are what it needs,
+ * and a clinic or a polyclinic its speciality (owner, 2026-11-19: "only clinics need one" — this replaces the
+ * 2026-10-18 "optional" for a clinic's speciality). The
  * phone, the address and the brick are OPTIONAL (owner, 2026-10-18: "make everything optional"): he fills
  * them in, or presses Capture location and the capture fills them in, and he can still correct what it
  * read. The area and the brick are CASCADING drop-lists — the areas of his region, then the bricks of the
@@ -20,7 +22,8 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
-import { CrmSpecialityField } from "@/components/phoenix-crm/speciality-field";
+import { CrmCustomerKindField } from "@/components/phoenix-crm/speciality-field";
+import { customerKindProblem } from "@/lib/phoenix-crm/speciality-list";
 import { CrmButton, CrmCard, CrmChoice, CrmField, CrmNote, CrmPill, CrmSelect, crmInputClassName, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import {
@@ -63,6 +66,7 @@ export function ManagerCustomerForm({
   const idPrefix = useId();
   const [name, setName] = useState(defaultName ?? "");
   const [speciality, setSpeciality] = useState("");
+  const [customerType, setCustomerType] = useState("");
   const [phone, setPhone] = useState("");
   const [contactNote, setContactNote] = useState("");
   const [grade, setGrade] = useState<string | null>(null);
@@ -107,6 +111,7 @@ export function ManagerCustomerForm({
   // A phone is optional, but one he wrote wrongly says so.
   const missing =
     missingManagerCustomerField({ name: name.trim() || null, areaChosen: Boolean(areaSeatId), grade, potentialGrade }) ??
+    customerKindProblem({ customerType, speciality, listType: null }) ??
     (phoneRead.ok ? null : "Write the phone as digits — 7 to 15 of them — or leave it empty.");
   const brickList = bricks.data?.bricks ?? [];
 
@@ -175,6 +180,7 @@ export function ManagerCustomerForm({
         "/api/phoenix-crm/manager-plans/customers",
         {
           name: name.trim(),
+          customerType: customerType.trim() || null,
           speciality: speciality.trim() || null,
           phone: phone.trim() || null,
           address: address.trim() || null,
@@ -241,8 +247,15 @@ export function ManagerCustomerForm({
       ) : null}
 
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-        <CrmSpecialityField id={`${idPrefix}-speciality`} kind="manager" onChange={setSpeciality} value={speciality} />
-        <CrmField htmlFor={`${idPrefix}-phone`} label="Phone">
+        <CrmCustomerKindField
+          customerType={customerType}
+          idPrefix={idPrefix}
+          kind="manager"
+          onSpecialityChange={setSpeciality}
+          onTypeChange={setCustomerType}
+          speciality={speciality}
+        />
+        <CrmField className="sm:col-span-2" htmlFor={`${idPrefix}-phone`} label="Phone">
           <input className={crmInputClassName} id={`${idPrefix}-phone`} inputMode="tel" maxLength={30} onChange={(event) => setPhone(event.target.value)} type="tel" value={phone} />
         </CrmField>
       </div>

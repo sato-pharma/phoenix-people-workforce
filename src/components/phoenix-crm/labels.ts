@@ -7,6 +7,7 @@ import { dayLabel, dayLabelWithYear, plural, visitMomentText } from "@/component
 import type { PillTone } from "@/components/phoenix-crm/ui";
 import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { followUpInWeek, usualDaysOf } from "@/lib/phoenix-crm/plan-insight";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { PHOENIX_CRM_WEEKDAY_SHORT } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
@@ -39,17 +40,24 @@ export function territoryLine(territory: TerritorySummary): string {
  * `customerMetaText` opens with. It is for a row that already prints AM or PM in a column of its
  * own, where saying it twice is noise: the rep's "Your day" panel on his landing page.
  */
-export function gradeSpecialityText(customer: { grade: PhoenixCrmGrade | null; speciality: string | null }): string {
+/**
+ * A customer's kind for a row: his type and his speciality, kept apart since 2026-11-19 ("Pediatrics" for a
+ * clinic, "Polyclinic · ENT", "Hospital"). A caller that has no type passes none and the speciality stands alone.
+ */
+type KindedCustomer = { grade: PhoenixCrmGrade | null; speciality: string | null; customerType?: string | null };
+
+export function gradeSpecialityText(customer: KindedCustomer): string {
   return gradeSpecialityParts(customer).join(" · ");
 }
 
 /** The same words as their parts, for a row that isolates each part's direction (an Arabic speciality). */
-export function gradeSpecialityParts(customer: { grade: PhoenixCrmGrade | null; speciality: string | null }): string[] {
-  return [customer.grade ? `Grade ${customer.grade}` : "No grade", customer.speciality].filter((part): part is string => Boolean(part));
+export function gradeSpecialityParts(customer: KindedCustomer): string[] {
+  const kind = customer.customerType === undefined ? customer.speciality : customerKindText(customer.customerType, customer.speciality);
+  return [customer.grade ? `Grade ${customer.grade}` : "No grade", kind].filter((part): part is string => Boolean(part));
 }
 
 /** "PM · Grade B · Internal Medicine". */
-export function customerMetaText(customer: { listType: PhoenixCrmListType; grade: PhoenixCrmGrade | null; speciality: string | null }): string {
+export function customerMetaText(customer: KindedCustomer & { listType: PhoenixCrmListType }): string {
   return `${listText(customer.listType)} · ${gradeSpecialityText(customer)}`;
 }
 
@@ -66,6 +74,8 @@ export function placeName(place: { label: string | null; zone: string | null; br
  * never says cannot, must, blocked or missing.
  */
 export const PENDING_PILL = "Not validated yet";
+/** Beside a customer still owed his type, or a clinic its speciality (owner, 2026-11-19); a visit asks for it first. */
+export const KIND_MISSING_PILL = "Speciality missing";
 /** Beside a customer whose third visit before validation the save would refuse (owner, 2026-10-28). */
 export const VALIDATE_FIRST_PILL = "Validate first";
 export const PENDING_COUNTS_NOTE = "Your visits here start counting once you validate.";

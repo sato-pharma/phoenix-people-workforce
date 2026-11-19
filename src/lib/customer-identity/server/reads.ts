@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { parseCrmContactCode } from "@/lib/crm/contact-code";
 import { isValidatedMarketingCustomer, marketingCustomerHubKind } from "@/lib/customer-360/validated";
 import { identityNameKey, suggestIdentityPairs } from "@/lib/customer-identity/suggestions";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import type {
   DistributorCodePair,
   IdentityCandidate,
@@ -87,13 +88,14 @@ async function phoenixCrmCandidates(): Promise<IdentityCandidate[]> {
     id: string;
     name: string | null;
     speciality: string | null;
+    customer_type: string | null;
     list_type: string | null;
     reference_contact_crm_id: number | null;
   }> = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await admin
       .from("phoenix_crm_customers")
-      .select("id, name, speciality, list_type, reference_contact_crm_id")
+      .select("id, name, speciality, customer_type, list_type, reference_contact_crm_id")
       .eq("is_test", false)
       // A "Campaign visit N" holder (20261029212200) files old campaign visits and names no doctor.
       .eq("campaign_visit_holder", false)
@@ -115,7 +117,7 @@ async function phoenixCrmCandidates(): Promise<IdentityCandidate[]> {
         name: text(row.name),
         source: "phoenix_crm" as const,
         sourceId: String(row.id),
-        speciality: row.speciality,
+        speciality: customerKindText(row.customer_type, row.speciality),
       },
     ];
   });

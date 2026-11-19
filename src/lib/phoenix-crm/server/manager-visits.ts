@@ -36,6 +36,7 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { holdsPlannedDoctors, joinPeopleNames, MANAGER_CUSTOMER_ADDRESS_MAX, managerSeniorPeople, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerVisitDetailEditable, parseManagerVisitDetail } from "@/lib/phoenix-crm/manager-visit-detail-rules";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
@@ -283,11 +284,11 @@ async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise
   const out = new Map<string, { name: string; speciality: string | null; seatId: string | null }>();
   if (ids.length === 0) return out;
   const rows = await fetchAllRowsKeyset<Row>(
-    () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality, seat_id").in("id", ids),
+    () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality, customer_type, seat_id").in("id", ids),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   for (const row of rows) {
-    out.set(String(row.id), { name: textOrNull(row.name) ?? "Customer", speciality: textOrNull(row.speciality), seatId: textOrNull(row.seat_id) });
+    out.set(String(row.id), { name: textOrNull(row.name) ?? "Customer", speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)), seatId: textOrNull(row.seat_id) });
   }
   return out;
 }

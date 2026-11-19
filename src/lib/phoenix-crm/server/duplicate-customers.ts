@@ -7,6 +7,7 @@ import { territoryName } from "@/lib/phoenix-crm/scope";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -171,7 +172,7 @@ export function oneRowPerDoctor<T extends Row>(rows: readonly T[]): T[] {
     if (!seatId || !id || !name) continue;
     byId.set(id, row);
     const held = bySeat.get(seatId) ?? [];
-    held.push({ kind: identityKindOf(row.list_type), name, source: "phoenix_crm", sourceId: id, speciality: text(row.speciality) || null });
+    held.push({ kind: identityKindOf(row.list_type), name, source: "phoenix_crm", sourceId: id, speciality: customerKindText(text(row.customer_type), text(row.speciality)) });
     bySeat.set(seatId, held);
   }
   const hidden = new Set<string>();
@@ -234,7 +235,7 @@ export async function loadDuplicateCustomers(viewer: PhoenixCrmViewer): Promise<
       name,
       source: "phoenix_crm",
       sourceId: text(row.id),
-      speciality: text(row.speciality) || null,
+      speciality: customerKindText(text(row.customer_type), text(row.speciality)),
     });
     bySeat.set(seatId, held);
   }
@@ -329,7 +330,7 @@ async function readListedCustomers(): Promise<Row[]> {
         () => {
           let query = admin
             .from("phoenix_crm_customers")
-            .select("id, name, speciality, grade, potential_grade, phone, primary_pharmacy_name, list_type, seat_id, validated_at, created_at")
+            .select("id, name, speciality, customer_type, grade, potential_grade, phone, primary_pharmacy_name, list_type, seat_id, validated_at, created_at")
             .eq("is_test", false)
             // 🔴 THE ARCHIVE IS LEFT OUT, OR THE LIST NEVER CLEARS. Removing a duplicate means dropping one
             //    row, and a dropped row is `dropped` — it stays in the database for ever, so a group that

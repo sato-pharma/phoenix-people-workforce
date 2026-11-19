@@ -42,13 +42,15 @@ export type PhoenixCustomerRow = {
   validated_at: string | null;
   is_test: boolean | null;
   speciality: string | null;
+  /** Where you call on him (2026-11-19): a pharmacy on a doctor's list now says Pharmacy HERE, not in the speciality. */
+  customer_type?: string | null;
   reference_contact_crm_id: number | null;
   own_contact_crm_id: number | null;
 };
 
 /** The select list that reads every column {@link isValidatedPhoenixHubRow} needs. */
 export const PHOENIX_VALIDATION_COLUMNS =
-  "id, list_type, status, validated_at, is_test, speciality, reference_contact_crm_id, own_contact_crm_id";
+  "id, list_type, status, validated_at, is_test, speciality, customer_type, reference_contact_crm_id, own_contact_crm_id";
 
 /** The column whose presence IS the validation — the reader filters `not null` on it. */
 export const PHOENIX_VALIDATED_AT_COLUMN = "validated_at";
@@ -92,7 +94,7 @@ export function isValidatedPhoenixHubRow(row: PhoenixCustomerRow): boolean {
   const status = String(row.status ?? "").trim().toLowerCase();
   if (status !== "active" && status !== "dropped") return false;
   if (phoenixContactId(row) == null) return false;
-  if (isPharmacySpeciality(row.speciality)) return false;
+  if (isPharmacySpeciality(row.speciality) || isPharmacySpeciality(row.customer_type)) return false;
   return true;
 }
 

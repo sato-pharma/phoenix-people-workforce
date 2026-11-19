@@ -32,7 +32,8 @@ import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
-import { CrmSpecialityField } from "@/components/phoenix-crm/speciality-field";
+import { CrmCustomerKindField } from "@/components/phoenix-crm/speciality-field";
+import { customerKindProblem, defaultCustomerType } from "@/lib/phoenix-crm/speciality-list";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
@@ -101,6 +102,7 @@ export function OutOfListEntry({
   // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
+  const [customerType, setCustomerType] = useState("");
   // Optional, saved with the validation, exactly as on the List's Validate (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
   // The grade he proposes: the add request is filed with it, in the same save.
@@ -142,6 +144,8 @@ export function OutOfListEntry({
       if (nameProblem) return nameProblem;
     } else if (cleanName.length < 3) return "Write the customer's full name.";
     if (!grade) return GRADE_NEEDED;
+    const kindProblem = customerKindProblem({ customerType, speciality, listType });
+    if (kindProblem) return kindProblem;
     const phoneCheck = parseCustomerPhone(phone);
     if (!phoneCheck.ok) return phoneCheck.error;
     return placeDraftProblem(draft, { needsPhoto: true });
@@ -165,7 +169,14 @@ export function OutOfListEntry({
           seatId,
           test,
           mode: "outside",
-          customer: { listType, name: cleanName, ...(doctorName ? { nameParts } : {}), speciality: normalizedName(speciality) || null, proposedGrade: grade },
+          customer: {
+            listType,
+            name: cleanName,
+            ...(doctorName ? { nameParts } : {}),
+            customerType: normalizedName(customerType) || null,
+            speciality: normalizedName(speciality) || null,
+            proposedGrade: grade,
+          },
           allowSameName,
           phone: phone.trim() || null,
           // The List's own place body (place-editor.tsx): the pin, and the photo's own reading under
@@ -264,6 +275,7 @@ export function OutOfListEntry({
               label="AM or PM"
               onChange={(next) => {
                 setListType(next);
+                setCustomerType((previous) => previous || defaultCustomerType(next));
                 setSameName(false);
                 setProblem(null);
               }}
@@ -303,13 +315,20 @@ export function OutOfListEntry({
               />
             </CrmField>
           )}
-          <CrmSpecialityField
-            className="sm:col-span-2"
+          <CrmCustomerKindField
+            customerType={customerType}
             disabled={saving}
-            id="phoenix-crm-outside-speciality"
+            idPrefix="phoenix-crm-outside"
             kind={listType}
-            onChange={setSpeciality}
-            value={speciality}
+            onSpecialityChange={(next) => {
+              setSpeciality(next);
+              setProblem(null);
+            }}
+            onTypeChange={(next) => {
+              setCustomerType(next);
+              setProblem(null);
+            }}
+            speciality={speciality}
           />
           <CrmField className="sm:col-span-2" hint="Your district manager confirms it or changes it, then SFE approves the customer." label="The grade you propose">
             <CrmChoice

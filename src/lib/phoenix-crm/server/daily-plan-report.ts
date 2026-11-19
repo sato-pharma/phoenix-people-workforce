@@ -65,7 +65,7 @@ function trimmed(value: unknown): string | null {
  * rep types"). iReports360's own phones are never read here, so a customer not validated yet shows none.
  */
 const DAILY_PLAN_ITEM_COLUMNS =
-  "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, customer:phoenix_crm_customers!customer_id(name, grade, speciality, status, reference_contact_crm_id, phone), place:phoenix_crm_places!place_id(label, address, brick_name, zone, area_name, lat, lon, timings, status)";
+  "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, customer:phoenix_crm_customers!customer_id(name, grade, speciality, customer_type, status, reference_contact_crm_id, phone), place:phoenix_crm_places!place_id(label, address, brick_name, zone, area_name, lat, lon, timings, status)";
 
 /**
  * The one territory the report reads: the chosen one, or the viewer's only one. Line and territory

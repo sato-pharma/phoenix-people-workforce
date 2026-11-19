@@ -71,6 +71,7 @@ import {
 } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { sharedPlanCapRefusal, type SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import {
   assertCanReturnPlan,
   assertReviewer,
@@ -149,7 +150,7 @@ export const PLAN_COLUMNS =
 /** Each item with its customer and place as they are now, so a customer who left the list shows. */
 export const ITEM_COLUMNS =
   "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, " +
-  "customer:phoenix_crm_customers!customer_id(name, grade, speciality, status), " +
+  "customer:phoenix_crm_customers!customer_id(name, grade, speciality, customer_type, status), " +
   "place:phoenix_crm_places!place_id(label, brick_name, zone, lat, lon, timings, status)";
 
 /**
@@ -452,7 +453,7 @@ export function buildDays(input: {
         name: textOrNull(customer.name) ?? "Customer",
         listType,
         grade: parseGrade(customer.grade),
-        speciality: textOrNull(customer.speciality),
+        speciality: customerKindText(textOrNull(customer.customer_type), textOrNull(customer.speciality)),
         placeLabel: textOrNull(place.label),
         brickName: textOrNull(place.brick_name),
         zone: textOrNull(place.zone),
@@ -617,7 +618,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       // A seated customer is planned and counted in the session of his seating (owner, 2026-10-10).
       listType: effectiveListType(listType, places),
       grade: parseGrade(row.grade),
-      speciality: textOrNull(row.speciality),
+      speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
       needsFullName: doctorNeedsFullName({

@@ -86,6 +86,11 @@ export function runCustomer360ValidatedTests() {
   );
   assert.equal(isValidatedPhoenixHubRow(phoenixRow({ speciality: "Pharmacy" })), false, "a pharmacy filed on a doctor's list is not a doctor");
   assert.equal(
+    isValidatedPhoenixHubRow(phoenixRow({ speciality: null, customer_type: "Pharmacy" })),
+    false,
+    "since 2026-11-19 a pharmacy on a doctor's list says so in its TYPE, and is still not a doctor",
+  );
+  assert.equal(
     phoenixContactId({ own_contact_crm_id: 777, reference_contact_crm_id: null }),
     777,
     "a customer a rep added himself is known by the contact Phoenix minted for him",

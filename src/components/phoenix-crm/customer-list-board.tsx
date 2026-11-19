@@ -29,6 +29,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { TableSearchInput } from "@/components/ui/sortable-table";
 import { cairoStamp, dayLabelWithYear } from "@/components/phoenix-crm/format";
 import {
+  KIND_MISSING_PILL,
   listText,
   monthStanding,
   monthVisitsText,
@@ -232,6 +233,7 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
         {customer.locationCheck === "not_confirmed" ? <CrmPill tone="orange">{LOCATION_NOT_CONFIRMED_PILL}</CrmPill> : null}
         {marked && customer.locationCheck !== "checking" ? <CrmPill tone="orange">Validate first</CrmPill> : null}
         {customer.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
+        {customer.kindMissing ? <CrmPill tone="orange">{KIND_MISSING_PILL}</CrmPill> : null}
         {waitingPills(customer)}
       </>
     );
@@ -241,6 +243,7 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
     return (
       <>
         <CrmPill tone="orange">Outside the list</CrmPill>
+        {customer.kindMissing ? <CrmPill tone="orange">{KIND_MISSING_PILL}</CrmPill> : null}
         {customer.locationCheck === "checking" ? <CrmPill tone="info">{LOCATION_CHECKING_PILL}</CrmPill> : null}
         {customer.waiting.some((entry) => entry.kind === "add") ? waitingPills(customer) : <CrmPill>Not asked to add yet</CrmPill>}
       </>
@@ -253,6 +256,8 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
       <CrmPill tone={standing.tone}>{standing.label}</CrmPill>
       {/* Owner, 2026-11-07: out of the plan and Add visit until his full name is written (pm-name-rules.ts). */}
       {customer.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
+      {/* Owner, 2026-11-19: a clinic owes its speciality, every other customer its type; a visit asks first. */}
+      {customer.kindMissing ? <CrmPill tone="orange">{KIND_MISSING_PILL}</CrmPill> : null}
       {customer.origin === "new" ? <CrmPill tone="orange">New customer</CrmPill> : null}
       {customer.pendingGradeRequestId ? (
         <CrmPill tone="info">{customer.pendingGrade ? `Grade ${customer.pendingGrade} proposed` : "Grade proposed"}</CrmPill>

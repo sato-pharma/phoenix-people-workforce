@@ -43,6 +43,7 @@ import {
   monthStanding,
   monthVisitsText,
   PENDING_COUNTS_NOTE,
+  KIND_MISSING_PILL,
   PENDING_PILL,
   pendingVisitsText,
   placeName,
@@ -254,6 +255,7 @@ export function CustomerScreen({
           {pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
           {active ? <CrmPill tone={standing.tone}>{standing.label}</CrmPill> : null}
           {outside ? <CrmPill tone="orange">Outside the list</CrmPill> : null}
+          {customer.kindMissing && !archived ? <CrmPill tone="orange">{KIND_MISSING_PILL}</CrmPill> : null}
           {view.canEdit && needsAddRequest(customer) ? <CrmPill tone="orange">Needs your grade · Ask to add</CrmPill> : null}
           {archived ? <CrmPill>In the Archive</CrmPill> : null}
           {active && customer.origin === "new" ? <CrmPill tone="orange">New customer</CrmPill> : null}

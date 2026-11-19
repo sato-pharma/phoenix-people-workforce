@@ -132,6 +132,7 @@ import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { ITEM_COLUMNS, loadPlanItemRows } from "@/lib/phoenix-crm/server/plans";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -254,7 +255,7 @@ export async function loadRepWeeks(
       customerId,
       name: textOrNull(customer.name) ?? "Customer",
       grade: textOrNull(customer.grade),
-      speciality: textOrNull(customer.speciality),
+      speciality: customerKindText(textOrNull(customer.customer_type), textOrNull(customer.speciality)),
       brickName: textOrNull(place.brick_name),
       zone: textOrNull(place.zone),
       listType: half,

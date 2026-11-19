@@ -25,6 +25,7 @@ import { canReadIntegrityBoard } from "@/lib/phoenix-crm/server/integrity-board"
 import { loadTerritoryCustomers, mapTimings } from "@/lib/phoenix-crm/server/list";
 import { buildLineCustomerListWorkbook, type LineListCustomer, type LineListTerritory } from "@/lib/phoenix-crm/server/line-customer-list-workbook";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { weekTimingsText } from "@/lib/phoenix-crm/timings";
 
 type Row = Record<string, unknown>;
@@ -108,7 +109,7 @@ export async function buildLineCustomerList(
           phone: text(row.phone),
           potential: text(row.potential_grade),
           primaryPharmacy: text(row.primary_pharmacy_name),
-          speciality: text(row.speciality),
+          speciality: customerKindText(text(row.customer_type), text(row.speciality)),
           status: standing(row.status),
         };
       }),

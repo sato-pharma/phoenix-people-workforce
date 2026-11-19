@@ -26,7 +26,7 @@ import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
+import { customerKindProblem, splitCustomerKind } from "@/lib/phoenix-crm/speciality-list";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
 import { parseSamplesGiven, type SamplesGiven } from "@/lib/phoenix-crm/samples";
@@ -811,6 +811,8 @@ export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
 export type NewCustomerDraft = {
   listType: PhoenixCrmListType;
   name: string;
+  /** Where you call on him — a clinic, a hospital, a contract (owner, 2026-11-19), kept apart from the speciality. */
+  customerType: string | null;
   speciality: string | null;
   proposedGrade: PhoenixCrmGrade;
 };
@@ -821,10 +823,25 @@ export type NewCustomerDraft = {
  */
 export type OutsideCustomerDraft = Omit<NewCustomerDraft, "proposedGrade">;
 
+/**
+ * The type and the speciality, kept apart, and refused when a clinic has no speciality (owner, 2026-11-19:
+ * "only clinics need one"). A missing TYPE is refused only from a form that offers one (it sends the
+ * `customerType` key): a page loaded before the Type field existed cannot pick one, and the customer is
+ * then shown "Speciality missing" and asked on the rep's next Edit or visit.
+ */
+function customerKindOf(body: Record<string, unknown>, listType: PhoenixCrmListType): EntryRuleResult<{ customerType: string | null; speciality: string | null }> {
+  const kind = splitCustomerKind({ customerType: body.customerType, speciality: body.speciality, listType });
+  const problem = customerKindProblem({ ...kind, listType });
+  if (problem && (kind.customerType || "customerType" in body)) return { ok: false, error: problem };
+  return { ok: true, value: kind };
+}
+
 export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCustomerDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const listType = parseListType(body.listType);
   if (!listType) return { ok: false, error: "Choose AM or PM." };
+  const kind = customerKindOf(body, listType);
+  if (!kind.ok) return kind;
   // A clinic doctor is written as three names, first, middle and last (owner, 2026-11-07,
   // pm-name-rules.ts); an AM account keeps its one name.
   if (listType === "PM") {
@@ -832,11 +849,11 @@ export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCusto
     if (!full.ok) return full;
     const name = cleanText(full.value, CUSTOMER_NAME_MAX);
     if (!name) return { ok: false, error: "Write the first, middle and last name." };
-    return { ok: true, value: { listType, name, speciality: normalizeSpeciality(body.speciality) } };
+    return { ok: true, value: { listType, name, ...kind.value } };
   }
   const name = cleanText(body.name, CUSTOMER_NAME_MAX);
   if (!name || name.length < 3) return { ok: false, error: "Write the customer's full name." };
-  return { ok: true, value: { listType, name, speciality: normalizeSpeciality(body.speciality) } };
+  return { ok: true, value: { listType, name, ...kind.value } };
 }
 
 /** "Add new customer": the same, plus the grade he proposes — the district manager, then SFE, decide. */

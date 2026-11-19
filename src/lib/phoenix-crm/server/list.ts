@@ -201,7 +201,7 @@ import {
   PHARMACY_LIST_TYPE,
   type ListedPharmacy,
 } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
+import { customerKindMissing, customerKindProblem, normalizeSpeciality, splitCustomerKind } from "@/lib/phoenix-crm/speciality-list";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
@@ -391,7 +391,11 @@ export type ListCustomer = {
   customerId: string;
   listType: PhoenixCrmListType;
   name: string;
+  /** Where you call on him — a clinic, a hospital, a contract — kept apart from the speciality (owner, 2026-11-19). */
+  customerType: string | null;
   speciality: string | null;
+  /** Still owed a type, or a clinic its speciality: the list shows "Speciality missing" and a visit asks first. */
+  kindMissing: boolean;
   grade: PhoenixCrmGrade | null;
   origin: "reference" | "new";
   referenceContactCrmId: number | null;
@@ -837,7 +841,7 @@ const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
   "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id, session, signboard_retake:signboard_check->retake";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, full_name_held, " +
+  "id, list_type, name, customer_type, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, full_name_held, " +
   // A pinned pharmacy's own location (2026-10-09). Every one is nullable and null on every doctor.
   "pharmacy_pin_lat, pharmacy_pin_lon, pharmacy_pin_accuracy_meters, pharmacy_pin_captured_at, pharmacy_pin_captured_by_hr_id, pharmacy_pin_address, " +
   "pharmacy_pin_governorate, pharmacy_pin_area_code, pharmacy_pin_area_name, pharmacy_pin_brick_id, pharmacy_pin_brick_name, pharmacy_pin_brick_distance_km, pharmacy_pin_brick_lookup";
@@ -1858,7 +1862,9 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       customerId,
       listType,
       name: String(row.name),
+      customerType: text(row.customer_type),
       speciality: text(row.speciality),
+      kindMissing: customerKindMissing({ customerType: text(row.customer_type), speciality: text(row.speciality), listType }),
       grade,
       origin,
       referenceContactCrmId: contactCrmId,
@@ -2623,6 +2629,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     first_stage: firstRequestStage(territoryReviewer(viewer.org, seat.seatId) !== null),
   };
   let proposedGrade: PhoenixCrmGrade | null = null;
+  let newKind: CustomerKind | null = null;
   // A manager validates a customer who is ALREADY ON THE LIST, and nothing else: carried over from
   // iReports360 (`reference`) or loaded from the SFE's sheet (`listed`, added on the owner's answer of
   // 2026-10-03, asked directly). Both are the same act — somebody else admitted him and graded him, and
@@ -2657,6 +2664,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     const draft = parseNewCustomer(body.customer);
     if (!draft.ok) throw validationError(draft.error);
     proposedGrade = draft.value.proposedGrade;
+    newKind = { customerType: draft.value.customerType, speciality: draft.value.speciality };
     Object.assign(payload, {
       mode: "new",
       name: draft.value.name,
@@ -2672,6 +2680,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     const draft = parseNewCustomer(body.customer);
     if (!draft.ok) throw validationError(draft.error);
     proposedGrade = draft.value.proposedGrade;
+    newKind = { customerType: draft.value.customerType, speciality: draft.value.speciality };
     Object.assign(payload, {
       mode: "outside",
       name: draft.value.name,
@@ -2757,6 +2766,8 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_validate_customer", { p: payload });
+  // The RPC knows only the speciality; the type the rep picked is written beside it straight after.
+  if (newKind) await saveCustomerKind(String(result.customer_id), newKind);
   const requestKind = text(result.request_kind);
   const validated: ValidateResult = {
     customerId: String(result.customer_id),
@@ -2922,8 +2933,14 @@ export async function renameCustomer(
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to change.");
   const customerId = String(body.customerId).toLowerCase();
+  // The visit form's "Speciality missing" step sends the type and speciality alone (owner, 2026-11-19: the
+  // rep is asked for it before his next visit): the name, the phone and the board check are not touched.
+  if (body.kindOnly === true) return saveKindOnly(seat.seatId, isTest, customerId, body);
   const phone = Object.prototype.hasOwnProperty.call(body, "phone") ? parseCustomerPhone(body.phone) : null;
   if (phone && !phone.ok) throw validationError(phone.error);
+  // The type and the speciality, kept apart (owner, 2026-11-19). A form that offers the Type sends its key;
+  // a page loaded before it existed leaves the type as it was and moves only the speciality, as before.
+  const kind = Object.prototype.hasOwnProperty.call(body, "customerType") ? await renameKindOf(customerId, body) : null;
   // A clinic doctor's new name is three names, held against his board (owner, 2026-11-07).
   const named = await fullNameForRename(seat.seatId, isTest, customerId, body);
   const result = await callPhoenixCrm<Row>("phoenix_crm_rename_customer", {
@@ -2934,11 +2951,12 @@ export async function renameCustomer(
       customer_id: customerId,
       name: named.name,
       // Picked from the one list, or an "Other" text — folded into the list name it spells.
-      speciality: normalizeSpeciality(body.speciality),
+      speciality: kind ? kind.speciality : normalizeSpeciality(body.speciality),
       allow_same_name: body.allowSameName === true,
       ...(phone?.ok ? { phone: phone.value } : {}),
     },
   });
+  if (kind) await saveCustomerKind(customerId, kind);
   if (named.hold) {
     await callPhoenixCrm<Row>("phoenix_crm_hold_full_name", {
       p: {
@@ -2958,6 +2976,68 @@ export async function renameCustomer(
     speciality: text(result.speciality),
     phone: text(result.phone),
   };
+}
+
+type CustomerKind = { customerType: string | null; speciality: string | null };
+
+/** The type and speciality a correction saves, refused when a clinic is left without its speciality. */
+async function renameKindOf(customerId: string, body: Record<string, unknown>): Promise<CustomerKind> {
+  const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("list_type").eq("id", customerId).maybeSingle();
+  if (error) throw toQueryError(error);
+  const listType = text((data as Row | null)?.list_type);
+  const kind = splitCustomerKind({ customerType: body.customerType, speciality: body.speciality, listType });
+  const problem = customerKindProblem({ ...kind, listType });
+  if (problem) throw validationError(problem);
+  return kind;
+}
+
+/**
+ * Only the type and speciality, on a customer of this seat: the visit form asks for them first when a
+ * customer still owes one. Unlike the correction screen this save IS the whole request, so a failure throws.
+ */
+async function saveKindOnly(
+  seatId: string,
+  isTest: boolean,
+  customerId: string,
+  body: Record<string, unknown>,
+): Promise<{ customerId: string; customerName: string; speciality: string | null; phone: string | null }> {
+  const supabase = getSupabaseAdmin();
+  const read = await supabase
+    .from("phoenix_crm_customers")
+    .select("id, name, list_type, phone")
+    .eq("id", customerId)
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .maybeSingle();
+  if (read.error) throw toQueryError(read.error);
+  const row = read.data as Row | null;
+  if (!row) throw validationError("Choose the customer to change.");
+  const listType = text(row.list_type);
+  const kind = splitCustomerKind({ customerType: body.customerType, speciality: body.speciality, listType });
+  const problem = customerKindProblem({ ...kind, listType });
+  if (problem) throw validationError(problem);
+  const saved = await supabase
+    .from("phoenix_crm_customers")
+    .update({ customer_type: kind.customerType, speciality: kind.speciality })
+    .eq("id", customerId)
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest);
+  if (saved.error) throw toQueryError(saved.error);
+  return { customerId, customerName: String(row.name), speciality: kind.speciality, phone: text(row.phone) };
+}
+
+/**
+ * The type beside the speciality. The save RPCs carry only the speciality, so the type is written straight
+ * after them; the table's own trigger (`phoenix_crm_customers_kind_apart`) keeps the pair apart whatever
+ * arrives. A failure is logged and never undoes the save — the customer then shows "Speciality missing" and
+ * is asked again on the rep's next Edit or visit.
+ */
+async function saveCustomerKind(customerId: string, kind: CustomerKind): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from("phoenix_crm_customers")
+    .update({ customer_type: kind.customerType, speciality: kind.speciality })
+    .eq("id", customerId);
+  if (error) logError("Phoenix CRM list: the customer's type could not be saved", { error, labels: { event: "phoenix_crm_customer_kind_save_failed", customerId } });
 }
 
 /**
