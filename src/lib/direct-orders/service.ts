@@ -123,6 +123,7 @@ import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { refreshSharedTradeCounterparties } from "@/lib/crm/shared-windows";
 import { extraDirectOrderAreaCodes } from "@/lib/direct-orders/extra-area-grants";
 import {
+  buildDirectOrderCollectionHistory,
   canRecordDirectOrderCollection,
   collectionMatchesExpected,
   deriveDirectOrderCollection,
@@ -130,6 +131,7 @@ import {
   directOrderCollectionDbError,
   DIRECT_ORDER_FINANCE_HR_ID,
   type ExpectedDirectOrderCollection,
+  resolveAddedDirectOrderPayment,
   todayInCairo,
 } from "@/lib/direct-orders/collection-rules";
 import {
@@ -6655,6 +6657,33 @@ export async function getDirectOrderApprovalDetail(
       };
     }
   }
+  // The order's payment history (19 Nov 2026), from its own collection events: every one carries the total it
+  // replaced and the total it wrote, so each instalment and its date can be shown. Only approved orders can hold
+  // a collection, so nothing is read for any other. A failed read shows no history; it never fails the window.
+  let collectionHistory: DirectOrderApprovalDetail["collectionHistory"] = [];
+  if (request.status === "approved" || request.paidAmount != null) {
+    const { data: collectionRows, error: collectionError } = await getSupabaseAdmin()
+      .from("direct_order_events")
+      .select("event_type, created_at, actor_hr_id, metadata")
+      .eq("request_id", request.id)
+      .in("event_type", ["collection_recorded", "collection_cleared"])
+      .order("created_at", { ascending: true });
+    if (collectionError) {
+      logError("Direct orders: the payment history could not be read", {
+        error: collectionError,
+        labels: { event: "direct_order_collection_history_failed", requestId: request.id },
+      });
+    } else {
+      collectionHistory = buildDirectOrderCollectionHistory(
+        (collectionRows ?? []) as Array<{
+          event_type: string | null;
+          created_at: string | null;
+          actor_hr_id: string | null;
+          metadata: Record<string, unknown> | null;
+        }>,
+      ).map((entry) => ({ ...entry, byName: entry.byHrId ? nameOf(entry.byHrId) ?? entry.byHrId : null }));
+    }
+  }
   const rawMatches =
     (pharmacy?.distributorCodes?.length ?? 0) === 0
       ? await findPossibleDistributorMatchesByPharmacyName(pharmacy?.pharmacyName)
@@ -6788,6 +6817,7 @@ export async function getDirectOrderApprovalDetail(
     missingManagementLine,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
     canRecordCollection: canRecordDirectOrderCollection(access),
+    collectionHistory,
     canSettleServiceFee: canSettleServiceFeeAsAdministrator(access),
     serviceFeeDefaults: canSettleServiceFeeAsAdministrator(access)
       ? {
@@ -7977,6 +8007,12 @@ export async function recordDirectOrderCollection(
   input: {
     requestId: string;
     paidAmount: number | null;
+    /**
+     * "Add a payment" (19 Nov 2026): this one instalment. When present the new total is the EXPECTED total plus it
+     * (resolveAddedDirectOrderPayment), so a stale page loses the compare-and-set instead of adding twice. Never
+     * sent together with `paidAmount`, which REPLACES the total ("Correct the total").
+     */
+    addAmount?: number | null;
     paymentDate: string | null;
     /**
      * The collection the screen showed when Finance pressed Save (parseExpectedDirectOrderCollection).
@@ -8014,7 +8050,13 @@ export async function recordDirectOrderCollection(
   // Clearing: one explicit "nothing collected" state, so a mistake is undoable. All three columns
   // reset together — a payment date left behind with no amount is what makes the phantom-pharmacy
   // check (pharmacy-probation.ts) treat an unpaid order as proof the pharmacy is real.
-  const clearing = input.paidAmount == null;
+  const adding = input.addAmount != null;
+  if (adding && input.paidAmount != null) {
+    badRequest("Send either the payment to add or the corrected total, not both.");
+  }
+  const clearing = !adding && input.paidAmount == null;
+  // The instalment, when this save adds one — named in the order's records beside the new total.
+  let addedPayment: number | null = null;
 
   // What the database function is asked to write. It is a compare-and-set against `expected`, under
   // the order's row lock (below), so these are a request, not the outcome.
@@ -8030,12 +8072,27 @@ export async function recordDirectOrderCollection(
     // lock, and that sum is the one the stored remainder is computed from.
     const offsetTotal = await loadOffsetTotalForOrder(input.requestId);
 
+    // "Add a payment": the total becomes the one the screen showed plus this instalment. `expected` has just been
+    // matched against the row, and the function compares against it again under the lock.
+    let totalPaid = input.paidAmount;
+    if (adding) {
+      const added = resolveAddedDirectOrderPayment({
+        alreadyPaid: expected.paidAmount,
+        addAmount: input.addAmount,
+        salesValue: before.salesValue,
+        offsetTotal,
+      });
+      if (!added.ok) badRequest(added.message);
+      addedPayment = added.addAmount;
+      totalPaid = added.paidAmount;
+    }
+
     // Every guard lives in collection-rules.ts, pure and unit-tested. This runs FIRST and keeps the
     // rules the database does not repeat — the Cairo "not in the future" date and the YYYY-MM-DD shape.
     const outcome = deriveDirectOrderCollection({
       status: before.status,
       salesValue: before.salesValue,
-      paidAmount: input.paidAmount,
+      paidAmount: totalPaid,
       paymentDate: input.paymentDate,
       todayCairo: todayInCairo(),
       offsetTotal,
@@ -8054,12 +8111,19 @@ export async function recordDirectOrderCollection(
         message: "Collection cleared — nothing is recorded as paid against this order.",
         messageOutstanding: null,
       }
-    : {
-        summary: `Direct order collection of ${rpcArgs.p_paid_amount} EGP recorded by ${actorKey}.`,
-        eventType: "collection_recorded",
-        message: `Collected ${rpcArgs.p_paid_amount} EGP on ${rpcArgs.p_payment_date} — paid in full.`,
-        messageOutstanding: `Collected ${rpcArgs.p_paid_amount} EGP on ${rpcArgs.p_payment_date}; {remaining} EGP still outstanding.`,
-      };
+    : addedPayment != null
+      ? {
+          summary: `Direct order payment of ${addedPayment} EGP recorded by ${actorKey}; ${rpcArgs.p_paid_amount} EGP collected in total.`,
+          eventType: "collection_recorded",
+          message: `Payment of ${addedPayment} EGP received on ${rpcArgs.p_payment_date}; ${rpcArgs.p_paid_amount} EGP collected in total — paid in full.`,
+          messageOutstanding: `Payment of ${addedPayment} EGP received on ${rpcArgs.p_payment_date}; ${rpcArgs.p_paid_amount} EGP collected in total, {remaining} EGP still outstanding.`,
+        }
+      : {
+          summary: `Direct order collection of ${rpcArgs.p_paid_amount} EGP recorded by ${actorKey}.`,
+          eventType: "collection_recorded",
+          message: `Collected ${rpcArgs.p_paid_amount} EGP on ${rpcArgs.p_payment_date} — paid in full.`,
+          messageOutstanding: `Collected ${rpcArgs.p_paid_amount} EGP on ${rpcArgs.p_payment_date}; {remaining} EGP still outstanding.`,
+        };
 
   // ONE locked write (F-MKT-005), WITH ITS RECORDS (REC-038 close-out, 19 Nov 2026; owner: "fix the direct-order
   // collection and marketing cancel the same way"). phx_record_direct_order_collection locks the order row FOR UPDATE —

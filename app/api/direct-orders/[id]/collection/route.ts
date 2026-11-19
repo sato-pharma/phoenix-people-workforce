@@ -13,7 +13,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * What the collection control sends (REC-060): the new total and date (each null to clear), and the
+ * What the collection control sends (REC-060): the new total (or, since 19 Nov 2026, `addAmount` — one
+ * payment to add to the total the screen loaded) and date (each null to clear), and the
  * total and date the screen LOADED (each null when nothing was recorded). Every field is optional, so an
  * older tab's body without the expectation, and the empty body a refused role sends, still reach their
  * own answer. parseExpectedDirectOrderCollection keeps judging the expectation's VALUE, with its own
@@ -21,6 +22,8 @@ export const dynamic = "force-dynamic";
  */
 const CollectionBodySchema = z.object({
   paidAmount: z.number().nullable().optional(),
+  // "Add a payment": this instalment alone. The service adds it to the total the screen loaded.
+  addAmount: z.number().nullable().optional(),
   paymentDate: z.string().nullable().optional(),
   expectedPaidAmount: z.number().nullable().optional(),
   expectedPaymentDate: z.string().nullable().optional(),
@@ -55,6 +58,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const updated = await recordDirectOrderCollection(access, {
       requestId: id,
       paidAmount: body.paidAmount ?? null,
+      addAmount: body.addAmount ?? null,
       paymentDate: body.paymentDate ?? null,
       expected: expected.expected,
     });
