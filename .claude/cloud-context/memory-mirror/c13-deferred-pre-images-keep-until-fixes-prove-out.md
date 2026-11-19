@@ -1,12 +1,22 @@
 ---
 name: c13-deferred-pre-images-keep-until-fixes-prove-out
-description: "The 5 unexposed 08-28/08-29 HR+CRM rollback pre-image tables are a DELIBERATE keep (deferred from Track C) — do not DROP until the 08-29 hire-date/probation fixes prove out through September payroll. Already moved out of `public` into `hr_backup_20260829`/`crm_backup_20260828` by migration 20260830133000 (CI-drift-check hygiene, not the C13 trigger) — same day, fully reversible, all 5 row counts unchanged. Re-verified live 2026-09-03: September payroll run still does not exist (only July published, August at part2) — the actual drop trigger has not fired."
+description: "CLOSED 19 Nov 2026 — the owner decided hr_backup_20260829 and crm_backup_20260828 export-then-drop (September payroll published 9 Oct, October 14 Nov, so the keep condition was met); both left EXEMPT_SCHEMAS and sit in scripts/backup-schema-decisions.json. History: the 5 08-28/08-29 HR+CRM rollback pre-image tables were a deliberate keep until the 08-29 hire-date/probation fixes proved out through September payroll; moved out of public by migration 20260830133000."
 metadata: 
   node_type: memory
   type: project
   originSessionId: e97e73e0-80f2-462a-8d5c-7c9b21f03938
-  modified: 2026-09-03T00:58:14.107Z
+  modified: 2026-11-19T05:00:00.000Z
 ---
+
+## Closed 19 Nov 2026 — decided export-then-drop
+
+The condition below was met: September payroll was published 9 Oct 2026 and October 14 Nov. Asked
+on 19 Nov 2026 (in chat, multiple choice), the owner chose **export, then drop** for both schemas.
+They were taken out of `EXEMPT_SCHEMAS` in `scripts/audit-backup-schemas.mjs` and recorded in
+`scripts/backup-schema-decisions.json`. They reach 90 days on 26 Nov (`crm_backup_20260828`) and
+27 Nov (`hr_backup_20260829`); the drop is a dated migration after `scripts/export-backup-schema.mjs`
+has written each one's manifest. Never put them back in the exemptions: an exempt schema is
+PROTECTED whatever its decision says.
 
 ## Re-verified 2026-09-03 against production
 

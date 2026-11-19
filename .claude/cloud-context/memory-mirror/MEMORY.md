@@ -36,6 +36,7 @@
 - [A baseline diff can be another session's unpushed migration](a-baseline-diff-can-be-another-sessions-unpushed-migration.md) - before refreshing production.sql, search every worktree's recent migrations; a live session may already carry the same change.
 - [Production refuses unencrypted database connections](production-database-refuses-unencrypted-connections.md) - SSL enforcement ON since 19 Nov 02:04 Cairo; a script from a checkout older than PR 550 is refused — update the checkout, never drop enforcement.
 - [The PHX backup drive is the same physical disk](the-phx-backup-drive-is-the-same-physical-disk.md) - E: is a partition of the one NVMe, so it survives a deletion, never a disk failure; 05-data-files vanished 11 Nov, recreated 19 Nov 02:47.
+- [The spare laptop keeps its own .env.local](the-spare-laptop-keeps-its-own-env-local.md) - not one of the 15 hard links; every rotation must be pushed to it too. Task "Phoenix Spare Database Password Refresh" fixes the 19 Nov password when the spare next answers.
 
 
 
