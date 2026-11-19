@@ -11,7 +11,8 @@
   Now every spare script asks this one. It answers in two steps:
     1. the last known address (spare-address.txt beside this file), when its SSH port answers and it is
        not one of this laptop's own addresses - a few milliseconds, the normal case;
-    2. otherwise it tries port 22 on every address of this laptop's own home network (one /24), and for
+    2. otherwise it tries port 22 on every address of this laptop's own network (its real size, at most
+       a /24 - a phone hotspot is only 14 addresses), and for
        each that answers it signs in with the spare's own key, checking the laptop's identity against
        the "phoenix-spare" entries in ~/.ssh/known_hosts (HostKeyAlias). Only the real spare passes: an
        address proves nothing, the host key does.
@@ -65,16 +66,40 @@ function Test-IsSpare([string]$ip) {
   return ($LASTEXITCODE -eq 0)
 }
 
-# Every address of this laptop's own /24 whose SSH port answers, this laptop's own left out.
-function Find-OpenSshHosts([string[]]$own) {
-  $bases = @($own | ForEach-Object { ($_ -split '\.')[0..2] -join '.' } | Select-Object -Unique)
-  $probes = foreach ($b in $bases) {
-    foreach ($n in 1..254) {
-      $ip = "$b.$n"
-      if ($own -contains $ip) { continue }
-      $c = New-Object Net.Sockets.TcpClient
-      [pscustomobject]@{ Ip = $ip; Client = $c; Task = $c.ConnectAsync($ip, 22) }
+# The host addresses of each of this laptop's own networks, using the network's REAL size, never wider
+# than a /24. A phone hotspot is a /28 (172.20.10.0-15): scanning it as a /24 hit its broadcast address
+# .15, which Windows refuses outright ("The requested address is not valid in its context", 2026-11-19),
+# and sent the other 240 probes off the network through the phone.
+function Get-ScanAddresses {
+  $seen = @{}
+  foreach ($nic in [Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+    if ($nic.OperationalStatus -ne 'Up' -or $nic.NetworkInterfaceType -eq 'Loopback') { continue }
+    $props = $nic.GetIPProperties()
+    if (-not ($props.GatewayAddresses | Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' })) { continue }
+    foreach ($a in $props.UnicastAddresses) {
+      if ($a.Address.AddressFamily -ne 'InterNetwork') { continue }
+      $prefix = [int]$a.PrefixLength
+      if ($prefix -lt 24 -or $prefix -gt 32) { $prefix = 24 }
+      $size = [long][math]::Pow(2, 32 - $prefix)
+      if ($size -lt 4) { continue }
+      $b = $a.Address.GetAddressBytes()
+      $n = ([long]$b[0] -shl 24) + ([long]$b[1] -shl 16) + ([long]$b[2] -shl 8) + [long]$b[3]
+      $net = $n - ($n % $size)
+      for ($h = $net + 1; $h -le $net + $size - 2; $h++) {   # not ($a..$b): 5.1 ranges are Int32 only
+        $ip = '{0}.{1}.{2}.{3}' -f (($h -shr 24) -band 255), (($h -shr 16) -band 255), (($h -shr 8) -band 255), ($h -band 255)
+        if (-not $seen.ContainsKey($ip)) { $seen[$ip] = $true; $ip }
+      }
     }
+  }
+}
+
+# Every address of this laptop's own network whose SSH port answers, this laptop's own left out.
+function Find-OpenSshHosts([string[]]$own) {
+  $probes = foreach ($ip in @(Get-ScanAddresses)) {
+    if ($own -contains $ip) { continue }
+    $c = New-Object Net.Sockets.TcpClient
+    # An address Windows refuses to dial throws at once instead of failing the task: skip it quietly.
+    try { [pscustomobject]@{ Ip = $ip; Client = $c; Task = $c.ConnectAsync($ip, 22) } } catch { $c.Dispose() }
   }
   if (-not $probes) { return }
   try { [void][Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($probes | ForEach-Object { $_.Task }), 2500) } catch { }

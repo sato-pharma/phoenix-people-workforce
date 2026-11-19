@@ -85,6 +85,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/phx-memory-health.ps1` | 9252 | `42a06c3eb1d87266` |
 | `scripts/portal-home-speed/measure.mjs` | 4373 | `839f2fbb28046402` |
 | `scripts/prune-claude-json.mjs` | 4263 | `5a193870fb9b0bf3` |
+| `scripts/ram-cleaner-now.ps1` | 2922 | `cd2b657ad55c9171` |
 | `scripts/ram-cleaner-watch.ps1` | 2249 | `4d06ab3f56b17b68` |
 | `scripts/ram-cleaner.ps1` | 19238 | `6290fd64165efb71` |
 | `scripts/ram-guard.ps1` | 22023 | `1a6290775e77a4bf` |
@@ -107,7 +108,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/scrub-staging-passwords.mjs` | 7200 | `a3bb820a598b2381` |
 | `scripts/slowness-sentinel-watch.ps1` | 2519 | `4523c5301ee076e8` |
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
-| `scripts/spare-address.ps1` | 7223 | `d8d0274eb616ddae` |
+| `scripts/spare-address.ps1` | 8826 | `bd94e583de501b98` |
 | `scripts/spare-browser-guard.ps1` | 5743 | `cf1529a8a651e269` |
 | `scripts/spare-db-password-refresh.mjs` | 8899 | `1d009fb990a2dc49` |
 | `scripts/spare-db-password-refresh.ps1` | 1110 | `19e5bfebc75143f5` |
