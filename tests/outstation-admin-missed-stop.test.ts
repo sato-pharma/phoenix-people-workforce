@@ -8,6 +8,12 @@ import {
   adminAddedStopNotes,
   readJourneyStops,
 } from "@/lib/outstation/chained-journey";
+import {
+  adminMissedStopRule,
+  isJourneyStopOpen,
+  journeyStopEvidenceKind,
+  journeyStopEvidenceRefusal,
+} from "@/lib/outstation/journey-stop-rules";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -21,7 +27,9 @@ import { stripComments } from "./support/comment-strip.ts";
 //   3. the stop is marked as the administrator's, keeps that mark when read back, and says so in the
 //      approval reason;
 //   4. the form's Cairo time becomes the right instant in winter and in summer;
-//   5. Expense Approvals offers it only for an undecided car trip under the cap.
+//   5. Expense Approvals offers it only where the service would take it, under the cap;
+//   6. without a car HR adds the leg's ticket with the stop — on a National Sales Manager's claim the
+//      system accepted too (owner, 2026-11-19: Amr Naguib, Cairo to Sohag, Sohag to Assiut, home).
 
 const root = process.cwd();
 const service = stripComments(readFileSync(join(root, "src/lib/outstation/service.ts"), "utf8"));
@@ -50,9 +58,11 @@ export function runOutstationAdminMissedStopTests(): void {
   const write = at("await writeJourneyStopToClaim({");
   for (const guard of [
     "assertOutstationClaimUnchanged({",
-    'request.expenseType !== "traveling" || request.transportationType !== "car"',
-    "(JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status)",
+    'request.expenseType !== "traveling"',
+    "if (!isJourneyStopOpen(request.status, request.employeeRole))",
     "isOutstationExpenseInPayroll(linkedPayroll)",
+    "payrollRowHoldsPersonsFigure(linkedPayroll)",
+    "if (evidenceRefusal) throw new Error(evidenceRefusal);",
     "existingStops.length >= MAX_JOURNEY_STOPS",
     "if (!reason) throw new Error(",
     "if (!usablePosition(input.latitude, input.longitude))",
@@ -61,7 +71,11 @@ export function runOutstationAdminMissedStopTests(): void {
   ]) {
     assert.ok(at(guard) < write, `${guard} must be checked before the stop is written`);
   }
-  assert.ok(at("assertOutstationClaimUnchanged({") < at("JOURNEY_STOP_OPEN_STATUSES"), "the version is checked first");
+  assert.ok(at("assertOutstationClaimUnchanged({") < at("isJourneyStopOpen("), "the version is checked first");
+  assert.ok(
+    at("if (evidenceRefusal) throw new Error(evidenceRefusal);") < at("uploadOutstationTicketAttachments("),
+    "a refused ticket is never stored",
+  );
 
   // ── 2. The employee's own measurement, pricing and write — never a fork ────────────────────────
   assert.ok(at("await measureJourneyStop({") < at("await priceJourneyStops({"));
@@ -102,8 +116,38 @@ export function runOutstationAdminMissedStopTests(): void {
   // ── 5. Offered only where the service would accept it ───────────────────────────────────────────
   assert.match(
     attachmentsRoute,
-    /requestRow\.expenseType === "traveling" &&\s+requestRow\.transportationType === "car" &&\s+isOutstationClaimUndecided\(requestRow\.status\) &&\s+stops\.length < MAX_JOURNEY_STOPS/,
+    /requestRow\.expenseType === "traveling" &&\s+isJourneyStopOpen\(requestRow\.status, requestRow\.employeeRole\) &&\s+stops\.length < MAX_JOURNEY_STOPS/,
   );
+  assert.match(attachmentsRoute, /ticket: adminMissedStopRule\(\{/, "the screen asks the ticket only where the service does");
   assert.match(attachmentsRoute, /revision: outstationClaimRevision\(requestRow\.updatedAt\)/);
   assert.match(attachmentsRoute, /stop\.addedByAdmin \? "" : stop\.photoPath/, "no signed URL is asked for a stop with no photo");
+
+  // ── 6. Without a car, HR adds the leg's ticket — on a system-accepted NSM claim too ───────────────
+  const nsm = "National Sales Manager";
+  const nsmTrain = adminMissedStopRule({ employeeRole: nsm, transportationType: "train" });
+  assert.deepEqual(nsmTrain, { paysFuel: false, photo: false, ticket: "optional" }, "an NSM owes no evidence: the ticket is optional");
+  assert.equal(isJourneyStopOpen("accepted_by_system", nsm), true, "HEADLINE: Amr Naguib's accepted train trip takes HR's stop");
+  assert.equal(isJourneyStopOpen("accepted_by_admin", nsm), false, "a person's acceptance still closes it");
+  assert.equal(isJourneyStopOpen("accepted_by_system", "District Manager"), false, "never widened to another role");
+  assert.equal(
+    journeyStopEvidenceRefusal({ hasPhoto: false, rule: nsmTrain, ticketAmount: 250, ticketFileCount: 1 }),
+    null,
+    "HR's 250 ticket with its file joins the system-accepted claim",
+  );
+  assert.equal(journeyStopEvidenceKind(nsmTrain, 1), "location_ticket");
+  assert.match(
+    String(journeyStopEvidenceRefusal({ hasPhoto: false, rule: nsmTrain, ticketAmount: 250, ticketFileCount: 0 })),
+    /a file is required/,
+    "an amount with no ticket file is refused",
+  );
+  const repTrain = adminMissedStopRule({ employeeRole: "Medical Representative", transportationType: "train" });
+  assert.equal(repTrain.ticket, "required", "a role that owes evidence must bring the leg's ticket");
+  assert.ok(journeyStopEvidenceRefusal({ hasPhoto: false, rule: repTrain, ticketAmount: 0, ticketFileCount: 0 }));
+  const car = adminMissedStopRule({ employeeRole: nsm, transportationType: "car" });
+  assert.deepEqual(car, { paysFuel: true, photo: false, ticket: "none" }, "a car's drive is fuel, never a ticket");
+  assert.ok(journeyStopEvidenceRefusal({ hasPhoto: false, rule: car, ticketAmount: 250, ticketFileCount: 1 }));
+  assert.match(admin, /travel: rule\.paysFuel \? "car" : "ticket"/);
+  assert.match(admin, /paysFuel: rule\.paysFuel,/);
+  assert.match(admin, /ticket: \{ amount: stopTicketAmount, uploaded: uploadedTickets \}/);
+  assert.match(stopRoute, /parseOutstationTicketAttachmentDataUrl\(/);
 }

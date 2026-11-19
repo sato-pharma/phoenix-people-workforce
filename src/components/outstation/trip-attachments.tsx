@@ -50,7 +50,24 @@ export type ApproverJourney = {
   stops: ApproverJourneyStop[];
 };
 /** Present when the claim may still take a stop the employee missed (2026-11-03). */
-type MissedStopOffer = { nextStopNumber: number; revision: string; tripEndDate: string; tripStartDate: string };
+type MissedStopOffer = {
+  nextStopNumber: number;
+  revision: string;
+  /** What the leg's ticket is on this trip: none on a car trip, otherwise required or optional (2026-11-19). */
+  ticket?: "none" | "optional" | "required";
+  tripEndDate: string;
+  tripStartDate: string;
+};
+
+/** A ticket file as the data URL the stop route reads; the server checks its type and size. */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("The ticket file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
 export type AttachmentsData = {
   employeeName: string | null;
   found: boolean;
@@ -174,7 +191,16 @@ function MissedStopForm({
   const [longitude, setLongitude] = useState("");
   const [stoppedAtCairo, setStoppedAtCairo] = useState("");
   const [reason, setReason] = useState("");
+  const [ticketAmount, setTicketAmount] = useState("");
+  const [ticketFile, setTicketFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const ticketRule = offer.ticket ?? "none";
+  const ticketMissing =
+    ticketRule === "required"
+      ? !ticketFile || !(Number(ticketAmount) > 0)
+      : ticketRule === "optional"
+        ? Boolean(ticketFile) !== Number(ticketAmount) > 0
+        : false;
   const [error, setError] = useState<string | null>(null);
 
   if (!open) {
@@ -191,6 +217,8 @@ function MissedStopForm({
     setSaving(true);
     setError(null);
     try {
+      const tickets =
+        ticketRule !== "none" && ticketFile ? [{ dataUrl: await readFileAsDataUrl(ticketFile), name: ticketFile.name }] : [];
       const response = await fetch(`/api/admin/outstation/${requestId}/journey-stop`, {
         body: JSON.stringify({
           expectedRevision: offer.revision,
@@ -198,6 +226,8 @@ function MissedStopForm({
           longitude,
           reason,
           stoppedAtCairo,
+          ticketAmount: ticketRule !== "none" ? ticketAmount : null,
+          tickets,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -205,7 +235,8 @@ function MissedStopForm({
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.message || `The stop could not be added (${response.status}).`);
       const place = typeof payload?.stopGovernorate === "string" ? ` in ${payload.stopGovernorate}` : "";
-      onAdded(`Stop ${payload?.stopNumber ?? offer.nextStopNumber}${place} added. ${payload?.modeReason ?? ""}`.trim());
+      const payroll = payload?.payrollSynced === false ? " Payroll did not follow the new total: check what payroll pays." : "";
+      onAdded(`Stop ${payload?.stopNumber ?? offer.nextStopNumber}${place} added. ${payload?.modeReason ?? ""}${payroll}`.trim());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The stop could not be added.");
     } finally {
@@ -222,6 +253,7 @@ function MissedStopForm({
         For a stop the employee made but could not record before the trip closed. Enter where and
         when it happened, from something you checked. It is priced like the employee&apos;s own stop,
         marked as added by you with your reason, and shown to whoever decides the claim.
+        {ticketRule !== "none" ? " Without a car, the ticket for the leg to this place is what pays." : ""}
       </p>
       <div className={`mt-3 ${phxFieldGridTwoClassName}`}>
         <label>
@@ -257,12 +289,38 @@ function MissedStopForm({
             value={reason}
           />
         </label>
+        {ticketRule !== "none" ? (
+          <>
+            <label>
+              <span className={phxLabelClassName}>
+                Ticket for this leg (EGP){ticketRule === "optional" ? " · optional" : ""}
+              </span>
+              <input
+                className={phxFieldClassName}
+                inputMode="decimal"
+                onChange={(event) => setTicketAmount(event.target.value)}
+                placeholder="250"
+                value={ticketAmount}
+              />
+              <span className={phxHintClassName}>Added to the trip&apos;s tickets and paid with it.</span>
+            </label>
+            <label>
+              <span className={phxLabelClassName}>The ticket (PDF, JPG or PNG)</span>
+              <input
+                accept="application/pdf,image/jpeg,image/png"
+                className={phxFieldClassName}
+                onChange={(event) => setTicketFile(event.target.files?.[0] ?? null)}
+                type="file"
+              />
+            </label>
+          </>
+        ) : null}
       </div>
       {error ? <p className={`mt-3 ${phxFormErrorClassName}`}>{error}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           className={phxButtonPrimaryClassName}
-          disabled={saving || !latitude.trim() || !longitude.trim() || !stoppedAtCairo || !reason.trim()}
+          disabled={saving || !latitude.trim() || !longitude.trim() || !stoppedAtCairo || !reason.trim() || ticketMissing}
           onClick={() => void save()}
           type="button"
         >
