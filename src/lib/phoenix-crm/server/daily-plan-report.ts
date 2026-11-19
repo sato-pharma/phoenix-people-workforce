@@ -39,6 +39,8 @@ import { loadPlannerReferences } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
+import { loadVisitTallies } from "@/lib/phoenix-crm/server/visit-tally";
+import { tallyForCustomer } from "@/lib/phoenix-crm/visit-tally";
 import { buildDays, loadPlanItemRows, PLAN_COLUMNS, statusOf } from "@/lib/phoenix-crm/server/plans";
 import type { ReportFilterInput } from "@/lib/phoenix-crm/server/reports";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
@@ -219,9 +221,13 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
   // Each world's activities and start times hang on its plan ids alone, so they are read beside the
   // items and the events rather than after them; only the sales-master references wait for the items,
   // since they are looked up for the customers those items name.
-  const [[itemRows, events], worldDays] = await Promise.all([
+  // Each world's visit tally (owner, 19 Nov 2026: every screen that shows a rep's weekly plan shows each customer's
+  // last visit, his visits this month and his visits in total) rides beside them: keyed by the seat and the world
+  // alone, through today, never windowed on the report's period. It never throws.
+  const [[itemRows, events], worldDays, worldTallies] = await Promise.all([
     Promise.all([loadPlanItemRows(planIds, DAILY_PLAN_ITEM_COLUMNS), loadPlanEvents(planIds)]),
     Promise.all(worlds.map((world) => Promise.all([loadPlanActivities([...world.worldIds]), loadPlanDayStarts([...world.worldIds])]))),
+    Promise.all(worlds.map((world) => loadVisitTallies([seat.seatId], world.isTest, viewer.cairoToday))),
   ]);
   const worldItemsOf = worlds.map((world) => itemRows.filter((row) => world.worldIds.has(String(row.plan_id))));
   const worldReferences = await Promise.all(
@@ -294,6 +300,7 @@ export async function loadDailyPlanReport(viewer: PhoenixCrmViewer, raw: ReportF
             hoursText: item.windowsText,
             exceptionLabel: item.exceptionLabel,
             exceptionNote: item.exceptionNote,
+            tally: tallyForCustomer(worldTallies[index], item.customerId),
           });
         }
       }

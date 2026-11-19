@@ -19,6 +19,7 @@ import { coverageTier, gradeTarget, type CoverageTier } from "@/lib/phoenix-crm/
 import { distanceMeters } from "@/lib/phoenix-crm/geo";
 import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { VisitTally } from "@/lib/phoenix-crm/visit-tally";
 
 export type PlannerPlace = {
   placeId: string;
@@ -113,6 +114,11 @@ export type PlannerCustomer = {
    * behind it did not answer: the row then says nothing about it rather than something untrue.
    */
   insight?: PlannerInsight | null;
+  /**
+   * His last visit, his visits this month and his visits in total (owner, 19 Nov 2026; visit-tally.ts), read
+   * for the rep AND his reviewer. Absent or null when the read did not answer: nothing is said about it.
+   */
+  tally?: VisitTally | null;
 };
 
 export type PlacedOnDay = {

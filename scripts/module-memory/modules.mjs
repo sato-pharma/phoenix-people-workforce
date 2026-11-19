@@ -377,13 +377,14 @@ export const MODULES = [
     title: "Phoenix CRM — the rep's weekly plan, its review and asking to edit it",
     scope: "The one week a rep plans and sends, the caps re-checked on the send, its review by the district manager, the words that say whose turn it is, the board that chases a sent week, and asking to edit a sent week — the district manager, then SFE, twice a week at most.",
     globs: [
-      "src/lib/phoenix-crm/{monthly-plan-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,approval-nudge-rules}.ts",
-      "src/lib/phoenix-crm/server/{plans,monthly-plans,plan-edits,plan-edit-expiry,plan-review,plan-day-status,approval-nudge,awaiting-decisions,decision-queues}.ts",
+      "src/lib/phoenix-crm/{monthly-plan-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,approval-nudge-rules,visit-tally}.ts",
+      "src/lib/phoenix-crm/server/{plans,monthly-plans,plan-edits,plan-edit-expiry,plan-review,plan-day-status,approval-nudge,awaiting-decisions,decision-queues,visit-tally}.ts",
       "src/components/phoenix-crm/plan-*.tsx",
       "app/api/phoenix-crm/plans/{copy-source,decide,edit-requests,history,reviews,submit}/**",
       "tests/phoenix-crm-plan-*",
+      "tests/phoenix-crm-visit-tally.test.ts",
     ],
-    keywords: ["weekly plan", "ask to edit", "edit request", "plan edit", "send this week", "sent week", "plan status", "week to review"],
+    keywords: ["weekly plan", "ask to edit", "edit request", "plan edit", "send this week", "sent week", "plan status", "week to review", "visit tally", "last visit"],
     tables: ["phoenix_crm_plan"],
   },
   // 🔴 SPLIT AGAIN, 2026-10-04, FOR THE SAME REASON AS THE ONE ABOVE: `phoenix-crm` reached 33 rules and its

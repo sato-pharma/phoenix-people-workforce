@@ -21,6 +21,7 @@
  */
 
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
+import type { VisitTally } from "@/lib/phoenix-crm/visit-tally";
 
 /** One live marketing request on a customer. `byName`: matched by the customer's name on the requester's own list. */
 export type CustomerMarketingMark = {
@@ -48,6 +49,12 @@ export type CustomerInsight = {
   /** The pharmacy the customer is listed with, for the "share a pharmacy" group. */
   pharmacy: string | null;
   marketing: CustomerMarketingMark[];
+  /**
+   * The customer's visit tally on the rep's territory through today — the last visit ever and the visits in total
+   * (owner, 19 Nov 2026: every screen that shows a rep's weekly plan shows them; `visit-tally.ts`). The month is
+   * already the pips. Null or absent on Manager's own list and when the read failed — then no line is drawn.
+   */
+  tally?: VisitTally | null;
 };
 
 export type CustomerInsightView = {
@@ -59,6 +66,8 @@ export type CustomerInsightView = {
   monthAhead: boolean;
   /** Keyed by the rep-list customer id, and "m:<id>" for a customer of Manager's own list. */
   insights: Record<string, CustomerInsight>;
+  /** Cairo today, the server's — the visit line words the last visit's year against it. */
+  today?: string;
 };
 
 /** The statuses a request is live in — waiting or running. Rejected, cancelled, closed and drafts are not shown. */

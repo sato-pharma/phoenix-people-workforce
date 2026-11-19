@@ -492,7 +492,7 @@ function PlanPanel({
           <PlanWeekCharts days={board.days} />
           <DayStrip days={board.days} />
           <div className="border-t border-slate-100">
-            <PlanDoctorsTable days={board.days} />
+            <PlanDoctorsTable days={board.days} today={board.today} />
           </div>
         </>
       )}
