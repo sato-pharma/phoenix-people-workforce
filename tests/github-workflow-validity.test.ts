@@ -216,8 +216,8 @@ export const DISPATCHED_RUNS_PER_DAY: Record<string, { slug: string; runsPerDay:
 };
 
 export const SCHEDULED_RUNS_CEILING = {
-  perDay: 62,
-  note: "2026-11-09: 56 GitHub-scheduled (deploy-drift-check 48, attendance-weekly-digest 2, five daily checks 1 each, codeql-weekly 1 on its Sunday) + 6 synthetic-journeys dispatched by cron-job.org. CodeQL moved here off every pull request (owner, 2026-11-09), so the real total of Actions runs fell",
+  perDay: 63,
+  note: "2026-11-19: 63 = 57 GitHub-scheduled + 6 synthetic-journeys dispatched. Added schema-restore-check, weekly on Mondays (REC-041), which this count reads as 1 a day: measured 48 s a run on a hosted runner, 0 minutes billed on this public repository (run 44443204241). Before it, 2026-11-09: 56 GitHub-scheduled (deploy-drift-check 48, attendance-weekly-digest 2, five daily checks 1 each, codeql-weekly 1 on its Sunday) + 6 synthetic-journeys dispatched by cron-job.org. CodeQL moved here off every pull request (owner, 2026-11-09), so the real total of Actions runs fell",
 };
 
 /** How many values one cron field takes: `*`, `*\/n`, `a`, `a-b`, `a-b/n`, and comma lists of those. */

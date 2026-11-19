@@ -76,11 +76,16 @@ rewrites a direct URL to production's IPv4 session pooler, `aws-1-eu-central-1.p
 (aws-1, not the aws-0 the staging tools assume), before pg_dump runs. `SCHEMA_BASELINE_POOLER_HOST`
 overrides it if production ever moves.
 
+## Rebuilding from it: the weekly restore check
+
+Since 19 Nov 2026 a weekly job restores this file into a throwaway `supabase/postgres` database at
+production's Postgres major, dumps what it built and compares it with the file, object for object. It
+creates the roles and extensions the file needs and clears the image's default privileges first. Any restore
+error or difference turns it red and alerts Telegram. That is the rebuild procedure, and its account is in
+[docs/security/schema-restore-check.md](security/schema-restore-check.md).
+
 ## What it does not do yet
 
-- **It does not prove that a fresh database built from this file matches production.** That needs a
-  scratch Postgres with Supabase's roles and extensions (the `supabase/postgres` image), and it is the next
-  step for REC-041.
 - The loose SQL files (F-ENG-016) moved to `supabase/scripts/`, and the `summarize-thread` edge
   function's source (F-DB-013) is in `supabase/functions/`, on 13 Nov 2026; the function itself was
   deleted from production the same day.
@@ -89,6 +94,6 @@ overrides it if production ever moves.
 
 - `scripts/lib/schema-baseline.mjs`: the pure half (normalising, splitting into objects, comparing,
   explaining).
-- `scripts/schema-baseline.mjs`: the command (`--write`, `--check`).
+- `scripts/schema-baseline.mjs`: the command (`--write`, `--check`, `--restore-check`).
 - `tests/schema-baseline.test.ts`: pins the normalising, the comparison, the committed file and the
   nightly wiring.
