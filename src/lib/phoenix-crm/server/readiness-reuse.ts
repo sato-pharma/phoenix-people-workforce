@@ -14,10 +14,11 @@
  * test runner (tests/phoenix-crm-readiness-reuse.test.ts):
  *
  * 1. THE SAVE STAMP RUNS AT MOST ONCE PER TERRITORY IN FIVE MINUTES (`readinessStamps`). The stamp
- *    writes the day a list was first complete and changes nothing else: the Team tab reads a territory
- *    as ready when it is stamped OR complete right now, so a stamp taken at the next save instead of
- *    this one changes nothing anyone sees. A failed stamp is never remembered, so the next save tries
- *    again; a rep drafting a week no longer pays one measurement per save.
+ *    writes the day a list was first complete ("Ready since" on the Team tab) and changes nothing else.
+ *    In the app a list is completed by a list write, and every readiness writer clears EVERY stamp, so
+ *    the first save after the write that completed a list always measures and stamps: the date is the
+ *    one it had when every save stamped. A failed stamp is never remembered either. Replayed against the
+ *    12,179 real plan saves since 1 Nov, that is 1,349 measurements instead of 12,179.
  *
  * 2. THE DISPLAY BOARDS SHARE A COPY UP TO A MINUTE OLD, KEYED BY THE EXACT TERRITORY SET
  *    (`READINESS_SHARED_COPY`, the owner's minute-old freshness for a board, 2026-10-16). Only a
@@ -43,8 +44,11 @@ export const READINESS_SHARED_LIMITS: SharedReadLimits = { maxEntries: 200, maxR
 
 /**
  * The app writes that change a reference customer's readiness state: validation (and its review,
- * restore and sharing across lines), the list requests (a drop waits as `drop_pending`), a customer
- * moved between seats, a list loaded from a sheet, and an `outside` archive.
+ * restore and sharing across lines, a trusted point, a shared place decided or restored, places seated
+ * in a venue, a settled timetable, a retired place), the list requests (a drop waits as
+ * `drop_pending`), a customer moved between seats, a list loaded from a sheet, and an `outside`
+ * archive. A script's write (the same-seat merge, the iReports360 history import) runs in another
+ * process and cannot drop this copy: the boards see it within the minute.
  */
 export const READINESS_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_add_place",
@@ -52,21 +56,22 @@ export const READINESS_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_create_request",
   "phoenix_crm_decide_manager_customer_removal",
   "phoenix_crm_decide_request",
+  "phoenix_crm_decide_shared_place",
   "phoenix_crm_decide_validation_review",
   "phoenix_crm_load_list_customers",
   "phoenix_crm_move_customer",
+  "phoenix_crm_place_on_trusted_point",
+  "phoenix_crm_restore_shared_place",
   "phoenix_crm_restore_validation",
   "phoenix_crm_return_request",
   "phoenix_crm_reverse_list_request",
+  "phoenix_crm_seat_places_in_venue",
+  "phoenix_crm_settle_venue_timetable",
   "phoenix_crm_share_line_validation",
+  "phoenix_crm_update_place",
   "phoenix_crm_validate_customer",
   "phoenix_crm_withdraw_request",
 ]);
-
-/** Called by `callPhoenixCrm` after every successful write: a readiness writer drops the shared copy. */
-export function dropSharedReadinessAfter(fn: string): void {
-  if (READINESS_WRITERS.has(fn)) bumpSharedReadGeneration(READINESS_SHARED_COPY, fn);
-}
 
 /** How long a territory's save stamp is not repeated. */
 export const READINESS_STAMP_FRESH_MS = 5 * 60_000;
@@ -76,3 +81,16 @@ const READINESS_STAMPS_MAX = 2_000;
 
 /** The save stamp's throttle, one key per territory. */
 export const readinessStamps = createRecentOnce({ freshMs: READINESS_STAMP_FRESH_MS, maxKeys: READINESS_STAMPS_MAX });
+
+/**
+ * Called by `callPhoenixCrm` after every successful write. A readiness writer drops the boards' shared
+ * copy, and clears every save stamp: the write may have completed a list, and the next save of that
+ * territory must measure it then, or "Ready since" would wait for a save after the five minutes. A
+ * write can touch several territories (a customer moved, a shared place, a line twin), so the whole
+ * throttle is cleared, never one key; an in-flight stamp that started before the write is not kept.
+ */
+export function dropSharedReadinessAfter(fn: string): void {
+  if (!READINESS_WRITERS.has(fn)) return;
+  bumpSharedReadGeneration(READINESS_SHARED_COPY, fn);
+  readinessStamps.forget(() => true);
+}

@@ -288,9 +288,9 @@ export type TerritoryReadiness = { ready: boolean; total: number; open: number; 
 
 /**
  * The plan save's readiness stamp, run at most once per territory inside `READINESS_STAMP_FRESH_MS`
- * (readiness-reuse.ts). A failed stamp is never remembered, so the next save stamps again; a stamp that
- * waits for a later save changes nothing anyone sees, because the Team tab reads a list as ready when it
- * is stamped OR complete right now.
+ * (readiness-reuse.ts). A failed stamp is never remembered, so the next save stamps again, and every
+ * readiness writer clears the throttle, so the first save after the write that completed a list always
+ * stamps it and "Ready since" keeps the date it had when every save stamped.
  */
 export function stampTerritoryReadyRecently(seatId: string): Promise<void> {
   return readinessStamps.run(seatId, () => territoryReadiness(seatId, false, true));

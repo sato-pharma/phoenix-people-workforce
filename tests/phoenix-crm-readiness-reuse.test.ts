@@ -80,6 +80,12 @@ async function sharedCopyIsDroppedByAListWriteOnly(): Promise<void> {
     "phoenix_crm_reverse_list_request",
     "phoenix_crm_move_customer",
     "phoenix_crm_load_list_customers",
+    "phoenix_crm_place_on_trusted_point",
+    "phoenix_crm_decide_shared_place",
+    "phoenix_crm_restore_shared_place",
+    "phoenix_crm_seat_places_in_venue",
+    "phoenix_crm_settle_venue_timetable",
+    "phoenix_crm_update_place",
   ]) {
     assert.ok(READINESS_WRITERS.has(fn), `${fn} changes what a list counts, so it drops the readiness copy`);
   }
@@ -114,6 +120,19 @@ async function theSaveStampRunsOncePerTerritoryInFiveMinutes(): Promise<void> {
   assert.equal(stamps, 1, "REGRESSION: three saves of one week inside five minutes measure the list once");
   await readinessStamps.run("seat-b", stamp);
   assert.equal(stamps, 2, "another territory is its own key");
+
+  // A visit save is no list write: the stamps stand.
+  dropSharedReadinessAfter("phoenix_crm_save_visit");
+  await readinessStamps.run("seat-a", stamp);
+  assert.equal(stamps, 2, "a write that changes no list count keeps the throttle");
+  // A validation may have completed a list, so the next save of EVERY territory measures it at once —
+  // otherwise "Ready since" would wait for a save after the five minutes, maybe the next week.
+  dropSharedReadinessAfter("phoenix_crm_validate_customer");
+  await readinessStamps.run("seat-a", stamp);
+  await readinessStamps.run("seat-b", stamp);
+  assert.equal(stamps, 4, "REGRESSION: a list write must clear every save stamp, so the next save stamps the completed list");
+  await readinessStamps.run("seat-a", stamp);
+  assert.equal(stamps, 4, "and the throttle holds again after that save");
 
   let failures = 0;
   const failing = async () => {
