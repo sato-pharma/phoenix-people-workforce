@@ -1444,7 +1444,7 @@ function assertMarketingCustomerDatabaseAccess(access: AccessContext) {
   }
 }
 
-function assertMarketingControlAccess(access: AccessContext) {
+export function assertMarketingControlAccess(access: AccessContext) {
   if (access.scope === "system") return;
   if (access.role !== "SFE Manager" && access.role !== "Super Admin") {
     throw forbiddenError("Forbidden: only SFE Manager and Super Admin can manage marketing controls.");

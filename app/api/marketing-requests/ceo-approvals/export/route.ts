@@ -5,9 +5,13 @@ import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { todayInCairo } from "@/lib/date-only";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
-import { clientSafeErrorMessage, toApiError, validationError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, forbiddenError, toApiError, validationError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
-import { resolveCeoApprovalsCarry, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import {
+  canViewMarketingCeoApprovals,
+  resolveCeoApprovalsCarry,
+  resolveCeoApprovalsRange,
+} from "@/lib/marketing-requests/ceo-approvals";
 import {
   buildCeoApprovalsWorkbook,
   ceoApprovalsExportFileName,
@@ -37,6 +41,9 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     assertSignedIn(access); // REC-080: the caller is judged before the body.
+    // The page's own reader roles (Marketing Manager, CEO, Super Admin), asked again by
+    // getMarketingCeoApprovals below: any other role is refused before the body is read (REC-080).
+    if (!canViewMarketingCeoApprovals(access.role)) throw forbiddenError("You do not have access to CEO Approvals.");
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:marketing:ceo-approvals" });
     const body = ((await request.json().catch(() => null)) ?? {}) as {
       carry?: unknown;

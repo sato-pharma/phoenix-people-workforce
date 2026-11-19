@@ -1370,6 +1370,7 @@ import { runSalesPayrollHierarchyScopeTests } from "./sales-payroll-hierarchy-sc
 import { runInternalMessagesTests } from "./internal-messages.test.ts";
 import { runRetentionSentFiguresAndRecordingsTests } from "./retention-sent-figures-and-recordings.test.ts";
 import { runPermissionChecksS01Tests } from "./permission-checks-s01.test.ts";
+import { runMarketingRoleGatesFirstTests } from "./marketing-role-gates-first.test.ts";
 import { runEarlyBirdsDecisionPermissionTests } from "./early-birds-decision-permission.test.ts";
 import {
   runRouteGuardHarnessPart1Tests,
@@ -6081,6 +6082,7 @@ await runTest("sales + payroll TEAM/HIERARCHY seat-continuity scope (resolver ad
 await runTest("internal messages", runInternalMessagesTests);
 await runTest("a sent email keeps no figures, and tablet recordings are kept 90 days (REC-059)", runRetentionSentFiguresAndRecordingsTests);
 await runTest("four routes assert their permission key on the server and refuse with no write (fingerprint decisions, ROI refresh, employee edits)", runPermissionChecksS01Tests);
+await runTest("three marketing writes ask their own role rule before the body: controls, the Doctor-List Check answer, the CEO Approvals export (REC-080)", runMarketingRoleGatesFirstTests);
 await runTest("an Early Birds decision needs early_birds:approve and the district in scope, and nobody decides their own name (F-CRM-016)", runEarlyBirdsDecisionPermissionTests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("gcloud migration hardening", runGcloudMigrationHardeningTests);
