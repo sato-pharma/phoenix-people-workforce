@@ -20,7 +20,8 @@ import { createHash } from "node:crypto";
 import { systemEmail } from "@/config/system-settings";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { recordManualEmailSendAudit } from "@/lib/email/email-composer-service";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import type { SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
+import { isQueuedForRetry, sendDurableEmail } from "@/lib/notifications/durable-email";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import {
@@ -277,29 +278,58 @@ export async function emailInterviewInvitation(
   // A one-minute bucket: a double press is one e-mail, a deliberate second send a minute later is another.
   const minute = Math.floor(Date.now() / 60_000);
   const idempotencyKey = `interview-invite-${createHash("sha256").update(`${bookingId}|${recipient}|${kind}|${to.toLowerCase()}|${minute}`).digest("hex").slice(0, 40)}`;
-  let outcome: Awaited<ReturnType<typeof sendPhoenixEmail>>;
+  let outcome: SendPhoenixEmailResult;
   try {
-    // The candidate belongs to nobody in the employee directory, and the interviewer's mailbox may be
-    // one Phoenix cannot vouch for, so both are declared as intended outside recipients.
-    outcome = await sendPhoenixEmail({
-      externalRecipients: [to],
-      from,
-      html: rendered.html,
-      idempotencyKey,
-      // The composer's reply-to, for the reason it records: a seat-keyed address fell through to an
-      // inbox Resend suppresses for a Super Admin send, and the replies bounced.
-      replyTo: systemEmail.satoComposerReplyToEmail,
-      subject: message.subject,
-      text: rendered.text,
-      to: [to],
-    });
+    // Durable (REC-048 phase 2, 19 Nov 2026): written to the outbox first, then sent now exactly as
+    // before — the person still reads at once whether it went. If the provider fails, the drain sends
+    // the SAME invitation a few minutes later, logs it "sent" here, and never sends one for an
+    // interview that has since moved, been cancelled or begun. A second press replaces a waiting one.
+    outcome = await sendDurableEmail(
+      {
+        input: {
+          // The candidate belongs to nobody in the employee directory, and the interviewer's mailbox may be
+          // one Phoenix cannot vouch for, so both are declared as intended outside recipients.
+          externalRecipients: [to],
+          from,
+          html: rendered.html,
+          idempotencyKey,
+          // The composer's reply-to, for the reason it records: a seat-keyed address fell through to an
+          // inbox Resend suppresses for a Super Admin send, and the replies bounced.
+          replyTo: systemEmail.satoComposerReplyToEmail,
+          subject: message.subject,
+          text: rendered.text,
+          to: [to],
+        },
+        sender: "phoenix",
+      },
+      {
+        dedupeKey: `recruitment:interview_calendar_invitation:${bookingId}:${recipient}:${kind}:${idempotencyKey}`,
+        followUp: {
+          bookingId,
+          destination: to,
+          interviewerHrId: prepared.booking.interviewerHrId ?? null,
+          invitationKind: kind,
+          kind: "interview_invitation",
+          recipient,
+          sentByHrId: hrIdForStorage(caller.access.hrId) ?? null,
+          startsAt: prepared.booking.startsAt,
+        },
+        supersedeKey: `interview_invitation:${bookingId}:${recipient}:${kind}:${to.toLowerCase()}`,
+      },
+    );
   } catch (error) {
     const detail = (error instanceof Error ? error.message : String(error)).slice(0, 300);
     await record("failed", detail);
+    if (isQueuedForRetry(error)) {
+      return { log: await loadLog(bookingId), message: `The e-mail could not be sent yet: ${detail}. Phoenix will send it again by itself in a few minutes.`, status: "failed" };
+    }
     return { log: await loadLog(bookingId), message: `The e-mail could not be sent: ${detail}`, status: "failed" };
   }
   if ("skipped" in outcome && outcome.skipped) {
     await record("failed", outcome.reason);
+    if (isQueuedForRetry(outcome.reason)) {
+      return { log: await loadLog(bookingId), message: `The e-mail was not sent yet: ${outcome.reason}. Phoenix will send it again by itself in a few minutes.`, status: "failed" };
+    }
     return { log: await loadLog(bookingId), message: `The e-mail was not sent: ${outcome.reason}`, status: "failed" };
   }
 

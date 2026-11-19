@@ -96,13 +96,6 @@ export function runEmailNotificationTests() {
     // confidence-gate bypass; see tests/email-reply-lists.test.ts.
     "src/lib/email/email-reply-lists.ts",
     "src/lib/email/send-phoenix-email.ts",
-    // The Marketing Manager's "Approved requests" email from CEO Approvals, added 2026-11-08. It
-    // replaces the email he wrote by hand each week: sent only on his own press of "Send now", in his
-    // name with his reply-to, its table built from the rows and notes he ticked — no fixed wording for
-    // the template catalogue and no preference to resolve. It passes an origin so the confidence gate
-    // still reviews it (ceiling in CEILING_OVERRIDES), and writes the audit log. See
-    // tests/marketing-ceo-approvals-email.test.ts.
-    "src/lib/marketing-requests/ceo-approvals-email-service.ts",
     // A Super Admin's manual approval of a held item re-sends the EXACT held content,
     // bypassing the gate for that one already-reviewed send. See approveHeldNotification
     // in src/lib/notifications/confidence-gate.ts.
@@ -112,6 +105,12 @@ export function runEmailNotificationTests() {
     // sender with that same input, inline and on every drain retry. It adds no recipient, CC or body of
     // its own — the five leave fallback bodies (which fire ONLY when the matching template has been
     // deactivated, so they cannot themselves be templates) now reach sendPhoenixEmail through it.
+    // Since REC-048 phase 2 (19 Nov 2026) the emails a person sends with a button travel the same way:
+    // the job offer letter, its resend and expiry notice (Sato identity, PDF attached, the hr@ mailbox
+    // by its stored name), the Interview Calendar's invitation, the marketing "Approved requests"
+    // email's Phoenix route and the careers form's confirmation. Each keeps its own From, To, CC,
+    // subject and body; tests/durable-button-emails.test.ts pins that none reaches the provider around
+    // the outbox.
     "src/lib/notifications/direct-email-payload.ts",
     "src/lib/notifications/email.ts",
     // The new joiner announcement (owner, 18 Nov 2026): when a new hire submits the joining form,
@@ -122,25 +121,6 @@ export function runEmailNotificationTests() {
     // keys idempotency on the offer, and refuses above 40 recipients. See
     // tests/offer-new-joiner-announcement.test.ts.
     "src/lib/offers/new-joiner-announcement.ts",
-    // An offer of employment goes to a candidate who has no Phoenix account, so there is no
-    // notification preference to resolve and nothing for the dispatcher to hold. It is also the
-    // one send in the system that must NOT carry Phoenix's identity — the owner's rule is that an
-    // official offer comes from Sato Pharmaceuticals — and it carries a rendered PDF attachment.
-    // Its body is built from the letter design HR edits in the module itself, not from a DB email
-    // template. See src/lib/offers/send.ts.
-    "src/lib/offers/send.ts",
-    // The careers-site application confirmation goes to the applicant, who has no Phoenix account and
-    // so no notification preference for the dispatcher to resolve. Like the offer and the interview
-    // invitation it must carry the SATO identity, not Phoenix's, and its body is the SATO house
-    // template rendered in the module itself (renderSatoEmail), not a DB email template. Best-effort
-    // on top of an already-captured application — it never bypasses the confidence gate. See
-    // src/lib/recruitment/inbound/website-apply-confirmation-email.ts.
-    "src/lib/recruitment/inbound/website-apply-confirmation-email.ts",
-    // An interview invitation goes to a candidate (no Phoenix account, no notification preference) or
-    // to the interviewer the person picked by hand, and is sent only on that person's own press of
-    // "Send" in the Interview Calendar — a manual human send, audited through
-    // recordManualEmailSendAudit, not a notification for the dispatcher to hold or template.
-    "src/lib/recruitment/interview-invitations.ts",
     // The Sato Email Composer, added 2026-09-12. There is no fixed wording to move into the
     // admin email-template catalogue: the body is written by the sender at send time, either
     // free-typed or from a Sato template the two seats edit inside the module itself and which

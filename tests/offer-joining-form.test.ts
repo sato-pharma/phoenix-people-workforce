@@ -336,7 +336,7 @@ async function run() {
   //    🔴 AND NO OFFER LEAVES WITHOUT ONE (owner, 2026-10-08): one did, and its button could never work.
   const sendSource = flat("src/lib/offers/send.ts");
   assert.match(sendSource, /if \(!offerHireDate\(offer\.startDate\)\) \{ throw new Error\(OFFER_START_DATE_REQUIRED_MESSAGE\)/, "the send refuses a dateless offer");
-  assert.ok(sendSource.indexOf("OFFER_START_DATE_REQUIRED_MESSAGE)") < sendSource.indexOf("sendPhoenixEmail("), "before any mail leaves");
+  assert.ok(sendSource.indexOf("OFFER_START_DATE_REQUIRED_MESSAGE)") < sendSource.indexOf("sendDurableEmail("), "before any mail leaves");
   assert.match(
     flat("src/components/offers/offer-composer.tsx"),
     /if \(!draft\.startDate\) \{ onReport\(OFFER_START_DATE_REQUIRED_MESSAGE, "error"\); return; \}/,
