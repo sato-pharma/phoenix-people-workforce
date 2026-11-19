@@ -18,6 +18,7 @@
  * the rep was already sent in his bell — nothing is added to his day and nothing new is said about him.
  */
 
+import { isUuid } from "@/lib/http/uuid";
 import { isPhoenixCrmModuleKey, phoenixCrmModuleForSlug, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 
 /** How far back an unread notice still pulses. Older ones stay in the bell and no longer shout. */
@@ -117,7 +118,7 @@ export function validateAgainRecordIdOf(eventKey: string | null | undefined): st
   const parts = String(eventKey ?? "").split(":");
   if (parts[0] !== "phoenix_crm" || parts[1] !== VALIDATE_AGAIN_EVENT_TYPE) return null;
   const recordId = (parts[3] ?? "").trim().toLowerCase();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(recordId) ? recordId : null;
+  return isUuid(recordId) ? recordId : null;
 }
 
 /** "3 new", never "99+ new" — the number is a reason to look, not a figure to read. */
