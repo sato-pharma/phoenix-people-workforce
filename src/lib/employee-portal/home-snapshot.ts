@@ -1378,6 +1378,12 @@ export async function getPortalHomeSnapshot(
           withEarlierRecordDoubleVisits(hrId, `${currentYear - 1}-01-01`, today, queryVisitsLimited<{ visit_date: string }>({
             // The CRM read door matches hr ids case-insensitively — pass the raw id, no UPPER guess.
             agentHrIds: [hrId],
+            // A floor, the same window the earlier-record rows above use. With none, the read had no
+            // date at all and the planner read every visit in the table for one rep, about 550 times a
+            // day (performance audit, 19 Nov 2026). The pulse shows this month, the last 90 days and the
+            // days since the latest double visit, so a floor of 1 January last year leaves those three
+            // unchanged for anyone with a double visit in that window.
+            dateFrom: `${currentYear - 1}-01-01`,
             doubleOnly: true,
             visitTypes: [0, -8],
             columns: "visit_date",

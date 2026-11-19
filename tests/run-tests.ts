@@ -3262,6 +3262,7 @@ import { runOverviewDashboardBehaviourTests } from "./overview-dashboard-behavio
 import { runSupportRequestsBehaviourTests } from "./support-requests-behaviour.test.ts";
 import { runVisitsReportRowBehaviourTests } from "./visits-report-row-behaviour.test.ts";
 import { runSrcLibFolderTestCoverageTests } from "./src-lib-folder-test-coverage.test.ts";
+import { runPhoenixCrmVisitsAgentIndexTests } from "./phoenix-crm-visits-agent-index.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12834,6 +12835,7 @@ await runTest("src/lib/overview, run (REC-079): a section the viewer's grants do
 await runTest("src/lib/support-requests, run (REC-079): a ticket is opened in the signed-in employee's name whatever the form sends, saved before HR is alerted and the unaddressed alert reported, an employee lists only their own, the queue and the status are HR's, and a missing table answers empty", runSupportRequestsBehaviourTests);
 await runTest("src/lib/visits-report, run (REC-079): the report table and its download read one row mapper, a visit's type is the resolved word never the vendor's raw Unknown, and its time is the save time until a check-in is matched", runVisitsReportRowBehaviourTests);
 await runTest("every folder under src/lib/ is imported by at least one test (REC-079, F-ENG-011): type-only imports and paths in comments or file reads do not count, and a new untested folder fails by name", runSrcLibFolderTestCoverageTests);
+await runTest("Phoenix CRM visits: the agent-day index carries both doors' exact agent expression and predicate, nothing drops it, the landing's double-visit summary has a date floor and the typed-pharmacy report pages by keyset", runPhoenixCrmVisitsAgentIndexTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
