@@ -6,7 +6,12 @@ import {
 } from "../src/lib/automated-payroll/deductions-source.ts";
 import { DEDUCTIONS_PUSH_REQUIRED_FROM_MONTH_KEY } from "../src/lib/deductions/push-cutover.ts";
 import { resolvePublishedAppliedAmount } from "../src/lib/deductions/calculations.ts";
-import { resolveDeductionNotificationCc } from "../src/lib/deductions/notify-deduction.ts";
+import {
+  DEDUCTION_EMAIL_COPY_RECIPIENTS,
+  notifyDeductionPushed,
+  resolveDeductionEmailCopyRecipients,
+  resolveDeductionNotificationCc,
+} from "../src/lib/deductions/notify-deduction.ts";
 import { describePushConflict, pushDeduction, pushForEmployee, withdrawDeduction } from "../src/lib/deductions/push.ts";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "../src/lib/deductions/types.ts";
 import { buildOrgIndex, personKey, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -186,6 +191,85 @@ export async function runDeductionsPerLinePushTests() {
     resolveDeductionNotificationCc({ employeeHrId: "OFFICE-1", orgIndex: org, directManagerHrId: null }),
     [],
     "no sales seat and no direct manager on file → nobody is CC'd, never a throw",
+  );
+
+  // ---------------------------------------------------------------------------
+  // 1b. The named email copy (owner, 2026-11-19: "in deduction notifications to reps reporting to
+  //     manager reporting to hany saad make hany saad informed with the deductions emails and
+  //     notifications"). Hany Saad is emailed a rep's deduction detail; nobody else is.
+  // ---------------------------------------------------------------------------
+  assert.deepEqual(
+    DEDUCTION_EMAIL_COPY_RECIPIENTS.map((entry) => entry.hrId),
+    ["PD-0001"],
+    "the email copy goes to Hany Saad alone — a second person is the owner's decision, one row",
+  );
+  const hanyOrg = buildOrgIndex([
+    seat({ seatId: "CEO", tier: "CEO", path: ["CEO"], occupantHrId: "B-2" }),
+    seat({ seatId: "NSM1", tier: "NSM", parentSeatId: "CEO", path: ["CEO", "NSM1"], occupantHrId: "A-12" }),
+    seat({ seatId: "RSM1", tier: "RSM", parentSeatId: "NSM1", path: ["CEO", "NSM1", "RSM1"], occupantHrId: "PD-0001" }),
+    seat({ seatId: "DM1", tier: "DM", parentSeatId: "RSM1", path: ["CEO", "NSM1", "RSM1", "DM1"], occupantHrId: "PD-0012" }),
+    seat({ seatId: "REP1", tier: "REP", parentSeatId: "DM1", path: ["CEO", "NSM1", "RSM1", "DM1", "REP1"], occupantHrId: "PD-0100" }),
+  ]);
+  assert.deepEqual(
+    resolveDeductionEmailCopyRecipients({ employeeHrId: "PD-0100", orgIndex: hanyOrg }),
+    [personKey("PD-0001")],
+    "a rep whose District Manager reports to Hany Saad → Hany Saad gets the email copy",
+  );
+  assert.deepEqual(
+    resolveDeductionEmailCopyRecipients({ employeeHrId: "PD-0012", orgIndex: hanyOrg }),
+    [],
+    "a District Manager's own deduction is not a rep's — no email copy",
+  );
+  assert.deepEqual(
+    resolveDeductionEmailCopyRecipients({ employeeHrId: "E-1", orgIndex: org }),
+    [],
+    "a rep in another region (Hany Saad not in the chain) → no email copy; the other managers are never emailed",
+  );
+
+  // End to end through the real notifier, with every sender faked: the employee's notice, the CC,
+  // and ONE email-only send to Hany Saad carrying the amount — and none to the DM or the NSM.
+  const sends: { recipientHrId?: string | null; channels?: readonly string[]; eventType?: string; email?: { metrics?: { label: string; value: string }[] } }[] = [];
+  const ccSends: { recipients: string[]; channels?: readonly string[] }[] = [];
+  const result = await notifyDeductionPushed({
+    actorHrId: "B-10",
+    line: {
+      amount: 516.13,
+      category: "no_records_activity",
+      dates: ["2026-11-10"],
+      daysCount: 1,
+      employeeHrId: "PD-0100",
+      employeeName: "Test Rep",
+      id: "line-hany",
+      monthKey: "2026-11",
+    },
+    loadDirectManagerHrId: async () => "PD-0012",
+    loadOrg: async () => hanyOrg,
+    loadShownName: async () => "Test Rep",
+    send: (async (input: (typeof sends)[number]) => {
+      sends.push(input);
+      return { deliveries: [{ status: "sent" }] };
+    }) as never,
+    sendToRecipients: (async (input: { channels?: readonly string[] }, recipients: string[]) => {
+      ccSends.push({ channels: input.channels, recipients });
+      return [];
+    }) as never,
+  });
+  assert.deepEqual(result.emailCopyHrIds, [personKey("PD-0001")], "the notifier reports the copy it sent");
+  const copies = sends.filter((sent) => sent.eventType === "deduction_pushed_manager_copy");
+  assert.equal(copies.length, 1, "exactly one email copy");
+  assert.equal(copies[0].recipientHrId, personKey("PD-0001"), "addressed to Hany Saad");
+  assert.deepEqual(copies[0].channels, ["email"], "email only — the CC already carries his in-app and Telegram");
+  assert.ok(
+    (copies[0].email?.metrics ?? []).some((metric) => metric.label === "Amount deducted" && metric.value.includes("516.13")),
+    "the copy carries the amount the rep's own email states",
+  );
+  assert.ok(
+    sends.every((sent) => sent.eventType !== "deduction_pushed_manager_copy" || sent.recipientHrId === personKey("PD-0001")),
+    "no other manager is emailed",
+  );
+  assert.ok(
+    ccSends.length === 1 && !(ccSends[0].channels ?? []).includes("email") && ccSends[0].recipients.includes(personKey("PD-0001")!),
+    "the CC heads-up still reaches Hany Saad in-app and on Telegram, and still emails nobody",
   );
 
   // ---------------------------------------------------------------------------
