@@ -18,13 +18,13 @@ import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/wo
 import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
 import { afterResponse } from "@/lib/http/after-response";
 import { ApiError } from "@/lib/http/api-errors";
-import { resolveNotificationPersonRecipients, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
+import { resolveNotificationPersonRecipients, resolveNotificationRoleEnabled, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
 import { getOutstandingDevicesByEmployee } from "@/lib/devices/service";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { openMailboxOffboardingTask } from "@/lib/mailbox-offboarding/service";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { isResignationEmploymentStatus } from "@/lib/payroll/leaver-kind";
 import { computeResignationSettlement } from "@/lib/payroll/copilot/proration";
 // Read-only use of the owner-locked payroll policy: the Part-1 anchor and payment-mode
@@ -510,6 +510,30 @@ async function notifyResignationWorkflow(
     });
   }
   const moduleOwnerHrIds = alertRecipients.map((recipient) => recipient.hrId).filter(Boolean);
+  // An empty list is never sent (19 Nov 2026). The engine would refuse it anyway — a named list is the
+  // whole audience, so nobody outside it can be told — but its refusal reads like a permissions failure.
+  // Say what really happened instead: a failed read of the list is an error; the alert switched off on
+  // the Notification Recipients screen is the admin's choice and only a warning.
+  if (moduleOwnerHrIds.length === 0) {
+    const switchedOn = await resolveNotificationRoleEnabled("resignation_workflow_alert");
+    const log = switchedOn ? logError : logWarning;
+    log("Resignation workflow alert not sent: its recipient list resolved to nobody", {
+      labels: {
+        event: "resignation_workflow_alert_no_recipients",
+        hr_id: record.employeeHrId,
+        reason: switchedOn ? "list_resolved_to_nobody" : "alert_switched_off",
+        status: record.status,
+      },
+      error: new Error(
+        alertWarnings.length > 0
+          ? alertWarnings.join("; ")
+          : switchedOn
+            ? "No active account holds a role on the resignation_workflow_alert list."
+            : "The resignation_workflow_alert policy is switched off.",
+      ),
+    });
+    return;
+  }
   // The email shows the status twice ({{status}} and the details table's Status row), so it is
   // a word a reader knows ("Under review"), never the stored code ("under_review").
   const statusLabel = resignationNoticeStatusLabel(record.status);
