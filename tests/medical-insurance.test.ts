@@ -45,9 +45,9 @@ import {
 import { stripComments } from "./support/comment-strip.ts";
 
 const POLICY = { endsOn: "2027-11-14", startsOn: "2026-11-15" };
-const MIGRATION = "supabase/migrations/20261117041500_medical_insurance_libano_suisse.sql";
+const MIGRATION = "supabase/migrations/20261119150524_medical_insurance_policy_50048950.sql";
 
-/** The rate card exactly as the migration seeds it, so the test pins what production prices with. */
+/** The rate card exactly as the issued policy's migration sets it, so the test pins what production prices with. */
 function seededRateCard(): MedicalInsuranceRateCard {
   const sql = readFileSync(MIGRATION, "utf8");
   const start = sql.indexOf("'{\n    \"currency\"");
@@ -93,37 +93,48 @@ function actionsFor(employees: EmployeeFacts[], members: MemberFacts[], exceptio
 }
 
 /**
- * The signed renewal offer (Rev 1.3, 5 November 2026), band by band: the same 104 people at the seeded
- * rates print the offer's own totals, to the pound.
+ * The issued policy 50048950 (22 November 2026 to 26 November 2027): the card holds the schedule's "Premium per
+ * age band group" exactly as printed, per person for the term, every band from 0 to 79; its fees reproduce the
+ * schedule's own bill (139 people, net 927,635.54, tax 14,378.35, cards 4,170, issue fee 90, total 946,273.89);
+ * and a band's premium is the rate times its people to the piastre, never rounded to the pound as the offer was.
  */
-function testTheSignedOfferIsReproducedToThePound() {
-  // [plan, the band's first age, how many people]
-  const offer: Array<[MedicalInsuranceCategory, number, number]> = [
-    ["A", 25, 1], ["A", 40, 1], ["A", 45, 1], ["A", 50, 1], ["A", 55, 4], ["A", 60, 1],
-    ["B", 30, 12], ["B", 35, 8], ["B", 40, 2], ["B", 45, 1], ["B", 50, 2],
-    ["C", 0, 3], ["C", 18, 23], ["C", 25, 28], ["C", 30, 11], ["C", 35, 4], ["C", 50, 1],
-  ];
+function testTheIssuedPolicyIsReproducedToThePiastre() {
+  assert.deepEqual(CARD.plans.A.rates, [7569.75, 8419.61, 10018.72, 12328.77, 14994.33, 17589.83, 21726.51, 24234.84, 31342.82, 39339.3, 46980.38, 54088.44, 62084.83, null]);
+  assert.deepEqual(CARD.plans.B.rates, [3494.61, 4052.66, 4776.65, 5822.34, 7028.99, 8203.97, 10076.66, 11212.13, 14429.8, 18049.73, 21508.79, 24726.62, 28346.52, null]);
+  assert.deepEqual(CARD.plans.C.rates, [3161.55, 3695.59, 4347.59, 5289.29, 6375.95, 7434.08, 9120.54, 10143.1, 13040.79, 16300.75, 19415.82, 22313.66, 25573.58, null]);
+  assert.deepEqual(CARD.ageBands.at(-1), { from: 80, to: null }, "80 and over is the one band the policy does not quote");
+
+  // The schedule's own bill, in piastres, through the card's fees.
+  const schedulePremium = 92_763_554;
+  const scheduleTax = Math.round((schedulePremium * CARD.taxBasisPoints) / 10_000);
+  assert.equal(scheduleTax, 1_437_835, "1.55% of 927,635.54 is 14,378.35");
+  assert.equal(139 * CARD.cardFeePerMember, 4_170, "EGP 30 a member for 139 people");
+  assert.equal(schedulePremium + scheduleTax + 139 * CARD.cardFeePerMember * 100 + CARD.issueFee * 100, 94_627_389, "the schedule's total, 946,273.89");
+
+  // One person in every band of every plan, and a second in Plan A's first band.
   const people: PersonToPrice[] = [];
-  for (const [category, from, count] of offer) {
-    // One year into the band on the policy's first day.
-    const birthDate = `${2026 - (from + 1)}-01-01`;
-    for (let index = 0; index < count; index += 1) people.push({ birthDate, category, coverageStart: POLICY.startsOn });
+  for (const category of ["A", "B", "C"] as const) {
+    CARD.ageBands.forEach((band, index) => {
+      // One year into the band on the policy's first day.
+      const birthDate = `${2026 - (band.from + 1)}-01-01`;
+      const count = category === "A" && index === 0 ? 2 : 1;
+      for (let person = 0; person < count; person += 1) people.push({ birthDate, category, coverageStart: POLICY.startsOn });
+    });
   }
 
   const statement = openingStatement(CARD, people);
-  assert.equal(statement.people, 104);
-  assert.equal(statement.unpriced, 0);
-  assert.deepEqual(statement.plans.map((plan) => [plan.category, plan.people, plan.premium]), [["A", 9, 234_645], ["B", 25, 172_339], ["C", 70, 305_316]]);
-  const bandA55 = statement.plans[0].bands.find((band) => band.label === "55 to 59");
-  assert.equal(bandA55?.premium, 123_458, "Plan A 55 to 59 prints 123,458, not 4 x 30,865");
-  assert.equal(statement.premium, 712_300, "the offer's premium");
-  assert.equal(statement.tax, 11_040.65, "1.55% tax and supervision");
-  assert.equal(statement.cards, 3_120, "EGP 30 a member for the card");
+  assert.equal(statement.people, 43);
+  assert.equal(statement.unpriced, 3, "the three over 80 are counted, not priced");
+  assert.equal(statement.plans[0].bands[0].premium, 15_139.5, "two at 7,569.75 is 15,139.50, not 15,140");
+  assert.deepEqual(statement.plans.map((plan) => [plan.category, plan.people, plan.premium]), [["A", 14, 358_287.88], ["B", 13, 161_729.47], ["C", 13, 146_212.29]]);
+  assert.equal(statement.premium, 666_229.64);
+  assert.equal(statement.tax, 10_326.56, "1.55% tax and supervision");
+  assert.equal(statement.cards, 1_290, "EGP 30 a member for the card, the unpriced included");
   assert.equal(statement.issueFee, 90, "the issue fee, once");
-  assert.equal(statement.total, 726_550.65);
+  assert.equal(statement.total, 677_936.2);
 
-  const old = annualRate(CARD, { birthDate: "1960-01-01", category: "C", coverageStart: POLICY.startsOn });
-  assert.equal(old.priced, false, "a band the offer did not quote is never priced at zero");
+  const old = annualRate(CARD, { birthDate: "1940-01-01", category: "C", coverageStart: POLICY.startsOn });
+  assert.equal(old.priced, false, "a band the policy does not quote (80 and over) is never priced at zero");
   assert.equal(annualRate(CARD, { birthDate: null, category: "A", coverageStart: POLICY.startsOn }).priced, false, "no birth date, no price");
   assert.throws(() => parseRateCard({ ...CARD, taxBasisPoints: undefined }), /missing a figure/);
   assert.equal(withPlanRates(CARD, "C", CARD.plans.C.rates.map((rate, index) => (index === 6 ? 8000 : rate))).plans.C.rates[6], 8000, "a quoted band can be filled in");
@@ -690,7 +701,7 @@ function testNothingHereSendsOrPays() {
 }
 
 export async function runMedicalInsuranceTests() {
-  testTheSignedOfferIsReproducedToThePound();
+  testTheIssuedPolicyIsReproducedToThePiastre();
   testAJoinerIsChargedByTheDayAndTheLastQuarterAtAQuarter();
   testALeaverIsRefundedByTheDay();
   testEveryoneBelongsFromDayOneAndTheRecordDecidesTheEnd();

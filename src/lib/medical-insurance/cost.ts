@@ -1,15 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// What cover costs under the Libano-Suisse contract, from the policy's own rate card. Pure, so one test can
-// pin it to the signed offer (EGP 712,300 for 104 people), and free of Supabase so a client component
-// imports it.
+// What cover costs under the Libano-Suisse policy, from the policy's own rate card. Pure, so one test can
+// pin it to the issued policy's schedule (EGP 927,635.54 for 139 people), and free of Supabase so a client
+// component imports it.
 //
-// THE CONTRACT (renewal offer Rev 1.3, 5 November 2026, signed and stamped):
-//   * The premium is ANNUAL, per person, by plan and five-year age band.
+// THE CONTRACT (policy 50048950, document MED/6021-3, issued 22 November 2026, cover to 26 November 2027):
+//   * The premium is per person for the policy's term, by plan and five-year age band, to the piastre as the
+//     schedule prints it ("Premium per age band group"). The code calls it the annual rate.
 //   * On top of the premium: 1.55% tax and supervision, EGP 30 per member for the card, and EGP 90 issue fee.
-//   * A joiner is charged the year's premium by the day, from the day they join to the policy's end; one who
-//     joins in the policy's last quarter pays 25% of the year instead.
-//   * A leaver is refunded by the day from the day after they leave to the policy's end, whether or not the
-//     card was used.
+//   * A joiner is charged the premium by the day, from the day they join to the policy's end; one who joins
+//     from the policy's tenth month (its last quarter) pays 25% of it instead.
+//   * A leaver is refunded for the rest of the term, whether or not a claim was made (the policy's annex);
+//     this file counts it by the day from the day after they leave.
 //
 // WHAT THE CONTRACT DOES NOT SAY, AND THIS FILE ASSUMES (each one is shown on the Cost tab):
 //   * The age that picks the band is the age on the day cover starts (the policy's first day for everyone on
@@ -138,9 +139,10 @@ export type OpeningStatement = {
 };
 
 /**
- * The year's opening bill, laid out as the offer is: per plan, per age band, the band's premium rounded to
- * the pound; then the tax on the premium, the card fee per person and the issue fee. Unpriced people are
- * counted and carry a card, but no premium.
+ * The year's opening bill, laid out as the policy's schedule is: per plan, per age band, the band's premium
+ * as the rate times its people, to the piastre (the issued policy prints rates in piastres, so a band's total
+ * is never rounded to the pound); then the tax on the premium, the card fee per person and the issue fee.
+ * Unpriced people are counted and carry a card, but no premium.
  */
 export function openingStatement(card: MedicalInsuranceRateCard, people: readonly PersonToPrice[]): OpeningStatement {
   const counts = new Map<string, number>();
@@ -155,25 +157,24 @@ export function openingStatement(card: MedicalInsuranceRateCard, people: readonl
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
-  let premium = 0;
+  let premiumPiastres = 0;
   const plans = (["A", "B", "C"] as const).map((category): PlanLine => {
     const bands: BandLine[] = [];
-    let planPremium = 0;
+    let planPiastres = 0;
     let planPeople = 0;
     card.ageBands.forEach((band, index) => {
       const count = counts.get(`${category}:${index}`) ?? 0;
       if (count === 0) return;
       const rate = card.plans[category].rates[index];
-      const bandPremium = Math.round((rate ?? 0) * count);
-      bands.push({ band: index, label: ageBandWords(band), people: count, premium: bandPremium, rate });
-      planPremium += bandPremium;
+      const bandPiastres = toPiastres(rate ?? 0) * count;
+      bands.push({ band: index, label: ageBandWords(band), people: count, premium: toEgp(bandPiastres), rate });
+      planPiastres += bandPiastres;
       planPeople += count;
     });
-    premium += planPremium;
-    return { bands, category, people: planPeople, premium: planPremium };
+    premiumPiastres += planPiastres;
+    return { bands, category, people: planPeople, premium: toEgp(planPiastres) };
   });
 
-  const premiumPiastres = premium * 100;
   const tax = Math.round((premiumPiastres * card.taxBasisPoints) / 10_000);
   const cards = toPiastres(card.cardFeePerMember) * people.length;
   const issue = people.length > 0 ? toPiastres(card.issueFee) : 0;
@@ -182,7 +183,7 @@ export function openingStatement(card: MedicalInsuranceRateCard, people: readonl
     issueFee: toEgp(issue),
     people: people.length,
     plans,
-    premium,
+    premium: toEgp(premiumPiastres),
     priced: people.length - unpriced,
     tax: toEgp(tax),
     total: toEgp(premiumPiastres + tax + cards + issue),
