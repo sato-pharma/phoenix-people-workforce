@@ -147,8 +147,26 @@ About 17 script connections therefore sent the database password and the rows in
 - The app opens no Postgres connection (it reaches Supabase over HTTPS), and `infra/phoenix-mcp` verifies the
   certificate chain itself.
 - Switching SSL enforcement on is the owner's own action on the production project, after this change has merged; it
-  may restart the database. A network restriction is NOT recommended: Railway, GitHub's runners and the laptop have no
-  fixed addresses, so it would cut off the app's own scripts and the release gate.
+  may restart the database. **He switched it on at 02:04 Cairo on 19 Nov 2026.** The database's front door refused
+  requests for about four seconds, then every outside connection came back over TLS 1.3. A network restriction is
+  NOT recommended: Railway, GitHub's runners and the laptop have no fixed addresses, so it would cut off the app's own
+  scripts and the release gate.
+
+## What the credentials audit changed on 19 Nov 2026
+
+- **The production database admin password was replaced.** The new one is in the shared local `.env.local` and in
+  the GitHub `PHOENIX_PRODUCTION_DATABASE_URL` secret (`main-secrets`). No Railway service holds it, because the app
+  reaches the database over HTTPS. The old password is refused. A copy of `.env.local` made before that morning
+  holds a dead password and must be refreshed, never "fixed" by loosening anything.
+- **The unused production secret key named "default" was revoked.** It had answered no request in the day before.
+  The app's own key (`phoenix_server_2026_10_22`) is untouched.
+- **Staging's old-format keys are switched off.** CI's `STAGING_SUPABASE_SERVICE_ROLE_KEY` and the local staging
+  row-security test file now hold a staging secret key of their own (`ci_and_rls_tests_2026_11_19`), so either can
+  be revoked without touching the staging website.
+- **`CRON_SECRET_PREVIOUS` and `PHOENIX_AUTH_SECRET_PREVIOUS` leave production on 22 Nov 2026.** The app stops
+  accepting them at 00:00 Cairo that day (`src/lib/auth/previous-secret.ts`). A scheduled task on the owner's laptop
+  deletes both from the website and worker services from 00:15 that night. It checks that they are gone, then
+  removes itself. The code that reads them and their `.env.example` lines go in a later change.
 
 ## Never print a secret
 

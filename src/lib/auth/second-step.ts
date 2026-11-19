@@ -29,6 +29,18 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 /** Who must pass the second step. His choice: the Super Admin accounts, and nobody else. */
 export const SECOND_STEP_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["Super Admin"]);
 
+/**
+ * 🔴 THE SECOND SIGN-IN STEP IS SWITCHED OFF (owner, 19 Nov 2026: "remove the auth code feature").
+ *
+ * No account is asked for an authenticator code at sign-in, the Super Admin accounts included, and the
+ * account's Devices tab shows no card for it. The sign-in route and the profile page read this switch; the
+ * rules in this file, the rows in second-step-store.ts and their tests stay whole and dormant, so nothing
+ * here or in the database has to be rebuilt. Adding a Super Admin's passkey still asks the password
+ * (second-step-management.ts): that guard does not depend on this switch. Never switch it back on unasked.
+ */
+export const SECOND_STEP_SWITCHED_ON = false;
+
+/** Who the step would be asked of if it were switched on. Read SECOND_STEP_SWITCHED_ON first. */
 export function secondStepRequiredForRole(role: PhoenixRole | string | null | undefined): boolean {
   return SECOND_STEP_ROLES.has(role as PhoenixRole);
 }
