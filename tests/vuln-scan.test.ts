@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  COVERAGE_FLOOR,
   coverageOf,
   directDependencyNames,
   isScoped,
   parseLockfilePackages,
   remedyFor,
   scanGraph,
+  scanLockfile,
   sortFindings,
 } from "../scripts/vuln-scan.mjs";
 
@@ -92,6 +94,13 @@ export async function runVulnScanTests() {
     /under-read lockfile/,
     "a graph below the coverage floor must THROW — reporting it clean is the one outcome this file exists to prevent",
   );
+  // …and the scan CI really runs applies that floor itself: the four-package fixture must be refused by
+  // `scanLockfile`, or a version that dropped `COVERAGE_FLOOR` would scan an under-read graph and pass.
+  await assert.rejects(
+    () => scanLockfile({ lockText: fixture, manifestText: "{}", query: async () => [] }),
+    /under-read lockfile/,
+    "scanLockfile — the path main and the CI step run — must refuse an under-read lockfile under COVERAGE_FLOOR",
+  );
 
   // ── Detection, with no network: the query is injected ─────────────────────────────────────────
   const direct = directDependencyNames(
@@ -169,21 +178,45 @@ export async function runVulnScanTests() {
   // Lowered once, by a measured removal: on 17 Nov 2026 the outside error tracker's SDK and its build
   // plugin left, and the lockfile went from 1062 / 398 to 985 / 334 (counted on origin/main and on the
   // branch with the same key pattern). 900 still refuses the broken parser's 800 above.
+  //
+  // 🔴 THE FLOOR IS THE SCRIPT'S OWN `COVERAGE_FLOOR`, NEVER A NUMBER WRITTEN HERE. That 17 Nov change
+  // lowered this test's literal to 900 and left `main`'s literal at 1000, so CI's scan refused on every
+  // run while this suite stayed green (found 19 Nov 2026, "parsed 985 packages … floor is 1000/250"
+  // in main's own static job log). Both now read one constant, and the block below runs the scan's
+  // real path under it. That block replaces the two `>= floor` checks that stood here: they compared
+  // the same parsed counts with the same floor, and in front of it they blamed the PARSER for a floor
+  // set above a healthy lockfile — the exact disagreement this block exists to name.
   const realLock = readFileSync(new URL("../pnpm-lock.yaml", import.meta.url), "utf8");
   const realPackages = parseLockfilePackages(realLock);
   const realCoverage = coverageOf(realPackages);
 
   assert.ok(
-    realCoverage.total >= 900,
-    `the real lockfile parsed only ${realCoverage.total} packages — the parser is under-reading it, so a clean `
-      + "scan would prove nothing",
+    COVERAGE_FLOOR.minTotal > 800 && COVERAGE_FLOOR.minScoped > 0,
+    `COVERAGE_FLOOR ${COVERAGE_FLOOR.minTotal}/${COVERAGE_FLOOR.minScoped} no longer refuses the measured broken `
+      + "parser (800 total, 0 scoped), so it would pass the very defect it exists to catch",
   );
-  assert.ok(
-    realCoverage.scoped >= 250,
-    `only ${realCoverage.scoped} scoped packages parsed out of ${realCoverage.total}. A collapsed scoped count IS `
-      + "the 2026-09-30 defect: pnpm quotes every @scope/name key, so a pattern anchored on two spaces loses them "
-      + "all while the total still looks plausible",
-  );
+
+  // ── THE SCAN CI RUNS, over the real lockfile, under the floor it really uses ──────────────────
+  // `scanLockfile` is exactly what `main` (and so the CI step) calls; only the OSV query is swapped for
+  // one that answers nothing. It throws when the parsed graph falls under `COVERAGE_FLOOR` — either the
+  // parser regressed (a collapsed SCOPED count is the 2026-09-30 defect: pnpm quotes every @scope/name
+  // key, so a pattern anchored on two spaces loses them all while the total still looks plausible) or
+  // the floor and the lockfile disagree. Its message names both counts, and this fails on the pull
+  // request that moved either, not weeks later in a log nobody reads.
+  let liveCoverage: { total: number; scoped: number } | null = null;
+  try {
+    ({ coverage: liveCoverage } = await scanLockfile({
+      lockText: realLock,
+      manifestText: readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      query: async (batch: unknown[]) => batch.map(() => ({ vulns: [] })),
+    }));
+  } catch (error) {
+    assert.fail(
+      "HEADLINE (19 Nov 2026): the scan CI runs refuses this repo's own lockfile, so main's second-opinion "
+        + `vulnerability scan reports nothing on every run while its step stays green — ${(error as Error).message}`,
+    );
+  }
+  assert.deepEqual(liveCoverage, realCoverage, "the scan CI runs must read the whole lockfile the parser reads");
 
   // 🔴 SELF-CALIBRATING, BECAUSE HARD-CODED PACKAGE NAMES ROT — AND MINE ROTTED WITHIN THE HOUR.
   // The first version of this block asserted four names by hand, `@grpc/grpc-js` among them. #4966

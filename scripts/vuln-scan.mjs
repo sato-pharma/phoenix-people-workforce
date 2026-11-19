@@ -54,6 +54,28 @@ const OSV_VULN = "https://api.osv.dev/v1/vulns/";
 const CHUNK = 500;
 
 /**
+ * The coverage floor the scan runs under — ONE value, read by `scanLockfile` (so by `main` and the CI
+ * step) AND by tests/vuln-scan.test.ts, which runs `scanLockfile` itself over the real lockfile.
+ *
+ * 🔴 WHY ONE CONSTANT (19 Nov 2026). On 17 Nov the outside error tracker's SDK and its build plugin
+ * left, the lockfile went from 1062 / 398 to 985 / 334, and the TEST's floor was lowered to 900 in the
+ * same change — but `main` kept its own literal 1000. From then on the CI step refused on every run
+ * ("parsed 985 packages … floor is 1000/250"), and stayed green because it is `continue-on-error`, so
+ * the second opinion this file exists to give reported nothing while the suite said the floor was fine.
+ * A floor written in two places drifts; this one cannot, and the test now fails the moment the real
+ * lockfile falls under the floor the scan really uses.
+ *
+ * 🔴 THE SCOPED FLOOR IS THE ONE THAT WORKS, AND THAT IS MEASURED, NOT ASSUMED. Reintroducing the
+ * quoted-key defect against this repo's real lockfile on 2026-09-30 produced `total: 800, scoped: 0`
+ * against a true `total: 1171, scoped: 371`. A total-only floor of 800 would have passed that EXACTLY —
+ * the defect drops ~32% of the graph and still leaves a plausible-looking count. So the total floor
+ * carries headroom and the scoped floor is the load-bearing one; keep both. Never lower either to quiet
+ * a red run: a drop means the parser regressed or the graph lost a third of itself, and both deserve a
+ * human, who records the measured removal beside the new value as the 17 Nov one is recorded here.
+ */
+export const COVERAGE_FLOOR = Object.freeze({ minTotal: 900, minScoped: 250 });
+
+/**
  * Severity order for reporting. OSV's `database_specific.severity` is the GitHub Advisory rating,
  * which is the one a human recognises.
  */
@@ -215,22 +237,25 @@ async function hydrate(ids) {
   return meta;
 }
 
-async function main() {
-  const lockText = readFileSync("pnpm-lock.yaml", "utf8");
-  const packages = parseLockfilePackages(lockText);
-  const direct = directDependencyNames(readFileSync("package.json", "utf8"));
+/**
+ * The scan `main` runs: parse the lockfile, read the direct dependencies, and scan under
+ * `COVERAGE_FLOOR`. `query` is injected, so tests/vuln-scan.test.ts runs this exact path over the real
+ * lockfile with no network — which is what proves the floor and the lockfile still agree.
+ */
+export async function scanLockfile({ lockText, manifestText, query }) {
+  return scanGraph({
+    packages: parseLockfilePackages(lockText),
+    query,
+    direct: directDependencyNames(manifestText),
+    ...COVERAGE_FLOOR,
+  });
+}
 
-  // 🔴 THE SCOPED FLOOR IS THE ONE THAT WORKS, AND THAT IS MEASURED, NOT ASSUMED. Reintroducing the
-  // quoted-key defect against this repo's real lockfile on 2026-09-30 produced `total: 800, scoped: 0`
-  // against a true `total: 1171, scoped: 371`. A total-only floor of 800 would have passed that
-  // EXACTLY — the defect drops ~32% of the graph and still leaves a plausible-looking count. So the
-  // total floor carries real headroom and the scoped floor is the load-bearing one; keep both.
-  const { coverage, findings } = await scanGraph({
-    packages,
+async function main() {
+  const { coverage, findings } = await scanLockfile({
+    lockText: readFileSync("pnpm-lock.yaml", "utf8"),
+    manifestText: readFileSync("package.json", "utf8"),
     query: osvQuery,
-    direct,
-    minTotal: 1000,
-    minScoped: 250,
   });
 
   console.log(`vuln-scan: read ${coverage.total} resolved packages (${coverage.scoped} scoped)`);
