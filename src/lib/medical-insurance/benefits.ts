@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The Libano-Suisse table of benefits for plans A, B and C, taken from the signed and stamped table (renewal
-// offer Rev 1.3, 5 November 2026, section 6 "جدول المنافع", pages 7 to 9 of 11). Each line carries the signed
+// offer Rev 1.3, 5 November 2026, section 6 "جدول المنافع", pages 7 to 9 of 11). The issued policy 50048950
+// (22 November 2026) carries the same table on its pages 31 to 33, line for line. Each line carries the signed
 // Arabic beside its English, so a reader can always check the translation against what was signed.
 //
 // It carries NO COST: the annual limit and the caps are what the insurer covers, never what the company pays.
@@ -31,7 +32,7 @@ export type PlanBenefits = {
   sections: BenefitSection[];
 };
 
-export const TABLE_OF_BENEFITS_SOURCE = "Libano-Suisse table of benefits, renewal offer Rev 1.3 of 5 November 2026, signed and stamped";
+export const TABLE_OF_BENEFITS_SOURCE = "Libano-Suisse table of benefits, policy 50048950 issued 22 November 2026 (the same table as renewal offer Rev 1.3, signed and stamped)";
 
 const egp = (amount: number) => amount.toLocaleString("en-US");
 
