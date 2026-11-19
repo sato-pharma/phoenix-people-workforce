@@ -35,6 +35,7 @@ import {
   toPooler,
   compareDumps,
   explainDrift,
+  flattenBooleanChains,
   freshnessQuery,
   normalizeDump,
   objectLineDiff,
@@ -218,41 +219,51 @@ function restoreCheck() {
   const restored = dump(url);
   const dumpSeconds = Math.round((Date.now() - started) / 1000);
   const diff = compareDumps(baseline, restored);
-  const total = diff.added.length + diff.removed.length + diff.changed.length;
+  // An object whose only change is Postgres folding a nested AND/OR chain on the way back in holds the same
+  // expression (flattenBooleanChains, scripts/lib/schema-baseline.mjs). It is listed, never counted.
+  const fileObjects = splitObjects(baseline);
+  const restoredObjects = splitObjects(restored);
+  const sameExpression = (key) =>
+    flattenBooleanChains(fileObjects.get(key) ?? "") === flattenBooleanChains(restoredObjects.get(key) ?? "");
+  const refolded = diff.changed.filter(sameExpression);
+  const changed = diff.changed.filter((key) => !sameExpression(key));
+  const total = diff.added.length + diff.removed.length + changed.length;
   console.log(
     `[schema-restore] ${BASELINE}: ${objects.toLocaleString("en")} objects restored in ${restoreSeconds}s with ` +
       `${restoreErrors.length} error(s); the restored database dumped in ${dumpSeconds}s to ` +
-      `${diff.objects.toLocaleString("en")} objects, ${total} differ from the file`,
+      `${diff.objects.toLocaleString("en")} objects, ${total} differ from the file` +
+      (refolded.length > 0 ? ` (and ${refolded.length} hold the same expression with Postgres's own brackets)` : ""),
   );
   list("errors while restoring", restoreErrors);
   list("in the restored database, not in the file", diff.added);
   list("in the file, missing from the restored database", diff.removed);
-  list("restored differently from the file", diff.changed);
-  if (diff.changed.length > 0) {
-    // What changed in each, so the run log names the difference itself (- the file, + the restored database).
-    const fileObjects = splitObjects(baseline);
-    const restoredObjects = splitObjects(restored);
-    for (const key of diff.changed.slice(0, LIST_LIMIT)) {
-      const lines = objectLineDiff(fileObjects.get(key) ?? "", restoredObjects.get(key) ?? "");
-      console.log(`  ${key}:`);
-      for (const line of lines.slice(0, 12)) console.log(`      ${line}`);
-      if (lines.length > 12) console.log(`      … and ${lines.length - 12} more line(s)`);
-    }
+  list("restored differently from the file", changed);
+  list("the same expression, re-bracketed by Postgres's parser (not a difference)", refolded);
+  // What changed in each, so the run log names the difference itself (- the file, + the restored database).
+  for (const key of [...changed, ...refolded].slice(0, LIST_LIMIT)) {
+    const lines = objectLineDiff(fileObjects.get(key) ?? "", restoredObjects.get(key) ?? "");
+    console.log(`  ${key}${refolded.includes(key) ? " (same expression)" : ""}:`);
+    for (const line of lines.slice(0, 12)) console.log(`      ${line}`);
+    if (lines.length > 12) console.log(`      … and ${lines.length - 12} more line(s)`);
   }
   summary([
     "## Schema restore check",
     "",
-    `| Objects in ${BASELINE} | Restore errors | Objects after restore | Differences |`,
-    "| ---: | ---: | ---: | ---: |",
-    `| ${objects.toLocaleString("en")} | ${restoreErrors.length} | ${diff.objects.toLocaleString("en")} | ${total} |`,
+    `| Objects in ${BASELINE} | Restore errors | Objects after restore | Differences | Same expression, re-bracketed |`,
+    "| ---: | ---: | ---: | ---: | ---: |",
+    `| ${objects.toLocaleString("en")} | ${restoreErrors.length} | ${diff.objects.toLocaleString("en")} | ${total} | ${refolded.length} |`,
     "",
     ...restoreErrors.slice(0, LIST_LIMIT).map((line) => `- error: \`${line.replace(/`/g, "'")}\``),
-    ...[...diff.added, ...diff.removed, ...diff.changed].slice(0, LIST_LIMIT).map((key) => `- differs: \`${key}\``),
+    ...[...diff.added, ...diff.removed, ...changed].slice(0, LIST_LIMIT).map((key) => `- differs: \`${key}\``),
+    ...refolded.slice(0, LIST_LIMIT).map((key) => `- same expression, re-bracketed: \`${key}\``),
   ]);
 
   if (restoreErrors.length === 0 && total === 0) {
-    console.log(`[schema-restore] PASS — the file rebuilds production's ${objects.toLocaleString("en")} objects exactly.`);
-    headline(`PASS: ${objects} objects restored, 0 errors, 0 differences`);
+    console.log(
+      `[schema-restore] PASS — the file rebuilds production's ${objects.toLocaleString("en")} objects` +
+        (refolded.length > 0 ? `; ${refolded.length} of them come back re-bracketed by Postgres, the same expression.` : " exactly."),
+    );
+    headline(`PASS: ${objects} objects restored, 0 errors, 0 differences (${refolded.length} re-bracketed, same expression)`);
     process.exit(0);
   }
   const verdict = `${restoreErrors.length} restore error(s), ${total} object(s) differ after the restore`;
