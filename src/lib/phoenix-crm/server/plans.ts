@@ -113,6 +113,7 @@ import { loadSeatDaysOff, loadSeatPendingLeave } from "@/lib/phoenix-crm/server/
 import { assertRepMayChangeWeek, editAcknowledgedAt, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
+import { readinessStamps } from "@/lib/phoenix-crm/server/readiness-reuse";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { effectiveListType, type PlannerCustomer, type PlannerInsight, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
@@ -285,6 +286,16 @@ export function venueNamesOf(
 
 export type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
 
+/**
+ * The plan save's readiness stamp, run at most once per territory inside `READINESS_STAMP_FRESH_MS`
+ * (readiness-reuse.ts). A failed stamp is never remembered, so the next save stamps again; a stamp that
+ * waits for a later save changes nothing anyone sees, because the Team tab reads a list as ready when it
+ * is stamped OR complete right now.
+ */
+export function stampTerritoryReadyRecently(seatId: string): Promise<void> {
+  return readinessStamps.run(seatId, () => territoryReadiness(seatId, false, true));
+}
+
 export async function territoryReadiness(seatId: string, isTest: boolean, markReady: boolean): Promise<TerritoryReadiness> {
   if (isTest) {
     const summary = summarizeReadiness((await loadReference(seatId, true)).map((row) => row.state));
@@ -366,7 +377,6 @@ export type PlannerView = {
   cairoToday: string;
   weekStart: string;
   weeks: Array<{ weekStart: string; status: PhoenixCrmPlanStatus | null; statusLabel: string }>;
-  readiness: TerritoryReadiness;
   /** Customers carried over from iReports360 and not validated yet. Information, never a refusal. */
   pendingCount: number;
   rules: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap" | "farApartKm" | "gradeTargets">;
@@ -544,7 +554,8 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     planPartsRead,
     customersRead,
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
-    ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
+    // No readiness read here (19 Nov 2026): no planner screen draws it, and each open measured the
+    // whole carried-over list for nothing — 2,737 disk blocks a time. The Team tab is where it shows.
     customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
     loadPlanHolidays(weekStart, addDaysIso(weekStart, 5)),
     // Last seen, the usual days and a follow-up due (owner, 2026-10-02): its Phoenix visits start now,
@@ -566,7 +577,6 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     { planRows, planRow, itemRows, names, activities, starts, edit },
     { customers, placesByCustomer },
     visitCounts,
-    readiness,
     references,
     holidays,
     insights,
@@ -673,7 +683,6 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
         }),
       };
     }),
-    readiness,
     pendingCount: plannerCustomers.filter((row) => row.pending).length,
     rules: {
       pmDailyCap: settings.pmDailyCap,
@@ -778,8 +787,10 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
 
   // Stamps the territory ready the first time its list is complete; it then stays ready. It is a
   // progress mark for the manager's Team tab, it has never refused a plan since 2026-09-22, and nothing
-  // the save answers reads it — so it runs once the answer has gone (2026-10-16 speed audit).
-  if (!isTest) await afterResponse("phoenix_crm_plan_save_readiness_stamp", () => territoryReadiness(seat.seatId, false, true));
+  // the save answers reads it — so it runs once the answer has gone (2026-10-16 speed audit), and at
+  // most once per territory in five minutes (19 Nov 2026, readiness-reuse.ts): 12,381 saves in 18 days
+  // each paid one whole-list measurement.
+  if (!isTest) await afterResponse("phoenix_crm_plan_save_readiness_stamp", () => stampTerritoryReadyRecently(seat.seatId));
 
   const drafts = parsePlanItems(body.items);
   if (!drafts.ok) throw validationError(drafts.error);

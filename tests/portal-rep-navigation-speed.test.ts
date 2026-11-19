@@ -157,7 +157,8 @@ export function runPortalRepNavigationSpeedTests(): void {
       const planner = functionBody(source(path), declaration);
       // What reads the reference list the mint can change still follows the mint...
       assert.match(planner, /ensured\.then\(\(\) => loadTerritoryCustomers\(/, `${declaration} keeps the customer list behind the mint`);
-      assert.match(planner, /ensured\.then\(\(\) => territoryReadiness\(/, `${declaration} keeps the readiness count behind the mint`);
+      // No planner screen draws readiness, so no planner open measures it (19 Nov 2026, readiness-reuse.ts).
+      assert.doesNotMatch(planner, /territoryReadiness\(|loadReadiness\(/, `REGRESSION: ${declaration} measures the whole list for a figure no screen draws`);
       assert.match(
         planner,
         /customersRead\.then\(\(\{ customers \}\) => loadPlannerReferences\(seat\.seatId, isTest, customers\)\)/,

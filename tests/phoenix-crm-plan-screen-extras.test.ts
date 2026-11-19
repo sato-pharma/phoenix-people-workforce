@@ -590,7 +590,11 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
 
     const save = bodyOf(plans, "export async function savePlan(");
     assert.ok(save.indexOf("const reads = Promise.all([") < save.indexOf("await assertRepMayChangeWeek("), "the save's list, holidays and leave start beside the one-week guard");
-    assert.match(save, /await afterResponse\("phoenix_crm_plan_save_readiness_stamp", \(\) => territoryReadiness\(seat\.seatId, false, true\)\);/, "the readiness stamp runs once the answer has gone");
+    assert.match(
+      save,
+      /await afterResponse\("phoenix_crm_plan_save_readiness_stamp", \(\) => stampTerritoryReadyRecently\(seat\.seatId\)\);/,
+      "the readiness stamp runs once the answer has gone, at most once per territory in five minutes",
+    );
     assert.equal((save.match(/venueNamesOf\(|loadSharedPlaceNames\(/g) ?? []).length, 1, "the venue names are read once per save");
 
     const planner = bodyOf(plans, "export async function loadPlanner(");

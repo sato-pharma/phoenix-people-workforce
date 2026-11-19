@@ -122,13 +122,11 @@ import {
   planPeople,
   REVIEW_ITEM_COLUMNS,
   statusOf,
-  territoryReadiness,
   venueNamesOf,
   type PlanDayView,
   type PlanSaveReads,
   type PlanSummary,
   type SavedPlan,
-  type TerritoryReadiness,
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
@@ -315,7 +313,6 @@ export type MonthlyPlannerView = {
   /** The due date has passed and the month is still not sent. */
   overdue: boolean;
   months: Array<{ monthStart: string; label: string; status: PhoenixCrmPlanStatus | null; statusLabel: string }>;
-  readiness: TerritoryReadiness;
   /** Customers carried over from iReports360 and not validated yet. Information, never a refusal. */
   pendingCount: number;
   rules: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap" | "farApartKm" | "gradeTargets" | "callRateAmTarget" | "callRatePmTarget">;
@@ -617,7 +614,8 @@ export async function loadMonthlyPlanner(
     planPartsRead,
     customersRead,
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
-    ensured.then(() => territoryReadiness(seat.seatId, isTest, false)),
+    // No readiness read here (19 Nov 2026): no planner screen draws it, and each open measured the
+    // whole carried-over list for nothing. The Team tab is where it shows.
     customersRead.then(({ customers }) => loadPlannerReferences(seat.seatId, isTest, customers)),
     // Two weeks either side of the month reach every week the board can show, the leading one included.
     loadPlanHolidays(addDaysIso(monthStart, -14), addDaysIso(monthEndOf(monthStart), 14)),
@@ -643,7 +641,6 @@ export async function loadMonthlyPlanner(
     { monthsResult, headerRow, planRows, itemRows, leadingRow, leadingItems, names, activities, starts, editState, sends },
     { customers, placesByCustomer },
     visitCounts,
-    readiness,
     references,
     holidays,
     insights,
@@ -776,7 +773,6 @@ export async function loadMonthlyPlanner(
         statusLabel: planStatusLine({ status: monthStatus, repName: territory.repName, reviewerName: territory.reviewerName }),
       };
     }),
-    readiness,
     pendingCount: plannerCustomers.filter((customer) => customer.pending).length,
     rules: {
       pmDailyCap: settings.pmDailyCap,

@@ -12,6 +12,7 @@ import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
 import { SHARED_PLACE_DAY_FULL_TEXT } from "@/lib/phoenix-crm/shared-place-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { OFFPLAN_DAY_FULL_TEXT, OFFPLAN_WEEK_FULL_TEXT } from "@/lib/phoenix-crm/unplanned-rules";
+import { dropSharedReadinessAfter } from "@/lib/phoenix-crm/server/readiness-reuse";
 import { REP_EXCEPTION_DATES_TEXT } from "@/lib/phoenix-crm/rep-exception-rules";
 import { VENUE_CAP_OUT_OF_RANGE_TEXT } from "@/lib/phoenix-crm/venue-cap-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -411,6 +412,8 @@ export async function callPhoenixCrm<T>(fn: string, args: Record<string, unknown
   if (error) {
     throw phoenixCrmRefusal(error) ?? error;
   }
+  // A write that changes what a list counts drops the boards' minute-old readiness copy (readiness-reuse.ts).
+  dropSharedReadinessAfter(fn);
   if (CUSTOMER_360_PHOENIX_WRITERS.has(fn)) bumpCustomer360Cache(fn);
   return data as T;
 }
