@@ -1,14 +1,42 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { isOutstationTransportationType } from "@/lib/outstation/manager-expense-input";
 import { previewManagerExpenseCalculation } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import type { OutstationExpenseType, OutstationTransportationType } from "@/lib/outstation/types";
+import type { OutstationExpenseType } from "@/lib/outstation/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** An amount or a distance as a number, or as text; Number() and optionalNumber() read both as before. */
+const previewNumberField = z.union([z.number(), z.string()]).nullable().optional();
+const previewTextField = z.string().nullable().optional();
+
+/**
+ * What the manual-expense modal's live preview sends (admin-manager-expense-modal.tsx). The required fields
+ * and the transportation type are still judged below, with the route's own invalid_input answer.
+ */
+const PreviewBodySchema = z.object({
+  claimedTotalAmount: previewNumberField,
+  destinationArea: previewTextField,
+  destinationCity: previewTextField,
+  destinationCountry: previewTextField,
+  destinationLabel: previewTextField,
+  distanceKm: previewNumberField,
+  employeeHrId: previewTextField,
+  expenseType: previewTextField,
+  meetingAmount: previewNumberField,
+  otherAmount: previewNumberField,
+  transportationType: previewTextField,
+  travelCostAmount: previewNumberField,
+  tripEndDate: previewTextField,
+  tripStartDate: previewTextField,
+});
 
 function optionalNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
@@ -30,22 +58,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
 
-    const body = (await request.json().catch(() => ({}))) as {
-      claimedTotalAmount?: number;
-      destinationArea?: string | null;
-      destinationCity?: string | null;
-      destinationCountry?: string | null;
-      destinationLabel?: string | null;
-      distanceKm?: number;
-      employeeHrId?: string;
-      expenseType?: OutstationExpenseType;
-      meetingAmount?: number;
-      otherAmount?: number;
-      transportationType?: OutstationTransportationType;
-      travelCostAmount?: number | null;
-      tripEndDate?: string;
-      tripStartDate?: string;
-    };
+    const parsedBody = await parseJsonBody(request, PreviewBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_input", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
 
     const employeeHrId =
       typeof body.employeeHrId === "string" ? body.employeeHrId.trim() : "";
@@ -70,7 +87,7 @@ export async function POST(request: Request) {
       !tripStartDate ||
       !tripEndDate ||
       !transportationType ||
-      !["car", "train", "bus", "other", "no_ticket"].includes(transportationType)
+      !isOutstationTransportationType(transportationType)
     ) {
       return NextResponse.json(
         {

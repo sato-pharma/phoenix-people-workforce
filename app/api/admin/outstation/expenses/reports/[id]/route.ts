@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { analyzeExpenseWorkbook, unrecognizedExpenseTemplateMessage } from "@/lib/outstation/expense-import";
@@ -14,9 +15,18 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseFormBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The Expenses workspace's report replace (expenses-review-workspace.tsx): one `file`. Optional here so a
+ * form without it still gets the route's own "Replacement expenses file is required."
+ */
+const ReportReplaceFormSchema = z.object({
+  file: z.instanceof(File).optional(),
+});
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -81,8 +91,11 @@ export async function PUT(request: Request, { params }: Params) {
     assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const { id } = await params;
-    const formData = await request.formData();
-    const file = formData.get("file");
+    const parsedForm = await parseFormBody(request, ReportReplaceFormSchema);
+    if (!parsedForm.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedForm.message }, { status: 400 });
+    }
+    const file = parsedForm.data.file;
 
     if (!id) {
       return NextResponse.json(

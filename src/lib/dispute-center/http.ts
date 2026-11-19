@@ -7,42 +7,24 @@ export { tidyDisputeText } from "./text.ts";
 import { checkDisputeImage, DISPUTE_ATTACHMENT_MAX_FILES, type CheckedDisputeImage } from "./attachment-rules.ts";
 
 /**
- * A message from either side: JSON (text only) or multipart/form-data when it carries pictures. Every
- * picture is checked by its OWN bytes here, before anything is written, so a bad file is refused
- * cleanly and never leaves half a message behind.
+ * The pictures of a Dispute Center reply, each checked by its own bytes before anything is written (owner,
+ * 2026-10-09: "upload a picture in both"). The route reads the reply through its schema (REC-060) and hands the
+ * form's files here; empty file inputs are dropped.
  */
-export async function readDisputeMessageRequest(request: Request): Promise<{
-  body: string;
-  images: CheckedDisputeImage[];
-  fields: Record<string, string>;
-}> {
-  const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
-  if (contentType.startsWith("multipart/form-data")) {
-    const form = await request.formData();
-    const fields: Record<string, string> = {};
-    for (const [key, value] of form.entries()) {
-      if (typeof value === "string") fields[key] = value;
-    }
-    const files = form.getAll("images").filter((entry): entry is File => typeof entry !== "string" && entry.size > 0);
-    if (files.length > DISPUTE_ATTACHMENT_MAX_FILES) {
-      throw validationError(`A message can carry at most ${DISPUTE_ATTACHMENT_MAX_FILES} pictures.`);
-    }
-    const images: CheckedDisputeImage[] = [];
-    for (const file of files) {
-      try {
-        images.push(checkDisputeImage({ bytes: new Uint8Array(await file.arrayBuffer()), name: file.name }));
-      } catch (error) {
-        throw validationError(String(error instanceof Error ? error.message : error).replace(/^Validation:\s*/, ""));
-      }
-    }
-    return { body: String(fields.body ?? ""), fields, images };
+export async function checkDisputeMessageImages(files: readonly File[]): Promise<CheckedDisputeImage[]> {
+  const real = files.filter((file) => file.size > 0);
+  if (real.length > DISPUTE_ATTACHMENT_MAX_FILES) {
+    throw validationError(`A message can carry at most ${DISPUTE_ATTACHMENT_MAX_FILES} pictures.`);
   }
-  const json = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const fields: Record<string, string> = {};
-  for (const [key, value] of Object.entries(json)) {
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") fields[key] = String(value);
+  const images: CheckedDisputeImage[] = [];
+  for (const file of real) {
+    try {
+      images.push(checkDisputeImage({ bytes: new Uint8Array(await file.arrayBuffer()), name: file.name }));
+    } catch (error) {
+      throw validationError(String(error instanceof Error ? error.message : error).replace(/^Validation:\s*/, ""));
+    }
   }
-  return { body: String(json.body ?? ""), fields, images: [] };
+  return images;
 }
 
 /** The one error shape every Dispute Center route answers with. */

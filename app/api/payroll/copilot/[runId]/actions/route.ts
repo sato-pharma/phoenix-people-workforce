@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -6,12 +7,23 @@ import {
   copilotErrorResponse,
   resolveCopilotActor,
 } from "@/lib/payroll/copilot/access";
-import { applyActionsToRun } from "@/lib/payroll/copilot/service";
+import { parseJsonBody } from "@/lib/http/request-body";
+import { applyActionsToRun, CopilotError } from "@/lib/payroll/copilot/service";
 import { COPILOT_OVERRIDE_FIELDS, type ProposedAction } from "@/lib/payroll/copilot/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The workbench posts `{ actions: [...] }` — a confirmed proposal list, an accepted recommendation, a
+ * confirm or a hold. Each entry stays `unknown` here on purpose: `coerceActions` below judges entry by
+ * entry and skips one it cannot apply, exactly as it did before the schema, so one odd entry never
+ * refuses the rest.
+ */
+const CopilotActionsBodySchema = z.object({
+  actions: z.array(z.unknown()).optional(),
+});
 
 function num(value: unknown): number | null {
   const n = Number(value);
@@ -90,8 +102,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     assertCopilotAccess(access);
     const { runId } = await params;
 
-    const body = (await request.json().catch(() => ({}))) as { actions?: unknown };
-    const actions = coerceActions(body.actions);
+    const parsed = await parseJsonBody(request, CopilotActionsBodySchema, { fallback: {} });
+    if (!parsed.ok) throw new CopilotError(parsed.message, 400);
+    const actions = coerceActions(parsed.data.actions);
 
     const view = await applyActionsToRun(runId, actions, resolveCopilotActor(access));
     return NextResponse.json({ ...view, appliedActions: actions.length });

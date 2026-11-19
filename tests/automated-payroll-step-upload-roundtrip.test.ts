@@ -148,7 +148,12 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
     save.indexOf("await assertStepUnchangedSince(") < save.indexOf("savePart1NotPaid("),
     "and once before Part 1 Not Paid can record anything",
   );
-  assert.match(save, /return \{ revision: saved\.updatedAt \|\| null \};/, "a save hands the screen its new revision");
+  // F-PAY-017: the revision handed back also names the run's cell watermark after this save's own lines.
+  assert.match(
+    save,
+    /return \{ revision: encodeStepRevision\(saved\.state\.updatedAt \|\| null, saved\.watermark\) \};/,
+    "a save hands the screen its new revision",
+  );
   const importer = bodyOf(service, "export async function importStepUpload(");
   assert.ok(
     importer.indexOf("await assertStepUnchangedSince(") < importer.indexOf("if (!commit)"),

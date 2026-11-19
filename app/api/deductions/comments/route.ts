@@ -1,13 +1,27 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { addDeductionsComment, findDeductionsCandidateOwner } from "@/lib/deductions/comments.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The employee portal's Deductions page sends `{ body, candidateId, explanation }` to OPEN a dispute
+ * (`body` is "" and `explanation` is the reason picked from the list — `{ reasonCode, confirmerHrId,
+ * detailText }`) and `{ body, candidateId }` for every later comment. The explanation is handed to
+ * addDeductionsComment exactly as sent (`z.unknown()`), which validates it with its own words.
+ */
+const CommentBodySchema = z.object({
+  body: z.string().nullish(),
+  candidateId: z.string().nullish(),
+  explanation: z.unknown().optional(),
+});
 
 function jsonError(error: unknown, fallback: string, defaultStatus = 500) {
   if (error instanceof SyntaxError) {
@@ -42,7 +56,11 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employee_profile", "read");
-    const body = await request.json();
+    const parsed = await parseJsonBody(request, CommentBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, message: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     const candidateId = String(body.candidateId ?? "").trim();
     if (!candidateId) {
       return NextResponse.json({ success: false, message: "candidateId is required." }, { status: 400 });

@@ -85,8 +85,10 @@ export function runDeductionsDisputePicturesTests() {
     const route = read("app/api/admin/deductions/comments/route.ts");
     const post = route.slice(route.indexOf("export async function POST"));
     assert.ok(
+      // Since REC-060 (19 Nov 2026) the form is read through parseFormBody, the one schema reader money routes use.
       post.indexOf("assertDeductionsDecisionActor(access)") !== -1 &&
-        post.indexOf("assertDeductionsDecisionActor(access)") < post.indexOf("request.formData()"),
+        post.indexOf("parseFormBody(request") !== -1 &&
+        post.indexOf("assertDeductionsDecisionActor(access)") < post.indexOf("parseFormBody(request"),
       "a non-Super-Admin is turned away before any picture is read",
     );
     assert.ok(

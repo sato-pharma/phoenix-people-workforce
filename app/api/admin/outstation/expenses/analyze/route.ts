@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { analyzeExpenseWorkbook, unrecognizedExpenseTemplateMessage } from "@/lib/outstation/expense-import";
@@ -10,9 +11,18 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { spreadsheetTooLargeMessage, validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseFormBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The Expenses workspace's upload (expenses-review-workspace.tsx): one `file`. Optional here so a form
+ * without it still gets the route's own "Expenses file is required."; its size and type are judged below.
+ */
+const ExpenseUploadFormSchema = z.object({
+  file: z.instanceof(File).optional(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -22,8 +32,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
-    const formData = await request.formData();
-    const file = formData.get("file");
+    const parsedForm = await parseFormBody(request, ExpenseUploadFormSchema);
+    if (!parsedForm.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedForm.message }, { status: 400 });
+    }
+    const file = parsedForm.data.file;
 
     if (!(file instanceof File)) {
       return NextResponse.json(

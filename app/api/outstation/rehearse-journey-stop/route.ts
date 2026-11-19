@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -7,6 +8,7 @@ import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence"
 import { rehearseOutstationJourneyStop } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +38,37 @@ function rehearsalStatus(error: unknown) {
   return 500;
 }
 
+/** A GPS figure, a distance or an amount as a number, or as text; numberOrNull and the shared readers take both. */
+const rehearsalNumberField = z.union([z.number(), z.string()]).nullable().optional();
+const rehearsalTextField = z.string().nullable().optional();
+
+/**
+ * What the test claim screen sends (journey-stop-rehearsal.tsx): the stop's position, the checked trip's
+ * arrival and dates, and the server's own earlier stop records sent back verbatim. Every field is optional, so
+ * an empty body still reaches the service — which refuses anyone who is not a test account with its own 403.
+ */
+const RehearseJourneyStopBodySchema = z.object({
+  accuracyMeters: rehearsalNumberField,
+  arrival: z
+    .object({
+      capturedAt: rehearsalTextField,
+      distanceFromResidenceKm: rehearsalNumberField,
+      latitude: rehearsalNumberField,
+      longitude: rehearsalNumberField,
+    })
+    .nullable()
+    .optional(),
+  latitude: rehearsalNumberField,
+  locationLabel: rehearsalTextField,
+  longitude: rehearsalNumberField,
+  stops: z.array(z.unknown()).nullable().optional(),
+  ticketAmount: rehearsalNumberField,
+  ticketFileCount: rehearsalNumberField,
+  transportationType: rehearsalTextField,
+  tripEndDate: rehearsalTextField,
+  tripStartDate: rehearsalTextField,
+});
+
 function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -50,7 +83,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, RehearseJourneyStopBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     // Never cast the raw body field to a number: `Number(null)` is 0, a fix at 0,0.
     const { latitude, longitude } = readDeparturePhotoPosition(body);
     const arrival = (body.arrival && typeof body.arrival === "object" ? body.arrival : {}) as Record<string, unknown>;

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
@@ -10,9 +11,24 @@ import {
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A month or a year as a number, or as text; the period is still judged below by assertValidPayrollPeriod. */
+const periodField = z.union([z.number(), z.string()]).nullable().optional();
+
+/**
+ * What the Expenses workspace's "Import to payroll" sends (expenses-review-workspace.tsx): the file name and
+ * the period. `records` is accepted only so that unsaved rows are still refused below by name.
+ */
+const PayrollImportBodySchema = z.object({
+  fileName: z.string().nullable().optional(),
+  month: periodField,
+  records: z.array(z.unknown()).nullable().optional(),
+  year: periodField,
+});
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +38,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
-    const body = await request.json();
+    const parsedBody = await parseJsonBody(request, PayrollImportBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const fileName = String(body.fileName ?? "expenses-upload.xls");
     const month = Number(body.month);
     const year = Number(body.year);

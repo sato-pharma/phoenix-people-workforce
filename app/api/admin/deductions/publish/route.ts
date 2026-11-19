@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listPublicationsForMonth, publishMonth } from "@/lib/deductions/publish.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PublishBody = {
-  monthKey?: unknown;
-};
+/** The Deductions workspace's Publish sends `{ monthKey }` (YYYY-MM). */
+const PublishBodySchema = z.object({
+  monthKey: z.string().nullish(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +25,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "deductions", "approve");
 
-    const body = (await request.json()) as PublishBody;
+    const parsed = await parseJsonBody(request, PublishBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (typeof body.monthKey !== "string" || !body.monthKey.trim()) {
       throw new Error("Validation: monthKey is required (YYYY-MM).");
     }

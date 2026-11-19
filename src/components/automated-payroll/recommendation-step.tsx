@@ -528,7 +528,12 @@ export function RecommendationStep({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load step.");
       setRows(data.rows as StepRow[]);
-      revisionRef.current = (data.state as { updatedAt?: string } | null | undefined)?.updatedAt || null;
+      // The server's revision also names the run's cell watermark (F-PAY-017), so a figure that changed under
+      // this screen refuses the save; an older server answer without it falls back to the step's own stamp.
+      revisionRef.current =
+        typeof data.revision === "string"
+          ? data.revision
+          : (data.state as { updatedAt?: string } | null | undefined)?.updatedAt || null;
       setCandidates((data.candidates ?? []) as ManualRowCandidate[]);
       setRemovedManual([]);
       const run = data.run as { month?: number; year?: number } | undefined;

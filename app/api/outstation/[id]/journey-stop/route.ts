@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -8,6 +9,7 @@ import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence"
 import { captureOutstationJourneyStop } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
@@ -22,6 +24,30 @@ export const dynamic = "force-dynamic";
  * window, the evidence the rule asks with a position, at most six stops — is enforced in the SERVICE.
  * The permission check below only establishes that the caller may touch the outstation module at all.
  */
+/** A GPS figure (coordinate or accuracy) as a number, or as text; the shared readers take both, null is none. */
+const stopNumberField = z.union([z.number(), z.string()]).nullable().optional();
+
+/** One ticket file for the leg, as a data URL of any size — the upload parser caps it. */
+const StopTicketFileSchema = z.object({
+  dataUrl: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+/**
+ * What the next-place card sends (journey-stop-card.tsx): the position, the live photo (a data URL, or null
+ * when the rule asks for none), the leg's ticket files and amount, and the card's retry key.
+ */
+const JourneyStopBodySchema = z.object({
+  accuracyMeters: stopNumberField,
+  captureKey: z.string().nullable().optional(),
+  imageDataUrl: z.string().nullable().optional(),
+  latitude: stopNumberField,
+  locationLabel: z.string().nullable().optional(),
+  longitude: stopNumberField,
+  ticketAmount: stopNumberField,
+  tickets: z.array(StopTicketFileSchema).nullable().optional(),
+});
+
 function journeyStopStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
@@ -73,9 +99,13 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, JourneyStopBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const imageDataUrl = typeof body.imageDataUrl === "string" && body.imageDataUrl ? body.imageDataUrl : null;
-    const rawTickets = Array.isArray(body.tickets) ? (body.tickets as Array<Record<string, unknown>>) : [];
+    const rawTickets = body.tickets ?? [];
     const ticketAmount = Number(body.ticketAmount ?? 0);
 
     // Read here, judged in the service: a stop with no position, or with the wrong evidence, is

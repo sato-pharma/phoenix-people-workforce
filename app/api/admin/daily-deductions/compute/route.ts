@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertDailyDeductionsPublishActor } from "@/lib/daily-deductions/permissions.ts";
 import { runConnectorForRange } from "@/lib/daily-deductions/service.ts";
@@ -14,11 +16,16 @@ export const dynamic = "force-dynamic";
 // route (#1377): a company-wide scan over a multi-month range is the heavy path.
 export const maxDuration = 300;
 
-type ComputeBody = {
-  connector?: unknown;
-  from?: unknown;
-  to?: unknown;
-};
+/**
+ * The Daily Deductions screen sends `{ connector, from, to }` — one connector key and the picked
+ * range (YYYY-MM-DD). No connector (or an empty body) asks for the plan. Which connector, and that the
+ * range is there, is still checked below with the route's own words.
+ */
+const ComputeBodySchema = z.object({
+  connector: z.string().nullish(),
+  from: z.string().nullish(),
+  to: z.string().nullish(),
+});
 
 /**
  * Runs ONE connector over a picked range and returns the clipped running tally.
@@ -34,7 +41,11 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "create");
     assertDailyDeductionsPublishActor(access);
 
-    const body = (await request.json().catch(() => ({}))) as ComputeBody;
+    const parsed = await parseJsonBody(request, ComputeBodySchema, { fallback: {} });
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
 
     const plan = dailyDeductionConnectors.map((connector) => ({ key: connector }));
     if (body.connector === undefined || body.connector === null) {

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { parseJsonBody } from "@/lib/http/request-body";
 import {
   assertCopilotAccess,
   copilotErrorResponse,
@@ -19,6 +21,31 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A figure the route coerces with Number(): the tab sends numbers (null when the source figure was not a number). */
+const NumberLike = z.union([z.number(), z.string()]).nullish();
+
+/** The two decisions `recordExpenseDecision` takes. */
+const EXPENSE_DECISIONS = ["include", "defer"] as const;
+
+/**
+ * The Expenses tab echoes the candidate row it loaded from GET (id, HR ID, dates, locations, km, type,
+ * travel cost, allowance) with `decision`. Every field but the decision stays optional so a row missing
+ * one still gets the route's own "requestId, employeeHrId, and dateFrom are required." answer.
+ */
+const ExpenseDecisionBodySchema = z.object({
+  requestId: z.string().nullish(),
+  employeeHrId: z.string().nullish(),
+  dateFrom: z.string().nullish(),
+  dateTo: z.string().nullish(),
+  locationFrom: z.string().nullish(),
+  locationTo: z.string().nullish(),
+  km: NumberLike,
+  type: z.string().nullish(),
+  travelCost: NumberLike,
+  allowance: NumberLike,
+  decision: z.enum(EXPENSE_DECISIONS, { error: "decision must be 'include' or 'defer'." }),
+});
 
 export async function GET(request: Request, { params }: { params: Promise<{ runId: string }> }) {
   try {
@@ -53,26 +80,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     assertCopilotAccess(access);
     const { runId } = await params;
 
-    const body = (await request.json().catch(() => ({}))) as {
-      requestId?: string;
-      employeeHrId?: string;
-      dateFrom?: string;
-      dateTo?: string;
-      locationFrom?: string;
-      locationTo?: string;
-      km?: number | null;
-      type?: string;
-      travelCost?: number;
-      allowance?: number;
-      decision?: string;
-    };
-
-    if (body.decision !== "include" && body.decision !== "defer") {
-      return NextResponse.json(
-        { error: "invalid_request", message: "decision must be 'include' or 'defer'." },
-        { status: 400 },
-      );
+    const parsed = await parseJsonBody(request, ExpenseDecisionBodySchema, { fallback: {} });
+    if (!parsed.ok) {
+      return NextResponse.json({ error: "invalid_request", message: parsed.message }, { status: 400 });
     }
+    const body = parsed.data;
     const requestId = String(body.requestId ?? "").trim();
     const employeeHrId = String(body.employeeHrId ?? "").trim();
     const dateFrom = String(body.dateFrom ?? "").trim();

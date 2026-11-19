@@ -7,6 +7,7 @@ import { groupRowsByColumnSet } from "@/lib/imports/upsert-by-column-set.ts";
 
 import { databaseFailureNote } from "./db-error.ts";
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
+import type { CellWrite } from "./step-revision.ts";
 import type {
   DraftCellChange,
   DraftRow,
@@ -367,6 +368,99 @@ export async function reopenPart1Atomically(
   return mapRun(row);
 }
 
+type UndoMoveResult = { run: MonthlySalaryRun; ledger: { released: number; discarded: number } };
+
+function mapUndoMoveResult(data: unknown): UndoMoveResult {
+  const payload = (Array.isArray(data) ? data[0] : data) as
+    | { run?: RunRow | null; released?: unknown; discarded?: unknown }
+    | null
+    | undefined;
+  if (!payload?.run) throw new Error("Not found: payroll run does not exist.");
+  return {
+    run: mapRun(payload.run),
+    ledger: { released: Number(payload.released ?? 0), discarded: Number(payload.discarded ?? 0) },
+  };
+}
+
+/**
+ * CANCEL AND REOPEN PART 2 ARE ONE DATABASE CALL EACH (REC-038, 19 Nov 2026), like Reopen Part 1. The override
+ * record (when finance had the files and a reason was given), the reserved late trips, the carry-forward release
+ * and discard, the move's own audit row and the phase used to be four or five calls, and a failure after the
+ * first left the run still open with its trips back on the list or its ledger half released.
+ * phx_cancel_automated_payroll_run / phx_reopen_automated_payroll_part2 do them all in one transaction under the
+ * move's claim, so a failure leaves the run exactly as it was.
+ */
+async function undoMoveAtomically(
+  fn: "phx_cancel_automated_payroll_run" | "phx_reopen_automated_payroll_part2",
+  id: string,
+  input: { actorHrId: string; overrideDetail: Record<string, unknown> | null },
+  options: { transitionToken: string },
+  words: { notDone: string; failed: string; event: string },
+): Promise<UndoMoveResult> {
+  const { data, error } = await getSupabaseAdmin().rpc(fn, {
+    p_run_id: id,
+    p_transition_token: options.transitionToken,
+    p_actor_hr_id: input.actorHrId,
+    p_override_detail: input.overrideDetail,
+  });
+  if (error) {
+    const message = String(error.message ?? "");
+    if (message.includes("automated_payroll_transition_claim_lost")) {
+      throw new Error(
+        `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before ${words.notDone}, and another ` +
+          "action has taken the run. Nothing was changed — refresh the page and read where the run is before repeating it.",
+      );
+    }
+    throw new Error(`Conflict: ${words.failed} Try again. (${databaseFailureNote(error, words.event)})`);
+  }
+  return mapUndoMoveResult(data);
+}
+
+export function cancelRunAtomically(
+  id: string,
+  input: { actorHrId: string; overrideDetail: Record<string, unknown> | null },
+  options: { transitionToken: string },
+): Promise<UndoMoveResult> {
+  return undoMoveAtomically("phx_cancel_automated_payroll_run", id, input, options, {
+    notDone: "the run could be cancelled",
+    failed:
+      "the run could not be cancelled, so nothing was changed: it is still open, its late trips are still set aside " +
+      "and its carry-forward ledger is untouched.",
+    event: "automated_payroll_cancel_failed",
+  });
+}
+
+export function reopenPart2Atomically(
+  id: string,
+  input: { actorHrId: string; overrideDetail: Record<string, unknown> | null },
+  options: { transitionToken: string },
+): Promise<UndoMoveResult> {
+  return undoMoveAtomically("phx_reopen_automated_payroll_part2", id, input, options, {
+    notDone: "Part 2 could be reopened",
+    failed:
+      "Part 2 could not be reopened, so nothing was changed: it is still confirmed, its late trips are still set " +
+      "aside and its carry-forward ledger is untouched.",
+    event: "automated_payroll_reopen_part2_failed",
+  });
+}
+
+/**
+ * Keep a live claim live (F-PAY-014): restart its 15-minute clock, in one statement conditioned on the token.
+ * True while this token still holds the run; false once the claim lapsed and another action took it, which
+ * the caller refuses on rather than writing. The app's clock is what restarts it; the claim function compares
+ * it with the database's `now()`, and the two agree to well under a second against a 15-minute lapse.
+ */
+export async function renewRunTransition(runId: string, token: string): Promise<boolean> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(RUNS)
+    .update({ transition_started_at: new Date().toISOString() })
+    .eq("id", runId)
+    .eq("transition_token", token)
+    .select("id");
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
 /** Let go of a claim a transition could not finish. Matches nothing when the phase write already cleared it. */
 export async function releaseRunTransition(runId: string, token: string): Promise<void> {
   const { error } = await getSupabaseAdmin()
@@ -564,6 +658,23 @@ const OPTIONAL_DRAFT_COLUMNS = ["expenses_note"] as const;
  * (saved-figures.ts), and a leaver's vacation lands on other columns than everybody else's, so one
  * request would erase the figures it was told to keep.
  */
+/** What the cell-history trigger does not count as a figure (20261007093359): identity and bookkeeping. */
+const NOT_A_CELL = new Set([
+  "run_id",
+  "employee_hr_id",
+  "employee_hr_id_compact",
+  "updated_at",
+  "edited_by",
+  "source",
+  "write_reason",
+  "write_step_key",
+]);
+
+/** The database columns — figures, as the cell history names them — a patch writes (F-PAY-017). */
+export function draftPatchColumns(patch: DraftRowPatch): string[] {
+  return Object.keys(draftPatchToDb("", patch)).filter((column) => !NOT_A_CELL.has(column));
+}
+
 export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): Promise<void> {
   if (patches.length === 0) return;
   const rows = patches
@@ -595,6 +706,45 @@ function SYSTEM_WRITE(reason: DraftWriteReason): Record<string, unknown> {
 }
 
 const CELL_HISTORY = "automated_payroll_draft_cell_history";
+
+/**
+ * The highest cell-history line this run has (F-PAY-017) — the watermark a step's revision carries. 0 when the run
+ * has no line yet. A failed read throws: a revision without a watermark would only weaken the save's check, but a
+ * save must never be told "nothing changed" by a read that did not happen.
+ */
+export async function readCellWatermark(runId: string): Promise<number> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(CELL_HISTORY)
+    .select("id")
+    .eq("run_id", runId)
+    .order("id", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const top = ((data ?? []) as RunRow[])[0];
+  const id = Number(top?.id ?? 0);
+  return Number.isFinite(id) ? id : 0;
+}
+
+/** Every cell-history line on a run numbered above `watermark`, oldest first (F-PAY-017). Paged, never capped. */
+export async function listCellWritesSince(runId: string, watermark: number): Promise<CellWrite[]> {
+  const client = getSupabaseAdmin();
+  const data = await fetchAllRows<RunRow>(
+    () =>
+      client
+        .from(CELL_HISTORY)
+        .select("id, employee_hr_id_compact, column_name, changed_by, write_reason")
+        .eq("run_id", runId)
+        .gt("id", watermark),
+    "id",
+  );
+  return data.map((row) => ({
+    id: Number(row.id ?? 0),
+    compact: String(row.employee_hr_id_compact ?? ""),
+    column: String(row.column_name ?? ""),
+    changedBy: (row.changed_by as string | null) ?? null,
+    writeReason: (row.write_reason as string | null) ?? null,
+  }));
+}
 
 /**
  * Every recorded change to one employee's cells on a run, newest first. History starts from the

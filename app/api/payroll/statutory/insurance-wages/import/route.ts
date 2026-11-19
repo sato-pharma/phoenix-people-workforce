@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { parseFormBody } from "@/lib/http/request-body";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { assertCopilotAccess, copilotErrorResponse } from "@/lib/payroll/copilot/access";
 import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
@@ -16,6 +18,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
+ * The Insurance Wages screen sends `file`, plus `commit` = "true" only when applying. The file stays
+ * optional so a form with none still gets the route's own "An insurance-wage file is required." answer.
+ */
+const InsuranceWageImportFormSchema = z.object({
+  file: z.instanceof(File).optional(),
+  commit: z.string().optional(),
+});
+
+/**
  * Bulk-set employees.social_insurance_wage from an xlsx (HR_ID + Insurance Wage).
  * With commit != "true" it returns a preview (matched / unmatched / issues);
  * with commit === "true" it applies the matched rows. CEO + Super Admin only.
@@ -28,9 +39,12 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     assertCopilotAccess(access);
 
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const commit = String(formData.get("commit") ?? "") === "true";
+    const form = await parseFormBody(request, InsuranceWageImportFormSchema);
+    if (!form.ok) {
+      return NextResponse.json({ error: "invalid_request", message: form.message }, { status: 400 });
+    }
+    const file = form.data.file;
+    const commit = form.data.commit === "true";
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "missing_file", message: "An insurance-wage file is required." }, { status: 400 });

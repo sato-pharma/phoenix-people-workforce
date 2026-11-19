@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import { setCarryLateExpenses } from "@/lib/automated-payroll/late-expenses";
+import { assertAutomatedPayrollHrActor } from "@/lib/automated-payroll/permissions";
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** `{ on: boolean }` (REC-060). A missing `on` still gets the route's own "say whether" refusal below. */
+const CarryLateExpensesBodySchema = z.object({
+  on: z.boolean().optional(),
+});
 
 /**
  * POST { on: boolean }: the payroll switch for outstation trips approved after their payout month was
@@ -19,7 +27,11 @@ export async function POST(request: Request) {
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     assertSignedIn(access);
-    const body = (await request.json().catch(() => ({}))) as { on?: unknown };
+    // REC-080: the service's own gate, asked before the body is judged.
+    assertAutomatedPayrollHrActor(access);
+    const parsed = await parseJsonBody(request, CarryLateExpensesBodySchema, { fallback: {} });
+    if (!parsed.ok) return jsonError(new Error(`Validation: ${parsed.message}`));
+    const body = parsed.data;
     if (typeof body.on !== "boolean") {
       return jsonError(new Error("Validation: say whether the switch is on or off."));
     }

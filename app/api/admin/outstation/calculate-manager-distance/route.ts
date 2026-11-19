@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { googleDirectionsRoute, isGoogleMapsServerKeyConfigured } from "@/lib/google-maps/server";
@@ -12,9 +13,22 @@ import {
 import { getResidenceLocationForEmployee } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A coordinate as a number, or as text; Number() below reads both as before. */
+const destinationCoordinateField = z.union([z.number(), z.string()]).nullable().optional();
+
+/** What the manual-expense modal sends (admin-manager-expense-modal.tsx). Each field is still judged below. */
+const ManagerDistanceBodySchema = z.object({
+  destinationIsRegion: z.boolean().nullable().optional(),
+  destinationLabel: z.string().nullable().optional(),
+  destinationLat: destinationCoordinateField,
+  destinationLng: destinationCoordinateField,
+  managerHrId: z.string().nullable().optional(),
+});
 
 function minutesFromSeconds(value: number | null | undefined) {
   return value != null ? Number((value / 60).toFixed(1)) : null;
@@ -28,13 +42,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
 
-    const body = (await request.json().catch(() => ({}))) as {
-      destinationIsRegion?: boolean;
-      destinationLabel?: string;
-      destinationLat?: number;
-      destinationLng?: number;
-      managerHrId?: string;
-    };
+    const parsedBody = await parseJsonBody(request, ManagerDistanceBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
 
     const managerHrId = typeof body.managerHrId === "string" ? body.managerHrId.trim() : "";
     const destinationLat = Number(body.destinationLat);

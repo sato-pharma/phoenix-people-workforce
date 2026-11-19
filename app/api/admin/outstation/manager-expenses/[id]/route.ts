@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -12,6 +13,7 @@ import {
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +25,15 @@ function isOutstationPayrollLockError(error: unknown) {
 function isOutstationConcurrencyConflictError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("state changed");
 }
+
+/**
+ * What the manual-expense modal sends on an edit: the whole form plus the version it opened on. The body is
+ * handed whole to buildManagerExpenseAdminPatch, which judges every field by name with its own words, so the
+ * schema is loose and names only the version this route reads itself.
+ */
+const ManagerExpenseEditBodySchema = z.looseObject({
+  expectedRevision: z.string().nullable().optional(),
+});
 
 function managerExpenseStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
@@ -57,7 +68,11 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json().catch(() => ({}));
+    const parsedBody = await parseJsonBody(request, ManagerExpenseEditBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const patch = buildManagerExpenseAdminPatch(body);
     if (!patch.ok) {
       return NextResponse.json(
@@ -67,7 +82,7 @@ export async function PATCH(
     }
 
     const updated = await updateManagerExpenseAsAdmin(id, access, patch.input, {
-      expectedRevision: typeof body?.expectedRevision === "string" ? body.expectedRevision : undefined,
+      expectedRevision: typeof body.expectedRevision === "string" ? body.expectedRevision : undefined,
     });
 
     return NextResponse.json({

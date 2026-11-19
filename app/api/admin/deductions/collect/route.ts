@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
@@ -9,19 +10,28 @@ import {
 } from "@/lib/deductions/collect.ts";
 import { isDeductionCycle } from "@/lib/deductions/cycle.ts";
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-type CollectBody = {
-  month?: unknown;
-  year?: unknown;
-  connector?: unknown;
+/** A month or year as the route has always taken it: a number, or text it reads with Number(). */
+const NumberLike = z.union([z.number(), z.string()]).nullish();
+
+/**
+ * The Deductions workspace sends `{ month, year }` for the plan, then `{ month, year, connector, cycle }`
+ * once per connector — month and year as numbers. Ranges, the connector key and the cycle are still
+ * checked below with the route's own words.
+ */
+const CollectBodySchema = z.object({
+  month: NumberLike,
+  year: NumberLike,
+  connector: z.string().nullish(),
   /** "office" (the Head Office 22nd → 21st cycle, one-part pay) or "calendar" (the default). */
-  cycle?: unknown;
-};
+  cycle: z.string().nullish(),
+});
 
 /**
  * Runs ONE connector per request.
@@ -45,7 +55,11 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "create");
     assertDeductionsDecisionActor(access);
 
-    const body = (await request.json().catch(() => ({}))) as CollectBody;
+    const parsed = await parseJsonBody(request, CollectBodySchema, { fallback: {} });
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     const month = Number(body.month);
     const year = Number(body.year);
     if (!Number.isInteger(month) || month < 1 || month > 12) {
