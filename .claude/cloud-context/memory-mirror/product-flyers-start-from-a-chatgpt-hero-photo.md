@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 21f0c779-a0cb-4588-acf8-2bc3502486eb
-  modified: 2026-11-18T22:52:41.629Z
+  modified: 2026-11-19T12:47:05.619Z
 ---
 
 On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid out in HTML/CSS with cut-out can photos, a baby photo and a teal field. The owner scored them 0/10, 2/10 and 0.5/10. His complaints, picked from a multiple-choice question: "looks cheap / like a webpage", "cans look pasted on", "two halves don't connect", and "back page is a boring table". He then picked "ChatGPT hero image" as the base for the next version.
@@ -83,5 +83,17 @@ On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid
   - Chrome writes the variable fonts as Type 3. fontTools is not installed, so static fonts cannot be made here.
 - Balance a field by measuring the ink of its contents against its edges, and check the direction before nudging. I moved the wrong way twice.
 - "Publish" for a flyer = a final folder in Downloads: print PDF with bleed, crop marks and trim/bleed boxes, a small screen PDF trimmed to A5, PNG previews and the source. This machine has no CMYK tool, so say the print file is RGB.
+- **The landscape version (19 Nov 2026, request at ~11:05 Cairo).** He attached E's PRINT.pdf, ChatGPT's new full logo ("Lacto" over a big "Advanced" pill, with a yellow splash and a green swoosh) and a new baby photo (lying on a cream rug, peach wall). His six points: use E; use the new logo; A5 landscape; use the new baby; put the dosage on the back ("1 scoop in 30ml water"); restyle the Pedia app's "Why Lacto?" slide in the flyer's colours "as it is the back of the flyer".
+  - Built from E's exact tokens, fonts, field, base and facts, turned on its side: 216×154 mm page, type 10 mm from the page edge. Front: the baby as a hard-edged photo panel on the right, mirrored so she looks toward the logo, with 28 px of reflected picture on top so the trim falls on her hair line. The cans (22.5 mm, E's finish and shadows) and their stage tags sit in the left column; the Sato mark is bottom left; the four facts are horizontal tiles in the teal field. Back: the crawling baby on white, and the dosage in its own column of the field behind a gold line ("1 scoop / in 30 ml of water / One level 4.5 g scoop · both stages").
+  - Output: `Downloads\Lacto-Advanced-A5-landscape` (PRINT, SCREEN, two PNGs, source). The FINAL and POLISHED folders are untouched. His verdict was pending when this was written.
+  - Pedia app: GitLab merge request !6 (`feat/why-lacto-flyer`, commit fce81f7) dresses only the `.sl.why.lac` slide as the flyer's back. It needs his merge.
+  - 🔴 Trap: Chrome rounds a 216×154 mm page to 612×437.04 pt, and the art ends at 436.51 pt. That leaves a 0.19 mm white strip at the bottom, inside the bleed box (E's portrait has the same strip on its right edge). Clip the source at the art's real edge (436.5 pt) when packaging, then render the bleed box and read its edge rows.
+  - 🔴 Trap: the Pedia app runs on an API 19 (Android 4.4) web view. Its CSS uses no grid, no flex gap and no custom properties, and every gradient also needs its `-webkit-` form. The app's Playfair draws old-style figures unless `font-feature-settings: "lnum" 1` is set.
+- **Round 2 (19 Nov ~14:40 Cairo):** he sent `images/28.webp` (the same baby, already cut out: RGBA with clean straight alpha) and asked for a "from scratch premium polish sweep end to end godmode".
+  - The front's photo panel became E's look: the baby cut out on pure white, mirrored toward the logo. She is 90 mm tall at 306 dpi, her body runs x 116.9–208.5 mm, and her forearms rest at y 103 on the cans' floor line. The cans moved 1.5 mm left so there is 8 mm of white between stage 2's can and her forearm. `prep_front28.py` draws her floor shadow from the lowest edge of each body column (contact 0.34, ambient 0.13), composes it on 255 white with wide margins, and fades the one hair wisp the picture's top edge clips.
+  - 🔴 Trap: the flyer's Inter has no non-breaking hyphen (U+2011), so Chrome drew every "2′‑FL" hyphen in Segoe UI. Use a plain hyphen inside a `white-space:nowrap` span. To find any fallback, list the Segoe spans with pymupdf `rawdict`. The only Segoe glyph left on purpose is E's → arrow.
+  - Pedia merge request !6 got commit 9f890c7: the gold "?" sits 1 px after the title (the shared Why-slide rule gave 4 px), and "2′-FL" uses a true prime. The app's Playfair-700.woff has U+2032 but not U+2011. fontTools isn't installed; read a WOFF's cmap by hand with `zlib` + `struct`.
+  - Left open: the front (yellow bodysuit) and back (E's green bodysuit) are two different children. I handed him a ChatGPT prompt for the same baby crawling on white, with `Downloads\Lacto-Advanced-baby-reference.png` as the reference.
+  - Superseded packages were moved aside, never deleted, to `lacto-flyer-ls\superseded-package-r1-panel` and `...-r2-segoe-hyphen` in the scratchpad.
 
 Related: [[the-next-step-box-must-not-manufacture-the-next-task]]
