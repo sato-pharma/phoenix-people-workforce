@@ -104,12 +104,32 @@ export function runBackupSchemaRetentionTests() {
 
   // ---------------------------------------------------------------- the owner's decisions
 
-  for (const schema of ["hr_backup_20260829", "crm_backup_20260828", "delta3_defer_backup_20260829"]) {
+  for (const schema of ["delta3_defer_backup_20260829"]) {
     assert.ok(EXEMPT_SCHEMAS[schema], `${schema} must stay exempt — the owner's standing decision`);
     assert.equal(
       classify({ schema, tables: [], blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
       VERDICT.PROTECTED,
       `${schema} must never expire on age alone`,
+    );
+  }
+
+  // 19 Nov 2026: the two C13 pre-images were kept until "September payroll proves the 08-29
+  // fixes". September and October are both published, and he decided both export-then-drop. An
+  // exempt schema is PROTECTED whatever its decision says, so the decision only takes effect if the
+  // exemption is gone — both halves are asserted, or a re-added exemption would silently void it.
+  const decidedNov19 = readDecisions();
+  for (const schema of ["hr_backup_20260829", "crm_backup_20260828"]) {
+    assert.equal(EXEMPT_SCHEMAS[schema], undefined, `${schema} was decided on 19 Nov 2026 — it must not be exempt again`);
+    assert.equal(decidedNov19[schema]?.decision, "export-then-drop", `${schema}: his 19 Nov decision is recorded`);
+    assert.equal(
+      classify({ schema, tables: [], blockers: [] }, { today: "2026-12-01", decisions: decidedNov19 }).verdict,
+      VERDICT.EXPIRED,
+      `${schema} expires once past 90 days, on his decision`,
+    );
+    assert.equal(
+      classify({ schema, tables: [], blockers: [] }, { today: "2026-11-19", decisions: decidedNov19 }).verdict,
+      VERDICT.YOUNG,
+      `${schema} is still inside its 90 days on the day he decided`,
     );
   }
 
@@ -137,6 +157,48 @@ export function runBackupSchemaRetentionTests() {
   assert.equal(
     classify({ ...undated, tables: ["deleted_employee_plans_20260101"] }, { today: "2031-01-01", retentionDays: 1, decisions: drop(undated.schema) }).verdict,
     VERDICT.EXPIRED,
+  );
+
+  // A decision alone does not date it: decided, still no day anywhere, still UNDATED.
+  assert.equal(
+    classify(undated, { today: "2031-01-01", retentionDays: 1, decisions: drop(undated.schema) }).verdict,
+    VERDICT.UNDATED,
+    "a decision with no `dated` cannot age a schema whose names carry no date",
+  );
+
+  // `dated` on the decision is the recorded day, used ONLY when no name carries one (19 Nov 2026:
+  // plan_backups and zz_search_proof).
+  const datedDecision = (dated: string) => ({
+    [undated.schema]: { decision: "export-then-drop" as const, decidedOn: "2026-11-19", decidedBy: "owner", why: "test", dated },
+  });
+  const byRecord = classify(undated, { today: "2026-12-25", decisions: datedDecision("2026-09-26") });
+  assert.equal(byRecord.verdict, VERDICT.EXPIRED, "90 days after the recorded day it expires on his decision");
+  assert.equal(byRecord.date, "2026-09-26");
+  assert.equal(
+    classify(undated, { today: "2026-12-24", decisions: datedDecision("2026-09-26") }).verdict,
+    VERDICT.YOUNG,
+    "one day short of 90 it is still young",
+  );
+  assert.match(
+    classify(undated, { today: "2026-11-19", decisions: datedDecision("2026-09-26") }).reason,
+    /dated 2026-09-26 by record, not by name/,
+    "the report says the day came from the record",
+  );
+  // A date in the names always wins, so a stray `dated` can never make a dated schema look older.
+  assert.equal(
+    classify({ ...undated, tables: ["deleted_employee_plans_20261115"] }, { today: "2026-12-25", decisions: datedDecision("2026-01-01") }).verdict,
+    VERDICT.YOUNG,
+    "THE NAME'S DATE BEATS THE RECORDED ONE — `dated` is a fallback, never an override",
+  );
+
+  // The real file: both undated schemas he decided on 19 Nov carry their recorded day.
+  const realDecisions = readDecisions();
+  assert.equal(realDecisions.plan_backups?.dated, "2026-09-26", "plan_backups: its row was deleted 25 Sep 22:12 UTC, 26 Sep in Cairo");
+  assert.equal(realDecisions.zz_search_proof?.dated, "2026-10-23", "zz_search_proof: first named by migration 20261023043536");
+  assert.equal(
+    classify({ schema: "zz_search_proof", tables: [], blockers: [] }, { today: "2026-11-19", decisions: realDecisions }).verdict,
+    VERDICT.YOUNG,
+    "zz_search_proof is now ageable — no longer UNDATED",
   );
 
   // ---------------------------------------------------------------- the window boundary
@@ -233,6 +295,12 @@ export function runBackupSchemaRetentionTests() {
     assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, why: "" } })), /needs decidedOn/);
     assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, decidedOn: "13 Nov" } })), /needs decidedOn/);
     assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, decidedBy: undefined } })), /needs decidedOn/);
+    // `dated` is optional, but when present it is one real day in YYYY-MM-DD.
+    assert.deepEqual(Object.keys(readDecisions(write({ plan_backups: { ...good, dated: "2026-09-26" } }))), ["plan_backups"]);
+    assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: "26 Sep" } })), /use one real date/);
+    assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: "2026-02-30" } })), /use one real date/);
+    assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: "20260926" } })), /use one real date/);
+    assert.throws(() => readDecisions(write({ plan_backups: { ...good, dated: 20260926 } })), /use one real date/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -247,7 +315,7 @@ export function runBackupSchemaRetentionTests() {
     assert.ok(!STANDARD_SCHEMAS.has(schema), `${schema} is a standard schema — never a snapshot to decide`);
     assert.ok(entry.decidedBy && entry.sheet, `${schema}: decidedBy and the sheet that put it to him`);
   }
-  assert.ok(Object.keys(real).length >= 101, "the November nine and the December 92 are all recorded");
+  assert.ok(Object.keys(real).length >= 105, "the November nine, the December 92 and the four of 19 Nov are all recorded");
 
   // ------------------------------------------------- export, then drop
   //

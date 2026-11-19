@@ -32036,17 +32036,20 @@ declare
     'cv_path', 'cv_file_name', 'photo_path',
     'exit_reason', 'bank_name'
   ];
-  o        jsonb := '{}'::jsonb;
-  n        jsonb := '{}'::jsonb;
-  col      text;
-  fields   text[] := '{}';
-  hidden   text[] := '{}';
-  old_diff jsonb := '{}'::jsonb;
-  new_diff jsonb := '{}'::jsonb;
-  v_hr_id  text;
-  headers  json;
-  v_login  text;
-  v_hr     text;
+  o          jsonb := '{}'::jsonb;
+  n          jsonb := '{}'::jsonb;
+  col        text;
+  fields     text[] := '{}';
+  hidden     text[] := '{}';
+  old_diff   jsonb := '{}'::jsonb;
+  new_diff   jsonb := '{}'::jsonb;
+  v_hr_id    text;
+  headers    json;
+  v_login    text;
+  v_hr       text;
+  v_channel  text;
+  v_api_role text;
+  v_api_path text;
 begin
   if tg_op in ('UPDATE', 'DELETE') then
     o := to_jsonb(old);
@@ -32086,13 +32089,35 @@ begin
     v_hr    := null;
   end;
 
+  -- HOW the write arrived, from the session itself. PostgREST sets request.jwt.claims and
+  -- request.headers on every request; a direct session sets neither. Only WHETHER the headers are
+  -- set is read here: their values carry the API key.
+  v_channel := case
+    when coalesce(current_setting('request.jwt.claims', true), '') <> ''
+      or coalesce(current_setting('request.headers', true), '') <> '' then 'api'
+    when coalesce(current_setting('application_name', true), '') like 'pg\_cron%' then 'database_job'
+    else 'direct_sql'
+  end;
+  if v_channel = 'api' then
+    begin
+      v_api_role := left(nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role', 64);
+    exception when others then
+      v_api_role := null;
+    end;
+    v_api_path := left(nullif(current_setting('request.path', true), ''), 200);
+  end if;
+
   insert into public.employee_change_log (
     employee_hr_id, change_kind, actor_login_id, actor_hr_id, actor_source,
-    changed_fields, masked_fields, old_values, new_values
+    changed_fields, masked_fields, old_values, new_values,
+    write_channel, write_db_user, write_application, write_api_role, write_api_path
   ) values (
     v_hr_id, lower(tg_op), v_login, v_hr,
     case when v_login is not null or v_hr is not null then 'app' else 'unattributed' end,
-    fields, hidden, old_diff, new_diff
+    fields, hidden, old_diff, new_diff,
+    v_channel, session_user::text,
+    left(nullif(current_setting('application_name', true), ''), 64),
+    v_api_role, v_api_path
   );
 
   return null;
@@ -32105,7 +32130,7 @@ ALTER FUNCTION public.phx_log_employee_change() OWNER TO postgres;
 -- Name: FUNCTION phx_log_employee_change(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_log_employee_change() IS 'AFTER ROW trigger on public.employees: writes public.employee_change_log. Values of the columns in its masked list are never stored, only named.';
+COMMENT ON FUNCTION public.phx_log_employee_change() IS 'AFTER ROW trigger on public.employees: writes public.employee_change_log. Values of the columns in its masked list are never stored, only named. write_channel says how the write arrived (api, database_job, direct_sql).';
 
 --
 -- Name: phx_log_employee_salary_change(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -32122,6 +32147,9 @@ declare
     'social_insurance', 'taxes', 'social_insurance_wage'
   ];
   is_insert   constant boolean := tg_op = 'INSERT';
+  -- ASSIGNED IN THE BODY, never in this DECLARE block. On an INSERT the OLD record is unassigned,
+  -- and `to_jsonb(old)` here would raise before the first statement ran — turning an audit trigger
+  -- into something that refuses hires.
   o           jsonb;
   n           jsonb := to_jsonb(new);
   col         text;
@@ -32131,11 +32159,16 @@ declare
   headers     json;
   v_login     text;
   v_hr        text;
+  v_channel   text;
+  v_api_role  text;
+  v_api_path  text;
 begin
   o := case when is_insert then '{}'::jsonb else to_jsonb(old) end;
 
   foreach col in array salary_cols loop
     if is_insert then
+      -- A hire records what it ARRIVED with. A column that came in null is not an event: it is a
+      -- box nobody filled, and the row would read as "salary set to nothing".
       if (n ->> col) is not null then
         new_diff := new_diff || jsonb_build_object(col, n -> col);
         fields   := array_append(fields, col);
@@ -32147,10 +32180,14 @@ begin
     end if;
   end loop;
 
+  -- Nothing salary-related on this write — a hire with no salary, or an edit that touched
+  -- something else. Record nothing.
   if array_length(fields, 1) is null then
     return new;
   end if;
 
+  -- Best-effort actor from the PostgREST request headers. Absent on direct SQL / MCP writes, which
+  -- is the point: a null actor flags an out-of-band change.
   begin
     headers := nullif(current_setting('request.headers', true), '')::json;
     v_login := nullif(headers ->> 'x-phoenix-actor-login-id', '');
@@ -32160,13 +32197,34 @@ begin
     v_hr    := null;
   end;
 
+  -- HOW the write arrived, read exactly as the employee log reads it. Only WHETHER the headers
+  -- are set is read: their values carry the API key.
+  v_channel := case
+    when coalesce(current_setting('request.jwt.claims', true), '') <> ''
+      or coalesce(current_setting('request.headers', true), '') <> '' then 'api'
+    when coalesce(current_setting('application_name', true), '') like 'pg\_cron%' then 'database_job'
+    else 'direct_sql'
+  end;
+  if v_channel = 'api' then
+    begin
+      v_api_role := left(nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role', 64);
+    exception when others then
+      v_api_role := null;
+    end;
+    v_api_path := left(nullif(current_setting('request.path', true), ''), 200);
+  end if;
+
   insert into public.employee_salary_change_log (
     employee_hr_id, actor_login_id, actor_hr_id, actor_source,
-    changed_fields, old_values, new_values
+    changed_fields, old_values, new_values,
+    write_channel, write_db_user, write_application, write_api_role, write_api_path
   ) values (
     new.hr_id, v_login, v_hr,
     case when v_login is not null or v_hr is not null then 'app' else 'unattributed' end,
-    fields, old_diff, new_diff
+    fields, old_diff, new_diff,
+    v_channel, session_user::text,
+    left(nullif(current_setting('application_name', true), ''), 64),
+    v_api_role, v_api_path
   );
 
   return new;
@@ -59372,8 +59430,14 @@ CREATE TABLE public.employee_change_log (
     masked_fields text[] DEFAULT '{}'::text[] NOT NULL,
     old_values jsonb DEFAULT '{}'::jsonb NOT NULL,
     new_values jsonb DEFAULT '{}'::jsonb NOT NULL,
+    write_channel text,
+    write_db_user text,
+    write_application text,
+    write_api_role text,
+    write_api_path text,
     CONSTRAINT employee_change_log_actor_source_check CHECK ((actor_source = ANY (ARRAY['app'::text, 'unattributed'::text]))),
-    CONSTRAINT employee_change_log_change_kind_check CHECK ((change_kind = ANY (ARRAY['insert'::text, 'update'::text, 'delete'::text])))
+    CONSTRAINT employee_change_log_change_kind_check CHECK ((change_kind = ANY (ARRAY['insert'::text, 'update'::text, 'delete'::text]))),
+    CONSTRAINT employee_change_log_write_channel_check CHECK ((write_channel = ANY (ARRAY['api'::text, 'database_job'::text, 'direct_sql'::text])))
 );
 
 ALTER TABLE public.employee_change_log OWNER TO postgres;
@@ -59383,6 +59447,36 @@ ALTER TABLE public.employee_change_log OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.employee_change_log IS 'Append-only history of public.employees, written by the phx_employees_change_log trigger. changed_fields names every changed column; masked_fields names the ones whose values are never stored (salary figures, kept with values by employee_salary_change_log, and personal identifiers). actor_source unattributed = the write sent no x-phoenix-actor-* header.';
+
+--
+-- Name: COLUMN employee_change_log.write_channel; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_change_log.write_channel IS 'How the write reached the database: api (a PostgREST request), database_job (pg_cron) or direct_sql (any other direct session). NULL on rows written before 19 Nov 2026 = not recorded.';
+
+--
+-- Name: COLUMN employee_change_log.write_db_user; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_change_log.write_db_user IS 'session_user of the write: authenticator for PostgREST, postgres for a direct session.';
+
+--
+-- Name: COLUMN employee_change_log.write_application; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_change_log.write_application IS 'application_name of the write''s session, at most 64 characters.';
+
+--
+-- Name: COLUMN employee_change_log.write_api_role; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_change_log.write_api_role IS 'On an api write only: the role claim of the request''s JWT. No token or header value is stored.';
+
+--
+-- Name: COLUMN employee_change_log.write_api_path; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_change_log.write_api_path IS 'On an api write only: the PostgREST path (/employees, /rpc/<function>), at most 200 characters.';
 
 --
 -- Name: employee_compensation; Type: TABLE; Schema: public; Owner: postgres
@@ -60050,7 +60144,13 @@ CREATE TABLE public.employee_salary_change_log (
     actor_source text DEFAULT 'unattributed'::text NOT NULL,
     changed_fields text[] DEFAULT '{}'::text[] NOT NULL,
     old_values jsonb DEFAULT '{}'::jsonb NOT NULL,
-    new_values jsonb DEFAULT '{}'::jsonb NOT NULL
+    new_values jsonb DEFAULT '{}'::jsonb NOT NULL,
+    write_channel text,
+    write_db_user text,
+    write_application text,
+    write_api_role text,
+    write_api_path text,
+    CONSTRAINT employee_salary_change_log_write_channel_check CHECK ((write_channel = ANY (ARRAY['api'::text, 'database_job'::text, 'direct_sql'::text])))
 );
 
 ALTER TABLE public.employee_salary_change_log OWNER TO postgres;
@@ -60060,6 +60160,36 @@ ALTER TABLE public.employee_salary_change_log OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.employee_salary_change_log IS 'Append-only audit of salary changes on public.employees. Written by the phx_log_employee_salary_change trigger on INSERT and UPDATE. An EMPTY old_values means a HIRE — the salary the person was created with; a populated old_values is a change to an existing one. actor_* comes from the x-phoenix-actor-* PostgREST headers the app sends; a null actor means an out-of-band write (raw SQL / MCP / an unwired code path).';
+
+--
+-- Name: COLUMN employee_salary_change_log.write_channel; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_salary_change_log.write_channel IS 'How the write reached the database: api (a PostgREST request), database_job (pg_cron) or direct_sql (any other direct session). NULL on rows written before 19 Nov 2026 = not recorded.';
+
+--
+-- Name: COLUMN employee_salary_change_log.write_db_user; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_salary_change_log.write_db_user IS 'session_user of the write: authenticator for PostgREST, postgres for a direct session.';
+
+--
+-- Name: COLUMN employee_salary_change_log.write_application; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_salary_change_log.write_application IS 'application_name of the write''s session, at most 64 characters.';
+
+--
+-- Name: COLUMN employee_salary_change_log.write_api_role; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_salary_change_log.write_api_role IS 'On an api write only: the role claim of the request''s JWT. No token or header value is stored.';
+
+--
+-- Name: COLUMN employee_salary_change_log.write_api_path; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_salary_change_log.write_api_path IS 'On an api write only: the PostgREST path (/employees, /rpc/<function>), at most 200 characters.';
 
 --
 -- Name: employee_salary_structure; Type: TABLE; Schema: public; Owner: postgres
@@ -72129,7 +72259,12 @@ CREATE VIEW public.v_employee_change_log WITH (security_invoker='true') AS
     l.changed_fields,
     l.masked_fields,
     l.old_values,
-    l.new_values
+    l.new_values,
+    l.write_channel,
+    l.write_db_user,
+    l.write_application,
+    l.write_api_role,
+    l.write_api_path
    FROM (((public.employee_change_log l
      LEFT JOIN public.employees e ON ((e.hr_id = l.employee_hr_id)))
      LEFT JOIN public.app_auth_users u ON (((l.actor_hr_id IS NULL) AND (u.login_id = l.actor_login_id))))
@@ -72294,7 +72429,12 @@ CREATE VIEW public.v_employee_salary_change_log WITH (security_invoker='true') A
     l.actor_source,
     l.changed_fields,
     l.old_values,
-    l.new_values
+    l.new_values,
+    l.write_channel,
+    l.write_db_user,
+    l.write_application,
+    l.write_api_role,
+    l.write_api_path
    FROM ((public.employee_salary_change_log l
      LEFT JOIN public.employees e ON ((e.hr_id = l.employee_hr_id)))
      LEFT JOIN public.employees a ON ((a.hr_id = COALESCE(l.actor_hr_id, l.actor_login_id))))

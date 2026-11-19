@@ -1566,7 +1566,10 @@ const defaultPermissionMatrix: PermissionMap = {
     // Phoenix CRM: reads the region; decides and approves only as the nearest manager above the rep
     // (a vacant district seat). Enters no visits: the rep enters a chain visit.
     phoenix_crm: ["read", "approve"],
-    early_birds: ["read"],
+    // Early Birds: decides a district's pick only inside his own subtree (the five-day escalation);
+    // decideEarlyBirdsCandidate checks the district against his scope. Held since F-CRM-016
+    // (2026-11-19), when the decision route began asserting this key — he already decided by scope.
+    early_birds: ["read", "approve"],
     overview: [],
     // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions
     // only"). This previously read `["read"]`, declared to match a portal page that widened a
@@ -1634,7 +1637,8 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_contact_lists: ["read", "approve"],
     // Phoenix CRM: the same as the Regional Manager, on the line.
     phoenix_crm: ["read", "approve"],
-    early_birds: ["read"],
+    // Early Birds: the same as the Regional Manager, on his own line only (the scope narrows it).
+    early_birds: ["read", "approve"],
     overview: [],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],

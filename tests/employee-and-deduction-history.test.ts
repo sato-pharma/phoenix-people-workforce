@@ -36,6 +36,12 @@ const SHARED_REFUSAL_FILE = "20261114021603_employee_change_log_shares_the_audit
 // place, a decision's audit row names whoever the request names, and exit_reason and bank_name are
 // never valued.
 const SECOND_REVIEW_FILE = "20261114024807_restore_without_triggers_and_actor_from_the_request.sql";
+// The database review of 19 Nov 2026: 71 of 100 employee log rows read "unattributed", and nothing told
+// an app write that forgot the actor header from a job or a direct SQL session. Both logs now record the
+// write channel, the session's login role and application, and on an API write the JWT role and path.
+const CHANNEL_FILE = "20261119035258_change_logs_record_the_write_channel.sql";
+
+const WRITE_COLUMNS = ["write_channel", "write_db_user", "write_application", "write_api_role", "write_api_path"];
 
 const MASKED = [
   "base_salary", "basic_salary", "gross_salary", "net_salary",
@@ -102,7 +108,7 @@ function lastDefiner(files: string[], fn: string): { file: string; body: string 
 
 export async function runEmployeeAndDeductionHistoryTests() {
   const files = readdirSync(MIGRATIONS).filter((name) => name.endsWith(".sql")).sort();
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE, SECOND_REVIEW_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE, SECOND_REVIEW_FILE, CHANNEL_FILE]) {
     assert.ok(files.includes(name), `the migration must still be here: ${name}`);
   }
 
@@ -410,6 +416,77 @@ export async function runEmployeeAndDeductionHistoryTests() {
     [],
     "only the trigger writes employee_change_log; application code reads v_employee_change_log",
   );
+
+  // ---- Both logs record HOW a write arrived, and never a header value -------------------------------
+  // Database review, 19 Nov 2026: 71 of 100 employee log rows read "unattributed" and nothing told an
+  // app write that forgot the actor header from a job or a direct SQL session.
+  const salaryWriter = lastDefiner(files, "public.phx_log_employee_salary_change").body;
+  for (const [label, writer, table] of [
+    ["the employee log", employeeWriter, "employee_change_log"],
+    ["the salary log", salaryWriter, "employee_salary_change_log"],
+  ] as const) {
+    assert.match(
+      writer,
+      /v_channel := case\s+when coalesce\(current_setting\('request\.jwt\.claims', true\), ''\) <> ''\s+or coalesce\(current_setting\('request\.headers', true\), ''\) <> '' then 'api'\s+when coalesce\(current_setting\('application_name', true\), ''\) like 'pg\\_cron%' then 'database_job'\s+else 'direct_sql'\s+end;/,
+      `${label}: the channel is api when PostgREST set its request settings, database_job under pg_cron, ` +
+        "and direct_sql for every other session — a branch dropped files that write under the wrong name",
+    );
+    assert.match(
+      writer,
+      new RegExp(
+        `insert into public\\.${table} \\([^)]*write_channel, write_db_user, write_application, write_api_role, write_api_path\\s*\\) values \\(`,
+      ),
+      `${label}: the insert must name all five write columns`,
+    );
+    assert.match(
+      writer,
+      /v_channel, session_user::text,\s+left\(nullif\(current_setting\('application_name', true\), ''\), 64\),\s+v_api_role, v_api_path\s*\);/,
+      `${label}: the five values are the channel, the login role, the application name, the JWT role and the path`,
+    );
+    assert.match(
+      writer,
+      /v_api_role := left\(nullif\(current_setting\('request\.jwt\.claims', true\), ''\)::json ->> 'role', 64\);\s+exception when others then/,
+      `${label}: the JWT role is read in its own exception block, so a malformed claim never blocks the save`,
+    );
+    assert.deepEqual(
+      [...writer.matchAll(/headers ->> '([^']+)'/g)].map((m) => m[1]).sort(),
+      ["x-phoenix-actor-hr-id", "x-phoenix-actor-login-id"],
+      `${label}: only the two actor headers are read — request.headers carries the API key and the bearer token`,
+    );
+    assert.deepEqual(
+      [...writer.matchAll(/\)::json ->> '([^']+)'/g)].map((m) => m[1]),
+      ["role"],
+      `${label}: only the role claim is taken from the JWT`,
+    );
+    assert.ok(
+      !/\bcurrent_user\b/.test(writer),
+      `${label}: current_user inside a security definer function is always its owner — record session_user`,
+    );
+  }
+  const channelSql = read(CHANNEL_FILE);
+  for (const table of ["employee_change_log", "employee_salary_change_log"]) {
+    for (const column of WRITE_COLUMNS) {
+      assert.ok(
+        channelSql.includes(`add column if not exists ${column}`) && channelSql.includes(`public.${table}.${column} is`),
+        `${table}.${column} must be added and described`,
+      );
+    }
+    assert.match(
+      channelSql,
+      new RegExp(`add constraint ${table}_write_channel_check\\s+check \\(write_channel in \\('api', 'database_job', 'direct_sql'\\)\\);`),
+      `${table}: the channel holds one of three names, or NULL on a row from before 19 Nov 2026`,
+    );
+  }
+  for (const view of ["v_employee_change_log", "v_employee_salary_change_log"]) {
+    const definers = files.filter((name) => read(name).includes(`create or replace view public.${view}`));
+    const sql = read(definers[definers.length - 1]);
+    const body = sql.slice(sql.indexOf(`create or replace view public.${view}`));
+    assert.match(
+      body.slice(0, body.indexOf(";")),
+      /l\.write_channel,\s+l\.write_db_user,\s+l\.write_application,\s+l\.write_api_role,\s+l\.write_api_path\s+from/,
+      `${view} must show the five write columns`,
+    );
+  }
 
   // ---- Every write names its person, whichever code path makes it ---------------------------------
   // Code review, 14 Nov 2026: only upsertEmployee sent the x-phoenix-actor-* headers, so a manager moved
