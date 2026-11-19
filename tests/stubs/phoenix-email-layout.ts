@@ -98,3 +98,41 @@ export function renderPhoenixMetadataSectionsText(sections: PhoenixEmailMetadata
 export function renderPhoenixEmailText(input: PhoenixEmailLayoutProps & { bodyText?: string }) {
   return `${input.title}\n\n${input.bodyText ?? input.previewText}`;
 }
+
+// The data grid the production-planning sweeps (reorder and expiry) put in their emails. Added
+// 19 Nov 2026: without these the reorder cron route could not be imported under the test loader, so
+// the route guard harness had to list it as not callable.
+export type PhoenixEmailGridColumn = {
+  readonly label: string;
+  readonly align?: "left" | "right";
+};
+
+export type PhoenixEmailGridCell = {
+  readonly text: string | number | null | undefined;
+  readonly sub?: string | null;
+  readonly note?: string | null;
+  readonly tone?: "neutral" | "danger" | "warning" | "ok";
+};
+
+type PhoenixEmailGridRow = readonly (PhoenixEmailGridCell | string | number | null | undefined)[];
+
+function gridCellText(cell: PhoenixEmailGridCell | string | number | null | undefined) {
+  if (cell === null || cell === undefined) return "";
+  return typeof cell === "object" ? String(cell.text ?? "") : String(cell);
+}
+
+export function renderPhoenixDataGrid(columns: readonly PhoenixEmailGridColumn[], rows: readonly PhoenixEmailGridRow[]) {
+  if (columns.length === 0 || rows.length === 0) return "";
+  const head = columns.map((column) => `<th>${escapeEmailHtml(column.label)}</th>`).join("");
+  const body = rows
+    .map((row) => `<tr>${columns.map((_column, index) => `<td>${escapeEmailHtml(gridCellText(row[index]))}</td>`).join("")}</tr>`)
+    .join("");
+  return `<table><tr>${head}</tr>${body}</table>`;
+}
+
+export function renderPhoenixDataGridText(columns: readonly PhoenixEmailGridColumn[], rows: readonly PhoenixEmailGridRow[]) {
+  if (columns.length === 0 || rows.length === 0) return "";
+  return [columns.map((column) => column.label), ...rows.map((row) => columns.map((_column, index) => gridCellText(row[index])))]
+    .map((cells) => cells.join(" | "))
+    .join("\n");
+}

@@ -3,7 +3,7 @@ import {
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
-} from "../../emails/phoenix-email-layout.tsx";
+} from "@/emails/phoenix-email-layout";
 import { systemHrReplyEmailText, systemIdentity } from "@/config/system-settings";
 
 export type PhoenixHrEmailTone = "professional" | "warm" | "firm" | "concise";
