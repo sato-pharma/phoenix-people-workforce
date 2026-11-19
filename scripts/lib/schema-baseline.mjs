@@ -125,6 +125,21 @@ export function compareDumps(baselineText, liveText) {
 }
 
 /**
+ * The lines of one changed object that only one side has, in order: `-` the file's, `+` the other dump's.
+ * Enough to name a difference in a run log without a diff tool; a line both sides hold is never shown.
+ */
+export function objectLineDiff(baseBody, liveBody) {
+  const baseLines = baseBody.split("\n");
+  const liveLines = liveBody.split("\n");
+  const inLive = new Set(liveLines);
+  const inBase = new Set(baseLines);
+  return [
+    ...baseLines.filter((line) => !inLive.has(line)).map((line) => `- ${line}`),
+    ...liveLines.filter((line) => !inBase.has(line)).map((line) => `+ ${line}`),
+  ];
+}
+
+/**
  * The word a migration would contain if it made this change: the object's own name, without a
  * function's argument list and without the table a constraint, trigger or policy is named after.
  * `FUNCTION public.f(a integer)` → `f`; `CONSTRAINT public.t t_pkey` → `t_pkey`.
