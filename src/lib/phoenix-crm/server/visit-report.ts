@@ -662,7 +662,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     ),
   ]);
   // The report prints the customer's kind where it printed the old mixed speciality ("Hospital", "Pediatrics").
-  const customerById = new Map(customers.map((row) => [String(row.id), { ...row, speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)) }]));
+  const customerById = new Map<string, Row>(customers.map((row) => [String(row.id), { ...row, speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)) }]));
   const placeById = new Map(places.map((row) => [String(row.id), row]));
 
   // ── Only what was chosen ──
