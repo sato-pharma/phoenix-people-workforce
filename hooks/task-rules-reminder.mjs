@@ -7,8 +7,14 @@
 // word with each prompt by a bash `echo` in ~/.claude/settings.json: ~2 KB a prompt, and 51% of all
 // hook-injected text across 467 sessions in three days (27.8 MB of 54.4 MB), 97% of it an exact repeat
 // of a copy already in the same context. The same rules also load on every request from
-// ~/.claude/CLAUDE.md, and next-step-capture.mjs still BLOCKS any reply whose Next step line is
-// missing or wrong — so the per-prompt echo was a reminder, never the enforcement.
+// ~/.claude/CLAUDE.md, and next-step-capture.mjs still checks every reply's Next step line — so the
+// per-prompt echo was a reminder, never the enforcement.
+//
+// IT ALSO CARRIES THE STOP HOOK'S VERDICT (2026-11-19). next-step-capture.mjs used to print its
+// warning as a Stop `systemMessage`, which Claude Code shows to the OWNER and never to the model —
+// he kept pasting "Stop says: Your reply is missing its opening line..." back by hand. It now leaves
+// the verdict in ~/.claude/state/next-step-verdict/<session>.txt, and the `prompt` mode here hands it
+// to the model with his next message (every prompt, not every 10th) and deletes the file.
 //
 //   node task-rules-reminder.mjs session   SessionStart (startup, resume, compact, clear): send, count = 0
 //   node task-rules-reminder.mjs prompt    UserPromptSubmit: count + 1; send when count % 10 === 0, or
@@ -35,8 +41,33 @@ export function shouldSend({ mode, count, hadRecord, everyPrompt = false }) {
   return count % EVERY === 0;
 }
 
-const out = (event, text) =>
+const VERDICT_DIR = path.join(process.env.USERPROFILE || os.homedir(), '.claude', 'state', 'next-step-verdict');
+
+/** Wrap the Stop hook's verdict on the LAST reply for THIS turn. Pure, so the selftest pins it. */
+export function verdictNote(reason) {
+  return [
+    'NEXT-STEP CHECK ON YOUR PREVIOUS REPLY (the owner did not see this; it is for you):',
+    String(reason).trim(),
+    '',
+    'Apply it to THIS reply: open it with one correct **Next step:** line, then answer his new message in full. Ignore any wording above that says to output only that line or to redo work — that reply has already ended. Do not mention this check to him.',
+  ].join('\n');
+}
+
+/** Read and delete the pending verdict for this session; '' when there is none. */
+function takeVerdict(sid) {
+  if (!sid) return '';
+  const file = path.join(VERDICT_DIR, `${sid}.txt`);
+  let reason = '';
+  try { reason = fs.readFileSync(file, 'utf8').trim(); } catch { return ''; }
+  try { fs.unlinkSync(file); } catch {}
+  return reason ? verdictNote(reason) : '';
+}
+
+const out = (event, text) => {
+  if (!text) return;
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } }));
+};
+const join = (...parts) => parts.filter(Boolean).join('\n\n');
 
 function selftest() {
   let ran = 0, bad = 0;
@@ -52,6 +83,9 @@ function selftest() {
   try { text = fs.readFileSync(RULES_FILE, 'utf8'); } catch {}
   check('task-rules.txt exists and starts with TASK RULES', text.startsWith('TASK RULES:'), true);
   check('task-rules.txt still carries the Next step rule', /\*\*Next step:\*\*/.test(text), true);
+  const note = verdictNote('Your reply is missing its opening line.');
+  check('a verdict note carries the Stop hook reason', note.includes('Your reply is missing its opening line.'), true);
+  check('a verdict note tells the model to answer the new message in full', /answer his new message in full/.test(note), true);
   console.log(`SELFTEST task-rules-reminder: ${ran} cases, ${bad} failed`);
   process.exit(bad ? 1 : 0);
 }
@@ -68,6 +102,8 @@ try {
   try { input = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, '') || '{}'); } catch {}
   const sid = String(input.session_id || '').replace(/[^\w.-]/g, '');
   if (!sid) { out(event, text); process.exit(0); }
+  let verdict = '';
+  try { verdict = takeVerdict(sid); } catch {}
   fs.mkdirSync(STATE_DIR, { recursive: true });
   const file = path.join(STATE_DIR, `${sid}.json`);
   let state = null;
@@ -75,7 +111,7 @@ try {
   const count = mode === 'session' ? 0 : (state?.count ?? 0) + 1;
   fs.writeFileSync(file, JSON.stringify({ count, at: Date.now() }));
   const send = shouldSend({ mode, count, hadRecord: !!state, everyPrompt: process.env.PHX_TASK_RULES_EVERY_PROMPT === '1' });
-  if (send) out(event, text);
+  out(event, join(send ? text : '', verdict));
   if (mode === 'session') {
     // Housekeeping, once per session start: drop records of sessions idle for a week.
     for (const f of fs.readdirSync(STATE_DIR)) {

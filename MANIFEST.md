@@ -18,7 +18,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/merge-checks-guard.mjs` | 21011 | `5b772ca6e3235ee4` |
 | `hooks/needs-you-refresh.mjs` | 5091 | `0b998d5b05d63dc4` |
 | `hooks/needs-you-status.mjs` | 6955 | `e5a4ca9b178fccf0` |
-| `hooks/next-step-capture.mjs` | 74222 | `7a3bc29b84b84d70` |
+| `hooks/next-step-capture.mjs` | 75971 | `933a4def2ad423c4` |
 | `hooks/phoenix-context-anywhere.mjs` | 8491 | `f60fbc78be048f19` |
 | `hooks/plan-mode-auto-approve.mjs` | 3356 | `b21cbb7a72bb3135` |
 | `hooks/python-repl-guard.mjs` | 27239 | `8efac615462f3676` |
@@ -34,7 +34,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/statusline.mjs` | 12556 | `9f4e1c651a78acb3` |
 | `hooks/suggestion-context.mjs` | 9285 | `184d0a26d6e240ce` |
 | `hooks/supabase-prompt-allow.mjs` | 4533 | `30324934431e1924` |
-| `hooks/task-rules-reminder.mjs` | 4974 | `46765bc466b74e22` |
+| `hooks/task-rules-reminder.mjs` | 6980 | `d25371d898a642fb` |
 | `hooks/weekly-review-readonly.mjs` | 16071 | `678e3e0bd1b922dc` |
 | `scripts/account-bridge/scripts/bridge.mjs` | 7872 | `b952a20b15b09353` |
 | `scripts/account-check.mjs` | 2970 | `6428253464dd500b` |
