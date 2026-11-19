@@ -44,7 +44,8 @@ async function namesById(client: Client, table: string, column: string, ids: Set
   if (ids.size === 0) return out;
   const { data, error } = await client.from(table).select(`id, ${column}`).in("id", [...ids]);
   if (error || !Array.isArray(data)) return out;
-  for (const row of data as Array<Record<string, unknown>>) {
+  // The select is built from `column`, so the client's typed parser cannot read it: plain records.
+  for (const row of data as unknown as Array<Record<string, unknown>>) {
     const id = row.id;
     const name = row[column];
     if (id !== null && id !== undefined && typeof name === "string" && name.trim()) out.set(String(id), name.trim());
