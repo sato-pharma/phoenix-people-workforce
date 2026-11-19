@@ -10297,17 +10297,23 @@ async function assertCanViewMarketingRequest(
   const isAssignedApprover = actorHrId
     ? steps.some((step) => isSamePerson(step.assignedHrId, access.hrId))
     : false;
-  if (canSeeMarketingRequest(access, requestRow, employeeRows) || isAssignedApprover || access.scope === "system") {
-    return;
-  }
   // A named product watcher (product-watchers.ts) reads, and comments on, every request that promotes
-  // a product he watches — with no rung, so no decision. Asked last and only for a watcher, so every
-  // other viewer pays no extra read. A failed product read refuses: unknown is never allow.
-  if (actorHrId && isMarketingProductWatcher(access.hrId)) {
-    const codesByRequestId = await loadProductCodesByRequestId(getSupabaseAdmin(), [String(requestRow.id)]);
-    if (watchesMarketingRequestProducts(access.hrId, codesByRequestId.get(String(requestRow.id)) ?? [])) return;
+  // a product he watches — with no rung, so no decision. Asked LAST (`&&` short-circuits) and only for
+  // a watcher, so every other viewer pays no extra read. A failed product read throws: never allow.
+  if (
+    !canSeeMarketingRequest(access, requestRow, employeeRows) &&
+    !isAssignedApprover &&
+    access.scope !== "system" &&
+    !(await watcherFollowsMarketingRequest(access, requestRow))
+  ) {
+    throw forbiddenError("Forbidden: you cannot view this marketing request.");
   }
-  throw forbiddenError("Forbidden: you cannot view this marketing request.");
+}
+
+async function watcherFollowsMarketingRequest(access: AccessContext, requestRow: MarketingRequestDbRow): Promise<boolean> {
+  if (!normalizeHrId(access.hrId) || !isMarketingProductWatcher(access.hrId)) return false;
+  const codesByRequestId = await loadProductCodesByRequestId(getSupabaseAdmin(), [String(requestRow.id)]);
+  return watchesMarketingRequestProducts(access.hrId, codesByRequestId.get(String(requestRow.id)) ?? []);
 }
 
 async function loadMarketingRequestForConversation(
