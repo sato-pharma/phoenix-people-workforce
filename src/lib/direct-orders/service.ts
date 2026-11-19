@@ -8044,17 +8044,42 @@ export async function recordDirectOrderCollection(
     rpcArgs = { p_paid_amount: outcome.paidAmount, p_payment_date: outcome.paymentDate };
   }
 
-  // ONE locked write (F-MKT-005). phx_record_direct_order_collection locks the order row FOR UPDATE —
-  // the lock the marketing-offset functions take before they rewrite remaining_amount — refuses if
-  // paid_amount / payment_date are no longer `expected` (what the screen showed), sums the offsets under that lock,
-  // re-checks the money arithmetic and writes the amount, the date and the remainder together. The
-  // unlocked read-then-update it replaces let an offset and a collection overwrite each other's
-  // remainder, and let a second Finance save silently win over the first.
+  // What the collection's records say, worked out before the write: the person, the amount and the date are known
+  // here, and the remainder (computed under the lock) is filled in by the function itself.
+  const actorKey = access.hrId ?? "unknown";
+  const records = clearing
+    ? {
+        summary: `Direct order collection cleared by ${actorKey}.`,
+        eventType: "collection_cleared",
+        message: "Collection cleared — nothing is recorded as paid against this order.",
+        messageOutstanding: null,
+      }
+    : {
+        summary: `Direct order collection of ${rpcArgs.p_paid_amount} EGP recorded by ${actorKey}.`,
+        eventType: "collection_recorded",
+        message: `Collected ${rpcArgs.p_paid_amount} EGP on ${rpcArgs.p_payment_date} — paid in full.`,
+        messageOutstanding: `Collected ${rpcArgs.p_paid_amount} EGP on ${rpcArgs.p_payment_date}; {remaining} EGP still outstanding.`,
+      };
+
+  // ONE locked write (F-MKT-005), WITH ITS RECORDS (REC-038 close-out, 19 Nov 2026; owner: "fix the direct-order
+  // collection and marketing cancel the same way"). phx_record_direct_order_collection locks the order row FOR UPDATE —
+  // the lock the marketing-offset functions take before they rewrite remaining_amount — refuses if paid_amount /
+  // payment_date are no longer `expected` (what the screen showed), sums the offsets under that lock, re-checks the
+  // money arithmetic and writes the amount, the date and the remainder together — then, in the same transaction, the
+  // required audit row and the order's event row. The records used to be written after the commit, so a record that
+  // failed left the collection standing while Finance was told the save had failed.
   const { data: rpcData, error: rpcError } = await supabase.rpc("phx_record_direct_order_collection", {
     p_order_id: input.requestId,
     ...rpcArgs,
     p_expected_paid_amount: expected.paidAmount,
     p_expected_payment_date: expected.paymentDate,
+    p_audit: { actor_login_id: access.loginId ?? access.hrId, summary: records.summary },
+    p_event: {
+      actor_hr_id: hrIdForStorage(access.hrId),
+      event_type: records.eventType,
+      message: records.message,
+      ...(records.messageOutstanding ? { message_outstanding: records.messageOutstanding } : {}),
+    },
   });
   if (rpcError) {
     const mapped = directOrderCollectionDbError(rpcError);
@@ -8066,77 +8091,29 @@ export async function recordDirectOrderCollection(
     paidAmount?: number | string | null;
     paymentDate?: string | null;
     remainingAmount?: number | string | null;
-    previousPaidAmount?: number | string | null;
-    previousPaymentDate?: string | null;
-    previousRemainingAmount?: number | string | null;
   };
   const toMoney = (value: number | string | null | undefined): number | null => (value == null ? null : Number(value));
   const toDate = (value: string | null | undefined): string | null => (value == null ? null : String(value));
-  const paidAmount = toMoney(written.paidAmount);
-  const paymentDate = toDate(written.paymentDate);
-  const remainingAmount = toMoney(written.remainingAmount);
-  const previousPaidAmount = toMoney(written.previousPaidAmount);
 
-  // The order as it now stands, for the caller. Its money is what the function wrote under the lock.
+  // The order as it now stands, for the caller. Its money is what the function wrote under the lock. The collection
+  // and its records are committed by now, so a read-back that fails answers from the row read above with the written
+  // figures — never a refusal for a save that happened.
   const { data: reread, error: rereadError } = await supabase
     .from("direct_order_requests")
     .select("*")
     .eq("id", input.requestId)
     .maybeSingle();
-  if (rereadError) throw rereadError;
+  if (rereadError) {
+    logError("Direct orders: a saved collection could not be read back; answering from the figures written", {
+      error: rereadError,
+      labels: { event: "direct_order_collection_reread_failed", requestId: input.requestId },
+    });
+  }
   const after = mapRequestRow({
     ...((reread ?? current) as Record<string, unknown>),
-    paid_amount: paidAmount,
-    payment_date: paymentDate,
-    remaining_amount: remainingAmount,
-  });
-
-  let summary: string;
-  let eventType: string;
-  let eventMessage: string;
-  if (clearing) {
-    summary = `Direct order collection cleared by ${access.hrId ?? "unknown"}.`;
-    eventType = "collection_cleared";
-    eventMessage = "Collection cleared — nothing is recorded as paid against this order.";
-  } else {
-    summary = `Direct order collection of ${paidAmount} EGP recorded by ${access.hrId ?? "unknown"}.`;
-    eventType = "collection_recorded";
-    eventMessage =
-      (remainingAmount ?? 0) > 0
-        ? `Collected ${paidAmount} EGP on ${paymentDate}; ${remainingAmount} EGP still outstanding.`
-        : `Collected ${paidAmount} EGP on ${paymentDate} — paid in full.`;
-  }
-
-  await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? access.hrId,
-    entityType: "direct_order_request",
-    entityId: after.id,
-    oldValues: {
-      paidAmount: previousPaidAmount,
-      paymentDate: toDate(written.previousPaymentDate),
-      remainingAmount:
-        written.previousRemainingAmount === undefined ? before.remainingAmount : toMoney(written.previousRemainingAmount),
-    },
-    newValues: {
-      paidAmount: after.paidAmount,
-      paymentDate: after.paymentDate,
-      remainingAmount: after.remainingAmount,
-    },
-    summary,
-  });
-  await insertEvent({
-    requestId: after.id,
-    actorHrId: access.hrId,
-    eventType,
-    message: eventMessage,
-    metadata: {
-      previousPaidAmount,
-      paidAmount: after.paidAmount,
-      remainingAmount: after.remainingAmount,
-      paymentDate: after.paymentDate,
-      // Recorded so the trail proves the month was untouched, not merely that we intended it.
-      salesMonthUnchanged: after.salesMonth,
-    },
+    paid_amount: toMoney(written.paidAmount),
+    payment_date: toDate(written.paymentDate),
+    remaining_amount: toMoney(written.remainingAmount),
   });
 
   pingDirectOrderSheet("collection_recorded");

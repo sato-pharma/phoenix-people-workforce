@@ -22,8 +22,8 @@ nothing when the model raises — exactly as Postgres does.
 | Operation | (a) forced failure | (b) two callers | File |
 | --- | --- | --- | --- |
 | Held-salary record at publish (#312) | added | added | `payroll-ledger-and-permission-behaviour.test.ts` (`runHeldRecordAtomicityBehaviourTests`) |
-| Direct-order collection (#333) | see the orders file | see the orders file | `direct-orders-marketing-rollback-and-race.test.ts` |
-| Marketing decision and cancel (#333) | see the orders file | see the orders file | `direct-orders-marketing-rollback-and-race.test.ts` |
+| Direct-order collection (#333) | added — **its records inside the call since 19 Nov, see §2b** | added | `direct-orders-marketing-rollback-and-race.test.ts` |
+| Marketing decision and cancel (#333) | added — **the cancel's record inside the call since 19 Nov, see §2b** | added | `direct-orders-marketing-rollback-and-race.test.ts` |
 | Candidate merge (#333) | see the merge file | see the merge file | `candidate-merge-rollback-and-race.test.ts` |
 | Retention conversations (#333) | added | added (update; a second create is a second conversation by design) | `hr-decisions-rollback-and-race.test.ts` |
 | Leave decisions (#333) | added (step and paid approval) | added (manager twice; two Super Admins, balance used once) | `hr-decisions-rollback-and-race.test.ts` |
@@ -103,6 +103,40 @@ held, the next release pays once and leaves the claim untouched), two releases a
 a claim rejected after the release read it, with and without a moved version (never pushed), and a claim re-priced
 between the release's read and its pin (refused, then released at the new figure). Its breaks are in §7.
 
+## 2b. The direct-order collection and the marketing cancel write their records inside their one call (REC-038)
+
+Owner, 19 Nov 2026: "fix the direct-order collection and marketing cancel the same way". Both were already one database
+function each (#333): `phx_record_direct_order_collection` and `phx_cancel_marketing_request`. But each committed first,
+and the app wrote the record afterwards — the collection's required audit row, then the order's event row, then the sheet
+ping; the cancel's required audit row. A record that failed left the collection (or the cancel) standing while the person
+was told the save had failed, and the collection's event row and sheet ping were skipped.
+
+Migration `20261119145916_direct_order_collection_and_marketing_cancel_write_records.sql` gives each function a form that
+takes the records' words from the app and writes the rows itself, in the same transaction, after the act:
+
+- **the collection** (7 arguments): the lock, the compare-and-set, the offsets under the lock, the money checks and the
+  one update, line for line as before; then the audit row (old and new paid amount, date and remainder) and the order's
+  event (the remainder the function computed fills the "still outstanding" sentence's `{remaining}`);
+- **the cancel** (5 arguments): the lock, the compare-and-set, the flip and the rungs closed as before; then the audit
+  row naming the status it replaced and the rungs it closed.
+
+The rows carry the same words and values the app wrote before. The sheet ping stays after the commit. A collection that
+committed is now answered as saved even when the read-back after it fails (it answers from the figures written).
+
+**The earlier forms stay**, so the code serving before the merge keeps working between the apply and the deploy; neither
+form has a default, so PostgREST picks each by the arguments sent. A later migration drops the earlier forms once this
+code is live.
+
+**Migration `20261119145916` must be applied before this code is merged.** Until it is, a collection and a cancel
+refuse and change nothing.
+
+`tests/direct-orders-marketing-rollback-and-race.test.ts` models both forms statement by statement: a record failing
+inside the call keeps nothing (the act included), the records land with the act in the app's own words (a remainder
+still owed, paid in full, cleared; a cancel's summary and values), a committed collection whose read-back fails is
+answered as saved, and the two-caller races write one record each. `tests/direct-orders-and-marketing-atomic.test.ts`
+pins that the new forms keep every lock, compare-and-set and money rule of the earlier ones, and that the app writes no
+record of its own after either call.
+
 ## 3. F-PAY-014 — publish works out its figures under its claim
 
 Publish assembled every row, ran its gates, built the held record and the bank coverage, and only then claimed the
@@ -143,12 +177,8 @@ judged on the step alone, as before. No database change.
    trip, so the risk is low. The switch starts OFF and stays the owner's.
 3. **`setCarryLateExpenses` reopens open runs' Expenses steps before the switch moves.** When its audit row then fails,
    the switch is put back but the reopened steps stay reopened. No money moves; HR re-confirms the step.
-4. **A collection or a marketing cancel whose record fails after the database step committed reads as failed.** The
-   collection (or the cancel) stands, the record is queued in the outbox and not lost, but the person is told the save
-   failed and the order's event row and sheet ping are skipped. A retry from the same screen is refused by the
-   compare-and-set, so no money is doubled. The fix is to write the record inside the function, or to answer "saved"
-   once the database step committed and the record is queued. The outstation approval had the same shape until it wrote
-   its records inside its one call (§2a).
+4. ~~**A collection or a marketing cancel whose record fails after the database step committed reads as failed.**~~
+   **Fixed on 19 Nov 2026 — each writes its records inside its one call, see §2b.**
 5. **The Payroll Copilot's Holiday Bridging tab looks broken today**: its GET leaves `requestId` out of each row, so its
    Exclude / Include post answers 400. The schema keeps `requestId` optional, so nothing about that answer changed.
 

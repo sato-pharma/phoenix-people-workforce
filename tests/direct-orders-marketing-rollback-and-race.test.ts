@@ -218,9 +218,10 @@ function collectionTables(): Tables {
 }
 
 /**
- * public.phx_record_direct_order_collection as 20261113161617 writes it: the order row locked FOR
- * UPDATE (a handler runs as one indivisible step), the compare-and-set on paid_amount and payment_date,
- * the offsets summed under the lock, the money re-checked, ONE update, then the jsonb answer.
+ * public.phx_record_direct_order_collection as its latest form writes it (20261119145916, the 7-argument form): the
+ * order row locked FOR UPDATE (a handler runs as one indivisible step), the compare-and-set on paid_amount and
+ * payment_date, the offsets summed under the lock, the money re-checked, ONE update, then — in the same transaction —
+ * the audit row and the order's event row (REC-038), then the jsonb answer.
  */
 function recordCollection(fault?: Fault) {
   return (args: Record<string, unknown>, tables: Tables): RpcAnswer =>
@@ -258,6 +259,34 @@ function recordCollection(fault?: Fault) {
         updated_at: new Date().toISOString(),
       });
       fault?.("after_update", draft);
+      // The records, inside the transaction, with the figures written under the lock.
+      const audit = (args.p_audit ?? {}) as Row;
+      (draft.audit_logs ??= []).push({
+        actor_login_id: String(audit.actor_login_id ?? "") || "system",
+        entity_id: String(args.p_order_id),
+        entity_type: "direct_order_request",
+        new_values: { paidAmount: paid, paymentDate: paid == null ? null : args.p_payment_date, remainingAmount: remaining },
+        old_values: { paidAmount: previous.paid, paymentDate: previous.date, remainingAmount: previous.remaining },
+        summary: audit.summary,
+      });
+      fault?.("after_audit", draft);
+      const event = (args.p_event ?? {}) as Row;
+      (draft.direct_order_events ??= []).push({
+        actor_hr_id: String(event.actor_hr_id ?? "") || null,
+        event_type: event.event_type,
+        message:
+          paid != null && (remaining ?? 0) > 0 && event.message_outstanding != null
+            ? String(event.message_outstanding).replace("{remaining}", String(remaining))
+            : event.message,
+        metadata: {
+          paidAmount: paid,
+          paymentDate: paid == null ? null : args.p_payment_date,
+          previousPaidAmount: previous.paid,
+          remainingAmount: remaining,
+          salesMonthUnchanged: String(order.sales_month ?? "") || null,
+        },
+        request_id: args.p_order_id,
+      });
       return {
         body: {
           paidAmount: paid,
@@ -333,14 +362,125 @@ async function twoCollectionSavesOneWinner(): Promise<void> {
     assert.equal(tables.direct_order_events[0].event_type, "collection_recorded");
     assert.equal((tables.direct_order_events[0].metadata as Row).paidAmount, winner.paidAmount, "the event is the winner's");
     assert.equal(tables.audit_logs.length, 1, "ONE audit row");
+    assert.deepEqual(anyWrite(seen), [], "every row — the collection, its audit row and its event — was written by the one call");
     assert.equal(outside.pings.length, 1, "the sheet is pinged once, for the save that happened");
     assert.deepEqual(outside.hosts, [], "nothing else outside Phoenix is called");
   }, { arrivals: 2, rpc: [COLLECTION_RPC] });
 }
 
+/** A record failing INSIDE the call — the event insert, after the audit row — rolls the collection back with it. */
+async function collectionRecordFailingInsideTheCallKeepsNothing(): Promise<void> {
+  const tables = collectionTables();
+  const before = snapshot(tables);
+  let auditWrittenBeforeTheStop = false;
+  const fault = failAt("after_audit", statementTimeout, (draft) => {
+    auditWrittenBeforeTheStop = draft.audit_logs.length === 1 && draft.direct_order_requests[0].paid_amount === 500;
+  });
+  await harness({ rpc: { [COLLECTION_RPC]: recordCollection(fault) }, tables }, async (seen, outside) => {
+    let thrown: unknown = null;
+    let answered: unknown = null;
+    try {
+      answered = await recordDirectOrderCollection(SUPER_ADMIN, { expected: SCREEN_LOADED, paidAmount: 500, paymentDate: "2026-11-02", requestId: ORDER_ID });
+    } catch (error) {
+      thrown = error;
+    }
+    assert.ok(auditWrittenBeforeTheStop, "precondition: inside the call the new collection AND its audit row were written before the stop");
+    assert.equal(answered, null, "RECORD: a collection whose record failed is never answered as saved");
+    assert.equal((thrown as { code?: string } | null)?.code, "57014", "RECORD: Finance is refused with the database's own error");
+    assert.deepEqual(anyWrite(seen), [], "RECORD: the app wrote nothing outside the call");
+    assert.deepEqual(outside.pings, [], "RECORD: the sheet is not told about a collection that did not happen");
+    assertNothingChanged(tables, before, "RECORD: HEADLINE: the collection does not stand without its record — every table reads as before");
+  });
+}
+
+/** The records land with the collection, in the call, saying exactly what the app used to write after it. */
+async function collectionRecordsLandWithIt(): Promise<void> {
+  for (const shape of ["outstanding", "paid_in_full", "cleared"] as const) {
+    const tables = collectionTables();
+    const paidAmount = shape === "outstanding" ? 500 : shape === "paid_in_full" ? 900 : null;
+    await harness({ rpc: { [COLLECTION_RPC]: recordCollection() }, tables }, async (seen, outside) => {
+      const order = await recordDirectOrderCollection(SUPER_ADMIN, {
+        expected: SCREEN_LOADED,
+        paidAmount,
+        paymentDate: paidAmount == null ? null : "2026-11-02",
+        requestId: ORDER_ID,
+      });
+      const label = `RECORDS (${shape})`;
+      assert.equal(rpcCalls(seen, COLLECTION_RPC).length, 1, `${label}: one call`);
+      assert.deepEqual(anyWrite(seen), [], `${label}: HEADLINE: the audit row and the event row were written inside the call, not after it`);
+      const remaining = shape === "outstanding" ? 400 : shape === "paid_in_full" ? 0 : 900;
+      assert.equal(order.remainingAmount, remaining, `${label}: Finance is told the remainder the function wrote`);
+      const [audit] = tables.audit_logs;
+      assert.deepEqual(
+        [audit.entity_type, audit.entity_id, audit.actor_login_id, audit.summary],
+        [
+          "direct_order_request",
+          ORDER_ID,
+          SUPER_ADMIN.loginId,
+          paidAmount == null
+            ? `Direct order collection cleared by ${SUPER_ADMIN.hrId}.`
+            : `Direct order collection of ${paidAmount} EGP recorded by ${SUPER_ADMIN.hrId}.`,
+        ],
+        `${label}: one audit row, in the words the app used to write`,
+      );
+      assert.deepEqual(audit.old_values, { paidAmount: 200, paymentDate: "2026-11-01", remainingAmount: 700 }, `${label}: naming what the collection replaced`);
+      assert.deepEqual(
+        audit.new_values,
+        { paidAmount, paymentDate: paidAmount == null ? null : "2026-11-02", remainingAmount: remaining },
+        `${label}: and what it wrote`,
+      );
+      const [event] = tables.direct_order_events;
+      const expectedMessage =
+        shape === "outstanding"
+          ? "Collected 500 EGP on 2026-11-02; 400 EGP still outstanding."
+          : shape === "paid_in_full"
+            ? "Collected 900 EGP on 2026-11-02 — paid in full."
+            : "Collection cleared — nothing is recorded as paid against this order.";
+      assert.deepEqual(
+        [event.event_type, event.message, event.actor_hr_id],
+        [paidAmount == null ? "collection_cleared" : "collection_recorded", expectedMessage, "B-10"],
+        `${label}: one event on the order's timeline, in the words the app used to write`,
+      );
+      assert.equal((event.metadata as Row).salesMonthUnchanged, "2026-10", `${label}: the event proves the sales month was untouched`);
+      assert.equal(outside.pings.length, 1, `${label}: the sheet is pinged once, after the commit`);
+    });
+  }
+}
+
+/** A collection that committed is answered as saved even when the read-back after it fails. */
+async function collectionSavedEvenWhenTheReadBackFails(): Promise<void> {
+  const tables = collectionTables();
+  await harness({ rpc: { [COLLECTION_RPC]: recordCollection() }, tables }, async () => {
+    const inner = globalThis.fetch;
+    let orderReads = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      const method = String(init?.method ?? "GET").toUpperCase();
+      if (method === "GET" && url.pathname === "/rest/v1/direct_order_requests" && (orderReads += 1) === 2) {
+        return new Response(JSON.stringify({ code: "57014", message: "canceling statement due to statement timeout" }), {
+          headers: { "content-type": "application/json" },
+          status: 500,
+        });
+      }
+      return inner(input, init);
+    }) as typeof fetch;
+    const order = await recordDirectOrderCollection(SUPER_ADMIN, { expected: SCREEN_LOADED, paidAmount: 500, paymentDate: "2026-11-02", requestId: ORDER_ID });
+    assert.equal(orderReads, 2, "precondition: the read-back after the call was the read that failed");
+    assert.deepEqual(
+      [order.paidAmount, order.paymentDate, order.remainingAmount],
+      [500, "2026-11-02", 400],
+      "READ-BACK: HEADLINE: a committed collection is answered as saved, with the figures written, never refused",
+    );
+    assert.equal(tables.audit_logs.length, 1, "READ-BACK: and its record stands with it");
+  });
+}
+
 export async function runDirectOrderCollectionRollbackAndRaceTests(): Promise<void> {
   await collectionStoppedAfterItsWriteKeepsNothing();
   await twoCollectionSavesOneWinner();
+  await collectionRecordFailingInsideTheCallKeepsNothing();
+  await collectionRecordsLandWithIt();
+  await collectionSavedEvenWhenTheReadBackFails();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────── 2. marketing decision
@@ -514,9 +654,9 @@ function decideStep(fault?: Fault) {
 }
 
 /**
- * public.phx_cancel_marketing_request as 20261113161619 writes it: the request locked, compare-and-set
- * on the status the caller read, flipped to 'cancelled', then every 'current' or 'pending' non-CC rung
- * closed as 'skipped'.
+ * public.phx_cancel_marketing_request as its latest form writes it (20261119145916, the 5-argument form): the request
+ * locked, compare-and-set on the status the caller read, flipped to 'cancelled', every 'current' or 'pending' non-CC
+ * rung closed as 'skipped', then — in the same transaction — the cancel's audit row (REC-038).
  */
 function cancelRequest(fault?: Fault) {
   return (args: Record<string, unknown>, tables: Tables): RpcAnswer =>
@@ -536,6 +676,16 @@ function cancelRequest(fault?: Fault) {
           closedSteps += 1;
         }
       }
+      fault?.("after_steps_closed", draft);
+      const audit = (args.p_audit ?? {}) as Row;
+      (draft.audit_logs ??= []).push({
+        actor_login_id: String(audit.actor_login_id ?? "") || "system",
+        entity_id: String(args.p_request_id),
+        entity_type: "marketing_request",
+        new_values: { closedApprovalSteps: closedSteps, status: "cancelled" },
+        old_values: { status },
+        summary: audit.summary,
+      });
       return { body: { closedSteps, previousStatus: status, requestId: args.p_request_id, status: "cancelled" }, status: 200 };
     });
 }
@@ -754,11 +904,56 @@ async function twoCancelsOneWinner(): Promise<void> {
     const audits = decisionAuditRows(tables);
     assert.equal(audits.length, 1, "ONE cancel audit row");
     assert.equal((audits[0].new_values as Row).closedApprovalSteps, 2, "naming the two rungs that one cancel closed");
+    assert.deepEqual(anyWrite(seen), [], "the cancel and its audit row were written by the one call");
     assert.deepEqual(outside.hosts, [], "nothing outside Phoenix is called");
   }, { arrivals: 2, rpc: [CANCEL_RPC] });
+}
+
+/** The audit row failing INSIDE the call rolls the cancel back with it; written, it says what the app used to write. */
+async function cancelRecordInsideTheCall(): Promise<void> {
+  {
+    const tables = marketingTables("middle");
+    const before = snapshot(tables);
+    let closedBeforeTheStop = false;
+    const fault = failAt("after_steps_closed", statementTimeout, (draft) => {
+      closedBeforeTheStop = draft.marketing_requests[0].status === "cancelled" && stepById(draft, STEP_MARKETING).status === "skipped";
+    });
+    await harness({ rpc: { [CANCEL_RPC]: cancelRequest(fault) }, tables }, async (seen) => {
+      let thrown: unknown = null;
+      try {
+        await cancelMarketingRequest({ access: SUPER_ADMIN, reason: "Duplicate of another request.", requestId: MKT_ID });
+      } catch (error) {
+        thrown = error;
+      }
+      assert.ok(closedBeforeTheStop, "precondition: inside the call the request was cancelled and its rungs closed before the stop");
+      assert.equal((thrown as { code?: string } | null)?.code, "57014", "RECORD: the Super Admin is refused with the database's own error");
+      assert.deepEqual(anyWrite(seen), [], "RECORD: the app wrote nothing outside the call");
+      assertNothingChanged(tables, before, "RECORD: HEADLINE: the cancel does not stand without its audit row — every table reads as before");
+    });
+  }
+  {
+    const tables = marketingTables("middle");
+    await harness({ rpc: { [CANCEL_RPC]: cancelRequest() }, tables }, async (seen) => {
+      await cancelMarketingRequest({ access: SUPER_ADMIN, reason: "Duplicate of another request.", requestId: MKT_ID });
+      assert.deepEqual(anyWrite(seen), [], "RECORDS: HEADLINE: the audit row was written inside the call, not after it");
+      const [audit] = decisionAuditRows(tables);
+      const code = String(tables.marketing_requests[0].request_code ?? MKT_ID);
+      assert.deepEqual(
+        [audit.actor_login_id, audit.summary, audit.old_values, audit.new_values],
+        [
+          SUPER_ADMIN.loginId,
+          `Marketing request ${code} cancelled (was "pending_approval"). Reason: Duplicate of another request.`,
+          { status: "pending_approval" },
+          { closedApprovalSteps: 2, status: "cancelled" },
+        ],
+        "RECORDS: one audit row, in the words and with the values the app used to write",
+      );
+    });
+  }
 }
 
 export async function runMarketingCancelRollbackAndRaceTests(): Promise<void> {
   await cancelStoppedPartWayKeepsNothing();
   await twoCancelsOneWinner();
+  await cancelRecordInsideTheCall();
 }
