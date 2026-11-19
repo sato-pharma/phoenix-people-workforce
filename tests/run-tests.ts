@@ -3216,6 +3216,12 @@ import { runHrDecisionsRollbackAndRaceTests } from "./hr-decisions-rollback-and-
 import { runOutstationReapproveRollbackAndRaceTests } from "./outstation-reapprove-rollback-and-race.test.ts";
 import { runDeductionsMoneyPathsBehaviourTests } from "./deductions-money-paths-behaviour.test.ts";
 import { runLateExpensesRollbackAndRaceTests } from "./late-expenses-rollback-and-race.test.ts";
+import {
+  runDirectOrderCollectionRollbackAndRaceTests,
+  runMarketingCancelRollbackAndRaceTests,
+  runMarketingDecisionRollbackAndRaceTests,
+} from "./direct-orders-marketing-rollback-and-race.test.ts";
+import { runCandidateMergeRollbackAndRaceTests } from "./candidate-merge-rollback-and-race.test.ts";
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runSecondSignInStepTests } from "./second-sign-in-step.test.ts";
@@ -12776,6 +12782,10 @@ await runTest("retention conversations and leave decisions are all or nothing wi
 await runTest("approving an outstation claim (F-PAY-015, REC-038 close-out, 19 Nov 2026): two approvals at once apply once, the loser is told the claim changed and the payroll row is written once; a later unchanged approve changes nothing; a failed payroll push or record refuses the approver with no record claiming the trip reached payroll and nobody told, and a re-approve pays the trip once — the approval is NOT yet all or nothing (docs/money-integrity-close-out-2026-11.md)", runOutstationReapproveRollbackAndRaceTests);
 await runTest("the deduction money paths behave (REC-078, REC-038 close-out, 19 Nov 2026): a deduction decision refused by a stale revision or the publication lock changes nothing and writes no audit; a decision whose audit fails still stands with the row queued; two Super Admin decisions from one revision land once, the loser STALE; daily deductions release one line at a time into the active snapshot, a line released twice at once is charged once, a withdrawn line leaves alone, a refused release or withdraw changes nothing, and nothing reaches any outside host", runDeductionsMoneyPathsBehaviourTests);
 await runTest("the late-approved expense carry is one winner and puts itself back (REC-029, REC-038 close-out, 19 Nov 2026): two runs reserving one trip at once give one reservation and a refusal naming the holder; a reservation whose insert fails is refused and leaves the stored reservations as they were; a switch whose audit row fails reads OFF again in the table, and says it WAS changed only when even the put-back failed", runLateExpensesRollbackAndRaceTests);
+await runTest("a direct-order collection is all or nothing with one winner (REC-038 close-out, 19 Nov 2026): a failure inside the modelled collection function after it wrote the new paid amount keeps nothing, Finance is refused and no event, record or sheet ping follows; two saves from the same screen at once store one collection, the other a 409", runDirectOrderCollectionRollbackAndRaceTests);
+await runTest("a marketing decision is all or nothing with one winner (REC-038 close-out, 19 Nov 2026): a final approval or a reject that fails inside the modelled function after its first write keeps nothing and writes no record or notice; two approvals of one rung, two final approvals, and a decision racing a cancel in either order each land once, the other a 409", runMarketingDecisionRollbackAndRaceTests);
+await runTest("cancelling a marketing request is all or nothing with one winner (REC-038 close-out, 19 Nov 2026): a cancel that fails after flipping the request keeps nothing and is never reported cancelled; two cancels at once close the rungs once, the other a 409", runMarketingCancelRollbackAndRaceTests);
+await runTest("a candidate merge is all or nothing with one winner (REC-038 close-out, 19 Nov 2026): a merge that fails inside the modelled function after its first moved row keeps nothing, writes no history line and never mirrors the CV; the same pair merged twice at once, and A into B against B into A, merge once, the other a 409", runCandidateMergeRollbackAndRaceTests);
 await runTest("the Employee Master change history panel never shows a value the log did not keep, never shows pay (or that pay moved) to a seat the master withholds it from, reads ids back as names, and opens only to a reader the directory lets see that person", runEmployeeChangeHistoryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

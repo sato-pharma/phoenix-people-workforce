@@ -26,7 +26,7 @@ import { snapshot, withStandIn, writesTo, type Seen, type Tables } from "./suppo
 //       audit is queued rather than lost, and approving again after a reload pays the trip once.
 //       NOTE: this operation is NOT all-or-nothing today — the status write (and the report row)
 //       survive a failed push. That assertion is deliberately NOT in the exported run function; the
-//       finding is in the report that came with this file.
+//       finding and that assertion are in docs/money-integrity-close-out-2026-11.md (§5 and the appendix).
 //   (b) TWO APPROVALS AT ONCE. Two Super Admins approve the same claim, from the same screen version,
 //       at the same moment. Exactly one applies; the other is refused as "the claim changed"
 //       (OutstationClaimChangedError, a 409 at the routes) and writes nothing; the payroll row is
