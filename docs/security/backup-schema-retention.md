@@ -319,10 +319,28 @@ them can undo a figure.
 | `msn_backup_20261009` | 1 · 492 | September's computed store-split figures for the three lines on the night of 9 Oct; 277 have changed since |
 | `sos_september_split_rebuild_20261009` | 2 · 140 | the September split rebuild's before-picture: store-split figures computed on 4 Oct, 87 since changed, and the Anti Infective September publication row while briefly unpublished that day. It is published again with the identical snapshot |
 
-The next snapshots to reach 90 days with no decision are the 10 October group, on 8 Jan 2027: the
-schemas `epda_backup_20261010`, `epda_sep_resplit_20261010`, `ez_backup_20261010`,
-`msn_backup_20261010`, `phx_crm_backup_20261010`, `ps_sep_remap_20261010`,
-`railways_backup_20261010`, `sep_map_sync_20261010` and `sos_backup_20261010`.
+**The 10 October schemas, decided the same day.** All nine "export, then drop", all nine exported that
+day. They reach 90 days on 8 Jan 2027. Six were moved here from `public` by `20261023023133` and
+`20261023023603`; no migration creates `epda_sep_resplit_20261010`, `ps_sep_remap_20261010` or
+`sep_map_sync_20261010`. Nothing depends on any of them or reads them; no role can use the nine
+schemas; staging has none and the schema baseline names none. July to September are published on all
+three lines, so none of them can undo a figure.
+
+| Schema | Tables · rows | What it holds |
+| --- | --- | --- |
+| `epda_backup_20261010` | 2 · 3,573 | the shared EPDA customer code's split as it stood early on 10 Oct (22 rows), and the September EPDA split's before-picture (3,551 rows). That code is still blocked, so the export is the record of its first split |
+| `epda_sep_resplit_20261010` | 1 · 24 | September EPDA Pharmacies invoice rows before 15 customers moved to their second codes; all 24 are live on the new codes |
+| `ez_backup_20261010` | 2 · 55 | September sales against target by area (49 rows) and the frozen September CNS roster that splits EZ across the Cairo and Giza reps (6 rows), taken before a change to how EZ is credited |
+| `msn_backup_20261010` | 1 · 479 | September's computed store-split net for the three lines just before the 10 Oct rebuild; 343 rows differ now |
+| `phx_crm_backup_20261010` | 1 · 7 | seven Phoenix CRM places' brick and area before a fix; all seven sit elsewhere now |
+| `ps_sep_remap_20261010` | 1 · 15 | one distributor's September invoice rows before three area moves; 12 are in the new area, 3 are back in the old one |
+| `railways_backup_20261010` | 1 · 49 | September sales against target by area, taken before a change to how Railways is credited |
+| `sep_map_sync_20261010` | 1 · 3,729 | September invoice rows from four distributors before the sync to the corrected customer map; 3,650 sit where the sync put them |
+| `sos_backup_20261010` | 2 · 145 | 60 held customer-map changes before they were applied (56 since changed), and the 30 customers behind 55 held changes before they were switched to unmapped and those holds refused. The customer map keeps no history, so the export is the lasting record |
+
+The next snapshots to reach 90 days with no decision are the 12 October group, on 10 Jan 2027: the
+schemas `sos_backup_20261012`, `phoenix_crm_merge_backup_20261012`, `phx_backup_20261012` and
+`au_backup_20261012`. No snapshot is dated 11 October.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
