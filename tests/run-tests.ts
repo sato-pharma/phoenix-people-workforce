@@ -1627,6 +1627,7 @@ import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-ex
 import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
 import { runPayrollCopilotVacationSettlementTests } from "./payroll-copilot-vacation-settlement.test.ts";
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
+import { runPayrollCopilotHolidayBridgingRoundtripTests } from "./payroll-copilot-holiday-bridging-roundtrip.test.ts";
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
 import { runDirectOrderFamilyBasketTests } from "./direct-orders-family-basket.test.ts";
@@ -6576,6 +6577,7 @@ await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)"
 await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
 await runTest("payroll copilot vacation settlement (defer/salary/reject never leave two live rows)", runPayrollCopilotVacationSettlementTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
+await runTest("payroll copilot holiday bridging Exclude and Include reach the database (19 Nov 2026): the row the route sends carries the request id its decision posts, the body built from it records the exclusion against the right request through the real route and Include lifts it, a row with no request id is refused in the route's own words, and the GET and the tab go through the one shared builder", runPayrollCopilotHolidayBridgingRoundtripTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("the payroll page's downloads are plain anchors, so opening it runs no export", runPayrollDownloadLinksNeverPrefetchTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
