@@ -374,10 +374,25 @@ three lines.
 | `store_split_backup_20261013` | 1 · 1,492 | the July to September store-split net for all three lines, taken early on 13 Oct before the rebuild that followed the Qena move; 443 rows differ now |
 | `phoenix_crm_backup_20261013` | 1 · 105 | one rep seat's Phoenix CRM customers before a clean-up that day; all 105 still exist on that seat and are now marked dropped. Holds personal fields |
 
-The next snapshot to reach 90 days with no decision is `ats_backup_20261014_offerhirefix`, on 12 Jan
-2027. After it come the three 15 October tables in `au` (`au.bak_20261015_aif_kfs2_d1_line_area_map`,
-`au.bak_20261015b_aif_kfs2_july_line_area_map` and `au.bak_20261015c_aif_rollup_jul_sep`), on 13 Jan
-2027.
+**The 14 and 15 October snapshots, decided on 19 Nov 2026.** Both questions "export, then drop", and all
+four were exported that day (9 files, 514 rows, every checksum matching its manifest). The 14 October
+schema reaches 90 days on 12 Jan 2027, the three 15 October tables on 13 Jan 2027. The three tables sit
+in the standing schema `au`, so each is dropped as a lone table with `drop table` and no `cascade`.
+`20261015145000` and `20261015153000` created the two area-map copies, so staging has those two as
+well and the drop clears them there too. The schema baseline names the three `au` tables. Nothing
+depends on any of the four or reads them: no foreign key, view, trigger, policy, function or cron job
+names them, no role can use the schema, and no browser role can use `au`. July to September are
+published on Anti Infective.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `ats_backup_20261014_offerhirefix` | 6 · 93 | the offer letters, candidates and status history from before the 14 Oct offer-to-hire repair ([`recruitment-offer-hire-sync.md`](../recruitment-offer-hire-sync.md)). All 43 letters still exist, and most changed in the repair; 23 of the 27 candidates still exist. Holds sensitive personal fields |
+| `au.bak_20261015_aif_kfs2_d1_line_area_map` | 1 · 57 | the Anti Infective area map from before Kafr El-Sheikh 2 joined the Delta (1) district from October; 56 rows are unchanged |
+| `au.bak_20261015b_aif_kfs2_july_line_area_map` | 1 · 58 | the same map from before that move was re-dated to July; 56 rows are unchanged |
+| `au.bak_20261015c_aif_rollup_jul_sep` | 1 · 306 | the July to September Anti Infective attribution rollup from before the move reached it; 300 rows are unchanged, and the 6 that differ are that area's share |
+
+The next snapshot to reach 90 days with no decision is `recruitment_backup_20261016`, on 14 Jan 2027.
+After it come `ats_backup_20261017_manager_folders` and `phx_backup_20261017`, on 15 Jan 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,

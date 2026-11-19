@@ -1122,6 +1122,34 @@
       "decidedBy": "owner",
       "why": "1 table, 105 rows: one rep seat's 105 Phoenix CRM customers as they stood before a clean-up on 13 Oct. All 105 still exist on the same seat and are now marked dropped (101 were pending, 4 outside). Holds personal fields, so its export stays outside the repository like every export.",
       "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
+    },
+    "ats_backup_20261014_offerhirefix": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "6 tables, 93 rows: the offer letters, candidates and status history as they stood before the 14 Oct offer-to-hire repair (docs/recruitment-offer-hire-sync.md), which pointed 23 letters at the employee each became, moved 4 to declined, stamped 11 candidates hired and 4 rejected. All 43 letters still exist and most changed in the repair; 23 of the 27 candidates still exist. Holds sensitive personal fields (national IDs, contact details, dates of birth, offered salaries), so its export stays outside the repository like every export.",
+      "sheet": "19 November 2026, the 14 and 15 October snapshots, in chat"
+    },
+    "au.bak_20261015_aif_kfs2_d1_line_area_map": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 57 rows: the Anti Infective area map before 20261015145000 moved Kafr El-Sheikh 2 into the Delta (1) district from October. 56 rows are unchanged; the move is live. Decided with the other two 15 October copies. Staging holds a copy too.",
+      "sheet": "19 November 2026, the 14 and 15 October snapshots, in chat"
+    },
+    "au.bak_20261015b_aif_kfs2_july_line_area_map": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 58 rows: the same area map before 20261015153000 re-dated that move to July. 56 rows are unchanged; the re-dated move is live. Decided with the other two 15 October copies. Staging holds a copy too.",
+      "sheet": "19 November 2026, the 14 and 15 October snapshots, in chat"
+    },
+    "au.bak_20261015c_aif_rollup_jul_sep": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 306 rows: the July-September Anti Infective attribution rollup before the Kafr El-Sheikh 2 move reached it. 300 rows are unchanged; the 6 that differ are that area's share. Decided with the other two 15 October copies.",
+      "sheet": "19 November 2026, the 14 and 15 October snapshots, in chat"
     }
   }
 }
