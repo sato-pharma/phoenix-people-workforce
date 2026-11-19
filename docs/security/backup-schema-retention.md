@@ -290,10 +290,24 @@ browser role and not `service_role` can use the schema; staging has none.
 | `ai_answers` | 54 | stored address answers naming the old bricks; re-pointed since |
 | `import_rows_sept_on` | 582 | September import rows from two batches that no longer exist; September is published on all three lines, so the copy can undo nothing |
 
-The next snapshots to reach 90 days with no decision are the 8 October group, on 6 Jan 2027: the
-schemas `crm_backup_20261008` and `phoenix_crm_merge_backup_20261008`, and six dated tables in `au`
-(`bak_20261008_luxor_notes_fix`, `bak_20261008_pd0021_decline_revert` and the four
-`bak_20261008_orphaned_direct_order*` tables).
+**The 8 October group, decided the same day.** Three schemas and six dated tables in `au`, all
+"export, then drop", all exported that day. They reach 90 days on 6 Jan 2027. Nothing depends on any
+of them or reads them; no browser role can use them, and no role at all can use the three schemas.
+Staging holds only `au.bak_20261008_luxor_notes_fix`. The recruitment schema was missed when the
+group was first listed and was decided separately, a few minutes later.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `phoenix_crm_merge_backup_20261008` | 8 · 363 | the 329 customers in the same-seat duplicate groups and the 34 rows hanging off them (visits, places, plan items, list requests, an off-plan visit), before the 8 Oct merge. All 329 customers still exist (the merged-away ones are archived as duplicates) and the visits and places now sit on the kept customer. The merge's offline report folder no longer exists, so the export is the only lasting before-picture |
+| `crm_backup_20261008` | 5 · 16 | a test probe's rows deleted from Phoenix CRM on 8 Oct (customers, list events, a place, a photo record and the file's storage row, not the file); all test data, none live |
+| `recruitment_backup_20261008` | 1 · 2 | two offer letters to one candidate, sent on 8 Oct, never accepted, then deleted from the live offers; holds the candidate's name and email |
+| `au.bak_20261008_orphaned_direct_orders` and its `_items`, `_steps`, `_events` | 4 · 51 | the five Pedia direct orders left returned with two resigned district managers, before the hand close on 8 Oct (`20261008040000`): 5 orders, 6 items, 18 approval steps, 22 events. All still live; the orders now read cancelled and the close added 5 events |
+| `au.bak_20261008_luxor_notes_fix` | 1 · 1 | Pedia Luxor's area row before the 8 Oct notes fix (`20261008153500`); live with the corrected notes and the same rep seat |
+| `au.bak_20261008_pd0021_decline_revert` | 1 · 1 | one Pedia rep's records while an offer withdrawal had wrongly marked the offer declined, taken by hand before the revert; the rep is active today. Holds personal fields |
+
+The next snapshots to reach 90 days with no decision are the 9 October group, on 7 Jan 2027: the
+schemas `ep_backup_20261009`, `sohag_backup_20261009`, `msn_backup_20261009`,
+`sos_september_split_rebuild_20261009` and `epda_backup_20261009`.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
