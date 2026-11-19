@@ -193,7 +193,7 @@ function MessageBubble({
                 Save to candidate
               </Action>
             ) : null}
-            <ActionLink href={mediaUrl(apiBase, message.id, true)} title="Download this file" tone="ghost">
+            <ActionLink href={mediaUrl(surface.apiBase, message.id, true)} title="Download this file" tone="ghost">
               <Download aria-hidden className="h-3.5 w-3.5" />
               Download
             </ActionLink>
@@ -247,18 +247,20 @@ export function InboxThreadView({
     }
   }
 
+  // Linking and "save to candidate" exist on the recruitment surface alone (the approvals surface switches them off), so
+  // their paths stay written out: tests/api-granted-but-uncalled.test.ts finds a route's caller by its literal path.
   function link(person: InboxPersonOption) {
     const body = person.kind === "candidate" ? { candidateId: person.id } : { employeeHrId: person.id };
-    void act(() => patchJson(`${surface.apiBase}/conversations/${conversation.id}/link`, body), `Linked this chat to ${person.name}.`);
+    void act(() => patchJson(`/api/whatsapp-inbox/conversations/${conversation.id}/link`, body), `Linked this chat to ${person.name}.`);
   }
 
   function unlink() {
-    void act(() => patchJson(`${surface.apiBase}/conversations/${conversation.id}/link`, {}), "This chat is no longer linked to anyone.");
+    void act(() => patchJson(`/api/whatsapp-inbox/conversations/${conversation.id}/link`, {}), "This chat is no longer linked to anyone.");
   }
 
   function save(messageId: string, person: InboxPersonOption, kind: "cv" | "other") {
     void act(
-      () => postJson(`${surface.apiBase}/messages/${messageId}/save-to-candidate`, { candidateId: person.id, kind }),
+      () => postJson(`/api/whatsapp-inbox/messages/${messageId}/save-to-candidate`, { candidateId: person.id, kind }),
       `Saved the file to ${person.name}'s record${kind === "cv" ? " as their CV" : ""}.`,
     );
   }

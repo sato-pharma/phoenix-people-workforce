@@ -219,6 +219,10 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   weekly_sales_mapping: true,
   whatsapp_inbox_conversation: true,
   whatsapp_inbox_message: true,
+  approvals_whatsapp_message: true,
+  approvals_whatsapp_broadcast: true,
+  approvals_whatsapp_list: true,
+  approvals_whatsapp_template: true,
   workflow_registry: true,
 };
 
