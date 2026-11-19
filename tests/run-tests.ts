@@ -1396,6 +1396,7 @@ import {
   runHeldRecordAtomicityBehaviourTests,
   runHeldSalaryRecordBehaviourTests,
   runPermissionLookupBehaviourTests,
+  runPermissionOverrideBehaviourTests,
 } from "./payroll-ledger-and-permission-behaviour.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
 import { runGcloudMigrationHardeningTests } from "./gcloud-migration-hardening.test.ts";
@@ -3244,6 +3245,18 @@ import { runStoredContentTypeTests } from "./stored-content-type.test.ts";
 import { runReviewFindings20261119Tests } from "./review-findings-2026-11-19.test.ts";
 import { runEmailTemplateKeepsRecordPayloadTests } from "./email-template-keeps-record-payload.test.ts";
 import { runEmployeeChangeHistoryTests } from "./employee-change-history.test.ts";
+import { runLeaveDecisionBehaviourTests } from "./leave-decision-behaviour.test.ts";
+import { runResignationCompleteBehaviourTests } from "./resignation-complete-behaviour.test.ts";
+import { runHireHandoffDatabaseBehaviourTests } from "./hire-handoff-database-behaviour.test.ts";
+import { runRoleLandingBehaviourTests } from "./role-landing-behaviour.test.ts";
+import { runDashboardInvalidationBehaviourTests } from "./dashboard-invalidation-behaviour.test.ts";
+import { runEmployeeLifecycleWorkflowBehaviourTests } from "./employee-lifecycle-workflow-behaviour.test.ts";
+import { runFinanceCommandCenterBehaviourTests } from "./finance-command-center-behaviour.test.ts";
+import { runOperationsActivityFeedBehaviourTests } from "./operations-activity-feed-behaviour.test.ts";
+import { runOverviewDashboardBehaviourTests } from "./overview-dashboard-behaviour.test.ts";
+import { runSupportRequestsBehaviourTests } from "./support-requests-behaviour.test.ts";
+import { runVisitsReportRowBehaviourTests } from "./visits-report-row-behaviour.test.ts";
+import { runSrcLibFolderTestCoverageTests } from "./src-lib-folder-test-coverage.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12789,6 +12802,19 @@ await runTest("a marketing decision is all or nothing with one winner (REC-038 c
 await runTest("cancelling a marketing request is all or nothing with one winner (REC-038 close-out, 19 Nov 2026): a cancel that fails after flipping the request keeps nothing and is never reported cancelled; two cancels at once close the rungs once, the other a 409", runMarketingCancelRollbackAndRaceTests);
 await runTest("a candidate merge is all or nothing with one winner (REC-038 close-out, 19 Nov 2026): a merge that fails inside the modelled function after its first moved row keeps nothing, writes no history line and never mirrors the CV; the same pair merged twice at once, and A into B against B into A, merge once, the other a 409", runCandidateMergeRollbackAndRaceTests);
 await runTest("the Employee Master change history panel never shows a value the log did not keep, never shows pay (or that pay moved) to a seat the master withholds it from, reads ids back as names, and opens only to a reader the directory lets see that person", runEmployeeChangeHistoryTests);
+await runTest("the permission matrix meets its override rows as a route does (REC-078, phase 2): an allow row grants what the compiled matrix lacks, no row crosses a hard boundary or strips a portal floor, and a cold start with the overrides unreadable refuses a signed-in seat with the plain refusal while the Super Admin gets in, then the next readable load serves the defaults with the override rows", runPermissionOverrideBehaviourTests);
+await runTest("a leave approval, run against an in-memory database (REC-078, #333): the approver's step and the request move in ONE call for annual, paid and Sick leave alike, no step or request row is ever written on its own, a rejection carries its reason in that call, and a lost race (40001, 55000 or no row) answers 409 with no event, audit row or notice after it", runLeaveDecisionBehaviourTests);
+await runTest("completing a resignation, run end to end (REC-078, #356): the employee is ended first — lifecycle, sign-in, vacancy link, seat — and the resignation stamped completed last; a failed step leaves it Approved with a 409 naming the step, pressing Complete again finishes it, and an exit that ends nobody is refused at step 1", runResignationCompleteBehaviourTests);
+await runTest("the hire hand-off against a database, not a fake store (REC-078, #360): one ledger row per employee and step through the upsert key with only whitelisted ids, the door's answer unchanged even when the ledger cannot be written, the hourly retry repairs the due rows on the same rows, gives up visibly, repeats nothing, runs only while it holds its lease, and fails loudly on an unreadable ledger", runHireHandoffDatabaseBehaviourTests);
+await runTest("where every role lands after signing in (REC-078): each assignable seat's landing is served by a real page, in its own shell, outside its seat fence, and through that page's own permission and role gates", runRoleLandingBehaviourTests);
+await runTest("src/lib/dashboard, run (REC-079): a leave write expires the vacation report caches and the Finance Command Center at once, a hire, seat edit or exit expires the org tree at once, sales refresh behind a served copy with the tree's expiry last, and a bust that throws never fails the write", runDashboardInvalidationBehaviourTests);
+await runTest("src/lib/employee-lifecycle, run (REC-079): resignation, probation and contract records are translated into the registry's words and refused before any write when the registry does not allow the move, a missing registry row fails closed, and the retired probation extend maps to nothing", runEmployeeLifecycleWorkflowBehaviourTests);
+await runTest("src/lib/finance, run (REC-079): a Finance Command Center source that fails is named as unavailable, never a confident zero, one failed source never takes the other down, the aggregate is asked over 1-24 months, and a seat without payroll:read is refused before any figure is read", runFinanceCommandCenterBehaviourTests);
+await runTest("src/lib/operations, run (REC-079): the business activity feed names a source it cannot read instead of showing a quiet day, keeps test fixtures out of the feed and its counts, and reads only the sources the viewer's grants open", runOperationsActivityFeedBehaviourTests);
+await runTest("src/lib/overview, run (REC-079): a section the viewer's grants do not open is never fetched, and an activity source that cannot be read is named on the overview while the rest of the page still loads", runOverviewDashboardBehaviourTests);
+await runTest("src/lib/support-requests, run (REC-079): a ticket is opened in the signed-in employee's name whatever the form sends, saved before HR is alerted and the unaddressed alert reported, an employee lists only their own, the queue and the status are HR's, and a missing table answers empty", runSupportRequestsBehaviourTests);
+await runTest("src/lib/visits-report, run (REC-079): the report table and its download read one row mapper, a visit's type is the resolved word never the vendor's raw Unknown, and its time is the save time until a check-in is matched", runVisitsReportRowBehaviourTests);
+await runTest("every folder under src/lib/ is imported by at least one test (REC-079, F-ENG-011): type-only imports and paths in comments or file reads do not count, and a new untested folder fails by name", runSrcLibFolderTestCoverageTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

@@ -19,14 +19,14 @@ import {
   type Seen,
   type StandIn,
   type Tables,
-} from "./support/postgrest-stand-in.ts";
+} from "./support/postgrest-transaction-stand-in.ts";
 
 /**
  * DEDUCTION MONEY PATHS, TESTED BY WHAT THEY DO (REC-078; enterprise audit F-PAY-004).
  *
  * Every test below calls the REAL domain function — `recordDecision`, `releaseDailyLines`,
  * `withdrawDailyLine` — through the REAL Supabase admin client, pointed at the shared in-memory
- * PostgREST in tests/support/postgrest-stand-in.ts. No network, no environment file, no real
+ * PostgREST in tests/support/postgrest-transaction-stand-in.ts. No network, no environment file, no real
  * database, and nothing can be sent: the stand-in refuses every other host, the sending keys are
  * blanked while the daily tests run, and a recorder notes any attempt to reach another host so the
  * tests can assert there was none.

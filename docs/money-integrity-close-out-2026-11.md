@@ -15,7 +15,7 @@ For each operation shipped as "all or nothing, a second caller gets 409" (#312, 
   shared state; exactly one lands, the other gets the refusal the code promises, and the end state shows the
   operation applied once.
 
-Both run the REAL domain function against `tests/support/postgrest-stand-in.ts`, an in-memory PostgREST. A
+Both run the REAL domain function against `tests/support/postgrest-transaction-stand-in.ts`, an in-memory PostgREST. A
 database function is modelled from its migration, statement by statement, inside `atomically(...)`, which keeps
 nothing when the model raises — exactly as Postgres does.
 

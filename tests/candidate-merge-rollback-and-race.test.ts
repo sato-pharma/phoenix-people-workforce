@@ -22,13 +22,13 @@ import {
   type Seen,
   type StandIn,
   type Tables,
-} from "./support/postgrest-stand-in.ts";
+} from "./support/postgrest-transaction-stand-in.ts";
 
 // A CANDIDATE MERGE IS ALL OR NOTHING, AND TWO MERGES OF ONE PAIR LEAVE ONE MERGE — proved on BEHAVIOUR.
 // tests/candidate-merge-atomic.test.ts pins the SQL text of phx_merge_ats_candidates and drives
 // mergeCandidates against a hand-rolled client that answers whatever it is told. This file runs the
 // REAL mergeCandidates, through the REAL Supabase admin client, against the in-memory PostgREST in
-// tests/support/postgrest-stand-in.ts, with the function modelled from its migration
+// tests/support/postgrest-transaction-stand-in.ts, with the function modelled from its migration
 // (20261113161727_ats_candidate_merge_atomic.sql): both candidate rows locked lowest id first and the
 // merge refused (PX409) when one is gone, the five deduped moves, the plain re-points, the append-only
 // copies, the WhatsApp relink, the delete of the duplicate and the whitelisted borrow — in that order,

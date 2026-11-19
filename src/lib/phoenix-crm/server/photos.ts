@@ -205,6 +205,22 @@ export function photoPathTerritory(path: string): { seatSegment: string; isTest:
 }
 
 /**
+ * Whether the sign route would hand this viewer a link for `path` — the ONE reach check, used by
+ * `signPhotoPaths` and by any screen that offers a path before asking for it (a path outside his reach
+ * would refuse its whole batch, blanking every other photo of that territory on the screen).
+ */
+export function photoReachOf(viewer: PhoenixCrmViewer): (path: string) => boolean {
+  const readable = new Set(
+    (viewer.isSuperAdmin ? viewer.org.territories : [...viewer.scopeTerritories, ...viewer.ownTerritories]).map((seat) => storageSegment(seat.seatId)),
+  );
+  return (path) => {
+    const owner = photoPathTerritory(path);
+    // A test account sees the test photos of its own reach, as it sees every other test entry there.
+    return Boolean(owner && !(owner.isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) && readable.has(owner.seatSegment));
+  };
+}
+
+/**
  * Display URLs for the photos a viewer may see. Paths outside their scope are refused — checked for
  * every path before a remembered link is looked up, so reuse never skips the check.
  */
@@ -213,15 +229,9 @@ export async function signPhotoPaths(viewer: PhoenixCrmViewer, rawPaths: unknown
   if (paths.length === 0) return {};
   if (paths.length > SIGN_BATCH_MAX) throw validationError(`Ask for at most ${SIGN_BATCH_MAX} photos at a time.`);
 
-  const readable = new Set(
-    (viewer.isSuperAdmin ? viewer.org.territories : [...viewer.scopeTerritories, ...viewer.ownTerritories]).map((seat) => storageSegment(seat.seatId)),
-  );
+  const mayShow = photoReachOf(viewer);
   for (const path of paths) {
-    const owner = photoPathTerritory(path);
-    // A test account sees the test photos of its own reach, as it sees every other test entry there.
-    if (!owner || (owner.isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) || !readable.has(owner.seatSegment)) {
-      throw new ApiError(403, "forbidden", "A photo you asked for is outside your scope.");
-    }
+    if (!mayShow(path)) throw new ApiError(403, "forbidden", "A photo you asked for is outside your scope.");
   }
 
   // Taken before the request, so the remembered expiry is never later than the real one.

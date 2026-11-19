@@ -12,7 +12,7 @@ import {
 // Loaded up front so the error row a refusal logs resolves its module from the cache and lands inside
 // the stand-in below, never after it has been taken down.
 import "../src/lib/error-monitor/service.ts";
-import { withStandIn } from "./support/postgrest-stand-in.ts";
+import { withStandIn } from "./support/postgrest-transaction-stand-in.ts";
 
 /**
  * LATE-APPROVED EXPENSE CARRY — WHAT A FAILURE LEAVES BEHIND, AND WHO WINS A RACE (REC-029 / F-PAY-012).
@@ -34,7 +34,7 @@ import { withStandIn } from "./support/postgrest-stand-in.ts";
  *      is told it WAS changed.
  *
  * Every function is handed the in-memory client below. Around all of it the shared stand-in
- * (tests/support/postgrest-stand-in.ts) holds the real admin client, so the only thing that may reach it
+ * (tests/support/postgrest-transaction-stand-in.ts) holds the real admin client, so the only thing that may reach it
  * is the error row a refusal logs — any other request means a write bypassed the client it was handed —
  * and nothing can reach a real host.
  *

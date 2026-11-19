@@ -23,11 +23,11 @@ import {
   type Seen,
   type StandIn,
   type Tables,
-} from "./support/postgrest-stand-in.ts";
+} from "./support/postgrest-transaction-stand-in.ts";
 
 // BEHAVIOUR, NOT SOURCE TEXT, for three money and status changes PR #333 (REC-038) made one database
 // function each. Every test calls the REAL domain function, through the REAL Supabase admin client,
-// against the in-memory PostgREST in tests/support/postgrest-stand-in.ts, and checks what happened to
+// against the in-memory PostgREST in tests/support/postgrest-transaction-stand-in.ts, and checks what happened to
 // the stored rows. Each database function is modelled from its migration — the lock, the guards and
 // every write, in the migration's order — inside `atomically`, so a raise part-way keeps nothing, as
 // Postgres does.

@@ -29,7 +29,7 @@ import {
   type Seen,
   type StandIn,
   type Tables,
-} from "./support/postgrest-stand-in.ts";
+} from "./support/postgrest-transaction-stand-in.ts";
 
 // REC-078 (enterprise audit 2026-11-13): behaviour tests, not source pins, for three things a payroll or
 // an access decision rests on. Each runs the REAL domain code against a stand-in PostgREST held in memory
@@ -610,5 +610,85 @@ export async function runPermissionLookupBehaviourTests(): Promise<void> {
       "a signed-out caller is refused as signed out",
     );
     assert.equal(seen.length, 0, "a guest is refused without a database read");
+  });
+}
+
+// ─────────────────────────────────────────────────────────────── 4. overrides that grant, and the cold start
+
+/**
+ * REC-078, phase 2 — the rest of the permission matrix, extending section 3 rather than repeating it.
+ * Section 3 proves a deny row takes a grant away, a failed reload keeps the last matrix, a lock
+ * suspends a grant and a guest is refused. This proves the other three ways an override row meets
+ * the compiled matrix, all through the same assertPermission every route calls:
+ *
+ *   (a) an ALLOW row grants what the compiled matrix lacks — the Super Admin's edit takes effect;
+ *   (b) no row can cross a hard boundary — an allow row for the admin console or the Field Absence
+ *       list is ignored for a seat the boundary shuts out, and a deny row cannot strip a portal floor;
+ *   (c) the fail-closed cold start (#327, REC-058) as a route meets it — a signed-in seat is refused
+ *       with the plain refusal (never the signed-out one), the Super Admin still gets in, and the
+ *       next readable load serves the defaults WITH the override rows, so nothing degraded was kept.
+ */
+export async function runPermissionOverrideBehaviourTests(): Promise<void> {
+  const rep = createAccessContext({ hrId: "STAND-IN-3", loginId: "stand.in.rep", role: "Medical Rep", source: "session" });
+  const manager = createAccessContext({ hrId: "STAND-IN-4", loginId: "stand.in.dm", role: "District Manager", source: "session" });
+  const owner = createAccessContext({ hrId: "STAND-IN-0", loginId: "stand.in.owner", role: "Super Admin", source: "session" });
+  assert.ok(!(permissionMatrix["Medical Rep"].vacancies ?? []).includes("read"), "precondition: the compiled matrix gives a Medical Rep no vacancies:read");
+  const grantRow = { action: "read", is_allowed: true, resource: "vacancies", role_name: "Medical Rep" };
+
+  // (a) An allow row grants it, through assertPermission.
+  await withStandIn({ tables: { role_permission_overrides: [grantRow], user_module_locks: [] } }, async () => {
+    clearPermissionMatrixCache();
+    clearModuleLockCache();
+    assert.equal(await canAccess(rep, "vacancies", "read"), true, "HEADLINE: an allow row grants what the compiled matrix lacks");
+    await assertPermission(rep, "vacancies", "read");
+    assert.equal(await canAccess(rep, "vacancies", "update"), false, "only the action the row names");
+  });
+
+  // (b) No row crosses a hard boundary, and a deny row cannot strip a portal floor.
+  const floor = portalMinimumPermissions.find(
+    (entry) => entry.roles.includes("Medical Rep") && (permissionMatrix["Medical Rep"][entry.resource] ?? []).includes(entry.action),
+  );
+  assert.ok(floor, "precondition: a Medical Rep holds at least one portal floor permission");
+  await withStandIn(
+    {
+      tables: {
+        role_permission_overrides: [
+          { action: "read", is_allowed: true, resource: "admin", role_name: "Medical Rep" },
+          { action: "read", is_allowed: true, resource: "field_absence", role_name: "District Manager" },
+          { action: floor.action, is_allowed: false, resource: floor.resource, role_name: "Medical Rep" },
+        ],
+        user_module_locks: [],
+      },
+    },
+    async () => {
+      clearPermissionMatrixCache();
+      clearModuleLockCache();
+      assert.equal(await canAccess(rep, "admin", "read"), false, "HEADLINE: an allow row never opens the admin console to a Medical Rep");
+      await assert.rejects(assertPermission(rep, "admin", "read"), (error: Error) => error.message === "Forbidden: Medical Rep cannot read admin.");
+      assert.equal(await canAccess(manager, "field_absence", "read"), false, "nor the Field Absence list to a district manager");
+      assert.equal(await canAccess(rep, floor.resource, floor.action), true, `a deny row cannot strip the ${floor.resource}:${floor.action} portal floor`);
+    },
+  );
+
+  // (c) The cold start, as a route meets it, and the recovery with the override rows.
+  const standIn: StandIn = {
+    failReads: { role_permission_overrides: { body: { code: "XX000", message: "stand-in read failure" }, status: 500 } },
+    tables: { role_permission_overrides: [grantRow], user_module_locks: [] },
+  };
+  await withStandIn(standIn, async () => {
+    clearPermissionMatrixCache(); // a real cold start: no matrix ever loaded
+    clearModuleLockCache();
+    const [resource, action] = grantsOf("Medical Rep").find(([candidate]) => !NEVER_LOCKABLE_RESOURCES.includes(candidate))!;
+    await assert.rejects(
+      assertPermission(rep, resource, action),
+      (error: Error) => !(error instanceof SignedOutRefusal) && error.message === `Forbidden: Medical Rep cannot ${action} ${resource}.`,
+      "HEADLINE (#327): with the overrides unreadable on a cold start a signed-in seat is refused — the plain refusal, never the signed-out one",
+    );
+    await assertPermission(owner, "admin", "read");
+
+    // The table reads again: the very next call serves the real matrix, override rows included.
+    delete standIn.failReads;
+    assert.equal(await canAccess(rep, resource, action), true, "the degraded matrix was never kept");
+    assert.equal(await canAccess(rep, "vacancies", "read"), true, "and the recovered matrix carries the override rows, not just the defaults");
   });
 }

@@ -30,13 +30,13 @@ import {
   type Row,
   type RpcAnswer,
   type Tables,
-} from "./support/postgrest-stand-in.ts";
+} from "./support/postgrest-transaction-stand-in.ts";
 
 /**
  * THE PAYROLL RUN'S MONEY PATHS, AS BEHAVIOUR (REC-078 money half, REC-038 close-out, 19 Nov 2026).
  *
  * Each section calls the REAL run-service function against the in-memory PostgREST (tests/support/
- * postgrest-stand-in.ts) and checks what is stored afterwards. The database functions the code calls are
+ * postgrest-transaction-stand-in.ts) and checks what is stored afterwards. The database functions the code calls are
  * modelled from their migrations — the claim (20260912050000), cancel and Reopen Part 2 (20261119120941),
  * Reopen Part 1 (20261114170804) — each as one indivisible step that keeps nothing when it raises.
  *

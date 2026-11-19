@@ -14,13 +14,13 @@ import {
   type Row,
   type Seen,
   type Tables,
-} from "./support/postgrest-stand-in.ts";
+} from "./support/postgrest-transaction-stand-in.ts";
 
 // BEHAVIOUR TESTS FOR TWO HR DECISIONS THAT MUST BE ALL OR NOTHING (F-HR-010, F-HR-011).
 //
 // tests/hr-atomic-writes.test.ts pins the SOURCE of these fixes (the SQL text, the service text) and
 // one refused call. This file runs the REAL domain functions against the shared in-memory PostgREST
-// (tests/support/postgrest-stand-in.ts) — no network, no environment file, no real database, nobody
+// (tests/support/postgrest-transaction-stand-in.ts) — no network, no environment file, no real database, nobody
 // notified — and checks what they DO, in two ways each:
 //
 //   (a) A FAILURE AFTER THE FIRST WRITE CHANGES NOTHING. The database function is modelled from its

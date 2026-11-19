@@ -8,7 +8,7 @@ import {
   outstationClaimRevision,
 } from "../src/lib/outstation/claim-revision.ts";
 import { approveOutstationRequestForPayroll } from "../src/lib/outstation/service.ts";
-import { snapshot, withStandIn, writesTo, type Seen, type Tables } from "./support/postgrest-stand-in.ts";
+import { snapshot, withStandIn, writesTo, type Seen, type Tables } from "./support/postgrest-transaction-stand-in.ts";
 
 // BEHAVIOUR TESTS FOR APPROVING AN OUTSTATION EXPENSE CLAIM INTO PAYROLL (F-PAY-015, PR #315).
 //
@@ -17,7 +17,7 @@ import { snapshot, withStandIn, writesTo, type Seen, type Tables } from "./suppo
 // (a report row and the trip's `outstation_expenses` row), then the required audit rows.
 // tests/automated-payroll-bank-file-download-guard.test.ts and tests/outstation-stale-approval.test.ts
 // pin that by reading the source; this file runs the REAL function against the shared in-memory
-// PostgREST (tests/support/postgrest-stand-in.ts) — no network, no environment file, no real database,
+// PostgREST (tests/support/postgrest-transaction-stand-in.ts) — no network, no environment file, no real database,
 // nobody notified — and checks what it DOES:
 //
 //   (a) A FAILURE AFTER THE STATUS UPDATE. The payroll push, or the required audit, is made to fail
