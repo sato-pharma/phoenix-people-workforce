@@ -82,18 +82,31 @@ type Seed = { file: string; moduleKey: string; statuses: SeedStatus[] | null; ac
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rel = (full: string) => path.relative(repoRoot, full).split(path.sep).join("/");
 
-/** The phase the latest phx_reopen_automated_payroll_part1 sets on the run, read from its migration. */
-function reopenFunctionPhase(): string {
+/**
+ * The database functions run-service.ts moves a run through (all or nothing — reopen Part 1 on 14 Nov 2026, cancel
+ * and reopen Part 2 on 19 Nov 2026, REC-038), each by the draft-store caller that names it.
+ */
+const ATOMIC_PHASE_WRITERS: Record<string, string> = {
+  reopenPart1Atomically: "phx_reopen_automated_payroll_part1",
+  cancelRunAtomically: "phx_cancel_automated_payroll_run",
+  reopenPart2Atomically: "phx_reopen_automated_payroll_part2",
+};
+
+/** The phase the latest definition of a database function sets on the run, read from its migration. */
+function atomicFunctionPhase(fn: string): string {
   const dir = path.join(repoRoot, "supabase/migrations");
   const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort().reverse();
+  const opening = new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${fn}\\s*\\(`, "i");
   for (const name of files) {
     const sql = stripSqlComments(readFileSync(path.join(dir, name), "utf8"));
-    if (!/create\s+or\s+replace\s+function\s+public\.phx_reopen_automated_payroll_part1\s*\(/i.test(sql)) continue;
-    const write = /update\s+public\.automated_payroll_runs\s+set\s+phase\s*=\s*'([^']+)'/i.exec(sql);
-    assert.ok(write, `${name}: phx_reopen_automated_payroll_part1 writes no phase on the run`);
+    const at = sql.search(opening);
+    if (at < 0) continue;
+    const body = sql.slice(at, sql.indexOf("$$;", at));
+    const write = /update\s+public\.automated_payroll_runs\s+set\s+phase\s*=\s*'([^']+)'/i.exec(body);
+    assert.ok(write, `${name}: ${fn} writes no phase on the run`);
     return write[1];
   }
-  assert.fail("no migration creates phx_reopen_automated_payroll_part1, which reopenPart1Atomically calls");
+  assert.fail(`no migration creates ${fn}, which run-service.ts calls`);
 }
 
 function walk(dir: string, onFile: (file: string) => void) {
@@ -468,11 +481,11 @@ export async function runWorkflowRegistryCoverageTests() {
     usedLabels.add(label);
     assert.ok(sameSet(from, row.from), `"${label}": run-service.ts leaves from [${from.join(", ")}] but the table from [${row.from.join(", ")}]`);
     const after = runService.slice(claim.index! + claim[0].length);
-    // reopenPart1Atomically (payroll audit 2026-11-14, owner: "All or nothing") moves the run inside the
-    // database function phx_reopen_automated_payroll_part1, so its SQL is read for the phase it writes.
-    const write = /\bphase:\s*"([^"]+)"|\bmarkRunPublished\(|\breopenPart1Atomically\(/.exec(after);
+    // reopenPart1Atomically, cancelRunAtomically and reopenPart2Atomically (owner: "All or nothing") move the run
+    // inside a database function, so its SQL is read for the phase it writes.
+    const write = /\bphase:\s*"([^"]+)"|\bmarkRunPublished\(|\b(reopenPart1Atomically|cancelRunAtomically|reopenPart2Atomically)\(/.exec(after);
     assert.ok(write, `"${label}": no phase write follows the claim`);
-    const written = write[1] ?? (write[0].startsWith("reopenPart1Atomically") ? reopenFunctionPhase() : "published");
+    const written = write[1] ?? (write[2] ? atomicFunctionPhase(ATOMIC_PHASE_WRITERS[write[2]]) : "published");
     assert.equal(written, row.to, `"${label}": run-service.ts writes phase "${written}" but the table says "${row.to}"`);
   }
 

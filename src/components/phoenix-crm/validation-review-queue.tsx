@@ -25,6 +25,7 @@ import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
@@ -320,6 +321,8 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         {row.refusalLabel ? <p className="break-words text-xs font-semibold text-slate-700">The rep was told: {row.refusalLabel}</p> : null}
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
         {row.restorable ? <Restore row={row} scope={scope} /> : null}
+        {/* The database would refuse the take-back (19 Nov 2026), so the row says why and offers nothing. */}
+        {row.capturedAgain ? <CrmNote tone="neutral">{DOOR_CAPTURED_AGAIN_TEXT}</CrmNote> : null}
         {row.refusable ? <RejectAfterApproval row={row} scope={scope} /> : null}
         {/* What the administrator approved, only he rejects (owner, 2026-11-16). */}
         {row.status === "approved" && row.lockedBySuperAdmin ? <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote> : null}

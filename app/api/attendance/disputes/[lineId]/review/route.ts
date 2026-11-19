@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { canReviewDisputes, reviewDispute } from "@/lib/attendance/digest-service.ts";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The dispute review inbox sends `{ uphold, notes }` — a boolean and the reviewer's note ("" when
+ * blank). `uphold` is optional here only so its absence keeps the route's own refusal below: it is
+ * never defaulted.
+ */
+const ReviewBodySchema = z.object({
+  uphold: z.boolean().nullish(),
+  notes: z.string().nullish(),
+});
 
 export async function POST(request: Request, { params }: { params: Promise<{ lineId: string }> }) {
   try {
@@ -25,7 +37,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ lin
     const lineId = Number(rawLineId);
     if (!Number.isInteger(lineId) || lineId <= 0) throw validationError("Invalid line id.");
 
-    const payload = (await request.json().catch(() => ({}))) as { uphold?: unknown; notes?: unknown };
+    const parsed = await parseJsonBody(request, ReviewBodySchema, { fallback: {} });
+    if (!parsed.ok) throw validationError(parsed.message);
+    const payload = parsed.data;
     if (typeof payload.uphold !== "boolean") {
       // Not defaulted: guessing this wrong either charges someone who was covered or
       // waives a real deduction, and both look identical afterwards.

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import {
@@ -7,10 +8,25 @@ import {
   recordHeldSettlement,
 } from "@/lib/automated-payroll/held-settlements";
 import { assertAutomatedPayrollHrActor } from "@/lib/automated-payroll/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * `{ hrId, amount, paidOn, method, reference, note }` from the "Paid outside payroll" panel (REC-060);
+ * method, reference and note arrive as null when left blank. The service judges every value.
+ */
+const HeldSettlementBodySchema = z.object({
+  hrId: z.string().optional(),
+  amount: z.union([z.number(), z.string()]).nullable().optional(),
+  paidOn: z.string().optional(),
+  method: z.string().nullable().optional(),
+  reference: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+});
 
 /**
  * "This held salary was already transferred outside payroll" (owner rule 2026-09-10).
@@ -50,15 +66,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const { runId } = await params;
-    const body = (await request.json().catch(() => ({}))) as {
-      hrId?: string;
-      amount?: number | string;
-      paidOn?: string;
-      method?: string;
-      reference?: string;
-      note?: string;
-    };
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: the service's own gate, asked before the body is judged.
+    assertAutomatedPayrollHrActor(access);
+    const parsed = await parseJsonBody(request, HeldSettlementBodySchema, { fallback: {} });
+    if (!parsed.ok) return jsonError(new Error(`Validation: ${parsed.message}`));
+    const body = parsed.data;
     const settlement = await recordHeldSettlement(access, runId, {
       hrId: String(body.hrId ?? ""),
       // Coerced here, not in the service: the service's own check must be able to reject a

@@ -37,6 +37,7 @@ import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
+import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
@@ -391,7 +392,11 @@ function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: s
 /** The decision control that fits where this customer stands. */
 function Decision({ customer, noTimetable, scope }: { customer: SeatedCustomer; noTimetable: boolean; scope: string }) {
   if (customer.state === "waiting" && customer.reviewId) return <WaitingDecision customer={customer} noTimetable={noTimetable} scope={scope} />;
-  if (customer.state === "rejected") return customer.restorable ? <RestoreSeated customer={customer} scope={scope} /> : null;
+  if (customer.state === "rejected") {
+    if (customer.restorable) return <RestoreSeated customer={customer} scope={scope} />;
+    // The database would refuse the take-back (19 Nov 2026), so the card says why and offers nothing.
+    return customer.capturedAgain ? <CrmNote tone="neutral">{DOOR_CAPTURED_AGAIN_TEXT}</CrmNote> : null;
+  }
   // "Reject — not on the timetable" is meaningless where the administrator declared there is none, and
   // its refusal would tell the rep something false about his photograph.
   // 🔴 What the administrator approved, only he rejects (owner, 2026-11-16).

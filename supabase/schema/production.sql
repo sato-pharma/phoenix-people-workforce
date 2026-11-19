@@ -85421,6 +85421,12 @@ CREATE UNIQUE INDEX phoenix_crm_visit_report_views_owner_name_uidx ON public.pho
 CREATE INDEX phoenix_crm_visit_resend_log_rep_idx ON public.phoenix_crm_visit_resend_log USING btree (rep_hr_id, created_at DESC);
 
 --
+-- Name: phoenix_crm_visits_agent_day_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_visits_agent_day_idx ON public.phoenix_crm_visits USING btree (COALESCE(rep_hr_id, manager_hr_id), visit_date) WHERE ((NOT is_test) AND (imported_from_ireports360_at IS NULL));
+
+--
 -- Name: phoenix_crm_visits_customer_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -85485,6 +85491,12 @@ CREATE INDEX phoenix_crm_visits_place_idx ON public.phoenix_crm_visits USING btr
 --
 
 CREATE INDEX phoenix_crm_visits_rep_captured_idx ON public.phoenix_crm_visits USING btree (rep_hr_id, is_test, captured_at) WHERE (lat IS NOT NULL);
+
+--
+-- Name: phoenix_crm_visits_rep_day_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_visits_rep_day_idx ON public.phoenix_crm_visits USING btree (rep_hr_id, visit_date);
 
 --
 -- Name: phoenix_crm_visits_seat_day_idx; Type: INDEX; Schema: public; Owner: postgres

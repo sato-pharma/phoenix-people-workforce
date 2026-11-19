@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { canAccess } from "@/lib/auth/permissions";
 import { getSalaryFlags, resolveSalaryFlag } from "@/lib/admin/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The Resolve button sends `{ id, showResolved }`. `salary_flags.id` is a bigint, so PostgREST hands the
+ * screen a NUMBER and the screen sends it back as one; a string id is accepted too. A missing or empty
+ * id still reaches the route's own "Missing flag id." answer.
+ */
+const SalaryFlagResolveBodySchema = z.object({
+  id: z.union([z.string(), z.number()]).nullish(),
+  showResolved: z.boolean().nullish(),
+});
 
 export async function GET(request: Request) {
   try {
@@ -37,13 +49,17 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: "Forbidden: insufficient permissions." }, { status: 403 });
     }
 
-    const body = await request.json() as { id?: string; showResolved?: unknown };
+    const parsed = await parseJsonBody(request, SalaryFlagResolveBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ message: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (!body.id) {
       return NextResponse.json({ message: "Missing flag id." }, { status: 400 });
     }
 
     const resolvedBy = access.loginId ?? "system";
-    await resolveSalaryFlag(body.id, resolvedBy);
+    await resolveSalaryFlag(String(body.id), resolvedBy);
 
     await writeAuditLog({
       actorLoginId: access.loginId,

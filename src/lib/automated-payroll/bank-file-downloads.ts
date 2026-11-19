@@ -199,6 +199,39 @@ export function assertUndoAllowedAfterDownloads(
 }
 
 /**
+ * The same check without its write (REC-038, 19 Nov 2026): it refuses exactly as guardUndoAfterDownloads does,
+ * and hands back the override row's detail for a move that writes it INSIDE its own database transaction —
+ * cancel and Reopen Part 2 (phx_cancel_automated_payroll_run, phx_reopen_automated_payroll_part2) — so the
+ * override is recorded if and only if the move happens. `overrideDetail` is null when no override was used.
+ */
+export async function planUndoAfterDownloads(
+  input: {
+    runId: string;
+    action: RunUndoAfterDownload;
+    override?: { reason?: string | null } | null;
+  },
+  client?: AuditClient,
+): Promise<{ overridden: boolean; reason: string | null; overrideDetail: Record<string, unknown> | null }> {
+  const downloads = await listBankFileDownloads(input.runId, client);
+  const result = assertUndoAllowedAfterDownloads(downloads, input.override, input.action);
+  if (!result.overridden) return { ...result, overrideDetail: null };
+  return {
+    ...result,
+    overrideDetail: {
+      move: input.action,
+      reason: result.reason,
+      files: downloadsThatBlock(downloads, input.action).map((download) => ({
+        file: download.file,
+        scope: download.scope,
+        fileName: download.fileName,
+        downloadedBy: download.actorHrId,
+        downloadedAt: download.downloadedAt,
+      })),
+    },
+  };
+}
+
+/**
  * The download check every undo runs under its claim, before any write (REC-035, F-PAY-016).
  *
  * Reads the downloads (a failed read refuses), refuses without an override (assertUndoAllowedAfterDownloads),
@@ -215,26 +248,15 @@ export async function guardUndoAfterDownloads(
   },
   client?: AuditClient,
 ): Promise<{ overridden: boolean; reason: string | null }> {
-  const downloads = await listBankFileDownloads(input.runId, client);
-  const result = assertUndoAllowedAfterDownloads(downloads, input.override, input.action);
-  if (!result.overridden) return result;
+  const { overrideDetail, ...result } = await planUndoAfterDownloads(input, client);
+  if (!overrideDetail) return result;
   try {
     await writeRequiredAutomatedPayrollAudit(
       {
         runId: input.runId,
         actorHrId: input.actorHrId,
         action: UNDO_OVERRIDE_RECORDED_ACTION,
-        detail: {
-          move: input.action,
-          reason: result.reason,
-          files: downloadsThatBlock(downloads, input.action).map((download) => ({
-            file: download.file,
-            scope: download.scope,
-            fileName: download.fileName,
-            downloadedBy: download.actorHrId,
-            downloadedAt: download.downloadedAt,
-          })),
-        },
+        detail: overrideDetail,
       },
       client,
     );

@@ -88,12 +88,13 @@ export function runAutomatedPayrollRunTransitionClaimTests() {
   // ==== Every transition claims before it writes ==================================================
   const source = stripComments(readFileSync("src/lib/automated-payroll/run-service.ts", "utf8"));
   const transitions: Array<[string, string, string]> = [
-    ["cancelRun", '["part1", "part2", "ready"]', "await releaseCarryForwardForCancelledRun("],
+    ["cancelRun", '["part1", "part2", "ready"]', "cancelRunAtomically("],
     ["confirmPart1", '["part1"]', "await upsertDraftRows(runId, patches)"],
     ["unconfirmPart1", '["part2"]', "await reopenPart1Atomically("],
-    ["unconfirmPart2", '["ready"]', "await releaseCarryForwardForCancelledRun("],
+    ["unconfirmPart2", '["ready"]', "reopenPart2Atomically("],
     ["confirmPart2", '["part2"]', "await recordOverpaidCarryForward("],
-    ["publishToPayslips", '["ready"]', "await findSalaryBatchForPeriod("],
+    // F-PAY-014: publish claims before it works out a single figure, not only before its first write.
+    ["publishToPayslips", '["ready"]', "await assembleForRun("],
   ];
   for (const [name, phases, firstWrite] of transitions) {
     const body = bodyOf(source, `export async function ${name}(`);
@@ -105,14 +106,12 @@ export function runAutomatedPayrollRunTransitionClaimTests() {
     assert.match(body, /whileClaimed\(runId, transition, async \(\) => \{/, `${name} must let the claim go if its writes fail part-way`);
   }
 
+  // Cancelling still releases the ledger with the phase: both inside phx_cancel_automated_payroll_run (REC-038).
   const cancel = bodyOf(source, "export async function cancelRun(");
-  assert.ok(
-    cancel.indexOf("await releaseCarryForwardForCancelledRun(") < cancel.indexOf('phase: "cancelled"'),
-    "cancelling still releases the ledger BEFORE the run is marked cancelled",
-  );
+  assert.ok(cancel.includes("cancelRunAtomically("), "cancelling goes through the one all-or-nothing call");
   const publish = bodyOf(source, "export async function publishToPayslips(");
   assert.ok(
-    publish.indexOf('run.phase === "published" && run.publishedBatchId') < publish.indexOf("claimTransition("),
+    publish.indexOf('before.phase === "published" && before.publishedBatchId') < publish.indexOf("claimTransition("),
     "an already-published run returns before any claim, so a retried publish stays idempotent",
   );
 

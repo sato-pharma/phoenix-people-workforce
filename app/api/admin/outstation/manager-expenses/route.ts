@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -13,6 +14,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +24,47 @@ function managerExpenseCreateStatus(error: unknown) {
   if (isWorkflowRegistryTransitionError(error)) return 409;
   return 500;
 }
+
+/** An amount, a distance or a duration as a number, or as text; each is read below exactly as before. */
+const createNumberField = z.union([z.number(), z.string()]).nullable().optional();
+const createTextField = z.string().nullable().optional();
+
+/** The Google Places destination the modal resolved — all seven keys, every one present on a create. */
+const ManagerExpenseDestinationSchema = z.looseObject({
+  area: z.string().nullable(),
+  city: z.string().nullable(),
+  country: z.string().nullable(),
+  label: z.string(),
+  latitude: z.number(),
+  longitude: z.number(),
+  placeId: z.string(),
+});
+
+/**
+ * What the manual-expense modal sends on a create (admin-manager-expense-modal.tsx). Every rule — the HR id,
+ * the destination, both taxonomies, the distance, the dates, No ticket, the invoice — is still judged below,
+ * with the route's own words. The meeting invoice is a data URL of any size; the service caps it.
+ */
+const ManagerExpenseCreateBodySchema = z.object({
+  amWorkload: z.number().nullable().optional(),
+  claimedTotalAmount: createNumberField,
+  destination: ManagerExpenseDestinationSchema.nullable().optional(),
+  distanceKm: createNumberField,
+  durationMinutes: createNumberField,
+  employeeHrId: createTextField,
+  expenseType: createTextField,
+  meetingAmount: z.number().nullable().optional(),
+  meetingInvoiceDataUrl: createTextField,
+  meetingInvoiceFileName: createTextField,
+  notes: createTextField,
+  otherAmount: z.number().nullable().optional(),
+  pmWorkload: z.number().nullable().optional(),
+  routePolyline: createTextField,
+  transportationType: createTextField,
+  travelCostAmount: createNumberField,
+  tripEndDate: createTextField,
+  tripStartDate: createTextField,
+});
 
 function optionalNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
@@ -37,7 +80,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertOutstationAdminAccess(access, "approve");
 
-    const body = (await request.json().catch(() => ({}))) as Partial<ManagerExpenseAdminInput>;
+    const parsedBody = await parseJsonBody(request, ManagerExpenseCreateBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
 
     const employeeHrId =
       typeof body.employeeHrId === "string" ? body.employeeHrId.trim() : "";

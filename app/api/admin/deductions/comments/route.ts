@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { checkDisputeImage, DISPUTE_ATTACHMENT_MAX_FILES, type CheckedDisputeImage } from "@/lib/deductions/comment-attachment-rules.ts";
@@ -6,10 +7,31 @@ import { addDeductionsReply } from "@/lib/deductions/comments.ts";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsDecisionActor, assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listPublishedDeductionCommentThreads } from "@/lib/deductions/portal.ts";
+import { parseFormBody, parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** The Disputes tab's text-only reply: `{ body, candidateId }`. */
+const ReplyJsonBodySchema = z.object({
+  body: z.string().nullish(),
+  candidateId: z.string().nullish(),
+});
+
+/** One `images` entry as a form carries it — a file, or (from an odd client) a plain string, which is skipped. */
+const ReplyFormEntry = z.union([z.string(), z.instanceof(File)]);
+
+/**
+ * The Disputes tab's reply WITH pictures: multipart `candidateId`, `body` and one `images` entry per
+ * picture (a single picture arrives as one value, several as a list). Every picture is still checked by
+ * its own bytes below, before anything is written.
+ */
+const ReplyFormBodySchema = z.object({
+  body: z.string().optional(),
+  candidateId: z.string().optional(),
+  images: z.union([ReplyFormEntry, z.array(ReplyFormEntry)]).optional(),
+});
 
 // The admin Disputes inbox: every employee comment on a published deduction, company-wide and
 // month-independent. A deduction comment mails HR a link that lands here, so this is the read
@@ -50,10 +72,17 @@ export async function POST(request: Request) {
     let replyText = "";
     const images: CheckedDisputeImage[] = [];
     if ((request.headers.get("content-type") ?? "").toLowerCase().startsWith("multipart/form-data")) {
-      const form = await request.formData();
-      candidateId = String(form.get("candidateId") ?? "").trim();
-      replyText = String(form.get("body") ?? "");
-      const files = form.getAll("images").filter((entry): entry is File => typeof entry !== "string" && entry.size > 0);
+      // The pictures are read here, through the schema, only after the Super Admin check above.
+      const parsed = await parseFormBody(request, ReplyFormBodySchema);
+      if (!parsed.ok) {
+        return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+      }
+      const form = parsed.data;
+      candidateId = String(form.candidateId ?? "").trim();
+      replyText = String(form.body ?? "");
+      const entries: Array<string | File> =
+        form.images === undefined ? [] : Array.isArray(form.images) ? form.images : [form.images];
+      const files = entries.filter((entry): entry is File => typeof entry !== "string" && entry.size > 0);
       if (files.length > DISPUTE_ATTACHMENT_MAX_FILES) {
         throw new Error(`Validation: A reply can carry at most ${DISPUTE_ATTACHMENT_MAX_FILES} pictures.`);
       }
@@ -61,7 +90,11 @@ export async function POST(request: Request) {
         images.push(checkDisputeImage({ bytes: new Uint8Array(await file.arrayBuffer()), name: file.name }));
       }
     } else {
-      const body = await request.json();
+      const parsed = await parseJsonBody(request, ReplyJsonBodySchema);
+      if (!parsed.ok) {
+        return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+      }
+      const body = parsed.data;
       candidateId = String(body.candidateId ?? "").trim();
       replyText = String(body.body ?? "");
     }

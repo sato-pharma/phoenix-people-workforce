@@ -30,7 +30,9 @@ export function runUnifiedNotificationsTests() {
   const bellSource = `${source("src/components/layout/in-app-notifications-bell.tsx")}\n${source("src/components/layout/in-app-notifications-panel.tsx")}`;
   const phase2Migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605201000_notification_engine_phase2_center.sql");
   const migration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260605050234_unified_notification_engine_phase1.sql");
-  const recipientsSource = source("src/lib/notifications/recipients.ts");
+  // The bell's category list lives in the registry's bell half since REC-084 phase 2 (19 Nov 2026);
+  // recipients.ts derives PERSONAL_BELL_CATEGORIES from it.
+  const bellCategoriesSource = source("src/lib/notifications/notification-bell-categories.ts");
   const configSource = source("src/config/system-settings.ts");
 
   assert.match(systemSource, /export async function createSystemNotification/, "central notification API must exist");
@@ -84,8 +86,8 @@ export function runUnifiedNotificationsTests() {
   assert.match(bellSource, /unreadCount/, "notification center must show unread count");
   assert.match(bellSource, /priority/, "notification center must display priority");
 
-  assert.match(recipientsSource, /"recruitment"/, "recruitment notifications must be visible in the personal bell");
-  assert.match(recipientsSource, /"excuse"/, "excuse notifications must be visible in the personal bell");
+  assert.match(bellCategoriesSource, /category: "recruitment"/, "recruitment notifications must be visible in the personal bell");
+  assert.match(bellCategoriesSource, /category: "excuse"/, "excuse notifications must be visible in the personal bell");
   assert.doesNotMatch(source("src/lib/excuses/service.ts"), /"excuse_request"/, "excuse producers must not use hidden category excuse_request");
   assert.match(configSource, /isForceTestingDelivery/, "email testing redirection must be env-controlled via isForceTestingDelivery");
 

@@ -1,18 +1,32 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { decideDailyDispute } from "@/lib/dispute-center/daily.ts";
-import { decideDeductionDispute, type DeductionDisputeOutcome } from "@/lib/dispute-center/deduction.ts";
+import { decideDeductionDispute } from "@/lib/dispute-center/deduction.ts";
 import { decideDigestDispute } from "@/lib/dispute-center/digest.ts";
 import { disputeCenterError } from "@/lib/dispute-center/http.ts";
 import { isDisputeCaseKind } from "@/lib/dispute-center/types.ts";
 import { validationError } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { decidePrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The decision panel sends `{ note, outcome }`, plus `reducedValue` (a number) on a deduction's reduce.
+ * Which outcomes a kind takes differs by kind, so the outcome is checked per kind below with each one's
+ * own words; every field is optional here so those checks — and the reviewer gate inside each decide
+ * call — still answer an empty body as they always did.
+ */
+const DecideBodySchema = z.object({
+  note: z.string().nullish(),
+  outcome: z.string().nullish(),
+  reducedValue: z.union([z.number(), z.string()]).nullish(),
+});
 
 // THE DECISION. Each module decides its own thing, and the words differ because the things differ:
 // a calendar dispute accepts or rejects a claim about a day, a deduction is accepted, rejected or
@@ -29,7 +43,9 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
     const { kind, ref } = await context.params;
     if (!isDisputeCaseKind(kind)) throw validationError("That kind of dispute does not exist.");
     const caseRef = decodeURIComponent(ref);
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = await parseJsonBody(request, DecideBodySchema, { fallback: {} });
+    if (!parsed.ok) throw validationError(parsed.message);
+    const body = parsed.data;
     const note = String(body.note ?? "");
 
     if (kind === "calendar") {
@@ -57,7 +73,7 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
       const result = await decideDeductionDispute(access, {
         candidateId: caseRef,
         note,
-        outcome: outcome as DeductionDisputeOutcome,
+        outcome,
         reducedValue: body.reducedValue == null ? null : Number(body.reducedValue),
       });
       return NextResponse.json({ result, success: true });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import {
   describeDeductionResyncNotApplied,
@@ -12,22 +13,31 @@ import { buildManualDeductionDraft } from "@/lib/deductions/connectors/manual.ts
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { isFinalSettlementMonth } from "@/lib/deductions/settlement.ts";
 import { insertCandidateDrafts } from "@/lib/deductions/service.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type ManualEntryBody = {
-  category?: unknown;
-  employeeHrId?: unknown;
-  employeeName?: unknown;
-  month?: unknown;
-  year?: unknown;
-  unit?: unknown;
-  value?: unknown;
-  reason?: unknown;
-};
+/** A month, year or value as the route has always taken it: a number, or text it reads with Number(). */
+const NumberLike = z.union([z.number(), z.string()]).nullish();
+
+/**
+ * The manual-entry form sends `{ category, employeeHrId, month, year, unit, value, reason }` — month,
+ * year and value as numbers. The category, unit, ranges and the employee are still checked below with
+ * the route's own words. No name is taken from the request: it is read from the employees table, so an
+ * `employeeName` key, if sent, is simply not read.
+ */
+const ManualEntryBodySchema = z.object({
+  category: z.string().nullish(),
+  employeeHrId: z.string().nullish(),
+  month: NumberLike,
+  year: NumberLike,
+  unit: z.string().nullish(),
+  value: NumberLike,
+  reason: z.string().nullish(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -38,7 +48,11 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "create");
     assertDeductionsDecisionActor(access);
 
-    const body = (await request.json()) as ManualEntryBody;
+    const parsed = await parseJsonBody(request, ManualEntryBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (body.category !== "loan" && body.category !== "other") {
       throw new Error('Validation: category must be "loan" or "other".');
     }

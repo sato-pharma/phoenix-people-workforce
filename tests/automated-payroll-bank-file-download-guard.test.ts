@@ -330,18 +330,26 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
     assert.match(body.slice(recordAt, recordAt + 200), new RegExp(`file: "${file}"`), `${builder} records itself as ${file}`);
     assert.ok(recordAt < body.lastIndexOf("return { buffer"), `${builder} must record BEFORE it returns the file`);
   }
+  // Since REC-038 (19 Nov 2026) the override record, the trips, the ledger, the audit row and the phase are ONE
+  // database call (phx_cancel_automated_payroll_run): the check runs first, writes nothing, and hands the call
+  // the override detail, so a refused cancel changes nothing and a used override is recorded only with the move.
   const cancel = bodyOf(runService, "export async function cancelRun(");
   const guardAt = cancel.indexOf(
-    'const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "cancel", override: options.overrideDownloaded });',
+    'const override = await planUndoAfterDownloads({ runId, action: "cancel", override: options.overrideDownloaded });',
   );
   assert.ok(guardAt > cancel.indexOf("whileClaimed("), "HEADLINE: cancel checks the downloads under its claim");
-  for (const write of ["await releaseLateExpenseReservations(runId)", "await releaseCarryForwardForCancelledRun(", 'phase: "cancelled"']) {
-    assert.ok(
-      guardAt < cancel.indexOf(write),
-      `HEADLINE: cancel refuses, and records a used override, BEFORE ${write}, so a refused cancel or a failed record changes nothing`,
-    );
+  assert.ok(
+    guardAt < cancel.indexOf("cancelRunAtomically("),
+    "HEADLINE: cancel refuses BEFORE its one database call, so a refused cancel changes nothing",
+  );
+  assert.match(cancel, /overrideDetail: override\.overrideDetail/, "the override detail travels into the one call");
+  const undoSql = readFileSync("supabase/migrations/20261119120941_automated_payroll_cancel_and_reopen_part2_atomically.sql", "utf8");
+  for (const fn of ["phx_cancel_automated_payroll_run", "phx_reopen_automated_payroll_part2"]) {
+    const start = undoSql.indexOf(`create or replace function public.${fn}(`);
+    const fnBody = undoSql.slice(start, undoSql.indexOf("$$;", start));
+    assert.match(fnBody, /if p_override_detail is not null then\s+insert into public\.automated_payroll_audit[\s\S]*?'undo_after_download_overridden'/, `${fn} records a used override inside its transaction`);
+    assert.match(fnBody, /'overrideReason', p_override_detail ->> 'reason'/, `${fn} keeps the override's reason on its own audit row`);
   }
-  assert.match(cancel, /overrideReason: override\.reason/, "an override's reason is kept on the cancel's audit row");
 
   const route = stripComments(readFileSync("app/api/automated-payroll/runs/[runId]/cancel/route.ts", "utf8"));
   assert.match(route, /body\?\.overrideDownloaded === true/, "the route only overrides on an explicit true");
@@ -352,20 +360,24 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
     {
       fn: "unconfirmPart2",
       action: "reopen_part2",
-      writes: ["await releaseLateExpenseReservations(runId)", "await releaseCarryForwardForCancelledRun(", 'phase: "part2"'],
+      plan: true,
+      writes: ["reopenPart2Atomically("],
       routePath: "app/api/automated-payroll/runs/[runId]/part2/unconfirm/route.ts",
     },
     {
       fn: "unconfirmPart1",
       action: "reopen_part1",
+      plan: false,
       writes: ["await releaseLateExpenseReservations(runId)", "await reopenPart1Atomically("],
       routePath: "app/api/automated-payroll/runs/[runId]/part1/unconfirm/route.ts",
     },
   ];
-  for (const { fn, action, writes, routePath } of reopens) {
+  for (const { fn, action, plan, writes, routePath } of reopens) {
     const body = bodyOf(runService, `export async function ${fn}(`);
     const at = body.indexOf(
-      `const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "${action}", override: options.overrideDownloaded });`,
+      plan
+        ? `const override = await planUndoAfterDownloads({ runId, action: "${action}", override: options.overrideDownloaded });`
+        : `const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "${action}", override: options.overrideDownloaded });`,
     );
     assert.ok(at > 0, `HEADLINE: ${fn} reads the bank-file downloads and refuses after one (REC-035)`);
     assert.ok(at > body.indexOf("whileClaimed(runId, transition"), `${fn} checks under its claim`);
@@ -375,11 +387,13 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
         `HEADLINE: ${fn} refuses, and records a used override, BEFORE ${write}, so a refused reopen or a failed record changes nothing`,
       );
     }
-    assert.match(
-      body,
-      /reopenedAfterBankFileDownload: true, overrideReason: override\.reason/,
-      `${fn}'s override and its reason are kept on its own audit row`,
-    );
+    if (!plan) {
+      assert.match(
+        body,
+        /reopenedAfterBankFileDownload: true, overrideReason: override\.reason/,
+        `${fn}'s override and its reason are kept on its own audit row`,
+      );
+    }
     const reopenRoute = stripComments(readFileSync(routePath, "utf8"));
     assert.ok(
       reopenRoute.includes(

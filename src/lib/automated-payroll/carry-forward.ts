@@ -233,7 +233,12 @@ export async function markCarryForwardApplied(input: {
   return (data ?? []).length;
 }
 
-/**
+/*
+ * UNDOING A RUN'S LEDGER IS DONE IN THE DATABASE, WITH THE MOVE (REC-038, 19 Nov 2026). Cancel and Reopen Part 2
+ * call phx_cancel_automated_payroll_run / phx_reopen_automated_payroll_part2 (draft-store.ts), which do both
+ * halves below in the same transaction as the phase write, so a failure can never leave a run open with its
+ * ledger half undone. The rule they apply:
+ *
  * Undo everything a run did to the ledger, because that run is being cancelled.
  *
  * Without this, cancelling a run AFTER its Part 2 confirm silently forgives real
@@ -249,35 +254,6 @@ export async function markCarryForwardApplied(input: {
  *     sheet that is being thrown away. Only unapplied ones: if a later run has
  *     already recovered a debt, that recovery is real and must not be undone.
  */
-export async function releaseCarryForwardForCancelledRun(runId: string): Promise<{
-  released: number;
-  discarded: number;
-}> {
-  const admin = getSupabaseAdmin();
-
-  const { data: released, error: releaseError } = await admin
-    .from(TABLE)
-    .update({ applied_run_id: null, applied_at: null, updated_at: new Date().toISOString() })
-    .eq("applied_run_id", runId)
-    .select("id");
-  if (releaseError) {
-    if (isMissingTableError(releaseError)) return { released: 0, discarded: 0 };
-    throw releaseError;
-  }
-
-  const { data: discarded, error: discardError } = await admin
-    .from(TABLE)
-    .delete()
-    .eq("source_run_id", runId)
-    .is("applied_run_id", null)
-    .select("id");
-  if (discardError) {
-    if (isMissingTableError(discardError)) return { released: (released ?? []).length, discarded: 0 };
-    throw discardError;
-  }
-
-  return { released: (released ?? []).length, discarded: (discarded ?? []).length };
-}
 
 /** Sum of a carry-forward map — the total the company is recovering this run. */
 export function sumCarryForward(totals: Map<string, number>): number {
