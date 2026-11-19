@@ -100,7 +100,8 @@ two approvals at once (one applies, the other gets "the claim changed", one row,
 landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); a held
 claim (accepted with no payroll row); and the release — a failure inside its call (every table as before, the claim left
 held, the next release pays once and leaves the claim untouched), two releases at once (one payroll row, one report row),
-and a claim rejected after the release read it, with and without a moved version (never pushed). Its breaks are in §7.
+a claim rejected after the release read it, with and without a moved version (never pushed), and a claim re-priced
+between the release's read and its pin (refused, then released at the new figure). Its breaks are in §7.
 
 ## 3. F-PAY-014 — publish works out its figures under its claim
 
@@ -205,6 +206,7 @@ The outstation approval's breaks (§2a), each watched to fire and restored green
 | the version check is skipped | (in `outstation-stale-approval.test.ts`) approve must check the version and then write |
 | the release writes its records outside the call | (c) release: and both records |
 | the release updates the claim (passes a status) | (c) release: as a release — no status, so the claim is not updated |
-| the release skips its read-again of the version | (c) rejected under the release: HEADLINE: a claim rejected under the release is never released |
+| the release skips comparing the version it pins with the claim it read | (c) re-priced: HEADLINE: the release refuses rather than push figures the claim no longer holds |
+| the release reports a moved claim as released | (c) rejected under the release: HEADLINE: never released |
 | model: the release does not require the claim to read accepted | (c) rejected by a writer that forgot the version: HEADLINE: never released |
 | model: no report lookup under the lock | (c) and one report row |
