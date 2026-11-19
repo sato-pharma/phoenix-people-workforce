@@ -175,12 +175,11 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     );
     assert.ok(followed.includes("for (const person of validated) await shareAcrossLinesQuietly(person.customerId);"), "🔴 and each customer validated now is shared across the lines");
 
+    // 🔴 A SEND-BACK KEEPS EVERY VISIT'S EARLIER DISTANCE (owner, 19 Nov 2026: "Keep earlier distances").
+    // From 14 Nov a rejected building measured its seated customers' visits again, which turned a customer
+    // with a clinic of his own "far" from it at every visit in the building. Only the take-back measures now.
     const decide = fn(venues, "export async function decideSharedPlace(");
-    assert.match(
-      decide,
-      /if \(decision === "reject"\) \{\s*await afterResponse\("[^"]+", \(\) =>\s*restampSeatedCustomersQuietly\(viewer, String\(result\.shared_place_id\), "retired"\),\s*\);/,
-      "🔴 a rejected building's visits are measured again too — it retired every place seated in it",
-    );
+    assert.doesNotMatch(decide, /restampSeatedCustomersQuietly|restampVisitLocations/, "🔴 a rejected building measures none of its customers' visits again");
 
     const restamp = fn(venues, "async function restampSeatedCustomersQuietly(");
     assert.ok(restamp.includes('"shared_place_id", [sharedPlaceId], (query) =>') && restamp.includes('query.eq("status", seated)'), "the seated places are read here: the decision returns only whose status changed");

@@ -700,6 +700,25 @@ export const MODULES = [
     keywords: ["place checks", "same place", "same customer", "place match", "polyclinic group", "bulk answer", "reject a customer", "approve after rejection", "district manager place checks", "master list", "master profile"],
     tables: ["phoenix_crm_place_match_answers", "phoenix_crm_master_decisions"],
   },
+  // 🔴 SPLIT, 2026-11-19, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `phoenix-crm-place-checks`
+  // sat at about 3,990 of its 4,000-byte pointer margin, and the send-back rule ("Keep earlier distances",
+  // owner, 19 Nov 2026) took it to 4,130. How a validation is DECIDED — who may approve or reject and when,
+  // what a decision names and says, a bulk answer, a rejection taken back, the button a saved decision
+  // releases and what a send-back changes — is one family, so it moves together. `phoenix-crm-place-checks`
+  // KEEPS EVERY GLOB IT HAD, so a decision file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-place-decisions",
+    title: "Phoenix CRM — deciding a validation on Place checks: who decides, what it says, what a send-back changes",
+    scope: "How a validation is decided on Place checks — who may approve or reject it and when, the Super Admin's lock on what he approved or rejected, the decider's name and time, a comment written with a decision, a bulk answer, a rejected polyclinic taken back, the button a saved decision releases, and what a send-back changes and keeps.",
+    globs: [
+      "src/lib/phoenix-crm/server/{validation-reviews,line-twins,shared-places}.ts",
+      "src/components/phoenix-crm/{place-check-done,place-check-restore}.tsx",
+      "app/api/phoenix-crm/validation-reviews/**",
+      "tests/phoenix-crm-{refuse-validation,sfe-place-checks,line-twins}*",
+    ],
+    keywords: ["send-back", "keep earlier distances", "reject after approval", "decided by filter", "decision comment", "sent-back customer"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-19, FOR THE SAME REASON AGAIN: `phoenix-crm-validation` measured a 4,144-byte
   // pointer against the 4,000 margin the moment the AM short forms and the new-photo advice taught their
   // rules. How the signboard READER reads a photo and judges it against the list — the nightly pass, the
