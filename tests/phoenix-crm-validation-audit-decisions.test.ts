@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { DOOR_CAPTURED_AGAIN_METERS, doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
+
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
@@ -69,6 +71,41 @@ export function runPhoenixCrmValidationAuditDecisionsTests(): void {
   for (const refusal of ["restore_customer_dropped", "restore_building_retired", "restore_door_captured_again"]) {
     assert.match(sentences, new RegExp(`${refusal}: \\{\\s+status: 409,\\s+message: "`), `${refusal} has its own sentence, so he reads WHY and not "something went wrong"`);
   }
+
+  // ── The board asks the captured-again test BEFORE it draws the button (19 Nov 2026) ───────────────
+  // The Super Admin pressed "Approve it after all" on a customer already captured again at that door and
+  // met the refusal. The board now makes the database's own test and draws the reason instead.
+  const door = (id: string, lat: number | null, lon: number | null, sharedPlaceId: string | null = null, customerId = "c1"): DoorPlace => ({
+    id,
+    customerId,
+    lat,
+    lon,
+    sharedPlaceId,
+  });
+  const refused = door("refused", 30.0444, 31.2357);
+  // 0.001° of latitude is about 111 m; 0.0015° about 167 m.
+  assert.equal(doorCapturedAgain(refused, [door("again", 30.0454, 31.2357)]), true, "another active place of his within 150 m is the same door");
+  assert.equal(doorCapturedAgain(refused, [door("elsewhere", 30.0459, 31.2357)]), false, "past 150 m it is another clinic — the take-back stands");
+  assert.equal(doorCapturedAgain(refused, [door("refused", 30.0444, 31.2357)]), false, "the refused place itself never counts against itself");
+  assert.equal(doorCapturedAgain(refused, [door("someone", 30.0444, 31.2357, null, "c2")]), false, "another customer's place at the door is not his");
+  assert.equal(
+    doorCapturedAgain(door("seat", 30.0444, 31.2357, "b1"), [door("reseat", 31.5, 32.5, "b1")]),
+    true,
+    "in the same building is the same door, whatever its stored point",
+  );
+  assert.equal(doorCapturedAgain(door("seat", null, null, "b1"), [door("other", 30.0444, 31.2357, "b2")]), false, "no point and another building: nothing to compare");
+  assert.equal(DOOR_CAPTURED_AGAIN_METERS, 150, "the line the restore function draws");
+  assert.match(again, new RegExp(`\\) <= ${DOOR_CAPTURED_AGAIN_METERS}\\b`), "🔴 the board's radius is the database's radius");
+
+  const loader = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const marked = loader.slice(loader.indexOf("async function markDoorsCapturedAgain("), loader.indexOf("export async function loadValidationReviews("));
+  assert.ok(marked.includes('query.eq("status", "active")'), "the customer's ACTIVE places are what the door is compared with");
+  assert.match(marked, /row\.restorable = false;\s+row\.capturedAgain = true;/, "🔴 a captured-again row offers no take-back, and says why");
+  assertBefore(loader, "await markDoorsCapturedAgain(rows, reviews, placeById);", "row.status === \"rejected\" && row.restorable && decided >= rejectedSince", "it is marked before the 90-day undo window is judged, so it drops back to 14 days");
+  for (const screen of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/shared-place-customers.tsx"]) {
+    assert.ok(stripComments(read(screen)).includes("DOOR_CAPTURED_AGAIN_TEXT"), `${screen} draws the reason where the button was`);
+  }
+  assert.match(stripComments(read("src/lib/phoenix-crm/shared-place-groups.ts")), /capturedAgain: row\.capturedAgain === true,/, "a seated customer carries it too");
 
   // ── "Stay in on his clinic" ────────────────────────────────────────────────────────────────────
   const stands = fnOf(sql, "phoenix_crm_customer_stands_on_another_place");

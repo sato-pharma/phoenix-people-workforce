@@ -407,23 +407,33 @@ async function directOrderCandidates(): Promise<IdentityCandidate[]> {
 async function typedPharmacyCandidates(): Promise<IdentityCandidate[]> {
   const admin = getSupabaseAdmin();
 
-  // Paged by range and ordered by id, like every other read in this file. `pageActive` cannot
-  // serve here: a visit has no `active` column, so filtering on one would read nothing at all.
+  // Paged by keyset on id (`id > last`), never by offset. About one visit in twelve carries a typed
+  // name and no index serves `pharmacy_name`, so every offset page walked the primary key from the
+  // start again: 43,390 buffers a page on production (performance audit, 19 Nov 2026). A keyset page
+  // starts where the last one stopped, so the whole read is one walk. `pageActive` cannot serve here:
+  // a visit has no `active` column, so filtering on one would read nothing at all.
   const named: { place_id: string | null; pharmacy_name: string | null }[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
+  let after: string | null = null;
+  for (;;) {
+    let query = admin
       .from("phoenix_crm_visits")
       .select("id, place_id, pharmacy_name")
       .eq("is_test", false)
       .not("pharmacy_name", "is", null)
       .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
+      .limit(PAGE);
+    if (after) query = query.gt("id", after);
+    const { data, error } = await query;
     if (error) throw new Error(`customer-identity: reading phoenix_crm_visits failed — ${error.message}`);
-    const rows = (data ?? []) as unknown as { place_id: string | null; pharmacy_name: string | null }[];
+    const rows = (data ?? []) as unknown as { id: string | null; place_id: string | null; pharmacy_name: string | null }[];
     for (const row of rows) {
       if (text(row.pharmacy_name).length > 0 && text(row.place_id).length > 0) named.push(row);
     }
     if (rows.length < PAGE) break;
+    // A page without its last id cannot say where the next one starts; stopping would drop the rest.
+    const last = text(rows[rows.length - 1]?.id);
+    if (!last) throw new Error("customer-identity: a page of typed pharmacy visits came back without its id");
+    after = last;
   }
   if (named.length === 0) return [];
 

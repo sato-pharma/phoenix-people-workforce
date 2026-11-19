@@ -450,7 +450,6 @@ export const DEFAULT_POLICY_ACKNOWLEDGED: Readonly<Record<string, { eventTypes: 
   "coaching": { eventTypes: ["report_submitted"], why: "today's behaviour: the default row" },
   "business_card_requests": { eventTypes: ["business_card_request_created"], why: "today's behaviour: the default row; the sender names the seat it addresses" },
   "support_requests": { eventTypes: ["support_request_created"], why: "today's behaviour: the default row" },
-  "resignation": { eventTypes: ["resignation_sla_reminder"], why: "today's behaviour: the default row — the reminder is sent under `resignation`, not `resignations`, so the resignations.* row never reaches it (reported to the owner, not changed)" },
   "mailbox_offboarding": { eventTypes: ["mailbox_offboarding_overdue"], why: "today's behaviour: the default row" },
   "deductions": {
     eventTypes: [

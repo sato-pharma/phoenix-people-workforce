@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, errorMessageOf, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
-import { getMarketingRoiReport, parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
+import { assertRoiReportViewer, getMarketingRoiReport, parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +53,9 @@ function marketingRoiTrackingApiError(error: unknown) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // The caller first, before the rate limit and the body: signed in, a marketing role, and linked to an
+    // employee record when what the report shows depends on who they are (assertRoiReportViewer).
+    assertRoiReportViewer(access);
     let body: unknown = {};
     try {
       body = await request.json();

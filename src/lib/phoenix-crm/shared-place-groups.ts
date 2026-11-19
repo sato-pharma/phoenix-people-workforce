@@ -78,6 +78,8 @@ export type SeatedCustomer = ValidationReviewFilterable & {
   refusable: boolean;
   /** A rejection that can still be taken back. */
   restorable: boolean;
+  /** A rejection the database will not take back: he was captured again at this door since (`door-captured-again.ts`). */
+  capturedAgain?: boolean;
   /** 🔴 The Super Admin approved this seat, so nobody else may reject it (owner, 2026-11-16). */
   lockedBySuperAdmin?: boolean;
   /** Visits measured against his place, and the places he would keep — only a validated row knows them. */
@@ -152,6 +154,7 @@ function fromReview(row: ValidationReviewRow, sharedPlaceId: string, state: Seat
     reviewed: true,
     refusable: row.refusable,
     restorable: row.restorable,
+    capturedAgain: row.capturedAgain === true,
     lockedBySuperAdmin: row.lockedBySuperAdmin === true,
     visits: null,
     otherPlaces: null,

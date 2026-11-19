@@ -3241,6 +3241,7 @@ import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
 import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
 import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 import { runNotificationRegistryLooseEndsTests } from "./notification-registry-loose-ends.test.ts";
+import { runResignationReminderPolicyTests } from "./resignation-reminder-policy.test.ts";
 import { runSyntheticJourneyAdviceTests } from "./synthetic-journey-advice.test.ts";
 import { runSyntheticJourneyRunStatusTests } from "./synthetic-journey-run-status.test.ts";
 import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declared-page.test.ts";
@@ -3263,6 +3264,7 @@ import { runOverviewDashboardBehaviourTests } from "./overview-dashboard-behavio
 import { runSupportRequestsBehaviourTests } from "./support-requests-behaviour.test.ts";
 import { runVisitsReportRowBehaviourTests } from "./visits-report-row-behaviour.test.ts";
 import { runSrcLibFolderTestCoverageTests } from "./src-lib-folder-test-coverage.test.ts";
+import { runPhoenixCrmVisitsAgentIndexTests } from "./phoenix-crm-visits-agent-index.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12782,6 +12784,7 @@ await runTest("every call to an outside service has a time limit (REC-050): the 
 await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
 await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 await runTest("the notification registry's loose ends (REC-084 phase 2, 19 Nov 2026): the bell's categories are derived from the registry and unchanged, every category a notice is written under is registered and every registered one is written or kept for history, every registered type has a policy row or an acknowledged default, and the default fallback logs a warning instead of staying silent", runNotificationRegistryLooseEndsTests);
+await runTest("the resignation reminder takes the resignations policy (owner, 19 Nov 2026): the real daily reminder, run against the in-memory database, stores its notice under resignations and opens in-app, email, Telegram and push like every other resignation notice; its email names the leaver so the identity guard lets it through; and only the reminder's own recipient list is told", runResignationReminderPolicyTests);
 await runTest("smoke-test advice on the Synthetic Journeys page (a failed assertion is never 'the page did not respond'; a cancelled prefetch and another host's refusal are not the app's failure; the app's own 401, 403, 404 and 500 are named)", runSyntheticJourneyAdviceTests);
 await runTest("smoke-test run status on the Synthetic Journeys page (every check passed and the one skip said why is healthy; a skip with no reason is still a warning; a skip never hides a failure or stands in for a pass)", runSyntheticJourneyRunStatusTests);
 await runTest("smoke check that skips itself shows its real page (the Outstation Expenses export reads /admin/outstation/expenses, not the word unknown; a check that named no page still reads unknown)", runSyntheticJourneyDeclaredPageTests);
@@ -12836,6 +12839,7 @@ await runTest("src/lib/overview, run (REC-079): a section the viewer's grants do
 await runTest("src/lib/support-requests, run (REC-079): a ticket is opened in the signed-in employee's name whatever the form sends, saved before HR is alerted and the unaddressed alert reported, an employee lists only their own, the queue and the status are HR's, and a missing table answers empty", runSupportRequestsBehaviourTests);
 await runTest("src/lib/visits-report, run (REC-079): the report table and its download read one row mapper, a visit's type is the resolved word never the vendor's raw Unknown, and its time is the save time until a check-in is matched", runVisitsReportRowBehaviourTests);
 await runTest("every folder under src/lib/ is imported by at least one test (REC-079, F-ENG-011): type-only imports and paths in comments or file reads do not count, and a new untested folder fails by name", runSrcLibFolderTestCoverageTests);
+await runTest("Phoenix CRM visits: the agent-day index carries both doors' exact agent expression and predicate, nothing drops it, the landing's double-visit summary has a date floor and the typed-pharmacy report pages by keyset", runPhoenixCrmVisitsAgentIndexTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
