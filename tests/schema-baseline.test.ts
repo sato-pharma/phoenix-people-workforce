@@ -15,8 +15,10 @@ import {
   toPooler,
   compareDumps,
   explainDrift,
+  flattenBooleanChains,
   freshnessQuery,
   normalizeDump,
+  objectLineDiff,
   objectWord,
   restorableBaseline,
   restorePrelude,
@@ -299,6 +301,34 @@ export function runSchemaBaselineTests() {
     assert.ok(fresh.includes(`'${schema}'`), `a database that already has ${schema} is not fresh`);
   }
   assert.ok(fresh.includes("relnamespace = 'public'::regnamespace"), "a database with anything in public is not fresh");
+
+  // Postgres folds a nested AND/OR chain when it parses the dump again (BETWEEN, a row IS DISTINCT FROM).
+  // The lines are the first restore's own, 19 Nov 2026: the file's, then the restored database's.
+  const sameAfterRestore: Array<[string, string]> = [
+    [
+      "    CONSTRAINT ats_interview_bookings_duration_valid CHECK ((((duration_minutes >= 15) AND (duration_minutes <= 480)) AND ((duration_minutes % 15) = 0))),",
+      "    CONSTRAINT ats_interview_bookings_duration_valid CHECK (((duration_minutes >= 15) AND (duration_minutes <= 480) AND ((duration_minutes % 15) = 0))),",
+    ],
+    [
+      "    CONSTRAINT phoenix_crm_manager_visits_pin CHECK ((((lat IS NULL) = (lon IS NULL)) AND ((lat IS NULL) OR (((lat >= (21.5)::double precision) AND (lat <= (32)::double precision)) AND ((lon >= (24)::double precision) AND (lon <= (37.5)::double precision)))) AND ((accuracy_meters IS NULL) OR (accuracy_meters >= (0)::numeric)))),",
+      "    CONSTRAINT phoenix_crm_manager_visits_pin CHECK ((((lat IS NULL) = (lon IS NULL)) AND ((lat IS NULL) OR ((lat >= (21.5)::double precision) AND (lat <= (32)::double precision) AND ((lon >= (24)::double precision) AND (lon <= (37.5)::double precision)))) AND ((accuracy_meters IS NULL) OR (accuracy_meters >= (0)::numeric)))),",
+    ],
+    [
+      "CREATE TRIGGER t AFTER UPDATE ON public.v FOR EACH ROW WHEN ((((old.r = 'far'::text) OR (new.r = 'far'::text)) AND ((((old.a IS DISTINCT FROM new.a) OR (old.b IS DISTINCT FROM new.b)) OR (old.c IS DISTINCT FROM new.c)) OR (old.d IS DISTINCT FROM new.d)))) EXECUTE FUNCTION public.f();",
+      "CREATE TRIGGER t AFTER UPDATE ON public.v FOR EACH ROW WHEN ((((old.r = 'far'::text) OR (new.r = 'far'::text)) AND ((old.a IS DISTINCT FROM new.a) OR (old.b IS DISTINCT FROM new.b) OR (old.c IS DISTINCT FROM new.c) OR (old.d IS DISTINCT FROM new.d)))) EXECUTE FUNCTION public.f();",
+    ],
+  ];
+  for (const [file, restoredLine] of sameAfterRestore) {
+    assert.notEqual(file, restoredLine, "the fixture really differs as text");
+    assert.equal(flattenBooleanChains(file), flattenBooleanChains(restoredLine), `the same expression after folding: ${file.slice(0, 60)}`);
+    assert.equal(flattenBooleanChains(file), restoredLine, "folding the file's line gives exactly what the restore wrote");
+  }
+  assert.notEqual(flattenBooleanChains("CHECK (((a) AND ((b) OR (c))))"), flattenBooleanChains("CHECK ((((a) AND (b)) OR (c)))"), "a change of meaning never folds away");
+  assert.equal(flattenBooleanChains("CHECK (((a) AND ((b) AND (c))))"), "CHECK (((a) AND ((b) AND (c))))", "a right-nested chain is left as the parser leaves it");
+  assert.equal(flattenBooleanChains("CHECK ((((a) AND (b)) OR (c)))"), "CHECK ((((a) AND (b)) OR (c)))", "a mixed AND/OR is left alone");
+  assert.equal(flattenBooleanChains("x = '((a) AND (b)) AND (c)'"), "x = '((a) AND (b)) AND (c)'", "nothing inside quotes is touched");
+  assert.equal(flattenBooleanChains("CHECK (((a) AND (b)"), "CHECK (((a) AND (b)", "unbalanced text comes back unchanged");
+  assert.deepEqual(objectLineDiff("same\nold\nalso", "same\nnew\nalso"), ["- old", "+ new"], "only the lines one side lacks are shown");
 
   // The weekly job: production's Postgres major, never on a pull request, no secret near the restore.
   const restoreWf = readFileSync(RESTORE_WORKFLOW, "utf8").replace(/\r\n/g, "\n");

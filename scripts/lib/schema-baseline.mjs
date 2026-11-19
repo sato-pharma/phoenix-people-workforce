@@ -124,6 +124,98 @@ export function compareDumps(baselineText, liveText) {
   return { added, removed, changed, objects: live.size };
 }
 
+/** Splits text into nested parenthesised groups, quotes kept whole. null when the brackets do not balance. */
+function parseGroups(text) {
+  const root = { items: [] };
+  const stack = [root];
+  let chunk = "";
+  const flush = () => {
+    if (chunk) stack[stack.length - 1].items.push(chunk);
+    chunk = "";
+  };
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      for (;;) {
+        if (j >= text.length) return null;
+        if (text[j] === ch) {
+          if (text[j + 1] === ch) {
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        j += 1;
+      }
+      chunk += text.slice(i, j + 1);
+      i = j;
+    } else if (ch === "(") {
+      flush();
+      const group = { items: [] };
+      stack[stack.length - 1].items.push(group);
+      stack.push(group);
+    } else if (ch === ")") {
+      flush();
+      if (stack.length === 1) return null;
+      stack.pop();
+    } else {
+      chunk += ch;
+    }
+  }
+  flush();
+  return stack.length === 1 ? root : null;
+}
+
+/** " AND " or " OR " when a group's top level is `(x) OP (y) OP (z)…` with one operator throughout, else null. */
+function chainOperator(items) {
+  if (items.length < 3 || items.length % 2 === 0) return null;
+  let op = null;
+  for (let k = 0; k < items.length; k += 1) {
+    const item = items[k];
+    if (k % 2 === 0) {
+      if (typeof item === "string") return null;
+    } else if (typeof item !== "string" || (item !== " AND " && item !== " OR ") || (op !== null && item !== op)) {
+      return null;
+    } else {
+      op = item;
+    }
+  }
+  return op;
+}
+
+function flattenGroup(group) {
+  group.items = group.items.map((item) => (typeof item === "string" ? item : flattenGroup(item)));
+  const op = chainOperator(group.items);
+  if (op !== null) {
+    for (;;) {
+      const first = group.items[0];
+      if (typeof first === "string" || chainOperator(first.items) !== op) break;
+      group.items = [...first.items, ...group.items.slice(1)];
+    }
+  }
+  return group;
+}
+
+function renderGroup(group) {
+  return group.items.map((item) => (typeof item === "string" ? item : `(${renderGroup(item)})`)).join("");
+}
+
+/**
+ * The same expression, written as Postgres writes it after parsing it again. Its parser folds a LEFT operand
+ * that is itself a chain of the same operator into one chain: `((a) AND (b)) AND (c)` becomes
+ * `(a) AND (b) AND (c)`. An expression Postgres BUILT nested — `x BETWEEN 1 AND 10` (an AND), a row
+ * `IS DISTINCT FROM` (a chain of ORs) — therefore dumps with brackets that a restore of that dump no longer
+ * has. Measured on the first restore, 19 Nov 2026: 10 CHECK constraints and 1 trigger WHEN, nothing else.
+ * This folds exactly that, outside quotes, so the two compare equal. Only the leftmost operand, as the parser
+ * does: a right-nested chain or a mixed AND/OR is left alone, so a change of meaning can never fold away.
+ * Text whose brackets do not balance comes back unchanged.
+ */
+export function flattenBooleanChains(text) {
+  const root = parseGroups(text);
+  return root === null ? text : renderGroup(flattenGroup(root));
+}
+
 /**
  * The lines of one changed object that only one side has, in order: `-` the file's, `+` the other dump's.
  * Enough to name a difference in a run log without a diff tool; a line both sides hold is never shown.
