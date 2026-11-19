@@ -420,10 +420,27 @@ counted in the advisor's `rls_enabled_no_policy`, so the drop lowers that count 
 | --- | --- | --- |
 | `notification_backup_20261023` | 3 · 824 | the before-image of the 23 Oct in-app notification repair ([`notification-bell-reconciliation.md`](../notification-bell-reconciliation.md)), which that migration's rollback statements read: 386 in-app deliveries to logins with no HR ID (all now `skipped`), 202 events whose earlier approver had been overwritten (all now name them again) and the 236 read-and-archived states the repair wrote (all still exist). The repair still stands in full. Holds recipient HR IDs |
 
-The next snapshots to reach 90 days with no decision are the five 26 October schemas
-(`brick_move_backup_20261026`, `phoenix_crm_backup_20261026`, `sos_backup_20261026_ibnsina`,
-`vacancies_backup_20261026` and `weekly_backup_20261026`), on 24 Jan 2027. After them comes
-`sos_backup_20261027_archives`, on 25 Jan 2027.
+**The five 26 October snapshots, decided on 20 Nov 2026.** "Export, then drop" for each, and all five
+were exported that day (9 files, 36,505 rows, every checksum matching its manifest). They reach 90 days
+on 24 Jan 2027. Each is a whole snapshot schema, so each drop is `drop schema … cascade`. No migration
+created any of them, so staging has none and the schema baseline names none: three were made by hand in
+their own schema, and the brick-move and photo-point copies were taken in `public` and moved into theirs
+by `20261027235603`. Nothing depends on any of the five or reads them: no foreign key, view, trigger,
+policy, function or cron job names them, and no role, `service_role` included, can use the schemas. The
+two moved copies still carry `service_role` table grants from `public`, which reach nothing without the
+schema. The two photo-point tables have row security on and no policy, so they are counted in the
+advisor's `rls_enabled_no_policy` and that drop lowers the count by 2.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `brick_move_backup_20261026` | 1 · 8 | the before-picture of one rep's 26 Oct brick move: customer map, direct-order code and pharmacy, import row and marketing code entries, each kept as a JSON pre-image |
+| `phoenix_crm_backup_20261026` | 2 · 1,537 | the 762 places and 775 visits from before 746 places were settled onto their photo's own reading on 26 Oct (`scripts/phoenix-crm-settle-on-photo.ts`). 756 of the 762 places now sit off the copied point, so the move stands |
+| `sos_backup_20261026_ibnsina` | 3 · 34,891 | the Ibn Sina family customer map (IS, IS-S and IS-T, 30,977 rows) as it stood on 26 Oct, the ids of the 3,794 map rows added that day (all still in the map), and the before-picture of the 120 rows moved on the owner's 27 Oct brick ruling (117 still on their new brick). Holds customer names and addresses |
+| `vacancies_backup_20261026` | 1 · 1 | one Pedia rep vacancy as it stood before its missing manager was filled in on 26 Oct; the manager is filled in today. Holds HR IDs and a manager's name |
+| `weekly_backup_20261026` | 2 · 68 | the 12 direct-order weekly batches and 56 region-only rows from before `20261026160001` rebuilt them so every direct order carries its pharmacy's area. None of the 56 is live now; the rebuild's 81 rows replaced them with every month's value and units unchanged |
+
+The next snapshot to reach 90 days with no decision is `sos_backup_20261027_archives`, on 25 Jan 2027.
+After it comes `phoenix_crm_merge_backup_20261028`, on 26 Jan 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
