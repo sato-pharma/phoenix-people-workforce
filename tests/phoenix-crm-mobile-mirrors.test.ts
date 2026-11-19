@@ -38,7 +38,7 @@ const WEB_SOURCES: ReadonlyArray<string> = [
   "src/lib/phoenix-crm/entry-rules.ts", // the module's own limits
   "src/lib/phoenix-crm/plan-rules.ts", // the plan note and the decision note
   "src/lib/phoenix-crm/unplanned-rules.ts", // the off-plan decision note
-  "src/components/phoenix-crm/list-screens.tsx", // SPECIALITY_TEXT_MAX, which lives beside its form
+  "src/lib/phoenix-crm/speciality-list.ts", // SPECIALITY_TEXT_MAX, beside the one speciality list (2026-11-19)
 ];
 
 /** `{ from `{`, to its match }` — the text inside a brace block, comments already blanked. */

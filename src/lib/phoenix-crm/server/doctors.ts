@@ -26,9 +26,10 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { chunk } from "@/lib/phoenix-crm/server/db";
+import { chunk, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople } from "@/lib/phoenix-crm/server/territory";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -146,7 +147,7 @@ async function loadValidatedCustomers(seatIds: string[], isTest: boolean): Promi
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_customers")
-          .select("id, seat_id, list_type, name, speciality, grade, validated_at, validated_by_hr_id")
+          .select("id, seat_id, list_type, name, speciality, customer_type, grade, validated_at, validated_by_hr_id")
           .in("seat_id", part)
           .eq("is_test", isTest)
           .eq("status", "active")
@@ -200,7 +201,7 @@ export async function loadDoctorDirectory(viewer: PhoenixCrmViewer, isTest: bool
       customerId: String(row.id),
       name: String(row.name),
       listType,
-      speciality: typeof row.speciality === "string" ? row.speciality : null,
+      speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
       grade: typeof row.grade === "string" ? (row.grade as PhoenixCrmGrade) : null,
       validatedAt: String(row.validated_at),
       validatedByName: validatedBy ? nameOf(names, validatedBy) : null,

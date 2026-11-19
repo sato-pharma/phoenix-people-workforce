@@ -51,7 +51,7 @@ export function signboardCheckRead(row: Row): Row | null {
  * approval lock (`approvalLockFor`) reads that.
  */
 export const REVIEW_SUBJECTS_SELECT =
-  "customer:phoenix_crm_customers!phoenix_crm_validation_reviews_customer_id_fkey(id, name, list_type, speciality), " +
+  "customer:phoenix_crm_customers!phoenix_crm_validation_reviews_customer_id_fkey(id, name, list_type, speciality, customer_type), " +
   "place:phoenix_crm_places!phoenix_crm_validation_reviews_place_id_fkey(id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id, created_by_hr_id, " +
   `${SIGNBOARD_CHECK_KEYS_SELECT})`;
 

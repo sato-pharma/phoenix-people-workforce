@@ -32,6 +32,7 @@ import { cairoOffsetMinutes } from "@/lib/format/cairo-zone";
 import { singleVisitHalfOfHour, vacantVisitPlaceError } from "@/lib/phoenix-crm/manager-plan-rules";
 import { isMissedRecordDay, missedVisitInstant, parseMissedActivity, parseMissedManagerVisit } from "@/lib/phoenix-crm/missed-records";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { canEnterMissedRecords, recordsOwnDayOn, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, mapDayActivityRow, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -139,7 +140,7 @@ async function territoryCustomers(seatId: string): Promise<Row[]> {
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_customers")
-        .select("id, name, speciality, seat_id, status")
+        .select("id, name, speciality, customer_type, seat_id, status")
         .eq("seat_id", seatId)
         .eq("is_test", false)
         .in("status", ["active", "pending"]),
@@ -199,7 +200,7 @@ export async function loadManagerMissedRecordForm(
           customerId: id,
           managerCustomerId: null,
           name: textOrNull(row.name) ?? "Customer",
-          speciality: textOrNull(row.speciality),
+          speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
           planned: slots.has(`c:${id}`),
           visited: visited.has(`c:${id}`),
           vacant,

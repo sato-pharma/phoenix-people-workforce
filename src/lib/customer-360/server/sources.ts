@@ -14,6 +14,7 @@ import { readContactVisitMonths } from "@/lib/crm/reads";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { loadActuals, mapRoiRequest } from "@/lib/marketing-requests/roi-report-service";
 import { pharmacyNameKey } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { readNamedPharmaciesOnVisits } from "@/lib/phoenix-crm/server/named-pharmacies";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/confidential-products";
@@ -135,6 +136,7 @@ async function loadPhoenix(): Promise<SourcePhoenixCustomer[]> {
   return rows.map((row) => {
     const place = placeByCustomer.get(String(row.id)) ?? null;
     return {
+      customer_type: text(row.customer_type),
       grade: text(row.grade),
       id: String(row.id),
       is_test: Boolean(row.is_test),
@@ -147,7 +149,7 @@ async function loadPhoenix(): Promise<SourcePhoenixCustomer[]> {
         : null,
       reference_contact_crm_id: num(row.reference_contact_crm_id),
       seat_id: text(row.seat_id),
-      speciality: text(row.speciality),
+      speciality: customerKindText(text(row.customer_type), text(row.speciality)),
       status: text(row.status),
       status_changed_at: text(row.status_changed_at),
       validated_at: text(row.validated_at),

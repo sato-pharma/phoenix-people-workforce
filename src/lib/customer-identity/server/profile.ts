@@ -2,6 +2,7 @@ import { parseCrmContactCode } from "@/lib/crm/contact-code";
 import { marketingCustomerHubKind } from "@/lib/customer-360/validated";
 import { othersOnMaster } from "@/lib/customer-identity/suggestions";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   AlsoKnownAs,
@@ -81,7 +82,7 @@ async function readSource(source: IdentitySource, ids: readonly string[]): Promi
   if (source === "phoenix_crm") {
     const { data, error } = await admin
       .from("phoenix_crm_customers")
-      .select("id, name, speciality, list_type, reference_contact_crm_id")
+      .select("id, name, speciality, customer_type, list_type, reference_contact_crm_id")
       .in("id", [...ids]);
     if (error) throw new Error(`customer-identity: reading phoenix_crm_customers failed — ${error.message}`);
     for (const row of (data ?? []) as Row[]) {
@@ -93,7 +94,7 @@ async function readSource(source: IdentitySource, ids: readonly string[]): Promi
         name: text(row.name),
         source,
         sourceId: String(row.id),
-        speciality: text(row.speciality) || null,
+        speciality: customerKindText(text(row.customer_type), text(row.speciality)),
       });
     }
     return out;

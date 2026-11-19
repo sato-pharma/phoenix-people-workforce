@@ -38,6 +38,7 @@ import {
   type ScheduleProblem,
 } from "@/lib/phoenix-crm/schedule-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { waitingIsLong, waitingOldestFirst, waitingText } from "@/lib/phoenix-crm/waiting-rules";
 import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { approvalLockFor } from "@/lib/phoenix-crm/server/super-admin-approval";
@@ -906,7 +907,7 @@ export async function loadValidationReviews(
       region: seat?.regionName ?? null,
       customerName: String(customer.name ?? "Unknown customer"),
       listType: String(customer.list_type ?? ""),
-      speciality: text(customer.speciality),
+      speciality: customerKindText(text(customer.customer_type), text(customer.speciality)),
       placeLabel: text(place.label),
       address: text(place.address),
       brickName: text(place.brick_name),
@@ -1354,7 +1355,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         customerId: String(row.customer_id),
         customerName: String(customer.name ?? "Unknown customer"),
         listType: String(customer.list_type ?? ""),
-        speciality: text(customer.speciality),
+        speciality: customerKindText(text(customer.customer_type), text(customer.speciality)),
         isTest: row.is_test === true,
         repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
         territory: seat ? territoryName(seat) : "Territory no longer in the organogram",

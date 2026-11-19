@@ -32,6 +32,8 @@ import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
+import { CrmCustomerKindField } from "@/components/phoenix-crm/speciality-field";
+import { customerKindProblem, defaultCustomerType } from "@/lib/phoenix-crm/speciality-list";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
@@ -40,8 +42,6 @@ import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/type
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 
-/** The server keeps a speciality to this length (entry-rules.ts parseOutsideCustomer). */
-const SPECIALITY_TEXT_MAX = 80;
 
 const PHOTO_NEEDED = PLACE_PHOTO_NEEDED;
 const GRADES = ["A", "B", "C"] as const;
@@ -74,13 +74,6 @@ async function customerSavedWith(seatId: string, test: boolean, photoPath: strin
   }
 }
 
-/** The specialities already on his list, offered while typing. */
-function knownSpecialities(customers: ReadonlyArray<VisitCustomerOption>): string[] {
-  const names = new Set<string>();
-  for (const customer of customers) if (customer.speciality) names.add(customer.speciality);
-  return [...names].sort((left, right) => left.localeCompare(right));
-}
-
 export function OutOfListEntry({
   canAddNew,
   customers,
@@ -109,6 +102,7 @@ export function OutOfListEntry({
   // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
+  const [customerType, setCustomerType] = useState("");
   // Optional, saved with the validation, exactly as on the List's Validate (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
   // The grade he proposes: the add request is filed with it, in the same save.
@@ -150,6 +144,8 @@ export function OutOfListEntry({
       if (nameProblem) return nameProblem;
     } else if (cleanName.length < 3) return "Write the customer's full name.";
     if (!grade) return GRADE_NEEDED;
+    const kindProblem = customerKindProblem({ customerType, speciality, listType });
+    if (kindProblem) return kindProblem;
     const phoneCheck = parseCustomerPhone(phone);
     if (!phoneCheck.ok) return phoneCheck.error;
     return placeDraftProblem(draft, { needsPhoto: true });
@@ -173,7 +169,14 @@ export function OutOfListEntry({
           seatId,
           test,
           mode: "outside",
-          customer: { listType, name: cleanName, ...(doctorName ? { nameParts } : {}), speciality: normalizedName(speciality) || null, proposedGrade: grade },
+          customer: {
+            listType,
+            name: cleanName,
+            ...(doctorName ? { nameParts } : {}),
+            customerType: normalizedName(customerType) || null,
+            speciality: normalizedName(speciality) || null,
+            proposedGrade: grade,
+          },
           allowSameName,
           phone: phone.trim() || null,
           // The List's own place body (place-editor.tsx): the pin, and the photo's own reading under
@@ -272,6 +275,7 @@ export function OutOfListEntry({
               label="AM or PM"
               onChange={(next) => {
                 setListType(next);
+                setCustomerType((previous) => previous || defaultCustomerType(next));
                 setSameName(false);
                 setProblem(null);
               }}
@@ -311,23 +315,21 @@ export function OutOfListEntry({
               />
             </CrmField>
           )}
-          <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-outside-speciality" label="Speciality">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
-              disabled={saving}
-              id="phoenix-crm-outside-speciality"
-              list="phoenix-crm-outside-specialities"
-              maxLength={SPECIALITY_TEXT_MAX}
-              onChange={(event) => setSpeciality(event.target.value)}
-              value={speciality}
-            />
-            <datalist id="phoenix-crm-outside-specialities">
-              {knownSpecialities(customers).map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </CrmField>
+          <CrmCustomerKindField
+            customerType={customerType}
+            disabled={saving}
+            idPrefix="phoenix-crm-outside"
+            kind={listType}
+            onSpecialityChange={(next) => {
+              setSpeciality(next);
+              setProblem(null);
+            }}
+            onTypeChange={(next) => {
+              setCustomerType(next);
+              setProblem(null);
+            }}
+            speciality={speciality}
+          />
           <CrmField className="sm:col-span-2" hint="Your district manager confirms it or changes it, then SFE approves the customer." label="The grade you propose">
             <CrmChoice
               columns={3}

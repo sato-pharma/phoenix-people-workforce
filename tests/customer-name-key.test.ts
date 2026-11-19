@@ -127,6 +127,7 @@ const NOT_A_CUSTOMER_NAME: Readonly<Record<string, string>> = {
   "src/lib/geo/egypt-locations.ts": "a governorate or city",
   "src/lib/phoenix-crm/dictation-correct.ts": "dictated words",
   "src/lib/phoenix-crm/list-sheet-hours.ts": "a weekday in an opening-hours cell",
+  "src/lib/phoenix-crm/speciality-list.ts": "a customer's speciality",
   "src/lib/recruitment/inbound/whatsapp-text-only-applicant.ts": "an applicant's message",
   "src/lib/recruitment/my-candidates-find.ts": "a candidate's name",
   "src/lib/sales/closing-organogram-regions.ts": "a region of the organogram",

@@ -26,6 +26,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -242,8 +243,8 @@ export type ManagerSlotCustomerRow = {
 
 const SLOT_CUSTOMER_COLUMNS =
   "id, slot_id, customer_id, manager_customer_id, source_seat_id, list_type, " +
-  "customer:phoenix_crm_customers!customer_id(name, grade, speciality, status), " +
-  "own:phoenix_crm_manager_customers!manager_customer_id(name, grade, potential_grade, speciality, status)";
+  "customer:phoenix_crm_customers!customer_id(name, grade, speciality, customer_type, status), " +
+  "own:phoenix_crm_manager_customers!manager_customer_id(name, grade, potential_grade, speciality, customer_type, status)";
 
 /** The customers planned on these half-days, each with its name and grade as they are now. */
 export async function loadManagerSlotCustomers(slotIds: ReadonlyArray<string>): Promise<ManagerSlotCustomerRow[]> {
@@ -269,7 +270,7 @@ export async function loadManagerSlotCustomers(slotIds: ReadonlyArray<string>): 
         name: textOrNull(customer.name) ?? "A customer no longer on file",
         grade: textOrNull(customer.grade),
         potentialGrade: textOrNull(customer.potential_grade),
-        speciality: textOrNull(customer.speciality),
+        speciality: customerKindText(textOrNull(customer.customer_type), textOrNull(customer.speciality)),
         gone: customerId ? status !== "active" && status !== "pending" : status === "removed",
       });
     }

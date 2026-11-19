@@ -17,6 +17,7 @@ import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { buildCustomerMatchBoard, type CustomerMatchBoard, type CustomerSubject } from "@/lib/phoenix-crm/customer-match-groups";
 import { personNameWords } from "@/lib/phoenix-crm/signboard-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
@@ -56,7 +57,7 @@ export async function loadCustomerMatchBoard(viewer: PhoenixCrmViewer): Promise<
 
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
   const [customers, names] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
+    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality, customer_type", "id", customerIds),
     loadPeopleNames(places.map((row) => text(row.created_by_hr_id))),
   ]);
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
@@ -80,7 +81,7 @@ export async function loadCustomerMatchBoard(viewer: PhoenixCrmViewer): Promise<
       region: seat?.regionName ?? null,
       title: customerName,
       listType: String(customer.list_type ?? ""),
-      speciality: text(customer.speciality),
+      speciality: customerKindText(text(customer.customer_type), text(customer.speciality)),
       nameWords,
       point: anchor.point,
       pin: fixOf(row.pin_lat, row.pin_lon),

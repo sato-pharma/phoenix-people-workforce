@@ -63,6 +63,7 @@ import {
   type VisitDraft,
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
+import { customerKindMissing } from "@/lib/phoenix-crm/speciality-list";
 import { FAR_VISIT_HELD_NOTE, farRefusalLineFor } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { BLIND_LOCATION, visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/visit-location-words";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
@@ -698,7 +699,11 @@ export type VisitCustomerOption = {
   name: string;
   listType: PhoenixCrmListType;
   grade: PhoenixCrmGrade | null;
+  /** Where you call on him — a clinic, a hospital, a contract (owner, 2026-11-19). */
+  customerType: string | null;
   speciality: string | null;
+  /** Still owed a type, or a clinic its speciality: the form asks for it before the visit (owner, 2026-11-19). */
+  kindMissing: boolean;
   /**
    * The brick his first place sits in, so the picker can group and colour a day geographically — the
    * same eight hues, in the same order, as the List tab (brick-tints.ts). The List tab has read this
@@ -1309,7 +1314,10 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       name: String(row.name),
       listType,
       grade,
+      customerType: textOrNull(row.customer_type),
       speciality: textOrNull(row.speciality),
+      // His own list type decides it, never the seating's session: a pharmacy owes nothing.
+      kindMissing: customerKindMissing({ customerType: textOrNull(row.customer_type), speciality: textOrNull(row.speciality), listType: parseListType(row.list_type) }),
       brickId: firstPlace?.brickId ?? null,
       brickName: firstPlace?.brickName ?? null,
       lastVisit: lastVisits.products.get(customerId) ?? null,

@@ -25,6 +25,7 @@ import { repHalfKey } from "@/lib/phoenix-crm/manager-plan-rules";
 import { oldCrmHalfOf, oldCrmPlanOf, OLD_CRM_CATCH_ALL_CONTACT } from "@/lib/phoenix-crm/old-crm-plan-rules";
 import { chunk, textOrNull } from "@/lib/phoenix-crm/server/db";
 import type { RepDayCustomer } from "@/lib/phoenix-crm/server/manager-plans";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -55,7 +56,7 @@ async function customersOfContacts(seatIds: ReadonlyArray<string>, contactIds: R
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_customers")
-          .select("id, seat_id, name, grade, speciality, list_type, status, own_contact_crm_id, reference_contact_crm_id")
+          .select("id, seat_id, name, grade, speciality, customer_type, list_type, status, own_contact_crm_id, reference_contact_crm_id")
           .eq("is_test", false)
           .in("seat_id", [...seatIds])
           .in("status", ["active", "pending"])
@@ -134,7 +135,7 @@ export async function loadOldCrmRepWeeks(input: { reps: ReadonlyArray<OldCrmRep>
         const half = oldCrmHalfOf({
           matched: customer !== null,
           listType: customer ? textOrNull(customer.list_type) : null,
-          speciality: customer ? textOrNull(customer.speciality) : entry.speciality,
+          speciality: customer ? customerKindText(textOrNull(customer.customer_type), textOrNull(customer.speciality)) : entry.speciality,
         });
         if (!half) continue;
         const key = repHalfKey(seatId, entry.planDate, half);
@@ -146,7 +147,7 @@ export async function loadOldCrmRepWeeks(input: { reps: ReadonlyArray<OldCrmRep>
           customerId: customer ? String(customer.id) : null,
           name: (customer ? textOrNull(customer.name) : null) ?? entry.contactName?.trim() ?? "Customer",
           grade: (customer ? textOrNull(customer.grade) : null) ?? entry.contactGrade,
-          speciality: (customer ? textOrNull(customer.speciality) : null) ?? entry.speciality,
+          speciality: (customer ? customerKindText(textOrNull(customer.customer_type), textOrNull(customer.speciality)) : null) ?? entry.speciality,
           brickName: null,
           zone: null,
           listType: half,

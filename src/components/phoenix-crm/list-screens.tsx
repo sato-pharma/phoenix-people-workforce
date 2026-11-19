@@ -49,6 +49,8 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { capturedLocationText, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { CrmCustomerKindField } from "@/components/phoenix-crm/speciality-field";
+import { customerKindProblem, defaultCustomerType } from "@/lib/phoenix-crm/speciality-list";
 import {
   emptyPlaceDraft,
   PlaceEditor,
@@ -113,8 +115,6 @@ import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
 
-/** The server keeps a speciality to this length (entry-rules.ts parseNewCustomer). */
-const SPECIALITY_TEXT_MAX = 80;
 /** The server keeps a request's note to this length (list.ts createListRequest). */
 const REQUEST_NOTE_MAX = 500;
 const GRADES = ["A", "B", "C"] as const;
@@ -619,6 +619,7 @@ export function ValidateScreen({
   // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
+  const [customerType, setCustomerType] = useState("");
   // Optional, and saved with the validation itself (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
   const [grade, setGrade] = useState<PhoenixCrmGrade | null>(null);
@@ -678,7 +679,6 @@ export function ValidateScreen({
   const needsFullName = subject.mode !== "new" && validationNeedsFullName({ listType: subjectFacts?.listType, name: currentName });
   const fullNameText = needsFullName ? normalizedName(joinDoctorName(fullParts)) : "";
   const customerName = (needsFullName && fullNameText) || (subjectFacts?.name ?? cleanName);
-  const specialityOptions = subject.mode === "new" ? knownSpecialities(view) : [];
   const canAskToDrop = Boolean(onAskToDrop && pendingCustomer && movesOf(pendingCustomer).includes("ask_to_drop"));
 
   function clientProblem(): string | null {
@@ -689,6 +689,8 @@ export function ValidateScreen({
         if (nameProblem) return nameProblem;
       } else if (cleanName.length < 3) return "Write the customer's full name.";
       if (!grade) return "Propose a grade (A, B or C).";
+      const kindProblem = customerKindProblem({ customerType, speciality, listType });
+      if (kindProblem) return kindProblem;
     }
     if (needsFullName) {
       const nameProblem = doctorFullNameProblem(fullParts);
@@ -722,6 +724,7 @@ export function ValidateScreen({
         listType,
         name: cleanName,
         ...(doctorName ? { nameParts } : {}),
+        customerType: normalizedName(customerType) || null,
         speciality: normalizedName(speciality) || null,
         proposedGrade: grade,
       },
@@ -860,6 +863,8 @@ export function ValidateScreen({
           if (nameProblem) return nameProblem;
         } else if (cleanName.length < 3) return "Write the customer's full name.";
         if (!grade) return "Propose a grade (A, B or C).";
+        const kindProblem = customerKindProblem({ customerType, speciality, listType });
+        if (kindProblem) return kindProblem;
       }
       if (needsFullName) {
         const nameProblem = doctorFullNameProblem(fullParts);
@@ -1007,6 +1012,8 @@ export function ValidateScreen({
                     label="AM or PM"
                     onChange={(next) => {
                       setListType(next);
+                      // A PM customer is a doctor in his own clinic; the type opens on Clinic and stays his to change.
+                      setCustomerType((previous) => previous || defaultCustomerType(next));
                       setSameName(null);
                       setProblem(null);
                     }}
@@ -1045,23 +1052,21 @@ export function ValidateScreen({
                     />
                   </CrmField>
                 )}
-                <CrmField hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-new-speciality" label="Speciality">
-                  <input
-                    autoComplete="off"
-                    className={crmInputClassName}
-                    disabled={saving}
-                    id="phoenix-crm-new-speciality"
-                    list="phoenix-crm-new-specialities"
-                    maxLength={SPECIALITY_TEXT_MAX}
-                    onChange={(event) => setSpeciality(event.target.value)}
-                    value={speciality}
-                  />
-                  <datalist id="phoenix-crm-new-specialities">
-                    {specialityOptions.map((option) => (
-                      <option key={option} value={option} />
-                    ))}
-                  </datalist>
-                </CrmField>
+                <CrmCustomerKindField
+                  customerType={customerType}
+                  disabled={saving}
+                  idPrefix="phoenix-crm-new"
+                  kind={listType}
+                  onSpecialityChange={(next) => {
+                    setSpeciality(next);
+                    setProblem(null);
+                  }}
+                  onTypeChange={(next) => {
+                    setCustomerType(next);
+                    setProblem(null);
+                  }}
+                  speciality={speciality}
+                />
                 <CustomerPhoneField
                   disabled={saving}
                   id="phoenix-crm-new-phone"
@@ -1254,14 +1259,6 @@ export function ValidateScreen({
       </div>
     </CrmPanel>
   );
-}
-
-/** The specialities already on this territory's lists, offered while typing a new one. */
-function knownSpecialities(view: TerritoryListView): string[] {
-  const names = new Set<string>();
-  for (const entry of view.reference) if (entry.speciality) names.add(entry.speciality);
-  for (const customer of view.customers) if (customer.speciality) names.add(customer.speciality);
-  return [...names].sort((left, right) => left.localeCompare(right));
 }
 
 // ── After a place is saved ──────────────────────────────────────────────────────────────────────
@@ -1765,6 +1762,7 @@ export function EditDetailsScreen({
   // A clinic doctor's name is three boxes, opened on what he already wrote (owner, 2026-11-07).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(() => splitDoctorName(customer?.name));
   const [speciality, setSpeciality] = useState(customer?.speciality ?? "");
+  const [customerType, setCustomerType] = useState(customer?.customerType ?? defaultCustomerType(customer?.listType));
   const [phone, setPhone] = useState(customer?.phone ?? "");
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1781,11 +1779,13 @@ export function EditDetailsScreen({
   const nameTouched = doctorName && joinDoctorName(nameParts) !== joinDoctorName(splitDoctorName(customer.name));
   const cleanName = !doctorName ? normalizedName(name) : nameTouched ? normalizedName(joinDoctorName(nameParts)) : customer.name;
   const cleanSpeciality = normalizedName(speciality);
+  const cleanType = normalizedName(customerType);
   // Compared the way it is saved, so "010 1234 5678" against a saved 01012345678 is no change at all.
   const phoneCheck = parseCustomerPhone(phone);
   const unchanged =
     cleanName === customer.name &&
     cleanSpeciality === (customer.speciality ?? "") &&
+    cleanType === (customer.customerType ?? "") &&
     phoneCheck.ok &&
     phoneCheck.value === (customer.phone ?? null);
 
@@ -1800,8 +1800,13 @@ export function EditDetailsScreen({
       setProblem(phoneCheck.error);
       return;
     }
+    const kindProblem = customerKindProblem({ customerType: cleanType, speciality: cleanSpeciality, listType: customer.listType });
+    if (kindProblem) {
+      setProblem(kindProblem);
+      return;
+    }
     if (unchanged) {
-      setProblem("Change the name, the speciality or the phone first.");
+      setProblem("Change the name, the type, the speciality or the phone first.");
       return;
     }
     setSaving(true);
@@ -1816,6 +1821,7 @@ export function EditDetailsScreen({
           customerId: customer.customerId,
           name: cleanName,
           ...(nameTouched ? { nameParts } : {}),
+          customerType: cleanType || null,
           speciality: cleanSpeciality || null,
           // Always sent from here, so emptying the box clears the phone.
           phone: phoneCheck.value,
@@ -1845,7 +1851,7 @@ export function EditDetailsScreen({
           <Detail label="On the list from">{customer.origin === "reference" ? "The iReports360 list" : "Added in Phoenix"}</Detail>
         </CustomerHeading>
       </CrmBlock>
-      <CrmBlock className="border-t border-slate-100" title="Name, speciality and phone">
+      <CrmBlock className="border-t border-slate-100" title="Name, type, speciality and phone">
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           {doctorName ? (
             <DoctorNameFields
@@ -1875,26 +1881,21 @@ export function EditDetailsScreen({
               />
             </CrmField>
           )}
-          <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-details-speciality" label="Speciality">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
-              disabled={saving}
-              id="phoenix-crm-details-speciality"
-              list="phoenix-crm-details-specialities"
-              maxLength={SPECIALITY_TEXT_MAX}
-              onChange={(event) => {
-                setSpeciality(event.target.value);
-                setProblem(null);
-              }}
-              value={speciality}
-            />
-            <datalist id="phoenix-crm-details-specialities">
-              {knownSpecialities(view).map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </CrmField>
+          <CrmCustomerKindField
+            customerType={customerType}
+            disabled={saving}
+            idPrefix="phoenix-crm-details"
+            kind={customer.listType}
+            onSpecialityChange={(next) => {
+              setSpeciality(next);
+              setProblem(null);
+            }}
+            onTypeChange={(next) => {
+              setCustomerType(next);
+              setProblem(null);
+            }}
+            speciality={speciality}
+          />
           <CustomerPhoneField
             disabled={saving}
             hint="Optional. Empty the box to remove it."

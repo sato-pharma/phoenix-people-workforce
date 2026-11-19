@@ -74,7 +74,7 @@ export function runPhoenixCrmDayPageCopiedVisitsTests() {
   assert.match(details, /const loggedAt = importedAt \? null : /, "a copied row has no logged time");
   assert.match(details, /archiveHistory: visitIsArchiveHistory\(\{/, "and the table's row carries the Archive mark");
   assert.ok(details.includes('lat, customer_validated, imported_from_ireports360_at"'), "the row reads its own copy mark");
-  assert.ok(details.includes('.select("id, seat_id, list_type, name, speciality, grade, status")'), "and its customer's status");
+  assert.ok(details.includes('.select("id, seat_id, list_type, name, speciality, customer_type, grade, status")'), "and its customer's status");
 
   const table = source("src/components/phoenix-crm/manager-plan-actual-table.tsx");
   assert.equal(count(table, "planActualRowHasHalf(row)"), 2, "both places that print a half ask first");

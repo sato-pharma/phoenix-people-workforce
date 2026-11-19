@@ -13,7 +13,7 @@ import { stripComments } from "./support/comment-strip.ts";
 export function runPhoenixCrmValidateStepsTests() {
   const screens = stripComments(readFileSync("src/components/phoenix-crm/list-screens.tsx", "utf8"));
   const start = screens.indexOf("export function ValidateScreen(");
-  const end = screens.indexOf("function knownSpecialities(");
+  const end = screens.indexOf("export function SavedScreen(");
   assert.ok(start > 0 && end > start, "the validate screen is found");
   const validate = screens.slice(start, end);
 

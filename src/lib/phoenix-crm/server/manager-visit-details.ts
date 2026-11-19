@@ -13,6 +13,7 @@ import { countsAsPlannersVisitWithRep, managerSeniorPeople, parseManagerSeniorVi
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { visitIsArchiveHistory } from "@/lib/phoenix-crm/unplanned-rules";
 import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -99,7 +100,7 @@ async function loadCustomers(ids: string[]): Promise<Map<string, CustomerFacts>>
   const out = new Map<string, CustomerFacts>();
   const rows = await readChunks(ids, (part) =>
     fetchAllRowsKeyset<Row>(
-      () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, list_type, name, speciality, grade, status").in("id", part),
+      () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, list_type, name, speciality, customer_type, grade, status").in("id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   );
@@ -109,7 +110,7 @@ async function loadCustomers(ids: string[]): Promise<Map<string, CustomerFacts>>
       listType: textOrNull(row.list_type),
       name: textOrNull(row.name) ?? "Customer",
       seatId: textOrNull(row.seat_id),
-      speciality: textOrNull(row.speciality),
+      speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
       status: textOrNull(row.status),
     });
   }
@@ -162,7 +163,7 @@ async function loadOwnListCustomers(ids: string[]): Promise<Map<string, OwnCusto
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_manager_customers")
-          .select("id, name, speciality, grade, area_name, pin_address, pin_brick_name")
+          .select("id, name, speciality, customer_type, grade, area_name, pin_address, pin_brick_name")
           .in("id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
@@ -173,7 +174,7 @@ async function loadOwnListCustomers(ids: string[]): Promise<Map<string, OwnCusto
         brickName: textOrNull(row.pin_brick_name),
         grade: textOrNull(row.grade),
         name: textOrNull(row.name) ?? "Customer",
-        speciality: textOrNull(row.speciality),
+        speciality: customerKindText(textOrNull(row.customer_type), textOrNull(row.speciality)),
       });
     }
   }

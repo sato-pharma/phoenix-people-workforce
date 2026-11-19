@@ -41,6 +41,7 @@ import {
 import { LINE_TWIN_MOVE_REASON, twinNameWords } from "@/lib/phoenix-crm/line-twins";
 import { parseSharedPlaceKind, sharedPlaceKindLabel } from "@/lib/phoenix-crm/shared-place-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
+import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { canDecideValidationReviews, placeChecksSeatScope, readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
@@ -156,7 +157,7 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
 
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
   const [customers, reviews, names] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
+    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality, customer_type", "id", customerIds),
     selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id, status", "customer_id", customerIds),
     loadPeopleNames([...places.map((row) => text(row.created_by_hr_id)), ...venues.map((row) => text(row.created_by_hr_id))]),
   ]);
@@ -182,9 +183,9 @@ export async function loadPlaceMatchBoard(viewer: PhoenixCrmViewer): Promise<Pla
       line: seat?.lineName ?? null,
       region: seat?.regionName ?? null,
       title: customerName,
-      subtitle: [text(customer.list_type), text(customer.speciality)].filter(Boolean).join(" · ") || null,
+      subtitle: [text(customer.list_type), customerKindText(text(customer.customer_type), text(customer.speciality))].filter(Boolean).join(" · ") || null,
       listType: String(customer.list_type ?? ""),
-      speciality: text(customer.speciality),
+      speciality: customerKindText(text(customer.customer_type), text(customer.speciality)),
       nameKey: normalizeContactName(customerName),
       point: anchor.point,
       accuracyMeters: anchor.accuracyMeters,
