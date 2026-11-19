@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1c636daf-110b-4389-9c03-0494427e6107
-  modified: 2026-10-03T15:20:05.835Z
+  modified: 2026-11-19T05:32:34.272Z
 ---
 
 `googleCheckApplies(listType)` in `src/lib/phoenix-crm/google-place-rules.ts` returns true for **`AM`
@@ -26,10 +26,11 @@ decides reviews that already exist.
    'B-10', 'decision', 'reject', 'note', …))` — it retires the place, sends the customer back to
    `pending` ("To validate"), and writes `validation_review_rejected` + `place_retired` +
    `customer_pending`.
-3. The RPC does **not** restamp the visits — the app does that in TypeScript
-   (`restampVisitLocationsQuietly`). Call `phoenix_crm_restamp_visit_locations` yourself with
-   `location_flag = 'no_place'`, `place_id` null, `distance_meters` null for each visit to that
-   customer, or every one keeps a distance measured against a retired place.
+3. **Do NOT restamp the visits.** A send-back keeps every visit's earlier distance (owner, 19 Nov
+   2026: "Keep earlier distances"), and the app's own reject paths no longer re-measure either
+   (`.claude/rules/phoenix-crm-place-checks.md`, the first rule). A re-measure against the places the
+   customer has left turned a doctor's visits at the refused clinic "far" from his second one. Only
+   taking the rejection back measures them again.
 
 **The visit survives**: it stays in `phoenix_crm_countable_visits` after the customer goes back to
 pending (verified — his 03 Oct visit on هبه حبيب still counts).
