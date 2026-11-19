@@ -236,7 +236,8 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
 
   // The save refuses a reserved id before its first read and before it mints a report row.
   const expenses = readFileSync("src/lib/outstation/expenses.ts", "utf8");
-  const saveBody = expenses.slice(expenses.indexOf("export async function savePayrollExpenseApprovals"));
+  // The save's body is payrollExpenseSaveCore since REC-038 (19 Nov 2026); savePayrollExpenseApprovals writes through it.
+  const saveBody = expenses.slice(expenses.indexOf("async function payrollExpenseSaveCore("));
   const guard = saveBody.indexOf("assertNoWorkflowTripIds(input.records)");
   assert.ok(guard > -1, "savePayrollExpenseApprovals refuses a reserved trip id itself");
   assert.ok(guard < saveBody.indexOf("readExistingExpenseRows("), "before its first database read");

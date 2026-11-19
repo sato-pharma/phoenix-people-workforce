@@ -446,7 +446,8 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
   const approve = bodyOf(service, "export async function approveOutstationRequestForPayroll(");
   const noopAt = approve.indexOf("isUnchangedOutstationReapproval(");
   assert.ok(noopAt > approve.indexOf("assertOutstationClaimUnchanged("), "the no-op still answers to the revision the reviewer saw");
-  for (const write of [".update(", "await pushAcceptedOutstationExpenseToPayroll(", "await writeRequiredAuditLog("]) {
+  // One database step since REC-038 (19 Nov 2026): the payroll save is planned, then one call writes it all.
+  for (const write of ["await planPayrollExpenseSave(", 'rpc("phx_accept_outstation_claim_for_payroll"']) {
     assert.ok(noopAt > 0 && noopAt < approve.indexOf(write), `HEADLINE: the unchanged re-approve returns before ${write}`);
   }
   assert.match(approve.slice(noopAt, noopAt + 600), /alreadyApproved: true/, "and says it was already approved");
@@ -483,7 +484,9 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
     assert.equal([...table.values()].reduce((sum, row) => sum + row.total, 0), firstPush.total, "and one amount");
   }
   const expenses = stripComments(readFileSync("src/lib/outstation/expenses.ts", "utf8"));
-  const save = bodyOf(expenses, "export async function savePayrollExpenseApprovals(");
+  // The save's body is payrollExpenseSaveCore since REC-038 (19 Nov 2026): savePayrollExpenseApprovals writes through it,
+  // and planPayrollExpenseSave runs it to the same rows without writing them.
+  const save = bodyOf(expenses, "async function payrollExpenseSaveCore(");
   assert.match(
     save,
     /\.from\("outstation_expenses"\)\s*\.upsert\(payload\.slice\(start, start \+ UPSERT_CHUNK_SIZE\), \{ onConflict: "trip_id" \}\)/,
@@ -493,6 +496,11 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
   const pushFn = bodyOf(service, "async function pushAcceptedOutstationExpenseToPayroll(");
   assert.match(pushFn, /if \(isOutstationExpenseInPayroll\(linkedPayroll\)\) \{\s*return 0;/, "a trip already paid is not pushed at all");
   assert.match(pushFn, /reportId: linkedPayroll\?\.reportId \?\? null/, "a re-push reuses the trip's report");
+  // The approval writes the planned row through its one database call, which upserts on trip_id too.
+  assert.match(approve, /const linkedReportId = linkedPayroll\?\.reportId \?\? null;/, "the approval reuses the trip's report");
+  const acceptSql = readFileSync("supabase/migrations/20261119132423_outstation_accept_claim_for_payroll_atomically.sql", "utf8").replace(/--[^\n]*/g, "");
+  assert.match(acceptSql, /insert into public\.outstation_expenses \([\s\S]*?on conflict \(trip_id\) do update set/, "HEADLINE: the approval's database step upserts the trip's row on trip_id");
+  assert.equal((acceptSql.match(/insert into public\.outstation_expenses/g) ?? []).length, 1, "and has no other insert of a trip row");
   const baseline = readFileSync("supabase/migrations/20260711135352_phoenix_production_schema_baseline.sql", "utf8");
   assert.match(baseline, /ADD CONSTRAINT payroll_expenses_trip_id_key UNIQUE \(trip_id\);/, "HEADLINE: the table holds trip_id unique");
   const migrations = execFileSync("git", ["ls-files", "supabase/migrations"], { encoding: "utf8" }).split("\n").filter(Boolean);

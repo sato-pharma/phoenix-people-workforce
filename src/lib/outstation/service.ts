@@ -17,6 +17,7 @@ import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { randomUUID } from "node:crypto";
 import { cache } from "react";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { auditLogRow } from "@/lib/admin/audit-outbox";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import {
@@ -210,6 +211,8 @@ import {
   canViewEmployeeExpenseScope,
   EXPENSE_DECISION_SELECT,
   isPayrollExpensesSchemaMissing,
+  finishPayrollExpenseSave,
+  planPayrollExpenseSave,
   resyncPayrollExpenseStepForRemovedTrips,
   savePayrollExpenseApprovals,
 } from "@/lib/outstation/expenses";
@@ -3751,53 +3754,89 @@ export async function approveOutstationRequestForPayroll(
   }
 
   const now = new Date().toISOString();
-  const { data, error } = await getSupabaseAdmin()
-    .from("outstation_expense_requests")
-    .update({
-      // His words, with the system's "Journey check:" group kept at the end (decision-note.ts).
-      approval_reason: typedComment
-        ? composeDecisionNote(existing.approvalReason, typedComment)
-        : existing.approvalReason,
-      calculation_status: acceptedStatus,
-      status: acceptedStatus,
-      updated_at: now,
-    })
-    .eq("id", requestId)
-    .eq("updated_at", checkedUpdatedAt)
-    .select("*")
-    .maybeSingle();
+  // His words, with the system's "Journey check:" group kept at the end (decision-note.ts).
+  const approvalReason = typedComment ? composeDecisionNote(existing.approvalReason, typedComment) : existing.approvalReason;
+  // The claim as it will read once accepted. The payroll row is worked out from it exactly as it always was from
+  // the stored claim after the status write.
+  const accepted: OutstationExpenseRequest = { ...existing, approvalReason, status: acceptedStatus, updatedAt: now };
+  // The two-photo + workload gate (owner rule, 2026-08-04): acceptance and PAYMENT are separate. A held claim is
+  // still accepted and recorded; what the gate withholds is the push into payroll, until both photos and the
+  // workload exist (releaseOutstationRequestToPayrollIfReady releases it). It reads fields the acceptance does not
+  // touch, so the gate worked out above from the stored claim is the gate of the accepted one.
+  const gate = existingGate;
 
-  if (error) throw new Error(error.message);
-  if (!data) {
-    // Not found, or the row moved after it was checked: either way it is no longer the claim he saw.
-    throw new OutstationClaimChangedError("changed");
-  }
-
-  const request = mapOutstationRequestRow(data as Record<string, unknown>);
-
-  // ── The two-photo + workload gate (owner rule, 2026-08-04) ──────────────────
-  // Acceptance and PAYMENT are separated here. The request is still accepted and recorded
-  // above — what the gate withholds is the push into payroll, until both photos and the trip
-  // workload exist. Throwing instead would leave the employee unable to submit at all, which
-  // is not what was asked for.
-  //
-  // A request that pre-dates the rule reads 'grandfathered' and passes untouched. That is also
-  // what a row read BEFORE the migration applies returns (see mapOutstationRequestRow), so this
-  // code deploying ahead of the migration cannot strand a single payment.
-  //
-  // Requests held here are released by releaseOutstationRequestToPayrollIfReady, which runs as
-  // soon as the missing evidence lands.
-  const gate = resolveOutstationGateState({
-    employeeRole: request.employeeRole,
-    evidenceGateStatus: request.evidenceGateStatus,
-    hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
-    hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
-    workloadGateStatus: request.workloadGateStatus,
+  // ONE DATABASE STEP (REC-038 close-out, 19 Nov 2026; owner: "fix the outstation approval so it is one step").
+  // The payroll report and row are worked out and judged by the payroll save's own code, written by nobody
+  // (planPayrollExpenseSave); then phx_accept_outstation_claim_for_payroll writes the claim's acceptance (pinned to
+  // the version the reviewer saw), the report, the row and both records together, or none of them. They were
+  // separate calls: a failed push left the claim accepted with an empty report row, and a failed record left the
+  // money queued while the approver was told the approval had failed.
+  const linkedReportId = linkedPayroll?.reportId ?? null;
+  const plan = gate.isPayrollEligible
+    ? await planPayrollExpenseSave(
+        {
+          fileName: workflowExpenseReportFileName(existing.id),
+          records: [mapOutstationRequestToPayrollExpenseRecord(accepted, { reportId: linkedReportId })],
+          reportId: linkedReportId,
+        },
+        access,
+        { allowWorkflowTripIds: true },
+      )
+    : null;
+  const actorLoginId = access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
+  const audits = [
+    ...(plan
+      ? [
+          auditLogRow({
+            actorLoginId,
+            entityId: String(existing.id),
+            entityType: "outstation_request",
+            newValues: { expenseTripId: outstationPayrollTripId(existing.id), payrollExpenseRows: plan.rows.length, status: acceptedStatus },
+            summary: `Outstation request ${existing.id} accepted; expense pushed to payroll.`,
+          }),
+        ]
+      : []),
+    auditLogRow({
+      actorLoginId,
+      entityId: String(existing.id),
+      entityType: "outstation_request",
+      newValues: { gateBlocker: gate.blocker, inPayroll: gate.isPayrollEligible, status: acceptedStatus },
+      oldValues: { status: existing.status },
+      summary: gate.isPayrollEligible
+        ? `Outstation request ${existing.id} accepted (${acceptedStatus}) and added to payroll.`
+        : `Outstation request ${existing.id} accepted (${acceptedStatus}) but HELD out of payroll: ${gate.message}`,
+    }),
+  ];
+  const { data, error } = await getSupabaseAdmin().rpc("phx_accept_outstation_claim_for_payroll", {
+    p_approval_reason: approvalReason,
+    p_audits: audits,
+    p_expected_updated_at: checkedUpdatedAt,
+    p_expense_rows: plan?.rows ?? [],
+    p_report: plan?.report ?? null,
+    p_report_id: plan?.reportId ?? null,
+    p_request_id: requestId,
+    p_status: acceptedStatus,
+    p_updated_at: now,
   });
-
-  const payrollExpenseRows = gate.isPayrollEligible
-    ? await pushAcceptedOutstationExpenseToPayroll(request, access)
-    : [];
+  if (error) {
+    // The claim moved after it was checked: it is no longer the claim he saw, and nothing was written.
+    if (String(error.message ?? "").includes("outstation_claim_changed")) throw new OutstationClaimChangedError("changed");
+    logError("Outstation: the approval's one database step failed, so nothing was written", {
+      labels: { event: "outstation_accept_claim_failed", requestId: String(requestId) },
+      error,
+    });
+    throw new Error(
+      "The claim could not be approved, so nothing was changed: it still reads as it did and nothing reached payroll. " +
+        `Try again. (database error ${String(error.code ?? "unknown")})`,
+    );
+  }
+  const landed = (data ?? {}) as { request?: Record<string, unknown> | null; expenses?: Array<Record<string, unknown>> | null };
+  if (!landed.request) throw new Error("The claim was approved but could not be read back. Reload the page.");
+  const request = mapOutstationRequestRow(landed.request);
+  const written = Array.isArray(landed.expenses) ? landed.expenses : [];
+  // After the commit: the moved decision reaches any open payroll run (never throws; it has its own retry queue).
+  if (plan) await finishPayrollExpenseSave(plan.before, written);
+  const payrollExpenseRows = written.length;
 
   if (!gate.isPayrollEligible) {
     logError("Outstation request accepted but held out of payroll by the evidence gate", {
@@ -3808,17 +3847,6 @@ export async function approveOutstationRequestForPayroll(
       },
     });
   }
-
-  await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
-    entityId: String(request.id),
-    entityType: "outstation_request",
-    newValues: { gateBlocker: gate.blocker, inPayroll: gate.isPayrollEligible, status: request.status },
-    oldValues: { status: existing.status },
-    summary: gate.isPayrollEligible
-      ? `Outstation request ${request.id} accepted (${acceptedStatus}) and added to payroll.`
-      : `Outstation request ${request.id} accepted (${acceptedStatus}) but HELD out of payroll: ${gate.message}`,
-  });
 
   // Narrowed 2026-08-08, when submission stopped auto-approving. Every ordinary claim is now
   // alerted the moment it is submitted, so firing here too would mail the employee, his manager

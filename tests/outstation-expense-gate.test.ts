@@ -191,10 +191,17 @@ export function runOutstationExpenseGateTests() {
     "utf8",
   );
 
+  // Since REC-038 (19 Nov 2026) the approval is one database step: the payroll rows are planned only when the gate
+  // is clear, and the one call writes exactly the planned rows — none when nothing was planned.
   assert.match(
     service,
-    /const payrollExpenseRows = gate\.isPayrollEligible\s*\?\s*await pushAcceptedOutstationExpenseToPayroll\([\s\S]*?:\s*\[\];/,
+    /const plan = gate\.isPayrollEligible\s*\?\s*await planPayrollExpenseSave\([\s\S]*?:\s*null;/,
     "the payroll push must be CONDITIONAL on the gate — an unconditional push is the whole bug this feature exists to prevent",
+  );
+  assert.match(
+    service,
+    /p_expense_rows: plan\?\.rows \?\? \[\]/,
+    "and the one database call writes only the rows the gate let through — none for a held claim",
   );
   assert.match(
     service,
