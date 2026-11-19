@@ -2738,14 +2738,22 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
     if (ageDays < 5) continue;
     for (const hrId of hrHrIds) {
       try {
+        // Sent under `resignations`, the module every other resignation notice uses, so the
+        // `resignations.*` policy row decides its channels (in-app, email, Telegram, push) like
+        // theirs (owner, 19 Nov 2026: "fix the resignation reminder's policy"). It used to go
+        // under `resignation` with its own `["email", "push"]`, so that row never reached it. The
+        // people stay the reminder's own recipient list above: a notice that names its recipient
+        // is sent to that person alone. The approval's own module key stays `resignation`.
+        // `subjectHrId` names the leaver: under `resignations` an email must say which employee it
+        // is about (employeeSubjectWorkflowModules in system.ts), or it is refused and never sent.
         await raiseApproval({ module: "resignation", step: "reminder" }, { via: "notice", notice: {
-          channels: ["email", "push"],
           eventType: "resignation_sla_reminder",
           message: `${String(row.employee_name)}'s resignation (effective: ${String(row.effective_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"} with no final decision.`,
           metadata: { idempotencyKey: `resignation:${String(row.id)}:sla:${hrId}:${today}` },
-          module: "resignation",
+          module: "resignations",
           priority: "high",
           recipientHrId: hrId,
+          subjectHrId: row.employee_hr_id ? String(row.employee_hr_id) : null,
           title: "Resignation pending decision",
           actionUrl: `/admin/approvals-hub?module=resignation&id=${String(row.id)}`,
           email: {
