@@ -2,8 +2,19 @@ import assert from "node:assert/strict";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import { ApiError } from "../src/lib/http/api-errors.ts";
+import { POST as decisionRoutePost } from "../app/api/vacations/requests/[id]/decision/route.ts";
 import { decideVacationRequest } from "../src/lib/vacation/service.ts";
-import { registryModuleRow, rpcCalls, withPostgrestStandIn, writesTo, type Row, type StandIn } from "./support/postgrest-stand-in.ts";
+import {
+  DEV_AUTH_ENV,
+  RATE_LIMIT_ALLOWS,
+  devAuthRequest,
+  registryModuleRow,
+  rpcCalls,
+  withPostgrestStandIn,
+  writesTo,
+  type Row,
+  type StandIn,
+} from "./support/postgrest-stand-in.ts";
 
 // REC-078 (phase 2): the leave approval decision, run — not read.
 //
@@ -19,6 +30,12 @@ import { registryModuleRow, rpcCalls, withPostgrestStandIn, writesTo, type Row, 
 //   3. A lost race answers 409, never a 500 and never "saved": the request moved since the approver
 //      read it (40001), the approver's step was already decided (55000), or the function found no row.
 //      Nothing else is written after a refusal — no event, no audit row, no notice.
+//   4. The stalled-approver override decides the STALLED manager step, in that same single call, and
+//      stores the System Administrator who answered (canonical HR id) on the step — never as if the
+//      assigned approver had answered — with the transfer sentence and no approver's name.
+//   5. Sick leave's final HR approval is final: its finality reads the step as it will be once the
+//      call commits, so the request moves to approved with its balance in that call.
+//   6. The decision ROUTE answers a lost race 409 with the conflict's own code, and a decision 200.
 
 const REQUEST_ID = "11111111-1111-4111-8111-111111111111";
 const MANAGER_STEP = "22222222-2222-4222-8222-222222222222";
@@ -275,5 +292,102 @@ export async function runLeaveDecisionBehaviourTests(): Promise<void> {
         assert.equal(writesTo(seen, "v2_vacation_request_events").length, 0);
       },
     );
+  }
+
+  // ── 6. The stalled-approver override: the stalled step, in one call, the answerer recorded ────────
+  {
+    // The manager step has waited since 10 Nov, past the two-day stall, so the approval transfers.
+    const standIn: StandIn = { rpc: { phx_apply_vacation_step_decision: (args, self) => applyStepDecision(self, args) }, tables: tables() };
+    const owner = createAccessContext({ hrId: "B-10", loginId: "b-10", role: "Super Admin", source: "session" });
+    await withPostgrestStandIn(standIn, async (seen) => {
+      await assert.rejects(
+        decideVacationRequest(MANAGER, { decision: "approve", override: true, requestId: REQUEST_ID }),
+        /^Error: Forbidden: only the System Administrator can respond on an unanswered request\.$/,
+        "only the System Administrator can answer in a stalled approver's place",
+      );
+      await assert.rejects(
+        decideVacationRequest(owner, { decision: "return", override: true, requestId: REQUEST_ID }),
+        /a transferred approval can approve or reject, not return/,
+        "a transferred approval cannot send the request back",
+      );
+      assert.equal(rpcCalls(seen, "phx_apply_vacation_step_decision").length, 0, "neither refusal wrote anything");
+
+      await decideVacationRequest(owner, { decision: "approve", override: true, requestId: REQUEST_ID });
+      const calls = rpcCalls(seen, "phx_apply_vacation_step_decision");
+      assert.equal(calls.length, 1, "the override decides the step and moves the request in one call too");
+      const args = calls[0].body as Record<string, unknown>;
+      assert.equal(args.p_step_id, MANAGER_STEP, "the STALLED manager step, never the System Administrator's own HR step");
+      assert.equal(
+        args.p_overridden_by_hr_id,
+        "B-10",
+        "HEADLINE: the step records who answered in the stalled approver's place, by canonical HR id",
+      );
+      assert.match(String(args.p_decision_comment), /transferred to the System Administrator/, "the comment says the approval transferred");
+      assert.doesNotMatch(String(args.p_decision_comment), /DM-7|Stand-in Manager/, "and never names the approver who did not reply");
+      assert.equal(writesTo(seen, "v2_vacation_approval_steps").length, 0, "no step row written on its own");
+      assert.ok(
+        writesTo(seen, "v2_vacation_request_events").some((write) => (Array.isArray(write.body) ? write.body : [write.body]).some((row) => (row as Row)?.event_type === "approval_admin_override")),
+        "the override leaves its own event, findable by type",
+      );
+    });
+    assert.equal(standIn.tables.v2_vacation_approval_steps.find((row) => row.id === MANAGER_STEP)?.status, "approved");
+  }
+
+  // ── 7. Sick leave's final HR approval is final ─────────────────────────────────────────────────────
+  {
+    const sick = tables(requestRow({ manager_decision: "approved", vacation_type: "sick" }));
+    sick.v2_vacation_approval_steps[0].status = "approved";
+    // Sick leave needs its evidence accepted, by somebody other than the acknowledging HR account.
+    sick.v2_vacation_evidence_reviews = [
+      { created_at: "2026-11-11T08:00:00+00:00", evidence_type: "sick", id: "review-1", request_id: REQUEST_ID, review_note: null, reviewed_at: "2026-11-11T08:00:00+00:00", reviewed_by_hr_id: "HR-3", status: "accepted", updated_at: "2026-11-11T08:00:00+00:00" },
+    ];
+    const standIn: StandIn = { rpc: { phx_apply_vacation_step_decision: (args, self) => applyStepDecision(self, args) }, tables: sick };
+    const owner = createAccessContext({ hrId: "B-10", loginId: "b-10", role: "Super Admin", source: "session" });
+    await withPostgrestStandIn(standIn, async (seen) => {
+      const decided = await decideVacationRequest(owner, { decision: "approve", requestId: REQUEST_ID });
+      const [call] = rpcCalls(seen, "phx_apply_vacation_step_decision");
+      const args = call.body as Record<string, unknown>;
+      assert.equal(args.p_step_id, HR_STEP, "HR's own step is the one decided");
+      const patch = args.p_request_patch as Row;
+      assert.equal(
+        patch.status,
+        "approved",
+        "HEADLINE: HR's approval of a Sick request whose manager already approved is FINAL — finality reads the step as it will be once the call commits",
+      );
+      assert.ok("payment_status" in patch, "a final approval carries the balance in the same call");
+      assert.equal(decided.status, "approved");
+    });
+    assert.equal(standIn.tables.v2_vacation_approval_steps.find((row) => row.id === SECOND_HR_STEP)?.status, "approved", "the other HR account's step is closed with it");
+  }
+
+  // ── 8. The decision route: a lost race is 409 with its own code, a decision is 200 ─────────────────
+  {
+    const route = (id: string) => ({ params: Promise.resolve({ id }) });
+    const raced: StandIn = {
+      rpc: { ...RATE_LIMIT_ALLOWS, phx_apply_vacation_step_decision: refusal("40001", "Vacation request was updated by another user. Refresh and try again.") },
+      tables: tables(),
+    };
+    await withPostgrestStandIn(raced, async (seen) => {
+      const response = await decisionRoutePost(
+        devAuthRequest("POST", `/api/vacations/requests/${REQUEST_ID}/decision`, { hrId: "DM-7", role: "District Manager" }, { decision: "approve" }),
+        route(REQUEST_ID),
+      );
+      const body = (await response.json()) as Record<string, unknown>;
+      assert.equal(response.status, 409, `HEADLINE: the route answers a lost race 409, never a 500 — got ${response.status} ${JSON.stringify(body)}`);
+      assert.equal(body.error, "vacation_decision_conflict", "with the conflict's own code, so the screen reloads");
+      assert.equal(body.success, false);
+      assert.equal(writesTo(seen, "v2_vacation_request_events").length, 0, "and nothing was written after the refusal");
+    }, { env: DEV_AUTH_ENV });
+
+    const decided: StandIn = { rpc: { ...RATE_LIMIT_ALLOWS, phx_apply_vacation_step_decision: (args, self) => applyStepDecision(self, args) }, tables: tables() };
+    await withPostgrestStandIn(decided, async () => {
+      const response = await decisionRoutePost(
+        devAuthRequest("POST", `/api/vacations/requests/${REQUEST_ID}/decision`, { hrId: "DM-7", role: "District Manager" }, { decision: "approve" }),
+        route(REQUEST_ID),
+      );
+      const body = (await response.json()) as { success?: boolean; request?: { status?: string } };
+      assert.equal(response.status, 200, `the same decision with no race is saved — got ${response.status} ${JSON.stringify(body)}`);
+      assert.equal(body.request?.status, "pending_hr");
+    }, { env: DEV_AUTH_ENV });
   }
 }

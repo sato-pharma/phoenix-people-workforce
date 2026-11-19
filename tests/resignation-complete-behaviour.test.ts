@@ -2,8 +2,20 @@ import assert from "node:assert/strict";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import { ApiError } from "../src/lib/http/api-errors.ts";
+import { POST as workflowRoutePost } from "../app/api/resignations/[id]/workflow/route.ts";
 import { runResignationWorkflow } from "../src/lib/resignations/service.ts";
-import { registryModuleRow, rpcCalls, withPostgrestStandIn, writesTo, writtenRow, type Row, type Seen, type StandIn } from "./support/postgrest-stand-in.ts";
+import {
+  DEV_AUTH_ENV,
+  devAuthRequest,
+  registryModuleRow,
+  rpcCalls,
+  withPostgrestStandIn,
+  writesTo,
+  writtenRow,
+  type Row,
+  type Seen,
+  type StandIn,
+} from "./support/postgrest-stand-in.ts";
 
 // REC-078 (phase 2): completing a resignation, run end to end — not read.
 //
@@ -19,6 +31,8 @@ import { registryModuleRow, rpcCalls, withPostgrestStandIn, writesTo, writtenRow
 //      Complete again once the fault is gone finishes it — every step is a re-assertion.
 //   3. A resignation whose employee row matches nobody is refused at step 1, before anyone's login,
 //      seat or resignation is touched.
+//   4. The Resignations screen's ROUTE answers a failed step with the step's own 409 and sentence —
+//      never a 500 — and a clean Complete with 200.
 
 const RESIGNATION_ID = "55555555-5555-4555-8555-555555555555";
 const READ_AT = "2026-11-10T08:00:00.000000+00:00";
@@ -162,5 +176,29 @@ export async function runResignationCompleteBehaviourTests(): Promise<void> {
       assert.equal(writesTo(seen, "employee_resignations").length, 0, "and the resignation is not touched");
     });
     assert.equal(standIn.tables.employee_resignations[0].status, "approved");
+  }
+
+  // ── 4. The route: a failed step is its own 409, never a 500; a clean Complete is 200 ──────────────
+  {
+    const route = { params: Promise.resolve({ id: RESIGNATION_ID }) };
+    const call = () =>
+      workflowRoutePost(devAuthRequest("POST", `/api/resignations/${RESIGNATION_ID}/workflow`, { hrId: "B-10", role: "Super Admin" }, { action: "complete" }), route);
+    const failing: StandIn = { rpc: { phx_vacate_au_seats_for_employee: seatFault }, tables: world() };
+    await withPostgrestStandIn(failing, async () => {
+      const response = await call();
+      const body = (await response.json()) as Record<string, unknown>;
+      assert.equal(response.status, 409, `HEADLINE (#356): the route answers a failed step 409, never a 500 — got ${response.status} ${JSON.stringify(body)}`);
+      assert.equal(body.code, "resignation_complete_step_failed");
+      assert.match(String(body.error), /step 4 of 4, "Free the organogram seat", failed\. It is still Approved/, "with the sentence written for HR");
+    }, { env: DEV_AUTH_ENV });
+    assert.equal(failing.tables.employee_resignations[0].status, "approved");
+
+    const clean: StandIn = { rpc: { phx_vacate_au_seats_for_employee: vacated }, tables: world() };
+    await withPostgrestStandIn(clean, async () => {
+      const response = await call();
+      const body = (await response.json()) as { success?: boolean; data?: { status?: string } };
+      assert.equal(response.status, 200, `a clean Complete is saved — got ${response.status} ${JSON.stringify(body)}`);
+      assert.equal(body.data?.status, "completed");
+    }, { env: DEV_AUTH_ENV });
   }
 }

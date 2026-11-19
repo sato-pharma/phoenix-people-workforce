@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { ApiError } from "../src/lib/http/api-errors.ts";
 import {
@@ -480,12 +479,7 @@ export async function runResignationCompleteOrderTests() {
   // the four step helpers being called inline after it. tests/resignation-complete-behaviour.test.ts
   // now RUNS runResignationWorkflow(…, "complete") against the in-memory PostgREST and reads the
   // order off the requests it makes: every employee-side write lands before the one "completed"
-  // stamp, a failed step is a 409 that leaves the row Approved, and pressing again finishes it. The
-  // route's answer below is still read here — that test calls the service, not the route.
-  const route = readFileSync("app/api/resignations/[id]/workflow/route.ts", "utf8");
-  assert.match(
-    route,
-    /if \(error instanceof ApiError\) \{\s*return NextResponse\.json\(\{ success: false, error: error\.message, code: error\.code \}, \{ status: error\.status \}\);/,
-    "the workflow route answers a step failure with its own status and sentence, never a 500",
-  );
+  // stamp, a failed step is a 409 that leaves the row Approved, and pressing again finishes it.
+  // The route's answer pin went the same way on the second pass: that test's §4 calls the real
+  // POST handler and reads a failed step's own 409 and sentence, and a clean Complete's 200.
 }
