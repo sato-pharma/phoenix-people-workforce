@@ -79,6 +79,13 @@ nothing ("The claim could not be approved, so nothing was changed").
 The other two pushes — the release of a held claim once its evidence lands, and the system's own acceptance — still use
 `pushAcceptedOutstationExpenseToPayroll`; neither moves a claim the reviewer is looking at.
 
+`tests/outstation-reapprove-rollback-and-race.test.ts` models the function statement by statement from its migration and
+runs the real approval against it: a payroll row or a record failing inside the call (every table equals before, the app
+writes nothing outside the call, the refusal says nothing changed, and approving again from the same screen pays once);
+two approvals at once (one applies, the other gets "the claim changed", one row, one report, one record each); a change
+landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); and a held
+claim (accepted with no payroll row). Its breaks are in §7.
+
 ## 3. F-PAY-014 — publish works out its figures under its claim
 
 Publish assembled every row, ran its gates, built the held record and the bank coverage, and only then claimed the
@@ -166,3 +173,17 @@ watched to fire, then restored green. The payroll-run suite's eleven breaks, for
 | the step read takes the watermark after the figures | the watermark is read BEFORE the figures the screen will show |
 | Reopen Part 1 skips the bank-file check | a Part 1 download refuses Reopen Part 1 without a reason |
 | Reopen Part 2 releases its trips outside the call | after a failure at write 1: still ready, trips still reserved, ledger untouched |
+
+The outstation approval's breaks (§2a), each watched to fire and restored green:
+
+| Break | Assertion that fired |
+| --- | --- |
+| the claim's status is written before the call (the old shape) | HEADLINE: the app wrote nothing outside the one call |
+| the plan writes the report row | HEADLINE: the app wrote nothing outside the one call |
+| the records are left out of the call | the call carried both records |
+| the gate is ignored, so a held claim is planned into payroll | held: HEADLINE: the call carries no payroll row and no report |
+| a moved claim is not reported as changed | the losing approval is refused as "the claim changed" |
+| the call carries a version read again just before it | the call carried the version that was CHECKED |
+| model: the claim's update ignores `updated_at` | HEADLINE: exactly one of two simultaneous approvals applies |
+| model: a raise keeps what ran | HEADLINE: every table afterwards equals the tables before |
+| the version check is skipped | (in `outstation-stale-approval.test.ts`) approve must check the version and then write |
