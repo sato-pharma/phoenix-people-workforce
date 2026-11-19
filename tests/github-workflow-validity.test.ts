@@ -204,6 +204,7 @@ export const SCHEDULED_RUNS_PER_DAY: Record<string, number> = {
   "deploy-drift-check.yml": 48,
   "migration-drift-check.yml": 1,
   "origin-certificate-check.yml": 1,
+  "schema-restore-check.yml": 1,
   "secret-drift-check.yml": 1,
   "security-scan.yml": 1,
   "staging-hr-drift-check.yml": 1,
