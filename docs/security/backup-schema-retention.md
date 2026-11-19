@@ -355,10 +355,29 @@ here, and nothing is dropped without a verified export.
 | `phx_backup_20261012` | 2 · 29 | duplicate Phoenix CRM venues removed that day (10 on one brick, 19 across 8 rep seats); none exists now |
 | `au_backup_20261012` | 2 · 104 | 51 resigned reps' seat rows and the vacant rows after them before `20261012142941` moved a resignation's seat end to the day after the last working day (all changed since, which is the fix), and one CNS rep's seat rows before the owner set that seat's end to 9 Aug 2026. Holds personal fields |
 
-The next snapshots to reach 90 days with no decision are the 13 October group, on 11 Jan 2027: the
-schemas `address_brick_backup_20261013`, `sos_backup_20261013`, `store_split_backup_20261013`,
-`qusiya_backup_20261013` and `phoenix_crm_backup_20261013`, and the table
-`public.address_brick_moves_20261013`.
+**The 13 October group, decided on 19 Nov 2026.** All four questions "export, then drop", and all six
+were exported that day (24 files, 12,005 rows, every checksum matching its manifest). They reach 90
+days on 11 Jan 2027. `address_brick_backup_20261013` and `store_split_backup_20261013` were moved here
+from `public` by `20261023023133`; `public.address_brick_moves_20261013` never moved, so its drop is
+the one `drop table` without `cascade` described below, and dropping it also takes it out of the
+schema baseline and the advisor count. Nothing depends on any of the six or reads them: no foreign
+key, view, trigger, policy, function or cron job names them; no role can use the five schemas, and no
+browser role has a grant on the table. Staging has none. July to September are published on all
+three lines.
+
+| Snapshot | Tables · rows | What it holds |
+| --- | --- | --- |
+| `address_brick_backup_20261013` | 2 · 6,921 | the before-picture of the 13 Oct address-first brick move: 1,462 customer mappings before the importer began reading the customer's address first (all on their new brick now) and 5,459 January to September invoice rows before they were re-stamped (all re-stamped since). The customer map keeps no history, so the export is the lasting record of where those customers sat |
+| `public.address_brick_moves_20261013` | 1 · 1,462 | the move log of the same move: each mapping's old brick, new brick and how its address was matched. All 1,462 sit on the brick it names |
+| `sos_backup_20261013` | 16 · 2,005 | the customer-map fixes that day in Tanta, Qusiya, Sohag city and a few single customers: 108 mappings before the fixes (105 differ now), 378 invoice rows before they were re-stamped (all re-stamped since) and the two Qusiya customer-code lists the fix worked from |
+| `qusiya_backup_20261013` | 3 · 20 | the Qusiya before-picture: 4 mappings (back where this copy holds them), 9 invoice rows (8 stamped elsewhere now) and 7 summary rows |
+| `store_split_backup_20261013` | 1 · 1,492 | the July to September store-split net for all three lines, taken early on 13 Oct before the rebuild that followed the Qena move; 443 rows differ now |
+| `phoenix_crm_backup_20261013` | 1 · 105 | one rep seat's Phoenix CRM customers before a clean-up that day; all 105 still exist on that seat and are now marked dropped. Holds personal fields |
+
+The next snapshot to reach 90 days with no decision is `ats_backup_20261014_offerhirefix`, on 12 Jan
+2027. After it come the three 15 October tables in `au` (`au.bak_20261015_aif_kfs2_d1_line_area_map`,
+`au.bak_20261015b_aif_kfs2_july_line_area_map` and `au.bak_20261015c_aif_rollup_jul_sep`), on 13 Jan
+2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
