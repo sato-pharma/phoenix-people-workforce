@@ -3244,6 +3244,7 @@ import { runOverviewDashboardBehaviourTests } from "./overview-dashboard-behavio
 import { runSupportRequestsBehaviourTests } from "./support-requests-behaviour.test.ts";
 import { runVisitsReportRowBehaviourTests } from "./visits-report-row-behaviour.test.ts";
 import { runSrcLibFolderTestCoverageTests } from "./src-lib-folder-test-coverage.test.ts";
+import { runMarketingProductWatchersTests } from "./marketing-product-watchers.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12791,6 +12792,7 @@ await runTest("src/lib/overview, run (REC-079): a section the viewer's grants do
 await runTest("src/lib/support-requests, run (REC-079): a ticket is opened in the signed-in employee's name whatever the form sends, saved before HR is alerted and the unaddressed alert reported, an employee lists only their own, the queue and the status are HR's, and a missing table answers empty", runSupportRequestsBehaviourTests);
 await runTest("src/lib/visits-report, run (REC-079): the report table and its download read one row mapper, a visit's type is the resolved word never the vendor's raw Unknown, and its time is the save time until a check-in is matched", runVisitsReportRowBehaviourTests);
 await runTest("every folder under src/lib/ is imported by at least one test (REC-079, F-ENG-011): type-only imports and paths in comments or file reads do not count, and a new untested folder fails by name", runSrcLibFolderTestCoverageTests);
+await runTest("marketing product watchers (owner, 2026-11-19): Ahmed SharafEldeen alone watches Guamusin and Ivyronc and not the other two codes in his scope, a watcher reads the whole Case File (conversation mounted) from any role and only on a request that promotes a watched product, his notice never says approve or reject and the due-date and overdue reminders never reach him, and the list is refused to a non-watcher before any read", runMarketingProductWatchersTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

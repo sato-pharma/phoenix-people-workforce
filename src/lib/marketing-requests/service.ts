@@ -56,6 +56,15 @@ import {
 } from "@/lib/venues/pharmacy-code-suggestions";
 import { MARKETING_WAITING_DUE_SOON_DAYS, MARKETING_WAITING_OVERDUE_DAYS } from "@/lib/marketing-requests/finance-ageing";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
+import {
+  MARKETING_PRODUCT_WATCHERS,
+  isMarketingProductWatcher,
+  isWatchedMarketingEvent,
+  marketingProductWatcherHrIds,
+  marketingWatcherNoticeWording,
+  watchedMarketingProductCodes,
+  watchesMarketingRequestProducts,
+} from "@/lib/marketing-requests/product-watchers";
 // Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
 // instead of copying them. Behaviour is unchanged for every caller below.
 import {
@@ -3354,6 +3363,68 @@ async function notifyMarketingWorkflow(params: {
       error,
     });
   });
+
+  await notifyMarketingProductWatchers({ ...params, ccHrIds });
+}
+
+/**
+ * Tell the named product watchers (product-watchers.ts) that a request for their product moved.
+ *
+ * Its own notice, not a CC on the approvers' one: the approvers' words say "needs your approval" and
+ * carry Approve / Reject / Return buttons, and a watcher holds no rung. In-app, Telegram and the phone
+ * only, with one "View Details" button. The approvers' SLA reminders are not his. Nobody is told
+ * twice — the actor, the requester and anyone already addressed are left out.
+ */
+async function notifyMarketingProductWatchers(params: {
+  actorHrId: string | null;
+  ccHrIds: string[];
+  eventType: Parameters<typeof notifyMarketingWorkflow>[0]["eventType"];
+  metadata?: Record<string, unknown>;
+  request: MarketingRequest;
+}): Promise<void> {
+  if (!isWatchedMarketingEvent(params.eventType)) return;
+  const eventType = params.eventType;
+  try {
+    const alreadyTold = [params.actorHrId, params.request.requesterHrId, ...params.ccHrIds];
+    const watcherHrIds = (await loadMarketingRequestWatcherHrIds(params.request.id)).filter(
+      (hrId) => !alreadyTold.some((told) => isSamePerson(told, hrId)),
+    );
+    if (watcherHrIds.length === 0) return;
+
+    const wording = marketingWatcherNoticeWording({
+      currentStepName:
+        cleanText(params.metadata?.currentStepName as string | null | undefined) ??
+        cleanText(params.metadata?.approvalStep as string | null | undefined),
+      eventType,
+      requestCode: params.request.requestCode,
+    });
+    const epoch = params.metadata?.idempotencyEpoch ?? params.metadata?.currentStepId ?? params.metadata?.decisionAt ?? "event";
+    await raiseApproval(approvalIdentity("marketing", eventType), { via: "notices", notice: {
+      actionUrl: marketingActionUrl(params.request.id),
+      actorId: params.actorHrId,
+      channels: ["in_app", "telegram", "push"],
+      eventType,
+      message: wording.message,
+      metadata: {
+        idempotencyKey: `marketing-request:${eventType}:${params.request.id}:${epoch}:product-watch`,
+        productWatch: true,
+        requestCode: params.request.requestCode,
+        requestId: params.request.id,
+        status: params.request.status,
+      },
+      module: "marketing_requests",
+      priority: "normal",
+      recordId: params.request.id,
+      subjectHrId: params.request.requesterHrId,
+      telegram: { buttons: [{ label: "View Details", url: marketingActionUrl(params.request.id) }] },
+      title: wording.title,
+    }, recipientHrIds: watcherHrIds });
+  } catch (error) {
+    logError("Marketing product watchers were not notified", {
+      labels: { event: "marketing_product_watch_notify_failed", eventType: params.eventType, requestId: params.request.id },
+      error,
+    });
+  }
 }
 
 /**
@@ -5066,6 +5137,25 @@ async function loadProductCodesByRequestId(
     }
   }
   return map;
+}
+
+/**
+ * The named product watchers of one request (product-watchers.ts) — the people its movement and its
+ * conversation must reach although they hold no rung. Best-effort for a NOTICE only: a failed read
+ * answers nobody, and the notice that called it still goes to everyone else. Never used for sight.
+ */
+async function loadMarketingRequestWatcherHrIds(requestId: string): Promise<string[]> {
+  if (MARKETING_PRODUCT_WATCHERS.length === 0) return [];
+  try {
+    const codesByRequestId = await loadProductCodesByRequestId(getSupabaseAdmin(), [requestId]);
+    return marketingProductWatcherHrIds(codesByRequestId.get(requestId) ?? []);
+  } catch (error) {
+    logError("Marketing product watchers could not be resolved", {
+      labels: { event: "marketing_product_watchers_unresolved", requestId },
+      error,
+    });
+    return [];
+  }
 }
 
 /** Return a filter that drops requests whose products don't include any of the viewer's
@@ -10151,6 +10241,8 @@ async function notifyAdvisoryComment(input: {
       // Everyone who has actually acted on the request. An assignee who has not decided yet is not
       // a participant in the conversation, only a name on a future step.
       ...input.steps.filter((step) => step.decisionAt).map((step) => step.assignedHrId),
+      // The product watchers follow the thread too (product-watchers.ts).
+      ...(await loadMarketingRequestWatcherHrIds(input.requestId)),
     ];
 
     await notifyConversationMessage({
@@ -10195,19 +10287,27 @@ async function notifyAdvisoryComment(input: {
  * matches), or a system-scope caller. Shared by the request-detail loader and the conversation
  * loader so both decide sight exactly the same way. Throws `Forbidden:` otherwise.
  */
-function assertCanViewMarketingRequest(
+async function assertCanViewMarketingRequest(
   access: AccessContext,
   requestRow: MarketingRequestDbRow,
   employeeRows: Awaited<ReturnType<typeof loadEmployeeDirectoryRows>>,
   steps: ReturnType<typeof mapApprovalStep>[],
-): void {
+): Promise<void> {
   const actorHrId = normalizeHrId(access.hrId);
   const isAssignedApprover = actorHrId
     ? steps.some((step) => isSamePerson(step.assignedHrId, access.hrId))
     : false;
-  if (!canSeeMarketingRequest(access, requestRow, employeeRows) && !isAssignedApprover && access.scope !== "system") {
-    throw forbiddenError("Forbidden: you cannot view this marketing request.");
+  if (canSeeMarketingRequest(access, requestRow, employeeRows) || isAssignedApprover || access.scope === "system") {
+    return;
   }
+  // A named product watcher (product-watchers.ts) reads, and comments on, every request that promotes
+  // a product he watches — with no rung, so no decision. Asked last and only for a watcher, so every
+  // other viewer pays no extra read. A failed product read refuses: unknown is never allow.
+  if (actorHrId && isMarketingProductWatcher(access.hrId)) {
+    const codesByRequestId = await loadProductCodesByRequestId(getSupabaseAdmin(), [String(requestRow.id)]);
+    if (watchesMarketingRequestProducts(access.hrId, codesByRequestId.get(String(requestRow.id)) ?? [])) return;
+  }
+  throw forbiddenError("Forbidden: you cannot view this marketing request.");
 }
 
 async function loadMarketingRequestForConversation(
@@ -10235,7 +10335,7 @@ async function loadMarketingRequestForConversation(
   const requestRow = requestResult.data as MarketingRequestDbRow;
   const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
 
-  assertCanViewMarketingRequest(access, requestRow, employeeRows, steps);
+  await assertCanViewMarketingRequest(access, requestRow, employeeRows, steps);
   return { requestRow, steps };
 }
 
@@ -10303,6 +10403,8 @@ async function notifyMarketingRequestConversation(input: {
       request.manager_hr_id ?? null,
       ...input.steps.filter((step) => step.decisionAt).map((step) => step.assignedHrId),
       ...priorAuthors,
+      // The product watchers follow the thread from its first message (product-watchers.ts).
+      ...(await loadMarketingRequestWatcherHrIds(String(request.id))),
     ];
 
     await notifyConversationMessage({
@@ -10374,7 +10476,7 @@ export async function getMarketingRequestDetail(
 
   const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
 
-  assertCanViewMarketingRequest(access, requestRow, employeeRows, steps);
+  await assertCanViewMarketingRequest(access, requestRow, employeeRows, steps);
   const actorHrId = normalizeHrId(access.hrId);
 
   // The viewer may post a non-blocking comment when they are a CC reviewer on the step that is
@@ -10898,4 +11000,165 @@ export async function mergeMarketingVenue(
 
   bumpCustomer360Cache("marketing venue merged");
   return result;
+}
+
+// ── Watched products: every request for the products a named watcher follows ──────────────────────
+
+/** One request on a watcher's list (product-watchers.ts). Names, never codes or ids, on screen. */
+export type MarketingWatchedRequestRow = {
+  customerName: string;
+  estimatedCost: number;
+  id: string;
+  outcome: MarketingApproverHistoryOutcome;
+  outcomeLabel: string;
+  productNames: string[];
+  raisedAt: string | null;
+  requestCode: string;
+  requesterName: string;
+  requestTitle: string;
+  /** "<step> · <approver>" while it is still moving; null once the chain is no longer waiting. */
+  waitingFor: string | null;
+};
+
+export type MarketingWatchedRequestsSummary = {
+  approved: number;
+  closedOrCancelled: number;
+  inApproval: number;
+  rejected: number;
+  returned: number;
+  total: number;
+};
+
+export type MarketingWatchedRequestsWorkspace = {
+  productNames: string[];
+  rows: MarketingWatchedRequestRow[];
+  summary: MarketingWatchedRequestsSummary;
+};
+
+/** The tiles over a watcher's list, counted from the rows themselves so they can never disagree. */
+export function summarizeMarketingWatchedRequests(rows: ReadonlyArray<Pick<MarketingWatchedRequestRow, "outcome">>): MarketingWatchedRequestsSummary {
+  return {
+    approved: rows.filter((row) => row.outcome === "approved").length,
+    closedOrCancelled: rows.filter((row) => row.outcome === "closed" || row.outcome === "cancelled" || row.outcome === "archived").length,
+    inApproval: rows.filter((row) => row.outcome === "in_flight").length,
+    rejected: rows.filter((row) => row.outcome === "rejected").length,
+    returned: rows.filter((row) => row.outcome === "returned").length,
+    total: rows.length,
+  };
+}
+
+/**
+ * Every marketing request — any status, from the first one ever raised — that promotes a product the
+ * viewer watches by name (owner, 2026-11-19: "also show the historical requests for these products").
+ * Unsaved drafts are left out: nobody has been asked anything yet. Read-only; each row opens the
+ * request's Case File, where he reads the whole trail and comments. Refused to anyone who watches
+ * nothing — the list is keyed to the named people, not to a role.
+ */
+export async function getMarketingWatchedProductRequests(access: AccessContext): Promise<MarketingWatchedRequestsWorkspace> {
+  const watchedCodes = Array.from(watchedMarketingProductCodes(access.hrId));
+  if (watchedCodes.length === 0) {
+    throw forbiddenError("Forbidden: you do not follow any marketing products.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const productsResult = await supabase
+    .from("marketing_products")
+    .select("id, product_code, product_name")
+    .in("product_code", watchedCodes);
+  if (productsResult.error) throw productsResult.error;
+  const products = (productsResult.data ?? []) as Array<{ id: number | string; product_code?: string | null; product_name?: string | null }>;
+  const productNameById = new Map(
+    products.map((row) => [Number(row.id), cleanText(row.product_name) ?? cleanText(row.product_code) ?? "Product"] as const),
+  );
+  const productNames = Array.from(new Set(productNameById.values())).sort((left, right) => left.localeCompare(right));
+  if (productNameById.size === 0) return { productNames, rows: [], summary: summarizeMarketingWatchedRequests([]) };
+
+  const linksResult = await supabase
+    .from("marketing_request_products")
+    .select("request_id, product_id")
+    .in("product_id", Array.from(productNameById.keys()));
+  if (linksResult.error) throw linksResult.error;
+  const watchedProductNamesByRequest = new Map<string, Set<string>>();
+  for (const link of (linksResult.data ?? []) as Array<{ product_id: number | string; request_id: string }>) {
+    const name = productNameById.get(Number(link.product_id));
+    if (!link.request_id || !name) continue;
+    const bucket = watchedProductNamesByRequest.get(link.request_id) ?? new Set<string>();
+    bucket.add(name);
+    watchedProductNamesByRequest.set(link.request_id, bucket);
+  }
+  const requestIds = Array.from(watchedProductNamesByRequest.keys());
+  if (requestIds.length === 0) return { productNames, rows: [], summary: summarizeMarketingWatchedRequests([]) };
+
+  const requestRows: MarketingRequestDbRow[] = [];
+  const stepsByRequestId = new Map<string, MarketingRequestApprovalStep[]>();
+  for (const batch of chunk(requestIds)) {
+    const [requestsResult, stepsResult] = await Promise.all([
+      supabase.from("marketing_requests").select("*").in("id", batch).neq("status", "draft"),
+      supabase.from("marketing_request_approval_steps").select("*").in("request_id", batch).order("sequence", { ascending: true }),
+    ]);
+    if (requestsResult.error) throw requestsResult.error;
+    if (stepsResult.error) throw stepsResult.error;
+    requestRows.push(...((requestsResult.data ?? []) as MarketingRequestDbRow[]));
+    for (const row of (stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
+      const step = mapApprovalStep(row);
+      stepsByRequestId.set(step.requestId, [...(stepsByRequestId.get(step.requestId) ?? []), step]);
+    }
+  }
+  const requests = requestRows.map(mapRequest);
+
+  const customerIds = Array.from(new Set(requests.map((request) => request.customerId).filter(Boolean)));
+  const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
+  const [customersResult, typesResult, employeeRows] = await Promise.all([
+    customerIds.length > 0
+      ? supabase.from("marketing_customers").select("id, display_name").in("id", customerIds)
+      : Promise.resolve({ data: [] as Array<{ display_name: string | null; id: string }>, error: null }),
+    supabase.from("marketing_request_types").select("id, name").in("id", typeIds),
+    // Historical requests were raised by people who may have left, so names come from the whole
+    // directory, not the active slice.
+    loadActorDirectoryRows(),
+  ]);
+  if (customersResult.error) throw customersResult.error;
+  if (typesResult.error) throw typesResult.error;
+  const customerNameById = new Map(
+    ((customersResult.data ?? []) as Array<{ display_name: string | null; id: string }>).map(
+      (row) => [row.id, cleanText(row.display_name) ?? "Unknown customer"] as const,
+    ),
+  );
+  const typeNameById = new Map(
+    ((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>).map(
+      (row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const,
+    ),
+  );
+
+  const rows: MarketingWatchedRequestRow[] = requests
+    .map((request) => {
+      const outcome = marketingHistoryOutcome(request.status);
+      const requesterName = employeeNameByHrId(employeeRows, request.requesterHrId);
+      const progress =
+        request.status === "pending_approval"
+          ? buildMarketingStepProgress(stepsByRequestId.get(request.id) ?? [], employeeRows)
+          : null;
+      const waitingFor = progress
+        ? [progress.currentStepName, progress.currentApproverName].map((part) => cleanText(part)).filter(Boolean).join(" · ")
+        : "";
+      return {
+        customerName: customerNameById.get(request.customerId) ?? "Unknown customer",
+        estimatedCost: toNumber(request.estimatedCost),
+        id: request.id,
+        outcome,
+        outcomeLabel: MARKETING_HISTORY_OUTCOME_LABEL[outcome],
+        productNames: Array.from(watchedProductNamesByRequest.get(request.id) ?? []).sort((left, right) => left.localeCompare(right)),
+        raisedAt: request.submittedAt ?? request.createdAt ?? null,
+        requestCode: request.requestCode,
+        requesterName,
+        requestTitle: marketingRequestTitle({
+          activity: marketingRequestActivity(typeNameById.get(request.requestTypeId), request.otherRequestType),
+          requesterName,
+        }),
+        waitingFor: waitingFor || null,
+      };
+    })
+    .sort((left, right) => String(right.raisedAt ?? "").localeCompare(String(left.raisedAt ?? "")));
+
+  return { productNames, rows, summary: summarizeMarketingWatchedRequests(rows) };
 }

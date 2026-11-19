@@ -1145,10 +1145,15 @@ export const MODULES = [
     scope: "The database functions that move a marketing request through its approval rungs (phx_decide_marketing_request_step, phx_cancel_marketing_request, the reopen and the resubmit) and the locks and status guards that keep two of them from overwriting each other.",
     globs: [
       "src/lib/marketing-requests/{cancel,reopen-rule}*",
+      // Who may follow a request without a rung (owner, 2026-11-19) — the other half of "who decides".
+      "src/lib/marketing-requests/product-watchers*",
+      "app/employee-portals/marketing-requests/watching/**",
+      "src/components/marketing-requests/marketing-watched-requests*",
+      "tests/*marketing-product-watchers*",
       "tests/*{marketing-cancel-request,marketing-reject-terminalises,marketing-reopen-rejected-request,marketing-finance-requirement-on-approval,direct-orders-and-marketing-atomic}*",
       "supabase/migrations/*{marketing_decide,marketing_reject_terminalises,marketing_reopen_rejected,marketing_resubmit_atomic,marketing_refuse_self_approval,marketing_finance_requirement_on_approval}*",
     ],
-    keywords: ["approval step", "approval rung", "decide marketing", "cancel marketing request", "reopen marketing request", "resubmit marketing request", "phx_decide_marketing_request_step"],
+    keywords: ["approval step", "approval rung", "decide marketing", "product watcher", "watched products", "cancel marketing request", "reopen marketing request", "resubmit marketing request", "phx_decide_marketing_request_step"],
     tables: ["marketing_request_approval_steps"],
   },
   // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the careers-page rules took

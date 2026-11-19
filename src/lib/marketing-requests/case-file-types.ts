@@ -351,7 +351,9 @@ export type MarketingCaseFileAdmission =
   | "hierarchy"
   | "chain_step"
   | "cc_reviewer"
-  | "product_owner";
+  | "product_owner"
+  /** A named product watcher (product-watchers.ts): reads in full and comments, holds no rung. */
+  | "product_watcher";
 
 /** One control on the decision bar. `href` is already resolved for THIS viewer's shell. */
 export type MarketingCaseFileDecisionAction = {
