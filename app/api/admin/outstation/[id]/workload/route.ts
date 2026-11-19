@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import {
   retryOutstationWorkloadCapture,
   setOutstationWorkloadManually,
 } from "@/lib/outstation/service";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +25,7 @@ export const dynamic = "force-dynamic";
  * that check — one authority for it, in the domain.
  */
 function workloadRepairStatus(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return 401;
   if (isForbiddenError(error)) return 403;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (message.includes("not waiting on its workload")) return 409;
@@ -46,6 +49,9 @@ export async function POST(
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the id and the body — the service's own first gate, repeated here.
+    assertSignedIn(access);
+    await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
     const id = parseOutstationRequestId(rawId);

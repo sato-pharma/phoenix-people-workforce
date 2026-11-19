@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { ApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   excuseErrorMessage,
@@ -24,6 +26,8 @@ export async function POST(
     if (csrfError) return csrfError;
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    // REC-080: a signed-out caller is refused before the body is judged.
+    assertSignedIn(access);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const newManagerHrId = typeof body.newManagerHrId === "string" ? body.newManagerHrId.trim() : "";
     if (!newManagerHrId) {
@@ -39,7 +43,10 @@ export async function POST(
       ? "Excuse database tables are not deployed yet."
       : excuseErrorMessage(error) || "Unable to reassign excuse approver.";
     const lower = message.toLowerCase();
-    const status = lower.startsWith("forbidden") ? 403 : lower.includes("was not found") ? 404 : 400;
+    const status =
+      error instanceof ApiError && error.status === 401
+        ? 401
+        : lower.startsWith("forbidden") ? 403 : lower.includes("was not found") ? 404 : 400;
     return NextResponse.json({ error: "reassign_failed", message, success: false }, { status });
   }
 }

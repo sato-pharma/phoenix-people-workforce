@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
+import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { ApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -51,7 +52,8 @@ function classifyRouteError(error: unknown, fallback: string): { status: number;
   else if (lower.startsWith("not found") || lower.includes("does not exist")) status = 404;
   else if (lower.startsWith("conflict")) status = 409;
   else if (lower.startsWith("validation")) status = 400;
-  else if (lower.includes("not authenticated")) status = 401;
+  // assertSignedIn's ApiError(401) "Authentication is required." keeps its 401 (REC-080).
+  else if (lower.includes("not authenticated") || (error instanceof ApiError && error.status === 401)) status = 401;
 
   if (status === 500) {
     logError("Automated payroll: unhandled route error", {

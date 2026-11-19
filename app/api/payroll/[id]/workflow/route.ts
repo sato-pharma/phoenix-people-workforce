@@ -1,7 +1,8 @@
 import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -10,7 +11,7 @@ import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { notifyPayslipAvailable } from "@/lib/payroll/notify-payslip-available";
 import { logError } from "@/lib/observability/log";
 
@@ -24,6 +25,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    // REC-080: every valid action asserts payroll update or approve below, so a caller holding
+    // neither is refused before the body is read. The per-action assertion still runs.
+    assertSignedIn(access);
+    if (!(await canAccess(access, "payroll", "update"))) {
+      await assertPermission(access, "payroll", "approve");
+    }
     const body = await request.json();
     const action = String(body.action ?? "") as PayrollWorkflowAction;
     const rejectedReason = body.rejectedReason ? String(body.rejectedReason) : undefined;
@@ -129,6 +136,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const message = clientSafeErrorMessage(error, "Workflow action failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: message }, { status: 403 });
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ success: false, error: message }, { status: 401 });
     }
     if (isPayrollConflictError(error)) {
       return NextResponse.json({ success: false, error: message }, { status: 409 });

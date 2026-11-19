@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { bulkDecideApprovals, parseBulkDecisionInput } from "@/lib/approvals-hub/bulk-decide";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    // REC-080: a signed-out caller is refused before the body is judged.
+    assertSignedIn(access);
     await assertApiRateLimit({
       identifier: rateLimitIdentity({ actor: access.loginId ?? access.hrId, request }),
       limit: 10,
@@ -35,6 +38,9 @@ export async function POST(request: Request) {
         { error: "rate_limited", message: "Too many bulk decisions in a minute — wait a moment and try again.", success: false },
         { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
       );
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ error: error.code, message: error.message, success: false }, { status: 401 });
     }
     const message = clientSafeErrorMessage(error, "The bulk decision failed.");
     return NextResponse.json(

@@ -33,6 +33,8 @@ export async function PATCH(request: Request) {
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     assertAuthenticated(access);
+    // REC-080: the caller is judged before the body — the same gate setAccountActiveForRecruiting opens with.
+    await assertPermission(access, "account_activation", "update");
 
     const payload = (await request.json()) as { isActive?: unknown; loginId?: unknown };
     const loginId = typeof payload.loginId === "string" ? payload.loginId.trim() : "";

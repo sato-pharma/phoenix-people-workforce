@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { releaseOutstationRequestWithoutEvidence } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
@@ -20,6 +22,7 @@ export const dynamic = "force-dynamic";
  * so a waiver can never be reached by sending an unexpected `action` to a different endpoint.
  */
 function evidenceReleaseStatus(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return 401;
   if (isForbiddenError(error)) return 403;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   // Not a failure of the request — a statement that this is the wrong tool for this row.
@@ -39,6 +42,9 @@ export async function POST(
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the id and the body — the service's own first gate, repeated here.
+    assertSignedIn(access);
+    await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
     const id = parseOutstationRequestId(rawId);

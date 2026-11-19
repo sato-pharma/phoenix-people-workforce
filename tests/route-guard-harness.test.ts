@@ -71,8 +71,13 @@ const INFRASTRUCTURE_TABLES: Readonly<Record<string, string>> = {
 // their record up first (the interview calendar, a company calendar event, a marketing conversation) now refuse
 // a signed-out caller before any lookup, and are judged like every other route. So are the ten answers that
 // refused with the wrong status (a 400 Forbidden, a 500 sign-in, a body or upload read before the caller):
-// each route now refuses the caller first, with 401 or 403.
-const BODY_FIRST = "answers 400 on the harness's empty body before any refusal of this caller; nothing is written";
+// each route now refuses the caller first, with 401 or 403. Eighty of the eighty-one answers that judged the
+// body first now refuse a signed-out caller (assertSignedIn) and a refused role (the domain's own gate, asked
+// before the body) first, or had a registry entry that named the wrong gate. One is left, below.
+const BODY_FIRST_PINNED =
+  "a retired weekly Plans endpoint whose real gate (weekly_plans:approve) sits in the service, which answers 409 (plans " +
+  "moved) to everyone; tests/weekly-plan-move-period.test.ts forbids a permission check in the route and " +
+  "tests/weekly-plans-one-store.test.ts forbids importing a gate from the service, so the empty body answers 400 first; nothing is written";
 const MARKETING_ROLE_LIST =
   "the real gate is the marketing role list (assertMarketingWorkspaceAccess), which admits the Financial Advisor — " +
   "the registry's expenses label is not what the route checks; answers 400 on the empty body, nothing is written";
@@ -96,88 +101,8 @@ const PASSKEY_CHALLENGE =
  * The call must still write nothing; a write needs its own line in WRITE_GAPS.
  */
 const ANSWER_GAPS: Readonly<Record<string, string>> = {
-  // BODY_FIRST (81)
-  "PATCH /api/admin/business-card-requests refused-role": BODY_FIRST,
-  "PATCH /api/admin/business-card-requests signed-out": BODY_FIRST,
-  "PATCH /api/admin/support-requests refused-role": BODY_FIRST,
-  "PATCH /api/admin/support-requests signed-out": BODY_FIRST,
-  "PATCH /api/employee-portal/account-activation refused-role": BODY_FIRST,
-  "PATCH /api/marketing-requests/control signed-out": BODY_FIRST,
-  "PATCH /api/marketing-requests/pharmacy-code-recheck signed-out": BODY_FIRST,
-  "PATCH /api/recruitment/interview-calendar/bookings/:id/outcome signed-out": BODY_FIRST,
-  "POST /api/admin/outstation/:id/evidence refused-role": BODY_FIRST,
-  "POST /api/admin/outstation/:id/evidence signed-out": BODY_FIRST,
-  "POST /api/admin/outstation/:id/journey-stop refused-role": BODY_FIRST,
-  "POST /api/admin/outstation/:id/journey-stop signed-out": BODY_FIRST,
-  "POST /api/admin/outstation/:id/recalculate-distance refused-role": BODY_FIRST,
-  "POST /api/admin/outstation/:id/recalculate-distance signed-out": BODY_FIRST,
-  "POST /api/admin/outstation/:id/reminder refused-role": BODY_FIRST,
-  "POST /api/admin/outstation/:id/reminder signed-out": BODY_FIRST,
-  "POST /api/admin/outstation/:id/workload refused-role": BODY_FIRST,
-  "POST /api/admin/outstation/:id/workload signed-out": BODY_FIRST,
-  "POST /api/approvals/bulk-decision signed-out": BODY_FIRST,
-  "POST /api/automated-payroll/runs signed-out": BODY_FIRST,
-  "POST /api/automated-payroll/runs/:runId/steps/:stepKey/confirm signed-out": BODY_FIRST,
-  "POST /api/automated-payroll/runs/:runId/steps/:stepKey/import signed-out": BODY_FIRST,
-  "POST /api/automated-payroll/settings/carry-late-expenses signed-out": BODY_FIRST,
-  "POST /api/contracts/:id/workflow refused-role": BODY_FIRST,
-  "POST /api/contracts/:id/workflow signed-out": BODY_FIRST,
-  "POST /api/customer-pharmacy-mapping/:id/decision signed-out": BODY_FIRST,
-  "POST /api/devices refused-role": BODY_FIRST,
-  "POST /api/devices signed-out": BODY_FIRST,
-  "POST /api/direct-orders/:id/decision refused-role": BODY_FIRST,
-  "POST /api/direct-orders/:id/decision signed-out": BODY_FIRST,
-  "POST /api/direct-orders/held/decision refused-role": BODY_FIRST,
-  "POST /api/direct-orders/held/decision signed-out": BODY_FIRST,
-  "POST /api/direct-orders/pharmacies/registry refused-role": BODY_FIRST,
-  "POST /api/direct-orders/pharmacies/registry signed-out": BODY_FIRST,
-  "POST /api/direct-orders/pharmacy-validations/:id/decision refused-role": BODY_FIRST,
-  "POST /api/direct-orders/pharmacy-validations/:id/decision signed-out": BODY_FIRST,
-  "POST /api/dispute-center/cases/:kind/:ref/assist signed-out": BODY_FIRST,
-  "POST /api/dispute-center/cases/:kind/:ref/decide signed-out": BODY_FIRST,
-  "POST /api/dispute-center/cases/:kind/:ref/messages signed-out": BODY_FIRST,
-  "POST /api/dispute-center/cases/:kind/:ref/reopen signed-out": BODY_FIRST,
-  "POST /api/excuses/:id/decision signed-out": BODY_FIRST,
-  "POST /api/excuses/:id/reassign signed-out": BODY_FIRST,
-  "POST /api/mailbox-offboarding refused-role": BODY_FIRST,
-  "POST /api/mailbox-offboarding signed-out": BODY_FIRST,
-  "POST /api/market-awareness/:activityId/decision refused-role": BODY_FIRST,
-  "POST /api/market-awareness/:activityId/decision signed-out": BODY_FIRST,
-  "POST /api/marketing-requests/:id/decision signed-out": BODY_FIRST,
-  "POST /api/marketing-requests/:id/license-verdict signed-out": BODY_FIRST,
-  "POST /api/marketing-requests/ceo-approvals/export signed-out": BODY_FIRST,
-  "POST /api/marketing-requests/finance-hold signed-out": BODY_FIRST,
-  "POST /api/marketing-requests/list-check/decide signed-out": BODY_FIRST,
-  "POST /api/payroll/:id/workflow refused-role": BODY_FIRST,
-  "POST /api/payroll/:id/workflow signed-out": BODY_FIRST,
-  "POST /api/private-calendar/disputes/:id/decide refused-role": BODY_FIRST,
-  "POST /api/private-calendar/disputes/:id/decide signed-out": BODY_FIRST,
-  "POST /api/private-calendar/disputes/decide-many refused-role": BODY_FIRST,
-  "POST /api/private-calendar/disputes/decide-many signed-out": BODY_FIRST,
-  "POST /api/probation/scorecards refused-role": BODY_FIRST,
-  "POST /api/resignations/:id/workflow refused-role": BODY_FIRST,
-  "POST /api/resignations/:id/workflow signed-out": BODY_FIRST,
-  "POST /api/sales/imports/:id/:action refused-role": BODY_FIRST,
-  "POST /api/sales/imports/:id/:action signed-out": BODY_FIRST,
-  "POST /api/support/requests refused-role": BODY_FIRST,
-  "POST /api/territory-management/area-consolidation/:areaId/apply signed-out": BODY_FIRST,
-  "POST /api/vacations/requests/:id/assign refused-role": BODY_FIRST,
-  "POST /api/vacations/requests/:id/assign signed-out": BODY_FIRST,
-  "POST /api/vacations/requests/:id/decision refused-role": BODY_FIRST,
-  "POST /api/vacations/requests/:id/decision signed-out": BODY_FIRST,
-  "POST /api/weekly-plans/:id/decision refused-role": BODY_FIRST,
-  "POST /api/weekly-plans/:id/decision signed-out": BODY_FIRST,
-  "POST /api/weekly-plans/:id/edit-request-decision refused-role": BODY_FIRST,
-  "POST /api/weekly-plans/:id/edit-request-decision signed-out": BODY_FIRST,
-  "POST /api/weekly-plans/:id/move-period refused-role": BODY_FIRST,
-  "POST /api/weekly-plans/:id/move-period signed-out": BODY_FIRST,
-  "POST /api/weekly-plans/:id/reassign refused-role": BODY_FIRST,
-  "POST /api/weekly-plans/:id/reassign signed-out": BODY_FIRST,
-  "POST /api/weekly-plans/:id/visit-details refused-role": BODY_FIRST,
-  "POST /api/weekly-plans/:id/visit-details signed-out": BODY_FIRST,
-  "POST /api/weekly-plans/decisions/batch refused-role": BODY_FIRST,
-  "POST /api/weekly-plans/decisions/batch signed-out": BODY_FIRST,
-  "PUT /api/automated-payroll/runs/:runId/steps/:stepKey signed-out": BODY_FIRST,
+  // BODY_FIRST_PINNED (1)
+  "POST /api/weekly-plans/:id/move-period refused-role": BODY_FIRST_PINNED,
   // MARKETING_ROLE_LIST (5)
   "PATCH /api/marketing-requests/control refused-role": MARKETING_ROLE_LIST,
   "POST /api/marketing-requests/:id/comment refused-role": MARKETING_ROLE_LIST,

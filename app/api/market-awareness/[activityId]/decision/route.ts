@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { marketAwarenessErrorResponse } from "@/lib/market-awareness/api-response";
 import { MarketAwarenessError, decideActivity } from "@/lib/market-awareness/service";
@@ -35,6 +37,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     if (csrfError) return csrfError;
     const { activityId } = await params;
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the body — the same gate decideActivity asks first, of every action.
+    assertSignedIn(access);
+    await assertPermission(access, "market_awareness", "approve");
     const body = await request.json();
     const activity = await decideActivity(access, activityId, {
       action: readAction(body.action),

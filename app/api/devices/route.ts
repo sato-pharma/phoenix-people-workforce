@@ -1,7 +1,8 @@
 import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   createDevice,
@@ -24,6 +25,7 @@ import {
   writeOffDevice,
 } from "@/lib/devices/service";
 import { isDevelopment } from "@/lib/env";
+import { ApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -38,6 +40,7 @@ export const dynamic = "force-dynamic";
  * cannot use, but that is UX — this file is the security boundary.
  */
 function deviceApiError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) return { message: error.message, status: 401 };
   if (isForbiddenError(error)) return { message: deviceErrorMessage(error), status: 403 };
   if (isDeviceRegisterSchemaMissing(error)) {
     return {
@@ -73,6 +76,12 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: every action below asserts company_devices create (register) or update (the rest), so a
+    // caller holding neither is refused before the body is read. Each action still asserts its own.
+    assertSignedIn(access);
+    if (!(await canAccess(access, "company_devices", "create"))) {
+      await assertPermission(access, "company_devices", "update");
+    }
     const payload = (await request.json()) as {
       action?:
         | "register"
