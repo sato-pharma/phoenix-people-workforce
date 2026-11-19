@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 
 import { systemEmail } from "@/config/system-settings";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { sendDurableEmail } from "@/lib/notifications/durable-email";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
 import { candidateGreetingName } from "@/lib/recruitment/candidate-greeting";
@@ -90,23 +90,32 @@ export async function sendWebsiteApplyConfirmation(input: {
     .digest("hex")
     .slice(0, 40)}`;
 
-  await sendPhoenixEmail({
-    externalRecipients: [to],
-    // The company's own name in the inbox list, from the mailbox the Sato Email Composer sends from.
-    from: satoEmailFrom(systemEmail.satoComposerFromEmail),
-    html,
-    idempotencyKey,
-    // Transactional: a confirmation of an action the person just took, so a stale marketing
-    // unsubscribe must not withhold it (see loadSuppressedRecipients).
-    notificationType: "careers_application_confirmation",
-    origin: {
-      eventType: "careers_application_confirmation",
-      module: "recruitment.website-apply",
-      recipientHrId: null,
+  // Durable (REC-048 phase 2, 19 Nov 2026): written to the outbox first and sent now, as before; a
+  // provider failure is retried by the drain with this same input instead of being lost. The key is
+  // the hashed idempotency key, so no applicant address is spelled out in it.
+  await sendDurableEmail(
+    {
+      input: {
+        externalRecipients: [to],
+        // The company's own name in the inbox list, from the mailbox the Sato Email Composer sends from.
+        from: satoEmailFrom(systemEmail.satoComposerFromEmail),
+        html,
+        idempotencyKey,
+        // Transactional: a confirmation of an action the person just took, so a stale marketing
+        // unsubscribe must not withhold it (see loadSuppressedRecipients).
+        notificationType: "careers_application_confirmation",
+        origin: {
+          eventType: "careers_application_confirmation",
+          module: "recruitment.website-apply",
+          recipientHrId: null,
+        },
+        replyTo: systemEmail.satoComposerReplyToEmail,
+        subject,
+        text,
+        to: [to],
+      },
+      sender: "phoenix",
     },
-    replyTo: systemEmail.satoComposerReplyToEmail,
-    subject,
-    text,
-    to: [to],
-  });
+    { dedupeKey: `recruitment:careers_application_confirmation:${idempotencyKey}` },
+  );
 }

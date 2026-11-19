@@ -29,6 +29,12 @@ export type ResolvedValue =
   | { kind: "unresolved"; text: string };
 
 export type NotificationSendSite = {
+  /**
+   * The bell category the notice is written under, as the object names it — `null` when it names
+   * none (the engine then defaults it from the module, `defaultNotificationCategory`). Read for
+   * shapes 1 and 3 only; a wrapper's category is its own business and is `undefined`.
+   */
+  category?: ResolvedValue | null;
   eventType: ResolvedValue;
   file: string;
   line: number;
@@ -475,8 +481,10 @@ export function scanNotificationSendSites(root = process.cwd()): {
       if (!moduleProp && !fileWide) continue;
       seen.add(`${file}:${open}`);
       const line = lineOf(code, open);
+      const categoryProp = props.find((prop) => prop.key === "category");
+      const category = categoryProp && categoryProp.terminator !== ";" ? resolver.resolve(categoryProp.value, file) : null;
       if (!moduleProp) {
-        sites.push({ eventType: resolver.resolve(eventProp.value, file), file, line, module: { kind: "values", values: [fileWide!.module] }, shape: "file-wide" });
+        sites.push({ category, eventType: resolver.resolve(eventProp.value, file), file, line, module: { kind: "values", values: [fileWide!.module] }, shape: "file-wide" });
         continue;
       }
       // `module: purpose === "setup" ? A : B, eventType: purpose === "setup" ? X : Y` pairs A with X
@@ -493,7 +501,7 @@ export function scanNotificationSendSites(root = process.cwd()): {
       }
       const direct = /(?<![\w$.])origin\s*:\s*$/.test(masked.slice(Math.max(0, open - 30), open));
       for (const [moduleExpr, eventExpr] of pairs) {
-        sites.push({ eventType: resolver.resolve(eventExpr, file), file, line, module: resolver.resolve(moduleExpr, file), shape: direct ? "direct-email" : "object" });
+        sites.push({ category: direct ? undefined : category, eventType: resolver.resolve(eventExpr, file), file, line, module: resolver.resolve(moduleExpr, file), shape: direct ? "direct-email" : "object" });
       }
     }
 
@@ -545,6 +553,9 @@ export const UNKEYED_SEND_CALLEES = [
   "sendPushNotification",
   "sendPhoenixEmail",
   "sendTemplatedEmail",
+  // The durable outbox door (REC-048) takes the same input as the two above: a durable send with no
+  // origin module and event is as untyped as a direct one (REC-048 phase 2, 19 Nov 2026).
+  "sendDurableEmail",
 ] as const;
 
 export function scanUnkeyedSendFiles(root = process.cwd()): Map<string, string[]> {
@@ -559,8 +570,17 @@ export function scanUnkeyedSendFiles(root = process.cwd()): Map<string, string[]
       while ((m = re.exec(masked))) {
         const before = masked.slice(Math.max(0, m.index - 30), m.index);
         if (/function\s*$/.test(before)) continue;
+        if (callee === "sendDurableEmail") {
+          // A forwarder hands on a message its caller built (`sendDurableEmail(delivery.message, …)`):
+          // the caller is the send. A templated durable send names its template, which carries its
+          // type — read as the templated senders always were, so only a raw durable email counts here.
+          const firstArg = masked.slice(m.index + callee.length + 1).trimStart();
+          if (!firstArg.startsWith("{")) continue;
+          const close = matchingClose(masked, m.index + callee.length);
+          if (/(?<![\w$.])templateKey\s*:/.test(masked.slice(m.index, close))) continue;
+        }
         // A sendPhoenixEmail that names its `origin` module and event is a typed send, read above.
-        if (callee === "sendPhoenixEmail" || callee === "sendTemplatedEmail") {
+        if (callee === "sendPhoenixEmail" || callee === "sendTemplatedEmail" || callee === "sendDurableEmail") {
           const close = matchingClose(masked, m.index + callee.length);
           if (/(?<![\w$.])origin\s*:/.test(masked.slice(m.index, close))) {
             const args = masked.slice(m.index, close);

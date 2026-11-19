@@ -25,6 +25,7 @@
 import type { SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import type { DurableEmailMessage } from "@/lib/notifications/direct-email-payload";
 import { sendDurableEmail } from "@/lib/notifications/durable-email";
+import type { DurableEmailFollowUp } from "@/lib/notifications/durable-email-follow-up";
 import {
   createSystemNotification,
   createSystemNotificationForRecipients,
@@ -99,7 +100,15 @@ export type NoticesDelivery = {
   notice: Omit<CreateSystemNotificationInput, "recipientHrId" | "recipientUserId">;
   recipientHrIds: Array<string | null | undefined>;
 };
-export type DurableEmailDelivery = { via: "durable-email"; message: DurableEmailMessage; dedupeKey: string };
+export type DurableEmailDelivery = {
+  via: "durable-email";
+  message: DurableEmailMessage;
+  dedupeKey: string;
+  /** What a late send by the drain still has to do — notifications/durable-email-follow-up.ts. */
+  followUp?: DurableEmailFollowUp;
+  /** The email this is, whatever its words: a new send for it closes an older row still waiting. */
+  supersedeKey?: string;
+};
 export type DirectEmailDelivery<T> = { via: "direct-email"; send: () => Promise<T> };
 export type ApprovalDelivery = NoticeDelivery | NoticesDelivery | DurableEmailDelivery | DirectEmailDelivery<unknown>;
 
@@ -125,7 +134,11 @@ export async function raiseApproval(approval: ApprovalIdentity, delivery: Approv
     case "notices":
       return createSystemNotificationForRecipients(stamp(delivery.notice, approval), delivery.recipientHrIds);
     case "durable-email":
-      return sendDurableEmail(delivery.message, { dedupeKey: delivery.dedupeKey });
+      return sendDurableEmail(delivery.message, {
+        dedupeKey: delivery.dedupeKey,
+        followUp: delivery.followUp,
+        supersedeKey: delivery.supersedeKey,
+      });
     case "direct-email":
       return delivery.send();
   }

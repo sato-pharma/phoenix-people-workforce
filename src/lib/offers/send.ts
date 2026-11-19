@@ -9,9 +9,10 @@ import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers
 import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
 import { offerBccWithOwnerCopy } from "@/lib/offers/owner-copy";
 import { systemDeployment } from "@/config/system-settings";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
-import { jobOfferSmtpDispatch } from "@/lib/email/job-offer-smtp";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
+import { sendDurableEmail } from "@/lib/notifications/durable-email";
+import { offerRetryFingerprint } from "@/lib/offers/offer-fingerprint";
+import type { OfferLetterResendFollowUp, OfferLetterSendFollowUp } from "@/lib/notifications/durable-email-follow-up";
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
 import { offerSendRefusal } from "@/lib/offers/approval-rules";
@@ -148,8 +149,34 @@ export async function sendOfferEmail(
     ? await getOfferTemplate(offer.templateId)
     : await defaultOfferTemplate();
 
+  const revision = offer.revision ?? 0;
   const delivery = await deliverOfferLetter(offer, template, {
     copies,
+    // Durable (REC-048 phase 2): the letter is written to the outbox first. If this send fails, HR is
+    // told now exactly as before and the offer stays unsent; should the drain deliver it later, the
+    // follow-up marks the offer sent — but only if nobody changed the offer in the meantime.
+    durable: {
+      dedupeKey: `offers:offer_letter:${offer.id}:r${revision}`,
+      followUp: {
+        approvedFromPending: offer.status === "pending_approval",
+        copies: { bcc: copies.bcc, cc: copies.cc },
+        design: {
+          blocks: template.blocks,
+          fontFamily: template.fontFamily,
+          fontSizePt: template.fontSizePt,
+          theme: template.theme,
+          variant: template.variant,
+        },
+        kind: "offer_letter",
+        mode: "send",
+        offerId: offer.id,
+        offerFingerprint: offerRetryFingerprint(offer),
+        requestedBy: offer.approval?.requestedBy ?? null,
+        revision,
+        sentBy: options.sentBy ?? null,
+      },
+      supersedeKey: `offer_letter:${offer.id}:r${revision}`,
+    },
     idempotencyKey: offerIdempotencyKey(offer.id, offer.revision ?? 0),
     logoUrl: options.logoUrl,
   });
@@ -200,10 +227,18 @@ export async function resendOfferEmail(
   // classic (types.ts) — so absent means classic, the letter the candidate was actually sent.
   const design: OfferLetterDesign = { ...offer.templateSnapshot, variant: offer.templateSnapshot.variant ?? "classic" };
 
+  const revision = offer.revision ?? 0;
   const delivery = await deliverOfferLetter(offer, design, {
     // The candidate only. The CC/BCC typed for the first send are not kept on the offer, and a
     // resend is for the person who never received the letter — not a second round of copies.
     copies: planOfferCopies({ candidateEmail: offer.candidateEmail }),
+    // Durable (REC-048 phase 2) — see sendOfferEmail. A resend changes nothing on the offer, so a late
+    // one only writes the route's audit row; it is not made at all once the offer is no longer out.
+    durable: {
+      dedupeKey: `offers:offer_resend:${offer.id}:${options.requestId}`,
+      followUp: { kind: "offer_letter", mode: "resend", offerId: offer.id, revision },
+      supersedeKey: `offer_resend:${offer.id}:r${revision}`,
+    },
     idempotencyKey: offerResendIdempotencyKey(offer.id, options.requestId),
     logoUrl: options.logoUrl,
   });
@@ -214,7 +249,12 @@ export async function resendOfferEmail(
 async function deliverOfferLetter(
   offer: OfferRecord,
   template: OfferLetterDesign,
-  options: { copies: OfferCopyPlan; idempotencyKey: string; logoUrl?: string },
+  options: {
+    copies: OfferCopyPlan;
+    durable: { dedupeKey: string; followUp: OfferLetterSendFollowUp | OfferLetterResendFollowUp; supersedeKey: string };
+    idempotencyKey: string;
+    logoUrl?: string;
+  },
 ): Promise<OfferLetterDelivery> {
   const { copies } = options;
   const fields = offerFields(offer);
@@ -322,35 +362,43 @@ async function deliverOfferLetter(
   // only") — a send, an updated offer and a resent letter alike. Never stored on the offer: see owner-copy.ts.
   const bcc = offerBccWithOwnerCopy({ bcc: copies.bcc, candidateEmail: offer.candidateEmail, cc: copies.cc });
 
-  const result = await sendPhoenixEmail({
-    attachments: attachments.length > 0 ? attachments : undefined,
-    bcc: bcc.length > 0 ? bcc : undefined,
-    cc: copies.cc.length > 0 ? copies.cc : undefined,
-    // A candidate has no employee record, so their address is unknown to the Recipient Assurance
-    // Guard by definition. Without this declaration every offer would be blocked as an
-    // unrecognised recipient.
-    //
-    // The copies are declared too. HR typed each one for this send a moment ago, and the owner
-    // ruled that an offer may be copied to anyone without a reason (2026-09-28) — so an outside
-    // address on CC is intended, not a typo the guard should catch. Its shape was already checked
-    // by `planOfferCopies` above.
-    // Through the real hr@ mailbox on Turbify when its app password is set (owner, 2026-11-06) —
-    // undefined otherwise, which keeps the provider chain exactly as it was. No fall back to Resend.
-    dispatch: jobOfferSmtpDispatch(),
-    externalRecipients: [offer.candidateEmail, ...copies.cc, ...bcc],
-    from: sender.from,
-    html,
-    idempotencyKey: options.idempotencyKey,
-    origin: {
-      eventType: "offer_letter",
-      module: "offers",
-      notificationType: "offer_letter",
+  const result = await sendDurableEmail(
+    {
+      // Through the real hr@ mailbox on Turbify when its app password is set (owner, 2026-11-06) —
+      // the provider chain otherwise, exactly as before. Stored by NAME (a function cannot sit in the
+      // outbox row) and resolved by the send itself — `jobOfferSmtpDispatch()`, inline and on a retry.
+      // A Turbify failure is never retried behind HR's back and never falls back to Resend.
+      dispatch: "job_offer_smtp",
+      input: {
+        attachments: attachments.length > 0 ? attachments : undefined,
+        bcc: bcc.length > 0 ? bcc : undefined,
+        cc: copies.cc.length > 0 ? copies.cc : undefined,
+        // A candidate has no employee record, so their address is unknown to the Recipient Assurance
+        // Guard by definition. Without this declaration every offer would be blocked as an
+        // unrecognised recipient.
+        //
+        // The copies are declared too. HR typed each one for this send a moment ago, and the owner
+        // ruled that an offer may be copied to anyone without a reason (2026-09-28) — so an outside
+        // address on CC is intended, not a typo the guard should catch. Its shape was already checked
+        // by `planOfferCopies` above.
+        externalRecipients: [offer.candidateEmail, ...copies.cc, ...bcc],
+        from: sender.from,
+        html,
+        idempotencyKey: options.idempotencyKey,
+        origin: {
+          eventType: "offer_letter",
+          module: "offers",
+          notificationType: "offer_letter",
+        },
+        replyTo: sender.replyTo,
+        subject,
+        text,
+        to: [offer.candidateEmail],
+      },
+      sender: "phoenix",
     },
-    replyTo: sender.replyTo,
-    subject,
-    text,
-    to: [offer.candidateEmail],
-  });
+    options.durable,
+  );
 
   const skipped = result.skipped === true;
   const skippedReason = skipped ? (result as { reason: string }).reason : null;
@@ -405,27 +453,39 @@ export async function expireOfferEmail(offerId: string): Promise<OfferSendOutcom
     logoSrc: mark ? SATO_LOGO_CID_SRC : satoLogoUrl(systemDeployment.productionUrl),
   });
 
-  const result = await sendPhoenixEmail({
-    attachments: mark ? [mark] : undefined,
-    // A candidate has no employee record, so their address is unknown to the Recipient Assurance
-    // Guard — it must be declared here or the notice is blocked as an unrecognised recipient, the
-    // same declaration the offer letter makes.
-    // The same hr@ mailbox the letter left from, when its app password is set (owner, 2026-11-06).
-    dispatch: jobOfferSmtpDispatch(),
-    externalRecipients: [offer.candidateEmail],
-    from: sender.from,
-    html,
-    idempotencyKey: offerExpiryIdempotencyKey(offer.id),
-    origin: {
-      eventType: "offer_expired",
-      module: "offers",
-      notificationType: "offer_expired",
+  const result = await sendDurableEmail(
+    {
+      // The same hr@ mailbox the letter left from, when its app password is set (owner, 2026-11-06).
+      dispatch: "job_offer_smtp",
+      input: {
+        attachments: mark ? [mark] : undefined,
+        // A candidate has no employee record, so their address is unknown to the Recipient Assurance
+        // Guard — it must be declared here or the notice is blocked as an unrecognised recipient, the
+        // same declaration the offer letter makes.
+        externalRecipients: [offer.candidateEmail],
+        from: sender.from,
+        html,
+        idempotencyKey: offerExpiryIdempotencyKey(offer.id),
+        origin: {
+          eventType: "offer_expired",
+          module: "offers",
+          notificationType: "offer_expired",
+        },
+        replyTo: sender.replyTo,
+        subject,
+        text,
+        to: [offer.candidateEmail],
+      },
+      sender: "phoenix",
     },
-    replyTo: sender.replyTo,
-    subject,
-    text,
-    to: [offer.candidateEmail],
-  });
+    // Durable (REC-048 phase 2): a late notice the drain sends withdraws the offer then — and only if
+    // the offer is still out with the candidate when it goes.
+    {
+      dedupeKey: `offers:offer_expired:${offer.id}`,
+      followUp: { kind: "offer_expiry", offerId: offer.id },
+      supersedeKey: `offer_expiry:${offer.id}`,
+    },
+  );
 
   const skipped = result.skipped === true;
   const skippedReason = skipped ? (result as { reason: string }).reason : null;

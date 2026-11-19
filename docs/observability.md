@@ -825,6 +825,7 @@ policy):
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
    | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
+   | `phoenix-attendance-weekly-digest` | `23 5,12 * * *` | 3h | GitHub Actions `attendance-weekly-digest.yml` at 03:23 and 10:23 UTC (05:23 and 12:23 Cairo in winter, an hour later in summer — declared at the earlier) · **in-house only** |
    | `phoenix-system-audit-sweep` | `57 4 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-expense-claims-refresh` | `51 * * * *` | 1h | cron-job.org job `8350207` |
    | `phoenix-recruitment-cv-digest` | `47 0,6,12,18 * * *` | 1h | cron-job.org job `8334658` |
@@ -963,6 +964,7 @@ policy):
    | `phoenix-territory-restamp` | `sales` | The nightly 03:20 territory restamp that keeps each customer's territory current against the master data. A red means sales rows are being attributed on a stale territory. |
    | `phoenix-brick-move-drain` | `sales` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. |
    | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 integrity checks. They store their report and write every breach into the System Audit ledger, which the 04:57 daily message carries; they send nothing of their own. A red means last night's checks were neither stored nor reported. |
+   | `phoenix-attendance-weekly-digest` | `hr in-house-only silent-when-clean` | The weekly attendance review's clock, twice a day: it builds each closed week for the Super Admin's release, settles days left unanswered past their deadline to salary and applies settled answers to payroll. It sends nothing itself. A red means the review weeks, the deadline settlement or the payroll answers are behind — or a step failed and the run's summary names it. |
    | `phoenix-system-audit-sweep` | `platform in-house-only silent-when-clean` | The nightly 04:57 System Audit sweep: every detector in turn, the verifier, then one in-app and Telegram message, sent only when an issue is new, newly shared or reopened, so a quiet morning is correct. A red means last night's findings were not collected and nobody was told. |
    | `phoenix-expense-claims-refresh` | `hr` | Rebuilds the expense-claims read mirror from the legacy outstation tables every hour. Production reads are live on that mirror, so a red means the claims people are reading go stale. |
    | `phoenix-recruitment-cv-digest` | `recruitment silent-when-clean` | Emails each hiring manager who had candidates pushed to them in the last six hours a summary of what they received and from whom. Silent when no manager received any. |

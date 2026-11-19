@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 
 import { sendTemplatedEmail, type SendTemplatedEmailInput } from "@/lib/email-templates/service";
+import type { EmailDispatch } from "@/lib/email/email-providers";
+import { jobOfferSmtpDispatch } from "@/lib/email/job-offer-smtp";
 import {
   sendPhoenixEmail,
   type SendPhoenixEmailInput,
   type SendPhoenixEmailResult,
 } from "@/lib/email/send-phoenix-email";
+import type { DurableEmailFollowUp } from "@/lib/notifications/durable-email-follow-up";
 
 /**
  * A DURABLE DIRECT EMAIL — the outbox row behind an approval email that used to be sent straight to
@@ -22,15 +25,32 @@ import {
  * resolves recipients by policy, adds the manager CC and swaps templates — the drain branches on
  * `kind === "direct_email"` before any of it runs (`processNotificationOutboxRow`).
  *
+ * The emails a person sends with a button (REC-048 phase 2, 19 Nov 2026) — a job offer, its resend
+ * and its expiry notice, the interview calendar's invitation, the marketing "approved requests" email
+ * and the careers form's confirmation — use the same shape. Two things they need are named here
+ * because a function cannot be stored in a row:
+ *
+ *  - `dispatch: "job_offer_smtp"` — an offer leaves through the real hr@ mailbox when its app password
+ *    is set (`jobOfferSmtpDispatch()`); the stored message names it and the send resolves it again,
+ *    inline and on every retry, exactly as `offers/send.ts` resolved it before.
+ *  - `followUp` — what a LATE send (one the drain makes after the press failed) still has to do: mark
+ *    the offer sent, withdraw the expired offer, log the invitation. See durable-email-follow-up.ts.
+ *
  * This module holds no database code, so the payload rules are testable on their own.
  */
 
 export const DIRECT_EMAIL_PAYLOAD_KIND = "direct_email" as const;
 
+/**
+ * A dispatcher a stored message is handed to, by NAME — a function cannot be stored, so the send
+ * resolves it again each time. Only a job offer uses one (`jobOfferSmtpDispatch`).
+ */
+export type DirectEmailDispatch = "job_offer_smtp";
+
 /** The sender and the exact input it is called with — inline and on every retry. */
 export type DurableEmailMessage =
   | { input: SendTemplatedEmailInput; sender: "templated" }
-  | { input: SendPhoenixEmailInput; sender: "phoenix" };
+  | { dispatch?: DirectEmailDispatch; input: Omit<SendPhoenixEmailInput, "dispatch">; sender: "phoenix" };
 
 export type DirectEmailPayload = {
   kind: typeof DIRECT_EMAIL_PAYLOAD_KIND;
@@ -47,14 +67,29 @@ export type DirectEmailPayload = {
   subject?: string | null;
   /** Stamped when the row is marked sent and the body and figures were deleted (sent-figures.ts). */
   figuresCleared?: true;
+  /** What a late send (made by the drain, not the press) still has to do — durable-email-follow-up.ts. */
+  followUp?: DurableEmailFollowUp;
+  /**
+   * The email this is, whatever its words: a later send with the same key closes this row if it is
+   * still waiting, so a press that sends the email again never leaves an older copy queued behind it.
+   */
+  supersedeKey?: string;
 };
 
 export type DirectEmailSenders = {
+  /** Turns a stored dispatcher NAME back into the dispatcher; `undefined` keeps the provider chain. */
+  resolveDispatch?: (name: DirectEmailDispatch) => EmailDispatch | undefined;
   sendPhoenixEmail: (input: SendPhoenixEmailInput) => Promise<SendPhoenixEmailResult>;
   sendTemplatedEmail: (input: SendTemplatedEmailInput) => Promise<SendPhoenixEmailResult>;
 };
 
-const defaultSenders: DirectEmailSenders = { sendPhoenixEmail, sendTemplatedEmail };
+/** The one dispatcher a stored message may name. Unset app password → `undefined` → the provider chain. */
+export function resolveDirectEmailDispatch(name: DirectEmailDispatch): EmailDispatch | undefined {
+  if (name === "job_offer_smtp") return jobOfferSmtpDispatch();
+  return undefined;
+}
+
+const defaultSenders: DirectEmailSenders = { resolveDispatch: resolveDirectEmailDispatch, sendPhoenixEmail, sendTemplatedEmail };
 
 export function isDirectEmailPayload(value: unknown): value is DirectEmailPayload {
   if (!value || typeof value !== "object") return false;
@@ -73,7 +108,9 @@ export function sendDirectEmailMessage(
   senders: DirectEmailSenders = defaultSenders,
 ): Promise<SendPhoenixEmailResult> {
   if (message.sender === "templated") return senders.sendTemplatedEmail(message.input);
-  return senders.sendPhoenixEmail(message.input);
+  // The dispatcher is resolved NOW, from its stored name — the same call offers/send.ts made inline.
+  const dispatch = message.dispatch ? (senders.resolveDispatch ?? resolveDirectEmailDispatch)(message.dispatch) : undefined;
+  return senders.sendPhoenixEmail(dispatch ? { ...message.input, dispatch } : message.input);
 }
 
 function cleanList(values: Array<string | null | undefined> | null | undefined): string[] {
@@ -101,6 +138,7 @@ export function buildDirectEmailPayload(
   message: DurableEmailMessage,
   label: string,
   originEnvironment: string,
+  extras: { followUp?: DurableEmailFollowUp; supersedeKey?: string } = {},
 ): DirectEmailPayload {
   const origin = message.input.origin ?? null;
   const employeeHrId = message.sender === "templated"
@@ -109,6 +147,7 @@ export function buildDirectEmailPayload(
   return {
     employeeHrId,
     eventType: origin?.eventType ?? (message.sender === "templated" ? String(message.input.templateKey) : null),
+    ...(extras.followUp ? { followUp: extras.followUp } : {}),
     kind: DIRECT_EMAIL_PAYLOAD_KIND,
     label,
     message,
@@ -116,6 +155,7 @@ export function buildDirectEmailPayload(
     originEnvironment,
     recipients: messageRecipients(message),
     subject: messageSubject(message),
+    ...(extras.supersedeKey ? { supersedeKey: extras.supersedeKey } : {}),
   };
 }
 
@@ -129,6 +169,7 @@ export function directEmailSentPayload(payload: DirectEmailPayload): DirectEmail
   const { message } = payload;
   const kept: DurableEmailMessage = message.sender === "phoenix"
     ? {
+        ...(message.dispatch ? { dispatch: message.dispatch } : {}),
         input: {
           bcc: message.input.bcc,
           cc: message.input.cc,

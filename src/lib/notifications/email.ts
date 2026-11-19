@@ -22,7 +22,13 @@ import {
   isDirectEmailPayload,
   sendDirectEmailMessage,
   type DirectEmailPayload,
+  type DirectEmailSenders,
 } from "@/lib/notifications/direct-email-payload";
+import {
+  checkDurableEmailFollowUp,
+  completeDurableEmailFollowUp,
+  type FollowUpGate,
+} from "@/lib/notifications/durable-email-follow-up";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
 import { TEMPORARY_PASSWORD_METRIC_LABEL } from "@/lib/auth/temporary-password";
@@ -1635,7 +1641,13 @@ export type OutboxSkipCode =
   | "no_deliverable_recipient"
   | "probation_audit_failed"
   | "payslip_email_blocked"
-  | "held_for_review";
+  | "held_for_review"
+  // A durable direct email (REC-048) whose send through a person's own Turbify mailbox failed — never
+  // retried behind their back, because the server may already have taken it.
+  | "not_retried"
+  // A durable direct email the drain was about to retry, whose record says it is no longer the email
+  // to send (the offer changed, the interview moved) — durable-email-follow-up.ts.
+  | "follow_up_refused";
 
 export type OutboxSkipClass =
   | { terminal: true; escalate: boolean; code: OutboxSkipCode }
@@ -2633,7 +2645,17 @@ export type DirectEmailDeliveryOutcome =
   | { outcome: "sent"; result: SendEmailResult }
   | { outcome: "skipped"; result: SendEmailResult & { skipped: true } }
   | { outcome: "queued"; result: SendEmailResult & { skipped: true } }
-  | { error: unknown; message: string; outcome: "threw" };
+  | { error: unknown; message: string; outcome: "threw"; terminal?: boolean };
+
+/**
+ * A failure that is NEVER retried behind the sender's back: a send through a real Turbify mailbox —
+ * the hr@ job-offer mailbox (`JobOfferSmtpError`) or a person's own My email (`PersonalMailboxError`).
+ * The server may already have taken the message, so a second try could put a second copy in front of
+ * the candidate; the person reads the reason and looks in Sent first (job-offer-smtp.ts).
+ */
+export function isNeverRetriedEmailError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "JobOfferSmtpError" || error.name === "PersonalMailboxError");
+}
 
 /**
  * One attempt at a CLAIMED durable direct email row (REC-048): the stored sender with the stored
@@ -2643,10 +2665,13 @@ export type DirectEmailDeliveryOutcome =
  * row is marked failed with the drain's own backoff and attempt limit, so the drain sends it again.
  * Used by the drain (`processNotificationOutboxRow`) and by the inline send (`durable-email.ts`).
  */
-export async function deliverDirectEmailOutboxRow(row: NotificationOutboxRow): Promise<DirectEmailDeliveryOutcome> {
+export async function deliverDirectEmailOutboxRow(
+  row: NotificationOutboxRow,
+  senders?: DirectEmailSenders,
+): Promise<DirectEmailDeliveryOutcome> {
   const payload = row.payload as unknown as DirectEmailPayload;
   try {
-    const result = await sendDirectEmailMessage(payload.message);
+    const result = await sendDirectEmailMessage(payload.message, senders);
     if (!result.skipped) {
       await markNotificationOutboxSent(row, result.id);
       return { outcome: "sent", result };
@@ -2660,10 +2685,55 @@ export async function deliverDirectEmailOutboxRow(row: NotificationOutboxRow): P
     return { outcome: "queued", result };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email failed.";
+    if (isNeverRetriedEmailError(error)) {
+      await markNotificationOutboxSkipped(row, message, "not_retried");
+      return { error, message, outcome: "threw", terminal: true };
+    }
     const retryAfterMs = error instanceof RetryableEmailError ? error.retryAfterMs : undefined;
     await markNotificationOutboxFailed(row, message, retryAfterMs);
     return { error, message, outcome: "threw" };
   }
+}
+
+export type DirectEmailRetryDeps = {
+  check: (followUp: unknown) => Promise<FollowUpGate>;
+  complete: (followUp: unknown, providerMessageId: string | null) => Promise<void>;
+  deliver: (row: NotificationOutboxRow) => Promise<DirectEmailDeliveryOutcome>;
+};
+
+const defaultDirectEmailRetryDeps: DirectEmailRetryDeps = {
+  check: checkDurableEmailFollowUp,
+  complete: completeDurableEmailFollowUp,
+  deliver: (row) => deliverDirectEmailOutboxRow(row),
+};
+
+/**
+ * THE DRAIN'S retry of a claimed durable direct email (REC-048 phase 2). Before it sends, the row's
+ * `followUp` is asked whether this is still the email to send — an offer edited or re-sent since the
+ * press, an interview moved or cancelled, closes the row unsent; an unreadable record leaves it queued.
+ * After a send, the follow-up does what the press would have done (marks the offer sent, withdraws the
+ * expired offer, logs the invitation). A row with no follow-up is simply delivered, as before. The
+ * inline send at the press never comes here: it does its own bookkeeping.
+ */
+export async function retryDirectEmailOutboxRow(
+  row: NotificationOutboxRow,
+  deps: DirectEmailRetryDeps = defaultDirectEmailRetryDeps,
+): Promise<DirectEmailDeliveryOutcome> {
+  const followUp = (row.payload as unknown as DirectEmailPayload).followUp;
+  const gate = await deps.check(followUp);
+  if (gate.decision === "skip") {
+    await markNotificationOutboxSkipped(row, gate.reason, "follow_up_refused");
+    return { outcome: "skipped", result: { reason: gate.reason, skipped: true } };
+  }
+  if (gate.decision === "later") {
+    await markNotificationOutboxFailed(row, gate.reason);
+    return { outcome: "queued", result: { reason: gate.reason, skipped: true } };
+  }
+  const delivery = await deps.deliver(row);
+  if (delivery.outcome === "sent") {
+    await deps.complete(followUp, delivery.result.skipped ? null : delivery.result.id ?? null);
+  }
+  return delivery;
 }
 
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
@@ -2677,7 +2747,7 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
   // identity guard, the probation audit and the policy path below, which all belong to the standard
   // notification and would re-route it. See direct-email-payload.ts.
   if (isDirectEmailPayload(claimedRow.payload)) {
-    const delivery = await deliverDirectEmailOutboxRow(claimedRow);
+    const delivery = await retryDirectEmailOutboxRow(claimedRow);
     console.log("Durable direct email attempted from the outbox", {
       level: delivery.outcome === "sent" ? "info" : "warning",
       tags: { component: "email", cron: "outbox-processing", isRetry: String(isRetry), outcome: delivery.outcome },

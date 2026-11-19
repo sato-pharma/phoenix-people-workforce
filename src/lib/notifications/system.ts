@@ -48,6 +48,7 @@ import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { noticeAlreadyReached, REACHED_DELIVERY_STATUSES } from "@/lib/notifications/stored-notice";
+import { defaultNotificationCategory } from "@/lib/notifications/notification-bell-categories";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -443,16 +444,8 @@ function schemaMissing(error: unknown, table: string) {
 function categoryFor(input: CreateSystemNotificationInput) {
   const explicit = cleanText(input.category).toLowerCase();
   if (explicit) return explicit;
-
-  const moduleName = cleanText(input.module).toLowerCase();
-  if (moduleName === "vacation" || moduleName === "leave") return "vacation_request";
-  if (moduleName === "excuse" || moduleName === "excuses") return "excuse";
-  if (moduleName === "coaching") return "coaching_report";
-  if (moduleName === "internal_message" || moduleName === "internal_messages") return "internal_message";
-  if (moduleName === "probation") return "probation";
-  if (moduleName === "recruitment") return "recruitment";
-  if (moduleName === "marketing_requests") return "general";
-  return "general";
+  // The module's default bell category — the registry's own rule (notification-bell-categories.ts).
+  return defaultNotificationCategory(input.module);
 }
 
 function notificationTypeFor(moduleName: string): EmailNotificationType {

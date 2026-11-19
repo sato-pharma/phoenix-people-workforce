@@ -294,12 +294,19 @@ export async function runOfferEmailViaTurbifyTests() {
     assert.ok(mirrorAt > dispatchAt, "and the mirror runs after it, whichever way the email left");
 
     // ── 7. every offer email is wired to the dispatcher ───────────────────────────────────────────
+    // Since REC-048 phase 2 (19 Nov 2026) each offer email goes through the durable outbox, which
+    // stores the dispatcher by NAME and resolves it again on every send — `jobOfferSmtpDispatch()`.
     const offers = stripComments(readFileSync("src/lib/offers/send.ts", "utf8"));
+    const durableSends = (offers.match(/await sendDurableEmail\(/g) ?? []).length;
+    assert.equal(durableSends, 2, "the letter (send and resend share one) and the expiry notice are the two offer sends");
     assert.equal(
-      (offers.match(/dispatch: jobOfferSmtpDispatch\(\),/g) ?? []).length,
-      (offers.match(/await sendPhoenixEmail\(\{/g) ?? []).length,
+      (offers.match(/dispatch: "job_offer_smtp",/g) ?? []).length,
+      durableSends,
       "the letter (send and resend) and the expiry notice all go through the hr@ mailbox when it is configured",
     );
+    assert.doesNotMatch(offers, /sendPhoenixEmail\(/, "no offer email reaches the provider around the outbox");
+    const payload = stripComments(readFileSync("src/lib/notifications/direct-email-payload.ts", "utf8"));
+    assert.match(payload, /if \(name === "job_offer_smtp"\) return jobOfferSmtpDispatch\(\);/, "the stored name resolves to the hr@ dispatcher");
   } finally {
     globalThis.fetch = savedFetch;
     for (const key of ENV_KEYS) {

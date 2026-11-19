@@ -6,6 +6,7 @@ import { getDigestSettings, settleOverdueAnswers, syncOpenReviewWeeks } from "@/
 import { previousMonthKey } from "@/lib/attendance/digest-weeks.ts";
 import { runHrOpsReportsSchedule, type HrOpsScheduleResult } from "@/lib/hr-ops-reports/schedule";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -81,10 +82,25 @@ async function runHrOpsReportsStep(todayIso: string): Promise<{ result: HrOpsSch
   }
 }
 
+/**
+ * THE HEARTBEAT (REC-049, 19 Nov 2026). The run is scheduled by `.github/workflows/attendance-weekly-digest.yml`
+ * (03:23 and 10:23 UTC) and recorded no heartbeat of its own — only the workflow watch could see it
+ * stop, and only as "the workflow is overdue". It now reports every run to the register as
+ * `phoenix-attendance-weekly-digest` (in-house only): success when the run answers 200, failure on any
+ * other answer (a step that failed, or a thrown run). A refused caller reports nothing.
+ */
+const HEARTBEAT_SLUG = "phoenix-attendance-weekly-digest";
+
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/attendance-weekly-digest");
   if (denied) return denied;
 
+  const response = await runWeeklyDigest();
+  await pingDeadMansSwitch(HEARTBEAT_SLUG, response.ok ? "success" : "fail", response.ok ? undefined : `The run answered HTTP ${response.status}; its summary names the failed step.`);
+  return response;
+}
+
+async function runWeeklyDigest(): Promise<NextResponse> {
   try {
     // Cairo, never UTC: for the first two or three hours of a Cairo day the UTC date
     // is still yesterday, which would judge a week as closed a day late — or, at the
