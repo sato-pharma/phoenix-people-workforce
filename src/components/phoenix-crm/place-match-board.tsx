@@ -36,6 +36,7 @@ import { useMemo, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { crmPost, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
+import { PLACE_CHECK_WAITING_FOR_ADMIN, usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { countText } from "@/components/phoenix-crm/format";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
@@ -524,6 +525,9 @@ function RepRows({ reps }: { reps: MatchRepAccuracy[] }) {
 // ── The tab ──────────────────────────────────────────────────────────────────────────────────────
 
 export function PlaceMatchBoardView({ filters }: { filters: ValidationReviewFilters }) {
+  // 🔴 AN ANSWER HERE IS A DECISION, THE SUPER ADMIN'S ALONE (owner, 2026-11-19): the SFE Manager reads the
+  // groups and the questions, and every answer button stays shut for him (the route refuses him too).
+  const decides = usePlaceCheckDecides();
   const resource = useCrmGet<BoardView>(ROUTE, "board");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -582,7 +586,7 @@ export function PlaceMatchBoardView({ filters }: { filters: ValidationReviewFilt
       setBusy(false);
     }
   };
-  const locked = busy || resource.loading;
+  const locked = busy || resource.loading || !decides;
   const anyFilter =
     filters.rep !== "" || filters.line !== "" || filters.region !== "" || filters.area !== "" || filters.list !== "" || filters.period !== "all" || filters.text.trim() !== "";
 
@@ -594,6 +598,7 @@ export function PlaceMatchBoardView({ filters }: { filters: ValidationReviewFilt
         </AdminCallout>
       ) : null}
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}
+      {decides ? null : <CrmNote tone="neutral">{PLACE_CHECK_WAITING_FOR_ADMIN}: the answers on this tab are the administrator&apos;s.</CrmNote>}
 
       <CrmStatGrid>
         <CrmStat label="Places several reps validated" note="Two or more reps, confidently the same place" value={countText(insights.groups)} />

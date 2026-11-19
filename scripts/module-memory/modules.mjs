@@ -675,7 +675,7 @@ export const MODULES = [
   {
     id: "phoenix-crm-place-checks",
     title: "Phoenix CRM — the Place checks page: groups, the same-place comparison and the decisions",
-    scope: "What the Place checks page draws and how the Super Admin and the SFE Manager decide on it — the polyclinics tab and its groups, the same-place comparison between reps, the bulk answers, a rejection taken back, the comments and a district manager's read-only board.",
+    scope: "What the Place checks page draws and how the Super Admin decides on it and the SFE Manager recommends — the polyclinics tab and its groups, the same-place comparison between reps, the bulk answers, a rejection taken back, the comments and a district manager's read-only board.",
     globs: [
       "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,waiting-rules}.ts",
       "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts",

@@ -92,7 +92,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
   // ── The read ──────────────────────────────────────────────────────────────────────────────────
   const server = code("src/lib/phoenix-crm/server/failing-timetables.ts");
   const load = server.slice(server.indexOf("export async function loadFailingTimetables("), server.indexOf("export type NoTimetableDeclaration"));
-  assert.ok(load.includes("if (!canDecideValidationReviews(viewer)) return EMPTY;"), "🔴 the list is the deciders' alone — anybody else is handed nothing");
+  assert.ok(load.includes("if (!readsCompanyPlaceChecks(viewer)) return EMPTY;"), "🔴 the list is the board's readers' alone — anybody else is handed nothing");
   assert.ok(load.includes('.in("reason", ["timetable_unreadable", "timetable_missing"])'), "only the two timetable refusals are read");
   assert.ok(load.includes('.eq("is_test", false)'), "a test entry is never listed");
   assert.match(
@@ -222,7 +222,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
   );
 
   const list = code("src/components/phoenix-crm/shared-place-list.tsx");
-  assert.ok(list.includes('{mode === "team" ? null : <NoTimetableDeclaration row={row} />}'), "🔴 a district manager's board never draws the declaration");
+  assert.ok(list.includes('{mode === "team" || !decides ? null : <NoTimetableDeclaration row={row} />}'), "🔴 a district manager's board never draws the declaration, nor the SFE Manager's (owner, 2026-11-19)");
   assert.ok(list.includes("const control = row.noTimetableControl ?? null;"), "the button is the row's own answer");
   assert.ok(list.includes("if (!control) return null;"));
   assert.ok(list.includes('{ sharedPlaceId: row.sharedPlaceId, declared: control === "declare" }'), "it posts the building and which of the two");

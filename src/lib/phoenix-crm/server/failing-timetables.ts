@@ -3,7 +3,7 @@
  * that a building has no timetable. The rule, its numbers and what the declaration does NOT do are in
  * `../failing-timetable-rules.ts`.
  *
- * The list is the deciders' (the Super Admin and the SFE Manager, `canDecideValidationReviews`), on the
+ * The list is the company board's readers' (the Super Admin and the SFE Manager, `readsCompanyPlaceChecks`), on the
  * Polyclinics tab of Place checks. A district manager's board is never handed it.
  *
  * 🔴 THE DECLARATION IS THE SUPER ADMIN'S ALONE (`canDecideSharedPlaces`), and it is one database function
@@ -22,7 +22,7 @@ import {
 } from "@/lib/phoenix-crm/failing-timetable-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
-import { canDecideValidationReviews, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, selectByIds, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -66,7 +66,7 @@ const EMPTY: FailingTimetablesView = { lookbackDays: FAILING_TIMETABLE_LOOKBACK_
  * not in use, the second is the administrator's exception and not a fault.
  */
 export async function loadFailingTimetables(viewer: PhoenixCrmViewer, now: Date = new Date()): Promise<FailingTimetablesView> {
-  if (!canDecideValidationReviews(viewer)) return EMPTY;
+  if (!readsCompanyPlaceChecks(viewer)) return EMPTY;
   const since = new Date(now.getTime() - FAILING_TIMETABLE_LOOKBACK_DAYS * DAY_MS).toISOString();
   const read = await readEveryPage<Row>(
     () =>

@@ -40,6 +40,7 @@ import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { waitingIsLong, waitingText } from "@/lib/phoenix-crm/waiting-rules";
 import {
   canDecideValidationReviews,
+  readsCompanyPlaceChecks,
   canRestoreValidation,
   placeChecksSeatScope,
   readTestFlag,
@@ -741,7 +742,7 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
   // null is the whole company (the Super Admin), a seat list is one district manager's own team
   // (owner, 2026-10-13). It THROWS for anybody else — see `placeChecksSeatScope`.
   const seats = placeChecksSeatScope(viewer);
-  const decides = canDecideValidationReviews(viewer);
+  const decides = readsCompanyPlaceChecks(viewer);
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()
@@ -854,7 +855,7 @@ export type SharedPlaceDecision = {
  * allow-list and already worded as the system's rather than a person's (golden rule #1).
  */
 export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceDecision> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = record(raw);
   if (!isUuid(body.sharedPlaceId)) throw validationError("Choose the polyclinic or centre to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;

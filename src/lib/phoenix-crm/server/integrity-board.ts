@@ -96,7 +96,7 @@ import {
   type PhoenixCrmIntegrityFlag,
   type StoredSignboardVerdict,
 } from "@/lib/phoenix-crm/location-integrity";
-import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { placeChecksSeatScope, readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { selectByIds, selectByIdsFewestRequests, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -1627,7 +1627,7 @@ export async function loadPlaceCheckIntegrity(
   input: { placeIds: ReadonlyArray<string>; sharedPlaceIds: ReadonlyArray<string> },
 ): Promise<PlaceCheckIntegrityIndex> {
   const seats = placeChecksSeatScope(viewer);
-  const decides = canDecideValidationReviews(viewer);
+  const decides = readsCompanyPlaceChecks(viewer);
   const ids = [...new Set([...input.placeIds, ...input.sharedPlaceIds].filter((id) => isUuid(id)))];
   if (ids.length === 0) return {};
 

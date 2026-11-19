@@ -67246,6 +67246,8 @@ CREATE TABLE public.phoenix_crm_place_recommendations (
     recommendation text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    writer_role text DEFAULT 'district_manager'::text NOT NULL,
+    CONSTRAINT phoenix_crm_place_recommendations_writer_role_check CHECK ((writer_role = ANY (ARRAY['district_manager'::text, 'sfe_manager'::text]))),
     CONSTRAINT phoenix_crm_place_recs_customer_chk CHECK (((place_id IS NULL) OR (customer_id IS NOT NULL))),
     CONSTRAINT phoenix_crm_place_recs_subject_chk CHECK (((((place_id IS NOT NULL))::integer + ((shared_place_id IS NOT NULL))::integer) = 1)),
     CONSTRAINT phoenix_crm_place_recs_value_chk CHECK ((recommendation = ANY (ARRAY['validate'::text, 'reject'::text])))
@@ -85020,6 +85022,12 @@ CREATE INDEX phoenix_crm_place_notes_venue_idx ON public.phoenix_crm_place_notes
 --
 
 CREATE INDEX phoenix_crm_place_recommendations_customer_idx ON public.phoenix_crm_place_recommendations USING btree (customer_id);
+
+--
+-- Name: phoenix_crm_place_recommendations_sfe_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_place_recommendations_sfe_idx ON public.phoenix_crm_place_recommendations USING btree (updated_at DESC) WHERE (writer_role = 'sfe_manager'::text);
 
 --
 -- Name: phoenix_crm_place_recs_place_uidx; Type: INDEX; Schema: public; Owner: postgres

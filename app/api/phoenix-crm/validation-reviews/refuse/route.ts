@@ -11,8 +11,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST = refuse a validation the Google check never held (every PM customer, and the AM ones that
-// matched). The Super Admin and the SFE Manager, exactly as the held reviews beside it: `approve` here is gate one,
-// and the service refuses everyone but those two before anything is read.
+// matched). The Super Admin alone (the SFE Manager recommends since 2026-11-19), exactly as the held reviews beside it:
+// `approve` here is gate one, and the service refuses everyone else before anything is read.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

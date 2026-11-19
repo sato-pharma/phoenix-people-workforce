@@ -1,7 +1,7 @@
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { parseDoctorFullName, type HeldFullName, type HeldFullNameBoard } from "@/lib/phoenix-crm/pm-name-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { canDecideValidationReviews, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canDecideValidationReviews, readsCompanyPlaceChecks, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -11,7 +11,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 export async function loadHeldFullNames(viewer: PhoenixCrmViewer): Promise<HeldFullName[]> {
-  if (!canDecideValidationReviews(viewer)) return [];
+  if (!readsCompanyPlaceChecks(viewer)) return [];
   // 🔴 EVERY HELD NAME, READ WHOLE AND PAGED (owner, 17 Nov 2026, the audit's decision paths). It read the
   // oldest 200 and stopped, with no word on the screen, so from the 201st the newest held names were
   // silently missing and nobody could decide them. A read that meets its ceiling THROWS, as every Place
@@ -100,11 +100,12 @@ function readingOf(lat: unknown, lon: unknown, accuracy: unknown): HeldFullNameB
 }
 
 /**
- * 🔴 THE SUPER ADMIN AND THE SFE MANAGER CORRECT A HELD NAME — WHOEVER DECIDES IT (owner, 2026-11-08, widening his own "the admin only, not the SFE" of the same evening: "make the edit names appear to sfe manager").
- * It was the Super Admin's alone for its first hour. Now it is exactly `canDecideValidationReviews`: the Super
- * Admin on `update`, the SFE Manager on `approve` — never `update` handed to him, never a test account, never
- * a district manager. The route asks `approve` (one permission per route, the module's rule) and this is the gate
- * for a correction, checked before the database is called.
+ * 🔴 WHOEVER DECIDES A HELD NAME CORRECTS IT — exactly `canDecideValidationReviews`, the Super Admin alone since
+ * 2026-11-19. The SFE Manager corrected names from 2026-11-08 ("make the edit names appear to sfe manager") while he
+ * decided place checks; the owner took the decision back from him on 2026-11-19 ("only able to recommend …, never
+ * able to take a decision"), and a correction is saved with Approve, so it went with it. Never a test account, never
+ * a district manager. The route asks `approve` (one permission per route, the module's rule) and this is the gate for
+ * a correction, checked before the database is called.
  */
 export function canCorrectHeldFullName(viewer: PhoenixCrmViewer): boolean {
   return canDecideValidationReviews(viewer);
@@ -119,19 +120,19 @@ export async function decideHeldFullName(
   viewer: PhoenixCrmViewer,
   raw: unknown,
 ): Promise<{ customerId: string; decision: "approve" | "reject"; corrected: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin decides these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
   if (!decision) throw validationError("Choose approve or reject.");
   const customerId = String(body.customerId).toLowerCase();
 
-  // A corrected name: the deciders' (the Super Admin and the SFE Manager), on approve only, and held to the same three-name rules a rep's
+  // A corrected name: the decider's (the Super Admin), on approve only, and held to the same three-name rules a rep's
   // own boxes are (no title, no place word, one name a box). The board match is not asked again — he is the
   // one deciding that the board was misread.
   let name: string | null = null;
   if (correctsHeldFullName(body)) {
-    if (!canCorrectHeldFullName(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager correct a name.");
+    if (!canCorrectHeldFullName(viewer)) throw forbiddenError("Only the Super Admin corrects a name.");
     if (decision !== "approve") throw validationError("A corrected name is saved with Approve.");
     const parsed = parseDoctorFullName(body.nameParts, null);
     if (!parsed.ok) throw validationError(parsed.error);

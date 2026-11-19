@@ -14,6 +14,11 @@
  *     and ONE recommendation per subject per manager, replaced when he changes his mind;
  *   · NOTHING decided. The decision is `canDecideValidationReviews` — the Super Admin alone (owner,
  *     2026-10-03) — and no screen a manager opens says who decides or that anything waits on anybody.
+ *   · A THIRD recommender since 2026-11-19 — the SFE Manager, on the company board (owner: "make Khaled
+ *     Bedair only able to recommend validation or not recommend, never able to take a decision, and the
+ *     recommended by him goes separately in a separate page for admin decision"). His row carries
+ *     `writer_role = 'sfe_manager'`, the Super Admin's "SFE recommendations" page reads it, and a district
+ *     manager's board never receives it (it names nobody above the manager).
  *
  * 🔴 THE REP'S SIDE IS THE ONE DOOR IN GOLDEN RULE #1, AND IT IS EXACTLY THIS WIDE. Until today nothing
  * a rep received named a person (owner, 2026-10-03: "do not show the rep that a person is accepting or
@@ -29,6 +34,7 @@
  */
 
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { hrIdsMatch } from "@/lib/hr-id";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
@@ -53,8 +59,9 @@ import {
   type PlaceRecommendation,
 } from "@/lib/phoenix-crm/place-note-rules";
 import {
-  canDecideValidationReviews,
+  readsCompanyPlaceChecks,
   readsTeamPlaceChecks,
+  recommendsOnCompanyPlaceChecks,
   teamPlaceChecksSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
@@ -91,7 +98,17 @@ export type PlaceRecommendationView = {
   managerName: string;
   recommendation: PlaceRecommendation;
   decidedAtText: string;
+  /** Who wrote it: a district manager on his team's board, or the SFE Manager on the company board. */
+  writerRole: PlaceRecommendationWriterRole;
+  /** The viewer's own recommendation — the one his two buttons show pressed. */
+  mine: boolean;
 };
+
+export type PlaceRecommendationWriterRole = "district_manager" | "sfe_manager";
+
+function writerRoleOf(value: unknown): PlaceRecommendationWriterRole {
+  return value === "sfe_manager" ? "sfe_manager" : "district_manager";
+}
 
 /**
  * Every comment and every recommendation on this page's subjects, keyed by `placeNoteSubjectKey`.
@@ -137,7 +154,8 @@ export async function loadPlaceNoteIndex(
   },
   // 🔴 A district manager's board names nobody above him (owner, 2026-10-13), so it gets the writer's
   // ROLE alone on a System Administrator's comment — and the name never leaves the server for him.
-  options: { managerBoard?: boolean } = {},
+  // `viewerHrId` marks the viewer's own recommendation (`mine`), so his buttons show what he chose.
+  options: { managerBoard?: boolean; viewerHrId?: string | null } = {},
 ): Promise<PlaceNoteIndex> {
   const placeIds = [...new Set(input.placeIds.filter((id) => isUuid(id)))];
   const sharedPlaceIds = [...new Set(input.sharedPlaceIds.filter((id) => isUuid(id)))];
@@ -145,7 +163,7 @@ export async function loadPlaceNoteIndex(
 
   const noteColumns = "id, place_id, shared_place_id, author_hr_id, author_source, body, rep_visible, created_at, advice";
   const columnsToRead = options.managerBoard ? noteColumns.replace(", advice", "") : noteColumns;
-  const recColumns = "id, place_id, shared_place_id, manager_hr_id, recommendation, updated_at";
+  const recColumns = "id, place_id, shared_place_id, manager_hr_id, recommendation, updated_at, writer_role";
   const [placeNotes, venueNotes, placeRecs, venueRecs] = await Promise.all([
     selectByIdsFewestRequests<Row>("phoenix_crm_place_notes", columnsToRead, "place_id", placeIds),
     selectByIdsFewestRequests<Row>("phoenix_crm_place_notes", columnsToRead, "shared_place_id", sharedPlaceIds),
@@ -154,7 +172,10 @@ export async function loadPlaceNoteIndex(
   ]);
 
   const noteRows = [...placeNotes, ...venueNotes].filter((row) => !options.managerBoard || placeNoteReachesManager(row.author_source, row.rep_visible));
-  const recRows = [...placeRecs, ...venueRecs];
+  // 🔴 A DISTRICT MANAGER'S BOARD CARRIES ONLY HIS OWN RECOMMENDATIONS (owner, 2026-11-19, with 2026-10-13's
+  // "names nobody above him"): the SFE Manager's rows are dropped HERE, on the server, because a field a
+  // browser receives counts as shown.
+  const recRows = [...placeRecs, ...venueRecs].filter((row) => !options.managerBoard || writerRoleOf(row.writer_role) === "district_manager");
   const names = await loadPeopleNames([
     ...noteRows.map((row) => text(row.author_hr_id)),
     ...recRows.map((row) => text(row.manager_hr_id)),
@@ -190,7 +211,9 @@ export async function loadPlaceNoteIndex(
     (recommendations[key] ??= []).push({
       decidedAtText: formatPhoenixDateTime(String(row.updated_at)),
       managerName: nameOf(names, text(row.manager_hr_id), "A manager"),
+      mine: Boolean(options.viewerHrId) && hrIdsMatch(text(row.manager_hr_id), options.viewerHrId ?? null),
       recommendation,
+      writerRole: writerRoleOf(row.writer_role),
     });
   }
 
@@ -377,7 +400,9 @@ async function subjectFor(viewer: PhoenixCrmViewer, kind: PlaceNoteSubjectKind, 
     throw forbiddenError("A test login reads this board as the manager sees it, and cannot comment or recommend on a real place.");
   }
 
-  if (canDecideValidationReviews(viewer)) return { source: "system_admin", subject };
+  // The company board's two readers — the Super Admin, who decides, and the SFE Manager, who recommends —
+  // write as the administrator, exactly as both did before 2026-11-19.
+  if (readsCompanyPlaceChecks(viewer)) return { source: "system_admin", subject };
   if (!readsTeamPlaceChecks(viewer)) throw forbiddenError("These place checks are not yours to comment on.");
   const mine = new Set(teamPlaceChecksSeats(viewer).map((seat) => seat.seatId));
   if (!mine.has(subject.seatId)) throw forbiddenError("This place belongs to another district.");
@@ -459,12 +484,14 @@ export async function savePlaceRecommendation(
   const subjectId = String(body.subjectId).toLowerCase();
 
   const { source, subject } = await subjectFor(viewer, kind, subjectId);
-  // 🔴 A RECOMMENDATION IS THE DISTRICT MANAGER'S WORD ON HIS OWN TEAM'S PLACE, AND NOBODY ELSE'S (owner,
-  // 17 Nov 2026, the audit's decision paths). The company board draws no recommend buttons, but this save
-  // read only the subject from `subjectFor` and threw its source away, so a hand-built request from the
-  // Super Admin or the SFE Manager stored a "manager" recommendation under a decider's own HR id, and the
-  // manager board then named him beside it: the one payload that must carry no decider.
-  if (source !== "manager") throw forbiddenError("A recommendation is the district manager's own word on a place in their team. The company board decides it.");
+  // 🔴 TWO RECOMMENDERS, AND THE DECIDER IS NEVER ONE OF THEM (owner, 17 Nov 2026, the audit's decision
+  // paths; widened 19 Nov 2026 to the SFE Manager). A district manager on his own team's place, and the SFE
+  // Manager on the company board — each row says which (`writer_role`). The Super Admin decides and never
+  // recommends: a hand-built request from him stored a "manager" recommendation under the decider's own HR
+  // id, and the manager board then named him beside it.
+  const writerRole: PlaceRecommendationWriterRole | null =
+    source === "manager" ? "district_manager" : recommendsOnCompanyPlaceChecks(viewer) ? "sfe_manager" : null;
+  if (!writerRole) throw forbiddenError("A recommendation is a district manager's or the SFE Manager's word on a place. The Super Admin decides it.");
   const upserted = await getSupabaseAdmin()
     .from("phoenix_crm_place_recommendations")
     .upsert(
@@ -477,6 +504,7 @@ export async function savePlaceRecommendation(
         seat_id: subject.seatId,
         shared_place_id: kind === "shared_place" ? subject.id : null,
         updated_at: new Date().toISOString(),
+        writer_role: writerRole,
       },
       // One unique index per subject kind, so the conflict target names the columns of the kind being
       // written: a venue save conflicts on (shared_place_id, manager_hr_id) and would not match the
