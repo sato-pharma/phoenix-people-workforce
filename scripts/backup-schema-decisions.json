@@ -989,6 +989,69 @@
       "decidedBy": "owner",
       "why": "2 tables, 140 rows: the September split rebuild's before-picture (139 store-split figures computed on 4 Oct, 87 since changed, and the Anti Infective September publication row while briefly unpublished on 9 Oct). The publication is published again with the identical snapshot, so the copy can change no figure.",
       "sheet": "19 November 2026, the 9 October snapshot schemas, in chat"
+    },
+    "epda_backup_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 3,573 rows: the shared EPDA customer code's split as it stood at 00:48 on 10 Oct (22 rows: invoice rows, its mapping and summary rows), and the September EPDA split's before-picture (3,551 rows: September summary rows, 216 invoice rows from February to September, 15 mappings and 188 import summaries). That shared code is still blocked; if it is ever resolved, the export is the record of its first split. July to September are published on all three lines.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "epda_sep_resplit_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 24 rows: September EPDA Pharmacies invoice rows before 15 customers moved to their second codes on 10 Oct. All 24 are still live and all carry the new code, so the copy is the record of the old one.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "ez_backup_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 55 rows: September sales against target by area (49 area rows) and the frozen September CNS roster that splits EZ evenly across the Cairo and Giza reps (6 rows), both taken on 10 Oct before a change to how EZ is credited; no migration or note records the change itself. September is published, so the copy can change no figure.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "msn_backup_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 479 rows: September's computed store-split net for the three lines at 00:02 on 10 Oct, taken before the owner's 'rebuild the September net now' rebuild; 343 rows differ now. The published September snapshots are that month's truth, so the copy can change no figure.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "phx_crm_backup_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 7 rows: seven Phoenix CRM places' brick and area at 11:22 on 10 Oct, before a fix. All seven are still live and all seven sit on a different brick or area now.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "ps_sep_remap_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 15 rows: one distributor's September invoice rows before three area moves on 10 Oct. All 15 are still live; 12 sit in the new area and 3 are back in the old one.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "railways_backup_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 49 rows: September sales against target by area (49 area rows), taken on 10 Oct before a change to how Railways is credited; no migration or note records the change itself. September is published, so the copy can change no figure.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "sep_map_sync_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 3,729 rows: September invoice rows from four distributors before they were synced to the corrected customer map on 10 Oct. All are still live; 3,650 sit where the sync put them, 15 are back where they were, and the rest moved again later. September is published on all three lines.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "sos_backup_20261010": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 145 rows: the 60 held customer-map changes as they stood before being applied at 01:41 on 10 Oct (56 of those mappings have changed since), and the 30 customers behind 55 held changes before they were switched to unmapped and those holds refused at 02:00. The customer map keeps no history, so the export is the lasting record of the mappings before.",
+      "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
     }
   }
 }
