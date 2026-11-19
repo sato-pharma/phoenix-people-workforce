@@ -24,6 +24,11 @@
  *   · a visit copied from iReports360 history counts only once the conversion marks it counted
  *     (`ireports360_kpi_counted`), and an archived visit never (`archived_at`) — the countable view's
  *     last two clauses (20261110170000);
+ *   · a COUNTED copy is never served under its own id: the door's Phoenix arm drops every copy
+ *     (`imported_from_ireports360_at is null`) and serves the old-CRM row it was converted from instead,
+ *     marked `counts_in_kpi` (20261107044059 section 8) — so it is counted, never expected at S2;
+ *   · an old-CRM row the door marks `counts_in_kpi = false` (a campaign, an archived or an uncounted copied
+ *     visit) is served for "did he work" readers and counted by no visit figure (`kpiOnly`);
  *   · the door serves a REP seat of a started team, from its start, before its stop — and, from the day
  *     iReports360 was retired, every REP seat whatever its start or stop (`phoenix_crm_counted_seat_windows()`,
  *     inner-joined in `crm_visits_unified`, 20261106235920);
@@ -105,11 +110,16 @@ export type DoorRow = {
   ampm: string | null;
   speciality: string | null;
   phoenix_customer_validated: boolean | null;
+  /**
+   * The door's `counts_in_kpi`: whether a visit figure counts the row (`kpiOnly`). Always true on a Phoenix
+   * row; false on an old-CRM campaign, archived or uncounted copied visit. Absent or null: not read, counted.
+   */
+  counts_in_kpi?: boolean | null;
 };
 
 /** The projection a door read asks for — every column of {@link DoorRow}, nothing else. */
 export const DOOR_COLUMNS =
-  "id,source,agent_hr_id,agent_crm_id,exclusion_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,double_hr_id,double_crm_id,crm_save_date,crm_visit_id,ampm,speciality,phoenix_customer_validated";
+  "id,source,agent_hr_id,agent_crm_id,exclusion_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,double_hr_id,double_crm_id,crm_save_date,crm_visit_id,ampm,speciality,phoenix_customer_validated,counts_in_kpi";
 
 /**
  * One row of `phoenix_crm_counted_seat_windows()`: a REP seat counted over [startsOn, stopsOn). `teamSeatId` is the
@@ -143,6 +153,7 @@ export type LifecycleExclusion =
   | "far_visit_held"
   | "archived_visit"
   | "ireports360_copy_not_counted"
+  | "ireports360_copy_served_as_old_row"
   | "seat_not_in_started_team"
   | "team_not_started"
   | "team_stopped"
@@ -515,6 +526,13 @@ export function evaluateRepDay(input: RepDayInputs): RepDayVerdict {
   }
   const reachDoor: SavedVisit[] = [];
   for (const visit of countable) {
+    // A counted copy is served as the old-CRM row it was converted from (`counts_in_kpi`), never under its
+    // own id — the door's Phoenix arm keeps `imported_from_ireports360_at is null` only. Expecting it there
+    // read every counted copy as lost at S2 and a call-rate shortfall (Nahla Youssef, 1–2 Nov 2026).
+    if (visit.importedFromIreports360At) {
+      bump(excluded, "ireports360_copy_served_as_old_row");
+      continue;
+    }
     const window = seatWindowVerdict(visit.seatId, visit.visitDate, input.windows);
     if (window.covered) reachDoor.push(visit);
     else bump(excluded, window.reason);
@@ -746,8 +764,15 @@ export function kpiExpectation(input: {
     for (const row of day.should.values()) rows.push({ row, mandatory: true });
     for (const id of day.lostIds) lostById.set(id, day.date);
   }
-  const vendorKept = new Set(collapseDuplicateVisitSubmissions(input.vendorRows.map((entry) => entry.row)).map((row) => row.id));
-  for (const entry of input.vendorRows) {
+  // The board reads the door with `kpiOnly` (`counts_in_kpi = true`) and collapses what it got, so an
+  // old-CRM row the door marks uncounted is left out BEFORE the collapse, exactly as the board leaves it.
+  const vendorCounted = input.vendorRows.filter((entry) => {
+    if (entry.row.counts_in_kpi !== false) return true;
+    note("kpi_vendor_row_not_counted");
+    return false;
+  });
+  const vendorKept = new Set(collapseDuplicateVisitSubmissions(vendorCounted.map((entry) => entry.row)).map((row) => row.id));
+  for (const entry of vendorCounted) {
     if (vendorKept.has(entry.row.id)) rows.push({ row: entry.row, mandatory: entry.attributedByHrId });
   }
 
