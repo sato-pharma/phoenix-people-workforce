@@ -93425,24 +93425,18 @@ CREATE POLICY daily_deductions_lines_admin_delete ON public.daily_deductions_lin
 CREATE POLICY daily_deductions_lines_admin_insert ON public.daily_deductions_lines FOR INSERT TO authenticated WITH CHECK (public.current_access_can_manage_employees());
 
 --
--- Name: daily_deductions_lines daily_deductions_lines_admin_select; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY daily_deductions_lines_admin_select ON public.daily_deductions_lines FOR SELECT TO authenticated USING (public.current_access_can_manage_employees());
-
---
 -- Name: daily_deductions_lines daily_deductions_lines_admin_update; Type: POLICY; Schema: public; Owner: postgres
 --
 
 CREATE POLICY daily_deductions_lines_admin_update ON public.daily_deductions_lines FOR UPDATE TO authenticated USING (public.current_access_can_manage_employees()) WITH CHECK (public.current_access_can_manage_employees());
 
 --
--- Name: daily_deductions_lines daily_deductions_lines_self_read; Type: POLICY; Schema: public; Owner: postgres
+-- Name: daily_deductions_lines daily_deductions_lines_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY daily_deductions_lines_self_read ON public.daily_deductions_lines FOR SELECT TO authenticated USING ((private.phx_can_access_employee(employee_hr_id) AND (EXISTS ( SELECT 1
+CREATE POLICY daily_deductions_lines_read ON public.daily_deductions_lines FOR SELECT TO authenticated USING ((public.current_access_can_manage_employees() OR (private.phx_can_access_employee(employee_hr_id) AND (EXISTS ( SELECT 1
    FROM public.daily_deductions_publications p
-  WHERE ((p.id = daily_deductions_lines.publication_id) AND (p.status = 'published'::text) AND (p.superseded_at IS NULL))))));
+  WHERE ((p.id = daily_deductions_lines.publication_id) AND (p.status = 'published'::text) AND (p.superseded_at IS NULL)))))));
 
 --
 -- Name: daily_deductions_publications; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -93589,18 +93583,12 @@ CREATE POLICY deductions_decisions_admin_update ON public.deductions_decisions F
 ALTER TABLE public.deductions_publication_lines ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: deductions_publication_lines deductions_publication_lines_admin_select; Type: POLICY; Schema: public; Owner: postgres
+-- Name: deductions_publication_lines deductions_publication_lines_read; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY deductions_publication_lines_admin_select ON public.deductions_publication_lines FOR SELECT TO authenticated USING (public.current_access_can_manage_employees());
-
---
--- Name: deductions_publication_lines deductions_publication_lines_self_read; Type: POLICY; Schema: public; Owner: postgres
---
-
-CREATE POLICY deductions_publication_lines_self_read ON public.deductions_publication_lines FOR SELECT TO authenticated USING ((private.phx_can_access_employee(employee_hr_id) AND (line_status = 'active'::text) AND (EXISTS ( SELECT 1
+CREATE POLICY deductions_publication_lines_read ON public.deductions_publication_lines FOR SELECT TO authenticated USING ((public.current_access_can_manage_employees() OR (private.phx_can_access_employee(employee_hr_id) AND (line_status = 'active'::text) AND (EXISTS ( SELECT 1
    FROM public.deductions_publications p
-  WHERE ((p.id = deductions_publication_lines.publication_id) AND (p.status = 'published'::text))))));
+  WHERE ((p.id = deductions_publication_lines.publication_id) AND (p.status = 'published'::text)))))));
 
 --
 -- Name: deductions_publications; Type: ROW SECURITY; Schema: public; Owner: postgres
