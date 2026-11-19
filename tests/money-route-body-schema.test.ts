@@ -52,7 +52,8 @@ export const NO_BODY_ROUTES = new Set<string>([
 ]);
 
 const MUTATING_HANDLER = /export\s+(?:async\s+)?(?:function|const)\s+(POST|PATCH|PUT|DELETE)\b/g;
-const RAW_BODY_READ = /\b(?:request|req)\s*\.\s*(?:json|formData|text|arrayBuffer|blob)\s*\(/;
+// A read straight off the request, through a clone of it, or of its raw body stream.
+const RAW_BODY_READ = /\b(?:request|req)\s*(?:\.\s*clone\s*\(\s*\))?\s*\.\s*(?:(?:json|formData|text|arrayBuffer|blob)\s*\(|body\b)/;
 const SCHEMA_READ = /\bparse(?:Json|Form)Body\s*(?:<[^>]*>)?\s*\(/;
 const READER_IMPORT = /from\s+["']@\/lib\/http\/request-body(?:\.ts)?["']/;
 
@@ -141,6 +142,8 @@ export async function runMoneyRouteBodySchemaTests(): Promise<void> {
   assert.deepEqual(
     moneyRoutesWithoutSchema([
       fake("app/api/payroll/new/route.ts", "export async function POST(request) { const body = await request.json(); }"),
+      fake("app/api/payroll/cloned/route.ts", "export async function POST(request) { const body = await request.clone().json(); }"),
+      fake("app/api/payroll/stream/route.ts", "export async function POST(request) { const reader = request.body.getReader(); }"),
       fake("app/api/payroll/other/route.ts", "export async function POST(request) { await parseJsonBody(request, s); }"),
       fake("app/api/payroll/none/route.ts", "export async function POST(request) { return ok(); }"),
       fake(
@@ -150,6 +153,8 @@ export async function runMoneyRouteBodySchemaTests(): Promise<void> {
     ]),
     [
       "app/api/payroll/new/route.ts: reads its body without a schema",
+      "app/api/payroll/cloned/route.ts: reads its body without a schema",
+      "app/api/payroll/stream/route.ts: reads its body without a schema",
       "app/api/payroll/other/route.ts: calls a body reader that is not request-body.ts",
       "app/api/payroll/none/route.ts: reads no body it can show — add a schema, or pin it in NO_BODY_ROUTES",
     ],
