@@ -398,16 +398,21 @@ async function twoApprovalsAtOnceApplyOnce(): Promise<void> {
  * (the read of the claim's `updated_at`): a write by someone else landing while the approval is being worked out.
  */
 function landAfterTheVersionCheck(tables: Tables, change: (tables: Tables) => void): void {
+  landAfterTheFirst(tables, (url) => url.pathname === "/rest/v1/outstation_expense_requests" && url.searchParams.get("select") === "updated_at", change);
+}
+
+/** Applies `change` just before the first request that follows the first request `matches` picks. */
+function landAfterTheFirst(tables: Tables, matches: (url: URL) => boolean, change: (tables: Tables) => void): void {
   const inner = globalThis.fetch;
-  let checked = false;
+  let passed = false;
   let landed = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (checked && !landed) {
+    if (passed && !landed) {
       landed = true;
       change(tables);
     }
-    if (url.pathname === "/rest/v1/outstation_expense_requests" && url.searchParams.get("select") === "updated_at") checked = true;
+    if (matches(url)) passed = true;
     return inner(input, init);
   }) as typeof fetch;
 }
@@ -586,6 +591,45 @@ async function aClaimRejectedUnderTheReleaseIsNeverPushed(stampsTheVersion: bool
   });
 }
 
+async function aClaimRepricedBeforeThePinIsNotReleasedFromOldFigures(): Promise<void> {
+  // The release has read the claim at 520.00; before it reads the version it pins to, the claim is re-priced to 700.00
+  // and its version moves (it still reads accepted). A release that pinned the NEW version would push a row worked
+  // out from the OLD figures, and the database step could not tell.
+  const tables = releasableTables();
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async (seen) => {
+    let afterTheChange: Tables | null = null;
+    landAfterTheFirst(tables, (url) => url.pathname === "/rest/v1/outstation_expense_requests", (live) => {
+      Object.assign(live.outstation_expense_requests[0], {
+        expected_total_amount: 700,
+        fuel_amount: 300,
+        total_amount: 700,
+        updated_at: "2026-11-17T09:41:07.000001+00:00",
+      });
+      afterTheChange = stored(live);
+    });
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.notEqual(afterTheChange, null, "(c) re-priced: the change landed between the release's read of the claim and its pin");
+    assert.equal(outcome.released, false, "(c) re-priced: HEADLINE: the release refuses rather than push figures the claim no longer holds");
+    assert.match(outcome.reason, /changed while it was being released, so nothing was written/, "(c) re-priced: and it says why");
+    assert.deepEqual(tables.outstation_expenses, [], "(c) re-priced: no payroll row for the old 520.00");
+    assert.deepEqual(stored(tables), afterTheChange, "(c) re-priced: the tables hold the change and nothing of the release");
+    assert.deepEqual(tableWrites(seen), [], "(c) re-priced: and nothing was written outside the call");
+  });
+
+  // The next capture releases the claim as it now reads.
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async () => {
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.equal(outcome.released, true, "(c) re-priced: the next release goes through");
+    assert.deepEqual(
+      tables.outstation_expenses.map((row) => [row.trip_id, row.total]),
+      [[TRIP_ID, 700]],
+      "(c) re-priced: and pays the claim as it now reads, 700.00",
+    );
+  });
+}
+
 async function aClaimRejectedUnderTheReleaseIsNeverPushedEvenUnstamped(): Promise<void> {
   await aClaimRejectedUnderTheReleaseIsNeverPushed(true);
   await aClaimRejectedUnderTheReleaseIsNeverPushed(false);
@@ -601,4 +645,5 @@ export async function runOutstationReapproveRollbackAndRaceTests(): Promise<void
   await releaseIsAllOrNothingWhenTheRecordFails();
   await twoReleasesAtOnceLeaveOnePayrollRow();
   await aClaimRejectedUnderTheReleaseIsNeverPushedEvenUnstamped();
+  await aClaimRepricedBeforeThePinIsNotReleasedFromOldFigures();
 }
