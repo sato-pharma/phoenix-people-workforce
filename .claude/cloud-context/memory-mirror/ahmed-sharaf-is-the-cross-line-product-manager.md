@@ -61,3 +61,11 @@ person named by HR_ID as a Cc on EVERY line's closing-publish email (`NAMED_CC_H
 once stored as `"Anti infective"`). Never resolve a viewer's line from the employee directory for a
 figures-bearing read, and never infer a PM's products from his line.
 See [[portal-closing-export-is-publication-gated]] and [[marketing-manager-outranks-product-manager]].
+
+**2026-11-19 — he WATCHES Guamusin and Ivyronc marketing requests (owner: "access and notification
+… he can not approve or reject but he can comment … also show the historical requests").** The
+Pedia requests for those two are reviewed by Rasha (A-8), so he sat on none of the 21 requests'
+rungs. He is now the one entry in `MARKETING_PRODUCT_WATCHERS`
+(`src/lib/marketing-requests/product-watchers.ts`): full Case File, every move and comment as a notice,
+his own Watched Products page. NOT Tigogrow or Osteosat — the owner named two. Never "fix" this by
+giving him an approval step. Rule: `.claude/rules/marketing.md`, "A PRODUCT WATCHER".

@@ -103,6 +103,11 @@ export function runEmployeePortalBottomNavTests() {
     // CVs sent to them). A wide read-only table — desk work, same class as Inbound Intake Health
     // above, not a phone bottom-nav shortcut. Renders cards on a phone; simply not pinnable.
     "/employee-portals/recruitment-engagement",
+    // Watched Products (owner, 2026-11-19): ONE named person's list of the marketing requests for the
+    // products he follows. It renders cards on a phone and is reached there from the rail's menu and
+    // from every notice he is sent (each opens the request itself); a bottom-bar shortcut offered to
+    // one person is not worth a newly measured short label in the shared width budget.
+    "/employee-portals/marketing-requests/watching",
     "/employee-portals/employees",
     "/employee-portals/contracts",
     "/employee-portals/resignations",

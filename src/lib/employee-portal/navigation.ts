@@ -5,6 +5,7 @@ import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
 import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { canViewMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
+import { isMarketingProductWatcher } from "@/lib/marketing-requests/product-watchers";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import { isNamedProductionPlanningPerson } from "@/lib/production-planning/access";
 import { canOpenPvTrainingEvidence } from "@/lib/pv-training/access";
@@ -292,6 +293,11 @@ export type EmployeePortalNavVisibility = {
   // than by this row. That under-reports, which is the right direction for a door: the page itself
   // asks the database (resolveProductionPlanningLevel), so this row is UX only.
   showProductionPlanningTab?: boolean;
+  // Watched Products — every marketing request for the products a named person follows without a
+  // rung (owner, 2026-11-19: Ahmed SharafEldeen, Guamusin and Ivyronc). BY HR ID, never by role:
+  // `Product Manager` is shared by every PM on every line. The page and its service re-ask the same
+  // list (src/lib/marketing-requests/product-watchers.ts), so this row is UX only.
+  showMarketingWatchedProductsTab?: boolean;
   // PV Training Evidence — the signed PV training sheets, for the QPPV's own account alone (owner,
   // 2026-11-09: "only in Dr. Sama account"). By HR id, never by role: her `Manager` role is shared
   // with the Toll Manufacturing Manager. The page re-asks the same helper (src/lib/pv-training/access.ts).
@@ -791,6 +797,8 @@ export function resolveEmployeePortalNavVisibility(
   const showMilestonesTab = canUseEmployeePortalMilestones(resolvedRole);
   // Production Planner — by NAME, never by role (see the field's comment above).
   const showProductionPlanningTab = isNamedProductionPlanningPerson(viewerHrId);
+  // Watched Products — by NAME, never by role (see the field's comment above).
+  const showMarketingWatchedProductsTab = isMarketingProductWatcher(viewerHrId);
   // PV Training Evidence — the QPPV alone, by HR id (see the field's comment above).
   const showPvTrainingEvidenceTab = canOpenPvTrainingEvidence(viewerHrId);
 
@@ -1229,6 +1237,7 @@ export function resolveEmployeePortalNavVisibility(
     showAreaDirectOrdersTab,
     showMilestonesTab,
     showProductionPlanningTab,
+    showMarketingWatchedProductsTab,
     showPvTrainingEvidenceTab,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
