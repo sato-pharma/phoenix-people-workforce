@@ -39,6 +39,19 @@ param(
   [double]$ColdCpuSec  = 0.5,   # CPU-seconds across a whole cycle that still counts as asleep
   [double]$WarmCpuSec  = 0.02,  # CPU-seconds across the 2 s sample (pressure mode)
   [int]$OrphanMinAgeMin = 30,
+  # SOFT tier (2026-11-19 fix): between the floor and this, BIG sleepers idle across the 2 s
+  # sample are trimmed too - the cold-for-a-whole-cycle test alone caught only 1-3 per run.
+  [int]$SoftFloorMB    = 3000,
+  [int]$SoftMinWsMB    = 150,
+  # ANTI-THRASH (owner, 2026-11-19 03:20 Cairo): a process trimmed in the last -ReTrimMinutes is
+  # left alone unless it has grown back by -RegrowMB. Measured first: the 03:14 run read 10,117 MB
+  # back from disk in 5 min (33.7 MB/s vs a 9.4 MB/s all-day average) - the same idle sessions
+  # were trimmed, faulted 1.5 GB back, and trimmed again every 5 minutes.
+  [int]$ReTrimMinutes  = 15,
+  [int]$RegrowMB       = 100,
+  # ...except under this much available RAM, where a freeze costs more than any disk read
+  # (measured 472 MB available at 03:19 the same night) - every idle process is fair game again.
+  [int]$SevereMB       = 800,
   # The ELEVATED task passes C:\ProgramData\PhoenixRamCleaner for both: an admin process must
   # never load its dll from (or write into) a folder a normal process can change.
   [string]$WorkDir = (Join-Path $env:USERPROFILE '.claude\scripts\ram-cleaner'),
@@ -53,7 +66,13 @@ if (-not (Test-Path -LiteralPath $workDir)) { New-Item -ItemType Directory -Path
 
 # --- one run at a time -------------------------------------------------------------------------
 $mutex = New-Object System.Threading.Mutex($false, 'Global\PhoenixRamCleaner')
-if (-not $mutex.WaitOne(0)) { exit 0 }
+if (-not $mutex.WaitOne(0)) {
+  # Never skip silently (03:19 on 19 Nov left no trace when a hand-run test held the lock).
+  if ($Apply) {
+    try { Add-Content -LiteralPath $LogFile -Value ('[{0}] OK SKIPPED - another RAM cleaner run held the lock (a hand run or a test); nothing trimmed this time' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss')) -Encoding ascii } catch {}
+  }
+  exit 0
+}
 
 try {
 # --- native helpers, compiled ONCE to a dll so a run never pays for csc.exe again -------------
@@ -118,12 +137,18 @@ $pressure = $availBefore -lt $FloorMB
 $snap = Get-Snapshot
 
 # --- previous run's CPU readings (the whole-cycle idle test) -----------------------------------
-$prev = @{}; $prevAgeMin = [double]::MaxValue
+$prev = @{}; $prevAgeMin = [double]::MaxValue; $recent = @{}; $prevPagesIn = $null
 if (Test-Path -LiteralPath $stateFile) {
   try {
     $st = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
     $prevAgeMin = ($now - [datetime]$st.at).TotalMinutes
     foreach ($prop in $st.cpu.PSObject.Properties) { $prev[$prop.Name] = [double]$prop.Value }
+    if ($null -ne $st.pagesIn) { $prevPagesIn = [double]$st.pagesIn }
+    if ($st.trim) {
+      foreach ($prop in $st.trim.PSObject.Properties) {
+        try { $recent[$prop.Name] = @{ at = [datetime]$prop.Value.at; ws = [double]$prop.Value.ws } } catch {}
+      }
+    }
   } catch { $prev = @{} }
 }
 # a state older than 30 min (sleep, reboot, a skipped run) proves nothing about idleness
@@ -157,7 +182,8 @@ function Test-Cold($p) {
 
 # --- pressure mode: a 2-second CPU sample for processes not yet proven cold -------------------
 $warm = @{}
-if ($pressure) {
+$soft = (-not $pressure) -and ($availBefore -lt $SoftFloorMB)
+if ($pressure -or $soft) {
   Start-Sleep -Milliseconds 2000
   $snap2 = Get-Snapshot
   foreach ($k in $snap.Keys) {
@@ -167,14 +193,19 @@ if ($pressure) {
 }
 
 # --- 1+2. trim ---------------------------------------------------------------------------------
-$trimmed = 0; $freedMB = 0.0; $denied = 0; $byName = @{}; $planned = @()
+$trimmed = 0; $freedMB = 0.0; $denied = 0; $byName = @{}; $planned = @(); $held = 0
 $minWs = if ($pressure) { $PressureMinWsMB } else { $MinWsMB }
 foreach ($p in ($snap.Values | Sort-Object WsMB -Descending)) {
   if ($p.Id -le 4 -or $exempt.Contains($p.Id)) { continue }
   if ($NeverTrim -contains $p.Name.ToLowerInvariant()) { continue }
   if ($p.WsMB -lt $minWs) { continue }
   $cold = Test-Cold $p
-  if (-not $cold -and -not ($pressure -and $warm.ContainsKey($p.Key))) { continue }
+  $warmOk = $warm.ContainsKey($p.Key) -and ($pressure -or ($soft -and $p.WsMB -ge $SoftMinWsMB))
+  if (-not $cold -and -not $warmOk) { continue }
+  if ($availBefore -ge $SevereMB -and $recent.ContainsKey($p.Key)) {
+    $r0 = $recent[$p.Key]
+    if (($now - $r0.at).TotalMinutes -lt $ReTrimMinutes -and $p.WsMB -lt ($r0.ws + $RegrowMB)) { $held++; continue }
+  }
   if (-not $Apply) { $planned += ('{0}({1}) {2:N0}MB {3}' -f $p.Name, $p.Id, $p.WsMB, $(if ($cold) { 'cold' } else { 'warm-idle' })); $freedMB += $p.WsMB; $trimmed++; continue }
   $r = [PhxRam]::Trim([uint32]$p.Id)
   if ($r -lt 0) { $denied++; continue }
@@ -183,6 +214,7 @@ foreach ($p in ($snap.Values | Sort-Object WsMB -Descending)) {
   try { $after = [System.Diagnostics.Process]::GetProcessById($p.Id).WorkingSet64 / 1MB } catch {}
   $f = [math]::Max(0, $p.WsMB - $after)
   $trimmed++; $freedMB += $f
+  $recent[$p.Key] = @{ at = $now; ws = $after }
   if (-not $byName.ContainsKey($p.Name)) { $byName[$p.Name] = 0.0 }
   $byName[$p.Name] += $f
 }
@@ -219,7 +251,20 @@ foreach ($p in $snap.Values) {
 # --- save this run's CPU readings for the next run's idle test ---------------------------------
 $cpuOut = [ordered]@{}
 foreach ($p in $snap.Values) { $cpuOut[$p.Key] = [math]::Round($p.Cpu, 2) }
-if ($Apply) { [pscustomobject]@{ at = $now.ToString('o'); cpu = $cpuOut } | ConvertTo-Json -Compress -Depth 3 | Set-Content -LiteralPath $stateFile -Encoding ascii }
+# COST METER: pages Windows read back from disk since the last run (cumulative raw counter).
+# It counts ALL hard page-ins (trimmed pages faulting back, plus ordinary file reads), so it is
+# the ceiling on what trimming cost - if it climbs run after run, trimming is too aggressive.
+$pagesIn = $null
+try { $pagesIn = [double](Get-CimInstance Win32_PerfRawData_PerfOS_Memory -EA Stop).PagesInputPersec } catch {}
+$reloadMB = $null
+if ($null -ne $pagesIn -and $null -ne $prevPagesIn -and $cycleValid -and $pagesIn -ge $prevPagesIn) { $reloadMB = ($pagesIn - $prevPagesIn) * 4 / 1024 }
+# recent trims still inside the anti-thrash window, for processes still alive
+$trimOut = [ordered]@{}
+foreach ($k in $recent.Keys) {
+  $r0 = $recent[$k]
+  if ($cpuOut.Contains($k) -and ($now - $r0.at).TotalMinutes -lt $ReTrimMinutes) { $trimOut[$k] = @{ at = $r0.at.ToString('o'); ws = [math]::Round($r0.ws, 1) } }
+}
+if ($Apply) { [pscustomobject]@{ at = $now.ToString('o'); pagesIn = $pagesIn; trim = $trimOut; cpu = $cpuOut } | ConvertTo-Json -Compress -Depth 4 | Set-Content -LiteralPath $stateFile -Encoding ascii }
 
 Start-Sleep -Milliseconds 800
 $availAfter = [PhxRam]::AvailMB()
@@ -239,10 +284,14 @@ $quips = @(
 )
 $quip = $quips[([int][math]::Floor($now.Minute / 5) + $now.Hour) % $quips.Count]
 $top = ($byName.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 4 | ForEach-Object { '{0} {1:N0}' -f $_.Key, $_.Value }) -join ', '
-$mode = if ($pressure) { 'PRESSURE' } elseif (-not $cycleValid) { 'FIRST-LOOK' } else { 'normal' }
+$mode = if ($pressure) { 'PRESSURE' } elseif ($soft) { 'SOFT' } elseif (-not $cycleValid) { 'FIRST-LOOK' } else { 'normal' }
 $verb = if ($Apply) { 'trimmed' } else { 'WOULD trim' }
-$line = '{0} avail {1:N0} -> {2:N0} MB ({3:+#,##0;-#,##0;0}) | {4} | {5} {6} procs ({7:N0} MB) | denied {8} | orphans {9} | top: {10} | {11}' -f `
-  $now.ToString('yyyy-MM-dd HH:mm:ss'), $availBefore, $availAfter, ($availAfter - $availBefore), $mode, $verb, $trimmed, $freedMB, $denied, $killed.Count, $(if ($top) { $top } else { '-' }), $quip
+$reloadTxt = if ($null -ne $reloadMB) { '{0:N0} MB' -f $reloadMB } else { '-' }
+# "[time] OK ..." / "[time] FAIL ..." - the shape worktree-snapshot-watch.ps1 (the Telegram alert)
+# reads. EVERY line must carry it: the watcher judges the last [time] line, so a FAIL followed by
+# un-bracketed OK lines would be an alarm forever.
+$line = '[{0}] OK avail {1:N0} -> {2:N0} MB ({3:+#,##0;-#,##0;0}) | {4} | {5} {6} procs ({7:N0} MB) | held back {13} (trimmed under {14} min ago) | denied {8} | orphans {9} | disk page-ins since last run {10} | top: {11} | {12}' -f `
+  $now.ToString('yyyy-MM-ddTHH:mm:ss'), $availBefore, $availAfter, ($availAfter - $availBefore), $mode, $verb, $trimmed, $freedMB, $denied, $killed.Count, $reloadTxt, $(if ($top) { $top } else { '-' }), $quip, $held, $ReTrimMinutes
 
 if ($Apply) {
   Add-Content -LiteralPath $logFile -Value $line -Encoding ascii
@@ -255,6 +304,14 @@ if ($Apply) {
 Write-Output $line
 if (-not $Apply) { $planned | Select-Object -First 40 | ForEach-Object { '  ' + $_ }; $killed | ForEach-Object { '  ' + $_ } }
 
+} catch {
+  $failed = $true
+  $msg = ($_.Exception.Message -replace '\s+', ' ')
+  if ($Apply) {
+    try { Add-Content -LiteralPath $logFile -Value ('[{0}] FAIL ram-cleaner PROBLEMS: {1}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $msg) -Encoding ascii } catch {}
+  }
+  Write-Output ('FAIL: ' + $msg)
 } finally {
   $mutex.ReleaseMutex(); $mutex.Dispose()
 }
+if ($failed) { exit 1 }

@@ -1,3 +1,4 @@
+﻿# SUPERSEDED 2026-11-19 by ram-cleaner.ps1 (runs every 5 min, elevated, from C:\ProgramData\PhoenixRamCleaner). Kept for hand use only; nothing schedules it.
 <#
 Phoenix Workforce RAM RECLAIM  --  the NON-DESTRUCTIVE half of the memory guard.
 ================================================================================
