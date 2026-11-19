@@ -18,7 +18,7 @@
  * A ticket's amount is the one figure here that is typed, so it never joins a claim the system already
  * accepted: nobody would see it before payroll pays it. The same rule as an extra ticket (owner,
  * 2026-10-19: "after HR decision not able to add anything"): that stop is the location alone, and HR
- * adds the ticket through the trip edit and sees the new figure.
+ * adds the ticket with "Add a missed stop" (adminMissedStopRule below) and sees the new figure.
  *
  * Pure: the service enforces all of this, and the screens read the same answers.
  */
@@ -58,6 +58,25 @@ export function journeyStopRule(input: {
     return { paysFuel: false, photo: false, ticket: "none" };
   }
   return { paysFuel: false, photo: false, ticket: waived ? "optional" : "required" };
+}
+
+/**
+ * What HR's "Add a missed stop" asks (2026-11-03; widened by the owner 2026-11-19 for a National Sales
+ * Manager's train trip the system accepted — Cairo to Sohag, then Sohag to Assiut, then home). No photo
+ * ever: HR types the position from what they checked. A car's drive is paid in fuel. Without a car the
+ * leg's ticket is what pays, and HR may add it even on a claim the system accepted, because the one
+ * typing the figure is HR — exactly "HR adds the ticket" above. Required, as for the employee, unless the
+ * role owes no evidence; optional there, and paid when attached. Which claims may take it is still
+ * isJourneyStopOpen: undecided, or that one role's system-accepted claim.
+ */
+export function adminMissedStopRule(input: {
+  employeeRole: string | null | undefined;
+  transportationType: string | null | undefined;
+}): JourneyStopRule {
+  if (String(input.transportationType ?? "").trim().toLowerCase() === "car") {
+    return { paysFuel: true, photo: false, ticket: "none" };
+  }
+  return { paysFuel: false, photo: false, ticket: isOutstationEvidenceWaivedRole(input.employeeRole) ? "optional" : "required" };
 }
 
 /** The rule for a claim only just submitted, which a National Sales Manager's is accepted on. */

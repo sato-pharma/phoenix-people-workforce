@@ -4,6 +4,7 @@ import { z } from "zod";
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { OUTSTATION_CLAIM_CHANGED_CODE, isOutstationClaimChangedError } from "@/lib/outstation/claim-revision";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { addOutstationJourneyStopAsAdmin } from "@/lib/outstation/service";
@@ -50,13 +51,25 @@ function adminStopStatus(error: unknown) {
 /** A coordinate as the form's text box holds it ("30.05"), or a number; numberOrNull reads both as before. */
 const coordinateField = z.union([z.number(), z.string()]).nullable().optional();
 
-/** What Expense Approvals' "Add a missed stop" sends (trip-attachments.tsx). Every rule stays the service's. */
+/** One ticket file for the leg, as a data URL — the upload parser caps its size and type. */
+const AdminStopTicketFileSchema = z.object({
+  dataUrl: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+/**
+ * What Expense Approvals' "Add a missed stop" sends (trip-attachments.tsx): the place, the time, the
+ * reason, the reviewer's version and, on a trip without a car, the leg's ticket and its amount
+ * (owner, 2026-11-19). Every rule stays the service's.
+ */
 const AdminJourneyStopBodySchema = z.object({
   expectedRevision: z.string().nullable().optional(),
   latitude: coordinateField,
   longitude: coordinateField,
   reason: z.string().nullable().optional(),
   stoppedAtCairo: z.string().nullable().optional(),
+  ticketAmount: coordinateField,
+  tickets: z.array(AdminStopTicketFileSchema).max(4).nullable().optional(),
 });
 
 function numberOrNull(value: unknown): number | null {
@@ -85,12 +98,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
     }
     const body = parsedBody.data;
+    const ticketAmount = numberOrNull(body.ticketAmount) ?? 0;
     const result = await addOutstationJourneyStopAsAdmin(id, access, {
       expectedRevision: typeof body.expectedRevision === "string" ? body.expectedRevision : "",
       latitude: numberOrNull(body.latitude),
       longitude: numberOrNull(body.longitude),
       reason: typeof body.reason === "string" ? body.reason : "",
       stoppedAt: cairoWallClockToIso(body.stoppedAtCairo),
+      ticket: {
+        amount: ticketAmount,
+        files: (body.tickets ?? []).map((entry) =>
+          parseOutstationTicketAttachmentDataUrl({
+            dataUrl: String(entry.dataUrl ?? ""),
+            fileName: String(entry.name ?? ""),
+          }),
+        ),
+      },
     });
 
     return NextResponse.json({
@@ -98,6 +121,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       flagReasons: result.pricing.flagReasons,
       fuelAmount: result.request.fuelAmount,
       mode: result.pricing.mode,
+      payrollSynced: result.payrollSynced,
       modeReason: result.pricing.modeReason,
       requestRevision: result.request.updatedAt ?? null,
       stopGovernorate: result.stop.governorate,
