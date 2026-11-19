@@ -62,6 +62,7 @@ import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fab
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
 import { STALE_STEP_OPENING } from "./imports/step-file-revision.ts";
+import { cellsChangedSince, describeCellConflicts, encodeStepRevision, parseStepRevision } from "./step-revision.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
 import { applyDayDrivenMoney } from "./imports/day-driven-money.ts";
 import {
@@ -175,10 +176,13 @@ import {
   listDraftCellHistory,
   listDraftRows,
   listLatestCellWrites,
+  listCellWritesSince,
   listStepStates,
   markRunPublished,
+  readCellWatermark,
   renewRunTransition,
   cancelRunAtomically,
+  draftPatchColumns,
   reopenPart1Atomically,
   reopenPart2Atomically,
   updateRun,
@@ -1118,9 +1122,14 @@ export async function getStepRecommendation(
   rows: StepRow[];
   state: StepState | null;
   candidates: ManualRowCandidate[];
+  /** The revision the screen sends back with its save: the step's, plus the run's cell watermark (F-PAY-017). */
+  revision: string | null;
 }> {
+  // The watermark is read BEFORE the figures, so any write the screen does not show is numbered above it.
+  assertAutomatedPayrollHrActor(access);
+  const watermark = await readCellWatermark(runId);
   const { run, rows, state, candidates } = await loadStepView(access, runId, stepKey);
-  return { run, rows, state, candidates };
+  return { run, rows, state, candidates, revision: encodeStepRevision(state?.updatedAt || null, watermark) };
 }
 
 /** The step as getStepRecommendation shows it, plus the draft rows it was built from (for saveStep). */
@@ -1306,12 +1315,47 @@ async function assertStepUnchangedSince(
   source: "screen" | "file",
 ): Promise<void> {
   if (expected === undefined) return;
+  const { step } = parseStepRevision(expected);
   const current = stepRevisionOf(await listStepStates(runId), stepKey);
-  if (sameStepRevision(current, expected)) return;
+  if (sameStepRevision(current, step ?? null)) return;
   throw new Error(
     `Conflict: ${STALE_STEP_OPENING}${source === "file" ? " (this file was downloaded before the latest save)" : ""}, ` +
       `so nothing was saved — saving would have written over the newer figures. Reload the step, then ` +
       (source === "file" ? "download the file again and make your change on it." : "make your change again."),
+  );
+}
+
+/**
+ * NO FIGURE IS WRITTEN OVER A CHANGE THE SCREEN NEVER SAW (F-PAY-017). Asked under the run's hold, right before the
+ * figures are written: every cell-history line numbered above the watermark the screen (or the step file) carried,
+ * on a person and column this save writes, refuses the whole save with the stale-step words — the owner's "Refuse
+ * and reload" — naming who changed. A revision with no watermark (an older screen or file) skips it. Exported for
+ * its behaviour test (tests/payroll-run-money-paths-behaviour.test.ts); saveStep is its one caller.
+ */
+export async function assertCellsUnchangedSince(
+  runId: string,
+  expected: string | null | undefined,
+  patches: readonly DraftRowPatch[],
+  source: "screen" | "file",
+): Promise<void> {
+  const { watermark } = parseStepRevision(expected);
+  if (watermark === null) return;
+  const writes = new Map<string, Set<string>>();
+  for (const patch of patches) {
+    const compact = compactHrKey(patch.employeeHrId);
+    if (!compact) continue;
+    const columns = writes.get(compact) ?? new Set<string>();
+    for (const column of draftPatchColumns(patch)) columns.add(column);
+    writes.set(compact, columns);
+  }
+  const conflicts = cellsChangedSince(await listCellWritesSince(runId, watermark), watermark, writes);
+  if (conflicts.length === 0) return;
+  const hrIdByCompact = new Map(patches.map((patch) => [compactHrKey(patch.employeeHrId) ?? "", patch.employeeHrId]));
+  const who = describeCellConflicts(conflicts, (compact) => hrIdByCompact.get(compact.toLowerCase()) ?? compact);
+  throw new Error(
+    `Conflict: ${STALE_STEP_OPENING}${source === "file" ? " (this file was downloaded before the latest change)" : ""} — ` +
+      `the figures of ${who} changed since — so nothing was saved: saving would have written over them. Reload the step, ` +
+      `then ${source === "file" ? "download the file again and make your change on it." : "make your change again."}`,
   );
 }
 
@@ -1464,12 +1508,15 @@ export async function saveStep(
   // The revision is checked under the same hold as the write, so two saves cannot both pass it.
   const saved = await holdRun({ runId, expected: stepWritablePhases(stepKey), action: RUN_HOLD_ACTIONS.saveStep }, async () => {
     await assertStepUnchangedSince(runId, stepKey, options?.expectedRevision, options?.revisionSource ?? "screen");
+    // And no figure it writes changed underneath it (F-PAY-017), under the same hold as the write.
+    await assertCellsUnchangedSince(runId, options?.expectedRevision, patches, options?.revisionSource ?? "screen");
     // The step goes back to "pending" BEFORE its figures are written (payroll audit 2026-11-14, finding
     // 10). The rows go in one statement per column set, so a failure part-way leaves some written; written
     // after them, a confirmed step then showed as confirmed over figures nobody had confirmed.
     const state = await upsertStepState({ runId, stepKey, status: "pending", inputMode });
     await upsertDraftRows(runId, patches);
-    return state;
+    // The new watermark includes this save's own lines, so the screen's next save is not refused over them.
+    return { state, watermark: await readCellWatermark(runId) };
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -1481,7 +1528,7 @@ export async function saveStep(
     detail: { edited: patches.length, figuresWritten: patches.filter(writesAFigure).length, inputMode },
   });
   // The screen keeps this as its new revision, so its own next save is not refused as stale.
-  return { revision: saved.updatedAt || null };
+  return { revision: encodeStepRevision(saved.state.updatedAt || null, saved.watermark) };
 }
 
 /** Confirm a step: persist the currently-shown values (accepted recommendations + edits) and lock it. */
@@ -3711,9 +3758,10 @@ export async function buildStepTemplate(
   runId: string,
   stepKey: StepKey,
 ): Promise<{ buffer: Buffer; fileName: string }> {
-  const { run, rows, state } = await getStepRecommendation(access, runId, stepKey);
-  // The file carries the revision it was built from, so an upload of it after a newer save is refused.
-  const buffer = await buildStepTemplateWorkbook({ run, stepKey, rows, revision: state?.updatedAt || null });
+  const { run, rows, revision } = await getStepRecommendation(access, runId, stepKey);
+  // The file carries the revision it was built from — the step's and the run's cell watermark (F-PAY-017) — so an
+  // upload of it after a newer save, or over a figure that changed since, is refused.
+  const buffer = await buildStepTemplateWorkbook({ run, stepKey, rows, revision });
   return { buffer, fileName: `Automated-Payroll-${stepKey}.xlsx` };
 }
 

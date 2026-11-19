@@ -7,6 +7,7 @@ import { groupRowsByColumnSet } from "@/lib/imports/upsert-by-column-set.ts";
 
 import { databaseFailureNote } from "./db-error.ts";
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
+import type { CellWrite } from "./step-revision.ts";
 import type {
   DraftCellChange,
   DraftRow,
@@ -657,6 +658,23 @@ const OPTIONAL_DRAFT_COLUMNS = ["expenses_note"] as const;
  * (saved-figures.ts), and a leaver's vacation lands on other columns than everybody else's, so one
  * request would erase the figures it was told to keep.
  */
+/** What the cell-history trigger does not count as a figure (20261007093359): identity and bookkeeping. */
+const NOT_A_CELL = new Set([
+  "run_id",
+  "employee_hr_id",
+  "employee_hr_id_compact",
+  "updated_at",
+  "edited_by",
+  "source",
+  "write_reason",
+  "write_step_key",
+]);
+
+/** The database columns — figures, as the cell history names them — a patch writes (F-PAY-017). */
+export function draftPatchColumns(patch: DraftRowPatch): string[] {
+  return Object.keys(draftPatchToDb("", patch)).filter((column) => !NOT_A_CELL.has(column));
+}
+
 export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): Promise<void> {
   if (patches.length === 0) return;
   const rows = patches
@@ -688,6 +706,45 @@ function SYSTEM_WRITE(reason: DraftWriteReason): Record<string, unknown> {
 }
 
 const CELL_HISTORY = "automated_payroll_draft_cell_history";
+
+/**
+ * The highest cell-history line this run has (F-PAY-017) — the watermark a step's revision carries. 0 when the run
+ * has no line yet. A failed read throws: a revision without a watermark would only weaken the save's check, but a
+ * save must never be told "nothing changed" by a read that did not happen.
+ */
+export async function readCellWatermark(runId: string): Promise<number> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(CELL_HISTORY)
+    .select("id")
+    .eq("run_id", runId)
+    .order("id", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const top = ((data ?? []) as RunRow[])[0];
+  const id = Number(top?.id ?? 0);
+  return Number.isFinite(id) ? id : 0;
+}
+
+/** Every cell-history line on a run numbered above `watermark`, oldest first (F-PAY-017). Paged, never capped. */
+export async function listCellWritesSince(runId: string, watermark: number): Promise<CellWrite[]> {
+  const client = getSupabaseAdmin();
+  const data = await fetchAllRows<RunRow>(
+    () =>
+      client
+        .from(CELL_HISTORY)
+        .select("id, employee_hr_id_compact, column_name, changed_by, write_reason")
+        .eq("run_id", runId)
+        .gt("id", watermark),
+    "id",
+  );
+  return data.map((row) => ({
+    id: Number(row.id ?? 0),
+    compact: String(row.employee_hr_id_compact ?? ""),
+    column: String(row.column_name ?? ""),
+    changedBy: (row.changed_by as string | null) ?? null,
+    writeReason: (row.write_reason as string | null) ?? null,
+  }));
+}
 
 /**
  * Every recorded change to one employee's cells on a run, newest first. History starts from the
