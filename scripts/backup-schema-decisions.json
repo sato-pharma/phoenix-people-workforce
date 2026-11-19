@@ -1178,6 +1178,41 @@
       "decidedBy": "owner",
       "why": "3 tables, 824 rows: the before-image of the 23 Oct in-app notification repair (docs/notification-bell-reconciliation.md, migration 20261023082524), whose rollback statements read it. 386 in-app deliveries to logins with no HR ID (all now skipped), 202 events whose earlier approver had been overwritten (all now name them again) and the 236 read-and-archived states the repair wrote (all still exist). The repair still stands in full. Holds recipient HR IDs. The migration created it, so staging holds a smaller copy too; the 26 Oct note that it is kept as the rollback was written under the keep-all rule retired on 19 Nov.",
       "sheet": "20 November 2026, the 23 October notification snapshot, in chat"
+    },
+    "brick_move_backup_20261026": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "1 table, 8 rows: the before-picture of one rep's 26 Oct brick move (customer map, direct-order code and pharmacy, import row and marketing code entries, each kept as a JSON pre-image). Taken in public and moved into this schema by 20261027235603. Nothing reads it and no role, service_role included, can use the schema. Made by hand, so staging holds none.",
+      "sheet": "20 November 2026, the five 26 October snapshots, in chat"
+    },
+    "phoenix_crm_backup_20261026": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "2 tables, 1,537 rows: the 762 places and 775 visits from before 746 places were settled onto their photo's own reading on 26 Oct (scripts/phoenix-crm-settle-on-photo.ts, docs/agents-owner-rules.md). 756 of the 762 places now sit off the copied point, so the move stands. Taken in public and moved into this schema by 20261027235603. Row security on with no policy, so both tables are counted in the advisor's rls_enabled_no_policy. Made by hand, so staging holds none.",
+      "sheet": "20 November 2026, the five 26 October snapshots, in chat"
+    },
+    "sos_backup_20261026_ibnsina": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "3 tables, 34,891 rows: the Ibn Sina family customer map (IS, IS-S and IS-T, 30,977 rows) as it stood on 26 Oct, the ids of the 3,794 map rows added that day (all still in the map), and the before-picture of the 120 rows moved on the owner's 27 Oct brick ruling (117 still on their new brick). Made by hand, so staging holds none. Holds customer names and addresses.",
+      "sheet": "20 November 2026, the five 26 October snapshots, in chat"
+    },
+    "vacancies_backup_20261026": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "1 table, 1 row: one Pedia rep vacancy as it stood before its missing manager was filled in on 26 Oct; the manager is filled in today. Made by hand, so staging holds none. Holds HR IDs and a manager's name.",
+      "sheet": "20 November 2026, the five 26 October snapshots, in chat"
+    },
+    "weekly_backup_20261026": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "2 tables, 68 rows: the 12 direct-order weekly batches and 56 region-only rows from before 20261026160001 rebuilt them so every direct order carries its pharmacy's area. None of the 56 is live now; the rebuild's 81 rows replaced them with every month's value and units unchanged. Made by hand, so staging holds none.",
+      "sheet": "20 November 2026, the five 26 October snapshots, in chat"
     }
   }
 }
