@@ -800,6 +800,20 @@
       "decidedBy": "owner",
       "why": "49 rows: Pedia's seats before the same move. Only the Kafr El-Sheikh 1 rep seat changed since (Alex-BHR to Delta (1)); a seat cannot carry a date, so the export is the lasting record of where it sat. September and October are published.",
       "sheet": "19 November 2026, the 12 September snapshot tables, in chat"
+    },
+    "au.bak_20260919_ismailia_suez_line_area_map": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "4 rows: Anti Infective Suez and Ismailia before the two became one area, Ismailia and Suez, in Delta (3) from 1 Sep (20260919213858). The change was made in place on the open September row, so the export is the lasting record of Ismailia as a rep-less area from 1 Sep, and the migration's own undo. September and October are published.",
+      "sheet": "19 November 2026, the 19 September snapshot tables, in chat"
+    },
+    "au.bak_20260919_ismailia_suez_seats": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 row: the Suez rep seat before the same change; only its label differs since (AIF Suez & Ismailia rep, now AIF Ismailia and Suez rep).",
+      "sheet": "19 November 2026, the 19 September snapshot tables, in chat"
     }
   }
 }
