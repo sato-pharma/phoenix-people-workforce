@@ -1150,6 +1150,27 @@
       "decidedBy": "owner",
       "why": "1 table, 306 rows: the July-September Anti Infective attribution rollup before the Kafr El-Sheikh 2 move reached it. 300 rows are unchanged; the 6 that differ are that area's share. Decided with the other two 15 October copies.",
       "sheet": "19 November 2026, the 14 and 15 October snapshots, in chat"
+    },
+    "recruitment_backup_20261016": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "1 table, 9 rows: the requisitions as they stood just before the hourly requisition autopilot (docs/recruitment-automation.md) began opening and closing them on 16 Oct. All 9 still exist and 3 have changed since. No salary band is filled in any of them.",
+      "sheet": "20 November 2026, the 16 and 17 October snapshots, in chat"
+    },
+    "ats_backup_20261017_manager_folders": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "2 tables, 139 rows: 72 CV sends to 14 managers made between 26 Aug and 1 Sep under the old placement rule, and the matching manager stamps on 67 candidates, taken on 17 Oct before the manager CV folders became empty shelves filled only by what a person sends (docs/recruitment-manager-cv-folders.md). None of the 72 sends exists now and only 2 of the 68 candidates remain, so the export becomes the only record of those sends. Holds managers names, so its export stays outside the repository like every export.",
+      "sheet": "20 November 2026, the 16 and 17 October snapshots, in chat"
+    },
+    "phx_backup_20261017": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-20",
+      "decidedBy": "owner",
+      "why": "42 tables, 7,747 rows (16 tables empty): the Phoenix CRM test data cleared on 17 Oct, test customers, list events, plans, visits and screen taps written between 10 and 17 Oct. Every row is marked is_test and none is in the live tables now.",
+      "sheet": "20 November 2026, the 16 and 17 October snapshots, in chat"
     }
   }
 }
