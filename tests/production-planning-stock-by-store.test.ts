@@ -5,7 +5,8 @@ import { PP, PP_EN } from "../src/lib/production-planning/strings.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
- * Production Planner — the Stock tab shows the factory and Sato's warehouse APART (2026-11-11).
+ * Production Planner — the Stock tab (2026-11-11) and the Planner tab (2026-11-19) show the factory
+ * and Sato's warehouse APART.
  *
  * A reviewer, after a stock adjustment and a transfer from the factory to Sato's warehouse: "this
  * change is not appearing clearly from my side … separate the stock quantities to clearly indicate
@@ -74,7 +75,36 @@ export function runProductionPlanningStockByStoreTests() {
   assert.equal(/qty\s*===\s*"0"|\/\[1-9\]\//.test(cell), false, "a zero balance is not hidden — it is the evidence of the move");
   assert.match(cell, /\{t\.stockAsOf\} <Num>\{held\.newestAsOfDate\}<\/Num>/, "each store says how fresh its figure is");
 
-  // 6. Both languages carry the new headings.
+  // 6. The PLANNER tab — the one that opens first — splits the two stores too (2026-11-19, the same
+  //    request again). Its Available cell made the TOTAL the one bold figure and the phone card
+  //    showed the total alone, so a transfer between the factory and Sato's warehouse changed
+  //    nothing the eye landed on there, whatever the Stock tab said.
+  const plannerResult = functionBody(screen, "PlannerResult");
+  assert.equal(
+    (plannerResult.match(/<PlannerHeld row=\{row\} \/>/g) ?? []).length,
+    2,
+    "🔴 the desktop Available cell AND the phone card both draw the two stores — the card used to show the total alone",
+  );
+  assert.equal(
+    /value=\{row\.held(?:Total|AtFactory|Elsewhere)\}/.test(plannerResult),
+    false,
+    "no held figure is drawn straight in the Planner result any more — PlannerHeld owns all three",
+  );
+  const plannerHeld = functionBody(screen, "PlannerHeld");
+  assert.match(plannerHeld, /\{ key: "factory", label: t\.stockColFactory, value: row\.heldAtFactory \}/);
+  assert.match(plannerHeld, /\{ key: "sato", label: t\.stockColSato, value: row\.heldElsewhere \}/);
+  assert.match(
+    plannerHeld,
+    /<p className="font-bold text-slate-900">\s*<Qty unit=\{row\.displayUnit\} value=\{store\.value\} \/>/,
+    "each store's own figure is the bold one",
+  );
+  assert.equal(
+    /font-bold[^"]*">\s*\{t\.totalHeld\}/.test(plannerHeld),
+    false,
+    "🔴 the TOTAL is not the cell's bold figure — a move between the two stores never changes it",
+  );
+
+  // 7. Both languages carry the new headings.
   assert.equal(PP_EN.stockColFactory, "Available at the factory");
   assert.equal(PP_EN.stockColSato, "Available at Sato warehouse");
   assert.equal(PP.stockColFactory, "المتاح في المصنع");

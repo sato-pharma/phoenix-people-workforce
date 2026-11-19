@@ -1251,28 +1251,7 @@ function PlannerResult({
                   <NeedBreakdown basisLabels={basisLabels} row={row} t={t} />
                 </td>
                 <td className={TD}>
-                  {row.supplier === "factory" ? (
-                    // Sato holds none of what the factory brings, so three zeros would read as a
-                    // shortage of his own.
-                    <p className="break-words text-[11px] text-slate-500">{t.heldFactoryBrings}</p>
-                  ) : (
-                    <>
-                      <p>
-                        {t.atFactory} <Qty unit={row.displayUnit} value={row.heldAtFactory} />
-                      </p>
-                      <p className="mt-0.5">
-                        {t.atOwnStore} <Qty unit={row.displayUnit} value={row.heldElsewhere} />
-                      </p>
-                      <p className="mt-0.5 font-bold text-slate-900">
-                        {t.totalHeld} <Qty unit={row.displayUnit} value={row.heldTotal} />
-                      </p>
-                      {row.coverRuns ? (
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          {t.coverRuns} <Num>{formatNumberLatin(row.coverRuns)}</Num> {t.unitRuns}
-                        </p>
-                      ) : null}
-                    </>
-                  )}
+                  <PlannerHeld row={row} />
                 </td>
                 <td className={TD}>
                   <PlannerAction
@@ -1302,17 +1281,12 @@ function PlannerResult({
                     <NeedBreakdown basisLabels={basisLabels} row={row} t={t} />
                   </dd>
                 </div>
-                <div className="flex flex-wrap justify-between gap-2">
-                  <dt className="font-bold">{t.totalHeld}</dt>
-                  <dd className="break-words">
-                    {row.supplier === "factory" ? (
-                      t.heldFactoryBrings
-                    ) : (
-                      <Qty unit={row.displayUnit} value={row.heldTotal} />
-                    )}
-                  </dd>
-                </div>
               </dl>
+              {/* The same two stores the desktop cell shows — the card used to carry the TOTAL alone,
+                  so a transfer between the factory and Sato's warehouse did not change it at all. */}
+              <div className="mt-2 border-t border-slate-200 pt-2">
+                <PlannerHeld row={row} />
+              </div>
               <div className="mt-2">
                 <PlannerAction
                   canWrite={canWrite}
@@ -1385,6 +1359,48 @@ function PlannerResult({
         </ul>
       </section>
     </>
+  );
+}
+
+/**
+ * The Planner tab's Available cell: the factory and Sato's warehouse APART, each figure bold under
+ * its own label, the total after them (2026-11-19, the reviewer's request again after a
+ * factory-to-Sato transfer: "separate the stock quantities to clearly indicate available stock at
+ * the factory, available stock at SATO warehouse"). The Stock tab has split the two since
+ * 2026-11-11, but the Planner tab — the one that opens first — still made the TOTAL its one bold
+ * figure, and the phone card showed the total alone, so a move between the two stores changed
+ * nothing the eye landed on. The words are the Stock tab's own column headings, so both tabs name
+ * the two stores the same way. Same column, same four-column table: the split is stacked inside it.
+ */
+function PlannerHeld({ row }: { row: WirePlanRow }) {
+  const t = useProductionPlanningStrings().t;
+  if (row.supplier === "factory") {
+    // Sato holds none of what the factory brings, so two zeros would read as a shortage of his own.
+    return <p className="break-words text-[11px] text-slate-500">{t.heldFactoryBrings}</p>;
+  }
+  const stores = [
+    { key: "factory", label: t.stockColFactory, value: row.heldAtFactory },
+    { key: "sato", label: t.stockColSato, value: row.heldElsewhere },
+  ];
+  return (
+    <div className="space-y-1.5">
+      {stores.map((store) => (
+        <div className="border-t border-slate-200 pt-1.5 first:border-t-0 first:pt-0" key={store.key}>
+          <p className="break-words text-[11px] font-semibold text-slate-600">{store.label}</p>
+          <p className="font-bold text-slate-900">
+            <Qty unit={row.displayUnit} value={store.value} />
+          </p>
+        </div>
+      ))}
+      <p className="border-t border-slate-200 pt-1.5 break-words text-[12px] text-slate-700">
+        {t.totalHeld} <Qty unit={row.displayUnit} value={row.heldTotal} />
+      </p>
+      {row.coverRuns ? (
+        <p className="text-[11px] text-slate-500">
+          {t.coverRuns} <Num>{formatNumberLatin(row.coverRuns)}</Num> {t.unitRuns}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
