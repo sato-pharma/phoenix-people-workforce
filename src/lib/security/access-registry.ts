@@ -873,7 +873,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "marketing_roi_refresh", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing/roi-refresh", permission: { resource: "marketing_roi_refresh", action: "update" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/:id/view-sales/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   // CEO Approvals' ticked rows as a house-style XLSX or PDF (owner, 2026-11-15). The page's own gate,
@@ -894,11 +894,16 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/drafts", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/bulk-upload", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/reverse-geocode", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only: resolves caller-supplied coordinates via the Google reverse-geocode proxy and persists nothing." }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only filtered ROI report; uses POST only to carry a complex filter body, persists nothing." }),
+  // The ROI and Coverage reports, their exports and their presets (seven entries, here and below) check no
+  // matrix permission: the gate is assertMarketingWorkspaceAccess (src/lib/marketing-requests/service.ts), the
+  // marketing creator roles plus the company-wide ones (Finance Manager and Financial Advisor included), inside
+  // the domain service. Until 19 Nov 2026 they were labelled expenses:read, which the Financial Advisor lacks
+  // yet is rightly let in (F-PLT-013, found by the route guard harness).
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only filtered ROI report; uses POST only to carry a complex filter body, persists nothing." }),
   // Customer Validation's area → doctor pick: reads the reps' Phoenix CRM lists inside the viewer's reach (crm-doctor-pick-service.ts).
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/crm-doctors", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/validation", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/roi-tracking/presets", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/roi-tracking/presets", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Direct Orders module — the service enforces the precise permission + per-step approver binding (domain-helper guard).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/submit", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/decision", permission: { resource: "direct_orders", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
@@ -1486,8 +1491,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/report/share-links", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/caps", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/variances", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only Coverage Report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only filtered Coverage Report; uses POST only to carry a complex filter body, persists nothing." }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report/export", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only Coverage Report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only filtered Coverage Report; uses POST only to carry a complex filter body, persists nothing." }),
   // Manager Scorecard — the ROI report grouped by the person who raised each request. Read-only
   // GET, no body: the viewer's own scope is the only filter, resolved server-side.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/manager-scorecard", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
@@ -1500,7 +1505,7 @@ export const accessRegistry = [
   // Finance Ageing's Excel. `expenses:read` is the base; the route then admits only the page's own
   // three roles (canViewMarketingFinanceAgeing), which is why it is no export key.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/finance-ageing/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
 
   // Make It Happen — the forecast planner. `sales:read` is the ROLE gate; canUseMakeItHappen then
@@ -1566,9 +1571,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/finance-hold", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Accepting a pharmacy code the sales master now matches (REC-077): Super Admin only.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/marketing-requests/pharmacy-code-recheck", permission: null, guard: "domain-helper", csrfRequired: true }),
-  // The ROI tracker: a read-only report on expenses:read, scoped inside getMarketingRoiTracker; POST only
-  // carries the filter body. Same shape as /api/marketing-requests/roi-tracking.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracker", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only ROI tracker report; uses POST only to carry a filter body, persists nothing." }),
+  // The ROI tracker: a read-only report scoped inside getMarketingRoiTracker; POST only carries the filter
+  // body. Same shape as /api/marketing-requests/roi-tracking.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracker", permission: null, guard: "domain-helper", csrfExemptReason: "Read-only ROI tracker report; uses POST only to carry a filter body, persists nothing." }),
   // Moving a validated customer to another rep, and reverting a move: assertValidatedCustomerTransferAccess.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/validated-customers/:id/transfer", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/validated-customers/transfers/:transferId/revert", permission: null, guard: "domain-helper", csrfRequired: true }),
@@ -2934,6 +2939,11 @@ export function findAccessRegistryEntry(route: string, method?: HttpMethod) {
     if (method && !(entry.methods as readonly HttpMethod[]).includes(method)) return false;
     return routeMatchesPattern(route, entry.pattern);
   });
+  // A route's own entry wins over any blanket: `/api/messages/**` also matches `/api/messages` and is the
+  // longer pattern, so the longest-first rule alone judged the inbox by communication:read instead of its
+  // own internal_messages entry (found by the route guard harness, 19 Nov 2026).
+  const exact = matches.find((entry) => entry.pattern === route);
+  if (exact) return exact;
   return matches.sort((left, right) => right.pattern.length - left.pattern.length)[0] ?? null;
 }
 

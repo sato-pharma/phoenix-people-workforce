@@ -53,20 +53,222 @@ const INFRASTRUCTURE_RPCS: Readonly<Record<string, string>> = {
   phx_auth_session_bundle: "the login check itself (read-only)",
 };
 
+/** Read-only database functions (`language sql stable`): calling one reads, it never writes. */
+const READ_ONLY_RPCS: Readonly<Record<string, string>> = {
+  phx_marketing_roi_latest_validated_period: "the ROI reports' sales-loaded-through month (stable, read-only)",
+};
+
 /** Tables a refused call may write to. */
 const INFRASTRUCTURE_TABLES: Readonly<Record<string, string>> = {
   api_rate_limit_buckets: "the request meter's fallback store",
   audit_logs: "a refusal is recorded in the audit log by design",
 };
 
+// ── The known gaps, by kind ──────────────────────────────────────────────────────────────────────────
+// Each reason was read off the route's own answer in the harness run of 19 Nov 2026; apart from the four
+// WRITE_GAPS lines nothing was written, and nothing was sent anywhere. The first kinds are follow-up work: the route judges its input, or looks
+// its record up, before it refuses the caller, so a stranger learns whether a body or an id is good.
+const BODY_FIRST = "answers 400 on the harness's empty body before any refusal of this caller; nothing is written";
+const MARKETING_ROLE_LIST =
+  "the real gate is the marketing role list (assertMarketingWorkspaceAccess), which admits the Financial Advisor — " +
+  "the registry's expenses label is not what the route checks; answers 400 on the empty body, nothing is written";
+const PLANS_MOVED = "a retired weekly Plans endpoint: answers 409 (plans moved) to everyone before any check; nothing is written";
+const RECORD_FIRST =
+  "looks the record up before it refuses the caller, and the empty stand-in holds none, so it answers that the record " +
+  "is missing (404, 400 or 500); nothing is written";
+const REFUSAL_AS_400 = "the refusal itself (Forbidden: Employee cannot create …) is answered 400 instead of 403; nothing is written";
+const INPUT_AS_500 = "the interview calendar judges the body before the caller and answers its own input refusal as 500; nothing is written";
+const MULTIPART_FIRST =
+  "reads the body as multipart form data before it refuses the caller, so the harness's JSON body throws a 500; nothing is written";
+const SIGN_IN_AS_500 = "the sign-in refusal (Authentication is required) is answered as a 500 AI failure instead of 401; nothing is written";
+const ROI_READ_ONLY =
+  "a read-only report that uses POST only to carry its filter: the Medical Rep is a marketing role and sees only their own " +
+  "requests, and with no HR id that is none, so 200 with no rows";
+const BEACON_204 = "a page beacon that answers 204 to everyone by design, so a page never sees an error; with no signed-in seat it records nothing";
+const SEAT_VIEW_EXIT = "leaving a seat view always succeeds by design: it clears the caller's own seat-view cookie and writes nothing without a seat view";
+const OWN_LAYOUT = "resets the caller's own sidebar layout; with no HR id there is no layout to reset, so 200 with nothing written";
+const OWN_DEVICE = "registers the caller's own phone for push; with no HR id it skips (200, skipped) and writes nothing";
+const TEST_TO_SELF =
+  "sends a test notice to the caller themselves; the harness's caller has no HR id, so it records the notice and its " +
+  "delivery rows with no recipient, and nothing leaves the machine";
+const PASSKEY_CHALLENGE =
+  "the first step of a passkey sign-in: it clears expired challenges and stores a one-time challenge for the browser to " +
+  "sign; there is no session yet, by design";
+
 /**
  * Answers that do not meet the rule but are known and explained — `"<METHOD> <route> <caller>"` → reason.
  * The call must still write nothing; a write needs its own line in WRITE_GAPS.
  */
-const ANSWER_GAPS: Readonly<Record<string, string>> = {};
+const ANSWER_GAPS: Readonly<Record<string, string>> = {
+  // BODY_FIRST (81)
+  "PATCH /api/admin/business-card-requests refused-role": BODY_FIRST,
+  "PATCH /api/admin/business-card-requests signed-out": BODY_FIRST,
+  "PATCH /api/admin/support-requests refused-role": BODY_FIRST,
+  "PATCH /api/admin/support-requests signed-out": BODY_FIRST,
+  "PATCH /api/employee-portal/account-activation refused-role": BODY_FIRST,
+  "PATCH /api/marketing-requests/control signed-out": BODY_FIRST,
+  "PATCH /api/marketing-requests/pharmacy-code-recheck signed-out": BODY_FIRST,
+  "PATCH /api/recruitment/interview-calendar/bookings/:id/outcome signed-out": BODY_FIRST,
+  "POST /api/admin/outstation/:id/evidence refused-role": BODY_FIRST,
+  "POST /api/admin/outstation/:id/evidence signed-out": BODY_FIRST,
+  "POST /api/admin/outstation/:id/journey-stop refused-role": BODY_FIRST,
+  "POST /api/admin/outstation/:id/journey-stop signed-out": BODY_FIRST,
+  "POST /api/admin/outstation/:id/recalculate-distance refused-role": BODY_FIRST,
+  "POST /api/admin/outstation/:id/recalculate-distance signed-out": BODY_FIRST,
+  "POST /api/admin/outstation/:id/reminder refused-role": BODY_FIRST,
+  "POST /api/admin/outstation/:id/reminder signed-out": BODY_FIRST,
+  "POST /api/admin/outstation/:id/workload refused-role": BODY_FIRST,
+  "POST /api/admin/outstation/:id/workload signed-out": BODY_FIRST,
+  "POST /api/approvals/bulk-decision signed-out": BODY_FIRST,
+  "POST /api/automated-payroll/runs signed-out": BODY_FIRST,
+  "POST /api/automated-payroll/runs/:runId/steps/:stepKey/confirm signed-out": BODY_FIRST,
+  "POST /api/automated-payroll/runs/:runId/steps/:stepKey/import signed-out": BODY_FIRST,
+  "POST /api/automated-payroll/settings/carry-late-expenses signed-out": BODY_FIRST,
+  "POST /api/contracts/:id/workflow refused-role": BODY_FIRST,
+  "POST /api/contracts/:id/workflow signed-out": BODY_FIRST,
+  "POST /api/customer-pharmacy-mapping/:id/decision signed-out": BODY_FIRST,
+  "POST /api/devices refused-role": BODY_FIRST,
+  "POST /api/devices signed-out": BODY_FIRST,
+  "POST /api/direct-orders/:id/decision refused-role": BODY_FIRST,
+  "POST /api/direct-orders/:id/decision signed-out": BODY_FIRST,
+  "POST /api/direct-orders/held/decision refused-role": BODY_FIRST,
+  "POST /api/direct-orders/held/decision signed-out": BODY_FIRST,
+  "POST /api/direct-orders/pharmacies/registry refused-role": BODY_FIRST,
+  "POST /api/direct-orders/pharmacies/registry signed-out": BODY_FIRST,
+  "POST /api/direct-orders/pharmacy-validations/:id/decision refused-role": BODY_FIRST,
+  "POST /api/direct-orders/pharmacy-validations/:id/decision signed-out": BODY_FIRST,
+  "POST /api/dispute-center/cases/:kind/:ref/assist signed-out": BODY_FIRST,
+  "POST /api/dispute-center/cases/:kind/:ref/decide signed-out": BODY_FIRST,
+  "POST /api/dispute-center/cases/:kind/:ref/messages signed-out": BODY_FIRST,
+  "POST /api/dispute-center/cases/:kind/:ref/reopen signed-out": BODY_FIRST,
+  "POST /api/excuses/:id/decision signed-out": BODY_FIRST,
+  "POST /api/excuses/:id/reassign signed-out": BODY_FIRST,
+  "POST /api/mailbox-offboarding refused-role": BODY_FIRST,
+  "POST /api/mailbox-offboarding signed-out": BODY_FIRST,
+  "POST /api/market-awareness/:activityId/decision refused-role": BODY_FIRST,
+  "POST /api/market-awareness/:activityId/decision signed-out": BODY_FIRST,
+  "POST /api/marketing-requests/:id/decision signed-out": BODY_FIRST,
+  "POST /api/marketing-requests/:id/license-verdict signed-out": BODY_FIRST,
+  "POST /api/marketing-requests/ceo-approvals/export signed-out": BODY_FIRST,
+  "POST /api/marketing-requests/finance-hold signed-out": BODY_FIRST,
+  "POST /api/marketing-requests/list-check/decide signed-out": BODY_FIRST,
+  "POST /api/payroll/:id/workflow refused-role": BODY_FIRST,
+  "POST /api/payroll/:id/workflow signed-out": BODY_FIRST,
+  "POST /api/private-calendar/disputes/:id/decide refused-role": BODY_FIRST,
+  "POST /api/private-calendar/disputes/:id/decide signed-out": BODY_FIRST,
+  "POST /api/private-calendar/disputes/decide-many refused-role": BODY_FIRST,
+  "POST /api/private-calendar/disputes/decide-many signed-out": BODY_FIRST,
+  "POST /api/probation/scorecards refused-role": BODY_FIRST,
+  "POST /api/resignations/:id/workflow refused-role": BODY_FIRST,
+  "POST /api/resignations/:id/workflow signed-out": BODY_FIRST,
+  "POST /api/sales/imports/:id/:action refused-role": BODY_FIRST,
+  "POST /api/sales/imports/:id/:action signed-out": BODY_FIRST,
+  "POST /api/support/requests refused-role": BODY_FIRST,
+  "POST /api/territory-management/area-consolidation/:areaId/apply signed-out": BODY_FIRST,
+  "POST /api/vacations/requests/:id/assign refused-role": BODY_FIRST,
+  "POST /api/vacations/requests/:id/assign signed-out": BODY_FIRST,
+  "POST /api/vacations/requests/:id/decision refused-role": BODY_FIRST,
+  "POST /api/vacations/requests/:id/decision signed-out": BODY_FIRST,
+  "POST /api/weekly-plans/:id/decision refused-role": BODY_FIRST,
+  "POST /api/weekly-plans/:id/decision signed-out": BODY_FIRST,
+  "POST /api/weekly-plans/:id/edit-request-decision refused-role": BODY_FIRST,
+  "POST /api/weekly-plans/:id/edit-request-decision signed-out": BODY_FIRST,
+  "POST /api/weekly-plans/:id/move-period refused-role": BODY_FIRST,
+  "POST /api/weekly-plans/:id/move-period signed-out": BODY_FIRST,
+  "POST /api/weekly-plans/:id/reassign refused-role": BODY_FIRST,
+  "POST /api/weekly-plans/:id/reassign signed-out": BODY_FIRST,
+  "POST /api/weekly-plans/:id/visit-details refused-role": BODY_FIRST,
+  "POST /api/weekly-plans/:id/visit-details signed-out": BODY_FIRST,
+  "POST /api/weekly-plans/decisions/batch refused-role": BODY_FIRST,
+  "POST /api/weekly-plans/decisions/batch signed-out": BODY_FIRST,
+  "PUT /api/automated-payroll/runs/:runId/steps/:stepKey signed-out": BODY_FIRST,
+  // MARKETING_ROLE_LIST (5)
+  "PATCH /api/marketing-requests/control refused-role": MARKETING_ROLE_LIST,
+  "POST /api/marketing-requests/:id/comment refused-role": MARKETING_ROLE_LIST,
+  "POST /api/marketing-requests/:id/decision refused-role": MARKETING_ROLE_LIST,
+  "POST /api/marketing-requests/ceo-approvals/export refused-role": MARKETING_ROLE_LIST,
+  "POST /api/marketing-requests/list-check/decide refused-role": MARKETING_ROLE_LIST,
+  // PLANS_MOVED (14)
+  "PATCH /api/weekly-plans/:id refused-role": PLANS_MOVED,
+  "PATCH /api/weekly-plans/:id signed-out": PLANS_MOVED,
+  "POST /api/weekly-plans refused-role": PLANS_MOVED,
+  "POST /api/weekly-plans signed-out": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/acknowledge refused-role": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/acknowledge signed-out": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/cancel refused-role": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/cancel signed-out": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/comments refused-role": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/comments signed-out": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/request-edit refused-role": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/request-edit signed-out": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/request-visit-details refused-role": PLANS_MOVED,
+  "POST /api/weekly-plans/:id/request-visit-details signed-out": PLANS_MOVED,
+  // RECORD_FIRST (17)
+  "DELETE /api/calendar/:id signed-out": RECORD_FIRST,
+  "DELETE /api/recruitment/interview-calendar/bookings/:id signed-out": RECORD_FIRST,
+  "DELETE /api/recruitment/interview-calendar/polls/:id signed-out": RECORD_FIRST,
+  "DELETE /api/recruitment/interview-calendar/requests/:id signed-out": RECORD_FIRST,
+  "DELETE /api/recruitment/interview-calendar/sessions/:id signed-out": RECORD_FIRST,
+  "PATCH /api/calendar/:id signed-out": RECORD_FIRST,
+  "PATCH /api/recruitment/interview-calendar/bookings/:id signed-out": RECORD_FIRST,
+  "PATCH /api/recruitment/interview-calendar/sessions/:id signed-out": RECORD_FIRST,
+  "POST /api/marketing-requests/:id/conversation signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/bookings/:id/comments signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/bookings/:id/confirmation signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/bookings/:id/polls signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/bookings/:id/scorecard signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/bookings/:id/zoom signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/polls/:id signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/sessions/:id/polls signed-out": RECORD_FIRST,
+  "POST /api/recruitment/interview-calendar/sessions/:id/zoom signed-out": RECORD_FIRST,
+  // REFUSAL_AS_400 (2)
+  "POST /api/business-card-requests signed-out": REFUSAL_AS_400,
+  "POST /api/support/requests signed-out": REFUSAL_AS_400,
+  // INPUT_AS_500 (3)
+  "POST /api/recruitment/interview-calendar/bookings signed-out": INPUT_AS_500,
+  "POST /api/recruitment/interview-calendar/requests/:id/schedule signed-out": INPUT_AS_500,
+  "POST /api/recruitment/interview-calendar/sessions signed-out": INPUT_AS_500,
+  // MULTIPART_FIRST (4)
+  "POST /api/marketing-requests/bulk-upload refused-role": MULTIPART_FIRST,
+  "POST /api/marketing-requests/finance-evidence refused-role": MULTIPART_FIRST,
+  "POST /api/marketing-requests/finance-evidence signed-out": MULTIPART_FIRST,
+  "POST /api/recruitment/interview-calendar/bookings/:id/cv signed-out": MULTIPART_FIRST,
+  // SIGN_IN_AS_500 (1)
+  "POST /api/recruitment/candidates/:id/cv-extract signed-out": SIGN_IN_AS_500,
+  // ROI_READ_ONLY (5)
+  "POST /api/marketing-requests/coverage-report refused-role": ROI_READ_ONLY,
+  "POST /api/marketing-requests/coverage-report/export refused-role": ROI_READ_ONLY,
+  "POST /api/marketing-requests/roi-tracker refused-role": ROI_READ_ONLY,
+  "POST /api/marketing-requests/roi-tracking refused-role": ROI_READ_ONLY,
+  "POST /api/marketing-requests/roi-tracking/export refused-role": ROI_READ_ONLY,
+  // BEACON_204 (8)
+  "POST /api/activity/track refused-role": BEACON_204,
+  "POST /api/activity/track signed-out": BEACON_204,
+  "POST /api/phoenix-crm/notices/seen refused-role": BEACON_204,
+  "POST /api/phoenix-crm/notices/seen signed-out": BEACON_204,
+  "POST /api/phoenix-crm/refused-readings refused-role": BEACON_204,
+  "POST /api/phoenix-crm/refused-readings signed-out": BEACON_204,
+  "POST /api/phoenix-crm/visit-resend-report refused-role": BEACON_204,
+  "POST /api/phoenix-crm/visit-resend-report signed-out": BEACON_204,
+  // SEAT_VIEW_EXIT (2)
+  "POST /api/admin/seat-view/exit refused-role": SEAT_VIEW_EXIT,
+  "POST /api/admin/seat-view/exit signed-out": SEAT_VIEW_EXIT,
+  // OWN_LAYOUT (1)
+  "DELETE /api/navigation/personal-layout refused-role": OWN_LAYOUT,
+  // OWN_DEVICE (1)
+  "POST /api/notifications/push/register refused-role": OWN_DEVICE,
+  // TEST_TO_SELF (2)
+  "POST /api/integrations/telegram/test refused-role": TEST_TO_SELF,
+  "POST /api/notifications/push/test refused-role": TEST_TO_SELF,
+};
 
 /** Writes a call is known to make before it is refused — key as above → the tables and the reason. */
-const WRITE_GAPS: Readonly<Record<string, { reason: string; targets: readonly string[] }>> = {};
+const WRITE_GAPS: Readonly<Record<string, { reason: string; targets: readonly string[] }>> = {
+  "POST /api/auth/biometric/login/options refused-role": { reason: PASSKEY_CHALLENGE, targets: ["app_auth_webauthn_challenges"] },
+  "POST /api/auth/biometric/login/options signed-out": { reason: PASSKEY_CHALLENGE, targets: ["app_auth_webauthn_challenges"] },
+  "POST /api/integrations/telegram/test refused-role": { reason: TEST_TO_SELF, targets: ["notification_events", "notification_deliveries"] },
+  "POST /api/notifications/push/test refused-role": { reason: TEST_TO_SELF, targets: ["notification_events", "notification_deliveries"] },
+};
 
 /** Route files the harness cannot call at all — `"<route>"` → reason. */
 const NOT_CALLABLE: Readonly<Record<string, string>> = {};
@@ -241,7 +443,9 @@ type DriverRecord =
     }
   | { idleEvents: DriverEvent[]; type: "done"; unhandled: string[] };
 
-function cleanEnvironment(): Record<string, string> {
+// Typed as the process environment itself: Next declares NODE_ENV as required on it, so a plain string
+// record is refused by spawnSync's `env` (TS2769) even though it carries NODE_ENV.
+function cleanEnvironment(): NodeJS.ProcessEnv {
   const carried: Record<string, string> = {};
   const pathValue = process.env.PATH ?? process.env.Path;
   if (pathValue) carried.PATH = pathValue;
@@ -310,7 +514,7 @@ function isRejection(status: number | null | undefined, threw: string | null | u
 function writesOf(events: DriverEvent[] | undefined): DriverEvent[] {
   return (events ?? []).filter((event) => {
     if (event.kind === "read") return false;
-    if (event.kind === "rpc") return !(event.target in INFRASTRUCTURE_RPCS);
+    if (event.kind === "rpc") return !(event.target in INFRASTRUCTURE_RPCS) && !(event.target in READ_ONLY_RPCS);
     if (event.kind === "db") return !(event.target in INFRASTRUCTURE_TABLES);
     return event.kind !== "outbound";
   });
