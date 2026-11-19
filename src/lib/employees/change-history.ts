@@ -17,9 +17,14 @@
  * - Plumbing. Timestamps the database stamps on every save are left out.
  *
  * HOW A WRITE ARRIVED. Since 19 Nov 2026 each row records its channel; older rows say so plainly.
+ *
+ * WHO MADE IT. The person's display name; when no person was named but a scheduled job was
+ * (`actor_job`, since 20261119132416), "Scheduled job: <its name>"; only when neither, "No person
+ * recorded".
  */
 
 import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
+import { findDailyJob } from "@/lib/scheduled-jobs/daily-jobs";
 
 /** One row of `v_employee_change_log`, as the route selects it. */
 export type RecordChangeRow = {
@@ -36,6 +41,8 @@ export type RecordChangeRow = {
   old_values: Record<string, unknown> | null;
   new_values: Record<string, unknown> | null;
   write_channel: string | null;
+  /** The scheduled job that made the write when no person did (since 20261119132416). */
+  actor_job?: string | null;
 };
 
 /** One row of `v_employee_salary_change_log`, as the route selects it. */
@@ -51,6 +58,8 @@ export type SalaryChangeRow = {
   old_values: Record<string, unknown> | null;
   new_values: Record<string, unknown> | null;
   write_channel: string | null;
+  /** The scheduled job that made the write when no person did (since 20261119132416). */
+  actor_job?: string | null;
 };
 
 export type ChangeHistoryField = {
@@ -240,12 +249,54 @@ export function valueText(field: string, value: unknown, names: ReferenceNames):
   return JSON.stringify(value);
 }
 
+/** Words the route names spell in capitals. */
+const JOB_WORD_CAPITALS: Readonly<Record<string, string>> = {
+  crm: "CRM",
+  cv: "CV",
+  db: "database",
+  fx: "FX",
+  hr: "HR",
+  roi: "ROI",
+  sla: "SLA",
+  sos: "SOS",
+  whatsapp: "WhatsApp",
+};
+
+function jobWords(slug: string): string {
+  const words = slug
+    .split(/[/_-]+/)
+    .filter(Boolean)
+    .map((word) => JOB_WORD_CAPITALS[word.toLowerCase()] ?? word.toLowerCase());
+  if (words.length === 0) return "Unnamed job";
+  const [first, ...rest] = words;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
+}
+
 /**
- * "unattributed" is the log's word for a write that named nobody: a cron, a script, a sync that ran
- * while a page was opened, or SQL run by hand. Say that, never "Unknown user".
+ * A scheduled job's name in words. The log keeps the name the job gives the shared cron guard
+ * (src/lib/security/cron-auth.ts): "cron/probation-milestones", "cron/daily/resignation-sla". A
+ * morning job reads by its own name in the daily-jobs list, the morning fan-out that runs them all
+ * as "Morning jobs", and any other job as its route in words.
  */
-function whoLabel(actorName: string | null): string {
-  return actorName?.trim() || "No person recorded";
+export function scheduledJobName(job: string): string {
+  const route = job.trim().replace(/^\/+|\/+$/g, "");
+  const daily = /^cron\/daily\/(.+)$/.exec(route);
+  if (daily) return findDailyJob(daily[1])?.name ?? jobWords(daily[1]);
+  if (route === "notifications/daily" || route === "cron/daily") return "Morning jobs";
+  return jobWords(route.replace(/^cron\//, ""));
+}
+
+/**
+ * "unattributed" is the log's word for a write that named nobody: a script, a sync that ran while a
+ * page was opened, or SQL run by hand. Say that, never "Unknown user". A scheduled job names itself
+ * since 19 Nov 2026 (owner: "Name scheduled jobs"), and a person always comes first.
+ */
+function whoLabel(actorName: string | null, actorJob?: string | null): string {
+  const person = actorName?.trim();
+  if (person) return person;
+  const job = actorJob?.trim();
+  if (job) return `Scheduled job: ${scheduledJobName(job)}`;
+  return "No person recorded";
 }
 
 /**
@@ -309,7 +360,7 @@ export function buildChangeHistoryEntries(input: {
       atLabel: cairoDateTime(row.changed_at),
       log: "record",
       kind: row.change_kind === "insert" ? "created" : "changed",
-      who: whoLabel(actorDisplayName(row, input.names)),
+      who: whoLabel(actorDisplayName(row, input.names), row.actor_job),
       how: channelLabel(row.write_channel),
       fields,
     });
@@ -325,7 +376,7 @@ export function buildChangeHistoryEntries(input: {
         atLabel: cairoDateTime(row.changed_at),
         log: "salary",
         kind: "changed",
-        who: whoLabel(actorDisplayName(row, input.names)),
+        who: whoLabel(actorDisplayName(row, input.names), row.actor_job),
         how: channelLabel(row.write_channel),
         fields,
       });
