@@ -109,6 +109,8 @@ import type { PlanOutstationTrip } from "@/lib/phoenix-crm/outstation-trip-banne
 import { editAcknowledgedAt, loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
+import { loadVisitTallies } from "@/lib/phoenix-crm/server/visit-tally";
+import { tallyForCustomer } from "@/lib/phoenix-crm/visit-tally";
 import { loadPlanSends } from "@/lib/phoenix-crm/server/plan-review";
 import {
   buildDays,
@@ -634,6 +636,8 @@ export async function loadMonthlyPlanner(
     customersRead.then(({ placesByCustomer, venueNames }) => venueNamesOf(placesByCustomer, venueNames)),
     // The territory person's business trips over the same days, for the banner. Never fails the board.
     loadPeopleOutstationTrips(seatOccupants(seat), { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
+    // Each customer's last visit, visits this month and visits in total (owner, 19 Nov 2026). Fail-soft.
+    loadVisitTallies([seat.seatId], isTest, today),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -648,6 +652,7 @@ export async function loadMonthlyPlanner(
     pendingLeave,
     venueNames,
     outstationTrips,
+    visitTallies,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -688,6 +693,7 @@ export async function loadMonthlyPlanner(
       }),
       reference: references.get(customerId) ?? null,
       insight: insights.get(customerId) ?? null,
+      tally: tallyForCustomer(visitTallies, customerId),
       places,
     };
   });

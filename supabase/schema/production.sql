@@ -9081,6 +9081,50 @@ $$;
 ALTER FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_customer_visit_tally(text[], boolean, date, date); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) RETURNS TABLE(seat_id text, customer_id uuid, contact_crm_id bigint, last_visit_on date, month_visits integer, total_visits integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  -- Grouped BEFORE the customer join, so the customers are looked up once per row by their key
+  -- rather than hashed whole (measured 19 Nov 2026: the six busiest territories in ~0.1 s).
+  with tally as (
+    select
+      v.seat_id,
+      v.customer_id,
+      max(v.visit_date) as last_visit_on,
+      (count(*) filter (where v.visit_date >= p_month_start))::integer as month_visits,
+      count(*)::integer as total_visits
+    from public.phoenix_crm_countable_visits_with_history v
+    where v.seat_id = any (p_seat_ids)
+      and v.is_test = p_is_test
+      and v.visit_date <= p_through
+      and v.customer_id is not null
+    group by v.seat_id, v.customer_id
+  )
+  select
+    t.seat_id,
+    t.customer_id,
+    coalesce(c.reference_contact_crm_id, c.own_contact_crm_id) as contact_crm_id,
+    t.last_visit_on,
+    t.month_visits,
+    t.total_visits
+  from tally t
+  left join public.phoenix_crm_customers c on c.id = t.customer_id
+  order by t.seat_id, t.customer_id;
+$$;
+
+ALTER FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) IS 'Per customer of each territory: last visit day, visits this month, visits in total — from phoenix_crm_countable_visits_with_history (owner, 19 Nov 2026: every rep weekly plan screen shows them).';
+
+--
 -- Name: phoenix_crm_customers_clear_import_mark(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -100031,6 +100075,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_customer_pharmacy_feedback(p_seat_id te
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_customer_visit_tally(p_seat_ids text[], p_is_test boolean, p_month_start date, p_through date) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_customers_clear_import_mark(); Type: ACL; Schema: public; Owner: postgres

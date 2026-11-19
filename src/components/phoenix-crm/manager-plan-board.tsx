@@ -1417,7 +1417,7 @@ function WithRepPart({
                       {customer.name}
                     </span>
                     <span className="block break-words text-xs font-semibold text-slate-500">{details}</span>
-                    <CustomerMarks insight={marks[customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customerId)} />
+                    <CustomerMarks insight={marks[customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customerId)} today={insight.data?.today} />
                     {showTimes ? <CustomerVisitTimesLines customerKey={customerId} error={visitTimes.error} today={day.date} view={visitTimes.data} /> : null}
                   </CrmCheck>
                 </CustomerCard>
@@ -2206,7 +2206,7 @@ function SingleVisitPart({
                               .filter(Boolean)
                               .join(" · ")}
                           </span>
-                          <CustomerMarks insight={marks[customer.customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customer.customerId)} />
+                          <CustomerMarks insight={marks[customer.customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customer.customerId)} today={insight.data?.today} />
                           {showTimes ? <CustomerVisitTimesLines customerKey={customer.customerId} error={visitTimes.error} today={date} view={visitTimes.data} /> : null}
                         </CrmCheck>
                       </CustomerCard>

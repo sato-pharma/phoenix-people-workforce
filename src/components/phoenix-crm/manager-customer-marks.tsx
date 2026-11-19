@@ -16,6 +16,7 @@
 import type { ReactNode } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
+import { lastVisitAndTotalText } from "@/components/phoenix-crm/labels";
 import { useCrmSurface } from "@/components/phoenix-crm/surface";
 import {
   customerGroups,
@@ -113,7 +114,18 @@ function Pips({ insight }: { insight: CustomerInsight }) {
 }
 
 /** The marks under a customer's name. Nothing while the marks are still loading — the card reads as before. */
-export function CustomerMarks({ insight, monthName, suggested }: { insight: CustomerInsight | undefined; monthName: string; suggested: boolean }) {
+export function CustomerMarks({
+  insight,
+  monthName,
+  suggested,
+  today,
+}: {
+  insight: CustomerInsight | undefined;
+  monthName: string;
+  suggested: boolean;
+  /** Cairo today from the server (`CustomerInsightView.today`); without it the visit line is not drawn. */
+  today?: string;
+}) {
   const surface = useCrmSurface();
   if (!insight) return null;
   const standing = frequencyStanding(insight.repVisits, insight.target);
@@ -136,6 +148,8 @@ export function CustomerMarks({ insight, monthName, suggested }: { insight: Cust
           </span>
         </span>
       ) : null}
+      {/* The last visit ever and the visits in total (owner, 19 Nov 2026) — the month is the pips beside it. */}
+      {insight.tally && today ? <span className="text-xs font-semibold text-slate-500">{lastVisitAndTotalText(insight.tally, today)}</span> : null}
       {insight.withYou > 0 ? (
         <span className="border border-emerald-300 bg-emerald-50 px-1.5 text-phx-sm font-black uppercase tracking-[0.06em] text-emerald-800">
           {insight.withYou === 1 ? "With you" : `With you ×${insight.withYou}`}

@@ -8,6 +8,7 @@ import type { PillTone } from "@/components/phoenix-crm/ui";
 import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { followUpInWeek, usualDaysOf } from "@/lib/phoenix-crm/plan-insight";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
+import type { VisitTally } from "@/lib/phoenix-crm/visit-tally";
 import { PHOENIX_CRM_WEEKDAY_SHORT } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritorySummary } from "@/lib/phoenix-crm/view-types";
@@ -124,6 +125,30 @@ export function lastSeenText(lastSeenOn: string | null, today: string): string {
   return lastSeenOn ? `Last seen ${seenDay(lastSeenOn, today)}` : "No visit recorded";
 }
 
+/** "14 visits in total", "1 visit in total" — every visit that counts, through today (visit-tally.ts). */
+export function totalVisitsText(total: number): string {
+  return `${plural(total, "visit", "visits")} in total`;
+}
+
+/**
+ * The visit line on every screen that shows a rep's weekly plan (owner, 19 Nov 2026; visit-tally.ts):
+ * "Last visit Tue 17 Nov · 2 visits this month · 14 visits in total", or "No visit recorded yet". A screen
+ * whose tally read failed has no tally and draws no line — this sentence is said only when it was read.
+ */
+export function visitTallyText(tally: VisitTally, today: string): string {
+  if (tally.total <= 0 || !tally.lastVisitOn) return "No visit recorded yet";
+  return `Last visit ${seenDay(tally.lastVisitOn, today)} · ${plural(tally.thisMonth, "visit", "visits")} this month · ${totalVisitsText(tally.total)}`;
+}
+
+/**
+ * The same line without the month, for a screen that already shows the month its own way (the manager's plan
+ * board, whose pips are the month): "Last visit Tue 17 Nov · 14 visits in total", or "No visit recorded yet".
+ */
+export function lastVisitAndTotalText(tally: VisitTally, today: string): string {
+  if (tally.total <= 0 || !tally.lastVisitOn) return "No visit recorded yet";
+  return `Last visit ${seenDay(tally.lastVisitOn, today)} · ${totalVisitsText(tally.total)}`;
+}
+
 /** "Usually seen Sun, Tue (iReports360)" — Saturday first, the field week's own order. */
 export function usualDaysText(weekdays: readonly number[]): string {
   return `Usually seen ${weekdays.map((weekday) => PHOENIX_CRM_WEEKDAY_SHORT[weekday] ?? "?").join(", ")} (iReports360)`;
@@ -142,25 +167,34 @@ export type PlannerRowInsight = { lastSeen: string | null; usual: string | null;
  *   - lastSeen: "Last seen Tue 29 Sept", and for a VALIDATED customer his month beside it, in the module's
  *     one month sentence (`monthVisitsText`: "· 1 of 3 visits this month"). Coverage counts validated
  *     customers only (owner, 2026-10-02), so a customer not validated yet shows the day alone. Null when
- *     the reads behind it did not answer — "No visit recorded" is said only when it was read;
+ *     the reads behind it did not answer — "No visit recorded" is said only when it was read. Every
+ *     customer's visits in total follow (owner, 19 Nov 2026: "· 14 visits in total"), from the visit tally,
+ *     and a reviewer — who reads no rep insight — gets the day from that tally, so the line is on every
+ *     screen that shows the plan, his own and his manager's alike;
  *   - usual: iReports360's usual days, while he has no days and hours of his own;
  *   - followUp: his latest visit's next step, when it is due inside the week being planned.
  */
 export function plannerRowInsight(
-  customer: Pick<PlannerCustomer, "insight" | "pending" | "places" | "visitsThisMonth">,
+  customer: Pick<PlannerCustomer, "insight" | "pending" | "places" | "visitsThisMonth" | "tally">,
   context: { target: number | null; today: string; weekStart: string; withTime?: boolean },
 ): PlannerRowInsight {
   const insight = customer.insight ?? null;
+  const tally = customer.tally ?? null;
   const usual = usualDaysOf(customer);
   const followUp = followUpInWeek(customer, context.weekStart);
-  // "Show visit times" on (owner, 2026-11-05): the last visit's day AND its time.
-  const seen = !insight
-    ? null
-    : context.withTime && insight.lastSeenOn
+  // "Show visit times" on (owner, 2026-11-05): the last visit's day AND its time. The rep's own insight
+  // speaks first; a reviewer reads none, so the visit tally gives the day (owner, 19 Nov 2026).
+  const seen = insight
+    ? context.withTime && insight.lastSeenOn
       ? `Last seen ${visitMomentText({ date: insight.lastSeenOn, at: insight.lastVisitAt ?? null }, context.today)}`
-      : lastSeenText(insight.lastSeenOn, context.today);
+      : lastSeenText(insight.lastSeenOn, context.today)
+    : tally
+      ? lastSeenText(tally.lastVisitOn, context.today)
+      : null;
+  const month = seen !== null && !customer.pending ? ` · ${monthVisitsText(customer.visitsThisMonth, context.target)}` : "";
+  const total = seen !== null && tally ? ` · ${totalVisitsText(tally.total)}` : "";
   return {
-    lastSeen: seen !== null && !customer.pending ? `${seen} · ${monthVisitsText(customer.visitsThisMonth, context.target)}` : seen,
+    lastSeen: seen !== null ? `${seen}${month}${total}` : null,
     usual: usual ? usualDaysText(usual) : null,
     followUp: followUp ? followUpText(followUp) : null,
   };
