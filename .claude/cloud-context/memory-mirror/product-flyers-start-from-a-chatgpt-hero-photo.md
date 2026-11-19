@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 21f0c779-a0cb-4588-acf8-2bc3502486eb
-  modified: 2026-11-19T13:11:12.405Z
+  modified: 2026-11-19T14:31:05.142Z
 ---
 
 On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid out in HTML/CSS with cut-out can photos, a baby photo and a teal field. The owner scored them 0/10, 2/10 and 0.5/10. His complaints, picked from a multiple-choice question: "looks cheap / like a webpage", "cans look pasted on", "two halves don't connect", and "back page is a boring table". He then picked "ChatGPT hero image" as the base for the next version.
@@ -111,6 +111,27 @@ On 17 Nov 2026 the Lacto Advanced A5 flyer went through three versions, all laid
   - The 2′-FL tile reads "0.02 g /100 ml water" over "human-milk oligosaccharide".
   - Back logo 40 mm wide (it was 34); everything from the back's field down moved 1.5 mm lower.
   - Measured gaps: can 2 to the baby 7 mm; the logo pill to can 1's lid 4 mm.
+- **Round 4, r8 (19 Nov ~15:35 Cairo).** His words: the cans bigger still, the baby may shrink a bit, and "THE BABY IN YELLOW RELAOCATE THEM TO REAch godmode premium poliush". He REFUSED it ("no i dont like"); it is kept aside as `superseded-package-r8-refused`, and r7 as `superseded-package-r7-baby-right`.
+  - Why the layout had to change: under the 60 mm logo a can cannot be wider than about 33 mm, so the cans moved out from under it.
+  - The cans are now on the RIGHT, 36.5 mm wide (they were 30), their right edge on the 206 mm margin, bottoms at 105.
+  - The headline stands over the cans, on can 1's left edge, still 20 pt.
+  - The baby is in the MIDDLE, 60 mm tall (she was 76.4), and no longer mirrored, so she turns toward the cans. `prep_front28.py` has `MIRROR = False`; the mirrored picture is kept as `z-baby-front-mirrored-r7.png`.
+  - Measured gaps: her hair to the logo 6.7 mm; her hand to can 1 6.2 mm; the headline to the can lids 6.3 mm.
+  - The back did not change.
   - Pedia merge request !6 was MERGED at his word at 14:59 Cairo (merge 5b19d83, carries 9f890c7 and the other session's palette-check fix 9a33f27). The branch is deleted; new Pedia work starts from main. Nothing has been deployed to the web or to Play.
 
+- **Round 5, r9 (19 Nov ~16:40 Cairo) — built, never packaged.** After refusing r8 he added mid-turn: do not change where the baby looks, "same as original photo"; "change hmo to HMOs"; and polish the text style of the three points.
+  - Layout that stayed: logo 60 mm at the left; the headline (20 pt) centred over the two cans; cans 37 mm wide beside the logo (visible x 74–111 and 115–152, bottoms at 105).
+  - The points are Playfair 600, 14 pt, deep teal, a flat gold disc (#A8741A) with a white tick, a hairline between rows: "2′-FL HMOs", "DHA and ARA", "Nucleotides". The tile label is "2′-FL HMOs" too.
+  - The baby stood at the right as shot, 62 mm tall, with can 2 hiding 6.6 mm of her hip. Kept as `z-src-r9.html` and `z-baby-front-asshot-r9.png`.
+- **Round 6, r10 (19 Nov ~16:50 Cairo) — the build now in `Downloads\Lacto-Advanced-A5-landscape`.** On seeing r9 he wrote "make the baby look the opposite position", so she is MIRRORED again (`prep_front28.py` has `MIRROR = True`) and faces the cans.
+  - 🔴 The lesson: **the baby faces the product, into the page.** "Same as original photo" lasted one draft; as shot she looks off the right edge. Flip her toward the cans unless he says otherwise in that same message.
+  - Mirrored, her reaching hand is the leftmost point, so nothing can tuck behind a can any more: she is whole, 56 mm tall at 492 dpi (she was 62), body box x 152.5–209.5, forearms at 104.
+  - Measured on the render: 2.5 mm of white between her hand and can 2; 3.6 mm from her hip to the trim. Everything left of x 149 and the whole back are pixel-identical to r9.
+  - Rejected on the way: her hand in front of can 2 (hides the pack; her picture is flat RGB on white), her hip bleeding off the right edge (a cut baby), 57 mm with a 1.6 mm gap (cramped).
+  - ✅ **He APPROVED this front at 16:52 Cairo ("Approve front").** It is FINAL: fix defects only, never the look. Packaged from `Lacto-Advanced-A5-landscape-r10b.pdf`; the source is `lacto-advanced-a5-landscape.html` beside it. The back has not been approved or refused.
+  - He reacts to drafts he sees in the transcript mid-turn — a draft opened with the Read tool is in front of him.
+
 Related: [[the-next-step-box-must-not-manufacture-the-next-task]]
+
+- **Round 7, the Why Lacto slide (19 Nov 2026, 17:28 Cairo):** on seeing the flyer-dressed Why Lacto slide (Pedia app 1.3.5) he said "RETURN THE APP AS IT WAS". It was reverted to the original blue 1.3.4 slide as 1.3.6 (code 16), GitLab main a71c230, on his "Merge 8 now". **Never re-dress the app's Why Lacto slide as the flyer unless he asks again in his own words.**
