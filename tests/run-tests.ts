@@ -3020,6 +3020,7 @@ import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
 import { runPortalLinkPrefetchTests } from "./portal-link-prefetch.test.ts";
 import { runPortalRepNavigationSpeedTests } from "./portal-rep-navigation-speed.test.ts";
 import { runPhoenixCrmReferenceMintThrottleTests } from "./phoenix-crm-reference-mint-throttle.test.ts";
+import { runPhoenixCrmReadinessReuseTests } from "./phoenix-crm-readiness-reuse.test.ts";
 import { runPageChangeFewerWavesTests } from "./page-change-fewer-waves.test.ts";
 import { runPhoenixCrmForecastWhatsAppTests } from "./phoenix-crm-forecast-whatsapp.test.ts";
 import { runKpiBoardAgentsTests } from "./kpi-board-agents.test.ts";
@@ -11988,6 +11989,10 @@ await runTest(
 await runTest(
   "the planners mint a seat's carried-over customers at most once in five minutes, never skip a first mint and never remember a failed one",
   runPhoenixCrmReferenceMintThrottleTests,
+);
+await runTest(
+  "a list write drops the boards' minute-old readiness copy, the save stamp runs once per territory in five minutes, no planner open measures readiness, and the work-evidence walk seeks on id",
+  runPhoenixCrmReadinessReuseTests,
 );
 await runTest(
   "the visit day reads in two waves and the messages list in one, never with another viewer's rows",

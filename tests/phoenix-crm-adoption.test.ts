@@ -213,7 +213,10 @@ export function runPhoenixCrmAdoptionTests(): void {
     // The ready date is the one readiness already carries — `phoenix_crm_seat_readiness` answers it
     // from `phoenix_crm_territory_readiness` when it is not asked to stamp — never a second read of it.
     assert.ok(service.includes("readyAt: list?.readyAt ?? null,"), "the ready date comes off the readiness answer");
-    assert.ok(service.includes(": sharedReadiness(seatIds),"), "readiness shared with the exceptions board when the pack opens both");
+    assert.ok(
+      service.includes(": sharedReadiness(seatIds, { reuseRecent: true }),"),
+      "readiness shared with the exceptions board, from the minute-old display copy (a report, never a notification)",
+    );
 
     // Few reads for the whole company, not three per seat.
     const gather = service.slice(service.indexOf("export async function gatherAdoption"), service.indexOf("export async function loadAdoptionReport"));

@@ -439,15 +439,26 @@ function everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter(): void {
  * EVERY EVIDENCE READ IS PAGED (audit, 2026-11-07). PostgREST stops a response at 1,000 rows and
  * production logged 8,146 non-test Phoenix CRM visits in October 2026, so the unpaged read kept the
  * first 1,000 and most provably worked days never reached the suppression — each one a day that
- * could be charged. All three tables go through `fetchAllRows` on a stable `id` order, and none is
- * read bare inside the loader.
+ * could be charged. All three tables go through the pager on a stable `id` order, and none is
+ * read bare inside the loader. Since 19 Nov 2026 the pager is the KEYSET walk (`id > last id`): an
+ * OFFSET page re-read every row before it, and a row with no id throws rather than ending the walk
+ * short.
  */
 function everyEvidenceReadIsPaged(): void {
   const source = stripComments(readFileSync("src/lib/crm/phoenix-work-evidence.ts", "utf8")).replace(/\r\n/g, "\n");
   const start = source.indexOf("export async function loadPhoenixWorkEvidenceDays(");
   assert.ok(start >= 0, "the loader exists");
   const body = source.slice(start, source.indexOf("\n}\n", start));
-  assert.match(body, /fetchAllRows<T>\(buildQuery, "id"\)/, "the loader pages through fetchAllRows on the id column");
+  assert.match(
+    body,
+    /fetchAllRowsKeyset<T>\(buildQuery, \{\s*cursorColumn: "id",/,
+    "the loader pages through the keyset walk on the id column",
+  );
+  assert.doesNotMatch(body, /fetchAllRows<T>\(buildQuery, "id"\)/, "REGRESSION: the OFFSET walk re-reads every earlier row on each page");
+  assert.match(body, /cursorOf: \(row\) => \{[\s\S]*?throw new Error\(/, "a row without its id throws rather than ending the walk short");
+  for (const column of ['"id,visit_date,', '"id,activity_date,', '"id,started_on,']) {
+    assert.ok(body.includes(column), `every evidence read selects its id for the cursor (${column})`);
+  }
   for (const table of ["PHOENIX_CRM_VISITS_TABLE", "PHOENIX_CRM_DAY_ACTIVITIES_TABLE", "PHOENIX_CRM_DAY_STARTS_TABLE"]) {
     assert.match(
       body,

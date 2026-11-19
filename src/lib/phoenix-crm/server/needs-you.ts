@@ -59,7 +59,7 @@ import {
   countPhoenixCrmWeeklyPlansWaitingForYou,
   phoenixCrmDecisionSeats,
 } from "@/lib/phoenix-crm/server/decision-queues";
-import { loadReadiness } from "@/lib/phoenix-crm/server/list";
+import { loadReadinessShared } from "@/lib/phoenix-crm/server/list";
 import {
   canDecideValidationReviews,
   countReopenedCustomersWaiting,
@@ -145,8 +145,9 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     countPhoenixCrmWeeklyPlansWaitingForYou(seats, viewer.cairoToday),
     // `loadReadiness` answers for EVERY seat asked about or throws — a territory the database did not
     // answer for is never read as ready, or as anything else. That is precisely the contract this
-    // board needs, so it is called bare and its rejection travels.
-    seatIds.length === 0 ? Promise.resolve(null) : loadReadiness(seatIds),
+    // board needs, so it is called bare and its rejection travels. A count on a board, so it reads the
+    // minute-old copy (loadReadinessShared), which keeps that contract and never keeps a failure.
+    seatIds.length === 0 ? Promise.resolve(null) : loadReadinessShared(seatIds),
     // The held-place queue is the Super Admin's alone, so for everybody else it is a TRUE zero and no
     // query is made at all — the gate is the module's own (`canDecideValidationReviews`), never a
     // role test spelled out again here.
