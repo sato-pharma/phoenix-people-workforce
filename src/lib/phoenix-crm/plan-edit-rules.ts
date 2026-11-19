@@ -51,10 +51,28 @@ export const PLAN_EDIT_NOTE_MAX = 500;
  */
 export const PLAN_EDIT_ASKS_PER_WEEK = 2;
 
+/**
+ * 🔴 The owner's one-week exceptions to the cap, by the week's own plan id — never a person, never a
+ * standing allowance. Each entry is the extra asks that ONE week gets on top of the two, and it lapses
+ * with the week itself (a passed week has no days left to ask about). Only the owner grants one.
+ *
+ * - Salma Sabry, Menoufia 1, the week of Saturday 14 November 2026 — both asks spent on 15 and 16
+ *   November; the owner granted one more on 19 November 2026.
+ */
+export const PLAN_EDIT_EXTRA_ASKS: Readonly<Record<string, number>> = {
+  "5c11089c-8d95-4f86-b445-84446a7b9ba7": 1,
+};
+
+/** How many asks this week allows: the two, plus any exception the owner granted that week. */
+export function planEditAsksAllowed(planId?: string | null): number {
+  const extra = typeof planId === "string" && planId ? PLAN_EDIT_EXTRA_ASKS[planId.toLowerCase()] : undefined;
+  return PLAN_EDIT_ASKS_PER_WEEK + (Number.isInteger(extra) && (extra as number) > 0 ? (extra as number) : 0);
+}
+
 /** The asks a week has left, from the requests already raised on it. */
-export function planEditAsksLeft(asked: number): number {
+export function planEditAsksLeft(asked: number, planId?: string | null): number {
   const used = Number.isFinite(asked) && asked > 0 ? Math.floor(asked) : 0;
-  return Math.max(0, PLAN_EDIT_ASKS_PER_WEEK - used);
+  return Math.max(0, planEditAsksAllowed(planId) - used);
 }
 
 /** What the server answers a third ask with. */

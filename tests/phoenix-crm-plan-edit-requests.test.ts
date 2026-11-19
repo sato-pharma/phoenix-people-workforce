@@ -9,6 +9,8 @@ import {
   nextPlanEditStatus,
   PHOENIX_CRM_ADMINISTRATOR_HR_ID,
   PLAN_EDIT_ASKS_PER_WEEK,
+  PLAN_EDIT_EXTRA_ASKS,
+  planEditAsksAllowed,
   planEditAsksLeft,
   planEditAsksLeftLine,
   planEditAsksNote,
@@ -267,7 +269,16 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
   // "for reps cap weekly plan edit requests + plan it self to 2 to be the rep makes the plan and send s to manager after the approval he have only 2 times to request edit per week"
   {
     assert.equal(PLAN_EDIT_ASKS_PER_WEEK, 2, "🔴 a rep asks to edit one week twice at most — the owner's number");
-    assert.deepEqual([0, 1, 2, 3].map(planEditAsksLeft), [2, 1, 0, 0], "every request raised counts, and the count never runs below none");
+    assert.deepEqual([0, 1, 2, 3].map((asked) => planEditAsksLeft(asked)), [2, 1, 0, 0], "every request raised counts, and the count never runs below none");
+    // 🔴 The owner's one-week exception (19 Nov 2026): Salma Sabry's week of 14 November gets one ask more —
+    // that week's plan alone; no other week or person is widened by it.
+    const salmaWeek = "5c11089c-8d95-4f86-b445-84446a7b9ba7";
+    assert.equal(PLAN_EDIT_EXTRA_ASKS[salmaWeek], 1, "the owner granted that one week a single extra ask");
+    assert.equal(planEditAsksAllowed(salmaWeek), 3);
+    assert.deepEqual([2, 3].map((asked) => planEditAsksLeft(asked, salmaWeek)), [1, 0], "her third ask is allowed, a fourth is not");
+    assert.equal(planEditAsksLeft(2, salmaWeek.toUpperCase()), 1, "the plan id is matched whatever its case");
+    assert.equal(planEditAsksLeft(2, "00000000-0000-4000-8000-000000000000"), 0, "every other week still stops at two");
+    assert.equal(planEditAsksLeft(2, null), 0, "and a week with no plan id is never widened");
     assert.match(planEditAsksNote(0), /twice/, "a rep who has spent both asks reads why the button is gone");
     assert.match(planEditAsksNote(1), /last ask/, "and is told before pressing the last one");
     assert.equal(planEditAsksLeftLine(1), "1 ask left this week");
@@ -276,7 +287,7 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
     const edits = source("src/lib/phoenix-crm/server/plan-edits.ts");
     const raise = edits.slice(edits.indexOf("export async function raisePlanEdit("), edits.indexOf("export async function decidePlanEdit("));
     const countAt = raise.indexOf('.from("phoenix_crm_plan_edit_requests")');
-    const refuseAt = raise.indexOf("if (planEditAsksLeft(asked ?? 0) === 0) throw conflictError(PLAN_EDIT_ASKS_USED_UP);");
+    const refuseAt = raise.indexOf("if (planEditAsksLeft(asked ?? 0, planId) === 0) throw conflictError(PLAN_EDIT_ASKS_USED_UP);");
     const writeAt = raise.indexOf('callPhoenixCrm<Row>("phoenix_crm_raise_plan_edit_request"');
     assert.ok(countAt > 0 && refuseAt > countAt && writeAt > refuseAt, "🔴 the third ask is refused on the server, before anything is written");
     const count = raise.slice(countAt, refuseAt);
@@ -287,7 +298,7 @@ export function runPhoenixCrmPlanEditRequestTests(): void {
     assert.match(state, /entry\.asked \+= 1;\s+if \(!entry\.latest\)/, "the week's own count takes every request it reads, before any status is looked at");
 
     const monthly = source("src/lib/phoenix-crm/server/monthly-plans.ts");
-    assert.match(monthly, /const editAsksLeft = planEditAsksLeft\(edit\?\.asked \?\? 0\);/, "the week reads its asks from that same count");
+    assert.match(monthly, /const editAsksLeft = planEditAsksLeft\(edit\?\.asked \?\? 0, planRow \? String\(planRow\.id\) : null\);/, "the week reads its asks from that same count, with the week's own exception");
     assert.match(monthly, /canAskToEdit: repState === "sent" && weekPlan !== null && editAsksLeft > 0,/, "🔴 the button is gone once both asks are spent");
 
     const panel = source("src/components/phoenix-crm/plan-week-panel.tsx");

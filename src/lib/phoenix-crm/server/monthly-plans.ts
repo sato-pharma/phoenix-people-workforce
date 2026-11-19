@@ -478,7 +478,7 @@ function buildMonthlyWeekView(inputs: MonthlyWeekInputs, weekStart: string, plan
   const staleOpen = days.some((day) => day.editable && day.items.some((item) => item.stale));
   const repState: RepWeekState = repForWeeks ? repStateOf({ weekStart, cairoToday: today, status: weekStatus, edit }) : "closed";
   const canEdit = repState === "plan";
-  const editAsksLeft = planEditAsksLeft(edit?.asked ?? 0);
+  const editAsksLeft = planEditAsksLeft(edit?.asked ?? 0, planRow ? String(planRow.id) : null);
   const latest = edit?.latest ?? null;
   const editRequest =
     edit?.waiting ??

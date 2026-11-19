@@ -347,7 +347,7 @@ export async function raisePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pro
     .eq("plan_id", planId)
     .eq("is_test", isTest);
   throwIfError(askedError);
-  if (planEditAsksLeft(asked ?? 0) === 0) throw conflictError(PLAN_EDIT_ASKS_USED_UP);
+  if (planEditAsksLeft(asked ?? 0, planId) === 0) throw conflictError(PLAN_EDIT_ASKS_USED_UP);
 
   const reviewer = territoryReviewer(viewer.org, seat.seatId);
   const result = await callPhoenixCrm<Row>("phoenix_crm_raise_plan_edit_request", {
