@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
+import { logError } from "@/lib/observability/log";
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -327,10 +328,17 @@ export type ReopenExpensesStep = (runId: string) => Promise<unknown>;
 
 /**
  * Flip the switch. Refused while any run is in Part 2 or ready, so a run's Expenses step, its Part 2
- * confirm and its publish always see the same setting. Every open run's Expenses figure is cleared and
- * its step reopened FIRST, so no figure saved under the old setting survives the change. The change is
- * audited, and the audit row is REQUIRED: if it cannot be written the previous value is put back and
- * the change is refused — and if that put-back fails too, the error says the switch WAS changed.
+ * confirm and its publish always see the same setting.
+ *
+ * THE SWITCH MOVES FIRST, THEN THE STEPS REOPEN (owner, 19 Nov 2026: "fix setCarryLateExpenses so the
+ * switch moves before any step reopens"). The setting is saved and its audit row — which is REQUIRED —
+ * written before any run is touched. If either fails, nothing is reopened: a failed save changes nothing,
+ * a failed audit row puts the previous value back and refuses, and if that put-back fails too the error
+ * says the switch WAS changed. Only once the change is saved and recorded is every open run's Expenses
+ * figure cleared and its step reopened, so no figure saved under the old setting survives it. Every open
+ * run is tried even when one refuses; a run whose step could not be reopened is named in the error,
+ * which says the switch IS changed. Its figure stays as it was, and Part 2 confirm still refuses a step
+ * confirmed under the other setting (`assertLateExpensesShownMatchesSwitch`).
  */
 export async function setCarryLateExpenses(
   access: AccessContext,
@@ -369,10 +377,7 @@ export async function setCarryLateExpenses(
 
   const previous = await getCarryLateExpensesSetting(db);
   if (previous === on) return { carryLateExpenses: on };
-  // A figure saved under the old setting would pay (or leave out) the carried trips by the old rule.
-  for (const run of open) {
-    if (run.id) await reopen(String(run.id));
-  }
+  const toReopen = open.filter((run) => run.id).map((run) => ({ id: String(run.id), month: Number(run.month), year: Number(run.year) }));
 
   const actor = actorId(access);
   const write = async (value: boolean) =>
@@ -395,7 +400,8 @@ export async function setCarryLateExpenses(
     actor_hr_id: actor,
     action: "carry_late_expenses_set",
     step_key: "p2_expenses",
-    detail: { from: previous, to: on, expensesStepsReopened: open.map((run) => String(run.id ?? "")) },
+    // Written BEFORE the reopens: it names the runs the change is about to reopen, not ones already reopened.
+    detail: { from: previous, to: on, expensesStepsToReopen: toReopen.map((run) => run.id) },
   });
   if (auditError) {
     // Put the old value back: a change nobody can trace is the state this audit row exists to prevent.
@@ -411,6 +417,30 @@ export async function setCarryLateExpenses(
     throw new Error(
       `Conflict: Could not record the change to the payroll switch, so it was not changed. Try again in a moment. ` +
         `(${databaseFailureNote(auditError, "automated_payroll_late_expense_switch_audit_failed")})`,
+    );
+  }
+
+  // The change is saved and recorded. Only now is any run touched: a figure saved under the old setting
+  // would pay (or leave out) the carried trips by the old rule. Every run is tried, even after one refuses.
+  const notReopened: string[] = [];
+  for (const run of toReopen) {
+    try {
+      await reopen(run.id);
+    } catch (reopenError) {
+      logError("Automated payroll: the payroll switch moved but a run's Expenses step could not be reopened", {
+        labels: { event: "automated_payroll_late_expense_switch_reopen_failed", runId: run.id },
+        error: reopenError,
+      });
+      notReopened.push(monthNameAndYear(run.month, run.year));
+    }
+  }
+  if (notReopened.length > 0) {
+    const months = joinNames(notReopened);
+    const one = notReopened.length === 1;
+    throw new Error(
+      `Conflict: the payroll switch IS now ${on ? "ON" : "OFF"} and the change is recorded, but the Expenses step of ` +
+        `${months} could not be reopened, so ${one ? "its" : "their"} saved Expenses figures were not cleared. Reopen ` +
+        `the Expenses step of ${months} and confirm it again before Part 2.`,
     );
   }
   return { carryLateExpenses: on };
