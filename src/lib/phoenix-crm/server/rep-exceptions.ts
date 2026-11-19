@@ -1,5 +1,5 @@
 /**
- * Phoenix CRM — the Rep Exceptions page of the Super Admin and the SFE Manager, server side: every rep, who has an
+ * Phoenix CRM — the Rep Exceptions page of the Super Admin (alone since 19 Nov 2026), server side: every rep, who has an
  * exception, and the one write. The rule, his words and what stays untouched are in `../rep-exception-rules.ts`.
  *
  * 🔴 THE PAGE SAYS WHAT THE DOOR WILL DO. `repStanding` reads only rows on the seats a rep holds now, because
@@ -7,8 +7,9 @@
  * never taken from the page.
  */
 
-import { forbiddenError, validationError } from "@/lib/http/api-errors";
-import { canUseSfeFieldControls, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { ApiError, forbiddenError, validationError } from "@/lib/http/api-errors";
+import { FIELD_CONTROL_OUTAGE_MESSAGE, seesFieldControlOutage } from "@/lib/phoenix-crm/field-control-outage";
+import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import {
@@ -37,13 +38,20 @@ type StoredRow = {
   created_at: string | null;
 };
 
-/** The Super Admin and the SFE Manager (owner, 2026-11-03), and never a test account. */
+/**
+ * The Super Admin ALONE, and never a test account (owner, 19 Nov 2026: "i want to make him when he goes to those
+ * pages the screen tell him server down"). The SFE Manager had it from 3 Nov 2026 to 19 Nov 2026; he is now
+ * answered as if the server were down (`../field-control-outage.ts`), never told he was refused.
+ */
 export function canManageRepExceptions(viewer: PhoenixCrmViewer): boolean {
-  return canUseSfeFieldControls(viewer);
+  if (viewer.isTestPersona) return false;
+  return viewer.isSuperAdmin && viewer.canUpdate;
 }
 
 function assertManager(viewer: PhoenixCrmViewer): void {
-  if (!canManageRepExceptions(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager manage rep exceptions.");
+  if (canManageRepExceptions(viewer)) return;
+  if (seesFieldControlOutage(viewer.role)) throw new ApiError(503, "service_unavailable", FIELD_CONTROL_OUTAGE_MESSAGE);
+  throw forbiddenError("Only the Super Admin manages rep exceptions.");
 }
 
 /** Everyone holding a rep seat, one entry per PERSON: both people on a shared seat, each person's every seat. */
