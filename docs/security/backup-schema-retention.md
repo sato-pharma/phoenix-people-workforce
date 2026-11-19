@@ -254,9 +254,19 @@ its export stays in the exports folder beside the repository and is never commit
 | `au.bak_move_ai0002_b177_occ_20260923` | 6 | the seat-holder history of their two seats in both lines; every row is still live, only dates differ |
 | `au.bak_move_ai0002_b177_lam_20260923` | 4 | the two areas in both lines; all still live, only the 1 Oct end date differs |
 
-The next tables to reach 90 days with no decision are `au.bak_20261002_luxor_rep_seat_revert`,
-`au.bak_20261002_ped_d16_occupancy`, `au.bak_20261002_ped_ue_split_occupancy` and
-`au.monthly_targets_pedia_oct2026_backup_20261002`, on 31 Dec 2026.
+**The four 2 October tables, decided the same day.** All four "export, then drop", all four exported
+that day. They reach 90 days on 31 Dec 2026. Row-level security off and no browser grant, like the
+two before. Two were taken by hand, with no migration naming them.
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `au.bak_20261002_luxor_rep_seat_revert` | 1 | Pedia Luxor's area row while it shared the Qena 2 rep seat, before the 2 Oct separation; the live row no longer has the link, so the export is its lasting record and the migration's undo |
+| `au.bak_20261002_ped_d16_occupancy` | 3 | the seat-holder history of the Pedia Kafr El-Sheikh 1 rep seat, taken by hand; all still live, dates and the current holder's region corrected since |
+| `au.bak_20261002_ped_ue_split_occupancy` | 4 | the seat-holder history of three Pedia Upper Egypt rep seats, taken by hand; all still live, only dates corrected since |
+| `au.monthly_targets_pedia_oct2026_backup_20261002` | 144 | Pedia's October targets as first uploaded on 1 Oct, which left the live table by 2 Oct with no row in the drop ledger; October was uploaded again and published, and none of these rows match it, so the export is the lasting record of the first upload |
+
+No dated table is next: the next snapshots to reach 90 days with no decision are three schemas,
+`crm_backup_20261003`, `crm_parity_backup_20261003` and `phoenix_crm_backup_20261003`, on 1 Jan 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
