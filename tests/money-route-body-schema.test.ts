@@ -46,7 +46,6 @@ export const NO_BODY_ROUTES = new Set<string>([
   "app/api/automated-payroll/runs/[runId]/non-employees/sync/route.ts",
   "app/api/automated-payroll/runs/[runId]/publish/route.ts",
   "app/api/automated-payroll/runs/[runId]/steps/[stepKey]/confirm/route.ts",
-  "app/api/dispute-center/cases/[kind]/[ref]/messages/route.ts",
   "app/api/payroll/[id]/route.ts",
   "app/api/payroll/copilot/[runId]/cancel/route.ts",
   "app/api/payroll/copilot/[runId]/materialize/route.ts",

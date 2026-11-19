@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     let replyText = "";
     const images: CheckedDisputeImage[] = [];
     if ((request.headers.get("content-type") ?? "").toLowerCase().startsWith("multipart/form-data")) {
-      // parseFormBody is where request.formData() runs — only here, after the Super Admin check above.
+      // The pictures are read here, through the schema, only after the Super Admin check above.
       const parsed = await parseFormBody(request, ReplyFormBodySchema);
       if (!parsed.ok) {
         return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
