@@ -786,6 +786,20 @@
       "decidedBy": "owner",
       "why": "45 rows: Pedia's seats before the Upper Egypt split (20260909223000). 10 seats were re-pointed to the new districts that day, since a seat cannot carry a date; the export is the lasting record of where they sat. August is published.",
       "sheet": "19 November 2026, the 9 September snapshot tables, in chat"
+    },
+    "au.bak_20260912_pedia_kfs_d1_line_area_map": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "61 rows: Pedia's area map before Kafr El-Sheikh 1 moved from Alex-BHR to Delta (1) from 1 Sep (20260912103000). The move is dated, so August still reads the old shape from au.line_area_map; 16 areas' staffed/vacant marks were edited in place since (14 filled, 2 now vacant), so the export is the lasting record of them as of 12 Sep. September and October are published.",
+      "sheet": "19 November 2026, the 12 September snapshot tables, in chat"
+    },
+    "au.bak_20260912_pedia_kfs_d1_seats": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "49 rows: Pedia's seats before the same move. Only the Kafr El-Sheikh 1 rep seat changed since (Alex-BHR to Delta (1)); a seat cannot carry a date, so the export is the lasting record of where it sat. September and October are published.",
+      "sheet": "19 November 2026, the 12 September snapshot tables, in chat"
     }
   }
 }

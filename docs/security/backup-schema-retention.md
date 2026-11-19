@@ -225,8 +225,16 @@ then drop", and all four were exported that day. They reach 90 days on 8 Dec 202
 | `au.bak_20260909_pedia_ue_split_line_area_map` | 50 | Pedia's area map before the Upper Egypt split; 11 rows were edited in place since, so the export is the lasting record of them |
 | `au.bak_20260909_pedia_ue_split_seats` | 45 | Pedia's seats before the split; 10 were re-pointed that day, because a seat cannot carry a date |
 
-The next tables to reach 90 days with no decision are `au.bak_20260912_pedia_kfs_d1_line_area_map`
-and `au.bak_20260912_pedia_kfs_d1_seats`, on 11 Dec 2026.
+**The two 12 September tables, decided the same day.** Both "export, then drop", both exported that
+day. They reach 90 days on 11 Dec 2026:
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `au.bak_20260912_pedia_kfs_d1_line_area_map` | 61 | Pedia's area map before Kafr El-Sheikh 1 moved from Alex-BHR to Delta (1) from 1 Sep; the move is dated, so August still reads the old shape, and 16 areas' staffed/vacant marks were edited in place since, so the export is the lasting record of them |
+| `au.bak_20260912_pedia_kfs_d1_seats` | 49 | Pedia's seats before the move; only the Kafr El-Sheikh 1 rep seat changed since, and a seat cannot carry a date |
+
+The next tables to reach 90 days with no decision are `au.bak_20260919_ismailia_suez_line_area_map`
+and `au.bak_20260919_ismailia_suez_seats`, on 18 Dec 2026.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
