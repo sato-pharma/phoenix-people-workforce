@@ -38,7 +38,9 @@ import {
 //   (b) TWO APPROVALS AT ONCE. Two Super Admins approve the same claim, from the same screen version, at the same
 //       moment. Exactly one applies; the other is refused as "the claim changed" (OutstationClaimChangedError, a
 //       409 at the routes) and writes nothing; the payroll row, the report row and the records are written once.
-//       A later approve of the now-accepted, unchanged claim makes no call at all (F-PAY-015).
+//       A later approve of the now-accepted, unchanged claim makes no call at all (F-PAY-015). And a change by
+//       someone else landing after the version check (a journey stop re-pricing the trip) is refused, never
+//       approved unseen: the call carries the version that was checked.
 //   A claim the evidence gate holds is accepted by the same one call, with no payroll row and the "HELD" record.
 
 const CLAIM_ID = 4521;
@@ -370,6 +372,62 @@ async function twoApprovalsAtOnceApplyOnce(): Promise<void> {
   });
 }
 
+/**
+ * Applies `change` to the stored tables just before the first request that follows the approval's version check
+ * (the read of the claim's `updated_at`): a write by someone else landing while the approval is being worked out.
+ */
+function landAfterTheVersionCheck(tables: Tables, change: (tables: Tables) => void): void {
+  const inner = globalThis.fetch;
+  let checked = false;
+  let landed = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (checked && !landed) {
+      landed = true;
+      change(tables);
+    }
+    if (url.pathname === "/rest/v1/outstation_expense_requests" && url.searchParams.get("select") === "updated_at") checked = true;
+    return inner(input, init);
+  }) as typeof fetch;
+}
+
+async function aChangeAfterTheCheckIsRefusedNotApprovedUnseen(): Promise<void> {
+  // The reviewer's screen shows 520.00. While the approval is being worked out, the employee's journey stop
+  // re-prices the claim to 700.00 and moves its version. The approval must refuse, not pay 700.00 unseen.
+  const tables = outstationTables("needs_review");
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async (seen) => {
+    let afterTheStop: Tables | null = null;
+    landAfterTheVersionCheck(tables, (live) => {
+      Object.assign(live.outstation_expense_requests[0], {
+        expected_total_amount: 700,
+        fuel_amount: 300,
+        total_amount: 700,
+        updated_at: "2026-11-17T09:41:07.000001+00:00",
+      });
+      afterTheStop = stored(live);
+    });
+    let refusal: unknown = null;
+    try {
+      await approveOutstationRequestForPayroll(CLAIM_ID, admin("B-10"), { expectedRevision: SCREEN_REVISION });
+    } catch (error) {
+      refusal = error;
+    }
+    await settle();
+    assert.equal(rpcCalls(seen, ACCEPT).length, 1, "moved: the approval reached its one call");
+    assert.equal(
+      (rpcCalls(seen, ACCEPT)[0].body as { p_expected_updated_at?: string }).p_expected_updated_at,
+      STORED_AT,
+      "moved: the call carried the version that was CHECKED, not one read again after the claim moved",
+    );
+    assert.ok(isOutstationClaimChangedError(refusal), "moved: HEADLINE: the approval is refused as \"the claim changed\", never approved unseen");
+    assert.deepEqual(tables.outstation_expenses, [], "moved: no payroll row — neither the 520.00 he saw nor the 700.00 he did not");
+    assert.equal(tables.outstation_expense_requests[0].status, "needs_review", "moved: the claim still waits for a decision");
+    assert.notEqual(afterTheStop, null, "moved: the employee's change landed after the version check");
+    assert.deepEqual(stored(tables), afterTheStop, "moved: the tables hold the employee's change and nothing of the approval");
+    assert.deepEqual(tableWrites(seen), [], "moved: and the app wrote nothing outside the call");
+  });
+}
+
 // ───────────────────────────────────────────────────────── a claim the evidence gate holds
 
 async function aHeldClaimIsAcceptedWithNoPayrollRow(): Promise<void> {
@@ -402,5 +460,6 @@ export async function runOutstationReapproveRollbackAndRaceTests(): Promise<void
   await approveIsAllOrNothingWhenThePayrollRowFails();
   await approveIsAllOrNothingWhenTheRecordFails();
   await twoApprovalsAtOnceApplyOnce();
+  await aChangeAfterTheCheckIsRefusedNotApprovedUnseen();
   await aHeldClaimIsAcceptedWithNoPayrollRow();
 }
