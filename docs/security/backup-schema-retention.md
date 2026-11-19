@@ -305,9 +305,24 @@ group was first listed and was decided separately, a few minutes later.
 | `au.bak_20261008_luxor_notes_fix` | 1 · 1 | Pedia Luxor's area row before the 8 Oct notes fix (`20261008153500`); live with the corrected notes and the same rep seat |
 | `au.bak_20261008_pd0021_decline_revert` | 1 · 1 | one Pedia rep's records while an offer withdrawal had wrongly marked the offer declined, taken by hand before the revert; the rep is active today. Holds personal fields |
 
-The next snapshots to reach 90 days with no decision are the 9 October group, on 7 Jan 2027: the
-schemas `ep_backup_20261009`, `sohag_backup_20261009`, `msn_backup_20261009`,
-`sos_september_split_rebuild_20261009` and `epda_backup_20261009`.
+**The 9 October schemas, decided the same day.** All five "export, then drop", all five exported that
+day. They reach 90 days on 7 Jan 2027. Four were moved here from `public` by `20261023023133`; no
+migration creates the rebuild schema. Nothing depends on any of them or reads them; no role can use
+the five schemas; staging has none. July to September are published on all three lines, so none of
+them can undo a figure.
+
+| Schema | Tables · rows | What it holds |
+| --- | --- | --- |
+| `ep_backup_20261009` | 5 · 190 | the EPDA Bulk September file as first imported on 9 Oct: the batch, its 73 invoice rows and the summary rows built from them. The same file was imported again on 10 Oct with the same lines, quantities and value; only 4 rows now sit on a different brick or area |
+| `sohag_backup_20261009` | 4 · 63 | Sohag customer mappings in Sohag1 before the 9 Oct move, including the 10 kept in Sohag city. All still live; 61 now sit in another area, mostly Sohag2. The customer map keeps no history, so the export is the lasting record of where they were |
+| `epda_backup_20261009` | 1 · 18 | EPDA Pharmacies 22199672 before the owner's 10 Oct ruling split it into two pharmacies: invoice rows July to September, the customer mapping and summary rows. Four invoice rows are still live, two under the new second code; the summary rows were rebuilt |
+| `msn_backup_20261009` | 1 · 492 | September's computed store-split figures for the three lines on the night of 9 Oct; 277 have changed since |
+| `sos_september_split_rebuild_20261009` | 2 · 140 | the September split rebuild's before-picture: store-split figures computed on 4 Oct, 87 since changed, and the Anti Infective September publication row while briefly unpublished that day. It is published again with the identical snapshot |
+
+The next snapshots to reach 90 days with no decision are the 10 October group, on 8 Jan 2027: the
+schemas `epda_backup_20261010`, `epda_sep_resplit_20261010`, `ez_backup_20261010`,
+`msn_backup_20261010`, `phx_crm_backup_20261010`, `ps_sep_remap_20261010`,
+`railways_backup_20261010`, `sep_map_sync_20261010` and `sos_backup_20261010`.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,

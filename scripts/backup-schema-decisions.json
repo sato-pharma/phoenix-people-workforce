@@ -954,6 +954,41 @@
       "decidedBy": "owner",
       "why": "1 table, 2 rows: two offer letters for one Talent Acquisition Specialist candidate, created and sent on 8 Oct, never accepted, with no vacancy or HR id, then deleted from the live offers; no live offer goes to that candidate now. The copy holds the candidate's name and email, so its export stays outside the repository like every export.",
       "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "ep_backup_20261009": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "5 tables, 190 rows: the EPDA Bulk distributor's September file as first imported on 9 Oct (1 batch, 73 invoice rows and the 116 summary rows built from them). The same file was imported again on 10 Oct with the same 73 lines, quantities and value; only 4 rows now sit on a different brick or area. The first import is gone from the live tables, and September is published on all three lines, so the copy can undo nothing.",
+      "sheet": "19 November 2026, the 9 October snapshot schemas, in chat"
+    },
+    "sohag_backup_20261009": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "4 tables, 63 rows: Sohag customer mappings in Sohag1 before the 9 Oct move (44, 8 and 1 moved that day, plus 10 kept in Sohag city). All 63 are still live and 61 now sit in another area, mostly Sohag2. The customer map keeps no history, so the export is the lasting record of where they were before.",
+      "sheet": "19 November 2026, the 9 October snapshot schemas, in chat"
+    },
+    "epda_backup_20261009": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 18 rows: EPDA Pharmacies 22199672 before the owner's 10 Oct ruling split it into two pharmacies (6 invoice rows July-September, 1 customer mapping, 11 summary rows). Four invoice rows are still live, two of them under the new second code; the mapping is live and the summary rows were rebuilt. July to September are published.",
+      "sheet": "19 November 2026, the 9 October snapshot schemas, in chat"
+    },
+    "msn_backup_20261009": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 492 rows: September's computed store-split figures for the three lines at 21:00 on 9 Oct; 277 have changed since. The published September snapshots are that month's truth, so the copy can change no figure.",
+      "sheet": "19 November 2026, the 9 October snapshot schemas, in chat"
+    },
+    "sos_september_split_rebuild_20261009": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 140 rows: the September split rebuild's before-picture (139 store-split figures computed on 4 Oct, 87 since changed, and the Anti Infective September publication row while briefly unpublished on 9 Oct). The publication is published again with the identical snapshot, so the copy can change no figure.",
+      "sheet": "19 November 2026, the 9 October snapshot schemas, in chat"
     }
   }
 }
