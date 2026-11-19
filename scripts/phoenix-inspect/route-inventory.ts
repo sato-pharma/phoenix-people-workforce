@@ -2,7 +2,7 @@
  * Writes docs/phoenix-intelligence/route-inventory.json from the app's own navigation code.
  *
  *   node --experimental-strip-types --experimental-specifier-resolution=node \
- *     --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-inspect/route-inventory.ts
+ *     --import ./tests/register-alias-loader.mjs scripts/phoenix-inspect/route-inventory.ts
  *
  * `--stdout` prints instead of writing. `--summary` prints one line per role.
  * Pure: no database, no network, no environment variables.

@@ -24,7 +24,7 @@
 //
 // Usage (from the primary checkout; the dry run writes nothing but the pre-image workbook in xlsx/):
 //   node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./scripts/alias-loader.mjs scripts/recruitment/recover-unfinished-whatsapp-answers.ts
+//     --import ./scripts/register-alias-loader.mjs scripts/recruitment/recover-unfinished-whatsapp-answers.ts
 // Apply (production only; N is the plan size the dry run just printed):
 //   ... scripts/recruitment/recover-unfinished-whatsapp-answers.ts --apply --confirm-production=<N>
 // Idempotent: a second run finds nothing left to fill.

@@ -414,7 +414,7 @@ far rule takes about 15% of the converted visits (re-measured 7 Nov 2026).
    not touch the doors: whenever it lands, they serve the same rows.
 
 ```powershell
-node --env-file-if-exists=.env.production.rls.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-convert-ireports360-visits.ts
+node --env-file-if-exists=.env.production.rls.local --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs scripts/phoenix-crm-convert-ireports360-visits.ts
 ```
 
 **Undo the conversion:** write each row of `before-<Cairo time>.jsonl` back by `visit_id`. Then write each row of

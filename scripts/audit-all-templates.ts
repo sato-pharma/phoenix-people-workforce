@@ -4,7 +4,7 @@
 // scans templateDefaults' static source — a bug in a published DB row (like the two this script
 // found on 2026-07-23: interview_invitation's single-brace tokens, contract_renewal's stale
 // greeting) is invisible to that test. Run with:
-//   node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/audit-all-templates.ts
+//   node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs scripts/audit-all-templates.ts
 import { emailTemplateKeys, getEmailTemplate } from "../src/lib/email-templates/service.ts";
 import { contextVariables } from "../src/lib/email-templates/render-core.ts";
 import { listEmailCustomVariables } from "../src/lib/email-templates/custom-variables.ts";

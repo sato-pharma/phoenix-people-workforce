@@ -78,7 +78,7 @@
  *
  * Run from a worktree with node directly (never pnpm there):
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/customer-pharmacy-pending-questions.ts [output.xlsx]
  *
  * Reads PRODUCTION through `SUPABASE_DB_URL` in `.env.local`.

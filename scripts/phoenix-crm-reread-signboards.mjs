@@ -35,7 +35,7 @@
 //
 // Run it through the alias loader so it imports the live modules rather than copying them:
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//        --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-reread-signboards.mjs
+//        --import ./tests/register-alias-loader.mjs scripts/phoenix-crm-reread-signboards.mjs
 
 import fs from "node:fs";
 import path from "node:path";

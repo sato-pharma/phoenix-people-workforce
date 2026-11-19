@@ -7,7 +7,7 @@
 //
 // Usage:
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//        --experimental-loader ./tests/alias-loader.mjs \
+//        --import ./tests/register-alias-loader.mjs \
 //        scripts/analyze-distributor-file.ts [DISTRIBUTOR_CODE] ["path\to\file.xlsx"]
 //
 // Defaults: SF + the Sofico April file on the Desktop upload folder.

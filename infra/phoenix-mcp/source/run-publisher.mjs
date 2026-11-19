@@ -3,7 +3,7 @@
 // the reader) plus the restricted publisher login for the isolated reporting database.
 //
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./tests/alias-loader.mjs infra/phoenix-mcp/source/run-publisher.mjs
+//     --import ./tests/register-alias-loader.mjs infra/phoenix-mcp/source/run-publisher.mjs
 //
 // Refuses to run unless explicitly enabled, publishes only complete proven datasets, withdraws a
 // sales month only on a proven absence, and does nothing at all while the owner is not authorized.

@@ -334,7 +334,7 @@ export const SIDEBAR_LABEL_SNAPSHOT_PATH = "tests/fixtures/sidebar-label-widths.
 export const MEASURE_SIDEBAR_LABELS_COMMAND = "pnpm run ui:measure-sidebar-labels";
 /** The same run from a worktree, where pnpm is refused (bash-guard C6): the script line, through node. */
 export const MEASURE_SIDEBAR_LABELS_WORKTREE_COMMAND =
-  "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/measure-sidebar-labels.ts";
+  "node --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs scripts/measure-sidebar-labels.ts";
 
 /**
  * Every label a sidebar can print for these sections: each item's own label AND every `labelByRole`

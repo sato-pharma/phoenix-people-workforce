@@ -15,7 +15,7 @@
  *
  * Usage:
  *   node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \
- *     --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-line-twins.ts [--apply] [--test]
+ *     --import ./tests/register-alias-loader.mjs scripts/phoenix-crm-line-twins.ts [--apply] [--test]
  */
 import { LINE_TWIN_SKIP_TEXT, lineTwinSummary, type LineTwinSkipReason } from "@/lib/phoenix-crm/line-twins";
 import { selectByIds } from "@/lib/phoenix-crm/server/db";

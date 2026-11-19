@@ -71,8 +71,8 @@ const PROBE_DRIVER = "tests/support/flag-gate-probe-driver.mjs";
 const LOADER = [
   "--experimental-strip-types",
   "--experimental-specifier-resolution=node",
-  "--experimental-loader",
-  "./tests/alias-loader.mjs",
+  "--import",
+  "./tests/register-alias-loader.mjs",
 ];
 
 /** Pinned BY NAME, so deleting a gate to quiet a failure shows up as a missing name and not a smaller list. */

@@ -87,7 +87,7 @@ is not independent. It is not a half day, not a candidate, and not a charge.
 From the repo root, with a populated `.env.local` (this reads production):
 
 ```bash
-node --env-file=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-half-day-trace-independence.ts 2026-10
+node --env-file=.env.local --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs scripts/check-half-day-trace-independence.ts 2026-10
 ```
 
 `[YYYY-MM]` defaults to the current Cairo month; `--all-days` keeps days the rule drops, `--limit N`

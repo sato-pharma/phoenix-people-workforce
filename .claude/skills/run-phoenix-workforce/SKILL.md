@@ -146,7 +146,7 @@ overflow @375px ok [{"sel":"main","scrollWidth":351,"clientWidth":351},{"sel":"b
 Most PRs change `src/lib/<domain>/`. Import and call it with the test suite's loader:
 
 ```bash
-node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs --input-type=module -e 'const m = await import("@/lib/auth/landing"); console.log(m.resolveLandingPathForRole("HR Operations"), m.resolveLandingPathForRole("Medical Rep"));'
+node --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs --input-type=module -e 'const m = await import("@/lib/auth/landing"); console.log(m.resolveLandingPathForRole("HR Operations"), m.resolveLandingPathForRole("Medical Rep"));'
 ```
 
 prints `/hr/admin/hr-command-center /employee-portals` (plus harmless

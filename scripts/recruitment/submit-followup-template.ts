@@ -19,7 +19,7 @@
 //
 // Usage — the dry run prints the request and Meta's current status for the name, and submits nothing:
 //   node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./scripts/alias-loader.mjs scripts/recruitment/submit-followup-template.ts
+//     --import ./scripts/register-alias-loader.mjs scripts/recruitment/submit-followup-template.ts
 // Submit (refused when Meta already holds a template of this name and language):
 //   ... scripts/recruitment/submit-followup-template.ts --apply
 // =============================================================================

@@ -117,7 +117,7 @@ export function requireImportSenders(env = process.env) {
       "RECRUITMENT_WHATSAPP_IMPORT_SENDERS is not set, so the owner's own forwards would read as applicants.\n"
         + "Run this with production's variables loaded, for example:\n"
         + "  railway run node --experimental-strip-types --experimental-specifier-resolution=node "
-        + "--experimental-loader ./tests/alias-loader.mjs scripts/<script>.mjs --dry-run",
+        + "--import ./tests/register-alias-loader.mjs scripts/<script>.mjs --dry-run",
     );
     process.exit(1);
   }

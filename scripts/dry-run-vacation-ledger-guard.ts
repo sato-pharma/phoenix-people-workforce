@@ -19,7 +19,7 @@
 //
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
 //     --experimental-specifier-resolution=node \
-//     --experimental-loader ./tests/alias-loader.mjs \
+//     --import ./tests/register-alias-loader.mjs \
 //     scripts/dry-run-vacation-ledger-guard.ts 2026-07
 
 import { fetchAllRows } from "../src/lib/supabase/paginated.ts";

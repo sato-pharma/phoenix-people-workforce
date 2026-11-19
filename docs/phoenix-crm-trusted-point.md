@@ -90,7 +90,7 @@ basis as the record, and still has no photo.
 
 ```
 node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \
-  --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-trusted-point.ts \
+  --import ./tests/register-alias-loader.mjs scripts/phoenix-crm-trusted-point.ts \
   --customer <uuid> --actor <HR id> [--apply]
 ```
 

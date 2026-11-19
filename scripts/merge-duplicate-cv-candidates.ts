@@ -24,7 +24,7 @@
 //
 // Run:
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+//     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
 //     scripts/merge-duplicate-cv-candidates.ts --plan <plan.json>          # dry run
 //   ... --plan <plan.json> --apply                                        # writes
 

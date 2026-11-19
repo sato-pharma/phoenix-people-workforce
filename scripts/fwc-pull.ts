@@ -17,7 +17,7 @@
  *
  * Usage (from the repo root, with a populated .env.local; dry run only):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/fwc-pull.ts <month 1-12> <year>
  */
 import { cairoTodayIso } from "@/lib/crm/dates";

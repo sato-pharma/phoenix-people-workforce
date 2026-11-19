@@ -72,7 +72,7 @@ refuseUnknownFlags({
 //
 // Usage (from the worktree root):
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//        --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
+//        --experimental-specifier-resolution=node --import ./scripts/register-alias-loader.mjs \
 //        scripts/recruitment-reread-legacy-schema-cvs.ts [--limit N] [--dry-run] [--include-titled]
 //
 //   --dry-run         lists the target set and exits. No AI call, no write, no spend.

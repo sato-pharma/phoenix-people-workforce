@@ -77,7 +77,7 @@ after he approves it.
   fingerprint in the required CI; changing it needs the owner's password (a scrypt verifier in
   `src/lib/sales/office-golden-rule.lock.json`). Never re-pin by hand, never "fix" a red lock test.
   🔴 **Never run the unlock through pnpm from a worktree** (it offers to delete the PRIMARY's `node_modules`);
-  run `node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/office-rule-unlock.ts --unlock`
+  run `node --experimental-strip-types --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs scripts/office-rule-unlock.ts --unlock`
   from the folder that holds the change.
 - **The other three raise a PROMPT** — `.claude/hooks/protected-file-guard.mjs` answers any edit with `ask`.
   The prompt is not the approval: ask him in plain words first; a refused prompt is his answer. History:

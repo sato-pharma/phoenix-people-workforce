@@ -37,7 +37,7 @@ refuseUnknownFlags({
 // 🔴 IT MUST RUN WITH PRODUCTION'S ENVIRONMENT, and the only supported way is:
 //
 //   railway run --service phoenix-people-workforce -- node --experimental-strip-types \
-//     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+//     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
 //     scripts/market-awareness-refire-pending-notices.ts --send
 //
 // A plain local run writes production (.env.local points at the production Supabase) but the local

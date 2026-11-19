@@ -36,7 +36,7 @@
  *
  * Usage (from the repo root, with a populated .env.local — this reads and writes PRODUCTION):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/backfill-attribution-store-split.ts [--apply] [period ...]
  *
  * Without --apply it computes and prints everything and writes NOTHING.

@@ -230,8 +230,8 @@ const [results, toolResults] = await Promise.all([
 const problems = [];
 let failedGates = 0;
 for (const result of results) {
-  // The ExperimentalWarning about --experimental-loader is node's, on every run, and says nothing
-  // about this repo — it is the one line worth dropping so a real message is not lost beside it.
+  // Node's ExperimentalWarning lines (type stripping, the old loader flag's advice) say nothing
+  // about this repo — they are the lines worth dropping so a real message is not lost beside them.
   const lines = result.out
     .split('\n')
     .filter((line) => !SHARD_RESULT_RE.test(line))

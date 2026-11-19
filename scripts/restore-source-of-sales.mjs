@@ -204,8 +204,8 @@ const REBUILD_ARGS = [
   "--env-file-if-exists=.env.local",
   "--experimental-strip-types",
   "--experimental-specifier-resolution=node",
-  "--experimental-loader",
-  "./tests/alias-loader.mjs",
+  "--import",
+  "./tests/register-alias-loader.mjs",
   "scripts/rebuild-source-of-sales-rollups.ts",
   "--apply",
 ];

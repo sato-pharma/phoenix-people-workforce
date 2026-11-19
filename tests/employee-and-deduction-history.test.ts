@@ -668,8 +668,8 @@ export async function runEmployeeAndDeductionHistoryTests() {
     [
       "--experimental-strip-types",
       "--experimental-specifier-resolution=node",
-      "--experimental-loader",
-      "./tests/alias-loader.mjs",
+      "--import",
+      "./tests/register-alias-loader.mjs",
       "tests/support/request-actor-in-next.mjs",
     ],
     { encoding: "utf8", timeout: 60000 },
