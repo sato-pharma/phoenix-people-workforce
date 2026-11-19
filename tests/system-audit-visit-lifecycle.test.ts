@@ -119,6 +119,31 @@ function fixture(overrides: Partial<SavedVisit> & { repHrId?: string | null } = 
   return { visit: visit(overrides), flags: { ...ALL, ...flags } };
 }
 
+/** An old-CRM (iReports360) row the door serves for REP, as `crm_visits_unified`'s vendor arm shapes it. */
+function vendorDoorRow(overrides: Partial<DoorRow> = {}): DoorRow {
+  return {
+    id: "ireports360-1",
+    source: "ireports360",
+    agent_hr_id: REP.hrId,
+    agent_crm_id: REP.crmId,
+    exclusion_crm_id: REP.crmId,
+    contact_crm_id: 555,
+    visit_date: DAY,
+    visit_type: 0,
+    visit_type_description: "Regular Visit",
+    comment: null,
+    double_hr_id: null,
+    double_crm_id: null,
+    crm_save_date: null,
+    crm_visit_id: 1,
+    ampm: "AM",
+    speciality: null,
+    phoenix_customer_validated: null,
+    counts_in_kpi: true,
+    ...overrides,
+  };
+}
+
 function groupTouches(fixtures: readonly Fixture[]): RepDayTouch[] {
   const byKey = new Map<string, RepDayTouch>();
   for (const { visit: saved } of fixtures) {
@@ -473,17 +498,59 @@ export async function runSystemAuditVisitLifecycleTests() {
       { importedFromIreports360At: "2026-11-08T00:00:00.000Z", ireports360KpiCounted: false, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: null },
       NONE,
     );
-    // A copy the conversion marked counted is a counted visit like any other.
-    const countedCopy = fixture({ importedFromIreports360At: "2026-11-08T00:00:00.000Z", ireports360KpiCounted: true });
-    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture(), archived, copy, stuckCopy, countedCopy] };
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture(), archived, copy, stuckCopy] };
     const { result, occurrences } = await run(world);
     assert.deepEqual(
       occurrences.map((row) => `${row.signatureKey} ${JSON.stringify((row.evidence as { visitIds?: string[] }).visitIds ?? [])}`),
       [],
-      "an archived visit and an uncounted iReports360 copy are left out as the view leaves them, and a counted copy counts — none is a finding",
+      "an archived visit and an uncounted iReports360 copy are left out as the view leaves them — none is a finding",
     );
     assert.equal(result.excludedCounts.archived_visit, 1, "the archived visit is counted under archived_visit");
     assert.equal(result.excludedCounts.ireports360_copy_not_counted, 2, "both uncounted copies, the off-plan one included, are counted under ireports360_copy_not_counted");
+  }
+
+  // ── A COUNTED iReports360 copy is served as the old-CRM row it was made from, never under its own id ──
+  // The door's Phoenix arm keeps `imported_from_ireports360_at is null` only, and its vendor arm marks the
+  // one old row each counted copy was converted from `counts_in_kpi` (20261107044059 section 8). Expecting
+  // the copy at S2 read Nahla Youssef's four counted copies of 1–2 Nov 2026 as lost visits and a call-rate
+  // shortfall, and made those days Phoenix entry days, so the old row beside them read as R12.
+  {
+    const copyDay = "2026-11-15";
+    const countedCopy = fixture(
+      { visitDate: copyDay, importedFromIreports360At: "2026-11-06T20:27:00.000Z", ireports360KpiCounted: true },
+      { ...NONE, inCountable: true },
+    );
+    const oldRow = vendorDoorRow({ id: "ireports360-counted", visit_date: copyDay, counts_in_kpi: true });
+    // The board counts the native visit (its fixture) and the old row (kpiExtra) — the copy is never counted twice.
+    const world: World = {
+      people: [REP],
+      windows: [SEAT_A],
+      excluded: [],
+      fixtures: [fixture(), countedCopy],
+      vendorRows: [oldRow],
+      kpiExtra: { "b-200|2026-11": 1 },
+    };
+    const { result, occurrences } = await run(world);
+    assert.deepEqual(
+      occurrences.map((row) => row.signatureKey),
+      [],
+      "a counted copy served as its old row is counted once, by the old row — not a lost visit, not a vendor row on a Phoenix day",
+    );
+    assert.equal(result.excludedCounts.ireports360_copy_served_as_old_row, 1, "the counted copy is counted under ireports360_copy_served_as_old_row");
+  }
+
+  // ── An old-CRM row the door marks `counts_in_kpi = false` is served, and counted by no visit figure ──
+  // The KPIs board reads the door with `kpiOnly`; a campaign, archived or uncounted copied old visit is
+  // there only for "did he work" readers. Expecting it read ~43 such rows as a call-rate shortfall.
+  {
+    const historyDay = "2026-11-15";
+    const notCounted = [1, 2, 3].map((n) =>
+      vendorDoorRow({ id: `ireports360-history-${n}`, visit_date: historyDay, contact_crm_id: 600 + n, crm_visit_id: 100 + n, counts_in_kpi: false }),
+    );
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()], vendorRows: notCounted };
+    const { result, occurrences } = await run(world);
+    assert.deepEqual(occurrences.map((row) => row.signatureKey), [], "old rows the board does not count are no call-rate shortfall");
+    assert.equal(result.excludedCounts.kpi_vendor_row_not_counted, 3, "each uncounted old row is counted under kpi_vendor_row_not_counted");
   }
 
   // ── R8: the calendar counts a visit twice ──
@@ -495,25 +562,7 @@ export async function runSystemAuditVisitLifecycleTests() {
 
   // ── R12: an iReports360 row served on the rep's Phoenix CRM day ──
   {
-    const vendor: DoorRow = {
-      id: "ireports360-1",
-      source: "ireports360",
-      agent_hr_id: REP.hrId,
-      agent_crm_id: REP.crmId,
-      exclusion_crm_id: REP.crmId,
-      contact_crm_id: 555,
-      visit_date: DAY,
-      visit_type: 0,
-      visit_type_description: "Regular Visit",
-      comment: null,
-      double_hr_id: null,
-      double_crm_id: null,
-      crm_save_date: null,
-      crm_visit_id: 1,
-      ampm: "AM",
-      speciality: null,
-      phoenix_customer_validated: null,
-    };
+    const vendor = vendorDoorRow();
     const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()], vendorRows: [vendor], kpiExtra: { "b-200|2026-11": 1 } };
     const { occurrences } = await run(world);
     assert.deepEqual(roots(occurrences).map((row) => row.signatureKey), ["visit:s3:reader:vendor"], "the vendor row beside a Phoenix CRM day is its own root");
