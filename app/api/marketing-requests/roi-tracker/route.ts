@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, errorMessageOf, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
-import { parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
+import { assertRoiReportViewer, parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
 import { getMarketingRoiTracker, type MarketingRequestOrigin } from "@/lib/marketing-requests/roi-tracker-service";
 
 export const runtime = "nodejs";
@@ -52,11 +52,15 @@ function roiTrackerApiError(error: unknown) {
 /**
  * The complete per-request ROI picture — rows, KPI band, products, target pharmacies (with
  * code-reference quality), and approval chain. Delegates scoping/masking entirely to
- * getMarketingRoiReport via getMarketingRoiTracker; this route adds no access logic of its own.
+ * getMarketingRoiReport via getMarketingRoiTracker. Its one check of its own is the service's viewer
+ * gate (assertRoiReportViewer), asked before the body; it carries no role sets.
  */
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // The caller first, before the rate limit and the body: signed in, a marketing role, and linked to an
+    // employee record when what the report shows depends on who they are (assertRoiReportViewer).
+    assertRoiReportViewer(access);
     let body: unknown = {};
     try {
       body = await request.json();

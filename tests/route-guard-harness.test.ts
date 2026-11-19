@@ -74,13 +74,12 @@ const INFRASTRUCTURE_TABLES: Readonly<Record<string, string>> = {
 // each route now refuses the caller first, with 401 or 403. Eighty of the eighty-one answers that judged the
 // body first now refuse a signed-out caller (assertSignedIn) and a refused role (the domain's own gate, asked
 // before the body) first, or had a registry entry that named the wrong gate. One is left, below.
+// The five ROI and Coverage report answers that gave a Medical Rep login with no HR id an empty 200 now refuse it
+// with 403 (assertRoiReportViewer in roi-report-service.ts): that role's reach is built from its HR id.
 const BODY_FIRST_PINNED =
   "a retired weekly Plans endpoint whose real gate (weekly_plans:approve) sits in the service, which answers 409 (plans " +
   "moved) to everyone; tests/weekly-plan-move-period.test.ts forbids a permission check in the route and " +
   "tests/weekly-plans-one-store.test.ts forbids importing a gate from the service, so the empty body answers 400 first; nothing is written";
-const ROI_READ_ONLY =
-  "a read-only report that uses POST only to carry its filter: the Medical Rep is a marketing role and sees only their own " +
-  "requests, and with no HR id that is none, so 200 with no rows";
 const BEACON_204 = "a page beacon that answers 204 to everyone by design, so a page never sees an error; with no signed-in seat it records nothing";
 const SEAT_VIEW_EXIT = "leaving a seat view always succeeds by design: it clears the caller's own seat-view cookie and writes nothing without a seat view";
 const OWN_LAYOUT = "resets the caller's own sidebar layout; with no HR id there is no layout to reset, so 200 with nothing written";
@@ -99,12 +98,6 @@ const PASSKEY_CHALLENGE =
 const ANSWER_GAPS: Readonly<Record<string, string>> = {
   // BODY_FIRST_PINNED (1)
   "POST /api/weekly-plans/:id/move-period refused-role": BODY_FIRST_PINNED,
-  // ROI_READ_ONLY (5)
-  "POST /api/marketing-requests/coverage-report refused-role": ROI_READ_ONLY,
-  "POST /api/marketing-requests/coverage-report/export refused-role": ROI_READ_ONLY,
-  "POST /api/marketing-requests/roi-tracker refused-role": ROI_READ_ONLY,
-  "POST /api/marketing-requests/roi-tracking refused-role": ROI_READ_ONLY,
-  "POST /api/marketing-requests/roi-tracking/export refused-role": ROI_READ_ONLY,
   // BEACON_204 (8)
   "POST /api/activity/track refused-role": BEACON_204,
   "POST /api/activity/track signed-out": BEACON_204,
