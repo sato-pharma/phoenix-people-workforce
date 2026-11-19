@@ -428,7 +428,8 @@ export async function runPersonalMailboxTests() {
   assert.equal((hook.match(/requestPermission\(/g) ?? []).length, 1, "exactly one permission request, in askForDesktopMailAlerts");
   const askStart = hook.indexOf("export function askForDesktopMailAlerts");
   assert.ok(askStart > 0 && hook.indexOf("requestPermission(", askStart) < hook.indexOf("\n}\n", askStart));
-  const menu = read("src/components/layout/internal-messages-menu.tsx");
+  // The envelope and the panel body it loads on first use, read as one component (envelope first).
+  const menu = `${read("src/components/layout/internal-messages-menu.tsx")}\n${read("src/components/layout/internal-messages-panel.tsx")}`;
   assert.ok(
     /onClick=\{\(\) => \{[^}]*askForDesktopMailAlerts\(\)/.test(menu),
     "the notification permission is asked from the My email tab's click, never from a timer",
