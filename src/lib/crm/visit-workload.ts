@@ -332,7 +332,11 @@ export async function getRepTripVisitWorkload(input: {
     dateFrom: start,
     dateTo: end,
     includeResignedAgents: true,
-    ...(crmId != null ? { participantCrmIds: [crmId] } : { participantHrIds: [hrId] }),
+    // By hr id ALWAYS, beside the CRM id: a third or later companion on a chain stands in neither slot,
+    // only in `companion_hr_ids`, and only the hr half searches it (the two halves UNION, as in
+    // visit-partners.ts). Asked by CRM id alone, a manager who came as that companion read no visit.
+    participantHrIds: [hrId],
+    ...(crmId != null ? { participantCrmIds: [crmId] } : {}),
   });
   // Still "unmapped" for a person with no CRM id and nothing under his hr id either. Before the cutover
   // that is everyone without a CRM account — office staff included — and a zero read for them was never

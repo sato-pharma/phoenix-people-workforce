@@ -25,6 +25,11 @@
 //   - A person with NO BASE SALARY. A day-rate deduction is Base Salary ÷ days in month; with
 //     no salary basis there is nothing to take a fraction of (the same rule the retired
 //     month-module version carried).
+//
+// And one day is charged at HALF: a day nothing but interviews covers, exactly one half of it
+// (owner, 2026-11-18: two or more interviews in a half are that half worked). The Half Day (CRM)
+// tab charges the other half for reps and district managers; for everyone this connector owns, it
+// is charged here at 0.5 — before this, every reader dropped the day and nobody charged it.
 
 import { logsOwnCrmVisitsTitle, isSfeManagerTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
@@ -36,6 +41,8 @@ const DISTRICT_MANAGER_TITLE = /district\s+(sales\s+)?manager/i;
 
 /** One "No Activity Recorded" day, as the Private Calendar engine reports it. */
 export type NoRecordsDay = {
+  /** Nothing but interviews covers the day (getCompanyNoActivityDays `interviewHalfDays`). */
+  coveredOnlyByInterviews?: boolean;
   date: string;
   description: string | null;
   employeeHrId: string;
@@ -70,6 +77,12 @@ export function selectNoRecordsDrafts(input: {
    * See src/lib/deductions/proven-worked-days.ts.
    */
   provenWorkedDayKeys: ReadonlySet<string>;
+  /**
+   * `${compact}:${date}` -> the half his interviews cover, on a day only one half of which they cover
+   * and nothing else proves (`ProvenWorkedDays.interviewHalfOnly`). Such a day, when nothing but the
+   * interviews covers it, is charged its other half: 0.5.
+   */
+  interviewHalfOnly?: ReadonlyMap<string, "AM" | "PM">;
   /** Base salary per employee, keyed by the COMPACT hr-id (hyphens stripped). */
   baseSalaryByCompact: ReadonlyMap<string, number | null>;
   month: number;
@@ -86,16 +99,24 @@ export function selectNoRecordsDrafts(input: {
 
     // The salary map is keyed by the COMPACT hr-id; the canonical key would miss every lookup.
     const compactKey = compactDeductionsHrId(day.employeeHrId);
+    const provenKey = compactKey ? `${compactKey}:${day.date}` : null;
+    // A day only interviews cover is charged ONLY when the interview fold agrees they hold exactly one
+    // half — the whole day covered, or any doubt, is never charged.
+    const interviewHalf = day.coveredOnlyByInterviews && provenKey ? input.interviewHalfOnly?.get(provenKey) : undefined;
+    if (day.coveredOnlyByInterviews && !interviewHalf) continue;
     // A day another source proves was worked is never charged. Keyed compact, like the salary map.
-    if (compactKey && input.provenWorkedDayKeys.has(`${compactKey}:${day.date}`)) continue;
+    if (!interviewHalf && provenKey && input.provenWorkedDayKeys.has(provenKey)) continue;
+    const deductionDays = interviewHalf ? 0.5 : 1;
     const baseSalary = compactKey ? (input.baseSalaryByCompact.get(compactKey) ?? null) : null;
     const estimatedAmount = calculateDeductionAmountFromBaseSalary({
       baseSalary,
-      deductionDays: 1,
+      deductionDays,
       month: input.month,
       year: input.year,
     });
     if (estimatedAmount == null) continue;
+    const worked = interviewHalf === "AM" ? "morning" : "afternoon";
+    const owed = interviewHalf === "AM" ? "afternoon" : "morning";
 
     drafts.push({
       category: "no_records_activity",
@@ -107,11 +128,15 @@ export function selectNoRecordsDrafts(input: {
       month: input.month,
       year: input.year,
       unit: "days",
-      rawValue: 1,
+      rawValue: deductionDays,
       estimatedAmount,
       calculationStatus: "calculated" as const,
-      reason: day.description || "No records — no punch and no other activity recorded",
-      evidence: { description: day.description },
+      reason: interviewHalf
+        ? `Interviews in the ${worked} only — nothing recorded for the ${owed}: no punch, visit, approved vacation or excuse`
+        : day.description || "No records — no punch and no other activity recorded",
+      evidence: interviewHalf
+        ? { description: day.description, interviewsCoveredHalf: interviewHalf, deductionDays }
+        : { description: day.description },
       dates: [day.date],
     } satisfies DeductionsCandidateDraft);
   }

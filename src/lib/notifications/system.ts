@@ -1126,6 +1126,20 @@ async function claimDelivery(input: {
   }
 }
 
+/**
+ * Give back a claim this send took and never used — the bare `pending` row `claimDelivery` wrote — so a later
+ * send under the same key can still deliver. Only a `pending` row, never one that recorded an outcome.
+ * Best-effort: at worst the bare claim stays, as it did before.
+ */
+async function releaseDeliveryClaim(eventId: string | null, idempotencyKey: string): Promise<void> {
+  if (!eventId) return;
+  try {
+    await getSupabaseAdmin().from("notification_deliveries").delete().eq("idempotency_key", idempotencyKey).eq("status", "pending");
+  } catch {
+    // The old outcome: the retry worker closes the bare claim.
+  }
+}
+
 // Flip a live `connected` Telegram link to `failed` (recording the reason) when the bot can no
 // longer deliver to it. Only touches a currently-`connected` row — never a pending/failed one —
 // and keeps the stored chat_id so a later reconnect simply overwrites it. Best-effort: a
@@ -2311,7 +2325,15 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         continue;
       }
 
-      const connection = await loadTelegramConnection({ ...input, recipientHrId: recipient.hrId, recipientUserId: recipient.userId });
+      let connection: Awaited<ReturnType<typeof loadTelegramConnection>>;
+      try {
+        connection = await loadTelegramConnection({ ...input, recipientHrId: recipient.hrId, recipientUserId: recipient.userId });
+      } catch (error) {
+        // Nothing was attempted, so the claim is given back: left as a bare `pending` row, the retry worker could only
+        // close it as skipped, and under a once-ever key (the new-error alert's) that closed the delivery for good.
+        await releaseDeliveryClaim(eventId, idempotencyKey);
+        throw error;
+      }
       if (connection?.status !== "connected" || !connection.telegram_chat_id) {
         await upsertDelivery({ channel, eventId, idempotencyKey, lastError: "Telegram is not connected.", recipient, status: "skipped" });
         deliveries.push({ channel, idempotencyKey, reason: "Telegram is not connected.", status: "skipped" });

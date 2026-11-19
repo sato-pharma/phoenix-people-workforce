@@ -13,6 +13,14 @@
 export const CLIENT_ERROR_RATE_LIMIT = 30;
 export const CLIENT_ERROR_RATE_WINDOW_MS = 60_000;
 
+/**
+ * Server errors this server's own instrumentation.ts forwards (with its signed proof) per window, in a bucket of
+ * their own. Every forward leaves from this replica's one address, so sharing the 30-a-minute address budget
+ * refused the 31st server error of a bad minute: no row and no Telegram. Still a ceiling, so a proof replayed
+ * inside its one-minute life cannot fill the table.
+ */
+export const SERVER_ERROR_FORWARD_RATE_LIMIT = 600;
+
 /** The whole body. A real report is a message, a stack and a little context — far below this. */
 export const CLIENT_ERROR_MAX_BODY_BYTES = 64 * 1024;
 

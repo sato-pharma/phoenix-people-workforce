@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { CLIENT_ERROR_RATE_LIMIT, SERVER_ERROR_FORWARD_RATE_LIMIT } from "../src/lib/error-monitor/client-error-intake.ts";
 import {
   SERVER_FORWARD_PROOF_HEADER,
   signServerErrorForward,
@@ -71,8 +72,22 @@ export async function runErrorForwardProofTests() {
     "RED the route verifies the proof before it decides to alert",
   );
   assert.ok(
-    route.includes('const alert = forwardedByThisServer || (report.source === "client" && Boolean(access.hrId || access.loginId));'),
-    "RED a server error is believed only with the proof; a browser crash only from a signed-in reporter",
+    route.includes('!isTestAccount(access) && (forwardedByThisServer || (report.source === "client" && Boolean(access.hrId || access.loginId)))'),
+    "RED a server error is believed only with the proof; a browser crash only from a signed-in reporter; a test account's dry run never",
+  );
+  // The proof is read BEFORE the limit (review finding, 2026-11-19): every forward leaves from this server's one address,
+  // so on the caller's 30-a-minute bucket the 31st server error of a bad minute was refused with no row and no Telegram.
+  assert.ok(
+    route.indexOf("await verifyServerErrorForward(") > 0 && route.indexOf("await verifyServerErrorForward(") < route.indexOf("await assertApiRateLimit("),
+    "RED the proof is verified before the rate limit",
+  );
+  assert.equal((route.match(/verifyServerErrorForward\(/g) ?? []).length, 1, "and once: the alert reads the same answer");
+  assert.ok(route.includes('identifier: forwardedByThisServer ? "server-forward" : rateLimitIdentity({ request })'), "a proven forward is counted in its own bucket");
+  assert.ok(route.includes('scope: forwardedByThisServer ? "server_error_forward" : "client_error_report"'), "under its own scope");
+  assert.ok(
+    route.includes("limit: forwardedByThisServer ? SERVER_ERROR_FORWARD_RATE_LIMIT : CLIENT_ERROR_RATE_LIMIT") &&
+      SERVER_ERROR_FORWARD_RATE_LIMIT > CLIENT_ERROR_RATE_LIMIT,
+    "with a ceiling above a browser's, and still a ceiling",
   );
   assert.ok(!route.includes("alert: Boolean(access.hrId || access.loginId)"), "the signed-in test alone is the defect this replaces");
   assert.ok(route.includes("alert,\n"), "the flag reaches logAppError");
