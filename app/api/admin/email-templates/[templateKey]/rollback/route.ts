@@ -75,7 +75,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
     if (error instanceof EmailTemplateValidationError) {
       return NextResponse.json(
-        { error: "validation_failed", issues: error.issues, message: "Fix the rollback reason before continuing." },
+        { error: "validation_failed", issues: error.issues, message: "This version cannot be restored as it is. Fix the highlighted template issues before continuing." },
         { status: 400 },
       );
     }

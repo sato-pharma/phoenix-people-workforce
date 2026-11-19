@@ -32,6 +32,7 @@ import { computeResignationSettlement } from "@/lib/payroll/copilot/proration";
 import { calculateBasicSalary, normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { recordOfferDeclinedAfterHire } from "@/lib/recruitment/offer-outcome-sync";
+import { resignationNoticeStatusLabel } from "@/lib/resignations/view-model";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
 
@@ -509,6 +510,9 @@ async function notifyResignationWorkflow(
     });
   }
   const moduleOwnerHrIds = alertRecipients.map((recipient) => recipient.hrId).filter(Boolean);
+  // The email shows the status twice ({{status}} and the details table's Status row), so it is
+  // a word a reader knows ("Under review"), never the stored code ("under_review").
+  const statusLabel = resignationNoticeStatusLabel(record.status);
   await raiseApproval(approvalIdentity("resignation", record.status), { via: "notice", notice: {
     actionUrl,
     actorId: "system",
@@ -518,7 +522,7 @@ async function notifyResignationWorkflow(
       employeeHrId: record.employeeHrId,
       metrics: [
         { label: "Employee", value: `${record.employeeName} (${record.employeeHrId})` },
-        { label: "Status", value: record.status },
+        { label: "Status", value: statusLabel },
         { label: "Effective date", value: record.effectiveDate },
       ],
       notificationType: "resignation",
