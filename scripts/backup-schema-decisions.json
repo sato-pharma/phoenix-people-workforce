@@ -863,6 +863,27 @@
       "decidedBy": "owner",
       "why": "144 rows: Pedia's October 2026 targets as first uploaded on 1 Oct (36 areas x 4 products), which left the live table by 2 Oct with no row in the drop ledger. October was uploaded again 14-30 Oct and published 10 Nov; none of the 144 rows match the live ones, so the export is the lasting record of the first upload.",
       "sheet": "19 November 2026, the 2 October snapshot tables, in chat"
+    },
+    "crm_backup_20261003": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 19 rows: a test walk-through on one CNS rep seat (1 plan, 12 plan items, 3 plan events, 2 visits, 1 off-plan visit), taken before it was cleared on 3 Oct. All test data; none of it is live.",
+      "sheet": "19 November 2026, the 3 October snapshot schemas, in chat"
+    },
+    "crm_parity_backup_20261003": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 139,051 rows: the old CRM's visit mirror on 2 Oct (visit id, date and rep id, 1 Jan-1 Oct 2026). 138,474 still match the live mirror unchanged; the nightly sync deleted the other 577 (two resigned reps' visits) between 3 and 19 Oct, and this copy is the only record of whose visits they were, so the export keeps it.",
+      "sheet": "19 November 2026, the 3 October snapshot schemas, in chat"
+    },
+    "phoenix_crm_backup_20261003": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "22 tables: Phoenix CRM test data cleared from the live app on 3 Oct (1,145 test customers, 1,159 list events, 9 visits, 13 places, 18 photo records, 3 plans and smaller tables; none live now), plus the 11 pharmacy visits' names before that evening's name backfill (the visits are still live under their corrected names).",
+      "sheet": "19 November 2026, the 3 October snapshot schemas, in chat"
     }
   }
 }

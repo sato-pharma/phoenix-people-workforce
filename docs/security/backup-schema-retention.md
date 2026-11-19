@@ -265,8 +265,19 @@ two before. Two were taken by hand, with no migration naming them.
 | `au.bak_20261002_ped_ue_split_occupancy` | 4 | the seat-holder history of three Pedia Upper Egypt rep seats, taken by hand; all still live, only dates corrected since |
 | `au.monthly_targets_pedia_oct2026_backup_20261002` | 144 | Pedia's October targets as first uploaded on 1 Oct, which left the live table by 2 Oct with no row in the drop ledger; October was uploaded again and published, and none of these rows match it, so the export is the lasting record of the first upload |
 
-No dated table is next: the next snapshots to reach 90 days with no decision are three schemas,
-`crm_backup_20261003`, `crm_parity_backup_20261003` and `phoenix_crm_backup_20261003`, on 1 Jan 2027.
+**The three 3 October schemas, decided the same day.** These are schemas, not tables, but they were
+the next to reach 90 days, so they were put to him in the same way. All three "export, then drop", all
+three exported that day. They reach 90 days on 1 Jan 2027. No migration creates any of them; nothing
+reads them; no browser role, and not even `service_role`, can use the three schemas; staging has none.
+
+| Schema | Tables · rows | What it holds |
+| --- | --- | --- |
+| `crm_backup_20261003` | 1 · 19 | a test walk-through on one CNS rep seat (a plan, its items and events, two visits and an off-plan visit), taken before it was cleared on 3 Oct; all test data, none live. Moved here from `public` by `20261023023133` |
+| `crm_parity_backup_20261003` | 1 · 139,051 | the old CRM's visit mirror on 2 Oct: visit id, date and rep id, 1 Jan to 1 Oct 2026. 138,474 still match the live mirror; the nightly sync deleted the other 577 (two resigned reps' visits) between 3 and 19 Oct, and the deletion log keeps only their ids and dates, so the export is the one record of whose visits they were |
+| `phoenix_crm_backup_20261003` | 22 · 2,380 | Phoenix CRM test data cleared from the live app on 3 Oct (test customers, list events, visits, places, photo records, plans), none of it live now; plus the 11 pharmacy visits' names before that evening's name backfill, whose visits are still live under the corrected names |
+
+No dated table is next: the next snapshot to reach 90 days with no decision is the schema
+`qena_split_backup_20261004`, on 2 Jan 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
