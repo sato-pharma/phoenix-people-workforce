@@ -39636,7 +39636,7 @@ ALTER FUNCTION public.phx_refuse_audit_trail_change() OWNER TO postgres;
 -- Name: FUNCTION phx_refuse_audit_trail_change(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_refuse_audit_trail_change() IS 'Refuses UPDATE, DELETE and TRUNCATE on an append-only history: automated_payroll_audit, deductions_audit and employee_change_log. Binds the table owner, which a REVOKE does not.';
+COMMENT ON FUNCTION public.phx_refuse_audit_trail_change() IS 'Refuses UPDATE, DELETE and TRUNCATE on an append-only history: automated_payroll_audit, deductions_audit, employee_change_log and employee_salary_change_log. Binds the table owner, which a REVOKE does not.';
 
 --
 -- Name: phx_refuse_publication_delete(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -87456,6 +87456,30 @@ CREATE TRIGGER employee_plan_headers_touch BEFORE UPDATE ON public.employee_plan
 --
 
 CREATE TRIGGER employee_plan_items_touch BEFORE UPDATE ON public.employee_plan_items FOR EACH ROW EXECUTE FUNCTION public.phx_touch_employee_plan_items();
+
+--
+-- Name: employee_salary_change_log employee_salary_change_log_no_delete; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER employee_salary_change_log_no_delete BEFORE DELETE ON public.employee_salary_change_log FOR EACH ROW EXECUTE FUNCTION public.phx_refuse_audit_trail_change();
+
+ALTER TABLE public.employee_salary_change_log ENABLE ALWAYS TRIGGER employee_salary_change_log_no_delete;
+
+--
+-- Name: employee_salary_change_log employee_salary_change_log_no_truncate; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER employee_salary_change_log_no_truncate BEFORE TRUNCATE ON public.employee_salary_change_log FOR EACH STATEMENT EXECUTE FUNCTION public.phx_refuse_audit_trail_change();
+
+ALTER TABLE public.employee_salary_change_log ENABLE ALWAYS TRIGGER employee_salary_change_log_no_truncate;
+
+--
+-- Name: employee_salary_change_log employee_salary_change_log_no_update; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER employee_salary_change_log_no_update BEFORE UPDATE ON public.employee_salary_change_log FOR EACH ROW EXECUTE FUNCTION public.phx_refuse_audit_trail_change();
+
+ALTER TABLE public.employee_salary_change_log ENABLE ALWAYS TRIGGER employee_salary_change_log_no_update;
 
 --
 -- Name: employee_support_requests employee_support_requests_touch; Type: TRIGGER; Schema: public; Owner: postgres

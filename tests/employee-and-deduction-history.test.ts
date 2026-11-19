@@ -40,6 +40,10 @@ const SECOND_REVIEW_FILE = "20261114024807_restore_without_triggers_and_actor_fr
 // an app write that forgot the actor header from a job or a direct SQL session. Both logs now record the
 // write channel, the session's login role and application, and on an API write the JWT role and path.
 const CHANNEL_FILE = "20261119035258_change_logs_record_the_write_channel.sql";
+// Read on both projects 19 Nov 2026: the salary log said it was append-only (its table comment, the
+// recovery doc, RECOVERY_FILE's header) and carried no refusal trigger at all. It now carries the
+// employee log's three, calling the same shared refusal.
+const SALARY_REFUSAL_FILE = "20261119072427_salary_change_log_refuses_update_delete_truncate.sql";
 
 const WRITE_COLUMNS = ["write_channel", "write_db_user", "write_application", "write_api_role", "write_api_path"];
 
@@ -108,7 +112,7 @@ function lastDefiner(files: string[], fn: string): { file: string; body: string 
 
 export async function runEmployeeAndDeductionHistoryTests() {
   const files = readdirSync(MIGRATIONS).filter((name) => name.endsWith(".sql")).sort();
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE, SECOND_REVIEW_FILE, CHANNEL_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE, SECOND_REVIEW_FILE, CHANNEL_FILE, SALARY_REFUSAL_FILE]) {
     assert.ok(files.includes(name), `the migration must still be here: ${name}`);
   }
 
@@ -185,6 +189,28 @@ export async function runEmployeeAndDeductionHistoryTests() {
     read(copyFiles[copyFiles.length - 1]).includes("drop function if exists public.phx_refuse_history_change();"),
     "the copy of the append-only refusal must stay dropped",
   );
+
+  // ---- The salary log is append-only too, the same way --------------------------------------------
+  for (const verb of ["update", "delete", "truncate"]) {
+    const definers = files.filter((name) => read(name).includes(`trigger employee_salary_change_log_no_${verb} `));
+    assert.ok(
+      definers.length > 0,
+      `${verb.toUpperCase()} on employee_salary_change_log must be refused by trigger — it holds every salary figure ever ` +
+        "set, it is left out of the undo log BECAUSE it refuses changes, and a REVOKE never binds the owner",
+    );
+    const last = definers[definers.length - 1];
+    assert.match(
+      read(last),
+      new RegExp(`trigger employee_salary_change_log_no_${verb} before ${verb} on public\\.employee_salary_change_log\\s+for each ${verb === "truncate" ? "statement" : "row"} execute function public\\.phx_refuse_audit_trail_change\\(\\);`),
+      `${last}: the salary log's ${verb} refusal must be ${verb === "truncate" ? "statement" : "row"}-level and call ` +
+        "phx_refuse_audit_trail_change(), the one refusal every append-only trail shares",
+    );
+    assert.match(
+      read(last),
+      new RegExp(`alter table public\\.employee_salary_change_log enable always trigger employee_salary_change_log_no_${verb};`),
+      `${last}: the salary log's ${verb} refusal must be ENABLE ALWAYS, or session_replication_role = replica walks past it`,
+    );
+  }
 
   // ---- No browser role reaches the log, its view or its functions ---------------------------------
   for (const target of [
@@ -363,6 +389,9 @@ export async function runEmployeeAndDeductionHistoryTests() {
     "employee_change_log_no_update",
     "employee_change_log_no_delete",
     "employee_change_log_no_truncate",
+    "employee_salary_change_log_no_update",
+    "employee_salary_change_log_no_delete",
+    "employee_salary_change_log_no_truncate",
     "phx_deductions_decisions_history",
   ];
   for (const name of files.filter((file) => file > RECOVERY_FILE)) {
