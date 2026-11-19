@@ -1,23 +1,11 @@
 "use client";
 
 import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
+import {
+  holidayBridgingDecisionBody,
+  type HolidayBridgingScreenRow as HolidayBridgingCandidate,
+} from "@/lib/payroll/copilot/holiday-bridging-row";
 import { useCallback, useEffect, useState } from "react";
-
-type HolidayBridgingCandidate = {
-  id: string;
-  requestId: string;
-  employeeHrId: string;
-  employeeName: string | null;
-  hireDate: string | null;
-  vacationType: string;
-  bridgingDate: string;
-  adjacentTo: "before" | "after";
-  holidayName: string;
-  holidayStartDate: string;
-  holidayEndDate: string;
-  salaryDeductionAmount: number;
-  excluded: boolean;
-};
 
 function egp(value: number): string {
   return `EGP ${Math.round(value).toLocaleString("en-US")}`;
@@ -77,12 +65,8 @@ export function HolidayBridgingTab({ runId }: { runId: string }) {
     setBusyId(row.id);
     setError(null);
     try {
-      await postJson(`/api/payroll/copilot/${runId}/deductions/holiday-bridging`, {
-        requestId: row.requestId,
-        employeeHrId: row.employeeHrId,
-        bridgingDate: row.bridgingDate,
-        action: row.excluded ? "include" : "exclude",
-      });
+      // The body is built from the row the route sent, by the same module that built the row (holiday-bridging-row.ts).
+      await postJson(`/api/payroll/copilot/${runId}/deductions/holiday-bridging`, holidayBridgingDecisionBody(row));
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save decision.");
