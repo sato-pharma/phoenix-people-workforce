@@ -72436,7 +72436,8 @@ CREATE VIEW public.v_employee_salary_change_log WITH (security_invoker='true') A
     l.write_db_user,
     l.write_application,
     l.write_api_role,
-    l.write_api_path
+    l.write_api_path,
+    l.actor_hr_id
    FROM ((public.employee_salary_change_log l
      LEFT JOIN public.employees e ON ((e.hr_id = l.employee_hr_id)))
      LEFT JOIN public.employees a ON ((a.hr_id = COALESCE(l.actor_hr_id, l.actor_login_id))))
