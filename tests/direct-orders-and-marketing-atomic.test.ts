@@ -32,6 +32,7 @@ const COLLECTION_MIGRATION = "20261113161617_direct_order_collection_atomic.sql"
 const DECIDE_MIGRATION = "20261113161619_marketing_decide_requires_pending_request.sql";
 const PREVIOUS_DECIDE_MIGRATION = "20260829180000_marketing_finance_requirement_on_approval.sql";
 const RECORDS_MIGRATION = "20261119145916_direct_order_collection_and_marketing_cancel_write_records.sql";
+const DROP_EARLIER_FORMS_MIGRATION = "20261119153902_drop_superseded_collection_and_cancel_forms.sql";
 
 const readMigration = (name: string) => readFileSync(new URL(name, MIGRATIONS), "utf8");
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -614,6 +615,29 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
   );
   assert.ok(cancelBody.includes("p_audit: {"), "the cancel hands its audit row to the one call");
   assert.ok(!cancelBody.includes("writeRequiredAuditLog("), "HEADLINE: cancelMarketingRequest writes no audit row of its own after the call");
+
+  // ── 10. The earlier forms are DROPPED, not left beside the record-writing ones ──────────────────
+  // PostgreSQL overloads on the argument list, so `create or replace` of a longer form leaves the shorter one in place,
+  // still executable by the service role — a way to collect or cancel without writing the record. Once #614 was live
+  // nothing called them, and 20261119153902 drops both; no later migration may bring either back.
+  const dropSql = squash(stripSqlComments(readMigration(DROP_EARLIER_FORMS_MIGRATION)));
+  const earlierForms = [
+    { name: "phx_record_direct_order_collection", sig: "phx_record_direct_order_collection(uuid, numeric, date, numeric, date)" },
+    { name: "phx_cancel_marketing_request", sig: "phx_cancel_marketing_request(uuid, text, text, timestamptz)" },
+  ];
+  for (const form of earlierForms) {
+    assert.ok(dropSql.includes(`drop function if exists public.${form.sig};`), `HEADLINE: the earlier form is dropped: ${form.sig}`);
+  }
+  const laterFiles = readdirSync(MIGRATIONS)
+    .filter((name) => name.endsWith(".sql") && name > DROP_EARLIER_FORMS_MIGRATION)
+    .sort();
+  for (const name of laterFiles) {
+    const later = squash(stripSqlComments(readMigration(name)));
+    for (const form of earlierForms) {
+      const recreated = new RegExp(`create (or replace )?function public\\.${form.name}\\(\\s*p_\\w+ \\w+,\\s*p_\\w+ \\w+,\\s*p_\\w+ \\w+,\\s*p_\\w+ \\w+(,\\s*p_\\w+ \\w+)?\\s*\\)`, "i");
+      assert.ok(!recreated.test(later), `${name} must not bring back the dropped ${form.sig}`);
+    }
+  }
 
   console.log("  direct-order collection and marketing decision: locked, compare-and-set, guarded");
 }
