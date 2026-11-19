@@ -271,7 +271,17 @@ const WRITE_GAPS: Readonly<Record<string, { reason: string; targets: readonly st
 };
 
 /** Route files the harness cannot call at all — `"<route>"` → reason. */
-const NOT_CALLABLE: Readonly<Record<string, string>> = {};
+const EMAIL_LAYOUT_TSX = "the route imports the email layout (src/emails/phoenix-email-layout.tsx) through a path tests/alias-loader.mjs does not stub, and plain Node cannot load a .tsx file";
+const NOT_CALLABLE: Readonly<Record<string, string>> = {
+  // src/lib/email/phoenix-hr-reply-template.ts imports "../../emails/phoenix-email-layout.tsx" by its relative path.
+  "/api/admin/email-ai/draft": EMAIL_LAYOUT_TSX,
+  "/api/admin/email-composer/preview": EMAIL_LAYOUT_TSX,
+  "/api/admin/email-composer/resolve-recipients": EMAIL_LAYOUT_TSX,
+  "/api/admin/email-reply/send": EMAIL_LAYOUT_TSX,
+  "/api/recruitment/interview-calendar/bookings/:id/invitations": EMAIL_LAYOUT_TSX,
+  "/api/cron/production-planning-reorder":
+    "imports renderPhoenixDataGrid from the email layout, which the test stub (tests/stubs/phoenix-email-layout.ts) does not carry",
+};
 
 // ── The Early Birds decision (F-CRM-016) ─────────────────────────────────────────────────────────────
 // Until 19 Nov 2026 it checked only that the district was inside the caller's Early Birds scope, AFTER
@@ -478,6 +488,9 @@ function runSlice(jobs: Job[]): { records: DriverRecord[]; seconds: number; stde
       process.execPath,
       [
         "--max-old-space-size=3072",
+        // Transforms, not only strips: seventeen routes reach a class with constructor parameter properties
+        // (coaching, the WhatsApp inbox, ask-again, the pharmacy matches), which plain stripping refuses.
+        "--experimental-transform-types",
         "--experimental-strip-types",
         "--experimental-specifier-resolution=node",
         "--experimental-loader",
