@@ -2271,6 +2271,7 @@ import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-reque
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-customer-marks.test.ts";
+import { runPhoenixCrmVisitTallyTests } from "./phoenix-crm-visit-tally.test.ts";
 import { runPhoenixCrmVisitTimesTests } from "./phoenix-crm-visit-times.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmManagerPlanSourceTests } from "./phoenix-crm-manager-plan-source.test.ts";
@@ -8806,6 +8807,11 @@ await runTest(
 await runTest(
   "Phoenix CRM manager plan board marks every customer (owner, 2026-10-23): the grade as the card edge, the rep's countable visits this month as pips against the grade's number (over drawn apart, never a bonus), his own visits with the rep and alone, a live marketing request that opens it — matched by the stored link or a unique name on the requester's own list — the groups a few of the shown customers share, and Go first on at most three behind their number or carrying a request; his own territories only, and the rep never sees any of it",
   runPhoenixCrmManagerCustomerMarksTests,
+);
+
+await runTest(
+  "Phoenix CRM visit tally on every screen that shows a rep's weekly plan (owner, 19 Nov 2026): each doctor's last visit, his visits this month and his visits in total — on the rep's planner and his manager's review, the Reps List plan tab, Plan Verification, the district manager's plan board and the daily plan report — counted once in SQL over the planner's own visits view, and a failed read draws nothing rather than \"No visit recorded yet\"",
+  runPhoenixCrmVisitTallyTests,
 );
 
 await runTest(

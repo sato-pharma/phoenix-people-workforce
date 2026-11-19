@@ -42,6 +42,9 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { PLAN_STATUS_NEW, type PlanKind } from "@/lib/crm/plan-verification";
 import { scopeAllowsAgent, type PlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import { cairoTodayIso } from "@/lib/crm/plan-week";
+import { loadVisitTallies } from "@/lib/phoenix-crm/server/visit-tally";
+import { contactTalliesRecord, type VisitTally } from "@/lib/phoenix-crm/visit-tally";
 
 /** PostgREST caps a page at 1000 rows and gives no marker when it truncates. */
 const PAGE_SIZE = 1000;
@@ -80,6 +83,11 @@ export type PlanSummary = {
    * CRM's own decide route. Absent on an old-CRM plan.
    */
   phoenixPlanId?: string;
+  /**
+   * The Phoenix seat the plan was filed on — the territory whose visits make each doctor's tally (the last
+   * visit, the visits this month, the visits in total) on the plan tab. Absent on an old-CRM plan.
+   */
+  phoenixSeatId?: string;
   phoenixStatus?: PhoenixCrmPlanStatus;
   phoenixVersion?: number;
   repName: string;
@@ -511,7 +519,7 @@ async function attachPhoenixPlanState(plans: PlanSummary[]): Promise<PlanSummary
   if (firstDays.length === 0) return plans;
   const earliest = firstDays.reduce((left, right) => (right < left ? right : left));
   const latest = firstDays.reduce((left, right) => (right > left ? right : left));
-  const byBoardId = new Map<number, { id: string; status: PhoenixCrmPlanStatus; version: number }>();
+  const byBoardId = new Map<number, { id: string; seatId: string | null; status: PhoenixCrmPlanStatus; version: number }>();
   let cursor: string | null = null;
   for (;;) {
     let query = getSupabaseAdmin()
@@ -523,11 +531,16 @@ async function attachPhoenixPlanState(plans: PlanSummary[]): Promise<PlanSummary
     if (cursor !== null) query = query.gt("id", cursor);
     const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
     if (error) throw new Error(`Could not read the Phoenix plans: ${error.message}`);
-    const page = (data ?? []) as unknown as Array<{ id: string; status: string; version: number }>;
+    const page = (data ?? []) as unknown as Array<{ id: string; seat_id: string | null; status: string; version: number }>;
     for (const row of page) {
       if (!PHOENIX_PLAN_STATUSES.has(row.status)) continue;
       const id = String(row.id);
-      byBoardId.set(phoenixPlanBoardId(id), { id, status: row.status as PhoenixCrmPlanStatus, version: Number(row.version) });
+      byBoardId.set(phoenixPlanBoardId(id), {
+        id,
+        seatId: row.seat_id ? String(row.seat_id) : null,
+        status: row.status as PhoenixCrmPlanStatus,
+        version: Number(row.version),
+      });
     }
     if (page.length < PAGE_SIZE) break;
     cursor = String(page[page.length - 1].id);
@@ -535,7 +548,13 @@ async function attachPhoenixPlanState(plans: PlanSummary[]): Promise<PlanSummary
   return plans.map((plan) => {
     const phoenix = plan.crmPlanId < 0 ? byBoardId.get(plan.crmPlanId) : undefined;
     return phoenix
-      ? { ...plan, phoenixPlanId: phoenix.id, phoenixStatus: phoenix.status, phoenixVersion: phoenix.version }
+      ? {
+          ...plan,
+          phoenixPlanId: phoenix.id,
+          ...(phoenix.seatId ? { phoenixSeatId: phoenix.seatId } : {}),
+          phoenixStatus: phoenix.status,
+          phoenixVersion: phoenix.version,
+        }
       : plan;
   });
 }
@@ -833,14 +852,39 @@ export type PlanVerificationBoard = {
    * all-clear indistinguishable from a healthy month.
    */
   rosterKnown: boolean;
-  /** The plan whose doctors are on screen, with its rows. Null when none is chosen or in scope. */
-  selected: { plan: PlanSummary; rows: PlanEntryRow[] } | null;
+  /**
+   * The plan whose doctors are on screen, with its rows. Null when none is chosen or in scope.
+   *
+   * `visits` is each doctor's tally on the plan's Phoenix seat (owner, 19 Nov 2026: every screen that shows a
+   * rep's weekly plan shows the doctor's last visit, his visits this month and his visits in total), keyed by
+   * CRM contact id as text, with the Cairo day it was read on. Null on an old-CRM plan or a failed read, and the
+   * table then says nothing about visits.
+   */
+  selected: {
+    plan: PlanSummary;
+    rows: PlanEntryRow[];
+    visits: { byContact: Record<string, VisitTally>; today: string } | null;
+  } | null;
   /** What the viewer's reach is, in words — shown so a short list is never mistaken for a quiet CRM. */
   scopeLabel: string;
   /** Set when the viewer resolves to nobody; the board then explains rather than showing an empty list. */
   scopeReason: string | null;
   year: number;
 };
+
+/**
+ * The chosen plan's rows and, for a Phoenix plan, each doctor's visit tally on its seat through Cairo today.
+ * The two reads run together; the tally never throws (a failed read answers `visits: null`).
+ */
+async function selectedPlanWithVisits(plan: PlanSummary): Promise<NonNullable<PlanVerificationBoard["selected"]>> {
+  const today = cairoTodayIso();
+  const [rows, tallies] = await Promise.all([
+    getPlanEntries(plan.crmPlanId, plan.agentCrmId),
+    plan.phoenixSeatId ? loadVisitTallies([plan.phoenixSeatId], false, today) : null,
+  ]);
+  const byContact = tallies ? contactTalliesRecord(tallies, rows.map((row) => row.contactCrmId)) : null;
+  return { plan, rows, visits: byContact ? { byContact, today } : null };
+}
 
 /**
  * Assembles the board.
@@ -919,7 +963,7 @@ export async function getPlanVerificationBoard(input: {
     : null;
   // The agent id is passed so the doctors carry their addresses: the plan rows hold none, and the
   // address lives on the rep's assigned list, which is keyed by agent.
-  const selected = chosen ? { plan: chosen, rows: await getPlanEntries(chosen.crmPlanId, chosen.agentCrmId) } : null;
+  const selected = chosen ? await selectedPlanWithVisits(chosen) : null;
 
   // WHO SHOULD HAVE FILED comes from the same source tab one uses for its rep picker — the CRM's own
   // assigned-contact mirror, filtered by the same scopeAllowsAgent. Sharing tab one's source means

@@ -21,7 +21,8 @@ import {
   planStatusLabel,
   type PlanKind,
 } from "@/lib/crm/plan-verification";
-import type { PlanEntryRow, PlanMissingRep, PlanSummary } from "@/lib/crm/plan-board";
+import type { PlanEntryRow, PlanMissingRep, PlanSummary, PlanVerificationBoard } from "@/lib/crm/plan-board";
+import { visitTallyText } from "@/components/phoenix-crm/labels";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -518,7 +519,30 @@ const ENTRY_COLS = [
 /** How much of the page above the doctors section stays visible when a plan opens. */
 const PLAN_LANDING_GAP = 12;
 
-export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: PlanSummary; rows: PlanEntryRow[] }) {
+type PlanVisits = NonNullable<PlanVerificationBoard["selected"]>["visits"];
+
+/**
+ * The doctor's visit line (owner, 19 Nov 2026: every screen that shows a rep's weekly plan shows when the doctor was
+ * last visited, his visits this month and his visits in total). Under the doctor's name, never a column of its own.
+ * Nothing on an old-CRM plan or a failed read.
+ */
+function PlanVisitLine({ row, visits }: { row: PlanEntryRow; visits: PlanVisits }) {
+  const tally = visits && row.contactCrmId != null ? visits.byContact[String(row.contactCrmId)] : undefined;
+  if (!visits || !tally) return null;
+  return <span className="mt-0.5 block text-phx-sm font-semibold text-slate-500">{visitTallyText(tally, visits.today)}</span>;
+}
+
+export function PlanDoctorsTable({
+  kind,
+  plan,
+  rows,
+  visits = null,
+}: {
+  kind: PlanKind;
+  plan: PlanSummary;
+  rows: PlanEntryRow[];
+  visits?: PlanVisits;
+}) {
   const landingRef = useRef<HTMLDivElement | null>(null);
   /**
    * Bring the doctors into view when a plan opens.
@@ -629,6 +653,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
             }
             title={row.contactName}
           >
+            <PlanVisitLine row={row} visits={visits} />
             <PortalRecordFields
               fields={
                 kind === "weekly"
@@ -703,7 +728,10 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   ) : (
                     <td className="px-3 py-2 font-black text-slate-900">{row.frequency == null ? "—" : row.frequency}</td>
                   )}
-                  <td className="px-3 py-2 font-semibold text-slate-900">{row.contactName}</td>
+                  <td className="break-words px-3 py-2 font-semibold text-slate-900">
+                    {row.contactName}
+                    <PlanVisitLine row={row} visits={visits} />
+                  </td>
                   <td className={`px-3 py-2 font-black ${gradeClass(row.grade)}`}>{row.grade ?? "—"}</td>
                   <td className="px-3 py-2 text-slate-600">{row.speciality ?? "Unspecified"}</td>
                   <td className="px-3 py-2 text-slate-400">{row.region ?? "—"}</td>

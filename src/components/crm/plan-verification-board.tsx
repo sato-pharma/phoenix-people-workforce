@@ -243,7 +243,7 @@ export function PlanVerificationBoardView({
             }
             title={`${selected.plan.repName} — ${planPeriodText(selected.plan)}`}
           >
-            <PlanDoctorsTable kind={kind} plan={selected.plan} rows={selected.rows} />
+            <PlanDoctorsTable kind={kind} plan={selected.plan} rows={selected.rows} visits={selected.visits} />
           </Section>
         </div>
       ) : null}

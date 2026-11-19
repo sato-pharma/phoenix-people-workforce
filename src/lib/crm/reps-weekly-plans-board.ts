@@ -51,6 +51,7 @@ import { buildRepsCascade, type RepsListRep } from "@/lib/crm/reps-list-board";
 import type { CoverageFilterOptions, CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 import type { CrmManagerScope } from "@/lib/crm/manager-scope";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { loadVisitTallies } from "@/lib/phoenix-crm/server/visit-tally";
 
 /** A rep card on this tab: the Reps List card plus what he filed for the chosen week. */
 export type RepsWeeklyPlanRep = RepsListRep & {
@@ -99,6 +100,8 @@ export type RepsWeeklyPlansBoard = {
   /** Which slice of the week the grid is showing. `"all"` when the manager has not narrowed it. */
   statusFilter: PlanStatusFilter;
   syncedAt: string | null;
+  /** Cairo today, the board's own — the plan tab's visit line reads it, never a clock in the browser. */
+  today: string;
   /** The chosen week. */
   week: PlanWeek;
   /** What the picker offers, newest first — future weeks at the top. */
@@ -205,6 +208,7 @@ export async function getRepsWeeklyPlansBoard(input: {
     selection: cascade.selection,
     statusFilter: resolvePlanStatusFilter(input.params.status),
     syncedAt: cascade.syncedAt,
+    today: todayIso,
     week,
     weeks,
   };
@@ -304,7 +308,14 @@ export async function getRepsWeeklyPlansBoard(input: {
   // WINDOWED ON THE PLAN'S OWN DAYS. `firstDate`/`lastDate` are derived from the plan's rows, so a
   // doctor seen the day after the plan ends cannot be credited to it — "seen another day" means
   // another day OF THIS PLAN.
-  const [entries, contactList, actuals] = selectedPlan
+  //
+  // THE VISIT TALLY IS THE FOURTH READ (owner, 19 Nov 2026: every screen that shows a rep's weekly plan
+  // shows each doctor's last visit, his visits this month and his visits in total). Read on the plan's
+  // own Phoenix seat, through today — never windowed on the plan — and only for a Phoenix plan: an
+  // old-CRM plan has no seat and its rows draw no line. `loadVisitTallies` never throws; a failed read
+  // answers `read: false` and the Contact cell then says nothing about visits rather than "No visit
+  // recorded yet" about a doctor who was seen.
+  const [entries, contactList, actuals, tallies] = selectedPlan
     ? await Promise.all([
         getPlanEntries(selectedPlan.crmPlanId, selectedPlan.agentCrmId),
         // A rep with a CRM id keeps the CRM-account read he always had; a rep hired without one is
@@ -326,10 +337,11 @@ export async function getRepsWeeklyPlansBoard(input: {
               today: todayIso,
             })
           : null,
+        selectedPlan.phoenixSeatId ? loadVisitTallies([selectedPlan.phoenixSeatId], false, todayIso) : null,
       ])
-    : [[] as PlanEntryRow[], null, null];
+    : [[] as PlanEntryRow[], null, null, null];
 
-  const days = buildPlanDoctorDays(entries, indexContactList(contactList), actuals);
+  const days = buildPlanDoctorDays(entries, indexContactList(contactList), actuals, tallies);
 
   return { ...base, counts, days, entries, plans, reps, selected, selectedPlan };
 }

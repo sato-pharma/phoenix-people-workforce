@@ -1160,6 +1160,9 @@ const LATER_MIGRATIONS = [
   // A building is not rejected by anyone but a Super Admin while a validated seat stands on his approval (owner, 18 Nov
   // 2026): phoenix_crm_decide_shared_place REPLACED a third time, from the body before it, and the last replacer.
   "supabase/migrations/20261118220000_phoenix_crm_building_reject_respects_super_admin_seats.sql",
+  // The visit tally on every screen that shows a rep's weekly plan (owner, 19 Nov 2026): one NEW read-only function,
+  // phoenix_crm_customer_visit_tally, over phoenix_crm_countable_visits_with_history. It replaces nothing.
+  "supabase/migrations/20261119152938_phoenix_crm_customer_visit_tally.sql",
 ];
 
 /**

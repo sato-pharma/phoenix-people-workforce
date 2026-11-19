@@ -9,6 +9,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { neighbourTint, type NeighbourTint } from "@/components/phoenix-crm/brick-tints";
+import { visitTallyText } from "@/components/phoenix-crm/labels";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
@@ -2036,6 +2037,17 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
   );
 }
 
+/**
+ * The doctor's visit tally under his name (owner, 19 Nov 2026: every screen that shows a rep's weekly plan shows
+ * when the doctor was last visited, his visits this month and his visits in total). Inside the Contact cell, never
+ * a seventh column — the six are the contact list's own. Nothing on an old-CRM plan or a failed read
+ * (`row.tally` null), so "No visit recorded yet" is only ever said when the visits were read.
+ */
+function VisitTallyLine({ row, today }: { row: PlanDoctorRow; today: string }) {
+  if (!row.tally) return null;
+  return <span className="mt-0.5 block text-phx-sm font-semibold text-slate-500">{visitTallyText(row.tally, today)}</span>;
+}
+
 /** AM / PM, where the contact list puts nothing. Absent on a plan row the CRM left without one. */
 function ShiftLine({ ampm }: { ampm: string | null }) {
   if (!ampm?.trim()) return null;
@@ -2074,10 +2086,12 @@ function PlanDayTable({
   day,
   onOpenConfidence,
   onOpenInsights,
+  today,
 }: {
   day: PlanDoctorDay;
   onOpenConfidence: (row: RepsListContact) => void;
   onOpenInsights: (row: RepsListContact) => void;
+  today: string;
 }) {
   const offListBrick = (row: PlanDoctorRow) => row.entry.region?.trim() || REPS_LIST_NO_LOCATION;
   const speciality = (row: PlanDoctorRow) =>
@@ -2110,6 +2124,7 @@ function PlanDayTable({
               }
               title={row.entry.contactName}
             >
+              <VisitTallyLine row={row} today={today} />
               <PortalRecordFields
                 fields={[
                   { label: "Specialty", value: speciality(row) },
@@ -2145,6 +2160,7 @@ function PlanDayTable({
             }
             title={contact.name}
           >
+            <VisitTallyLine row={row} today={today} />
             <InsightsChip onOpen={() => onOpenInsights(contact)} row={contact} />
             <SharedLine row={contact} />
             <TradeLine row={contact} />
@@ -2209,6 +2225,7 @@ function PlanDayTable({
                       ) : (
                         <OffListContactCell row={row} />
                       )}
+                      <VisitTallyLine row={row} today={today} />
                       <VerdictChip verdict={row.verdict} />
                     </td>
                     <td className="break-words px-3 py-2 text-slate-600">{speciality(row)}</td>
@@ -2259,7 +2276,7 @@ function PlanDayTable({
  * RepsListContacts has one: a dialog per row is hundreds of mounted overlays, and a dialog per day
  * would put a hook count inside a map, which React forbids outright.
  */
-export function PlanDoctorsTable({ days }: { days: PlanDoctorDay[] }) {
+export function PlanDoctorsTable({ days, today }: { days: PlanDoctorDay[]; today: string }) {
   const [confidenceFor, setConfidenceFor] = useState<RepsListContact | null>(null);
   const [insightsFor, setInsightsFor] = useState<RepsListContact | null>(null);
   const closeConfidence = useCallback(() => setConfidenceFor(null), []);
@@ -2275,7 +2292,7 @@ export function PlanDoctorsTable({ days }: { days: PlanDoctorDay[] }) {
           // clear of the sticky page header when the browser lands on it.
           <div className="scroll-mt-24" id={day.date ? `plan-day-${day.date}` : undefined} key={day.date ?? "undated"}>
             <PlanDayHeading day={day} />
-            <PlanDayTable day={day} onOpenConfidence={openConfidence} onOpenInsights={openInsights} />
+            <PlanDayTable day={day} onOpenConfidence={openConfidence} onOpenInsights={openInsights} today={today} />
           </div>
         ))}
       </div>

@@ -52,6 +52,7 @@ import {
 } from "@/lib/crm/plan-actuals";
 import type { PlanEntryRow } from "@/lib/crm/plan-board";
 import type { RepsListContact, RepsListForRep } from "@/lib/crm/reps-list";
+import { tallyForContact, type VisitTallies, type VisitTally } from "@/lib/phoenix-crm/visit-tally";
 
 /** A contact as the Reps List board knows it, plus the brick heading of the group it sits in. */
 export type PlanDoctorContact = {
@@ -69,6 +70,12 @@ export type PlanDoctorRow = {
   entry: PlanEntryRow;
   /** Stable React key. The same doctor can appear on two days, so the date is part of it. */
   key: string;
+  /**
+   * The doctor's visit tally on the plan's Phoenix seat — the last visit, the visits this month, the visits in
+   * total (owner, 19 Nov 2026). Null when no tallies were supplied (an old-CRM plan) or the read failed, and the
+   * Contact cell then draws nothing about visits. `phoenix-crm/visit-tally.ts`.
+   */
+  tally: VisitTally | null;
   /**
    * What the rep actually did about this planned call.
    *
@@ -134,6 +141,8 @@ export function buildPlanDoctorDays(
   byContactId: ReadonlyMap<number, PlanDoctorContact>,
   /** What actually happened in this plan's window. Omit — or pass null — for no marks at all. */
   actuals: PlanActuals | null = null,
+  /** Each doctor's visit tally on the plan's Phoenix seat, keyed by contact. Omit — or pass null — for none. */
+  tallies: VisitTallies | null = null,
 ): PlanDoctorDay[] {
   const days = new Map<string, PlanDoctorDay>();
 
@@ -150,6 +159,7 @@ export function buildPlanDoctorDays(
       contact: (entry.contactCrmId == null ? null : byContactId.get(entry.contactCrmId)) ?? null,
       entry,
       key: `${entry.contactCrmId ?? "x"}:${date ?? "x"}:${entry.ampm ?? "x"}:${index}`,
+      tally: tallies ? tallyForContact(tallies, entry.contactCrmId) : null,
       verdict: planRowVerdict(actuals, { contactCrmId: entry.contactCrmId ?? null, date }),
     });
   }

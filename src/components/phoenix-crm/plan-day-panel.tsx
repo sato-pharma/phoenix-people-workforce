@@ -345,7 +345,25 @@ export function PlanDayPanel({
             <p className="text-sm font-medium text-slate-500">No other activity planned.</p>
           )}
         </CrmBlock>
-        <PlannedDayView byId={byId} day={day} idPrefix={idPrefix} only={reviewList} showSpread={showSpread} tints={tints} weekdayName={weekdayName} />
+        <PlannedDayView
+          byId={byId}
+          day={day}
+          idPrefix={idPrefix}
+          // The same visit line the day's ticking rows carry (owner, 19 Nov 2026): his last visit, his visits
+          // this month and in total — on the rep's sent plan and on the plan his manager reviews alike.
+          lineFor={(customer) =>
+            plannerRowInsight(customer, {
+              target: gradeTarget({ gradeTargets }, customer.listType, customer.grade),
+              today,
+              weekStart: fieldWeekStart(day.date),
+              withTime: showTimes,
+            }).lastSeen
+          }
+          only={reviewList}
+          showSpread={showSpread}
+          tints={tints}
+          weekdayName={weekdayName}
+        />
       </div>
     );
   }
@@ -1084,6 +1102,7 @@ function PlannedDayView({
   byId,
   day,
   idPrefix,
+  lineFor,
   only,
   showSpread,
   tints,
@@ -1093,6 +1112,8 @@ function PlannedDayView({
   byId: ReadonlyMap<string, PlannerCustomer>;
   day: PlanDayView;
   idPrefix: string;
+  /** A planned customer's visit line ("Last seen … · 2 visits this month · 14 visits in total"); null draws none. */
+  lineFor: (customer: PlannerCustomer) => string | null;
   /** One list alone — a reviewer's step reads AM, then PM (owner, 2026-10-02). Unset: both. */
   only?: PhoenixCrmDoctorListType;
   showSpread: boolean;
@@ -1141,6 +1162,7 @@ function PlannedDayView({
                             <div className="min-w-0 flex-1">
                               <p className="break-words text-sm font-black text-slate-950">{item.name}</p>
                               <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">{customerMetaText(item)}</p>
+                              <PlannedSeenLine byId={byId} customerId={item.customerId} lineFor={lineFor} />
                               <p className="mt-0.5 break-words text-sm font-bold text-slate-800">{item.windowsText}</p>
                               <SavedPills item={item} showSpread={showSpread} />
                               <SavedNote item={item} />
@@ -1169,6 +1191,7 @@ function PlannedDayView({
                             <td className={crmTdClassName}>
                               <p className="font-black text-slate-950">{item.name}</p>
                               <p className="mt-0.5 text-xs text-slate-500">{item.grade ? `Grade ${item.grade}` : "No grade"}</p>
+                              <PlannedSeenLine byId={byId} customerId={item.customerId} lineFor={lineFor} />
                               <SavedPills item={item} showSpread={showSpread} />
                             </td>
                             <td className={crmTdClassName}>{item.speciality ?? "—"}</td>
@@ -1189,6 +1212,20 @@ function PlannedDayView({
       })}
     </>
   );
+}
+
+/** A planned customer's visit line, from the planner's own customer — none when he is not on the list any more. */
+function PlannedSeenLine({
+  byId,
+  customerId,
+  lineFor,
+}: {
+  byId: ReadonlyMap<string, PlannerCustomer>;
+  customerId: string;
+  lineFor: (customer: PlannerCustomer) => string | null;
+}) {
+  const customer = byId.get(customerId);
+  return customer ? <SeenLine lastSeen={lineFor(customer)} /> : null;
 }
 
 function SavedPills({ item, showSpread }: { item: PlanItemView; showSpread: boolean }) {

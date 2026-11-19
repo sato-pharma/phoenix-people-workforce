@@ -35,6 +35,7 @@ import { describeDayStarts, noDayStarts, type PlanDayStarts } from "@/lib/phoeni
 import { daysInPeriod, REPORT_MAX_DAYS, type ReportRuleResult } from "@/lib/phoenix-crm/report-rules";
 import { formatClockMinute } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmDoctorListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import type { VisitTally } from "@/lib/phoenix-crm/visit-tally";
 
 // ── The days it reads ───────────────────────────────────────────────────────────────────────────
 
@@ -279,6 +280,12 @@ export type DailyPlanCustomer = {
   /** Minutes past midnight, Cairo, the visit to him that day was saved; null when not visited. */
   visitedMinute: number | null;
   offPlan: DailyPlanOffPlan | null;
+  /**
+   * His visit tally on the territory through today — the last visit, the visits this month, the visits in total
+   * (owner, 19 Nov 2026: every screen that shows a rep's weekly plan shows them; `visit-tally.ts`). Null or absent
+   * when the read failed, and the report then draws no visit line.
+   */
+  tally?: VisitTally | null;
 };
 
 /** What is true of a planned customer himself: not validated yet, gone from the list, planned outside his hours. */
@@ -455,6 +462,7 @@ export function buildDailyPlanDays(input: {
           status: dailyPlanVisitStatus({ date, visitDay: input.visitDay, visited: visit !== null, onLeave: leaveDays.has(date) }),
           visitedMinute: visit ? cairoMinuteOfInstant(visit.capturedAt) : null,
           offPlan: visit?.offPlan ?? null,
+          ...(item.tally !== undefined ? { tally: item.tally } : {}),
         };
         return { listType: item.listType, customer };
       });
