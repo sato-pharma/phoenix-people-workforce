@@ -201,6 +201,7 @@ import {
   PHARMACY_LIST_TYPE,
   type ListedPharmacy,
 } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
 import { parseTimings, sortTimings } from "@/lib/phoenix-crm/timings";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import type {
@@ -2932,7 +2933,8 @@ export async function renameCustomer(
       is_test: isTest,
       customer_id: customerId,
       name: named.name,
-      speciality: cleanText(body.speciality, 80),
+      // Picked from the one list, or an "Other" text — folded into the list name it spells.
+      speciality: normalizeSpeciality(body.speciality),
       allow_same_name: body.allowSameName === true,
       ...(phone?.ok ? { phone: phone.value } : {}),
     },

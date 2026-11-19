@@ -2186,6 +2186,7 @@ import { runCrmAccountSetupReminderTests } from "./crm-account-setup-reminder.te
 import { runPhoenixCrmStuckLoadingTests } from "./phoenix-crm-stuck-loading.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
+import { runPhoenixCrmSpecialityListTests } from "./phoenix-crm-speciality-list.test.ts";
 import { runNeutralWordingTests } from "./neutral-wording.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
 import { runPhoenixCrmLineProductsTests } from "./phoenix-crm-line-products.test.ts";
@@ -8150,6 +8151,10 @@ await runTest(
 await runTest(
   "Phoenix CRM says AM and PM, never Doctors or Accounts (owner, 2026-09-23: \"make it ALL AM PM not doctors and accounts\" — the two label maps that turned the codes into words are deleted so nothing can restore them, no screen string in the module carries either word, no label names a list type twice as \"Doctors · PM\", and the directory tab is called Directory because it holds AM customers too)",
   runPhoenixCrmAmPmWordTests,
+);
+await runTest(
+  "Phoenix CRM's speciality is one fixed pick-list plus Other (owner, 2026-11-19: \"make the speciality not typable fixed drop list\" / \"add other and under other make him able to type\") — every pair the production clean-up applied is the server normaliser's own answer, an unmatched text stays as Other, the list agrees with the contact taxonomy, and every screen and server door goes through it",
+  runPhoenixCrmSpecialityListTests,
 );
 
 await runTest(

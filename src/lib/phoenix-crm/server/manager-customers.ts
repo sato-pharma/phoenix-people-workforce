@@ -39,6 +39,7 @@ import {
   type NameCandidate,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { compareFoldedNames } from "@/lib/phoenix-crm/name-fold";
+import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -646,7 +647,8 @@ export async function addManagerCustomer(viewer: PhoenixCrmViewer, raw: unknown)
   const body = record(raw);
   const isTest = testModeFor(viewer, body.test);
   const name = cleanText(body.name, 200, "The name");
-  const speciality = cleanText(body.speciality, 120, "The speciality");
+  // Picked from the one list, or an "Other" text — folded into the list name it spells (owner, 2026-11-19).
+  const speciality = normalizeSpeciality(cleanText(body.speciality, 120, "The speciality"));
   const address = cleanText(body.address, MANAGER_CUSTOMER_ADDRESS_MAX, "The address");
   const brickId = cleanText(body.brickId, 40, "The brick");
   const contactNote = cleanText(body.contactNote, 300, "The contact note");

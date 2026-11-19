@@ -32,6 +32,7 @@ import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
+import { CrmSpecialityField } from "@/components/phoenix-crm/speciality-field";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
@@ -40,8 +41,6 @@ import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/type
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 
-/** The server keeps a speciality to this length (entry-rules.ts parseOutsideCustomer). */
-const SPECIALITY_TEXT_MAX = 80;
 
 const PHOTO_NEEDED = PLACE_PHOTO_NEEDED;
 const GRADES = ["A", "B", "C"] as const;
@@ -72,13 +71,6 @@ async function customerSavedWith(seatId: string, test: boolean, photoPath: strin
   } catch {
     return undefined;
   }
-}
-
-/** The specialities already on his list, offered while typing. */
-function knownSpecialities(customers: ReadonlyArray<VisitCustomerOption>): string[] {
-  const names = new Set<string>();
-  for (const customer of customers) if (customer.speciality) names.add(customer.speciality);
-  return [...names].sort((left, right) => left.localeCompare(right));
 }
 
 export function OutOfListEntry({
@@ -311,23 +303,14 @@ export function OutOfListEntry({
               />
             </CrmField>
           )}
-          <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-outside-speciality" label="Speciality">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
-              disabled={saving}
-              id="phoenix-crm-outside-speciality"
-              list="phoenix-crm-outside-specialities"
-              maxLength={SPECIALITY_TEXT_MAX}
-              onChange={(event) => setSpeciality(event.target.value)}
-              value={speciality}
-            />
-            <datalist id="phoenix-crm-outside-specialities">
-              {knownSpecialities(customers).map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </CrmField>
+          <CrmSpecialityField
+            className="sm:col-span-2"
+            disabled={saving}
+            id="phoenix-crm-outside-speciality"
+            kind={listType === "AM" ? "AM" : "PM"}
+            onChange={setSpeciality}
+            value={speciality}
+          />
           <CrmField className="sm:col-span-2" hint="Your district manager confirms it or changes it, then SFE approves the customer." label="The grade you propose">
             <CrmChoice
               columns={3}

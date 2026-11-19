@@ -20,6 +20,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { CaptureLocation, type CapturedPin } from "@/components/phoenix-crm/capture-location";
+import { CrmSpecialityField } from "@/components/phoenix-crm/speciality-field";
 import { CrmButton, CrmCard, CrmChoice, CrmField, CrmNote, CrmPill, CrmSelect, crmInputClassName, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import {
@@ -240,9 +241,7 @@ export function ManagerCustomerForm({
       ) : null}
 
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-        <CrmField htmlFor={`${idPrefix}-speciality`} label="Speciality">
-          <input className={crmInputClassName} id={`${idPrefix}-speciality`} maxLength={120} onChange={(event) => setSpeciality(event.target.value)} value={speciality} />
-        </CrmField>
+        <CrmSpecialityField id={`${idPrefix}-speciality`} kind="manager" onChange={setSpeciality} value={speciality} />
         <CrmField htmlFor={`${idPrefix}-phone`} label="Phone">
           <input className={crmInputClassName} id={`${idPrefix}-phone`} inputMode="tel" maxLength={30} onChange={(event) => setPhone(event.target.value)} type="tel" value={phone} />
         </CrmField>

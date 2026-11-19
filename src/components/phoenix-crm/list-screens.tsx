@@ -49,6 +49,7 @@ import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { capturedLocationText, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { CrmSpecialityField } from "@/components/phoenix-crm/speciality-field";
 import {
   emptyPlaceDraft,
   PlaceEditor,
@@ -113,8 +114,6 @@ import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
 
-/** The server keeps a speciality to this length (entry-rules.ts parseNewCustomer). */
-const SPECIALITY_TEXT_MAX = 80;
 /** The server keeps a request's note to this length (list.ts createListRequest). */
 const REQUEST_NOTE_MAX = 500;
 const GRADES = ["A", "B", "C"] as const;
@@ -678,7 +677,6 @@ export function ValidateScreen({
   const needsFullName = subject.mode !== "new" && validationNeedsFullName({ listType: subjectFacts?.listType, name: currentName });
   const fullNameText = needsFullName ? normalizedName(joinDoctorName(fullParts)) : "";
   const customerName = (needsFullName && fullNameText) || (subjectFacts?.name ?? cleanName);
-  const specialityOptions = subject.mode === "new" ? knownSpecialities(view) : [];
   const canAskToDrop = Boolean(onAskToDrop && pendingCustomer && movesOf(pendingCustomer).includes("ask_to_drop"));
 
   function clientProblem(): string | null {
@@ -1045,23 +1043,13 @@ export function ValidateScreen({
                     />
                   </CrmField>
                 )}
-                <CrmField hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-new-speciality" label="Speciality">
-                  <input
-                    autoComplete="off"
-                    className={crmInputClassName}
-                    disabled={saving}
-                    id="phoenix-crm-new-speciality"
-                    list="phoenix-crm-new-specialities"
-                    maxLength={SPECIALITY_TEXT_MAX}
-                    onChange={(event) => setSpeciality(event.target.value)}
-                    value={speciality}
-                  />
-                  <datalist id="phoenix-crm-new-specialities">
-                    {specialityOptions.map((option) => (
-                      <option key={option} value={option} />
-                    ))}
-                  </datalist>
-                </CrmField>
+                <CrmSpecialityField
+                  disabled={saving}
+                  id="phoenix-crm-new-speciality"
+                  kind={listType === "AM" ? "AM" : "PM"}
+                  onChange={setSpeciality}
+                  value={speciality}
+                />
                 <CustomerPhoneField
                   disabled={saving}
                   id="phoenix-crm-new-phone"
@@ -1254,14 +1242,6 @@ export function ValidateScreen({
       </div>
     </CrmPanel>
   );
-}
-
-/** The specialities already on this territory's lists, offered while typing a new one. */
-function knownSpecialities(view: TerritoryListView): string[] {
-  const names = new Set<string>();
-  for (const entry of view.reference) if (entry.speciality) names.add(entry.speciality);
-  for (const customer of view.customers) if (customer.speciality) names.add(customer.speciality);
-  return [...names].sort((left, right) => left.localeCompare(right));
 }
 
 // ── After a place is saved ──────────────────────────────────────────────────────────────────────
@@ -1875,26 +1855,17 @@ export function EditDetailsScreen({
               />
             </CrmField>
           )}
-          <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-details-speciality" label="Speciality">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
-              disabled={saving}
-              id="phoenix-crm-details-speciality"
-              list="phoenix-crm-details-specialities"
-              maxLength={SPECIALITY_TEXT_MAX}
-              onChange={(event) => {
-                setSpeciality(event.target.value);
-                setProblem(null);
-              }}
-              value={speciality}
-            />
-            <datalist id="phoenix-crm-details-specialities">
-              {knownSpecialities(view).map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </CrmField>
+          <CrmSpecialityField
+            className="sm:col-span-2"
+            disabled={saving}
+            id="phoenix-crm-details-speciality"
+            kind={customer.listType === "AM" ? "AM" : "PM"}
+            onChange={(next) => {
+              setSpeciality(next);
+              setProblem(null);
+            }}
+            value={speciality}
+          />
           <CustomerPhoneField
             disabled={saving}
             hint="Optional. Empty the box to remove it."

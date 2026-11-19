@@ -26,6 +26,7 @@ import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { normalizeSpeciality } from "@/lib/phoenix-crm/speciality-list";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
 import { parseSamplesGiven, type SamplesGiven } from "@/lib/phoenix-crm/samples";
@@ -831,11 +832,11 @@ export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCusto
     if (!full.ok) return full;
     const name = cleanText(full.value, CUSTOMER_NAME_MAX);
     if (!name) return { ok: false, error: "Write the first, middle and last name." };
-    return { ok: true, value: { listType, name, speciality: cleanText(body.speciality, 80) } };
+    return { ok: true, value: { listType, name, speciality: normalizeSpeciality(body.speciality) } };
   }
   const name = cleanText(body.name, CUSTOMER_NAME_MAX);
   if (!name || name.length < 3) return { ok: false, error: "Write the customer's full name." };
-  return { ok: true, value: { listType, name, speciality: cleanText(body.speciality, 80) } };
+  return { ok: true, value: { listType, name, speciality: normalizeSpeciality(body.speciality) } };
 }
 
 /** "Add new customer": the same, plus the grade he proposes — the district manager, then SFE, decide. */
