@@ -176,6 +176,7 @@ import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
 import { runHealthchecksScheduleSyncTests } from "./healthchecks-schedule-sync.test.ts";
 import { runJobHeartbeatRegisterTests } from "./job-heartbeat-register.test.ts";
+import { runScheduledRouteHeartbeatsTests } from "./scheduled-route-heartbeats.test.ts";
 import { runDatabaseRestartWatchTests } from "./database-restart-watch.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
 import { runDbHealthSnapshotLivenessTests } from "./db-health-snapshot-liveness.test.ts";
@@ -3124,6 +3125,8 @@ import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-
 import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.ts";
 import { runJobLeaseTests } from "./job-lease.test.ts";
 import { runSharedInstanceStateTests } from "./shared-instance-state.test.ts";
+import { runNotificationDrainTwoInstancesTests } from "./notification-drain-two-instances.test.ts";
+import { runPermissionMatrixSharedVersionTests } from "./permission-matrix-shared-version.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
 import { runMailboxRobotServiceTests } from "./mailbox-robot-service.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
@@ -3216,11 +3219,13 @@ import { runPasskeyAddAsksPasswordTests } from "./passkey-add-asks-password.test
 import { runSecondStepQrCodeTests } from "./second-step-qr-code.test.ts";
 import { runLeakedPasswordTests } from "./leaked-password.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
+import { runDurableButtonEmailsTests } from "./durable-button-emails.test.ts";
 import { runReportItLifecycleTests } from "./report-it-lifecycle.test.ts";
 import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
 import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
 import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
 import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
+import { runNotificationRegistryLooseEndsTests } from "./notification-registry-loose-ends.test.ts";
 import { runSyntheticJourneyAdviceTests } from "./synthetic-journey-advice.test.ts";
 import { runSyntheticJourneyRunStatusTests } from "./synthetic-journey-run-status.test.ts";
 import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declared-page.test.ts";
@@ -3629,6 +3634,10 @@ await runTest(
 await runTest(
   "job heartbeat register (a windowed schedule's silent hours are not a stranded job)",
   runJobHeartbeatRegisterTests,
+);
+await runTest(
+  "every scheduled route records a heartbeat (REC-049, 19 Nov 2026): each route under app/api/cron, the two morning notification routes and every route cron-job.org or a GitHub workflow calls reports to the heartbeat register under a declared slug, or is named as a hand-driven route whose sweep reports elsewhere",
+  runScheduledRouteHeartbeatsTests,
 );
 await runTest(
   "database restart watch (installing the alarm must not fire it, and the time it reports is Cairo)",
@@ -12467,6 +12476,14 @@ await runTest(
   runSharedInstanceStateTests,
 );
 await runTest(
+  "two notification drains start at once and exactly one drains (REC-083 phase 2, 19 Nov 2026): the real drain loaded as two servers against one in-memory claim_job_lease, the second skipped as overlapping-run by the shared lease while the first is mid-run, and the next run drains once the lease is handed back",
+  runNotificationDrainTwoInstancesTests,
+);
+await runTest(
+  "the permission cache hears another server's change (REC-083 phase 2, 19 Nov 2026): a copy held past the check interval asks the override table's newest stamp and row count, reloads when it moved, serves the copy when it did not or cannot be read, and a failed reload keeps the last-known matrix, never the cold start",
+  runPermissionMatrixSharedVersionTests,
+);
+await runTest(
   "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",
   runWorkerOnlyCronRoutesTests,
 );
@@ -12726,6 +12743,7 @@ await runTest("adding a passkey asks a Super Admin for the password before any c
 await runTest("the second sign-in step's set-up shows a QR code to scan beside the key to type (owner, 14 Nov 2026): qrcode.react ships as a production dependency; level M with the four-module quiet zone, black on white; the sign-in page and the profile card both draw it from the same address their Open in the app link carries; nothing is fetched to draw it; and the real library draws the real address as the 57-module square a decoder read back, labelled, with the key in no readable text", runSecondStepQrCodeTests);
 await runTest("a password already in a published leak is refused when it is chosen (integration audit INT-006, 13 Nov 2026): only the first five characters of its fingerprint leave, with no header naming who asks; a padded answer's made-up lines are not leaks; a service that cannot be asked is recorded as not checked, never as a pass or a refusal; both places a password is chosen ask before anything is written and before the link is spent; and sign-in never asks", runLeakedPasswordTests);
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
+await runTest("the emails a person sends with a button survive a provider failure (REC-048 phase 2, 19 Nov 2026): the offer letter, its resend and expiry notice, the interview invitation, the approved requests email and the careers confirmation write their outbox row first, a forced provider failure leaves a row the drain picks up and sends with the same input through the same hr@ dispatcher, a late offer or invitation is never sent once the record changed, a Turbify failure is never retried, and a second press replaces a waiting first", runDurableButtonEmailsTests);
 await runTest("a safety report is owned by whoever holds Report It read-all access (REC-033, 13 Nov 2026): her new-report notice and email carry no patient data, go to her alone and fire after the reply; a report moves received, under assessment, closed, one step forward, only by a read-all viewer, refused before any write otherwise, with its audit row in the same transaction; and the migration allows exactly the code's statuses", runReportItLifecycleTests);
 await runTest(
   "the morning jobs move to one schedule each behind PHOENIX_DAILY_JOBS_SPLIT: switched off (what ships) /api/notifications/daily runs every job once, through the shared runners, digest first, and /api/cron/daily/<job> runs none and records no heartbeat; switched on, the reverse; never both and never neither, in the routes, the heartbeat declarations, the Healthchecks check and the re-fire policies; every job has exactly one cron-job.org entry and one heartbeat at the same minute, no two share a minute, the job route runs one job per request, and the jobs run are exactly the thirty the fan-out ran",
@@ -12734,6 +12752,7 @@ await runTest(
 await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
 await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
 await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
+await runTest("the notification registry's loose ends (REC-084 phase 2, 19 Nov 2026): the bell's categories are derived from the registry and unchanged, every category a notice is written under is registered and every registered one is written or kept for history, every registered type has a policy row or an acknowledged default, and the default fallback logs a warning instead of staying silent", runNotificationRegistryLooseEndsTests);
 await runTest("smoke-test advice on the Synthetic Journeys page (a failed assertion is never 'the page did not respond'; a cancelled prefetch and another host's refusal are not the app's failure; the app's own 401, 403, 404 and 500 are named)", runSyntheticJourneyAdviceTests);
 await runTest("smoke-test run status on the Synthetic Journeys page (every check passed and the one skip said why is healthy; a skip with no reason is still a warning; a skip never hides a failure or stands in for a pass)", runSyntheticJourneyRunStatusTests);
 await runTest("smoke check that skips itself shows its real page (the Outstation Expenses export reads /admin/outstation/expenses, not the word unknown; a check that named no page still reads unknown)", runSyntheticJourneyDeclaredPageTests);

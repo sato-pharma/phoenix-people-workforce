@@ -291,6 +291,11 @@ const OTHER_JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // no stand-down window to exempt — only a restored job carries that date.
   { slug: "phoenix-brick-move-drain", kind: "cron", schedule: "19,39,59 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-reconciliation-check", kind: "cron", schedule: "40 4 * * *", graceSeconds: 2 * HOUR },
+  // The weekly attendance review's clock (REC-049, 19 Nov 2026), scheduled by GitHub Actions
+  // (.github/workflows/attendance-weekly-digest.yml) at 03:23 and 10:23 UTC — 05:23 and 12:23 Cairo in
+  // winter, an hour later in summer, declared at the EARLIER reading like the pg_cron jobs. Three hours
+  // of grace: a scheduled GitHub run is often late, and summer adds the hour. In-house only.
+  { slug: "phoenix-attendance-weekly-digest", kind: "cron", schedule: "23 5,12 * * *", graceSeconds: 3 * HOUR },
   // The nightly System Audit sweep (src/lib/system-audit/sweep.ts): every detector one at a time, the
   // verifier, then the one daily message. 04:57 Cairo, seventeen minutes after the integrity checks
   // above have written their findings, on a minute nothing else in the account holds. Must match

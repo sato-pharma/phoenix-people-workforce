@@ -17,8 +17,8 @@ is the sender the module already used:
 | --- | --- |
 | `notice` | `createSystemNotification` |
 | `notices` | `createSystemNotificationForRecipients` (a fixed To and Cc list, one email envelope) |
-| `durable-email` | `sendDurableEmail` (leave's approval emails, with Send again) |
-| `direct-email` | the module's own email call, run unchanged (the direct-order final approval, the marketing "approved requests" list) |
+| `durable-email` | `sendDurableEmail` (leave's approval emails, with Send again; since 19 Nov 2026 also the marketing "approved requests" email's Phoenix route — `docs/notifications-phase-2.md`) |
+| `direct-email` | the module's own email call, run unchanged (the direct-order final approval, the marketing "approved requests" email sent from the sender's own mailbox, which is never retried) |
 
 **Same notices only (owner, 14 Nov 2026).** Nobody gains or loses a notice. Each caller passes the same
 recipients, channels, wording and email as before. The door adds one thing: a tag on the in-app notice's

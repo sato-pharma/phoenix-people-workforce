@@ -7,7 +7,6 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertNotSeatView } from "@/lib/auth/seat-view";
 import { assertNotTestAccount } from "@/lib/auth/test-persona";
 import { todayInCairo } from "@/lib/date-only";
-import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { afterResponse } from "@/lib/http/after-response";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
@@ -32,6 +31,7 @@ import {
   type ApprovedRequestsRecipient,
 } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
+import { isQueuedForRetry } from "@/lib/notifications/durable-email";
 import { logError } from "@/lib/observability/log";
 import { personalMailboxSendable, sendPersonalMailboxHtmlEmail } from "@/lib/personal-mailbox/service";
 import { PersonalMailboxError } from "@/lib/personal-mailbox/rules";
@@ -263,21 +263,43 @@ export async function sendMarketingCeoApprovalsEmail(
     }
   };
 
+  // The Phoenix route is DURABLE (REC-048 phase 2, 19 Nov 2026): written to the outbox first and sent
+  // now, exactly as before. A provider failure is told to him at once ("Queued for retry: …") and the
+  // drain sends the SAME email a few minutes later; pressing again the same day finds that row, so
+  // Finance never gets two. The own-mailbox route stays as it was — never retried, see above.
+  const sendThroughPhoenix = async (): Promise<{ skipped: false } | { reason: string; skipped: true }> => {
+    try {
+      const sent = await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, {
+        dedupeKey: `marketing:approved_requests:${fingerprint}`,
+        message: {
+          input: {
+            cc: recipients.cc.map((person) => person.email),
+            from: `${content.senderName} via Phoenix <${systemEmail.defaultFromEmail}>`,
+            html,
+            idempotencyKey,
+            origin: { eventType: APPROVED_REQUESTS_EMAIL_EVENT, module: APPROVED_REQUESTS_EMAIL_MODULE },
+            replyTo: senderEmail || undefined,
+            subject,
+            text,
+            to: recipients.to.map((person) => person.email),
+          },
+          sender: "phoenix",
+        },
+        via: "durable-email",
+      });
+      return sent.skipped ? { reason: sent.reason, skipped: true as const } : { skipped: false as const };
+    } catch (error) {
+      // Waiting in the outbox: say so, and record it, rather than answering as if nothing happened.
+      if (isQueuedForRetry(error)) return { reason: (error as Error).message, skipped: true as const };
+      throw error;
+    }
+  };
+
   // Two doors, one per route, so each send is plainly an approval sent through raiseApproval.
   const result =
     from.kind === "own_mailbox"
       ? await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => sendFromOwnMailbox() })
-      : await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => sendPhoenixEmail({
-    cc: recipients.cc.map((person) => person.email),
-    from: `${content.senderName} via Phoenix <${systemEmail.defaultFromEmail}>`,
-    html,
-    idempotencyKey,
-    origin: { eventType: APPROVED_REQUESTS_EMAIL_EVENT, module: APPROVED_REQUESTS_EMAIL_MODULE },
-    replyTo: senderEmail || undefined,
-    subject,
-    text,
-    to: recipients.to.map((person) => person.email),
-  }) });
+      : await sendThroughPhoenix();
   const sentAtIso = new Date().toISOString();
 
   await writeRequiredAuditLog({

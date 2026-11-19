@@ -2,7 +2,14 @@ import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "@/lib/employee
 import { canonicalHrIdKey, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { isWithinManagerHierarchy, type SeatContinuitySubject } from "@/lib/workforce/hierarchy-resolver";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
-import { logError } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
+import {
+  PERMISSION_SHARED_VERSION_CHECK_MS,
+  PERMISSION_SHARED_VERSION_TIMEOUT_MS,
+  permissionSharedVersionFrom,
+  permissionSharedVersionMoved,
+  type PermissionSharedVersion,
+} from "@/lib/auth/permission-matrix-version";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrBundleGrants, isSalaryBlindRole } from "@/lib/auth/hr-functions";
 // Temporary per-account module suspensions. Imported for its VALUE; module-locks.ts imports only
@@ -2187,6 +2194,8 @@ type PermissionMatrix = typeof defaultPermissionMatrix;
 
 type PermissionCacheState = {
   fetchedAt: number;
+  /** When the load that produced this copy STARTED — a change stamped after it may be missing from it. */
+  loadStartedAt: number;
   matrix: PermissionMatrix;
 };
 
@@ -2299,15 +2308,106 @@ export function coldStartPermissionMatrix(): PermissionMatrix {
   return closed;
 }
 
+// ── Across servers (REC-083 phase 2, 19 Nov 2026) ────────────────────────────────────────────────
+// clearPermissionMatrixCache() drops the copy only on the server that saved the change. A copy held for
+// PERMISSION_SHARED_VERSION_CHECK_MS now asks the table's shared version (its newest updated_at and its
+// row count), at most that often per process, and is marked STALE when another server moved it — the
+// next read reloads it, and a failed reload still serves this copy (last-known-good), never the cold
+// start. See permission-matrix-version.ts. A copy younger than the interval is served without asking.
+
+type PermissionSharedVersionReader = () => Promise<PermissionSharedVersion | null>;
+
+async function readPermissionSharedVersionFromDatabase(): Promise<PermissionSharedVersion | null> {
+  const { count, data, error } = await getSupabaseAdmin()
+    .from("role_permission_overrides")
+    .select("updated_at", { count: "exact" })
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (error) return null;
+  const newest = ((data ?? []) as Array<{ updated_at?: unknown }>)[0]?.updated_at;
+  return permissionSharedVersionFrom(typeof newest === "string" ? newest : null, typeof count === "number" ? count : null);
+}
+
+let readPermissionSharedVersion: PermissionSharedVersionReader = readPermissionSharedVersionFromDatabase;
+let permissionSharedVersionCheckEveryMs = PERMISSION_SHARED_VERSION_CHECK_MS;
+let lastPermissionVersionCheckAt = 0;
+let lastPermissionVersionFingerprint: string | null = null;
+let permissionVersionCheckInFlight: Promise<void> | null = null;
+// Bumped by every local clear, so an answer that arrives after a local save does not mark its successor.
+let permissionCacheGeneration = 0;
+
+function settlePermissionVersionWithin(promise: Promise<PermissionSharedVersion | null>, ms: number): Promise<PermissionSharedVersion | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    (timer as { unref?: () => void }).unref?.();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/** Marks this process's copy stale when another server changed the overrides since it loaded. Never throws. */
+async function reconcileSharedPermissionVersion(): Promise<void> {
+  const now = Date.now();
+  const copy = permissionCache;
+  // Only a FRESH copy is asked about: a stale one is reloaded anyway, and the test seed (fetchedAt 0) is stale.
+  if (!copy || copy.fetchedAt + permissionCacheMs <= now) return;
+  if (now - copy.loadStartedAt < permissionSharedVersionCheckEveryMs) return;
+  if (!permissionVersionCheckInFlight) {
+    if (now - lastPermissionVersionCheckAt < permissionSharedVersionCheckEveryMs) return;
+    lastPermissionVersionCheckAt = now;
+    const generation = permissionCacheGeneration;
+    permissionVersionCheckInFlight = (async () => {
+      const current = await settlePermissionVersionWithin(readPermissionSharedVersion(), PERMISSION_SHARED_VERSION_TIMEOUT_MS);
+      if (!current) return;
+      const previousFingerprint = lastPermissionVersionFingerprint;
+      lastPermissionVersionFingerprint = current.fingerprint;
+      // A local save already dropped the copy while this was asked: nothing left to mark.
+      if (generation !== permissionCacheGeneration || permissionCache !== copy) return;
+      if (!permissionSharedVersionMoved({ copyLoadStartedAt: copy.loadStartedAt, current, now, previousFingerprint })) return;
+      logInfo("Permission overrides changed on another server; reloading this server's copy", {
+        labels: { component: "permissions", event: "permission_matrix_shared_version_moved" },
+      });
+      // Stale, never dropped: the next read reloads, and a failed reload still has this copy to serve.
+      permissionCache = { ...copy, fetchedAt: 0 };
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        permissionVersionCheckInFlight = null;
+      });
+  }
+  await permissionVersionCheckInFlight;
+}
+
+/** Test seam: replace the shared-version read (null restores the database) and the check interval. */
+export function __setPermissionSharedVersionReaderForTests(
+  reader: PermissionSharedVersionReader | null,
+  options: { checkEveryMs?: number } = {},
+) {
+  readPermissionSharedVersion = reader ?? readPermissionSharedVersionFromDatabase;
+  permissionSharedVersionCheckEveryMs = options.checkEveryMs ?? PERMISSION_SHARED_VERSION_CHECK_MS;
+  lastPermissionVersionCheckAt = 0;
+  lastPermissionVersionFingerprint = null;
+}
+
 async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
+  await reconcileSharedPermissionVersion();
   if (permissionCache && permissionCache.fetchedAt + permissionCacheMs > Date.now()) {
     return permissionCache.matrix;
   }
 
   if (!permissionMatrixPromise) {
+    const loadStartedAt = Date.now();
     permissionMatrixPromise = getPermissionMatrixFromDb()
       .then((matrix) => {
-        permissionCache = { fetchedAt: Date.now(), matrix };
+        permissionCache = { fetchedAt: Date.now(), loadStartedAt, matrix };
         return matrix;
       })
       .catch((error) => {
@@ -2337,6 +2437,7 @@ export async function loadPermissionMatrixUncached(): Promise<PermissionMatrix> 
 
 export function clearPermissionMatrixCache() {
   permissionCache = null;
+  permissionCacheGeneration += 1;
 }
 
 /**
@@ -2348,7 +2449,7 @@ export function clearPermissionMatrixCache() {
  * (tests/permission-matrix-cold-start.test.ts).
  */
 export function seedPermissionMatrixWithDefaultsForTests() {
-  permissionCache = { fetchedAt: 0, matrix: applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix)) };
+  permissionCache = { fetchedAt: 0, loadStartedAt: 0, matrix: applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix)) };
 }
 
 export async function getPermissionMatrix(): Promise<PermissionMatrix> {

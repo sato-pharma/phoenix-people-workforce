@@ -28,6 +28,16 @@ import {
 } from "@/lib/notifications/policy";
 import type { SystemNotificationChannel, SystemNotificationPriority } from "@/lib/notifications/system";
 
+// The bell's half of the registry: which categories the personal bell lists (recipients.ts derives
+// PERSONAL_BELL_CATEGORIES from it), and the module default a notice with no category of its own gets.
+// Kept in its own pure file so the bell can read it without the policy engine.
+export {
+  defaultNotificationCategory,
+  NOTIFICATION_BELL_CATEGORIES,
+  OFF_THE_BELL_CATEGORIES,
+  type NotificationBellCategory,
+} from "@/lib/notifications/notification-bell-categories";
+
 export type NotificationTypeDelivery = "direct_email" | "both";
 
 export type NotificationTypeEntry = {

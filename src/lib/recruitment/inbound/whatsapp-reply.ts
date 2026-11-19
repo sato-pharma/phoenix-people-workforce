@@ -11,6 +11,7 @@
 // window, and keeps the quality-rating exposure bounded to content Meta has already approved.
 
 import { logWarning } from "@/lib/observability/log";
+import { buildOutboundLogRow, recordOutboundMessage } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 
@@ -46,32 +47,44 @@ export async function sendWhatsAppCvAcknowledgement(input: { toWaId: string; pho
   const phoneNumberId = input.phoneNumberId?.trim() || process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
   if (!cfg.enabled || !cfg.templateName || !token || !phoneNumberId) return false;
 
+  const payload: Record<string, unknown> = {
+    messaging_product: "whatsapp",
+    template: { language: { code: cfg.languageCode }, name: cfg.templateName },
+    to: input.toWaId,
+    type: "template",
+  };
+  // THE LEDGER (REC-048 phase 2, 19 Nov 2026): this was the one outbound WhatsApp message that went
+  // to Meta without a row in `ats_whatsapp_outbound_messages` — every other send records itself
+  // through whatsapp-interactive.ts. It is recorded now, after Meta answers, success or failure.
+  // Record only: the message, its number, its template and what this function returns are unchanged,
+  // and recordOutboundMessage never throws.
+  const record = (result: { ok: true; wamid: string | null } | { ok: false; reason: string; detail: string | null }) =>
+    recordOutboundMessage(buildOutboundLogRow({ event: "whatsapp_cv_acknowledgement", payload, phoneNumberId, result, toWaId: input.toWaId }));
+
   try {
     const response = await fetch(`https://graph.facebook.com/${graphApiVersion()}/${phoneNumberId}/messages`, {
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        template: { language: { code: cfg.languageCode }, name: cfg.templateName },
-        to: input.toWaId,
-        type: "template",
-      }),
+      body: JSON.stringify(payload),
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       method: "POST",
       signal: AbortSignal.timeout(8_000),
     });
+    const body = (await response.json().catch(() => null)) as { error?: { message?: string }; messages?: Array<{ id?: string }> } | null;
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
       logWarning("WhatsApp CV acknowledgement failed to send", {
         labels: { event: "whatsapp_autoreply_failed", status: response.status },
         context: { error: body?.error?.message ?? null },
       });
+      await record({ detail: body?.error?.message ?? null, ok: false, reason: "failed" });
       return false;
     }
+    await record({ ok: true, wamid: body?.messages?.[0]?.id ?? null });
     return true;
   } catch (error) {
     logWarning("WhatsApp CV acknowledgement threw", {
       error,
       labels: { event: "whatsapp_autoreply_error" },
     });
+    await record({ detail: error instanceof Error ? error.message : null, ok: false, reason: "failed" });
     return false;
   }
 }

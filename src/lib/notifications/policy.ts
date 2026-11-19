@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import {
   canAccess,
   parseRoleStrict,
@@ -424,9 +424,137 @@ function policyKey(moduleName: string, eventType: string) {
   return `${cleanText(moduleName).toLowerCase()}.${cleanText(eventType).toLowerCase()}`;
 }
 
+/**
+ * THE TYPES THAT RESOLVE TO `defaultPolicy` ON PURPOSE (REC-084 phase 2, 19 Nov 2026).
+ *
+ * A type with neither an exact row nor a `<module>.*` row above used to fall through to
+ * `defaultPolicy` (in-app, email and push to the named employee, strict) with nothing said — a new
+ * sender, or a typo in an event name, got that audience silently. The fallback now says so
+ * (`notification_policy_default_used`, a warning, once per type per process), unless the type is
+ * named here. `tests/notification-registry-loose-ends.test.ts` holds every registered type
+ * (notification-types.ts) to a row OR an entry here, and refuses an entry that has since gained a row.
+ *
+ * Every entry below is today's behaviour, acknowledged as it stands — not a ruling on it. Writing a
+ * row for one of them changes who is told or how, so it is the owner's decision, type by type.
+ */
+export const DEFAULT_POLICY_ACKNOWLEDGED: ReadonlyArray<{ module: string; eventTypes: readonly string[]; why: string }> = [
+  // ── Direct emails: sent straight to the provider (or the durable outbox), so no policy is read ──
+  { eventTypes: ["telegram_onboarding_link"], module: "telegram", why: "a direct email; the engine's policy is never read" },
+  { eventTypes: ["production_expiry_alarm", "production_reorder_alarm"], module: "production_planning", why: "direct emails to the recipients named on the production planning screen; no policy is read" },
+  { eventTypes: ["careers_application_confirmation"], module: "recruitment.website-apply", why: "a direct email to the applicant; no policy is read" },
+  { eventTypes: ["weekly_sales_uploaded", "targets_uploaded", "sos_monthly_closing_report"], module: "sales", why: "direct emails built and addressed by the sales module; no policy is read" },
+  // ── Engine notices that name their own recipients and channels and take the default row for the rest ──
+  { eventTypes: ["report_it_new_report"], module: "report_it", why: "in-app to the report's owners, who are named by the sender; its email is a durable direct email" },
+  { eventTypes: ["holiday_confirmation_reminder"], module: "holiday_confirmation", why: "today's behaviour: the default row" },
+  { eventTypes: ["report_submitted"], module: "coaching", why: "today's behaviour: the default row" },
+  { eventTypes: ["business_card_request_created"], module: "business_card_requests", why: "today's behaviour: the default row; the sender names the seat it addresses" },
+  { eventTypes: ["support_request_created"], module: "support_requests", why: "today's behaviour: the default row" },
+  { eventTypes: ["resignation_sla_reminder"], module: "resignation", why: "today's behaviour: the default row — the reminder is sent under `resignation`, not `resignations`, so the resignations.* row never reaches it (reported to the owner, not changed)" },
+  { eventTypes: ["mailbox_offboarding_overdue"], module: "mailbox_offboarding", why: "today's behaviour: the default row" },
+  {
+    eventTypes: [
+      "deduction_pushed",
+      "deduction_pushed_cc",
+      "deductions_comment",
+      "dispute_center_opened",
+      "dispute_center_message",
+      "dispute_center_decided",
+      "dispute_center_reopen_requested",
+      "dispute_center_reopened",
+      "dispute_center_reopen_declined",
+      "dispute_explanation_confirm_requested",
+      "dispute_explanation_answered",
+    ],
+    module: "deductions",
+    why: "today's behaviour: the default row; each sender names the employee and the managers it tells",
+  },
+  {
+    eventTypes: [
+      "private_calendar_dispute_submitted",
+      "private_calendar_dispute_decided",
+      "private_calendar_dispute_message",
+      "private_calendar_gap_notice",
+      "dispute_center_reopen_requested",
+      "dispute_center_reopened",
+      "dispute_center_reopen_declined",
+      "dispute_explanation_confirm_requested",
+      "dispute_explanation_answered",
+    ],
+    module: "private_calendar",
+    why: "today's behaviour: the default row; each sender names the employee and the reviewer it tells",
+  },
+  {
+    eventTypes: [
+      "daily_hr_digest",
+      "system_audit_daily",
+      "background_jobs_run_success",
+      "background_jobs_run_failed",
+      "database_host_low_memory",
+      "database_host_low_root_disk",
+      "database_restarted",
+      "new_app_error",
+      "github_workflow_overdue",
+      "scheduled_job_stranded",
+      "notification_drain_stranded",
+      "notification_held_for_review",
+      "notification_holds_expired",
+      "dead_telegram_link_alert",
+      "email_block_new",
+      "ai_quota_exhausted",
+      "ai_key_rejected",
+      "ai_account_answering",
+      "activity_inactivity_digest",
+      "attendance_punch_feed_stalled",
+      "brick_move_net_unsettled",
+      "brick_move_queue_stuck",
+      "cv_lifecycle_link_expiring",
+      "share_link_dead_token_polled",
+      "tablet_fleet_watch",
+      "marketing_pharmacy_code_sync_notice",
+      "milestone_due",
+      "telegram_connection_linked",
+      "telegram_test",
+      "push_test",
+    ],
+    module: "system",
+    why: "operator alerts and system notices: each names its own recipients and channels (the operator-watch guard keeps the no-email ones off email); the default row is what fills the rest",
+  },
+];
+
+const acknowledgedDefaultPolicyKeys = new Set(
+  DEFAULT_POLICY_ACKNOWLEDGED.flatMap((entry) => entry.eventTypes.map((eventType) => policyKey(entry.module, eventType))),
+);
+
+export type NotificationPolicySource = "exact" | "wildcard" | "default";
+
+/** Where a type's policy comes from: its own row, its module's `.*` row, or `defaultPolicy`. */
+export function notificationPolicySource(input: Pick<ResolveNotificationRecipientsInput, "eventType" | "module">): NotificationPolicySource {
+  if (policyTable[policyKey(input.module, input.eventType)]) return "exact";
+  if (policyTable[`${cleanText(input.module).toLowerCase()}.*`]) return "wildcard";
+  return "default";
+}
+
+/** True when a type resolves to `defaultPolicy` on purpose — see DEFAULT_POLICY_ACKNOWLEDGED. */
+export function isAcknowledgedDefaultPolicy(moduleName: string, eventType: string): boolean {
+  return acknowledgedDefaultPolicyKeys.has(policyKey(moduleName, eventType));
+}
+
+const warnedDefaultPolicyKeys = new Set<string>();
+
+/** The silent fallback, made visible: one warning per unacknowledged type per process. */
+function warnDefaultPolicyUsed(moduleName: string, eventType: string) {
+  const key = policyKey(moduleName, eventType);
+  if (acknowledgedDefaultPolicyKeys.has(key) || warnedDefaultPolicyKeys.has(key)) return;
+  warnedDefaultPolicyKeys.add(key);
+  logWarning("A notification type has no policy row, so the default policy decided its channels and recipients", {
+    labels: { event: "notification_policy_default_used", policy_key: key },
+  });
+}
+
 export function resolveNotificationPolicy(input: Pick<ResolveNotificationRecipientsInput, "eventType" | "module">): NotificationPolicy {
   const exact = policyTable[policyKey(input.module, input.eventType)];
   const wildcard = policyTable[`${cleanText(input.module).toLowerCase()}.*`];
+  if (!exact && !wildcard) warnDefaultPolicyUsed(input.module, input.eventType);
   const merged = { ...defaultPolicy, ...(wildcard ?? {}), ...(exact ?? {}) };
   return {
     ...merged,

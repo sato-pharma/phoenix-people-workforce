@@ -9,6 +9,7 @@ import {
   sendDirectEmailMessage,
   type DurableEmailMessage,
 } from "@/lib/notifications/direct-email-payload";
+import type { DurableEmailFollowUp } from "@/lib/notifications/durable-email-follow-up";
 import {
   claimNotificationOutboxRow,
   deliverDirectEmailOutboxRow,
@@ -47,11 +48,30 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  *
  * A credential email (a reset code, a set-your-password link) is never written here: it has its own
  * sealed outbox path (credential-seal.ts), and this payload would keep the code readable.
+ *
+ * ── The emails a person sends with a button (REC-048 phase 2, 19 Nov 2026) ──
+ * A job offer, its resend and expiry notice, the interview calendar's invitation, the marketing
+ * "approved requests" email and the careers form's confirmation joined the same path. The person who
+ * pressed still learns at once whether the email went — the outbox only adds the retry. Three options
+ * exist for them:
+ *
+ *  - `supersedeKey` — the email this is, whatever its words. A new press for it closes any older row
+ *    for it that is still waiting, so pressing Send again never leaves the first attempt queued behind
+ *    the second (an offer's PDF and accept link are minted afresh on each press, so the two are never
+ *    the same message).
+ *  - `followUp` — what a LATE send by the drain still has to do (durable-email-follow-up.ts).
+ *  - A send through a person's own Turbify mailbox (the hr@ job-offer mailbox) is NEVER retried behind
+ *    their back: the server may already have taken it. That failure closes the row (`not_retried`) and
+ *    the ORIGINAL error reaches the caller word for word — the sentence HR already reads today.
  */
 
 export type DurableEmailOptions = {
   /** The caller's own readable idempotency key, e.g. `vacation:<request id>:leave_request:<manager email>`. */
   dedupeKey: string;
+  /** What a late send by the drain still has to do — durable-email-follow-up.ts. */
+  followUp?: DurableEmailFollowUp;
+  /** The email this is, whatever its words: a new send for it closes an older row still waiting. */
+  supersedeKey?: string;
 };
 
 export type OpenedDurableEmailRow =
@@ -62,7 +82,12 @@ export type OpenedDurableEmailRow =
 /** The database half, injectable so the inline flow is tested without one. */
 export type DurableEmailDeps = {
   deliver: (row: NotificationOutboxRow) => Promise<DirectEmailDeliveryOutcome>;
-  open: (message: DurableEmailMessage, dedupeKey: string, label: string) => Promise<OpenedDurableEmailRow>;
+  open: (
+    message: DurableEmailMessage,
+    dedupeKey: string,
+    label: string,
+    extras?: { followUp?: DurableEmailFollowUp; supersedeKey?: string },
+  ) => Promise<OpenedDurableEmailRow>;
   sendDirect: (message: DurableEmailMessage) => Promise<SendPhoenixEmailResult>;
 };
 
@@ -72,17 +97,42 @@ function originEnvironment(): string {
   return process.env.APP_ENV || process.env.NODE_ENV || "development";
 }
 
+export const SUPERSEDED_REASON = "[superseded] A later send of the same email replaced this one, so it was not sent.";
+
+/**
+ * Closes every row for the same email (`supersedeKey`) that is still WAITING — `pending` or `failed`,
+ * never `processing`, which a drain or another press is sending right now — except this send's own.
+ * A failed write is logged and the send goes on: the worst case is today's, an older copy retried.
+ */
+async function closeSupersededRows(supersedeKey: string, dedupeKey: string, nowIso: string): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from(notificationOutboxTable)
+    .update({ last_error: SUPERSEDED_REASON, locked_at: null, next_attempt_at: null, status: "skipped", updated_at: nowIso })
+    .eq("payload->>kind", "direct_email")
+    .eq("payload->>supersedeKey", supersedeKey)
+    .in("status", ["pending", "failed"])
+    .neq("dedupe_key", dedupeKey);
+  if (error) {
+    logError("Durable email could not close the older copy it replaces", {
+      error,
+      labels: { event: "durable_email_supersede_failed", supersedeKey },
+    });
+  }
+}
+
 /**
  * Writes the row as this send's own claim, or finds the row an earlier attempt of the same request
  * wrote: a `pending`/`failed` one is claimed and sent now, a `sent` one is not sent again, and one
  * another process is sending (or that was closed as skipped) is left alone.
  */
-async function openDurableEmailRow(
+export async function openDurableEmailRow(
   message: DurableEmailMessage,
   dedupeKey: string,
   label: string,
+  extras: { followUp?: DurableEmailFollowUp; supersedeKey?: string } = {},
 ): Promise<OpenedDurableEmailRow> {
   const now = new Date().toISOString();
+  if (extras.supersedeKey) await closeSupersededRows(extras.supersedeKey, dedupeKey, now);
   const { data, error } = await getSupabaseAdmin()
     .from(notificationOutboxTable)
     .insert({
@@ -93,7 +143,7 @@ async function openDurableEmailRow(
       locked_at: now,
       max_attempts: notificationOutboxMaxAttempts,
       next_attempt_at: null,
-      payload: buildDirectEmailPayload(message, label, originEnvironment()),
+      payload: buildDirectEmailPayload(message, label, originEnvironment(), extras),
       status: "processing",
       updated_at: now,
     })
@@ -142,7 +192,7 @@ export async function runDurableEmail(
 
   let opened: OpenedDurableEmailRow;
   try {
-    opened = await deps.open(message, dedupeKey, label);
+    opened = await deps.open(message, dedupeKey, label, { followUp: options.followUp, supersedeKey: options.supersedeKey });
   } catch (error) {
     // Durability must never cost an email: with no row, send exactly as before.
     logError("Durable email could not be written to the outbox — sent directly instead", {
@@ -159,9 +209,18 @@ export async function runDurableEmail(
   if (delivery.outcome === "queued") {
     return { reason: `${QUEUED_FOR_RETRY_PREFIX} ${delivery.result.reason}`, skipped: true };
   }
+  // A failure that is never retried behind the person's back (their own Turbify mailbox may already
+  // have taken it): the row is closed, and the caller gets the ORIGINAL error, word for word.
+  if (delivery.terminal) throw delivery.error;
   // A provider failure is still a THROW to the caller, as it always was — its own failure record runs
   // unchanged — but the words say the email is waiting in the outbox, not lost.
   throw new Error(`${QUEUED_FOR_RETRY_PREFIX} ${delivery.message}`, { cause: delivery.error });
+}
+
+/** True for the words `runDurableEmail` gives an email that is now waiting in the outbox. */
+export function isQueuedForRetry(value: unknown): boolean {
+  const message = value instanceof Error ? value.message : typeof value === "string" ? value : "";
+  return message.startsWith(QUEUED_FOR_RETRY_PREFIX);
 }
 
 /** Sends an approval email through the outbox — see the header. */

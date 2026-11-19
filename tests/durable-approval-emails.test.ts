@@ -164,9 +164,14 @@ async function testTheStoredInputGoesBackToItsOwnSenderUnchanged() {
   const branch = processRow.indexOf("if (isDirectEmailPayload(claimedRow.payload))");
   assert.ok(branch > 0, "the drain must branch on a direct email");
   assert.ok(branch < processRow.indexOf("validateNotificationEmailIdentity("), "the branch comes before the standard path's first step");
-  assert.ok(processRow.slice(branch, branch + 400).includes("deliverDirectEmailOutboxRow(claimedRow)"), "the branch delivers through the direct sender");
+  // Since REC-048 phase 2 the branch runs the row's follow-up gate first (retryDirectEmailOutboxRow),
+  // which then delivers through the same direct sender.
+  assert.ok(processRow.slice(branch, branch + 400).includes("retryDirectEmailOutboxRow(claimedRow)"), "the branch retries through the direct sender");
+  const retry = functionBody(email, "export async function retryDirectEmailOutboxRow(");
+  assert.ok(retry.includes("deps.deliver(row)"), "the retry delivers the stored message");
+  assert.ok(email.includes("deliver: (row) => deliverDirectEmailOutboxRow(row),"), "through deliverDirectEmailOutboxRow by default");
   const deliver = functionBody(email, "export async function deliverDirectEmailOutboxRow(");
-  assert.ok(deliver.includes("sendDirectEmailMessage(payload.message)"), "the drain sends the stored message");
+  assert.ok(deliver.includes("sendDirectEmailMessage(payload.message, senders)"), "the drain sends the stored message (senders injectable for the tests only)");
   assert.ok(!deliver.includes("sendNotificationEmailDirect"), "the drain never uses the standard notification path for a direct email");
   assert.ok(!deliver.includes("enrichRecipientsWithManagerCc"), "the drain adds no manager CC to a direct email");
 }
