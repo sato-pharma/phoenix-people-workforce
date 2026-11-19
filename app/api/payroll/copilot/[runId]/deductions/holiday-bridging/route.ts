@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { parseJsonBody } from "@/lib/http/request-body";
 import {
   assertCopilotAccess,
   copilotErrorResponse,
@@ -23,6 +25,21 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** The two actions `recordHolidayBridgingDecision` takes. */
+const HOLIDAY_BRIDGING_ACTIONS = ["exclude", "include"] as const;
+
+/**
+ * The Holiday Bridging tab sends `{ requestId, employeeHrId, bridgingDate, action }` from the row it
+ * loaded. Every field but the action stays optional so a row missing one still gets the route's own
+ * "requestId, employeeHrId, and bridgingDate are required." answer.
+ */
+const HolidayBridgingBodySchema = z.object({
+  requestId: z.string().nullish(),
+  employeeHrId: z.string().nullish(),
+  bridgingDate: z.string().nullish(),
+  action: z.enum(HOLIDAY_BRIDGING_ACTIONS, { error: "action must be 'exclude' or 'include'." }),
+});
 
 export async function GET(request: Request, { params }: { params: Promise<{ runId: string }> }) {
   try {
@@ -73,19 +90,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     assertCopilotAccess(access);
     const { runId } = await params;
 
-    const body = (await request.json().catch(() => ({}))) as {
-      requestId?: string;
-      employeeHrId?: string;
-      bridgingDate?: string;
-      action?: string;
-    };
-
-    if (body.action !== "exclude" && body.action !== "include") {
-      return NextResponse.json(
-        { error: "invalid_request", message: "action must be 'exclude' or 'include'." },
-        { status: 400 },
-      );
+    const parsed = await parseJsonBody(request, HolidayBridgingBodySchema, { fallback: {} });
+    if (!parsed.ok) {
+      return NextResponse.json({ error: "invalid_request", message: parsed.message }, { status: 400 });
     }
+    const body = parsed.data;
     const requestId = String(body.requestId ?? "").trim();
     const employeeHrId = String(body.employeeHrId ?? "").trim();
     const bridgingDate = String(body.bridgingDate ?? "").trim();

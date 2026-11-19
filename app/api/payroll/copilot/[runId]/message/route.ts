@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { parseJsonBody } from "@/lib/http/request-body";
 import {
   assertCopilotAccess,
   copilotErrorResponse,
@@ -10,6 +12,11 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** The workbench sends `{ text }` — the chat box, or "<HR ID>: <issue>" from a row's report-issue box. */
+const CopilotMessageBodySchema = z.object({
+  text: z.string().optional(),
+});
 
 /**
  * Parse the CEO's free-text reply into proposed actions. No mutation — the CEO
@@ -24,8 +31,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     assertCopilotAccess(access);
     const { runId } = await params;
 
-    const body = (await request.json().catch(() => ({}))) as { text?: unknown };
-    const text = typeof body.text === "string" ? body.text : "";
+    const parsed = await parseJsonBody(request, CopilotMessageBodySchema, { fallback: {} });
+    if (!parsed.ok) throw new CopilotError(parsed.message, 400);
+    const text = parsed.data.text ?? "";
     if (!text.trim()) {
       throw new CopilotError("A message is required.", 400);
     }
