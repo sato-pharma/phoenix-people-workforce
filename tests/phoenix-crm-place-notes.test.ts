@@ -186,21 +186,20 @@ function checkHeDecidesNothing(): void {
   // "Waiting for you" to him, while a manager still reads "Still being checked".
   assert.match(
     read("src/components/phoenix-crm/shared-place-customers.tsx"),
-    /customer\.state === "waiting" \? <CrmPill tone="warn">\{mode === "team" \? "Still being checked" : "Waiting for you"\}<\/CrmPill>/,
-    "a waiting customer reads 'Waiting for you' to the Super Admin and 'Still being checked' to a manager",
+    /customer\.state === "waiting" \? <CrmPill tone="warn">\{mode === "team" \? "Still being checked" : decides \? "Waiting for you" : "Waiting for the administrator"\}<\/CrmPill>/,
+    "a waiting customer reads 'Waiting for you' to the Super Admin, 'Waiting for the administrator' to the SFE Manager and 'Still being checked' to a manager",
   );
 
-  for (const [path, control] of [
-    ["src/components/phoenix-crm/validated-place-list.tsx", "Refuse"],
-    ["src/components/phoenix-crm/shared-place-list.tsx", "Decision"],
-  ] as const) {
-    const list = read(path);
-    assert.match(
-      list,
-      new RegExp(`mode === "team" \\? null : <${control} row=\\{row\\}[^>]*/>`),
-      `${path} renders no ${control} control for a manager`,
-    );
-  }
+  // Each list draws its decision behind one test that is false on a manager's board AND on the SFE
+  // Manager's company board (owner, 2026-11-19: he recommends, he never decides).
+  const placesInUse = read("src/components/phoenix-crm/validated-place-list.tsx");
+  assert.match(placesInUse, /const decider = mode !== "team" && decides;/, "validated-place-list.tsx: one test for a decision");
+  assert.match(placesInUse, /\{decider \? <Refuse row=\{row\}[^>]*\/> : null\}/, "validated-place-list.tsx renders no Refuse control for a manager or the SFE Manager");
+  assert.match(
+    read("src/components/phoenix-crm/shared-place-list.tsx"),
+    /\{mode === "team" \? null : decides \? \(\s*<Decision row=\{row\} scope=\{scope\} \/>\s*\) : \(\s*<PlaceCheckDecisionState/,
+    "shared-place-list.tsx renders no Decision control for a manager, and the SFE Manager reads the decision's state instead",
+  );
 
   // The queue keeps a settled state for him, and it names nobody and carries no note.
   const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
@@ -209,7 +208,7 @@ function checkHeDecidesNothing(): void {
   assert.ok(!settled[0].includes("decidedByName"), "it never names who decided");
   assert.ok(!settled[0].includes("decisionNote"), "and never carries the decision note");
   assert.ok(!settled[0].includes("Restore"), "and offers no way to take a decision back");
-  assert.match(queue, /mode === "team" \? <Settled row=\{row\} \/> : <Decision row=\{row\} scope=\{scope\} \/>/, "one switch, both modes, in one place");
+  assert.match(queue, /mode === "team" \? \(\s*<Settled row=\{row\} \/>\s*\) : decides \? \(\s*<Decision row=\{row\} scope=\{scope\} \/>\s*\) : \(\s*<PlaceCheckDecisionState/, "one switch, all three boards, in one place");
 
   // 🔴 NOT A WORD ABOUT WHO DECIDES, anywhere a manager can read. The owner's instruction was
   // "don't show this on the screen", so this sweeps the strings a well-meaning edit would add. The

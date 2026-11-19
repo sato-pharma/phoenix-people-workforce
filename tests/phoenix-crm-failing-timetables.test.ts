@@ -222,7 +222,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
   );
 
   const list = code("src/components/phoenix-crm/shared-place-list.tsx");
-  assert.ok(list.includes('{mode === "team" ? null : <NoTimetableDeclaration row={row} />}'), "🔴 a district manager's board never draws the declaration");
+  assert.ok(list.includes('{mode === "team" || !decides ? null : <NoTimetableDeclaration row={row} />}'), "🔴 a district manager's board never draws the declaration, nor the SFE Manager's (owner, 2026-11-19)");
   assert.ok(list.includes("const control = row.noTimetableControl ?? null;"), "the button is the row's own answer");
   assert.ok(list.includes("if (!control) return null;"));
   assert.ok(list.includes('{ sharedPlaceId: row.sharedPlaceId, declared: control === "declare" }'), "it posts the building and which of the two");

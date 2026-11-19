@@ -307,7 +307,7 @@ function checkBulkDecide(): void {
     ["validated-place-list.tsx", list],
     ["shared-place-list.tsx", venues],
   ] as const) {
-    assert.match(source, /const bulk = mode === "company";/, `${file}: the bar is drawn only on the Super Admin's own board`);
+    assert.match(source, /const bulk = mode === "company" && decides;/, `${file}: the bar is drawn only on the Super Admin's own board — never the SFE Manager's (owner, 2026-11-19)`);
     assert.match(source, /bulk \?/, `${file}: and every pick box is behind that same test`);
   }
 }
@@ -346,7 +346,8 @@ function checkScreens(): void {
   assert.ok(page.includes("<ValidationReviewsBoard") || page.includes("<PlaceChecksWithDeck"), "the board is what the page draws");
   if (page.includes("<PlaceChecksWithDeck")) {
     const wrapper = read("src/components/place-review-deck/place-checks-with-deck.tsx");
-    assert.match(wrapper, /<ValidationReviewsBoard \{\.\.\.board\} mode="company"/, "the wrapper draws the company board with every prop it was handed");
+    assert.match(wrapper, /<ValidationReviewsBoard\s+\{\.\.\.board\}\s+mode="company"/, "the wrapper draws the company board with every prop it was handed");
+    assert.match(wrapper, /reviewDeck=\{decides \?/, "🔴 and the one-by-one review, which is nothing but decisions, only for the decider (owner, 2026-11-19)");
   }
 
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
