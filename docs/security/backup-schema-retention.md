@@ -199,7 +199,24 @@ A table is claimed only when it carries a **real date** *and* either ends in tha
 
 The verdict ladder, the dependency checks and the 90 days are the schema ones, unchanged — a
 foreign key, view or function that names the table beats its age, which matters *more* here than
-for a schema, because the live tables sit beside it. The emitted statement is
+for a schema, because the live tables sit beside it.
+
+🔴 **And the owner decides each table too (19 November 2026).** Until then a dated table went
+`EXPIRED` on age alone — the one thing REC-040 forbids for a schema — so the first three to reach 90
+days would have been printed for dropping with no decision behind them:
+`au.zz_brick_backfill_snapshot_20260827` on 25 Nov, `au.bak_20260828_d3_line_area_map` and
+`au.bak_20260828_d3_seats` on 26 Nov. Now `classifyTable()` and `classify()` share one ladder: a
+table is decided in [`scripts/backup-schema-decisions.json`](../../scripts/backup-schema-decisions.json)
+under `<schema>.<table>`, and past 90 days with no entry it is `UNDECIDED` with no drop statement.
+`readDecisions()` refuses a dotted key outside `public` / `au`. Export, then drop works the same:
+`node scripts/export-backup-schema.mjs au.<table>` writes `snapshot-exports/au.<table>/` with its own
+`manifest.json`, and no `drop table` is printed until it exists. The owner answered the first three
+in chat that day, each "export, then drop"; all three were exported the same day (166, 5 and 1
+rows). The 29 Aug Delta (3) pre-image he keeps, `delta3_defer_backup_20260829`, is untouched: the two
+28 Aug copies are not exact duplicates of it. The next table to reach 90 days with no decision is
+`au.zz_rollup_pre_20260909_all` and its neighbours, on 8 Dec 2026.
+
+The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
 but a lone table in `public` could have had something come to depend on it, and a statement that
 refuses is the right answer at that moment.

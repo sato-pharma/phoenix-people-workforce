@@ -1,5 +1,5 @@
 {
-  "about": "The owner's decision for each snapshot schema, one entry per schema, read by scripts/audit-backup-schemas.mjs. A schema past 90 days with no entry here is never offered for dropping. decision: drop | export-then-drop | keep (keep takes an optional until date). Rule: docs/security/backup-schema-retention.md, 'The owner decides each one'.",
+  "about": "The owner's decision for each snapshot schema, one entry per schema, read by scripts/audit-backup-schemas.mjs. A dated snapshot TABLE in public or au is decided the same way under <schema>.<table>. A schema or table past 90 days with no entry here is never offered for dropping. decision: drop | export-then-drop | keep (keep takes an optional until date). Rule: docs/security/backup-schema-retention.md, 'The owner decides each one'.",
   "decisions": {
     "ez_split_backup_20260826": {
       "decision": "export-then-drop",
@@ -737,6 +737,27 @@
       "why": "A scratch search-speed test from October; no business data. No date in any name: dated by migration 20261023043536, the first to name it (it pinned zz_search_proof.run_phase's search path).",
       "sheet": "19 November 2026 review, in chat",
       "dated": "2026-10-23"
+    },
+    "au.zz_brick_backfill_snapshot_20260827": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "166 rows: the area mapping before the 27 Aug brick back-fill of 10 February 2026 sales rows (the -607,500 EGP Pedia return among them). February is published, so it can undo nothing.",
+      "sheet": "19 November 2026, the first snapshot tables, in chat"
+    },
+    "au.bak_20260828_d3_line_area_map": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "5 rows: Anti-Infective areas D11, D24, D25, OT2 and OT9 as they stood on 28 Aug, before the Delta (3) move that has been live since 1 Sep. Not an exact copy of delta3_defer_backup_20260829.line_area_map_pre, which he keeps for good.",
+      "sheet": "19 November 2026, the first snapshot tables, in chat"
+    },
+    "au.bak_20260828_d3_seats": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 row: the D24 rep seat as it stood on 28 Aug, before the Delta (3) move that has been live since 1 Sep.",
+      "sheet": "19 November 2026, the first snapshot tables, in chat"
     }
   }
 }
