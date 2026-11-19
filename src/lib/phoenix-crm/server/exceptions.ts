@@ -58,7 +58,7 @@ import {
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsTeamReports, readWorldFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
-import { loadReadiness, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import { loadReadiness, loadReadinessShared, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { readSeatGroups, shareInFlight, startedEarly } from "@/lib/phoenix-crm/server/reports";
@@ -274,8 +274,13 @@ async function loadVisitDays(seatIds: string[], isTest: boolean, from: string, t
  * MOMENT — the reports pack opens this board and the adoption report together, and both open with
  * this call (`shareInFlight`; nothing is kept once it lands). `loadReadiness` answers territory by
  * territory, so the set is keyed sorted and de-duplicated; both boards only ever `get` from the map.
+ *
+ * `reuseRecent` is for a DISPLAY caller only — the exceptions screen and the adoption report — and
+ * serves a copy up to a minute old (`loadReadinessShared`, 19 Nov 2026). The 06:55 digest is a
+ * notification: it never passes it, and measures live.
  */
-export function sharedReadiness(seatIds: string[]): Promise<Map<string, SeatReadiness>> {
+export function sharedReadiness(seatIds: string[], options: { reuseRecent?: boolean } = {}): Promise<Map<string, SeatReadiness>> {
+  if (options.reuseRecent) return loadReadinessShared(seatIds);
   const key = `phoenix-crm:readiness|${[...new Set(seatIds)].sort().join(",")}`;
   return shareInFlight(key, () => loadReadiness(seatIds));
 }
@@ -299,6 +304,8 @@ export async function gatherExceptions(input: {
   config: PhoenixCrmViewer["config"];
   /** How many finished WORKING days the call rate reads. The board uses six; the digest uses one. */
   windowWorkingDays: number;
+  /** The screen's opt-in to the minute-old readiness copy. The digest never sets it: it is a notification. */
+  reuseRecentReadiness?: boolean;
 }): Promise<ExceptionsView> {
   const { config, isTest, seats } = input;
   const seatIds = seats.map((seat) => seat.seatId);
@@ -310,7 +317,9 @@ export async function gatherExceptions(input: {
   const independent = startedEarly(
     Promise.all([
       // Readiness is measured on real entries; in test mode nothing is claimed about a list.
-      isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : sharedReadiness(seatIds),
+      isTest || seatIds.length === 0
+        ? Promise.resolve(new Map<string, SeatReadiness>())
+        : sharedReadiness(seatIds, { reuseRecent: input.reuseRecentReadiness === true }),
       loadPlanFacts(seatIds, isTest, weekStart),
       loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
     ]),
@@ -452,5 +461,7 @@ export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test:
     cairoToday: viewer.cairoToday,
     config: viewer.config,
     windowWorkingDays: RATE_WINDOW_WORKING_DAYS,
+    // The screen is a display reader, so its readiness may be a minute old; the digest never asks.
+    reuseRecentReadiness: true,
   });
 }

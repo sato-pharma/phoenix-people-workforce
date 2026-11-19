@@ -111,7 +111,8 @@ export async function gatherAdoption(input: {
     // carries the date each list was stamped finished: `phoenix_crm_seat_readiness` answers it
     // straight from `phoenix_crm_territory_readiness` when it is not asked to stamp, so the second
     // read of that table this board used to make is gone and the date is the same one.
-    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : sharedReadiness(seatIds),
+    // A report a manager opens, so the minute-old copy (`reuseRecent`); a list write drops it.
+    isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : sharedReadiness(seatIds, { reuseRecent: true }),
     loadVisitFirsts(seatIds, isTest),
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
   ]);

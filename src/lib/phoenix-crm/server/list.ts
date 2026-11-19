@@ -218,6 +218,8 @@ import { guardPlaceReadings, refuseReadingsApart } from "@/lib/phoenix-crm/serve
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { afterResponse } from "@/lib/http/after-response";
 import { createRecentOnce } from "@/lib/phoenix-crm/server/recent-once";
+import { READINESS_SHARED_COPY, READINESS_SHARED_LIMITS } from "@/lib/phoenix-crm/server/readiness-reuse";
+import { getOrLoadShared } from "@/lib/cache/shared-read";
 import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
 
 /** Decided requests stay on the rep's screen this long, so the answer is seen. */
@@ -1424,6 +1426,29 @@ export async function loadReadiness(seatIds: string[], markReady = false): Promi
   const unanswered = asked.filter((seatId) => !readiness.has(seatId));
   if (unanswered.length > 0) {
     throw new Error(`phoenix_crm_seat_readiness answered no row for ${unanswered.length} of ${asked.length} territories`);
+  }
+  return readiness;
+}
+
+/**
+ * `loadReadiness` for a DISPLAY board — the Team tab, the Needs you board, the exceptions screen and the
+ * adoption report — served from a copy up to a minute old, keyed by the exact territory set
+ * (src/lib/phoenix-crm/server/readiness-reuse.ts). Same contract: every territory asked about, or it
+ * throws, and a failed read is never kept. A write that changes what a list counts drops the copy at the
+ * write door. Never for the save stamp, the digest, or anything that decides.
+ */
+export async function loadReadinessShared(seatIds: string[]): Promise<Map<string, SeatReadiness>> {
+  const asked = [...new Set(seatIds)].sort();
+  if (asked.length === 0) return new Map();
+  const { rows } = await getOrLoadShared<SeatReadiness>(
+    READINESS_SHARED_COPY,
+    asked.join(","),
+    async () => [...(await loadReadiness(asked)).values()],
+    READINESS_SHARED_LIMITS,
+  );
+  const readiness = new Map((rows ?? []).map((row) => [row.seatId, row]));
+  if (asked.some((seatId) => !readiness.has(seatId))) {
+    throw new Error("The shared readiness copy did not hold every territory asked about");
   }
   return readiness;
 }
