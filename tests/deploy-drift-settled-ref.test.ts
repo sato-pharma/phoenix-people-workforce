@@ -167,6 +167,46 @@ export function runDeployDriftSettledRefTests() {
       "first thing to rule out at 4am, and it is not derivable from the other lines.",
   );
 
+  // 9 — ONE ALERT PER COMMIT THAT NEVER SHIPS (REC-082, 19 Nov 2026). The alarm used to page every
+  // 30 minutes for as long as one commit stayed unshipped. It now keys "already told him" on the
+  // settled commit the finding is about, remembered as an Actions cache entry, and fails toward
+  // sending: anything it cannot read sends again rather than staying quiet.
+  const notifyAt = source.indexOf("      - name: Notify Telegram on failure");
+  const rememberAt = source.indexOf("      - name: Remember the commit this alert named");
+  assert.ok(notifyAt > 0 && rememberAt > notifyAt, "The step that remembers an alerted commit must exist and come AFTER the Telegram step.");
+  const notify = source.slice(notifyAt, rememberAt);
+  const remember = source.slice(rememberAt);
+  assert.match(
+    steps.find((s) => s.label === "production")?.body ?? "",
+    /echo "DRIFT_PRODUCTION_REF=\$REF_SHA" >> "\$GITHUB_ENV"/,
+    "production: the finding no longer records WHICH commit never shipped, so the alert cannot be keyed on it — every run pages again.",
+  );
+  assert.match(
+    notify,
+    /SEEN=\$\(gh api "repos\/\$\{REPO\}\/actions\/caches\?key=\$\{ALERT_KEY\}/,
+    "The Telegram step no longer asks whether this commit was already alerted, so one unshipped commit pages him every 30 minutes again.",
+  );
+  assert.match(
+    notify,
+    /Already alerted for \$\{ALERT_SCOPE\} commit[^\n]*\n\s*exit 0\n/,
+    "HEADLINE: a commit already alerted must end the Telegram step quietly (exit 0) — one alert per commit that fails to deploy.",
+  );
+  assert.match(notify, /if \[ "\$IS_TEST" != "true" \]; then/, "The self-test must never be swallowed as 'already alerted'.");
+  assert.match(
+    notify,
+    /if \[ "\$\{SEEN:-0\}" -gt 0 \] 2>\/dev\/null; then/,
+    "The 'already alerted' test must fail toward SENDING: an unreadable or non-numeric answer has to fall through to the message.",
+  );
+  const deliveredAt = notify.indexOf('echo "Telegram alert delivered."');
+  const keyWrittenAt = notify.indexOf('echo "DRIFT_ALERT_KEY=${ALERT_KEY}" >> "$GITHUB_ENV"');
+  assert.ok(
+    deliveredAt > 0 && keyWrittenAt > deliveredAt,
+    "The commit may be remembered only AFTER Telegram answered 200 — remembering a failed send would silence the only alert.",
+  );
+  assert.match(remember, /uses: actions\/cache\/save@[0-9a-f]{40}/, "The alerted commit must be remembered with the pinned cache save action.");
+  assert.match(remember, /key: \$\{\{ env\.DRIFT_ALERT_KEY \}\}/, "The remembered key must be the one the Telegram step checks.");
+  assert.match(remember, /if: \$\{\{ always\(\) && env\.DRIFT_ALERT_KEY != '' \}\}/, "The save runs only when an alert was actually delivered.");
+
   // 8 — the stale two-hour figure must not come back; Railway skips within MINUTES of a conclusion.
   assert.ok(
     !/after two hours Railway SKIPS it/.test(source),

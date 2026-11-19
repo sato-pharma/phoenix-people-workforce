@@ -61,6 +61,24 @@ export const KNOWN_SLOW_TESTS_MS: Readonly<Record<string, number>> = {
   runWorkflowDispatchGuardTests: 4_200,
   runWorktreeExitGuardPreRemovalTests: 4_000,
   runEmailProviderFailoverTests: 4_000,
+  // The route guard harness (REC-080): read off each part's own header line in run 44444017574, the
+  // harness's first CI run — sixteen child processes, 5.5 to 11.5 s each, about 129 s between them.
+  runRouteGuardHarnessPart4Tests: 11_500,
+  runRouteGuardHarnessPart9Tests: 9_500,
+  runRouteGuardHarnessPart5Tests: 9_400,
+  runRouteGuardHarnessPart8Tests: 8_800,
+  runRouteGuardHarnessPart3Tests: 8_200,
+  runRouteGuardHarnessPart10Tests: 7_900,
+  runRouteGuardHarnessPart1Tests: 7_700,
+  runRouteGuardHarnessPart6Tests: 7_700,
+  runRouteGuardHarnessPart11Tests: 7_600,
+  runRouteGuardHarnessPart12Tests: 7_400,
+  runRouteGuardHarnessPart2Tests: 7_100,
+  runRouteGuardHarnessPart7Tests: 7_000,
+  runRouteGuardHarnessPart14Tests: 6_900,
+  runRouteGuardHarnessPart13Tests: 6_800,
+  runRouteGuardHarnessPart15Tests: 6_100,
+  runRouteGuardHarnessPart16Tests: 5_500,
 };
 
 /**
