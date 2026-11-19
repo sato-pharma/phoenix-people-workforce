@@ -17,11 +17,16 @@ import { seatIdIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 import { loadLiveTeamSeatIdsForDisplay } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { photoReachOf } from "@/lib/phoenix-crm/server/photos";
+import { loadValidateAgainPhotoPaths } from "@/lib/phoenix-crm/server/validation-reviews";
 import {
   groupUnreadByModule,
   phoenixCrmModuleOfNotice,
   phoenixCrmNoticePulses,
   PHOENIX_CRM_BADGE_WINDOW_DAYS,
+  validateAgainRecordIdOf,
+  VALIDATE_AGAIN_EVENT_TYPE,
   type PhoenixCrmUnreadByModule,
   type PhoenixCrmUnreadNotice,
 } from "@/lib/phoenix-crm/notice-badge-rules";
@@ -50,13 +55,57 @@ async function loadUnread(access: AccessContext): Promise<PhoenixCrmUnreadNotice
 }
 
 /**
+ * "Validate again" in the strip shows the photo it is about (owner, 19 Nov 2026: "render those validation
+ * photos here"). Only the notices the strip names (four a module) are asked about, and only a path the
+ * sign route would hand this viewer is kept — one outside his reach would refuse its whole photo batch.
+ * Never throws: a photo that cannot be read leaves the notice as it was, words only.
+ */
+async function withValidateAgainPhotos(
+  access: AccessContext,
+  grouped: PhoenixCrmUnreadByModule,
+  wantPhotos: boolean,
+): Promise<PhoenixCrmUnreadByModule> {
+  const shown = Object.values(grouped).flatMap((entry) => entry?.notices ?? []);
+  const recordIds = shown
+    .filter((notice) => notice.eventType === VALIDATE_AGAIN_EVENT_TYPE)
+    .map((notice) => validateAgainRecordIdOf(notice.eventKey))
+    .filter((id): id is string => Boolean(id));
+  let photos = new Map<string, string>();
+  if (wantPhotos && recordIds.length > 0) {
+    try {
+      const [paths, viewer] = await Promise.all([loadValidateAgainPhotoPaths(recordIds), resolvePhoenixCrmViewer(access)]);
+      const mayShow = photoReachOf(viewer);
+      photos = new Map([...paths].filter(([, path]) => mayShow(path)));
+    } catch (error) {
+      logError("phoenix_crm.validate_again_photos_failed", { labels: { event: "phoenix_crm_validate_again_photos_failed" }, error });
+    }
+  }
+  // The key stays on the server: the screens get the photo, never the ids it was found by.
+  const finish = ({ eventKey, ...notice }: PhoenixCrmUnreadNotice): PhoenixCrmUnreadNotice => {
+    const recordId = notice.eventType === VALIDATE_AGAIN_EVENT_TYPE ? validateAgainRecordIdOf(eventKey) : null;
+    const photoPath = recordId ? photos.get(recordId) ?? null : null;
+    return photoPath ? { ...notice, photoPath } : notice;
+  };
+  const out: PhoenixCrmUnreadByModule = {};
+  for (const [key, entry] of Object.entries(grouped) as [keyof PhoenixCrmUnreadByModule, PhoenixCrmUnreadByModule[keyof PhoenixCrmUnreadByModule]][]) {
+    if (entry) out[key] = { count: entry.count, notices: entry.notices.map(finish) };
+  }
+  return out;
+}
+
+/**
  * The viewer's unread notices grouped by the module each opens, or `null` when they could not be read.
  * A test persona reads only its own world's notices (the same fence as the bell), so a Super Admin
  * playing a rep sees that rep's test pulses and no real ones.
  */
-export async function loadPhoenixCrmUnreadByModule(access: AccessContext): Promise<PhoenixCrmUnreadByModule | null> {
+export async function loadPhoenixCrmUnreadByModule(
+  access: AccessContext,
+  options: { photos?: boolean } = {},
+): Promise<PhoenixCrmUnreadByModule | null> {
   try {
-    return groupUnreadByModule(await loadUnread(access));
+    const grouped = groupUnreadByModule(await loadUnread(access));
+    // Only a module page draws the strip; the chooser shows counts and asks for no photo.
+    return await withValidateAgainPhotos(access, grouped, options.photos === true);
   } catch (error) {
     logError("phoenix_crm.unread_notices_failed", { labels: { event: "phoenix_crm_unread_notices_failed" }, error });
     return null;

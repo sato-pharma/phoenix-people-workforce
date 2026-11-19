@@ -80,7 +80,7 @@ export default async function PhoenixCrmModulePage({
   // on every Phoenix CRM open the page waited for whichever of the two reads was slower — usually these. They start beside
   // the page load, are never awaited by it, and fill in under their own Suspense. The read never rejects (a failed read is
   // null, a card without a pulse), so it is safe to leave running when the page answers without it.
-  const unreadRead = loadPhoenixCrmUnreadByModule(access);
+  const unreadRead = loadPhoenixCrmUnreadByModule(access, { photos: true });
   const load = await loadPhoenixCrmPage(access);
   // `?add=visit` / `?add=week` still arrive here from the portal's "+", and the shell reads them.
   void (await searchParams);

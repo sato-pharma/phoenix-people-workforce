@@ -18,6 +18,7 @@
  * the rep was already sent in his bell — nothing is added to his day and nothing new is said about him.
  */
 
+import { isUuid } from "@/lib/http/uuid";
 import { isPhoenixCrmModuleKey, phoenixCrmModuleForSlug, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 
 /** How far back an unread notice still pulses. Older ones stay in the bell and no longer shout. */
@@ -37,8 +38,16 @@ export const PHOENIX_CRM_NOTICES_THAT_NEVER_PULSE: readonly string[] = [
 export type PhoenixCrmUnreadNotice = {
   actionUrl: string | null;
   createdAt: string;
+  /** The notice's own key — "Validate again" reads its review id back from it. Never sent to a screen. */
+  eventKey?: string | null;
   eventType: string;
   id: string;
+  /**
+   * "Validate again" only: the photo the notice is about — his own picture, the one he is asked to take
+   * again (owner, 19 Nov 2026: "render those validation photos here"). Absent when it could not be read
+   * or is outside the viewer's reach; the strip then names the notice as before.
+   */
+  photoPath?: string | null;
   /** The territory the notice was raised about, when it names one. Null for a notice that is not about a territory. */
   seatId?: string | null;
   title: string;
@@ -94,6 +103,22 @@ export function groupUnreadByModule(notices: readonly PhoenixCrmUnreadNotice[]):
     if (entry.notices.length < PHOENIX_CRM_NOTICE_STRIP_LIMIT) entry.notices.push(notice);
   }
   return grouped;
+}
+
+/** The event type of a "Validate again" notice (`server/notifications.ts`). */
+export const VALIDATE_AGAIN_EVENT_TYPE = "validation_not_confirmed";
+
+/**
+ * The record a "Validate again" notice is about, read back from its key:
+ * `phoenix_crm:validation_not_confirmed:<customer id>:<review id>[:<attempt>]`. The review id is a
+ * polyclinic's own id when the building was refused. The attempt is an instant and holds colons of its
+ * own, so the id is the fourth segment, never the last. Null for any other key.
+ */
+export function validateAgainRecordIdOf(eventKey: string | null | undefined): string | null {
+  const parts = String(eventKey ?? "").split(":");
+  if (parts[0] !== "phoenix_crm" || parts[1] !== VALIDATE_AGAIN_EVENT_TYPE) return null;
+  const recordId = (parts[3] ?? "").trim().toLowerCase();
+  return isUuid(recordId) ? recordId : null;
 }
 
 /** "3 new", never "99+ new" — the number is a reason to look, not a figure to read. */

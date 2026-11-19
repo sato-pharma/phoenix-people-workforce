@@ -8,6 +8,7 @@ import {
   phoenixCrmNoticePulses,
   PHOENIX_CRM_NOTICE_STRIP_LIMIT,
   PHOENIX_CRM_NOTICES_THAT_NEVER_PULSE,
+  validateAgainRecordIdOf,
   type PhoenixCrmUnreadNotice,
 } from "../src/lib/phoenix-crm/notice-badge-rules.ts";
 
@@ -22,7 +23,10 @@ import {
  *   3. the strip is newest-first and bounded, while the badge counts every one;
  *   4. the screens draw it, and it is cleared from a MOUNTED page, never from a server render (a link
  *      prefetch renders the page on the server with nobody looking);
- *   5. the clearing route is declared, session-guarded and CSRF-checked, and writes only the caller's rows.
+ *   5. the clearing route is declared, session-guarded and CSRF-checked, and writes only the caller's rows;
+ *   6. "Validate again" in the strip shows the photo it is about (owner, 19 Nov 2026: "render those
+ *      validation photos here") — found from the notice's own key, kept only inside the viewer's photo
+ *      reach, and the key itself never leaves the server.
  */
 
 const notice = (id: string, eventType: string, actionUrl: string | null, createdAt: string): PhoenixCrmUnreadNotice => ({
@@ -141,5 +145,43 @@ export function runPhoenixCrmNoticeBadgeTests() {
     assert.doesNotMatch(server, /\.from\(/, "Phoenix CRM's server folder reads no notification table itself");
     assert.match(server, /return null;/, "a failed read answers null, not an empty result");
     assert.match(server, /phoenixCrmNoticePulses\(row\.eventType\)/, "the feeds are dropped before anything is counted");
+  }
+
+  // ── 6. "Validate again" shows its photo ──────────────────────────────────────────────────────
+  {
+    const customer = "e98c7ea3-cc3e-4479-a863-430b17e2b215";
+    const review = "880eee27-ed18-4238-af27-eb04602aabe3";
+    assert.equal(validateAgainRecordIdOf(`phoenix_crm:validation_not_confirmed:${customer}:${review}`), review, "the review id is the fourth segment");
+    assert.equal(
+      validateAgainRecordIdOf(`phoenix_crm:validation_not_confirmed:${customer}:${review}:2026-11-19T09:29:39.382Z`),
+      review,
+      "🔴 an attempt instant holds colons of its own — the id is never the LAST segment",
+    );
+    assert.equal(validateAgainRecordIdOf(`phoenix_crm:plan:${review}:v1:submitted`), null, "any other notice has no photo");
+    assert.equal(validateAgainRecordIdOf(`phoenix_crm:validation_not_confirmed:${customer}:not-an-id`), null, "a malformed key reads nothing");
+    assert.equal(validateAgainRecordIdOf(null), null);
+
+    const reader = readFileSync("src/lib/notifications/unread.ts", "utf8");
+    assert.match(reader, /\.select\("id,subject,event_key,/, "the unread read carries each row's key");
+
+    const server = readFileSync("src/lib/phoenix-crm/server/unread-notices.ts", "utf8");
+    assert.match(server, /loadValidateAgainPhotoPaths\(recordIds\)/, "the photos are read for the notices the strip names");
+    assert.match(server, /const mayShow = photoReachOf\(viewer\);/, "🔴 and a path is kept only inside the viewer's reach — one outside it refuses its whole batch");
+    assert.match(server, /const finish = \(\{ eventKey, \.\.\.notice \}: PhoenixCrmUnreadNotice\)/, "the key is dropped before anything reaches a screen");
+
+    const photos = readFileSync("src/lib/phoenix-crm/server/photos.ts", "utf8");
+    assert.match(photos, /const mayShow = photoReachOf\(viewer\);\s*for \(const path of paths\) \{\s*if \(!mayShow\(path\)\) throw new ApiError\(403/, "the sign route asks the SAME reach check");
+
+    const reviews = readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8");
+    assert.match(reviews, /export async function loadValidateAgainPhotoPaths\(/);
+    assert.match(reviews, /selectByIds<\{ id: string; photo_path: string \| null \}>\("phoenix_crm_shared_places", "id, photo_path"/, "a refused building's notice carries the building's id — its door photo answers it");
+
+    const badge = readFileSync("src/components/phoenix-crm/new-badge.tsx", "utf8");
+    assert.match(badge, /notice\.photoPath \? <CrmPhotoThumb /, "the strip draws the photo under its line");
+
+    const modulePage = readFileSync("app/employee-portals/field-crm/[module]/page.tsx", "utf8");
+    assert.match(modulePage, /loadPhoenixCrmUnreadByModule\(access, \{ photos: true \}\)/, "the module page asks for the photos");
+    const chooserPage = readFileSync("app/employee-portals/field-crm/page.tsx", "utf8");
+    assert.doesNotMatch(chooserPage, /photos: true/, "the chooser shows counts only and reads no photo");
   }
 }

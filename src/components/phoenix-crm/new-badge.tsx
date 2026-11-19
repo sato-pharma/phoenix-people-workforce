@@ -1,3 +1,4 @@
+import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { newBadgeText, type PhoenixCrmModuleNotices } from "@/lib/phoenix-crm/notice-badge-rules";
 
 /**
@@ -42,7 +43,11 @@ export function PhoenixCrmNewNotices({ entry }: { entry: PhoenixCrmModuleNotices
               <span className="absolute inset-0 rounded-none bg-red-500 motion-safe:animate-ping" />
               <span className="relative h-2 w-2 rounded-none bg-red-600" />
             </span>
-            <span className="min-w-0 break-words">{notice.title}</span>
+            <span className="grid min-w-0 gap-1.5">
+              <span className="min-w-0 break-words">{notice.title}</span>
+              {/* "Validate again" shows the photo it is about (owner, 19 Nov 2026) — his own picture, tap to open it full screen. */}
+              {notice.photoPath ? <CrmPhotoThumb alt={`Photo — ${notice.title}`} className="h-20 w-20" path={notice.photoPath} /> : null}
+            </span>
           </li>
         ))}
       </ul>
