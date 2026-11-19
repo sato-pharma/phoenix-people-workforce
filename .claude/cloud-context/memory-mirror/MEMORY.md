@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [Supabase MCP declines a write holding DDL](supabase-mcp-declines-a-write-that-holds-ddl.md) — "SQL execution was declined" was a temp table; one CTE statement ran
 
 
 

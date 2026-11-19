@@ -30,6 +30,9 @@ import path from 'node:path';
 
 const HOME = process.env.USERPROFILE || os.homedir();
 const DIR = path.join(HOME, '.claude', '.next-step');
+// Where a warned verdict waits for the next turn (read and deleted by task-rules-reminder.mjs).
+// A separate folder, never DIR: statusline.mjs and relay-capture.mjs read DIR/<session>.txt.
+export const VERDICT_DIR = path.join(HOME, '.claude', 'state', 'next-step-verdict');
 const TAIL_BYTES = 512 * 1024;
 const PRUNE_AFTER_MS = 7 * 24 * 3600 * 1000;
 
@@ -167,9 +170,12 @@ function prune() {
  * a blocked Stop hook makes the desktop app auto-continue, and the app's Agent-SDK suggestion
  * gate skips any turn whose origin is "auto_continuation" BY NAME - so every block silently
  * spent the suggestion this hook exists to fill. It blocked twice on 2026-10-15 and he watched
- * the box come up empty both times. It now emits a `systemMessage`: the model reads the verdict
- * and the NEXT reply carries the line, while the reply already on screen stands and the turn ENDS
- * normally - which is the only state in which the app offers a suggestion at all.
+ * the box come up empty both times. It emitted a `systemMessage` from then until 2026-11-19 - but
+ * a Stop hook's systemMessage is shown to HIM, not the model, so the nag sat in his chat and he had
+ * to paste it back ("fix this", 2026-11-19). It now writes the verdict to VERDICT_DIR, and
+ * task-rules-reminder.mjs gives it to the model with his next message: the NEXT reply carries the
+ * line, the reply already on screen stands, and the turn ENDS normally - which is the only state in
+ * which the app offers a suggestion at all.
  *
  * IT STILL FIRES AT MOST ONCE PER TURN. `stop_hook_active` stays honoured, so a continuation
  * started for any other reason is not warned at a second time.
@@ -1122,8 +1128,21 @@ if (process.argv[2] === 'selftest') {
   const warned = decide('**Next step:** ready — “merge <PR> when green”', { sessionId: 'warned' });
   check(
     'a wrong line is answered by a WARNING, never a block',
-    warned.blocked && warned.decision === undefined && !!warned.systemMessage,
-    'decision ' + JSON.stringify(warned.decision) + ', systemMessage ' + JSON.stringify(!!warned.systemMessage),
+    warned.blocked && warned.decision === undefined,
+    'decision ' + JSON.stringify(warned.decision),
+  );
+  // THE 2026-11-19 CHANGE: a Stop hook's systemMessage is printed on HIS screen ("Stop says: ...")
+  // and never reaches the model. The verdict must go to the next turn's file instead.
+  check(
+    'a warning prints NOTHING he sees (no systemMessage)',
+    warned.systemMessage === undefined,
+    'systemMessage ' + JSON.stringify(warned.systemMessage),
+  );
+  const verdictFile = path.join(HOME_T, '.claude', 'state', 'next-step-verdict', 'warned.txt');
+  check(
+    'a warning leaves its verdict for the next turn',
+    fs.existsSync(verdictFile) && fs.readFileSync(verdictFile, 'utf8').length > 0,
+    'no file at ' + verdictFile,
   );
   check(
     'a warned line is NOT captured, so a placeholder never becomes his ghost text',
@@ -1347,13 +1366,22 @@ try {
         }
       }
     }
-    // WARN, NEVER BLOCK - see the head of this file. `systemMessage` reaches the model without
-    // forcing a continuation, so the suggestion on the reply already shown survives.
+    // WARN, NEVER BLOCK - see the head of this file - and NEVER ON HIS SCREEN (owner, 2026-11-19,
+    // "fix this"). A Stop hook's `systemMessage` is shown to the USER, not the model: from
+    // 2026-10-15 to 2026-11-19 every verdict landed in his chat as "Stop says: Your reply is
+    // missing its opening line..." and the model never read it, so he copied it back by hand
+    // (twice in one afternoon, in two sessions). The verdict is now LEFT for the next turn in
+    // VERDICT_DIR/<session>.txt; task-rules-reminder.mjs (UserPromptSubmit) hands it to the model
+    // as additionalContext and deletes it. Nothing is printed that Claude Code shows him.
     // `nextStepVerdict` is inert to Claude Code (an unknown key is ignored) and is the field
     // the selftest reads to tell a warned verdict from a clean one.
     let warned = false;
     if (reason && text && input?.stop_hook_active !== true) {
-      process.stdout.write(JSON.stringify({ nextStepVerdict: 'warn', reason, systemMessage: reason }));
+      try {
+        fs.mkdirSync(VERDICT_DIR, { recursive: true });
+        fs.writeFileSync(path.join(VERDICT_DIR, `${String(sessionId).replace(/[^\w.-]/g, '')}.txt`), reason, 'utf8');
+      } catch {}
+      process.stdout.write(JSON.stringify({ nextStepVerdict: 'warn', reason }));
       warned = true;
     }
 

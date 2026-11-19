@@ -3863,7 +3863,8 @@ export type DirectOrderPharmacySearchHit = {
  * The combo-box search behind the submit form (spec B1/B2/B3).
  *
  * All matching happens in SQL (`phx_search_direct_order_customers`): customer CODE (prefix, then
- * contains) OR Arabic-normalized NAME, across the live union of the distributor customer
+ * contains) OR Arabic-normalized NAME matched word by word (every typed word anywhere in the name,
+ * any order, "صيدلية"/"دكتور" and a leading "ال" left out), across the live union of the distributor customer
  * directory and Phoenix-validated pharmacies — so a pharmacy admitted by any route is findable
  * the moment it exists, with no cached list to go stale.
  *
@@ -3896,11 +3897,16 @@ export async function searchDirectOrderPharmacyDirectory(
   const unrestricted = reportScope === "all" || reportScope === "line";
   if (!unrestricted && allowedAreaCodes.size === 0) return [];
 
+  // SQL is asked for its full 100 and the caller's limit is applied AFTER the area and wholesaler
+  // filters below. Cutting to 30 inside SQL first let a common word ("رياض" alone matches 100+
+  // names company-wide) fill the page with other reps' pharmacies, which the area filter then
+  // removed — leaving the rep's own pharmacy unshown, on a list that looked complete (2026-11-19).
+  const limit = Math.min(Math.max(input.limit ?? 30, 1), 100);
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.rpc("phx_search_direct_order_customers", {
     p_query: query,
     p_distributor_code: distributorCode,
-    p_limit: Math.min(Math.max(input.limit ?? 30, 1), 100),
+    p_limit: 100,
   });
   if (error) throw error;
 
@@ -3929,7 +3935,8 @@ export async function searchDirectOrderPharmacyDirectory(
     .filter((hit) => (hit.areaCode ? unrestricted || allowedAreaCodes.has(hit.areaCode.toUpperCase()) : unrestricted))
     // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
     // matchable venue in the submit-form combo box, on either the directory or the Phoenix side.
-    .filter((hit) => !isCertainWholesalerVenue(hit.customerName, hit.customerCode, hit.distributorCode));
+    .filter((hit) => !isCertainWholesalerVenue(hit.customerName, hit.customerCode, hit.distributorCode))
+    .slice(0, limit);
 
   return attachConfirmedAliases(hits);
 }

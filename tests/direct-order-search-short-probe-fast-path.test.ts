@@ -131,11 +131,45 @@ export function searchViolations(searchBody: string, keysBody: string): string[]
   }
 
   // ── the two directory arms ─────────────────────────────────────────────────
-  if (!/from public\.source_of_sales_customer_map m, probe_kind p where m\.active and p\.raw <> '' and not p\.short_probe and \(p_distributor_code is null or m\.distributor_code = p_distributor_code\) and \( m\.customer_code ilike p\.raw \|\| '%' or m\.customer_code ilike '%' \|\| p\.raw \|\| '%' or \(p\.norm is not null and public\.phx_normalize_arabic\(m\.customer_name\) ilike '%' \|\| p\.norm \|\| '%'\) \)/.test(search)) {
-    out.push("the existing trigram arm must stay, unchanged, behind `not p.short_probe`");
+  if (!/from public\.source_of_sales_customer_map m, probe_kind p where m\.active and p\.raw <> '' and not p\.short_probe and cardinality\(p\.patterns\) <= 1 and \(p_distributor_code is null or m\.distributor_code = p_distributor_code\) and \( m\.customer_code ilike p\.raw \|\| '%' or m\.customer_code ilike '%' \|\| p\.raw \|\| '%' or public\.phx_normalize_arabic\(m\.customer_name\) ilike '%' \|\| p\.lead \|\| '%' \)/.test(search)) {
+    out.push("the one-word trigram arm must stay behind `not p.short_probe`, with the name test alone on `p.lead`");
   }
   if (!/from public\.source_of_sales_customer_map m, probe_kind p where m\.active and p\.raw <> '' and p\.short_probe and \(p_distributor_code is null or m\.distributor_code = p_distributor_code\) and public\.phx_direct_order_search_keys\(m\.customer_code, m\.customer_name\) && p\.keys/.test(search)) {
     out.push("the short arm must look the keys up with `phx_direct_order_search_keys(code, name) && p.keys` behind `p.short_probe`");
+  }
+  return out;
+}
+
+/**
+ * Every way the word-by-word name match (owner, 2026-11-19) can quietly stop working. Empty means
+ * the shape is intact. A rep typed "صيدلية رياض" and got nothing, because the old name test wanted
+ * the whole probe, spaces removed, as one unbroken piece of the name.
+ */
+export function wordByWordViolations(searchBody: string): string[] {
+  const out: string[] = [];
+  const search = squash(searchBody);
+  if (!search.includes("from regexp_split_to_table(p0.raw, U&'[[:space:][:punct:]\\060C\\061B]+') as piece")) {
+    out.push("the probe must be split into words on spaces and punctuation (Arabic comma and semicolon included)");
+  }
+  for (const word of ["صيدليه", "الصيدليه", "صيدليات", "دكتور", "pharmacy"]) {
+    if (!search.includes(`'${word}'`)) out.push(`the generic word ${word} must stay in the left-out list, in its NORMALISED spelling (ة written ه) — the list is compared after phx_normalize_arabic`);
+  }
+  if (!search.includes("case when n.w like U&'\\0627\\0644%' and char_length(n.w) >= 4 then substr(n.w, 3) else n.w end as word")) {
+    out.push("each typed word must drop a leading ال when 2+ letters remain — \"صيدلية الرياض\" must find a name stored as \"رياض طهطا ن\"");
+  }
+  if (!search.includes("array_agg('%' || t.word || '%' order by char_length(t.word) desc, t.word) as patterns")) {
+    out.push("the word patterns must be ordered longest first — patterns[1] and [2] are the index conditions of the multi-word arm");
+  }
+  const oneWordArm = /select 'directory'::text as source[\s\S]*? union all/.exec(search)?.[0] ?? "";
+  if (oneWordArm.includes("p.norm is not null")) {
+    out.push("the one-word arm's name test must stand alone on p.lead: a `p.norm is not null` beside it can no longer be proven from the ilike, the planner adds a Filter repeating the whole OR, and the plpgsql normaliser runs twice per row (\"محمد\" 318 ms -> 688 ms on production)");
+  }
+  if (!/and not p\.short_probe and cardinality\(p\.patterns\) > 1 and .*?or \(public\.phx_normalize_arabic\(m\.customer_name\) ilike p\.patterns\[1\] and public\.phx_normalize_arabic\(m\.customer_name\) ilike p\.patterns\[2\] and \(cardinality\(p\.patterns\) = 2 or public\.phx_normalize_arabic\(m\.customer_name\) ilike all \(p\.patterns\)\)\) \)/.test(search)) {
+    out.push("the multi-word arm must be gated on `cardinality(p.patterns) > 1` and test the two longest words as index conditions, `ilike all` only for a third word");
+  }
+  if ((search.match(/ as old_match/g) ?? []).length !== 4) out.push("every one of the four arms must carry old_match");
+  if (!search.includes("order by h.old_match desc nulls last, (h.source = 'phoenix') desc,")) {
+    out.push("old_match must be the FIRST ranking key — otherwise the rows only the word match adds (dozens of Phoenix pharmacies for \"محمد\") push the old answers past the limit");
   }
   return out;
 }
@@ -186,18 +220,39 @@ export function runDirectOrderSearchShortProbeFastPathTests() {
   assert.match(searchSql, /language sql\s+stable\s+security invoker\s+set search_path = ''/, "the search must stay SECURITY INVOKER, STABLE, with search_path pinned — DEFINER would hand the whole catalogue to anyone who can reach it");
   assert.doesNotMatch(searchSql, /security definer/, "the search must never become SECURITY DEFINER");
 
+  // The word-by-word name match (2026-11-19) is the only change since the original. Mapping each
+  // piece of it back to the original test must give the original text exactly — so the code
+  // matching, the columns, the ranking keys and the limit are still the original ones.
   const original = squash(stripSqlComments(readFileSync(ORIGINAL_SEARCH, "utf8")));
+  const dropOldMatch = (text: string) => text.replace(/ as prefix_code, .*? as old_match/g, " as prefix_code");
   const rank = (text: string) => /select h\.source, h\.distributor_code[\s\S]*?limit least\(greatest\(coalesce\(p_limit, 30\), 1\), 100\);/.exec(text)?.[0] ?? "";
   assert.ok(rank(original).length > 100, "fixture precondition: the original ranking and limit are found");
-  assert.equal(rank(search), rank(original), "the ranking and the limit must be byte-for-byte the original — the fast path may change HOW rows are found, never their order");
+  assert.equal(
+    rank(search).replace("order by h.old_match desc nulls last, ", "order by "),
+    rank(original),
+    "the ranking and the limit must be the original, with only `h.old_match` put in front — the old answers keep their old order",
+  );
 
   const phoenixArm = (text: string) => /select 'phoenix'::text as source[\s\S]*?\) \) select h\.source/.exec(text)?.[0].replace(/probe_kind p/g, "probe p").replace(/ \) \) select h\.source$/, "") ?? "";
   assert.ok(phoenixArm(original).length > 100, "fixture precondition: the original Phoenix arm is found");
-  assert.equal(phoenixArm(search), phoenixArm(original), "the Phoenix-pharmacies arm must be the original, untouched");
+  assert.equal(
+    dropOldMatch(phoenixArm(search)).replace("ilike all (p.patterns)", "ilike '%' || p.norm || '%'"),
+    phoenixArm(original),
+    "the Phoenix-pharmacies arm must be the original, with only the word-by-word name test and the old_match column",
+  );
 
-  const slowArm = (text: string) => /select 'directory'::text as source[\s\S]*?\) \) union all/.exec(text)?.[0].replace(/ and not p\.short_probe/g, "").replace(/probe_kind p/g, "probe p") ?? "";
+  const slowArm = (text: string) => /select 'directory'::text as source[\s\S]*? union all/.exec(text)?.[0].replace(/ and not p\.short_probe/g, "").replace(/probe_kind p/g, "probe p") ?? "";
   assert.ok(slowArm(original).length > 100, "fixture precondition: the original directory arm is found");
-  assert.equal(slowArm(search), slowArm(original), "the existing directory arm must be the original, plus only `not p.short_probe`");
+  assert.equal(
+    dropOldMatch(slowArm(search))
+      .replace(" and cardinality(p.patterns) <= 1", "")
+      .replace("or public.phx_normalize_arabic(m.customer_name) ilike '%' || p.lead || '%' )", "or (p.norm is not null and public.phx_normalize_arabic(m.customer_name) ilike '%' || p.norm || '%') )"),
+    slowArm(original),
+    "the one-word directory arm must be the original, plus only `not p.short_probe`, the one-word gate, `p.lead` and the old_match column",
+  );
+
+  // ── the word-by-word name match (2026-11-19) ───────────────────────────────
+  assert.deepEqual(wordByWordViolations(searchBody), [], `RED ${where}: the word-by-word name match lost one of its parts`);
 
   // ── negative controls: the checks must be able to fail ─────────────────────
   // A function replacement: in a replacement STRING, `$'` means "the rest of the input after the match".
@@ -232,6 +287,19 @@ export function runDirectOrderSearchShortProbeFastPathTests() {
   assert.ok(normalizerViolations(previousNormalizer).length > 0, "the five-regex body is not the pinned shape; if it passes, this check proves nothing");
   const previousSearch = bodyOf(stripSqlComments(readFileSync(ORIGINAL_SEARCH, "utf8")), "create function public.phx_search_direct_order_customers(");
   assert.ok(searchViolations(previousSearch, keysBody).length > 0, "the original search has no short-probe path; if it passes, this check proves nothing");
+  assert.ok(wordByWordViolations(previousSearch).length > 0, "the original search matches the whole probe; if it passes, the word-by-word check proves nothing");
+  const oldMatchLast = searchBody.replace(/order by\s+h\.old_match desc nulls last,/, "order by");
+  assert.notEqual(oldMatchLast, searchBody, "fixture precondition: the ranking is where the mutation lands");
+  assert.ok(wordByWordViolations(oldMatchLast).some((v) => v.startsWith("old_match must be the FIRST")), "a ranking without old_match first must be refused");
+  const doubleCall = searchBody.replace(
+    "or public.phx_normalize_arabic(m.customer_name) ilike '%' || p.lead || '%'",
+    "or (p.norm is not null and public.phx_normalize_arabic(m.customer_name) ilike '%' || p.lead || '%')",
+  );
+  assert.notEqual(doubleCall, searchBody, "fixture precondition: the one-word name test is where the mutation lands");
+  assert.ok(wordByWordViolations(doubleCall).some((v) => v.includes("twice per row")), "a null check beside the one-word name test must be refused");
+  const pharmacyCounted = searchBody.replace("'صيدليه', ", "");
+  assert.notEqual(pharmacyCounted, searchBody, "fixture precondition: the left-out list is where the mutation lands");
+  assert.ok(wordByWordViolations(pharmacyCounted).some((v) => v.includes("صيدليه")), "dropping صيدليه from the left-out list must be refused");
 }
 
 /** Everything from the function's name to its dollar-quote, for the volatility words. */
