@@ -376,6 +376,14 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     /The saved Expenses figures of every open run are cleared and its Expenses step reopens/,
     "the prompt says what the change clears",
   );
+  // A refusal can come AFTER the switch moved (an open run's Expenses step that could not be reopened — owner:
+  // "fix setCarryLateExpenses so the switch moves before any step reopens"), so a failed flip re-reads where the
+  // switch really stands and reloads the step before it shows the refusal's words.
+  assert.match(
+    LATE_EXPENSES_PANEL,
+    /catch \(flipError\) \{[\s\S]*?await load\(\);\s*onChanged\(\);\s*setError\(message\);/,
+    "a failed flip re-reads the switch and reloads the step, then shows the refusal",
+  );
   // With nothing listed it says so in words, never "The 0 trips listed here (0.00)" (owner: "fix the 0-trips wording").
   assert.match(
     LATE_EXPENSES_PANEL,

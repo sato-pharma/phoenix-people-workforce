@@ -102,7 +102,12 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
       setOn(data.setting?.carryLateExpenses === true);
       onChanged();
     } catch (flipError) {
-      setError(flipError instanceof Error ? flipError.message : "Failed to change the switch.");
+      const message = flipError instanceof Error ? flipError.message : "Failed to change the switch.";
+      // A refusal can come AFTER the switch moved (a run's Expenses step that could not be reopened), so
+      // read where it really stands and reload the step, then show the refusal's own words.
+      await load();
+      onChanged();
+      setError(message);
     } finally {
       setBusy(false);
     }

@@ -742,18 +742,19 @@ export async function runAutomatedPayrollLateExpensesTests() {
     assert.deepEqual(result, { carryLateExpenses: true }, "a run in Part 1 does not block the switch");
     assert.deepEqual(
       steps,
-      ["reopen run-nov (writes so far: 0)"],
-      "HEADLINE: flipping the switch clears and reopens the Expenses step of every open run, BEFORE the switch moves — never a published one",
+      ["reopen run-nov (writes so far: 2)"],
+      "HEADLINE: the switch moves first — its setting and its audit row are written, THEN the Expenses step of every open run is cleared and reopened, never a published one (owner: \"fix setCarryLateExpenses so the switch moves before any step reopens\")",
     );
     assert.deepEqual(writes.map((write) => `${write.op} ${write.table}`), ["upsert automated_payroll_settings", "insert automated_payroll_audit"]);
     assert.deepEqual(
       (writes[1].payload as { detail: unknown }).detail,
-      { from: false, to: true, expensesStepsReopened: ["run-nov"] },
-      "the change is audited from → to, with the runs reopened",
+      { from: false, to: true, expensesStepsToReopen: ["run-nov"] },
+      "the change is audited from → to, with the runs it is about to reopen",
     );
   }
   {
     const writes: Write[] = [];
+    const reopened: string[] = [];
     await rejects(
       () =>
         setCarryLateExpenses(
@@ -761,17 +762,19 @@ export async function runAutomatedPayrollLateExpensesTests() {
           true,
           fakeDb(
             {
-              automated_payroll_runs: { rows: [] },
+              automated_payroll_runs: { rows: [{ id: "run-nov", month: 11, year: 2026, phase: "part1" }] },
               automated_payroll_settings: { rows: [{ id: 1, carry_late_expenses: false }] },
               automated_payroll_audit: { writeError: { message: "audit down" } },
             },
             writes,
           ),
+          { reopenExpensesStep: async (runId) => reopened.push(runId) },
         ),
       /could not record the change.*so it was not changed/i,
       "the audit row is required",
     );
     assert.equal((writes.at(-1)?.payload as { carry_late_expenses: boolean }).carry_late_expenses, false, "and the old value is put back");
+    assert.deepEqual(reopened, [], "HEADLINE: a change that could not be recorded reopens no run's Expenses step — the open Part 1 run keeps its figures");
   }
   await rejects(
     () =>

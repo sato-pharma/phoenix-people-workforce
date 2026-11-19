@@ -28,10 +28,14 @@ import { withStandIn } from "./support/postgrest-transaction-stand-in.ts";
  *   2. A reservation whose insert fails after the run's earlier reservations were released: the caller is
  *      refused, nothing else is written, and the stored reservations are what they were (a run being
  *      confirmed normally holds none, and another run's reservation is never touched).
- *   3. The switch: when its required audit row cannot be written after the setting was saved, the stored
- *      setting is put back — checked in the TABLE, not only in the write log — and the caller is told it
- *      was not changed; when the put-back fails too, the table still reads the new value and the caller
- *      is told it WAS changed.
+ *   3. The switch moves before any step reopens (owner, 19 Nov 2026: "fix setCarryLateExpenses so the
+ *      switch moves before any step reopens"). With a run open in Part 1 every time: when the setting cannot
+ *      be saved, or its required audit row cannot be written after it was saved, no run's Expenses step is
+ *      reopened; a failed audit row puts the stored setting back — checked in the TABLE, not only in the
+ *      write log — and the caller is told it was not changed; when the put-back fails too, the table still
+ *      reads the new value and the caller is told it WAS changed. When one open run's step cannot be
+ *      reopened after the change was saved and recorded, the other runs are still reopened, the switch
+ *      stays changed and the caller is told so, naming the month left as it was.
  *
  * Every function is handed the in-memory client below. Around all of it the shared stand-in
  * (tests/support/postgrest-transaction-stand-in.ts) holds the real admin client, so the only thing that may reach it
@@ -322,15 +326,46 @@ async function aFailedReservationLeavesTheReservationsAsTheyWere(): Promise<void
   }
 }
 
-async function theSwitchIsPutBackWhenItsAuditRowFails(): Promise<void> {
+async function theSwitchMovesBeforeAnyStepReopens(): Promise<void> {
   const settingsBefore = { carry_late_expenses: false, id: 1, updated_at: "2026-11-01T08:00:00+00:00", updated_by_hr_id: "b10" };
-  const auditDown: Failure = { error: { code: "57014", message: "canceling statement due to statement timeout" }, nth: 1, op: "insert", table: "automated_payroll_audit" };
+  const timeout = { code: "57014", message: "canceling statement due to statement timeout" };
+  const auditDown: Failure = { error: timeout, nth: 1, op: "insert", table: "automated_payroll_audit" };
+  // Every case has a run open in Part 1, so "no step was reopened" is a claim about a run that WOULD be.
+  const openRuns = (): TableSpec => ({
+    rows: [
+      { id: "run-nov", month: 11, phase: "part1", year: 2026 },
+      { id: "run-oct", month: 10, phase: "published", year: 2026 },
+    ],
+  });
+
+  // The setting cannot be saved: nothing is changed and no step is reopened.
+  {
+    const tables: Record<string, TableSpec> = {
+      automated_payroll_audit: { rows: [] },
+      automated_payroll_runs: openRuns(),
+      automated_payroll_settings: { rows: [{ ...settingsBefore }] },
+    };
+    const before = rowsOf(tables);
+    const reopened: string[] = [];
+    let outcome: unknown = "changed";
+    try {
+      await setCarryLateExpenses(superAdmin, true, memoryDb(tables, [], [{ error: timeout, nth: 1, op: "upsert", table: "automated_payroll_settings" }]), {
+        reopenExpensesStep: async (runId) => reopened.push(runId),
+      });
+    } catch (error) {
+      outcome = error;
+    }
+    assert.ok(outcome instanceof Error, "SWITCH SAVE FAILS: the caller is refused");
+    assert.match(outcome.message, /^Conflict: Could not save the payroll switch, so nothing was changed\./, "SWITCH SAVE FAILS: and is told nothing was changed");
+    assert.deepEqual(reopened, [], "SWITCH SAVE FAILS: HEADLINE: the open Part 1 run's Expenses step is NOT reopened — the switch never moved");
+    assert.deepEqual(rowsOf(tables), before, "SWITCH SAVE FAILS: every stored row is as it was");
+  }
 
   // The audit row fails, the put-back works: the setting the TABLE holds is the old one again.
   {
     const tables: Record<string, TableSpec> = {
       automated_payroll_audit: { rows: [] },
-      automated_payroll_runs: { rows: [{ id: "run-oct", month: 10, phase: "published", year: 2026 }] },
+      automated_payroll_runs: openRuns(),
       automated_payroll_settings: { rows: [{ ...settingsBefore }] },
     };
     const steps: Step[] = [];
@@ -348,7 +383,7 @@ async function theSwitchIsPutBackWhenItsAuditRowFails(): Promise<void> {
     assert.equal(tables.automated_payroll_settings.rows[0].carry_late_expenses, false, "SWITCH AUDIT FAILS: the stored switch is back to what it was (OFF)");
     assert.equal(await getCarryLateExpensesSetting(memoryDb(tables, [])), false, "SWITCH AUDIT FAILS: and the switch reads OFF through the domain's own reader");
     assert.deepEqual(tables.automated_payroll_audit.rows, [], "SWITCH AUDIT FAILS: no audit row was stored");
-    assert.deepEqual(reopened, [], "SWITCH AUDIT FAILS: no open run's Expenses step was reopened — a published run is not open");
+    assert.deepEqual(reopened, [], "SWITCH AUDIT FAILS: HEADLINE: the open Part 1 run's Expenses step is NOT reopened — the switch was put back, so its figures stay");
     assert.deepEqual(
       steps.filter((step) => step.op !== "select").map((step) => `${step.op} ${step.table}${step.error ? " (failed)" : ""}`),
       ["upsert automated_payroll_settings", "insert automated_payroll_audit (failed)", "upsert automated_payroll_settings"],
@@ -360,16 +395,18 @@ async function theSwitchIsPutBackWhenItsAuditRowFails(): Promise<void> {
   {
     const tables: Record<string, TableSpec> = {
       automated_payroll_audit: { rows: [] },
-      automated_payroll_runs: { rows: [] },
+      automated_payroll_runs: openRuns(),
       automated_payroll_settings: { rows: [{ ...settingsBefore }] },
     };
-    const db = memoryDb(tables, [], [auditDown, { error: { code: "57014", message: "canceling statement due to statement timeout" }, nth: 2, op: "upsert", table: "automated_payroll_settings" }]);
+    const db = memoryDb(tables, [], [auditDown, { error: timeout, nth: 2, op: "upsert", table: "automated_payroll_settings" }]);
+    const reopened: string[] = [];
     let outcome: unknown = "changed";
     try {
-      await setCarryLateExpenses(superAdmin, true, db, { reopenExpensesStep: async () => undefined });
+      await setCarryLateExpenses(superAdmin, true, db, { reopenExpensesStep: async (runId) => reopened.push(runId) });
     } catch (error) {
       outcome = error;
     }
+    assert.deepEqual(reopened, [], "SWITCH PUT-BACK FAILS: no step is reopened for a change nobody could record — the error tells HR to set it back");
     assert.equal(tables.automated_payroll_settings.rows[0].carry_late_expenses, true, "SWITCH PUT-BACK FAILS: the table holds ON");
     assert.ok(outcome instanceof Error, "SWITCH PUT-BACK FAILS: the caller is still refused");
     assert.match(
@@ -380,11 +417,65 @@ async function theSwitchIsPutBackWhenItsAuditRowFails(): Promise<void> {
   }
 }
 
+/**
+ * After the change was saved and recorded, one open run's Expenses step cannot be reopened (its hold is busy,
+ * or it moved on). Every other open run is still reopened, the switch stays changed, and the caller is told the
+ * truth: the switch IS changed, and which month's step was left as it was.
+ */
+async function aStepThatCannotBeReopenedLeavesTheSwitchChangedAndSaysSo(): Promise<void> {
+  const tables: Record<string, TableSpec> = {
+    automated_payroll_audit: { rows: [] },
+    automated_payroll_runs: {
+      rows: [
+        { id: "run-nov", month: 11, phase: "part1", year: 2026 },
+        { id: "run-dec", month: 12, phase: "part1", year: 2026 },
+      ],
+    },
+    automated_payroll_settings: { rows: [{ carry_late_expenses: false, id: 1 }] },
+  };
+  const steps: Step[] = [];
+  const order: string[] = [];
+  let outcome: unknown = "changed";
+  try {
+    await setCarryLateExpenses(superAdmin, true, memoryDb(tables, steps), {
+      reopenExpensesStep: async (runId) => {
+        order.push(`reopen ${runId} after ${steps.filter((step) => step.op !== "select").map((step) => `${step.op} ${step.table}`).join(", ")}`);
+        if (runId === "run-nov") throw new Error("Conflict: someone else is working on this run. Try again in a moment.");
+      },
+    });
+  } catch (error) {
+    outcome = error;
+  }
+  assert.deepEqual(
+    order,
+    [
+      "reopen run-nov after upsert automated_payroll_settings, insert automated_payroll_audit",
+      "reopen run-dec after upsert automated_payroll_settings, insert automated_payroll_audit",
+    ],
+    "REOPEN FAILS: HEADLINE: each step is reopened only after the switch was saved and recorded — and the run after the one that refused is still tried",
+  );
+  assert.equal(tables.automated_payroll_settings.rows[0].carry_late_expenses, true, "REOPEN FAILS: the stored switch is ON — the recorded change stands");
+  assert.equal(tables.automated_payroll_audit.rows.length, 1, "REOPEN FAILS: one audit row records the change");
+  assert.deepEqual(
+    tables.automated_payroll_audit.rows[0].detail,
+    { expensesStepsToReopen: ["run-nov", "run-dec"], from: false, to: true },
+    "REOPEN FAILS: and names the runs it was about to reopen",
+  );
+  assert.ok(outcome instanceof Error, "REOPEN FAILS: the caller is told something was left undone");
+  assert.equal(
+    outcome.message,
+    "Conflict: the payroll switch IS now ON and the change is recorded, but the Expenses step of November 2026 could not be " +
+      "reopened, so its saved Expenses figures were not cleared. Reopen the Expenses step of November 2026 and confirm it again before Part 2.",
+    "REOPEN FAILS: in words that say the switch IS changed and name the month left as it was — never that nothing changed",
+  );
+}
+
 export async function runLateExpensesRollbackAndRaceTests(): Promise<void> {
   await withStandIn({ tables: {} }, async (seen) => {
     await twoRunsReserveTheSameTripAtOnce();
     await aFailedReservationLeavesTheReservationsAsTheyWere();
-    await theSwitchIsPutBackWhenItsAuditRowFails();
+    await theSwitchMovesBeforeAnyStepReopens();
+    await aStepThatCannotBeReopenedLeavesTheSwitchChangedAndSaysSo();
     for (let turn = 0; turn < 40; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(
       seen.filter((request) => request.table !== "app_error_events").map((request) => `${request.method} ${request.table ?? request.rpc}`),
