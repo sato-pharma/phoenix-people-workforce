@@ -85,6 +85,8 @@ the primary by absolute path with no error. Never send parallel subagents into o
   `C:\ProgramData\PhoenixRamCleaner` (log there); 🔴 never point an elevated task at a user-writable script or dll.
   Log lines are `[time] OK|FAIL` (the hourly Telegram task "Phoenix RAM Cleaner - Failure Alert" reads the last one).
   Anti-thrash: no re-trim within 15 min unless regrown 100 MB, off under 800 MB free (03:14 read 33.7 MB/s back from disk).
+  🔴 It obeys mem-watchdog's rule 10 CLAUDE FIRST (owner 2026-09-12): never trims claude.exe or its shells above 500 MB
+  free — it broke that 01:52–04:20 on 19 Nov. The watchdog already trims non-Claude idle processes every 2 min.
 - 🔴 **THE SPARE LAPTOP RUNS THE DEV SERVER AND THE TESTS** (owner, 2026-11-07: "16+8 = 24 GB", "Dev server and
   tests") — `localhost:3000` here IS the spare's dev server (running again since his 05:26 restart, after 04:06's
   "KILL DEV"). 🥇 **GOLDEN RULE: LOCAL DEV ALWAYS POINTS TO PRODUCTION, NEVER STAGING** (owner, 2026-11-07 05:30:

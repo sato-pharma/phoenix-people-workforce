@@ -52,6 +52,12 @@ param(
   # ...except under this much available RAM, where a freeze costs more than any disk read
   # (measured 472 MB available at 03:19 the same night) - every idle process is fair game again.
   [int]$SevereMB       = 800,
+  # CLAUDE FIRST - the owner's rule 10 (2026-09-12 23:40, mem-watchdog.ps1): Claude's processes are
+  # NEVER trimmed - a session waiting on the model looks idle, and trimming it makes the reply fault
+  # back from disk, which IS "Claude is slow". The one exception is the crash floor below.
+  # This cleaner broke that rule from 01:52 to the fix on 19 Nov; same family definition and the
+  # same 500 MB floor as the watchdog, on purpose.
+  [int]$CritRamMB      = 500,
   # The ELEVATED task passes C:\ProgramData\PhoenixRamCleaner for both: an admin process must
   # never load its dll from (or write into) a folder a normal process can change.
   [string]$WorkDir = (Join-Path $env:USERPROFILE '.claude\scripts\ram-cleaner'),
@@ -175,6 +181,24 @@ try {
 } catch {}
 foreach ($p in $snap.Values) { if ($p.Cmd -match 'next(\.js)?["'' ]+dev|dev-server\.mjs|next-server') { [void]$exempt.Add($p.Id) } }
 
+# Claude family (rule 10): every claude.exe (the app AND the session engines share the name), plus
+# any shell whose parent chain (6 deep) reaches one - mem-watchdog.ps1 Get-ClaudeFamilyPids, verbatim.
+$claudeSkip = New-Object 'System.Collections.Generic.HashSet[int]'
+if ($availBefore -ge $CritRamMB) {
+  $shellNames = @('powershell','pwsh','bash','sh','conhost','cmd','OpenConsole')
+  foreach ($p in $snap.Values) {
+    if ($p.Name -eq 'claude') { [void]$claudeSkip.Add($p.Id); continue }
+    if ($shellNames -notcontains $p.Name) { continue }
+    $cur = $p
+    for ($d = 0; $d -lt 6; $d++) {
+      $par = $snap[$cur.Parent]
+      if (-not $par -or $par.Id -eq $cur.Id) { break }
+      if ($par.Name -eq 'claude') { [void]$claudeSkip.Add($p.Id); break }
+      $cur = $par
+    }
+  }
+}
+
 function Test-Cold($p) {
   if (-not $cycleValid -or -not $prev.ContainsKey($p.Key)) { return $false }
   return ($p.Cpu - $prev[$p.Key]) -le $ColdCpuSec
@@ -197,6 +221,7 @@ $trimmed = 0; $freedMB = 0.0; $denied = 0; $byName = @{}; $planned = @(); $held 
 $minWs = if ($pressure) { $PressureMinWsMB } else { $MinWsMB }
 foreach ($p in ($snap.Values | Sort-Object WsMB -Descending)) {
   if ($p.Id -le 4 -or $exempt.Contains($p.Id)) { continue }
+  if ($claudeSkip.Contains($p.Id)) { continue }
   if ($NeverTrim -contains $p.Name.ToLowerInvariant()) { continue }
   if ($p.WsMB -lt $minWs) { continue }
   $cold = Test-Cold $p
@@ -290,8 +315,8 @@ $reloadTxt = if ($null -ne $reloadMB) { '{0:N0} MB' -f $reloadMB } else { '-' }
 # "[time] OK ..." / "[time] FAIL ..." - the shape worktree-snapshot-watch.ps1 (the Telegram alert)
 # reads. EVERY line must carry it: the watcher judges the last [time] line, so a FAIL followed by
 # un-bracketed OK lines would be an alarm forever.
-$line = '[{0}] OK avail {1:N0} -> {2:N0} MB ({3:+#,##0;-#,##0;0}) | {4} | {5} {6} procs ({7:N0} MB) | held back {13} (trimmed under {14} min ago) | denied {8} | orphans {9} | disk page-ins since last run {10} | top: {11} | {12}' -f `
-  $now.ToString('yyyy-MM-ddTHH:mm:ss'), $availBefore, $availAfter, ($availAfter - $availBefore), $mode, $verb, $trimmed, $freedMB, $denied, $killed.Count, $reloadTxt, $(if ($top) { $top } else { '-' }), $quip, $held, $ReTrimMinutes
+$line = '[{0}] OK avail {1:N0} -> {2:N0} MB ({3:+#,##0;-#,##0;0}) | {4} | {5} {6} procs ({7:N0} MB) | held back {13} (trimmed under {14} min ago) | Claude spared {15} (rule 10) | denied {8} | orphans {9} | disk page-ins since last run {10} | top: {11} | {12}' -f `
+  $now.ToString('yyyy-MM-ddTHH:mm:ss'), $availBefore, $availAfter, ($availAfter - $availBefore), $mode, $verb, $trimmed, $freedMB, $denied, $killed.Count, $reloadTxt, $(if ($top) { $top } else { '-' }), $quip, $held, $ReTrimMinutes, $claudeSkip.Count
 
 if ($Apply) {
   Add-Content -LiteralPath $logFile -Value $line -Encoding ascii

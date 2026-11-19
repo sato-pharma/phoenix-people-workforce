@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 12891 | `7ba73c1ce978f83f` |
+| `CLAUDE.md` | 13129 | `9b5e6a9f461e55a6` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -86,7 +86,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/portal-home-speed/measure.mjs` | 4373 | `839f2fbb28046402` |
 | `scripts/prune-claude-json.mjs` | 4263 | `5a193870fb9b0bf3` |
 | `scripts/ram-cleaner-watch.ps1` | 2249 | `4d06ab3f56b17b68` |
-| `scripts/ram-cleaner.ps1` | 17883 | `9babb07c81bd0aeb` |
+| `scripts/ram-cleaner.ps1` | 19238 | `6290fd64165efb71` |
 | `scripts/ram-guard.ps1` | 22023 | `1a6290775e77a4bf` |
 | `scripts/ram-reclaim.ps1` | 6849 | `f1c431c19efe8d79` |
 | `scripts/refresh-whatsapp-apk.sh` | 3650 | `985d05e4b240040e` |
@@ -110,6 +110,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-address.ps1` | 7223 | `d8d0274eb616ddae` |
 | `scripts/spare-browser-guard.ps1` | 5743 | `cf1529a8a651e269` |
 | `scripts/spare-db-password-refresh.mjs` | 8899 | `1d009fb990a2dc49` |
+| `scripts/spare-db-password-refresh.ps1` | 1110 | `19e5bfebc75143f5` |
 | `scripts/spare-follow-production.ps1` | 14567 | `dfcc3c3ba43fd452` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
 | `scripts/spare-test.ps1` | 12090 | `5d3def1c3b4b03c0` |
