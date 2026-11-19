@@ -461,14 +461,17 @@ export async function createCompanyCalendarEvent(access: AccessContext, input: C
 }
 
 async function loadEventForManage(access: AccessContext, id: string): Promise<EventRow> {
+  // The role is refused BEFORE the event is read. Refused only after the lookup, "not found" against
+  // "forbidden" told a signed-out visitor, or anyone who may not manage the calendar, which event ids
+  // are real (REC-080, 19 Nov 2026). The line check below needs the row, so it stays after it.
+  if (!canManageCompanyCalendar(access.role)) {
+    throw new Error("Forbidden: you are not allowed to manage calendar events.");
+  }
   const { data, error } = await getSupabaseAdmin().from(EVENTS_TABLE).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Calendar event was not found.");
   const row = data as EventRow;
   const isAdmin = canPublishCompanyWide(access.role);
-  if (!canManageCompanyCalendar(access.role)) {
-    throw new Error("Forbidden: you are not allowed to manage calendar events.");
-  }
   if (!isAdmin) {
     const viewerLineName = await viewerLine(access);
     if (row.audience_scope !== "line" || !sameLine(row.line_name, viewerLineName)) {

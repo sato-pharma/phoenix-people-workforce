@@ -10254,9 +10254,12 @@ export async function postMarketingRequestConversationComment(
   requestId: string,
   body: string,
 ): Promise<RecordConversationComment> {
-  const { requestRow, steps } = await loadMarketingRequestForConversation(access, requestId);
+  // A message needs a person behind it, so a session with no HR id is refused BEFORE the request is
+  // read. Refused only after the lookup, "not found" against "forbidden" told a signed-out visitor
+  // which request ids are real (REC-080, 19 Nov 2026).
   const actorHrId = normalizeHrId(access.hrId);
   if (!actorHrId) throw forbiddenError("Forbidden: no HR_ID on this session.");
+  const { requestRow, steps } = await loadMarketingRequestForConversation(access, requestId);
 
   const employeeRows = await loadEmployeeDirectoryRows();
   const authorName = employeeNameByHrId(employeeRows, access.hrId) || null;
