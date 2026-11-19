@@ -76,15 +76,31 @@ call with no payroll row and its "HELD out of payroll" record.
 **The migration must be applied before this code is merged.** Until it is, approving a claim refuses and changes
 nothing ("The claim could not be approved, so nothing was changed").
 
-The other two pushes — the release of a held claim once its evidence lands, and the system's own acceptance — still use
-`pushAcceptedOutstationExpenseToPayroll`; neither moves a claim the reviewer is looking at.
+**The release is the same one call** (owner, 19 Nov 2026: "move the release path onto the one-call approval too";
+migration `20261119143529_outstation_release_claim_to_payroll_atomically.sql`). `releaseOutstationRequestToPayrollIfReady`
+delivers a held claim's payroll row once its missing photo or workload lands. It made separate calls (the report row, the
+trip's row, then two records), so a failure part-way left an empty report row, or the money queued with no record saying
+so. It now calls the same function with no status: the claim is left exactly as it is (no column and no `updated_at`
+moves), locked, pinned to the version the release read, and required to still read accepted — so a claim rejected in
+between is never pushed, even by a writer that forgot to move the version. The report, the trip's row and both records
+("expense pushed to payroll", "released into payroll — evidence complete") land together or not at all; a failure leaves
+the claim held and the next capture tries again. The redefinition also reuses the trip's own report when no report id is
+passed, read under the claim's lock, so two releases landing together leave one report row rather than an empty second
+one. The system's automatic acceptance already ran through `approveOutstationRequestForPayroll`, so with the release moved
+the old push (`pushAcceptedOutstationExpenseToPayroll`) had no caller and is gone; the approval and the release share
+`planAcceptedClaimPayrollRow` and `writeClaimToPayrollInOneStep` in `src/lib/outstation/service.ts`.
+
+**Migration `20261119143529` must be applied before that code is merged.** Until it is, a release refuses and changes
+nothing; the claim stays held. The live approval never passes a null status, so applying it first changes nothing it does.
 
 `tests/outstation-reapprove-rollback-and-race.test.ts` models the function statement by statement from its migration and
 runs the real approval against it: a payroll row or a record failing inside the call (every table equals before, the app
 writes nothing outside the call, the refusal says nothing changed, and approving again from the same screen pays once);
 two approvals at once (one applies, the other gets "the claim changed", one row, one report, one record each); a change
-landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); and a held
-claim (accepted with no payroll row). Its breaks are in §7.
+landing after the version check (refused, never approved unseen); the unchanged re-approve (no call at all); a held
+claim (accepted with no payroll row); and the release — a failure inside its call (every table as before, the claim left
+held, the next release pays once and leaves the claim untouched), two releases at once (one payroll row, one report row),
+and a claim rejected after the release read it, with and without a moved version (never pushed). Its breaks are in §7.
 
 ## 3. F-PAY-014 — publish works out its figures under its claim
 
@@ -187,3 +203,8 @@ The outstation approval's breaks (§2a), each watched to fire and restored green
 | model: the claim's update ignores `updated_at` | HEADLINE: exactly one of two simultaneous approvals applies |
 | model: a raise keeps what ran | HEADLINE: every table afterwards equals the tables before |
 | the version check is skipped | (in `outstation-stale-approval.test.ts`) approve must check the version and then write |
+| the release writes its records outside the call | (c) release: and both records |
+| the release updates the claim (passes a status) | (c) release: as a release — no status, so the claim is not updated |
+| the release skips its read-again of the version | (c) rejected under the release: HEADLINE: a claim rejected under the release is never released |
+| model: the release does not require the claim to read accepted | (c) rejected by a writer that forgot the version: HEADLINE: never released |
+| model: no report lookup under the lock | (c) and one report row |

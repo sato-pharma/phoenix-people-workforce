@@ -215,6 +215,7 @@ import {
   planPayrollExpenseSave,
   resyncPayrollExpenseStepForRemovedTrips,
   savePayrollExpenseApprovals,
+  type PlannedPayrollExpenseSave,
 } from "@/lib/outstation/expenses";
 import {
   mapOutstationRequestToPayrollExpenseRecord,
@@ -932,7 +933,7 @@ export { outstationRecordName };
  *
  * `employeeName` becomes the DISPLAY name (owner, 2026-11-03). `employeeRecordName` keeps the
  * record's full name beside it, because a request read here also goes on to stamp the payroll
- * ledger (pushAcceptedOutstationExpenseToPayroll), and a nickname must never land on that row.
+ * ledger (planAcceptedClaimPayrollRow), and a nickname must never land on that row.
  *
  * The stored column itself is left exactly as written: it stays the audit trail of what was true
  * on the day, and nothing here writes to it. An HR id the directory does not know — an imported
@@ -3605,37 +3606,85 @@ async function syncLinkedOutstationPayrollExpense(input: {
   return saved.length;
 }
 
-// Pushes an already-accepted outstation request into payroll (idempotent — skips if the
-// linked expense row was already imported into a paid batch). Used by the auto-accept at
-// submit and by a Super Admin's accept override.
-async function pushAcceptedOutstationExpenseToPayroll(
+/**
+ * The payroll report and row an accepted claim gets — worked out and judged by the payroll save's own code, and
+ * written by nobody (planPayrollExpenseSave). The approval and the release hand it to their one database call
+ * (writeClaimToPayrollInOneStep). A re-push reuses the trip's report.
+ */
+async function planAcceptedClaimPayrollRow(
   request: OutstationExpenseRequest,
+  linkedReportId: string | null,
   access: AccessContext,
-): Promise<number> {
-  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
-  if (isOutstationExpenseInPayroll(linkedPayroll)) {
-    return 0;
-  }
-  const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
-    reportId: linkedPayroll?.reportId ?? null,
-  });
-  const savedExpenses = await savePayrollExpenseApprovals({
-    fileName: workflowExpenseReportFileName(request.id),
-    records: [expenseRecord],
-    reportId: linkedPayroll?.reportId ?? null,
-  }, access, { allowWorkflowTripIds: true });
-  await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
-    entityId: String(request.id),
-    entityType: "outstation_request",
-    newValues: {
-      expenseTripId: expenseRecord.tripId,
-      payrollExpenseRows: savedExpenses.length,
-      status: request.status,
+): Promise<PlannedPayrollExpenseSave> {
+  return planPayrollExpenseSave(
+    {
+      fileName: workflowExpenseReportFileName(request.id),
+      records: [mapOutstationRequestToPayrollExpenseRecord(request, { reportId: linkedReportId })],
+      reportId: linkedReportId,
     },
-    summary: `Outstation request ${request.id} accepted; expense pushed to payroll.`,
+    access,
+    { allowWorkflowTripIds: true },
+  );
+}
+
+/** The "expense pushed to payroll" record, written inside the one call by the approval and by the release. */
+function expensePushedToPayrollAuditRow(input: { actorLoginId: string; requestId: number; rows: number; status: string }) {
+  return auditLogRow({
+    actorLoginId: input.actorLoginId,
+    entityId: String(input.requestId),
+    entityType: "outstation_request",
+    newValues: { expenseTripId: outstationPayrollTripId(input.requestId), payrollExpenseRows: input.rows, status: input.status },
+    summary: `Outstation request ${input.requestId} accepted; expense pushed to payroll.`,
   });
-  return savedExpenses.length;
+}
+
+/**
+ * ONE DATABASE STEP (REC-038 close-out, 19 Nov 2026): phx_accept_outstation_claim_for_payroll. An approval passes the
+ * accepted status and the claim is updated; a release passes `status: null` and the claim is left exactly as it is,
+ * locked and required to still read accepted. Either way the claim is pinned to `expectedUpdatedAt`, and the payroll
+ * report, the trip's row and the records land with it or not at all. Never throws: it answers the stored claim and
+ * the rows written, `claimChanged` when the claim moved (nothing written), or the database error (nothing written).
+ */
+async function writeClaimToPayrollInOneStep(input: {
+  approvalReason: string | null;
+  audits: Array<ReturnType<typeof auditLogRow>>;
+  expectedUpdatedAt: string;
+  plan: PlannedPayrollExpenseSave | null;
+  requestId: number;
+  status: string | null;
+  updatedAt: string | null;
+}): Promise<{
+  claimChanged: boolean;
+  error: { code?: string; message?: string } | null;
+  request: Record<string, unknown> | null;
+  written: Array<Record<string, unknown>>;
+}> {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_accept_outstation_claim_for_payroll", {
+    p_approval_reason: input.approvalReason,
+    p_audits: input.audits,
+    p_expected_updated_at: input.expectedUpdatedAt,
+    p_expense_rows: input.plan?.rows ?? [],
+    p_report: input.plan?.report ?? null,
+    p_report_id: input.plan?.reportId ?? null,
+    p_request_id: input.requestId,
+    p_status: input.status,
+    p_updated_at: input.updatedAt,
+  });
+  if (error) {
+    return {
+      claimChanged: String(error.message ?? "").includes("outstation_claim_changed"),
+      error,
+      request: null,
+      written: [],
+    };
+  }
+  const landed = (data ?? {}) as { request?: Record<string, unknown> | null; expenses?: Array<Record<string, unknown>> | null };
+  return {
+    claimChanged: false,
+    error: null,
+    request: landed.request ?? null,
+    written: Array.isArray(landed.expenses) ? landed.expenses : [],
+  };
 }
 
 // Accept an outstation request and push it to payroll. At submit this runs as the system
@@ -3771,31 +3820,12 @@ export async function approveOutstationRequestForPayroll(
   // the version the reviewer saw), the report, the row and both records together, or none of them. They were
   // separate calls: a failed push left the claim accepted with an empty report row, and a failed record left the
   // money queued while the approver was told the approval had failed.
-  const linkedReportId = linkedPayroll?.reportId ?? null;
   const plan = gate.isPayrollEligible
-    ? await planPayrollExpenseSave(
-        {
-          fileName: workflowExpenseReportFileName(existing.id),
-          records: [mapOutstationRequestToPayrollExpenseRecord(accepted, { reportId: linkedReportId })],
-          reportId: linkedReportId,
-        },
-        access,
-        { allowWorkflowTripIds: true },
-      )
+    ? await planAcceptedClaimPayrollRow(accepted, linkedPayroll?.reportId ?? null, access)
     : null;
   const actorLoginId = access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
   const audits = [
-    ...(plan
-      ? [
-          auditLogRow({
-            actorLoginId,
-            entityId: String(existing.id),
-            entityType: "outstation_request",
-            newValues: { expenseTripId: outstationPayrollTripId(existing.id), payrollExpenseRows: plan.rows.length, status: acceptedStatus },
-            summary: `Outstation request ${existing.id} accepted; expense pushed to payroll.`,
-          }),
-        ]
-      : []),
+    ...(plan ? [expensePushedToPayrollAuditRow({ actorLoginId, requestId: existing.id, rows: plan.rows.length, status: acceptedStatus })] : []),
     auditLogRow({
       actorLoginId,
       entityId: String(existing.id),
@@ -3807,36 +3837,32 @@ export async function approveOutstationRequestForPayroll(
         : `Outstation request ${existing.id} accepted (${acceptedStatus}) but HELD out of payroll: ${gate.message}`,
     }),
   ];
-  const { data, error } = await getSupabaseAdmin().rpc("phx_accept_outstation_claim_for_payroll", {
-    p_approval_reason: approvalReason,
-    p_audits: audits,
-    p_expected_updated_at: checkedUpdatedAt,
-    p_expense_rows: plan?.rows ?? [],
-    p_report: plan?.report ?? null,
-    p_report_id: plan?.reportId ?? null,
-    p_request_id: requestId,
-    p_status: acceptedStatus,
-    p_updated_at: now,
+  const step = await writeClaimToPayrollInOneStep({
+    approvalReason,
+    audits,
+    expectedUpdatedAt: checkedUpdatedAt,
+    plan,
+    requestId,
+    status: acceptedStatus,
+    updatedAt: now,
   });
-  if (error) {
-    // The claim moved after it was checked: it is no longer the claim he saw, and nothing was written.
-    if (String(error.message ?? "").includes("outstation_claim_changed")) throw new OutstationClaimChangedError("changed");
+  // The claim moved after it was checked: it is no longer the claim he saw, and nothing was written.
+  if (step.claimChanged) throw new OutstationClaimChangedError("changed");
+  if (step.error) {
     logError("Outstation: the approval's one database step failed, so nothing was written", {
       labels: { event: "outstation_accept_claim_failed", requestId: String(requestId) },
-      error,
+      error: step.error,
     });
     throw new Error(
       "The claim could not be approved, so nothing was changed: it still reads as it did and nothing reached payroll. " +
-        `Try again. (database error ${String(error.code ?? "unknown")})`,
+        `Try again. (database error ${String(step.error.code ?? "unknown")})`,
     );
   }
-  const landed = (data ?? {}) as { request?: Record<string, unknown> | null; expenses?: Array<Record<string, unknown>> | null };
-  if (!landed.request) throw new Error("The claim was approved but could not be read back. Reload the page.");
-  const request = mapOutstationRequestRow(landed.request);
-  const written = Array.isArray(landed.expenses) ? landed.expenses : [];
+  if (!step.request) throw new Error("The claim was approved but could not be read back. Reload the page.");
+  const request = mapOutstationRequestRow(step.request);
   // After the commit: the moved decision reaches any open payroll run (never throws; it has its own retry queue).
-  if (plan) await finishPayrollExpenseSave(plan.before, written);
-  const payrollExpenseRows = written.length;
+  if (plan) await finishPayrollExpenseSave(plan.before, step.written);
+  const payrollExpenseRows = step.written.length;
 
   if (!gate.isPayrollEligible) {
     logError("Outstation request accepted but held out of payroll by the evidence gate", {
@@ -3868,6 +3894,10 @@ export async function approveOutstationRequestForPayroll(
     request: await withLiveRequestName(request),
   };
 }
+
+/** A release that found the claim changed (or no longer accepted) under it: nothing written, the next trigger retries. */
+const OUTSTATION_RELEASE_CLAIM_MOVED_REASON =
+  "The claim changed while it was being released, so nothing was written. The next capture releases it.";
 
 /**
  * Push a previously-held request into payroll once its evidence is complete.
@@ -3919,15 +3949,52 @@ export async function releaseOutstationRequestToPayrollIfReady(
     });
     if (!gate.isPayrollEligible) return { reason: gate.message, released: false };
 
-    await pushAcceptedOutstationExpenseToPayroll(request, access);
-    await writeRequiredAuditLog({
-      actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
-      entityId: String(request.id),
-      entityType: "outstation_request",
-      newValues: { inPayroll: true },
-      oldValues: { inPayroll: false },
-      summary: `Outstation request ${request.id} released into payroll — evidence complete.`,
+    // ONE DATABASE STEP (REC-038 close-out, 19 Nov 2026; owner: "move the release path onto the one-call approval
+    // too"). It made separate calls — the report row, the trip's row, then two records — so a failure part-way left an
+    // empty report row, or the money queued with no record saying so. The stamp the call is pinned to is read now and
+    // must be the version read above, so the row planned below is the claim's current one; the call leaves the claim
+    // exactly as it is, locked and required to still read accepted, and writes the report, the row and both records
+    // together, or none of them.
+    const checkedUpdatedAt = await readOutstationRequestStoredUpdatedAt(request.id);
+    if (outstationClaimRevision(checkedUpdatedAt) !== outstationClaimRevision(request.updatedAt)) {
+      return { reason: OUTSTATION_RELEASE_CLAIM_MOVED_REASON, released: false };
+    }
+    const plan = await planAcceptedClaimPayrollRow(request, linked?.reportId ?? null, access);
+    const actorLoginId = access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
+    const step = await writeClaimToPayrollInOneStep({
+      approvalReason: null,
+      audits: [
+        expensePushedToPayrollAuditRow({ actorLoginId, requestId: request.id, rows: plan.rows.length, status: request.status }),
+        auditLogRow({
+          actorLoginId,
+          entityId: String(request.id),
+          entityType: "outstation_request",
+          newValues: { inPayroll: true },
+          oldValues: { inPayroll: false },
+          summary: `Outstation request ${request.id} released into payroll — evidence complete.`,
+        }),
+      ],
+      expectedUpdatedAt: checkedUpdatedAt,
+      plan,
+      requestId: request.id,
+      status: null,
+      updatedAt: null,
     });
+    if (step.claimChanged) return { reason: OUTSTATION_RELEASE_CLAIM_MOVED_REASON, released: false };
+    if (step.error) {
+      logError("Outstation: the payroll release's one database step failed, so nothing was written", {
+        labels: { event: "outstation_release_claim_failed", requestId: String(request.id) },
+        error: step.error,
+      });
+      return {
+        reason:
+          "The payroll release could not be written, so nothing changed: the claim stays held and the next capture " +
+          `tries again. (database error ${String(step.error.code ?? "unknown")})`,
+        released: false,
+      };
+    }
+    // After the commit: the released row reaches any open payroll run (never throws; it has its own retry queue).
+    await finishPayrollExpenseSave(plan.before, step.written);
     return { reason: gate.message, released: true };
   } catch (error) {
     logError("Outstation payroll release failed (non-blocking)", {

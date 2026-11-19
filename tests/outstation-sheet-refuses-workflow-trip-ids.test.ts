@@ -247,8 +247,14 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
   // Only the workflow opts out — and every one of its pushes does, or accepted app trips would stop
   // reaching payroll.
   const service = readFileSync("src/lib/outstation/service.ts", "utf8");
-  const workflowSaves = service.split("await savePayrollExpenseApprovals(").slice(1);
-  assert.equal(workflowSaves.length, 3, "the workflow pushes an app trip to payroll from exactly three places");
+  // Since REC-038 (19 Nov 2026) the approval and the release plan their row (planPayrollExpenseSave, in
+  // planAcceptedClaimPayrollRow) for their one database call instead of saving it, so two saves are left — and the
+  // planned save must opt out exactly as a save does.
+  const workflowSaves = [
+    ...service.split("await savePayrollExpenseApprovals(").slice(1),
+    ...service.split("return planPayrollExpenseSave(").slice(1),
+  ];
+  assert.equal(workflowSaves.length, 3, "the workflow pushes an app trip to payroll from exactly three places: two saves and the planned row");
   for (const call of workflowSaves) {
     const args = call.slice(0, call.indexOf(");"));
     assert.match(args, /allowWorkflowTripIds: true/, "each workflow push declares itself");
