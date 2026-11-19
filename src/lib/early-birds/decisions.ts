@@ -6,7 +6,7 @@
 // layer around it.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, normalizeHrIdForAccess, resolveStoredHrId } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
@@ -89,11 +89,14 @@ export function earlyBirdsReasonSummary(candidate: EarlyBirdsPendingCandidate): 
 /**
  * Recommendations awaiting a decision, scoped to the districts the viewer actually owns. A
  * District Manager sees his own; a Regional/National manager sees the districts under him; the
- * executive audience sees all of them.
+ * Super Admin sees all of them. A viewer without `early_birds:approve` — a Medical Rep, or a
+ * read-only company-wide seat — has nothing waiting on him, so he is never shown a button the
+ * decision route refuses (F-CRM-016).
  */
 export async function listPendingEarlyBirdsRecommendations(
   access: AccessContext,
 ): Promise<EarlyBirdsPendingCandidate[]> {
+  if (!(await canAccess(access, "early_birds", "approve"))) return [];
   const scope = await resolveEarlyBirdsScope(access);
   // An unreadable directory yields no districts, so this returns nothing either way. That is the
   // right call for an approvals list — inventing rows we cannot prove the viewer owns would be
@@ -251,15 +254,22 @@ export type EarlyBirdsDecisionResult =
 /**
  * Record a District Manager's decision.
  *
- * Authorization is by DISTRICT OWNERSHIP, not by role name: the actor must own the district the
- * snapshot belongs to (or be a company-wide viewer). A Regional Manager can therefore act for a
- * district under him, which is what makes the five-day escalation possible without a second
- * approval surface.
+ * Authorization is three checks, all before the first write (enterprise audit F-CRM-016):
+ * 1. The `early_birds:approve` key — Super Admin, District Manager, Regional Manager and National
+ *    Sales Manager. A Medical Rep and the read-only company-wide seats (CEO, SFE, Marketing,
+ *    Product, Group Product, Training, HR Resourcing) see the board but never decide it.
+ * 2. DISTRICT OWNERSHIP, not a role name: the actor's Early Birds scope must hold the district the
+ *    snapshot belongs to. A Regional Manager can therefore act for a district under him, which is
+ *    what makes the five-day escalation possible without a second approval surface.
+ * 3. Never one's own name: a candidate whose HR id is the actor's is refused.
  */
 export async function decideEarlyBirdsCandidate(
   access: AccessContext,
   input: { snapshotId: string; candidateId: string; decision: "approve" | "reject"; comment?: string },
 ): Promise<EarlyBirdsDecisionResult> {
+  if (!(await canAccess(access, "early_birds", "approve"))) {
+    return { ok: false, error: "forbidden", message: "Your role cannot decide an Early Bird recommendation." };
+  }
   if (input.decision === "reject" && !String(input.comment ?? "").trim()) {
     return { ok: false, error: "failed", message: "A reason is required to reject a recommendation." };
   }
@@ -294,6 +304,20 @@ export async function decideEarlyBirdsCandidate(
       );
     if (!owns) {
       return { ok: false, error: "forbidden", message: "That district is not yours to decide." };
+    }
+
+    // Never one's own name: an acting District Manager can still be ranked in the district above
+    // her, and nobody approves their own award.
+    const { data: candidateData, error: candidateError } = await supabase
+      .from("early_birds_candidates")
+      .select("id, employee_hr_id")
+      .eq("id", input.candidateId)
+      .limit(1);
+    if (candidateError) throw new Error(candidateError.message);
+    const candidate = ((candidateData ?? []) as unknown as Array<{ id: string; employee_hr_id: string | null }>)[0];
+    const actorKey = normalizeHrIdForAccess(access.hrId);
+    if (candidate && actorKey && normalizeHrIdForAccess(candidate.employee_hr_id) === actorKey) {
+      return { ok: false, error: "forbidden", message: "You cannot decide a recommendation that names you." };
     }
 
     const directory = await getEmployeeDirectoryRows().catch(() => []);
