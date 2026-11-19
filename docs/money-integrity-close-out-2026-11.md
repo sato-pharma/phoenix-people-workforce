@@ -183,8 +183,16 @@ judged on the step alone, as before. No database change.
    `tests/late-expenses-rollback-and-race.test.ts` now gives the run an earlier reservation and checks it survives a
    failed call and a lost race; **the migration must be applied before that code is merged** (until it is, a Part 2
    confirm that carries a late trip refuses and changes nothing).
-3. **`setCarryLateExpenses` reopens open runs' Expenses steps before the switch moves.** When its audit row then fails,
-   the switch is put back but the reopened steps stay reopened. No money moves; HR re-confirms the step.
+3. ~~**`setCarryLateExpenses` reopens open runs' Expenses steps before the switch moves.**~~ **Fixed on 19 Nov 2026**
+   (owner: "fix setCarryLateExpenses so the switch moves before any step reopens"). The setting is saved and its
+   required audit row written first; only then is each open run's Expenses figure cleared and its step reopened. A
+   failed save reopens nothing and changes nothing; a failed audit row puts the old setting back and reopens nothing.
+   Every open run is tried even after one refuses, and a run whose step could not be reopened is named in the
+   refusal, which says the switch IS changed and recorded — its figures stay as they were until HR reopens that step,
+   and Part 2 confirm still refuses a step confirmed under the other setting. The audit row now names the runs it is
+   about to reopen (`expensesStepsToReopen`), because it is written before them. After a refused flip the panel
+   re-reads where the switch stands. No database change. `tests/late-expenses-rollback-and-race.test.ts` gives every
+   failure an open Part 1 run and checks it is not reopened, and checks the run after a refusal is still reopened.
 4. ~~**A collection or a marketing cancel whose record fails after the database step committed reads as failed.**~~
    **Fixed on 19 Nov 2026 — each writes its records inside its one call, see §2b.**
 5. ~~**The Payroll Copilot's Holiday Bridging tab looks broken today**~~ **Fixed on 19 Nov 2026** (owner: "fix the Payroll
@@ -271,3 +279,12 @@ The late-trip reservation's breaks (§5 item 2), each watched to fire and restor
 | the release goes back before the one call | RACE: no release or insert of its own outside the one call |
 | model: the function keeps its delete when its insert fails | RESERVE LOSES A RACE: HEADLINE: the stored reservations are exactly as they were |
 | a lost race is not named as another run's hold | RACE: the loser is told with a LateExpenseRefusal |
+
+The switch's breaks (§5 item 3), each watched to fire and restored green:
+
+| Break | Assertion that fired |
+| --- | --- |
+| every open run reopened before the switch is saved (the old order) | SWITCH SAVE FAILS: HEADLINE: the open Part 1 run's Expenses step is NOT reopened; and in the main suite, HEADLINE: the switch moves first |
+| stop at the first run that refuses | REOPEN FAILS: HEADLINE: each step is reopened only after the switch was saved and recorded — and the run after the one that refused is still tried |
+| a refused reopen answered as changed | REOPEN FAILS: the caller is told something was left undone |
+| the panel no longer re-reads the switch after a refused flip | a failed flip re-reads the switch and reloads the step, then shows the refusal |
