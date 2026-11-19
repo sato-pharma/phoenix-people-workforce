@@ -15,6 +15,10 @@ import {
   notifyWhatsAppIntakeUnhealthy,
 } from "@/lib/recruitment/inbound/recruitment-notify";
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
+import {
+  describeResubscribeResults,
+  resubscribeUnsubscribedWhatsAppLines,
+} from "@/lib/recruitment/inbound/whatsapp-line-resubscribe";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 import { refuseOnPageServer } from "@/lib/platform/worker-only-route";
@@ -121,7 +125,13 @@ const PAGING_STATUSES = new Set<WhatsAppIntakeHealth["status"]>([
  * error alert policy fires on.
  */
 async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
-  const health = await checkWhatsAppIntakeHealth();
+  const checked = await checkWhatsAppIntakeHealth();
+  // A line whose business account dropped the Phoenix app gets no messages at all, so put it back at
+  // once (production only, once an hour per account) and say in the alert what was done — the person
+  // reading it learns whether anything is left for them (owner, 19 Nov 2026: "automate this").
+  const resubscribes = await resubscribeUnsubscribedWhatsAppLines(checked.routing?.unsubscribedLines ?? []);
+  const resubscribeNote = describeResubscribeResults(resubscribes);
+  const health: WhatsAppIntakeHealth = resubscribeNote ? { ...checked, detail: `${checked.detail}${resubscribeNote}` } : checked;
   if (PAGING_STATUSES.has(health.status)) {
     logError("Inbound WhatsApp CV intake is not healthy", {
       context: {
@@ -140,6 +150,8 @@ async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
         outsideSenders: health.reach?.outsideSenders ?? null,
         emailSenders: health.reach?.emailSenders ?? null,
         status: health.status,
+        unsubscribedLines: health.routing?.unsubscribedLines?.map((line) => line.displayNumber).join(", ") || null,
+        resubscribed: resubscribes.map((result) => `${result.line.displayNumber}:${result.outcome}`).join(", ") || null,
       },
     });
     // Push to Telegram/OneSignal (throttled to once per status per Cairo day) so it reaches a
