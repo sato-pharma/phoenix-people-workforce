@@ -242,7 +242,7 @@ function OpeningPanel({ view }: { view: MedicalInsuranceMoneyView }) {
 
   return (
     <AdminTableShell
-      description="Everyone on the policy from its first day, laid out as the offer is: per plan and age band, each band's premium rounded to the pound. Ages are taken on the policy's first day."
+      description="Everyone on the policy from its first day, laid out as the policy's schedule is: per plan and age band, each band's premium the rate times its people. Ages are taken on the policy's first day."
       title="The opening bill"
     >
       <div className="hidden md:block">
@@ -383,7 +383,7 @@ function lineHowWords(line: CostLine): string | null {
     : `${share} refunded: premium ${money(movement.premium)}, tax ${money(movement.tax)}`;
 }
 
-const OPENING_ADDITION_HOW = "Laid out as the offer is: each band's premium rounded to the pound, tax 1.55% and EGP 30 a card";
+const OPENING_ADDITION_HOW = "Laid out as the policy's schedule is: each band's premium the rate times its people, tax 1.55% and EGP 30 a card";
 
 function openingAdditionWords(people: number): string {
   return people === 1 ? "1 person joining from the policy's first day" : `${people} people joining from the policy's first day`;
@@ -576,7 +576,7 @@ function PolicyNumberPanel({ policyNumber }: { policyNumber: string | null }) {
   const { busy, error, save } = useSave();
   const [value, setValue] = React.useState(policyNumber ?? "");
   return (
-    <AdminTableShell description="Libano-Suisse issues the policy number with the policy. Until then the proposal stands in for it on every file." title="Policy number">
+    <AdminTableShell description="The number printed on the issued policy. Every file carries it; change it only if Libano-Suisse issues a new one." title="Policy number">
       <div className="flex flex-wrap items-end gap-3 p-4">
         <label className="block w-full sm:w-72">
           <span className={phxLabelClassName}>Policy number</span>
