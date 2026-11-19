@@ -221,7 +221,10 @@ key is not the table's real primary key.
 
 **Left out on purpose:** the append-only trails (`automated_payroll_audit`, `deductions_audit`,
 `employee_salary_change_log`, `employee_change_log`) refuse UPDATE, DELETE and TRUNCATE by trigger,
-so there is nothing for a restore to undo; and the rebuilt tables (`expense_claims`,
+so there is nothing for a restore to undo. The salary log was the exception until 19 Nov 2026: it
+said it was append-only but had never carried a refusal trigger on either project, so from 13 Nov
+it was left out of the undo log on the strength of a guard it did not have. `20261119072427` gave it
+the employee log's three. And the rebuilt tables (`expense_claims`,
 `expense_claim_events` by `phx_refresh_expense_claims`, the weekly attendance digests) are restored
 by restoring their source and rebuilding. `tests/employee-and-deduction-history.test.ts` pins the 43,
 the 24-version five and these exclusions. Five of the 43 could not actually be restored until
