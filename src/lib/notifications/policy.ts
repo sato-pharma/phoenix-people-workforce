@@ -436,22 +436,23 @@ function policyKey(moduleName: string, eventType: string) {
  *
  * Every entry below is today's behaviour, acknowledged as it stands — not a ruling on it. Writing a
  * row for one of them changes who is told or how, so it is the owner's decision, type by type.
+ * Keyed by module name, so the list never reads as a sender to the source scans that look for one.
  */
-export const DEFAULT_POLICY_ACKNOWLEDGED: ReadonlyArray<{ module: string; eventTypes: readonly string[]; why: string }> = [
+export const DEFAULT_POLICY_ACKNOWLEDGED: Readonly<Record<string, { eventTypes: readonly string[]; why: string }>> = {
   // ── Direct emails: sent straight to the provider (or the durable outbox), so no policy is read ──
-  { eventTypes: ["telegram_onboarding_link"], module: "telegram", why: "a direct email; the engine's policy is never read" },
-  { eventTypes: ["production_expiry_alarm", "production_reorder_alarm"], module: "production_planning", why: "direct emails to the recipients named on the production planning screen; no policy is read" },
-  { eventTypes: ["careers_application_confirmation"], module: "recruitment.website-apply", why: "a direct email to the applicant; no policy is read" },
-  { eventTypes: ["weekly_sales_uploaded", "targets_uploaded", "sos_monthly_closing_report"], module: "sales", why: "direct emails built and addressed by the sales module; no policy is read" },
+  "telegram": { eventTypes: ["telegram_onboarding_link"], why: "a direct email; the engine's policy is never read" },
+  "production_planning": { eventTypes: ["production_expiry_alarm", "production_reorder_alarm"], why: "direct emails to the recipients named on the production planning screen; no policy is read" },
+  "recruitment.website-apply": { eventTypes: ["careers_application_confirmation"], why: "a direct email to the applicant; no policy is read" },
+  "sales": { eventTypes: ["weekly_sales_uploaded", "targets_uploaded", "sos_monthly_closing_report"], why: "direct emails built and addressed by the sales module; no policy is read" },
   // ── Engine notices that name their own recipients and channels and take the default row for the rest ──
-  { eventTypes: ["report_it_new_report"], module: "report_it", why: "in-app to the report's owners, who are named by the sender; its email is a durable direct email" },
-  { eventTypes: ["holiday_confirmation_reminder"], module: "holiday_confirmation", why: "today's behaviour: the default row" },
-  { eventTypes: ["report_submitted"], module: "coaching", why: "today's behaviour: the default row" },
-  { eventTypes: ["business_card_request_created"], module: "business_card_requests", why: "today's behaviour: the default row; the sender names the seat it addresses" },
-  { eventTypes: ["support_request_created"], module: "support_requests", why: "today's behaviour: the default row" },
-  { eventTypes: ["resignation_sla_reminder"], module: "resignation", why: "today's behaviour: the default row — the reminder is sent under `resignation`, not `resignations`, so the resignations.* row never reaches it (reported to the owner, not changed)" },
-  { eventTypes: ["mailbox_offboarding_overdue"], module: "mailbox_offboarding", why: "today's behaviour: the default row" },
-  {
+  "report_it": { eventTypes: ["report_it_new_report"], why: "in-app to the report's owners, who are named by the sender; its email is a durable direct email" },
+  "holiday_confirmation": { eventTypes: ["holiday_confirmation_reminder"], why: "today's behaviour: the default row" },
+  "coaching": { eventTypes: ["report_submitted"], why: "today's behaviour: the default row" },
+  "business_card_requests": { eventTypes: ["business_card_request_created"], why: "today's behaviour: the default row; the sender names the seat it addresses" },
+  "support_requests": { eventTypes: ["support_request_created"], why: "today's behaviour: the default row" },
+  "resignation": { eventTypes: ["resignation_sla_reminder"], why: "today's behaviour: the default row — the reminder is sent under `resignation`, not `resignations`, so the resignations.* row never reaches it (reported to the owner, not changed)" },
+  "mailbox_offboarding": { eventTypes: ["mailbox_offboarding_overdue"], why: "today's behaviour: the default row" },
+  "deductions": {
     eventTypes: [
       "deduction_pushed",
       "deduction_pushed_cc",
@@ -465,10 +466,9 @@ export const DEFAULT_POLICY_ACKNOWLEDGED: ReadonlyArray<{ module: string; eventT
       "dispute_explanation_confirm_requested",
       "dispute_explanation_answered",
     ],
-    module: "deductions",
     why: "today's behaviour: the default row; each sender names the employee and the managers it tells",
   },
-  {
+  "private_calendar": {
     eventTypes: [
       "private_calendar_dispute_submitted",
       "private_calendar_dispute_decided",
@@ -480,10 +480,9 @@ export const DEFAULT_POLICY_ACKNOWLEDGED: ReadonlyArray<{ module: string; eventT
       "dispute_explanation_confirm_requested",
       "dispute_explanation_answered",
     ],
-    module: "private_calendar",
     why: "today's behaviour: the default row; each sender names the employee and the reviewer it tells",
   },
-  {
+  "system": {
     eventTypes: [
       "daily_hr_digest",
       "system_audit_daily",
@@ -516,13 +515,12 @@ export const DEFAULT_POLICY_ACKNOWLEDGED: ReadonlyArray<{ module: string; eventT
       "telegram_test",
       "push_test",
     ],
-    module: "system",
     why: "operator alerts and system notices: each names its own recipients and channels (the operator-watch guard keeps the no-email ones off email); the default row is what fills the rest",
   },
-];
+};
 
 const acknowledgedDefaultPolicyKeys = new Set(
-  DEFAULT_POLICY_ACKNOWLEDGED.flatMap((entry) => entry.eventTypes.map((eventType) => policyKey(entry.module, eventType))),
+  Object.entries(DEFAULT_POLICY_ACKNOWLEDGED).flatMap(([moduleName, entry]) => entry.eventTypes.map((eventType) => policyKey(moduleName, eventType))),
 );
 
 export type NotificationPolicySource = "exact" | "wildcard" | "default";

@@ -155,14 +155,14 @@ function testEveryRegisteredTypeHasAPolicyRowOrAnAcknowledgedDefault() {
   assert.ok(defaults > 0, "the census found no defaulted type at all — it is not reading the policy");
 
   const seen = new Set<string>();
-  for (const entry of DEFAULT_POLICY_ACKNOWLEDGED) {
-    assert.ok(entry.why.trim().length > 10, `the acknowledgement for ${entry.module} gives no reason`);
+  for (const [moduleName, entry] of Object.entries(DEFAULT_POLICY_ACKNOWLEDGED)) {
+    assert.ok(entry.why.trim().length > 10, `the acknowledgement for ${moduleName} gives no reason`);
     for (const eventType of entry.eventTypes) {
-      const k = key(entry.module, eventType);
+      const k = key(moduleName, eventType);
       assert.ok(!seen.has(k), `${k} is acknowledged twice`);
       seen.add(k);
       assert.ok(registered.has(k), `DEFAULT_POLICY_ACKNOWLEDGED names ${k}, which the registry does not list — drop it`);
-      assert.equal(notificationPolicySource({ eventType, module: entry.module }), "default", `${k} has a policy row now — drop it from DEFAULT_POLICY_ACKNOWLEDGED`);
+      assert.equal(notificationPolicySource({ eventType, module: moduleName }), "default", `${k} has a policy row now — drop it from DEFAULT_POLICY_ACKNOWLEDGED`);
     }
   }
 }
@@ -177,8 +177,8 @@ function testTheDefaultFallbackIsLoggedNotSilent() {
   try {
     unknown = resolveNotificationPolicy({ eventType: "nothing_sends_this", module: "loose_ends_probe" });
     resolveNotificationPolicy({ eventType: "nothing_sends_this", module: "loose_ends_probe" });
-    const acknowledged = DEFAULT_POLICY_ACKNOWLEDGED[0];
-    resolveNotificationPolicy({ eventType: acknowledged.eventTypes[0], module: acknowledged.module });
+    const [acknowledgedModule, acknowledged] = Object.entries(DEFAULT_POLICY_ACKNOWLEDGED)[0];
+    resolveNotificationPolicy({ eventType: acknowledged.eventTypes[0], module: acknowledgedModule });
     const withRow = NOTIFICATION_TYPES.find((entry) => notificationPolicySource(entry) === "exact");
     assert.ok(withRow, "some registered type has its own row");
     resolveNotificationPolicy(withRow);
