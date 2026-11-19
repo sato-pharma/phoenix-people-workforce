@@ -96,6 +96,68 @@ A file that skips step 5 never runs. `tests/test-wiring-complete.test.ts` fails 
 writes or edits the file — using the guard's own two regexes (pinned equal by
 `tests/test-registration-check.test.ts`).
 
+### Behaviour tests against the in-memory database (REC-078 / REC-079, phase 2, 19 Nov 2026)
+
+A test that proves a rule a database write rests on CALLS the code and asserts what it did — never a
+regex over its source. `tests/support/postgrest-stand-in.ts` is the one way to do that here:
+
+- `withPostgrestStandIn(standIn, body)` points the REAL admin client (`getSupabaseAdmin()`) at an
+  address nothing listens on and answers it from tables held in memory. `standIn.tables` holds the
+  rows; `failReads` / `failWrites` answer a table with a failure; `rpc` plays a database function
+  (a plain value is a 200 body, `{ status, body }` anything else); `unknownRpc` answers the rest.
+- Every request is recorded in order (`seen`): `writesTo(seen, table)`, `rpcCalls(seen, name)` and
+  `writtenRow(entry)` read it, so a test asserts what was written, in what order, and that a refusal
+  wrote nothing. A read never creates a table, so "nothing changed" is a `deepEqual` of the world.
+- Nothing leaves the machine: any other host is recorded as `outbound` and answered 503, and
+  `http`, `https`, `net` and `tls` throw while a body runs. No environment file is read. The
+  Supabase settings, fetch, the sockets and the permission, module-lock and directory caches are put
+  back afterwards — after a quiet spell, so work the code left running (`void notify(…)`) finishes
+  against the stand-in, never against whatever the environment points at.
+- It understands eq, neq, is, in, gt, gte, lt, lte, like, ilike, cs, `not.`, `or=(…)`/`and=(…)`,
+  multi-column order, limit/offset, counts, single-row answers, insert, upsert on `on_conflict`,
+  update and delete. A filter it does not know is answered 400 with its name, so a test never passes
+  by reading rows the code did not ask for.
+- `registryModuleRow(moduleKey, actions)` seeds one `workflow_registry_modules` row. The older
+  modules (leave, resignations, probation, contracts) fail CLOSED on a missing row, so a test that
+  drives their decisions seeds the rule it relies on.
+
+`tests/stubs/next-cache.ts` records revalidation while `watchNextCacheForTests()` is armed (and can
+make each call throw, the way Next does outside a request scope), so a cache-busting rule is run too.
+
+What phase 2 added on it: the leave decision (`tests/leave-decision-behaviour.test.ts`), completing a
+resignation (`tests/resignation-complete-behaviour.test.ts`), the hire hand-off ledger and its retry
+against a database (`tests/hire-handoff-database-behaviour.test.ts`), the permission overrides and
+cold start (`runPermissionOverrideBehaviourTests` in `tests/payroll-ledger-and-permission-behaviour.test.ts`),
+role landing (`tests/role-landing-behaviour.test.ts`), and one test for each of the seven `src/lib`
+folders no test imported (dashboard, employee-lifecycle, finance, operations, overview,
+support-requests, visits-report). Each was broken on purpose and its own assertion seen to fire.
+
+Source pins retired because a behaviour test now runs the same rule (each retirement is commented in
+place, naming the test that replaced it):
+
+- `tests/hr-atomic-writes.test.ts` §5 — the reads of `applyVacationDecisionSequential` and
+  `applyVacationDecisionLegacy` for the single call, the 409 mapping in both branches, Sick leave's
+  step values and the event/audit order. The SQL pins, the whitelist check and three pins for paths
+  the new test does not drive stay.
+- `tests/resignation-complete-order.test.ts` §7 — the reads of `runResignationWorkflow`'s text for
+  the ordered path and the absent inline stamp. The route's answer pin stays.
+- `tests/org-tree-cache-invalidation.test.ts` — the reads of `invalidateExecutiveDashboardCache` for
+  the org-tree branch, its `{ expire: 0 }` and its try/catch. The read-tag, seat-transfer and
+  hub-imports pins stay.
+
+No lock test was touched: the Office golden-rule lock, the form-design and square-edge ratchets and
+every other ratchet are exactly as they were.
+
+#### Every `src/lib` folder is imported by a test
+
+`tests/src-lib-folder-test-coverage.test.ts` fails, naming the folder, when a folder under `src/lib/`
+is imported by no file under `tests/`. Only a real import counts — a static or dynamic `import`, or
+an `export … from` — by path or `@/lib/` alias. An `import type` does not (the runner erases it),
+nor does a path in a comment, a string or a `readFileSync` (that proves wording, not behaviour). It
+found a seventh folder the first count missed: `visits-report`, named until then only by a type
+import. A folder that genuinely cannot be exercised would go in its `EXEMPT` list with the reason;
+the list is empty.
+
 ### Filtering Tests
 
 There is no per-test filter flag, and `PHX_TEST_SHARD` is not one — it splits the suite by position,

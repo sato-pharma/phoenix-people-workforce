@@ -475,21 +475,13 @@ export async function runResignationCompleteOrderTests() {
   );
 
   // ── 7. The wiring: runResignationWorkflow's Complete goes through the ordered path ───────────
-  const source = readFileSync("src/lib/resignations/service.ts", "utf8").replace(/\r\n/g, "\n");
-  const workflow = source.slice(
-    source.indexOf("export async function runResignationWorkflow("),
-    source.indexOf("async function stampResignationWorkflowRow("),
-  );
-  assert.ok(workflow.length > 0, "runResignationWorkflow precedes stampResignationWorkflowRow");
-  assert.match(
-    workflow,
-    /if \(action === "complete"\) \{\s*updated = await completeResignationInOrder\(\s*row\.id,\s*resignationCompletionSteps\(supabase, \{ actorHrId, directoryEmployee, row \}\),\s*\(\) => stampResignationWorkflowRow\(/,
-    "Complete runs the employee-side steps through completeResignationInOrder, with the stamp handed in as the LAST step",
-  );
-  assert.ok(!workflow.includes(".update(updates)"), "runResignationWorkflow never stamps the row inline — only stampResignationWorkflowRow does");
-  for (const helper of ["updateEmployeeLifecycleFallback(", "deactivateEmployeeAccessIfSupported(", "linkCompletedResignationVacancy(", "vacateAuSeatsIfSupported("]) {
-    assert.ok(!workflow.includes(helper), `${helper} runs only inside resignationCompletionSteps, never inline after the stamp`);
-  }
+  // RETIRED 19 Nov 2026 (REC-078, phase 2): the source pins that read runResignationWorkflow's text
+  // for the call to completeResignationInOrder, for no inline `.update(updates)` stamp and for none of
+  // the four step helpers being called inline after it. tests/resignation-complete-behaviour.test.ts
+  // now RUNS runResignationWorkflow(…, "complete") against the in-memory PostgREST and reads the
+  // order off the requests it makes: every employee-side write lands before the one "completed"
+  // stamp, a failed step is a 409 that leaves the row Approved, and pressing again finishes it. The
+  // route's answer below is still read here — that test calls the service, not the route.
   const route = readFileSync("app/api/resignations/[id]/workflow/route.ts", "utf8");
   assert.match(
     route,
