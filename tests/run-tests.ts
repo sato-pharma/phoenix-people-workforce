@@ -1232,6 +1232,7 @@ import { runProbationStabilizationTests } from "./probation-stabilization.test.t
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
 import { runRlsAuthenticatedReadRevokeTests } from "./rls-authenticated-read-revoke.test.ts";
+import { runBrowserRoleTableWritesTests } from "./browser-role-table-writes.test.ts";
 import { runAccessIdentityHardeningTests } from "./access-identity-hardening.test.ts";
 import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.ts";
 import { runPayrollMutationAuditTests } from "./payroll-mutation-audit.test.ts";
@@ -5860,6 +5861,11 @@ await runTest("legacy probation feedback stays retired (its files, its identifie
 await runTest("access profile hr_id casing (admin-typed hr_id is normalised before it reaches the employees FK)", runAccessProfileHrIdCasingTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
+await runTest(
+  "the browser roles write no public table or view (the production baseline grants none, no later migration grants one, "
+  + "and the 19 Nov revoke keeps its 63 objects and both guards)",
+  runBrowserRoleTableWritesTests,
+);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
 await runTest("payroll mutation audit", runPayrollMutationAuditTests);
 await runTest("vacation retention purge audit", runVacationRetentionPurgeAuditTests);

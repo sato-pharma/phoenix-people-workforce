@@ -101790,7 +101790,7 @@ GRANT ALL ON FUNCTION public.phx_make_it_happen_brick_units(p_period text, p_lin
 -- Name: TABLE automated_payroll_runs; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.automated_payroll_runs TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.automated_payroll_runs TO authenticated;
 GRANT ALL ON TABLE public.automated_payroll_runs TO service_role;
 
 --
@@ -102160,7 +102160,7 @@ GRANT ALL ON FUNCTION public.phx_publication_take_snapshot() TO service_role;
 --
 
 GRANT ALL ON TABLE public.daily_deductions_publications TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.daily_deductions_publications TO authenticated;
+GRANT SELECT ON TABLE public.daily_deductions_publications TO authenticated;
 
 --
 -- Name: FUNCTION phx_publish_daily_deductions(p_range_start date, p_range_end date, p_lines jsonb, p_actor text, p_notes text); Type: ACL; Schema: public; Owner: postgres
@@ -102939,7 +102939,7 @@ GRANT ALL ON FUNCTION public.phx_weekly_plans_drift_check() TO service_role;
 --
 
 GRANT ALL ON TABLE public.daily_deductions_lines TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.daily_deductions_lines TO authenticated;
+GRANT SELECT ON TABLE public.daily_deductions_lines TO authenticated;
 
 --
 -- Name: FUNCTION phx_withdraw_daily_deduction_line(p_line_id uuid, p_actor text); Type: ACL; Schema: public; Owner: postgres
@@ -103314,7 +103314,7 @@ GRANT ALL ON FUNCTION recovery.take_snapshots() TO service_role;
 -- Name: TABLE source_of_sales_areas; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_areas TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_areas TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_areas TO service_role;
 
 --
@@ -103333,7 +103333,7 @@ GRANT ALL ON TABLE public.source_of_sales_import_batches TO service_role;
 -- Name: TABLE source_of_sales_products; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_products TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_products TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_products TO service_role;
 
 --
@@ -103365,14 +103365,14 @@ GRANT SELECT ON TABLE analytics.closing_by_product TO analytics_readonly;
 -- Name: TABLE source_of_sales_area_regions; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_area_regions TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_area_regions TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_area_regions TO service_role;
 
 --
 -- Name: TABLE source_of_sales_distributors; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_distributors TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_distributors TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_distributors TO service_role;
 
 --
@@ -103477,14 +103477,14 @@ GRANT SELECT ON TABLE analytics.sos_by_area TO analytics_readonly;
 -- Name: TABLE source_of_sales_blocks; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_blocks TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_blocks TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_blocks TO service_role;
 
 --
 -- Name: TABLE source_of_sales_bricks; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_bricks TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_bricks TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_bricks TO service_role;
 
 --
@@ -103732,7 +103732,7 @@ GRANT ALL ON SEQUENCE public.ats_candidate_comments_id_seq TO service_role;
 -- Name: TABLE ats_candidate_cv_extractions; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.ats_candidate_cv_extractions TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.ats_candidate_cv_extractions TO authenticated;
 GRANT ALL ON TABLE public.ats_candidate_cv_extractions TO service_role;
 
 --
@@ -103769,7 +103769,7 @@ GRANT ALL ON TABLE public.ats_candidate_placements TO service_role;
 -- Name: TABLE ats_cv_intake_events; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.ats_cv_intake_events TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.ats_cv_intake_events TO authenticated;
 GRANT ALL ON TABLE public.ats_cv_intake_events TO service_role;
 
 --
@@ -103830,7 +103830,7 @@ GRANT ALL ON TABLE public.ats_cv_lifecycle_share_links TO service_role;
 -- Name: TABLE ats_email_intake_cursors; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.ats_email_intake_cursors TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.ats_email_intake_cursors TO authenticated;
 GRANT ALL ON TABLE public.ats_email_intake_cursors TO service_role;
 
 --
@@ -104305,7 +104305,7 @@ GRANT ALL ON TABLE public.auth_login_attempts TO service_role;
 -- Name: TABLE automated_payroll_audit; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,MAINTAIN ON TABLE public.automated_payroll_audit TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.automated_payroll_audit TO authenticated;
 GRANT SELECT,INSERT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.automated_payroll_audit TO service_role;
 
 --
@@ -104318,7 +104318,7 @@ GRANT ALL ON TABLE public.automated_payroll_carried_expenses TO service_role;
 -- Name: TABLE automated_payroll_carry_forward; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.automated_payroll_carry_forward TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.automated_payroll_carry_forward TO authenticated;
 GRANT ALL ON TABLE public.automated_payroll_carry_forward TO service_role;
 
 --
@@ -104337,7 +104337,7 @@ GRANT ALL ON SEQUENCE public.automated_payroll_draft_cell_history_id_seq TO serv
 -- Name: TABLE automated_payroll_draft_rows; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.automated_payroll_draft_rows TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.automated_payroll_draft_rows TO authenticated;
 GRANT ALL ON TABLE public.automated_payroll_draft_rows TO service_role;
 
 --
@@ -104351,34 +104351,34 @@ GRANT ALL ON TABLE public.automated_payroll_held_entered TO service_role;
 --
 
 GRANT ALL ON TABLE public.automated_payroll_held_part1_unpaid TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.automated_payroll_held_part1_unpaid TO authenticated;
+GRANT SELECT ON TABLE public.automated_payroll_held_part1_unpaid TO authenticated;
 
 --
 -- Name: TABLE automated_payroll_held_releases; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT ALL ON TABLE public.automated_payroll_held_releases TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.automated_payroll_held_releases TO authenticated;
+GRANT SELECT ON TABLE public.automated_payroll_held_releases TO authenticated;
 
 --
 -- Name: TABLE automated_payroll_held_settlements; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT ALL ON TABLE public.automated_payroll_held_settlements TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.automated_payroll_held_settlements TO authenticated;
+GRANT SELECT ON TABLE public.automated_payroll_held_settlements TO authenticated;
 
 --
 -- Name: TABLE automated_payroll_non_employee_recurring; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT ALL ON TABLE public.automated_payroll_non_employee_recurring TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.automated_payroll_non_employee_recurring TO authenticated;
+GRANT SELECT ON TABLE public.automated_payroll_non_employee_recurring TO authenticated;
 
 --
 -- Name: TABLE automated_payroll_non_employees; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.automated_payroll_non_employees TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.automated_payroll_non_employees TO authenticated;
 GRANT ALL ON TABLE public.automated_payroll_non_employees TO service_role;
 
 --
@@ -104398,13 +104398,13 @@ GRANT ALL ON TABLE public.automated_payroll_settings TO service_role;
 --
 
 GRANT ALL ON TABLE public.automated_payroll_standing_additions TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.automated_payroll_standing_additions TO authenticated;
+GRANT SELECT ON TABLE public.automated_payroll_standing_additions TO authenticated;
 
 --
 -- Name: TABLE automated_payroll_step_state; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.automated_payroll_step_state TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.automated_payroll_step_state TO authenticated;
 GRANT ALL ON TABLE public.automated_payroll_step_state TO service_role;
 
 --
@@ -104417,7 +104417,7 @@ GRANT ALL ON TABLE public.blocked_ips TO service_role;
 -- Name: TABLE brick_reference_imports; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.brick_reference_imports TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.brick_reference_imports TO authenticated;
 GRANT ALL ON TABLE public.brick_reference_imports TO service_role;
 
 --
@@ -104432,7 +104432,7 @@ GRANT ALL ON SEQUENCE public.brick_reference_imports_id_seq TO service_role;
 -- Name: TABLE brick_reference_rows; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.brick_reference_rows TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.brick_reference_rows TO authenticated;
 GRANT ALL ON TABLE public.brick_reference_rows TO service_role;
 
 --
@@ -104879,14 +104879,14 @@ GRANT ALL ON TABLE public.database_restarts TO service_role;
 -- Name: TABLE deductions_audit; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,MAINTAIN ON TABLE public.deductions_audit TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.deductions_audit TO authenticated;
 GRANT SELECT,INSERT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.deductions_audit TO service_role;
 
 --
 -- Name: TABLE deductions_candidates; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.deductions_candidates TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.deductions_candidates TO authenticated;
 GRANT ALL ON TABLE public.deductions_candidates TO service_role;
 
 --
@@ -104911,21 +104911,21 @@ GRANT ALL ON TABLE public.deductions_comments TO service_role;
 -- Name: TABLE deductions_decisions; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.deductions_decisions TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.deductions_decisions TO authenticated;
 GRANT ALL ON TABLE public.deductions_decisions TO service_role;
 
 --
 -- Name: TABLE deductions_publication_lines; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.deductions_publication_lines TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.deductions_publication_lines TO authenticated;
 GRANT ALL ON TABLE public.deductions_publication_lines TO service_role;
 
 --
 -- Name: TABLE deductions_publications; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.deductions_publications TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.deductions_publications TO authenticated;
 GRANT ALL ON TABLE public.deductions_publications TO service_role;
 
 --
@@ -105151,7 +105151,7 @@ GRANT ALL ON TABLE public.employee_change_log TO service_role;
 --
 
 GRANT ALL ON TABLE public.employee_compensation TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.employee_compensation TO authenticated;
+GRANT SELECT ON TABLE public.employee_compensation TO authenticated;
 
 --
 -- Name: TABLE employee_contracts; Type: ACL; Schema: public; Owner: postgres
@@ -105197,14 +105197,14 @@ GRANT ALL ON SEQUENCE public.employee_history_id_seq TO service_role;
 -- Name: TABLE employee_linkage_health; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.employee_linkage_health TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.employee_linkage_health TO authenticated;
 GRANT ALL ON TABLE public.employee_linkage_health TO service_role;
 
 --
 -- Name: TABLE employee_linkage_health_summary; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.employee_linkage_health_summary TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.employee_linkage_health_summary TO authenticated;
 GRANT ALL ON TABLE public.employee_linkage_health_summary TO service_role;
 
 --
@@ -105367,7 +105367,7 @@ GRANT ALL ON TABLE public.field_workforce_compliance_monthly_summary TO service_
 -- Name: TABLE geo_locations; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.geo_locations TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.geo_locations TO authenticated;
 GRANT ALL ON TABLE public.geo_locations TO service_role;
 
 --
@@ -106240,7 +106240,7 @@ GRANT ALL ON TABLE public.notification_preferences TO service_role;
 -- Name: TABLE notification_role_policies; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.notification_role_policies TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.notification_role_policies TO authenticated;
 GRANT ALL ON TABLE public.notification_role_policies TO service_role;
 
 --
@@ -106296,13 +106296,13 @@ GRANT ALL ON TABLE public.offers TO service_role;
 --
 
 GRANT ALL ON TABLE public.outstation_expense_reports TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.outstation_expense_reports TO authenticated;
+GRANT SELECT ON TABLE public.outstation_expense_reports TO authenticated;
 
 --
 -- Name: TABLE outstation_expense_requests; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.outstation_expense_requests TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.outstation_expense_requests TO authenticated;
 GRANT ALL ON TABLE public.outstation_expense_requests TO service_role;
 
 --
@@ -106318,13 +106318,13 @@ GRANT ALL ON SEQUENCE public.outstation_expense_requests_id_seq TO service_role;
 --
 
 GRANT ALL ON TABLE public.outstation_expenses TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.outstation_expenses TO authenticated;
+GRANT SELECT ON TABLE public.outstation_expenses TO authenticated;
 
 --
 -- Name: TABLE outstation_policy_rules; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.outstation_policy_rules TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.outstation_policy_rules TO authenticated;
 GRANT ALL ON TABLE public.outstation_policy_rules TO service_role;
 
 --
@@ -106357,56 +106357,56 @@ GRANT ALL ON TABLE public.password_setup_tokens TO service_role;
 -- Name: TABLE payroll_copilot_adjustments; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_copilot_adjustments TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_copilot_adjustments TO authenticated;
 GRANT ALL ON TABLE public.payroll_copilot_adjustments TO service_role;
 
 --
 -- Name: TABLE payroll_copilot_expense_decisions; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_copilot_expense_decisions TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_copilot_expense_decisions TO authenticated;
 GRANT ALL ON TABLE public.payroll_copilot_expense_decisions TO service_role;
 
 --
 -- Name: TABLE payroll_copilot_flags; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_copilot_flags TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_copilot_flags TO authenticated;
 GRANT ALL ON TABLE public.payroll_copilot_flags TO service_role;
 
 --
 -- Name: TABLE payroll_copilot_runs; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_copilot_runs TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_copilot_runs TO authenticated;
 GRANT ALL ON TABLE public.payroll_copilot_runs TO service_role;
 
 --
 -- Name: TABLE payroll_copilot_vacation_settlements; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_copilot_vacation_settlements TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_copilot_vacation_settlements TO authenticated;
 GRANT ALL ON TABLE public.payroll_copilot_vacation_settlements TO service_role;
 
 --
 -- Name: TABLE payroll_recurring_adjustments; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_recurring_adjustments TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_recurring_adjustments TO authenticated;
 GRANT ALL ON TABLE public.payroll_recurring_adjustments TO service_role;
 
 --
 -- Name: TABLE payroll_resignation_candidates; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_resignation_candidates TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_resignation_candidates TO authenticated;
 GRANT ALL ON TABLE public.payroll_resignation_candidates TO service_role;
 
 --
 -- Name: TABLE payroll_statutory_config; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.payroll_statutory_config TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.payroll_statutory_config TO authenticated;
 GRANT ALL ON TABLE public.payroll_statutory_config TO service_role;
 
 --
@@ -107111,7 +107111,7 @@ GRANT ALL ON TABLE public.prodplan_stock_entries TO service_role;
 -- Name: TABLE push_subscriptions; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.push_subscriptions TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.push_subscriptions TO authenticated;
 GRANT ALL ON TABLE public.push_subscriptions TO service_role;
 
 --
@@ -107143,7 +107143,7 @@ GRANT ALL ON TABLE public.report_it_audit_logs TO service_role;
 -- Name: TABLE report_it_dashboard_access; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.report_it_dashboard_access TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.report_it_dashboard_access TO authenticated;
 GRANT ALL ON TABLE public.report_it_dashboard_access TO service_role;
 
 --
@@ -107191,21 +107191,21 @@ GRANT ALL ON TABLE public.salary_allowance_defaults TO service_role;
 --
 
 GRANT ALL ON TABLE public.salary_batches TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.salary_batches TO authenticated;
+GRANT SELECT ON TABLE public.salary_batches TO authenticated;
 
 --
 -- Name: TABLE salary_flags; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT ALL ON TABLE public.salary_flags TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.salary_flags TO authenticated;
+GRANT SELECT ON TABLE public.salary_flags TO authenticated;
 
 --
 -- Name: TABLE salary_records; Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT ALL ON TABLE public.salary_records TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.salary_records TO authenticated;
+GRANT SELECT ON TABLE public.salary_records TO authenticated;
 
 --
 -- Name: TABLE sales_area_region_codes; Type: ACL; Schema: public; Owner: postgres
@@ -107294,7 +107294,7 @@ GRANT ALL ON TABLE public.sato_email_templates TO service_role;
 -- Name: TABLE sensitive_data_access_audit; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,MAINTAIN ON TABLE public.sensitive_data_access_audit TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.sensitive_data_access_audit TO authenticated;
 GRANT SELECT,INSERT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.sensitive_data_access_audit TO service_role;
 
 --
@@ -107357,7 +107357,7 @@ GRANT ALL ON SEQUENCE public.sos_map_change_log_id_seq TO service_role;
 -- Name: TABLE source_of_sales_area_aliases; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_area_aliases TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_area_aliases TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_area_aliases TO service_role;
 
 --
@@ -107372,7 +107372,7 @@ GRANT ALL ON SEQUENCE public.source_of_sales_area_aliases_id_seq TO service_role
 -- Name: TABLE source_of_sales_block_groups; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_block_groups TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_block_groups TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_block_groups TO service_role;
 
 --
@@ -107484,7 +107484,7 @@ GRANT ALL ON TABLE public.source_of_sales_mapping_audit TO service_role;
 -- Name: TABLE source_of_sales_product_aliases; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_product_aliases TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_product_aliases TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_product_aliases TO service_role;
 
 --
@@ -107513,7 +107513,7 @@ GRANT ALL ON SEQUENCE public.source_of_sales_reference_issues_id_seq TO service_
 -- Name: TABLE source_of_sales_region_aliases; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_region_aliases TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_region_aliases TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_region_aliases TO service_role;
 
 --
@@ -107528,14 +107528,14 @@ GRANT ALL ON SEQUENCE public.source_of_sales_region_aliases_id_seq TO service_ro
 -- Name: TABLE source_of_sales_regions; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_regions TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_regions TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_regions TO service_role;
 
 --
 -- Name: TABLE source_of_sales_territory_aliases; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.source_of_sales_territory_aliases TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.source_of_sales_territory_aliases TO authenticated;
 GRANT ALL ON TABLE public.source_of_sales_territory_aliases TO service_role;
 
 --
@@ -107625,7 +107625,7 @@ GRANT ALL ON TABLE public.territory_preview_links TO service_role;
 --
 
 GRANT ALL ON TABLE public.user_access_profiles TO service_role;
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.user_access_profiles TO authenticated;
+GRANT SELECT ON TABLE public.user_access_profiles TO authenticated;
 
 --
 -- Name: TABLE user_error_screens; Type: ACL; Schema: public; Owner: postgres
@@ -107735,7 +107735,7 @@ GRANT ALL ON TABLE public.v2_vacation_weekly_off_policies TO service_role;
 -- Name: TABLE v_access_identity_health; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.v_access_identity_health TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.v_access_identity_health TO authenticated;
 GRANT ALL ON TABLE public.v_access_identity_health TO service_role;
 
 --
@@ -107761,14 +107761,14 @@ GRANT ALL ON TABLE public.v_employee_locations_masked TO service_role;
 -- Name: TABLE v_employee_portal_payslips; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.v_employee_portal_payslips TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.v_employee_portal_payslips TO authenticated;
 GRANT ALL ON TABLE public.v_employee_portal_payslips TO service_role;
 
 --
 -- Name: TABLE v_employee_portal_salary_history; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.v_employee_portal_salary_history TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.v_employee_portal_salary_history TO authenticated;
 GRANT ALL ON TABLE public.v_employee_portal_salary_history TO service_role;
 
 --
@@ -107812,7 +107812,7 @@ GRANT ALL ON TABLE public.v_expense_payroll_reconciliation TO service_role;
 -- Name: TABLE v_hr_id_orphan_audit; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE public.v_hr_id_orphan_audit TO authenticated;
+GRANT SELECT,MAINTAIN ON TABLE public.v_hr_id_orphan_audit TO authenticated;
 GRANT ALL ON TABLE public.v_hr_id_orphan_audit TO service_role;
 
 --
