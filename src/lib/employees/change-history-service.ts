@@ -31,10 +31,10 @@ export function changeHistoryIncludesMoney(access: Pick<AccessContext, "role">, 
 export const CHANGE_HISTORY_LIMIT = 200;
 
 const RECORD_COLUMNS =
-  "id, changed_at, change_kind, actor_login_id, actor_hr_id, actor_name, actor_source, changed_fields, masked_fields, old_values, new_values, write_channel";
+  "id, changed_at, change_kind, actor_login_id, actor_hr_id, actor_name, actor_source, changed_fields, masked_fields, old_values, new_values, write_channel, actor_job";
 
 const SALARY_COLUMNS =
-  "id, changed_at, actor_login_id, actor_hr_id, actor_name, actor_source, changed_fields, old_values, new_values, write_channel";
+  "id, changed_at, actor_login_id, actor_hr_id, actor_name, actor_source, changed_fields, old_values, new_values, write_channel, actor_job";
 
 type Client = ReturnType<typeof getSupabaseAdmin>;
 

@@ -22,8 +22,19 @@
  *
  * Keyed on the request's own header store from next/headers — one object per request, so a person is
  * never carried into another request (tests/employee-and-deduction-history.test.ts proves the identity
- * inside a real Next request scope). Outside a request (a cron, a script, a test, a timer) there is no
- * store, nothing is remembered and nothing is sent: the write is recorded unattributed, as before.
+ * inside a real Next request scope). Outside a request (a script, a test, a timer) there is no store,
+ * nothing is remembered and nothing is sent: the write is recorded unattributed, as before.
+ *
+ * A SCHEDULED JOB NAMES ITSELF (owner, 19 Nov 2026: "Name scheduled jobs"). A cron route has no
+ * signed-in person, so its writes used to read "No person recorded" on the Employee Master's Change
+ * History. Every scheduled route already names itself to the shared cron guard
+ * (src/lib/security/cron-auth.ts: assertCronAuthorized(request, "cron/probation-milestones")); once the
+ * guard lets it in, it calls rememberRequestJob, and that request's writes carry
+ * x-phoenix-actor-job: <the name>. The two logs store it as actor_job, actor_source 'job'. The same
+ * limits hold: only /rest/v1 writes carry it, a caller that names any actor header is left alone, and
+ * a person always wins — when someone is signed in to the request, their headers go and the job's
+ * does not. The first name a request is given is kept: the morning fan-out runs other routes' handlers
+ * inside its own request, and a run is named by the route that started it.
  */
 
 type RequestActor = { loginId: string | null; hrId: string | null };
@@ -39,9 +50,22 @@ type ActorSource = {
 /** The one call being made: its method, its URL when the caller did not build it itself, its own headers. */
 type DatabaseCall = { method?: string | null; url?: string | null; headers?: HeadersInit };
 
-const ACTOR_HEADER_NAMES = ["x-phoenix-actor-login-id", "x-phoenix-actor-hr-id"] as const;
+const JOB_HEADER = "x-phoenix-actor-job";
+
+const ACTOR_HEADER_NAMES = ["x-phoenix-actor-login-id", "x-phoenix-actor-hr-id", JOB_HEADER] as const;
 
 const actors = new WeakMap<object, RequestActor>();
+
+/** The scheduled job serving a request, by the request's header store. */
+const jobs = new WeakMap<object, string>();
+
+// A job is remembered from the cron guard, which answers synchronously, so the store is looked up in
+// the background. A write waits for every lookup still in flight before it reads, so a job's first
+// write can never go out ahead of its name.
+const jobsBeingRemembered = new Set<Promise<void>>();
+
+// The database stores at most 100 characters; a route name is far shorter.
+const JOB_NAME_MAX = 100;
 
 // Nobody remembered in this process yet → no write asks Next for anything. A script, a build, the test
 // suite and a cron-only worker never pay for a header read, and never call headers() where it would
@@ -78,12 +102,27 @@ export function rememberActorFor(store: object | null, access: ActorSource): voi
   anyoneRemembered = true;
 }
 
-/** The x-phoenix-actor-* headers for the request whose header store is `store`; empty when none. */
+/** Remember `job` as the scheduled job serving the request whose header store is `store`. The first name stays. */
+export function rememberJobFor(store: object | null, job: string): void {
+  if (!store) return;
+  const name = clean(job);
+  if (!name || name.length > JOB_NAME_MAX) return;
+  if (!jobs.has(store)) jobs.set(store, name);
+  anyoneRemembered = true;
+}
+
+/**
+ * The x-phoenix-actor-* headers for the request whose header store is `store`; empty when none. The
+ * signed-in person when there is one, else the scheduled job — never both.
+ */
 export function actorHeadersFor(store: object | null): Record<string, string> {
   const actor = store ? actors.get(store) : undefined;
   const out: Record<string, string> = {};
   if (actor?.loginId) out["x-phoenix-actor-login-id"] = actor.loginId;
   if (actor?.hrId) out["x-phoenix-actor-hr-id"] = actor.hrId;
+  if (Object.keys(out).length > 0) return out;
+  const job = store ? jobs.get(store) : undefined;
+  if (job) out[JOB_HEADER] = job;
   return out;
 }
 
@@ -111,8 +150,25 @@ export async function rememberRequestActor(access: ActorSource): Promise<void> {
   rememberActorFor(await currentRequestStore(), access);
 }
 
+/**
+ * Called by the shared cron guard once it has let a scheduled job in: that request's writes are logged
+ * under the job's name. Returns at once and never throws; the lookup finishes in the background, and
+ * requestActorHeaders waits for it.
+ */
+export function rememberRequestJob(job: string): void {
+  const name = clean(job);
+  if (!name || name.length > JOB_NAME_MAX) return;
+  const lookup: Promise<void> = currentRequestStore()
+    .then((store) => rememberJobFor(store, name))
+    .finally(() => {
+      jobsBeingRemembered.delete(lookup);
+    });
+  jobsBeingRemembered.add(lookup);
+}
+
 /** The headers to add to `call`, made while serving the current request. Empty for anything else. Never throws. */
 export async function requestActorHeaders(call: DatabaseCall): Promise<Record<string, string>> {
+  if (jobsBeingRemembered.size > 0) await Promise.all([...jobsBeingRemembered]);
   if (!anyoneRemembered || !callTakesRequestActor(call)) return {};
   return actorHeadersFor(await currentRequestStore());
 }

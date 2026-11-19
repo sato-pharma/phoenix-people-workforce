@@ -11,6 +11,7 @@ globalThis.AsyncLocalStorage = AsyncLocalStorage;
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://actor-probe.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "actor-probe-service-role-key";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "actor-probe-anon-key";
+process.env.CRON_SECRET = "actor-probe-cron-secret";
 
 const sent = [];
 globalThis.fetch = async (input, init) => {
@@ -20,6 +21,7 @@ globalThis.fetch = async (input, init) => {
     path: new URL(String(input)).pathname,
     login: headers.get("x-phoenix-actor-login-id"),
     hr: headers.get("x-phoenix-actor-hr-id"),
+    job: headers.get("x-phoenix-actor-job"),
     body: typeof init?.body === "string" ? init.body : null,
   });
   return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
@@ -30,6 +32,7 @@ const { workUnitAsyncStorage } = (await import("next/dist/server/app-render/work
 const { headers } = await import("next/headers.js");
 const actor = await import("../../src/lib/supabase/request-actor.ts");
 const { getSupabaseAdmin } = await import("../../src/lib/supabase/server.ts");
+const { assertCronAuthorized } = await import("../../src/lib/security/cron-auth.ts");
 
 const inRequest = (run) =>
   workAsyncStorage.run({ route: "/actor-probe" }, () =>
@@ -37,6 +40,9 @@ const inRequest = (run) =>
   );
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sentSince = (from) => sent.slice(from);
+const cronCall = (secret) =>
+  new Request("https://actor-probe.local/api/cron/probe", { headers: { authorization: `Bearer ${secret}` } });
+const writesMarked = (mark) => sent.filter((call) => call.body?.includes(mark));
 
 const out = {};
 
@@ -66,13 +72,31 @@ await Promise.all([
     await admin.rpc("phx_probe", { p: 1 });
     await admin.from("employees").update({ nickname: "probe" }).eq("hr_id", "A-1").setHeader("x-phoenix-actor-login-id", "joining-form");
     await admin.storage.from("probe").upload("a.txt", "x");
-    out.remembered = sentSince(from);
+    // The job and refused requests below run at the same time; their writes are told apart by body.
+    out.remembered = sentSince(from).filter((call) => !/"(job-first|job-second|refused)"/.test(call.body ?? ""));
   }),
   inRequest(async () => {
     await pause(10);
     const from = sent.length;
     await getSupabaseAdmin().from("employees").update({ nickname: "other" }).eq("hr_id", "A-2");
     out.otherRequest = sentSince(from).filter((call) => call.body?.includes("other"));
+  }),
+  // A scheduled job, admitted by the shared cron guard, writing at once — no pause between the guard
+  // and its first write, so its name must already be on that write — while the person's request runs.
+  inRequest(async () => {
+    out.cronAdmitted = assertCronAuthorized(cronCall("actor-probe-cron-secret"), "cron/daily/resignation-sla") === null;
+    await getSupabaseAdmin().from("employees").update({ nickname: "job-first" }).eq("hr_id", "A-4");
+    // The morning fan-out runs another route's handler inside its own request: the first name stays.
+    assertCronAuthorized(cronCall("actor-probe-cron-secret"), "notifications/birthdays");
+    await pause(5);
+    await getSupabaseAdmin().from("employees").update({ nickname: "job-second" }).eq("hr_id", "A-4");
+    out.cronJob = writesMarked("job-");
+  }),
+  // A caller the guard refuses is never named.
+  inRequest(async () => {
+    out.cronRefused = assertCronAuthorized(cronCall("wrong-secret"), "cron/refused") !== null;
+    await getSupabaseAdmin().from("employees").update({ nickname: "refused" }).eq("hr_id", "A-5");
+    out.refusedCaller = writesMarked("refused");
   }),
 ]);
 

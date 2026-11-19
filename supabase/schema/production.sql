@@ -32047,6 +32047,7 @@ declare
   headers    json;
   v_login    text;
   v_hr       text;
+  v_job      text;
   v_channel  text;
   v_api_role text;
   v_api_path text;
@@ -32079,15 +32080,22 @@ begin
     return null;
   end if;
 
-  -- Best-effort actor from the PostgREST request headers, exactly as the salary trigger reads it.
+  -- Best-effort actor from the PostgREST request headers, exactly as the salary trigger reads it:
+  -- the signed-in person, or, when a scheduled job made the write, the job's name.
   begin
     headers := nullif(current_setting('request.headers', true), '')::json;
     v_login := nullif(headers ->> 'x-phoenix-actor-login-id', '');
     v_hr    := nullif(headers ->> 'x-phoenix-actor-hr-id', '');
+    v_job   := left(nullif(btrim(headers ->> 'x-phoenix-actor-job'), ''), 100);
   exception when others then
     v_login := null;
     v_hr    := null;
+    v_job   := null;
   end;
+  -- A person and a job are never mixed into one actor: a named person owns the row.
+  if v_login is not null or v_hr is not null then
+    v_job := null;
+  end if;
 
   -- HOW the write arrived, from the session itself. PostgREST sets request.jwt.claims and
   -- request.headers on every request; a direct session sets neither. Only WHETHER the headers are
@@ -32110,14 +32118,14 @@ begin
   insert into public.employee_change_log (
     employee_hr_id, change_kind, actor_login_id, actor_hr_id, actor_source,
     changed_fields, masked_fields, old_values, new_values,
-    write_channel, write_db_user, write_application, write_api_role, write_api_path
+    write_channel, write_db_user, write_application, write_api_role, write_api_path, actor_job
   ) values (
     v_hr_id, lower(tg_op), v_login, v_hr,
-    case when v_login is not null or v_hr is not null then 'app' else 'unattributed' end,
+    case when v_login is not null or v_hr is not null then 'app' when v_job is not null then 'job' else 'unattributed' end,
     fields, hidden, old_diff, new_diff,
     v_channel, session_user::text,
     left(nullif(current_setting('application_name', true), ''), 64),
-    v_api_role, v_api_path
+    v_api_role, v_api_path, v_job
   );
 
   return null;
@@ -32159,6 +32167,7 @@ declare
   headers     json;
   v_login     text;
   v_hr        text;
+  v_job       text;
   v_channel   text;
   v_api_role  text;
   v_api_path  text;
@@ -32186,16 +32195,23 @@ begin
     return new;
   end if;
 
-  -- Best-effort actor from the PostgREST request headers. Absent on direct SQL / MCP writes, which
-  -- is the point: a null actor flags an out-of-band change.
+  -- Best-effort actor from the PostgREST request headers: the signed-in person, or, when a
+  -- scheduled job made the write, the job's name. Absent on direct SQL / MCP writes, which is the
+  -- point: a null actor flags an out-of-band change.
   begin
     headers := nullif(current_setting('request.headers', true), '')::json;
     v_login := nullif(headers ->> 'x-phoenix-actor-login-id', '');
     v_hr    := nullif(headers ->> 'x-phoenix-actor-hr-id', '');
+    v_job   := left(nullif(btrim(headers ->> 'x-phoenix-actor-job'), ''), 100);
   exception when others then
     v_login := null;
     v_hr    := null;
+    v_job   := null;
   end;
+  -- A person and a job are never mixed into one actor: a named person owns the row.
+  if v_login is not null or v_hr is not null then
+    v_job := null;
+  end if;
 
   -- HOW the write arrived, read exactly as the employee log reads it. Only WHETHER the headers
   -- are set is read: their values carry the API key.
@@ -32217,14 +32233,14 @@ begin
   insert into public.employee_salary_change_log (
     employee_hr_id, actor_login_id, actor_hr_id, actor_source,
     changed_fields, old_values, new_values,
-    write_channel, write_db_user, write_application, write_api_role, write_api_path
+    write_channel, write_db_user, write_application, write_api_role, write_api_path, actor_job
   ) values (
     new.hr_id, v_login, v_hr,
-    case when v_login is not null or v_hr is not null then 'app' else 'unattributed' end,
+    case when v_login is not null or v_hr is not null then 'app' when v_job is not null then 'job' else 'unattributed' end,
     fields, old_diff, new_diff,
     v_channel, session_user::text,
     left(nullif(current_setting('application_name', true), ''), 64),
-    v_api_role, v_api_path
+    v_api_role, v_api_path, v_job
   );
 
   return new;
@@ -59435,7 +59451,8 @@ CREATE TABLE public.employee_change_log (
     write_application text,
     write_api_role text,
     write_api_path text,
-    CONSTRAINT employee_change_log_actor_source_check CHECK ((actor_source = ANY (ARRAY['app'::text, 'unattributed'::text]))),
+    actor_job text,
+    CONSTRAINT employee_change_log_actor_source_check CHECK ((actor_source = ANY (ARRAY['app'::text, 'job'::text, 'unattributed'::text]))),
     CONSTRAINT employee_change_log_change_kind_check CHECK ((change_kind = ANY (ARRAY['insert'::text, 'update'::text, 'delete'::text]))),
     CONSTRAINT employee_change_log_write_channel_check CHECK ((write_channel = ANY (ARRAY['api'::text, 'database_job'::text, 'direct_sql'::text])))
 );
@@ -59477,6 +59494,12 @@ COMMENT ON COLUMN public.employee_change_log.write_api_role IS 'On an api write 
 --
 
 COMMENT ON COLUMN public.employee_change_log.write_api_path IS 'On an api write only: the PostgREST path (/employees, /rpc/<function>), at most 200 characters.';
+
+--
+-- Name: COLUMN employee_change_log.actor_job; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_change_log.actor_job IS 'The scheduled job that made the write (its cron route name, at most 100 characters), when no person was named. Read from the x-phoenix-actor-job request header. NULL = no job named.';
 
 --
 -- Name: employee_compensation; Type: TABLE; Schema: public; Owner: postgres
@@ -60150,6 +60173,7 @@ CREATE TABLE public.employee_salary_change_log (
     write_application text,
     write_api_role text,
     write_api_path text,
+    actor_job text,
     CONSTRAINT employee_salary_change_log_write_channel_check CHECK ((write_channel = ANY (ARRAY['api'::text, 'database_job'::text, 'direct_sql'::text])))
 );
 
@@ -60190,6 +60214,12 @@ COMMENT ON COLUMN public.employee_salary_change_log.write_api_role IS 'On an api
 --
 
 COMMENT ON COLUMN public.employee_salary_change_log.write_api_path IS 'On an api write only: the PostgREST path (/employees, /rpc/<function>), at most 200 characters.';
+
+--
+-- Name: COLUMN employee_salary_change_log.actor_job; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.employee_salary_change_log.actor_job IS 'The scheduled job that made the write (its cron route name, at most 100 characters), when no person was named. Read from the x-phoenix-actor-job request header. NULL = no job named.';
 
 --
 -- Name: employee_salary_structure; Type: TABLE; Schema: public; Owner: postgres
@@ -72266,7 +72296,8 @@ CREATE VIEW public.v_employee_change_log WITH (security_invoker='true') AS
     l.write_db_user,
     l.write_application,
     l.write_api_role,
-    l.write_api_path
+    l.write_api_path,
+    l.actor_job
    FROM (((public.employee_change_log l
      LEFT JOIN public.employees e ON ((e.hr_id = l.employee_hr_id)))
      LEFT JOIN public.app_auth_users u ON (((l.actor_hr_id IS NULL) AND (u.login_id = l.actor_login_id))))
@@ -72437,7 +72468,8 @@ CREATE VIEW public.v_employee_salary_change_log WITH (security_invoker='true') A
     l.write_application,
     l.write_api_role,
     l.write_api_path,
-    l.actor_hr_id
+    l.actor_hr_id,
+    l.actor_job
    FROM ((public.employee_salary_change_log l
      LEFT JOIN public.employees e ON ((e.hr_id = l.employee_hr_id)))
      LEFT JOIN public.employees a ON ((a.hr_id = COALESCE(l.actor_hr_id, l.actor_login_id))))

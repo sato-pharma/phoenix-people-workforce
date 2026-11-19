@@ -44,6 +44,10 @@ const CHANNEL_FILE = "20261119035258_change_logs_record_the_write_channel.sql";
 // recovery doc, RECOVERY_FILE's header) and carried no refusal trigger at all. It now carries the
 // employee log's three, calling the same shared refusal.
 const SALARY_REFUSAL_FILE = "20261119072427_salary_change_log_refuses_update_delete_truncate.sql";
+// Owner, 19 Nov 2026: "Name scheduled jobs". A cron route has no signed-in person, so its changes read
+// "No person recorded" on the Employee Master's Change History. The cron guard now remembers the job's
+// name for the request, its writes send x-phoenix-actor-job, and both logs store it as actor_job.
+const JOB_FILE = "20261119132416_change_logs_name_the_scheduled_job.sql";
 
 const WRITE_COLUMNS = ["write_channel", "write_db_user", "write_application", "write_api_role", "write_api_path"];
 
@@ -112,7 +116,7 @@ function lastDefiner(files: string[], fn: string): { file: string; body: string 
 
 export async function runEmployeeAndDeductionHistoryTests() {
   const files = readdirSync(MIGRATIONS).filter((name) => name.endsWith(".sql")).sort();
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE, SECOND_REVIEW_FILE, CHANNEL_FILE, SALARY_REFUSAL_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE, SECOND_REVIEW_FILE, CHANNEL_FILE, SALARY_REFUSAL_FILE, JOB_FILE]) {
     assert.ok(files.includes(name), `the migration must still be here: ${name}`);
   }
 
@@ -150,8 +154,8 @@ export async function runEmployeeAndDeductionHistoryTests() {
   );
   assert.match(
     employeeWriter,
-    /case when v_login is not null or v_hr is not null then 'app' else 'unattributed' end/,
-    "a write with no actor header is recorded as unattributed, never dropped",
+    /case when v_login is not null or v_hr is not null then 'app' when v_job is not null then 'job' else 'unattributed' end/,
+    "a person's write is 'app', a scheduled job's is 'job', and a write naming neither is recorded as unattributed, never dropped",
   );
 
   // ---- Append-only, against UPDATE, DELETE, TRUNCATE and replica mode -----------------------------
@@ -463,14 +467,24 @@ export async function runEmployeeAndDeductionHistoryTests() {
     assert.match(
       writer,
       new RegExp(
-        `insert into public\\.${table} \\([^)]*write_channel, write_db_user, write_application, write_api_role, write_api_path\\s*\\) values \\(`,
+        `insert into public\\.${table} \\([^)]*write_channel, write_db_user, write_application, write_api_role, write_api_path, actor_job\\s*\\) values \\(`,
       ),
-      `${label}: the insert must name all five write columns`,
+      `${label}: the insert must name all five write columns, then the scheduled job`,
     );
     assert.match(
       writer,
-      /v_channel, session_user::text,\s+left\(nullif\(current_setting\('application_name', true\), ''\), 64\),\s+v_api_role, v_api_path\s*\);/,
-      `${label}: the five values are the channel, the login role, the application name, the JWT role and the path`,
+      /v_channel, session_user::text,\s+left\(nullif\(current_setting\('application_name', true\), ''\), 64\),\s+v_api_role, v_api_path, v_job\s*\);/,
+      `${label}: the five values are the channel, the login role, the application name, the JWT role and the path; then the job`,
+    );
+    assert.match(
+      writer,
+      /v_job\s+:= left\(nullif\(btrim\(headers ->> 'x-phoenix-actor-job'\), ''\), 100\);/,
+      `${label}: the job name is read from its own header, trimmed and held to the 100 characters the app sends at most`,
+    );
+    assert.match(
+      writer,
+      /if v_login is not null or v_hr is not null then\s+v_job := null;\s+end if;/,
+      `${label}: a person and a job are never mixed into one actor — a named person owns the row`,
     );
     assert.match(
       writer,
@@ -479,8 +493,8 @@ export async function runEmployeeAndDeductionHistoryTests() {
     );
     assert.deepEqual(
       [...writer.matchAll(/headers ->> '([^']+)'/g)].map((m) => m[1]).sort(),
-      ["x-phoenix-actor-hr-id", "x-phoenix-actor-login-id"],
-      `${label}: only the two actor headers are read — request.headers carries the API key and the bearer token`,
+      ["x-phoenix-actor-hr-id", "x-phoenix-actor-job", "x-phoenix-actor-login-id"],
+      `${label}: only the three actor headers are read — request.headers carries the API key and the bearer token`,
     );
     assert.deepEqual(
       [...writer.matchAll(/\)::json ->> '([^']+)'/g)].map((m) => m[1]),
@@ -506,9 +520,23 @@ export async function runEmployeeAndDeductionHistoryTests() {
       `${table}: the channel holds one of three names, or NULL on a row from before 19 Nov 2026`,
     );
   }
-  // CREATE OR REPLACE VIEW can only APPEND a column, so a later column sits after the five. The one
-  // allowed so far is the salary view's actor_hr_id (20261119111338), which the Employee Master's
-  // Change History panel names the editor by; any other must be added here on purpose.
+  const jobSql = read(JOB_FILE);
+  for (const table of ["employee_change_log", "employee_salary_change_log"]) {
+    assert.ok(
+      new RegExp(`alter table public\\.${table}\\s+add column if not exists actor_job text;`).test(jobSql) &&
+        jobSql.includes(`public.${table}.actor_job is`),
+      `${table}.actor_job must be added and described`,
+    );
+  }
+  assert.match(
+    jobSql,
+    /add constraint employee_change_log_actor_source_check\s+check \(actor_source in \('app', 'job', 'unattributed'\)\);/,
+    "the record log's actor_source admits 'job', or every scheduled job's write would be refused by the CHECK and fail the save",
+  );
+  // CREATE OR REPLACE VIEW can only APPEND a column, so a later column sits after the five. Allowed so
+  // far: the salary view's actor_hr_id (20261119111338), which the Employee Master's Change History
+  // panel names the editor by, then actor_job on both (20261119132416), which names a scheduled job;
+  // any other must be added here on purpose.
   const viewSelects: Record<string, string> = {};
   for (const view of ["v_employee_change_log", "v_employee_salary_change_log"]) {
     const definers = files.filter((name) => read(name).includes(`create or replace view public.${view}`));
@@ -517,13 +545,13 @@ export async function runEmployeeAndDeductionHistoryTests() {
     viewSelects[view] = body.slice(0, body.indexOf(";"));
     assert.match(
       viewSelects[view],
-      /l\.write_channel,\s+l\.write_db_user,\s+l\.write_application,\s+l\.write_api_role,\s+l\.write_api_path(?:,\s+l\.actor_hr_id)?\s+from/,
-      `${view} must show the five write columns`,
+      /l\.write_channel,\s+l\.write_db_user,\s+l\.write_application,\s+l\.write_api_role,\s+l\.write_api_path(?:,\s+l\.actor_hr_id)?,\s+l\.actor_job\s+from/,
+      `${view} must show the five write columns, then actor_job — the panel names a scheduled job by it`,
     );
   }
   assert.match(
     viewSelects.v_employee_salary_change_log,
-    /l\.write_api_path,\s+l\.actor_hr_id\s+from/,
+    /l\.write_api_path,\s+l\.actor_hr_id,\s+l\.actor_job\s+from/,
     "v_employee_salary_change_log must show actor_hr_id: the Change History panel names a salary editor by it (display name, not the view's full name)",
   );
 
@@ -555,6 +583,45 @@ export async function runEmployeeAndDeductionHistoryTests() {
   rememberActorFor(unsafe, { source: "session", loginId: "عمر", hrId: "B-10" });
   assert.deepEqual(actorHeadersFor(unsafe), { "x-phoenix-actor-hr-id": "B-10" }, "a header value must be ASCII");
 
+  // ---- A scheduled job names itself (owner, 19 Nov 2026: "Name scheduled jobs") -------------------
+  const { rememberJobFor } = await import("../src/lib/supabase/request-actor.ts");
+  const jobRun = {};
+  rememberJobFor(jobRun, "cron/daily/resignation-sla");
+  rememberJobFor(jobRun, "notifications/birthdays");
+  assert.deepEqual(
+    actorHeadersFor(jobRun),
+    { "x-phoenix-actor-job": "cron/daily/resignation-sla" },
+    "a job's writes carry its name, and the first name stays: a run is named by the route that started it, " +
+      "not by another route's handler it calls inside the same request",
+  );
+  const personAndJob = {};
+  rememberJobFor(personAndJob, "cron/probation-milestones");
+  rememberActorFor(personAndJob, { source: "session", loginId: "ops:omar", hrId: "B-10" });
+  assert.deepEqual(
+    actorHeadersFor(personAndJob),
+    { "x-phoenix-actor-login-id": "ops:omar", "x-phoenix-actor-hr-id": "B-10" },
+    "a signed-in person always wins, and a job is never sent beside them: two sources are never mixed",
+  );
+  for (const [label, name] of [
+    ["a name that is not ASCII", "وظيفة"],
+    ["a name with a space", "cron/two words"],
+    ["a name over 100 characters", `cron/${"x".repeat(100)}`],
+    ["an empty name", "  "],
+  ] as const) {
+    const store = {};
+    rememberJobFor(store, name);
+    assert.deepEqual(actorHeadersFor(store), {}, `${label} is never sent as a job`);
+  }
+  rememberJobFor(null, "cron/outside");
+  assert.deepEqual(actorHeadersFor(null), {}, "outside a request no job is remembered");
+  const cronGuard = readFileSync("src/lib/security/cron-auth.ts", "utf8");
+  assert.equal(
+    (cronGuard.match(/rememberRequestJob\(job\);\s+return null;/g) ?? []).length,
+    2,
+    "the cron guard remembers the job on both of its admitting paths (the secret and the previous secret during a " +
+      "rotation) — and only there, so a refused caller is never named",
+  );
+
   // Which call takes the person: a database write that named no actor of its own, and nothing else.
   const { callTakesRequestActor, withActorHeaders } = await import("../src/lib/supabase/request-actor.ts");
   const rest = "https://x.supabase.co/rest/v1/employees?hr_id=eq.A-1";
@@ -570,11 +637,11 @@ export async function runEmployeeAndDeductionHistoryTests() {
       `${elsewhere} never reads the actor headers, so a login id and an HR id are never sent there`,
     );
   }
-  for (const named of ["x-phoenix-actor-login-id", "X-Phoenix-Actor-Hr-Id"]) {
+  for (const named of ["x-phoenix-actor-login-id", "X-Phoenix-Actor-Hr-Id", "x-phoenix-actor-job"]) {
     assert.equal(
       callTakesRequestActor({ method: "POST", url: rest, headers: { [named]: "joining-form" } }),
       false,
-      "a caller that named an actor — either header — is left as it is: two sources are never mixed",
+      "a caller that named an actor — any of the three headers — is left as it is: two sources are never mixed",
     );
   }
   const callerInit = { method: "PATCH", body: '{"a":1}', headers: { Prefer: "return=representation" } };
@@ -588,7 +655,14 @@ export async function runEmployeeAndDeductionHistoryTests() {
   // The real thing: Next's own request scope, the app's own admin client, fetch replaced by a recorder
   // (tests/support/request-actor-in-next.mjs). It is what fails if a Next upgrade stops handing one
   // request the same header store twice — the whole feature rests on that, and nothing else would say.
-  type SentCall = { method: string; path: string; login: string | null; hr: string | null; body: string | null };
+  type SentCall = {
+    method: string;
+    path: string;
+    login: string | null;
+    hr: string | null;
+    job: string | null;
+    body: string | null;
+  };
   const probe = spawnSync(
     process.execPath,
     [
@@ -609,6 +683,10 @@ export async function runEmployeeAndDeductionHistoryTests() {
     remembered: SentCall[];
     otherRequest: SentCall[];
     outsideARequest: SentCall[];
+    cronAdmitted: boolean;
+    cronJob: SentCall[];
+    cronRefused: boolean;
+    refusedCaller: SentCall[];
   };
   assert.deepEqual(seen.beforeAnyone, {}, "until someone is remembered in the process, no write asks Next for anything");
   assert.equal(
@@ -625,7 +703,7 @@ export async function runEmployeeAndDeductionHistoryTests() {
   const [update, plainRead, rpc, named, upload] = seen.remembered;
   assert.deepEqual(
     update,
-    { method: "PATCH", path: "/rest/v1/employees", login: "ops:omar", hr: "B-10", body: '{"nickname":"probe"}' },
+    { method: "PATCH", path: "/rest/v1/employees", login: "ops:omar", hr: "B-10", job: null, body: '{"nickname":"probe"}' },
     "a write through the shared admin client carries the request's person, and its body is untouched — " +
       "it is how resignations, probation, imports, photos and CVs reach the employees table",
   );
@@ -638,14 +716,34 @@ export async function runEmployeeAndDeductionHistoryTests() {
   );
   assert.deepEqual([upload.path, upload.login, upload.hr], ["/storage/v1/object/probe/a.txt", null, null], "storage is sent nobody");
   assert.deepEqual(
-    seen.otherRequest.map((call) => [call.login, call.hr]),
-    [[null, null]],
-    "a request served at the same moment is never given the other request's person",
+    seen.otherRequest.map((call) => [call.login, call.hr, call.job]),
+    [[null, null, null]],
+    "a request served at the same moment is never given the other request's person, nor the job's name",
   );
   assert.deepEqual(
-    seen.outsideARequest.map((call) => [call.login, call.hr]),
-    [[null, null]],
+    seen.outsideARequest.map((call) => [call.login, call.hr, call.job]),
+    [[null, null, null]],
     "outside a request the write goes out unattributed",
+  );
+  assert.equal(seen.cronAdmitted, true, "the probe's job carried the right secret");
+  assert.deepEqual(
+    seen.cronJob.map((call) => [call.method, call.path, call.login, call.hr, call.job]),
+    [
+      ["PATCH", "/rest/v1/employees", null, null, "cron/daily/resignation-sla"],
+      ["PATCH", "/rest/v1/employees", null, null, "cron/daily/resignation-sla"],
+    ],
+    "a scheduled job's writes carry the name it gave the cron guard — the first one too, made with no pause " +
+      "after the guard — and a second name given inside the same run (the morning fan-out) changes nothing",
+  );
+  assert.equal(seen.cronRefused, true, "the probe's refused caller held the wrong secret");
+  assert.deepEqual(
+    seen.refusedCaller.map((call) => [call.login, call.hr, call.job]),
+    [[null, null, null]],
+    "a caller the cron guard refused is never named",
+  );
+  assert.ok(
+    seen.remembered.every((call) => call.job === null),
+    "the signed-in request running beside the job is never given the job's name",
   );
 
   for (const helper of ["src/lib/employees/employee-directory.ts", "src/lib/employees/vacancy-closer.ts"]) {
