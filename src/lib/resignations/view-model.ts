@@ -223,6 +223,17 @@ export function resignationStatusLabel(status: ResignationStatus) {
   return statusExportLabels[status] ?? status;
 }
 
+/**
+ * The status a resignation notice shows, twice — the email's {{status}} and its details table's
+ * Status row. Any stored code becomes words a reader knows ("under_review" → "Under review",
+ * "declined_offer" → "Declined offer"); the notice is also raised for codes outside
+ * `ResignationStatus`, so it takes any string.
+ */
+export function resignationNoticeStatusLabel(status: string) {
+  const words = status.trim().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function buildResignationExportRows(records: readonly ResignationRecord[]): ExportRow[] {
   return records.map((record) => ({
     createdBy: resignationActorLabel(record),

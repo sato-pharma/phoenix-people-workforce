@@ -1372,9 +1372,44 @@ function extractPlaceholders(value: unknown) {
   return { malformed, tokens };
 }
 
-export function validateEmailTemplatePayload(payload: EmailTemplatePayload, extraAllowedTokens: ReadonlySet<string> = new Set()) {
+/**
+ * The tokens a sender's own record reaches an email through. A sender's `metrics` arrive as
+ * `{{detailsTable}}` (`{{detailsSections}}` for the grouped kind) and nothing else, so a body that
+ * drops the one its template's default carries sends the email with the record left out while
+ * every layer still reports it delivered. That is how 155 resignation emails went out with no
+ * update text, status or details between 9 Sep and 19 Nov 2026 (audit F-COM-018).
+ */
+const RECORD_PAYLOAD_TOKENS = ["detailsTable", "detailsSections"] as const;
+
+/** The record tokens this template's own default body carries, which a saved body must keep. */
+export function requiredRecordPayloadTokens(templateKey: string | null | undefined): string[] {
+  const key = normalizeTemplateKey(templateKey);
+  if (!key) return [];
+  const defaultTokens = new Set(extractPlaceholders(templateDefaults[key].bodyHtml).tokens);
+  return RECORD_PAYLOAD_TOKENS.filter((token) => defaultTokens.has(token));
+}
+
+export function validateEmailTemplatePayload(
+  payload: EmailTemplatePayload,
+  extraAllowedTokens: ReadonlySet<string> = new Set(),
+  templateKey?: string | null,
+) {
   const issues: EmailTemplateValidationIssue[] = [];
   const warnings: EmailTemplateValidationIssue[] = [];
+
+  // Only a body that was actually sent is judged: a partial update with no body keeps the saved one.
+  if (payload.bodyHtml !== undefined && payload.bodyHtml !== null) {
+    const bodyTokens = new Set(extractPlaceholders(payload.bodyHtml).tokens);
+    for (const token of requiredRecordPayloadTokens(templateKey)) {
+      if (bodyTokens.has(token)) continue;
+      issues.push({
+        field: "bodyHtml",
+        message: `Body HTML must keep {{${token}}}. It is the only way this email's details (who, the status and the dates) reach the reader; without it they are left out. Add it back from Available Variables.`,
+        token,
+        type: "required",
+      });
+    }
+  }
   const fields: Array<[keyof EmailTemplatePayload, string]> = [
     ["subject", "Subject"],
     ["greeting", "Greeting"],
@@ -1484,7 +1519,7 @@ export function getEmailTemplateHealth(
   rules: EmailTemplateRecipientRules,
   extraAllowedTokens: ReadonlySet<string> = new Set(),
 ): EmailTemplateHealth {
-  const validation = validateEmailTemplatePayload({ ...template, rules }, extraAllowedTokens);
+  const validation = validateEmailTemplatePayload({ ...template, rules }, extraAllowedTokens, template.templateKey);
   const issues: EmailTemplateHealth["issues"] = [];
   let score = 100;
 
@@ -1923,7 +1958,7 @@ export async function saveEmailTemplate(
   if (!key) throw new Error("Unsupported email template.");
   const customVariables = await listEmailCustomVariables();
   const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
-  const validation = validateEmailTemplatePayload(payload, customTokens);
+  const validation = validateEmailTemplatePayload(payload, customTokens, key);
   if (!validation.isValid) throw new EmailTemplateValidationError(validation.issues);
   const action = options.action ?? (payload.isActive ? "publish" : "save");
   const reason = text(options.reason ?? payload.changeReason);
@@ -2899,7 +2934,7 @@ export async function sendTemplateTestEmail(input: {
 
   const customVariablesList = await listEmailCustomVariables();
   const customTokens = new Set(customVariablesList.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
-  const validation = validateEmailTemplatePayload(input.template ?? {}, customTokens);
+  const validation = validateEmailTemplatePayload(input.template ?? {}, customTokens, key);
   if (!validation.isValid) throw new EmailTemplateValidationError(validation.issues);
 
   const current = await getEmailTemplate(key);

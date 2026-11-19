@@ -155,7 +155,7 @@ export async function validateEmailTemplateDraft(input: {
   };
   const customVariables = await listEmailCustomVariables();
   const customTokens = new Set(customVariables.filter((variable) => variable.sourceAllowed).map((variable) => variable.token));
-  const payloadValidation = validateEmailTemplatePayload(template, customTokens);
+  const payloadValidation = validateEmailTemplatePayload(template, customTokens, input.templateKey);
   const issues: EmailDraftValidationIssue[] = [
     ...payloadValidation.issues.map((issue) => ({ ...issue, severity: "error" as const })),
     ...payloadValidation.warnings.map((issue) => ({ ...issue, severity: "warning" as const })),
