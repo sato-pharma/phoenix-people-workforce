@@ -367,6 +367,23 @@ export async function reopenPart1Atomically(
   return mapRun(row);
 }
 
+/**
+ * Keep a live claim live (F-PAY-014): restart its 15-minute clock, in one statement conditioned on the token.
+ * True while this token still holds the run; false once the claim lapsed and another action took it, which
+ * the caller refuses on rather than writing. The app's clock is what restarts it; the claim function compares
+ * it with the database's `now()`, and the two agree to well under a second against a 15-minute lapse.
+ */
+export async function renewRunTransition(runId: string, token: string): Promise<boolean> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(RUNS)
+    .update({ transition_started_at: new Date().toISOString() })
+    .eq("id", runId)
+    .eq("transition_token", token)
+    .select("id");
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
 /** Let go of a claim a transition could not finish. Matches nothing when the phase write already cleared it. */
 export async function releaseRunTransition(runId: string, token: string): Promise<void> {
   const { error } = await getSupabaseAdmin()

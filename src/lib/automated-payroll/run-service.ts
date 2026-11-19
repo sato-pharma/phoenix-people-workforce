@@ -178,6 +178,7 @@ import {
   listLatestCellWrites,
   listStepStates,
   markRunPublished,
+  renewRunTransition,
   reopenPart1Atomically,
   updateRun,
   upsertDraftRows,
@@ -553,6 +554,22 @@ async function whileClaimed<T>(runId: string, token: string, work: () => Promise
     });
     throw error;
   }
+}
+
+/**
+ * A LIVE TRANSITION'S CLAIM NEVER LAPSES UNDER IT (F-PAY-014). A claim lapses 15 minutes after it was taken,
+ * so that a request that died does not hold the run for ever. Publish holds its claim while it writes real
+ * money, and a publish slower than that could have had its claim taken over by a cancel or a reopen halfway
+ * through. So before each money write the claim is renewed in one conditioned statement
+ * (renewRunTransition): its clock restarts while this request is alive, and a claim another action already
+ * took refuses the next write instead of letting it land.
+ */
+async function keepClaim(runId: string, token: string, nextWrite: string): Promise<void> {
+  if (await renewRunTransition(runId, token)) return;
+  throw new Error(
+    `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before ${nextWrite}, and another ` +
+      "action has taken the run. Refresh the page and read where the run is before repeating it.",
+  );
 }
 
 // ---- Run lifecycle ----------------------------------------------------------
@@ -3034,128 +3051,21 @@ async function refuseAfterClearing(
 export async function publishToPayslips(access: AccessContext, runId: string): Promise<PublishResult> {
   assertRealSessionForDecision(access, "publish a payroll run to payslips");
   assertAutomatedPayrollPublisher(access);
-  const run = await requireRun(runId);
+  const before = await requireRun(runId);
 
-  if (run.phase === "published" && run.publishedBatchId) {
-    return { run, batchId: run.publishedBatchId, publishedCount: 0, heldExcluded: 0 };
+  if (before.phase === "published" && before.publishedBatchId) {
+    return { run: before, batchId: before.publishedBatchId, publishedCount: 0, heldExcluded: 0 };
   }
-  if (run.phase !== "ready") {
+  if (before.phase !== "ready") {
     throw new Error("Conflict: confirm Part 2 before publishing to payslips.");
   }
 
-  const { rows, draftRows: publishDraftRows } = await assembleForRun(run);
-  const heldRows = rows.filter((entry) => entry.onHold);
-  const heldExcluded = heldRows.length;
-  const publishRows = rows.filter((entry) => !entry.onHold).map((entry) => entry.row);
-  if (publishRows.length === 0) {
-    throw new Error("Conflict: no publishable employees (all rows are held or empty).");
-  }
-
-  // THE GATES RUN AGAIN, HERE, AGAINST THE ROWS ABOUT TO BE WRITTEN.
-  //
-  // Publish re-assembles every row live from current employee, deduction and expense data, and
-  // until now checked nothing but the run's phase. So anything that moved between Part 2 confirm
-  // and this click — a corrected salary, a new deduction, an expense approved this morning — was
-  // written to the payslip while finance had already executed bank files built from the older
-  // figures. The employee's payslip and their transfer disagreed, and nothing recorded it.
-  const { preflightValidate: preflightAtPublish } = await import("./validate.ts");
-  const publishPreflight = preflightAtPublish(rows);
-  if (!publishPreflight.ok) {
-    const sample = publishPreflight.issues
-      .slice(0, 6)
-      .map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
-    throw new Error(
-      `Validation: ${publishPreflight.errorCount} issue(s) in the rows about to be published. ` +
-        `${sample.join("; ")} (These passed at Part 2 confirm, so something has changed since.)`,
-    );
-  }
-  await assertHeldReleasesPayable(runId, publishDraftRows, rows);
-
-  const publishTotals = reconcile(rows);
-  if (publishTotals.splitMismatches.length > 0) {
-    const sample = publishTotals.splitMismatches
-      .slice(0, 5)
-      .map((one) => `${one.hrId}: ${one.firstPart} + ${one.secondPart} != ${one.monthSalary}`);
-    throw new Error(
-      `Conflict: the split does not reconcile for ${publishTotals.splitMismatches.length} row(s) ` +
-        `about to be published. ${sample.join("; ")}`,
-    );
-  }
-
-  // Refuses when the month moved since Part 2 confirm AND when there is no stamp at all (audit
-  // 2026-10-23, S-PAY-08): "could not compare" used to publish, recording only that it had not checked.
-  // The one exception is a run confirmed before the stamp existed (2026-09-11), which never had one.
-  const confirmedStamp = await readPart2ConfirmedTotals(runId);
-  const predatesStamp = !confirmedStamp && confirmedBeforeStampExisted(run.part2ConfirmedAt);
-  if (!predatesStamp) {
-    assertMatchesPart2Confirm(confirmedStamp, part2Totals(rows.length, publishTotals), "publish");
-  }
-
-  // THE LATE-APPROVED TRIPS THIS MONTH PAYS (REC-029 / F-PAY-012, late-expenses.ts): what Part 2 confirm
-  // recorded as carried, kept only for people actually published (not held) with expenses above zero. A
-  // held person was not paid, so neither was their carried trip, and it stays on the list.
-  const lateAtPublish = lateExpensesAtPublish((await readPart2ConfirmedStamp(runId)).lateExpensesCarried, rows);
-  const lateExpensesCarried = lateAtPublish.paid;
-  const expensesCovered = await expensesCoveredForPublish(runId, rows, lateExpensesCarried);
-
-  // WHAT EACH HELD PERSON WAS OWED, recorded permanently at the moment they are dropped.
-  //
-  // Publishing filters held rows out, so no salary_record is written for them and the payslip
-  // screens show nothing. Until now the only trace was a COUNT in this run's audit row plus a
-  // free-text reason on a staging row that the next run overwrites — so a month later there was
-  // no way to answer "who was held in August, for how much, and why". Production carried 20 such
-  // people in August holding EGP 260,904 of already-paid first instalment, 18 of them with a hold
-  // reason of a single dash.
-  //
-  // This is the whole roster, with money, captured from the same assembled rows publish itself
-  // used — so it can never disagree with what was published. It is a record of a decision, not a
-  // payment: nothing here pays anybody, and a held person is still settled outside the system.
-  const heldRecord = heldRows
-    .map((entry) => ({
-      hrId: entry.row.hrId,
-      name: entry.row.fullName,
-      // assembleRows already puts a held row's hold reason in payrollComment, falling back to an
-      // explicit "no reason given" marker — so this is the same string the sheet shows.
-      reason: (entry.row.payrollComment ?? "").trim() || null,
-      // The first instalment has ALREADY left the company — unless they were held at Part 1 confirm,
-      // when the Part 1 bank files left them out and it is still owed (owner, 2026-10-26). A run
-      // confirmed before that was recorded keeps the old reading, "already paid". The second is what
-      // this publish would have paid and did not. All are needed to settle the person by hand.
-      firstPartAlreadyPaid: entry.part1Withheld === true ? 0 : roundCurrency(entry.row.firstPart),
-      firstPartWithheld: entry.part1Withheld === true ? roundCurrency(entry.row.firstPart) : 0,
-      // A held row releases no earlier held salary in Part 2 (assemble.ts); a Part 1 release paid before
-      // the hold is inside firstPartAlreadyPaid. So the Part 2 figure is this month's own.
-      secondPartWithheld: roundCurrency(entry.row.secondPart),
-      monthTotal: roundCurrency(entry.row.monthSalary),
-      // The filing figures too (audit finding 43): a held person has no salary record, so the statutory
-      // summary can only name what they would have filed if publish writes it down here.
-      socialInsurance: roundCurrency(entry.row.socialInsurance),
-      employmentIncomeTax: roundCurrency(entry.row.employmentIncomeTax),
-    }))
-    .sort((a, b) => b.secondPartWithheld - a.secondPartWithheld);
-  const heldSecondPartTotal = roundCurrency(
-    heldRecord.reduce((sum, entry) => sum + entry.secondPartWithheld, 0),
-  );
-  const heldFirstPartTotal = roundCurrency(
-    heldRecord.reduce((sum, entry) => sum + entry.firstPartAlreadyPaid, 0),
-  );
-  // Counted, not corrected. A reason of "-" satisfies every existing check and answers nothing;
-  // production carried 18 of them in one month. Naming the count here makes it visible without
-  // this publish inventing a policy about what a good reason looks like.
-  const heldWithoutMeaningfulReason = heldRecord.filter(
-    (entry) => !entry.reason || /^[\s\-–—.]*$/.test(entry.reason),
-  ).length;
-  const { part1Unpaid, deferred } = owedLaterRecords(rows, publishDraftRows, run);
-
-  // Who the bank files carry and who they do not, for both instalments, captured at the one
-  // moment the month becomes final. See exports/bank-coverage.ts.
-  const nonEmployeesForCoverage = await getNonEmployeePayrollRows(run.id);
-  const bankCoverage = (["part1", "part2"] as const).map((scope) =>
-    buildBankCoverage({ rows, nonEmployees: nonEmployeesForCoverage, scope }),
-  );
-
-  // From the batch to the phase, under one claim (audit finding 50): see claimTransition. A cancel racing
-  // publish used to write `cancelled` over `published` and un-mark the debts it had just recovered.
+  // THE CLAIM COMES FIRST, AND EVERY FIGURE IS WORKED OUT UNDER IT (F-PAY-014). Publish used to assemble the
+  // rows, run its gates and build the held record BEFORE claiming, so a Reopen Part 2, a save and a re-confirm
+  // landing in those seconds left it publishing figures the run no longer held. Under the claim nothing else can
+  // write, so what is checked is what is written. A refusal lets the claim go (whileClaimed). From the batch to
+  // the phase it is one claim too (audit finding 50): a cancel racing publish used to write `cancelled` over
+  // `published` and un-mark the debts it had just recovered.
   const transition = await claimTransition(runId, ["ready"], "Publishing to payslips");
   // What already landed, so a lost claim can say what exists instead of "nothing was written". Publish is
   // the one transition that writes REAL MONEY before its phase write: by the time the run is marked, the
@@ -3165,11 +3075,125 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   // its records were not this run's, or a create whose own follow-up threw after the batch was written.
   const batchNotes: Record<string, unknown> = {};
   const published = await whileClaimed(runId, transition, async () => {
+    // The run as it stands under the claim: a reopen and re-confirm before the claim moved its stamp.
+    const run = await requireRun(runId);
+    const { rows, draftRows: publishDraftRows } = await assembleForRun(run);
+    const heldRows = rows.filter((entry) => entry.onHold);
+    const heldExcluded = heldRows.length;
+    const publishRows = rows.filter((entry) => !entry.onHold).map((entry) => entry.row);
+    if (publishRows.length === 0) {
+      throw new Error("Conflict: no publishable employees (all rows are held or empty).");
+    }
+
+    // THE GATES RUN AGAIN, HERE, AGAINST THE ROWS ABOUT TO BE WRITTEN.
+    //
+    // Publish re-assembles every row live from current employee, deduction and expense data, and
+    // until now checked nothing but the run's phase. So anything that moved between Part 2 confirm
+    // and this click — a corrected salary, a new deduction, an expense approved this morning — was
+    // written to the payslip while finance had already executed bank files built from the older
+    // figures. The employee's payslip and their transfer disagreed, and nothing recorded it.
+    const { preflightValidate: preflightAtPublish } = await import("./validate.ts");
+    const publishPreflight = preflightAtPublish(rows);
+    if (!publishPreflight.ok) {
+      const sample = publishPreflight.issues
+        .slice(0, 6)
+        .map((issue) => `${issue.hrId ?? "?"}: ${issue.message}`);
+      throw new Error(
+        `Validation: ${publishPreflight.errorCount} issue(s) in the rows about to be published. ` +
+          `${sample.join("; ")} (These passed at Part 2 confirm, so something has changed since.)`,
+      );
+    }
+    await assertHeldReleasesPayable(runId, publishDraftRows, rows);
+
+    const publishTotals = reconcile(rows);
+    if (publishTotals.splitMismatches.length > 0) {
+      const sample = publishTotals.splitMismatches
+        .slice(0, 5)
+        .map((one) => `${one.hrId}: ${one.firstPart} + ${one.secondPart} != ${one.monthSalary}`);
+      throw new Error(
+        `Conflict: the split does not reconcile for ${publishTotals.splitMismatches.length} row(s) ` +
+          `about to be published. ${sample.join("; ")}`,
+      );
+    }
+
+    // Refuses when the month moved since Part 2 confirm AND when there is no stamp at all (audit
+    // 2026-10-23, S-PAY-08): "could not compare" used to publish, recording only that it had not checked.
+    // The one exception is a run confirmed before the stamp existed (2026-09-11), which never had one.
+    const confirmedStamp = await readPart2ConfirmedTotals(runId);
+    const predatesStamp = !confirmedStamp && confirmedBeforeStampExisted(run.part2ConfirmedAt);
+    if (!predatesStamp) {
+      assertMatchesPart2Confirm(confirmedStamp, part2Totals(rows.length, publishTotals), "publish");
+    }
+
+    // THE LATE-APPROVED TRIPS THIS MONTH PAYS (REC-029 / F-PAY-012, late-expenses.ts): what Part 2 confirm
+    // recorded as carried, kept only for people actually published (not held) with expenses above zero. A
+    // held person was not paid, so neither was their carried trip, and it stays on the list.
+    const lateAtPublish = lateExpensesAtPublish((await readPart2ConfirmedStamp(runId)).lateExpensesCarried, rows);
+    const lateExpensesCarried = lateAtPublish.paid;
+    const expensesCovered = await expensesCoveredForPublish(runId, rows, lateExpensesCarried);
+
+    // WHAT EACH HELD PERSON WAS OWED, recorded permanently at the moment they are dropped.
+    //
+    // Publishing filters held rows out, so no salary_record is written for them and the payslip
+    // screens show nothing. Until now the only trace was a COUNT in this run's audit row plus a
+    // free-text reason on a staging row that the next run overwrites — so a month later there was
+    // no way to answer "who was held in August, for how much, and why". Production carried 20 such
+    // people in August holding EGP 260,904 of already-paid first instalment, 18 of them with a hold
+    // reason of a single dash.
+    //
+    // This is the whole roster, with money, captured from the same assembled rows publish itself
+    // used — so it can never disagree with what was published. It is a record of a decision, not a
+    // payment: nothing here pays anybody, and a held person is still settled outside the system.
+    const heldRecord = heldRows
+      .map((entry) => ({
+        hrId: entry.row.hrId,
+        name: entry.row.fullName,
+        // assembleRows already puts a held row's hold reason in payrollComment, falling back to an
+        // explicit "no reason given" marker — so this is the same string the sheet shows.
+        reason: (entry.row.payrollComment ?? "").trim() || null,
+        // The first instalment has ALREADY left the company — unless they were held at Part 1 confirm,
+        // when the Part 1 bank files left them out and it is still owed (owner, 2026-10-26). A run
+        // confirmed before that was recorded keeps the old reading, "already paid". The second is what
+        // this publish would have paid and did not. All are needed to settle the person by hand.
+        firstPartAlreadyPaid: entry.part1Withheld === true ? 0 : roundCurrency(entry.row.firstPart),
+        firstPartWithheld: entry.part1Withheld === true ? roundCurrency(entry.row.firstPart) : 0,
+        // A held row releases no earlier held salary in Part 2 (assemble.ts); a Part 1 release paid before
+        // the hold is inside firstPartAlreadyPaid. So the Part 2 figure is this month's own.
+        secondPartWithheld: roundCurrency(entry.row.secondPart),
+        monthTotal: roundCurrency(entry.row.monthSalary),
+        // The filing figures too (audit finding 43): a held person has no salary record, so the statutory
+        // summary can only name what they would have filed if publish writes it down here.
+        socialInsurance: roundCurrency(entry.row.socialInsurance),
+        employmentIncomeTax: roundCurrency(entry.row.employmentIncomeTax),
+      }))
+      .sort((a, b) => b.secondPartWithheld - a.secondPartWithheld);
+    const heldSecondPartTotal = roundCurrency(
+      heldRecord.reduce((sum, entry) => sum + entry.secondPartWithheld, 0),
+    );
+    const heldFirstPartTotal = roundCurrency(
+      heldRecord.reduce((sum, entry) => sum + entry.firstPartAlreadyPaid, 0),
+    );
+    // Counted, not corrected. A reason of "-" satisfies every existing check and answers nothing;
+    // production carried 18 of them in one month. Naming the count here makes it visible without
+    // this publish inventing a policy about what a good reason looks like.
+    const heldWithoutMeaningfulReason = heldRecord.filter(
+      (entry) => !entry.reason || /^[\s\-–—.]*$/.test(entry.reason),
+    ).length;
+    const { part1Unpaid, deferred } = owedLaterRecords(rows, publishDraftRows, run);
+
+    // Who the bank files carry and who they do not, for both instalments, captured at the one
+    // moment the month becomes final. See exports/bank-coverage.ts.
+    const nonEmployeesForCoverage = await getNonEmployeePayrollRows(run.id);
+    const bankCoverage = (["part1", "part2"] as const).map((scope) =>
+      buildBankCoverage({ rows, nonEmployees: nonEmployeesForCoverage, scope }),
+    );
+
     // TWO RUNS NEVER PAY THE SAME LATE TRIP, AND NONE PAYS ONE THAT CHANGED. Checked under the claim and before
     // anything is written, so a refusal leaves no batch behind: another published run that carried one of
     // these trips wins, and a trip no longer approved at the amount Part 2 recorded refuses the publish.
     await assertLateExpensesPublishable(runId, lateAtPublish, lateExpenseNames(rows));
     const ownFileName = `automated-payroll:${runId}`;
+    await keepClaim(runId, transition, "the salary batch could be written");
     let existing = await findSalaryBatchForPeriod(run.month, run.year);
 
     if (!existing) {
@@ -3237,6 +3261,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
         );
       }
       // Still editable: rewrite it with this run's rows, then prove the rewrite before finalising it.
+      await keepClaim(runId, transition, "the leftover salary batch could be rewritten");
       try {
         await replaceSalaryBatch(batchId, {
           records: publishRows,
@@ -3267,6 +3292,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     // Any non-approved leftover is finalised, not just an "uploaded" one, and the result is checked.
     // Skipping this for every other status is what let a run be marked published over a batch nobody
     // could see.
+    await keepClaim(runId, transition, "the salary batch could be approved");
     const status =
       existing.status === "approved" || existing.status === "locked"
         ? existing.status
@@ -3277,6 +3303,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     // are excluded because no salary record was written for them, so their debt was collected from
     // nobody. This used to happen at Part-2 confirm, which marked balances recovered against money
     // that had not been written yet — see carry-forward.ts.
+    await keepClaim(runId, transition, "the carry-forward ledger could be settled");
     const carryForwardRecovered = await markCarryForwardApplied({
       runId,
       appliedCompacts: rows
@@ -3288,6 +3315,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     // RECORD WHAT THIS RUN RELEASED OF AN EARLIER MONTH'S HELD SALARY, from the rows actually published
     // — the same rule as the carry-forward above. It REPLACES what Part 2 confirm reserved, so a retried
     // publish writes the same record again rather than a second one.
+    await keepClaim(runId, transition, "the held-salary releases could be recorded");
     const heldReleased = await recordHeldReleases({
       runId,
       actorHrId: actorId(access),
@@ -3348,7 +3376,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       },
       { transitionToken: transition },
     );
-    return { batchId, carryForwardRecovered, heldReleased, updated };
+    return { batchId, carryForwardRecovered, heldReleased, updated, rows, publishRows, heldExcluded, lateExpensesCarried, run };
   }).catch((publishError: unknown) => {
     // A carried-trip refusal comes before anything is written, and clears nothing: the run is Part 2-confirmed,
     // so its files may already be at the bank (REC-035, refusalKeepingConfirmedFigures).
@@ -3367,7 +3395,7 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     }
     throw publishError;
   });
-  const { batchId, carryForwardRecovered, heldReleased, updated } = published;
+  const { batchId, updated, rows, publishRows, heldExcluded, lateExpensesCarried, run } = published;
 
   // Mark the outstation trips this month paid (owner ruling 2026-09-12). Never throws: expense-stamp.ts.
   const expenseStamp = await recordPaidExpenseStamp({
