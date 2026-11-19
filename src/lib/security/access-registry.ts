@@ -880,15 +880,18 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/:id/view-sales/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   // CEO Approvals' ticked rows as a house-style XLSX or PDF (owner, 2026-11-15). The page's own gate,
-  // canViewMarketingCeoApprovals, runs inside getMarketingCeoApprovals before a row is read.
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/ceo-approvals/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // canViewMarketingCeoApprovals (Marketing Manager, CEO, Super Admin), runs in the route before its body and
+  // again inside getMarketingCeoApprovals before a row is read; it is no matrix permission (19 Nov 2026, REC-080: the expenses label made the Financial Advisor, whom the marketing role list admits, look refused).
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/ceo-approvals/export", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/marketing-requests/report/share-links", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Minting a link that copies candidate names and phone numbers into a Google Sheet is gated on
   // recruitment:EXPORT, not recruitment:read — reading the pool inside Phoenix and issuing a
   // credential that survives the session are different acts, and only the second one leaves the
   // building.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/cv-lifecycle/share-links", permission: { resource: "recruitment", action: "export" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/marketing-requests/control", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Marketing controls: SFE Manager and Super Admin only (assertMarketingControlAccess), asked by the route before
+  // its body (19 Nov 2026, REC-080: the expenses label made the Financial Advisor, whom the marketing role list admits, look refused).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/marketing-requests/control", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/marketing-requests/venue-merge", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/marketing-requests/customer-merge", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PATCH"], pattern: "/api/marketing-requests/vendors", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
@@ -1504,12 +1507,15 @@ export const accessRegistry = [
   // The Doctor-List Check's Excel and its one write. `expenses:read` is the base; the routes then admit
   // only the board's own readers, and the answer only the SFE Manager and the Super Admin.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/list-check/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/list-check/decide", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The answer: SFE Manager or Super Admin (canDecideListCheck), asked by the route before its body (19 Nov 2026, REC-080: the expenses label made the Financial Advisor, whom the marketing role list admits, look refused).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/list-check/decide", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Finance Ageing's Excel. `expenses:read` is the base; the route then admits only the page's own
   // three roles (canViewMarketingFinanceAgeing), which is why it is no export key.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/finance-ageing/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // A workflow decision: only the approver the request's current step names (decideMarketingRequestWorkflow,
+  // with a linked HR identity) (19 Nov 2026, REC-080: the expenses label made the Financial Advisor, whom the marketing role list admits, look refused).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: null, guard: "domain-helper", csrfRequired: true }),
 
   // Make It Happen — the forecast planner. `sales:read` is the ROLE gate; canUseMakeItHappen then
   // admits only the eight owner-named roles, and the workspace is rebuilt in the caller's own scope
@@ -1551,7 +1557,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/close", permission: { resource: "market_awareness", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Finance's paid / not-paid mark — `update`, which only Finance Manager and Super Admin hold.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/market-awareness/:activityId/finance", permission: { resource: "market_awareness", action: "update" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/comment", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // An advisory comment: only a CC reviewer on the request's current step (postMarketingAdvisoryComment)
+  // (19 Nov 2026, REC-080: the expenses label made the Financial Advisor, whom the marketing role list admits, look refused).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/comment", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/resubmit", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Super-Admin-only direct-sales tracking toggle (Phase D). GET reads the flag; POST is
   // the mutation (Super-Admin gate enforced in the service). csrf is applied to the POST.

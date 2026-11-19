@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { toApiError, validationError } from "@/lib/http/api-errors";
+import { forbiddenError, toApiError, validationError } from "@/lib/http/api-errors";
 import { decideMarketingListCheck } from "@/lib/marketing-requests/crm-list-check";
+import { canDecideListCheck } from "@/lib/marketing-requests/crm-list-check-rules";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     assertSignedIn(access); // REC-080: the caller is judged before the body.
+    // The same role rule decideMarketingListCheck asks, now before the body too (REC-080).
+    if (!canDecideListCheck(access.role)) throw forbiddenError("Only the SFE Manager or the Super Admin answers this.");
     const body = (await request.json().catch(() => null)) as { checkId?: unknown; decision?: unknown } | null;
     const checkId = typeof body?.checkId === "string" ? body.checkId.trim() : "";
     const decision = body?.decision;

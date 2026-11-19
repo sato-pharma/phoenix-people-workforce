@@ -4,6 +4,7 @@ import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, errorMessageOf, toApiError } from "@/lib/http/api-errors";
 import {
+  assertMarketingControlAccess,
   getMarketingControlWorkspace,
   updateMarketingControlRequestType,
   updateMarketingControlSetting,
@@ -65,6 +66,9 @@ export async function PATCH(request: Request) {
 
     const access = await resolveAccessContext(request);
     assertSignedIn(access); // REC-080: the caller is judged before the body.
+    // Every entity below is SFE Manager or Super Admin only (each update asserts the same), so a role
+    // outside that pair is refused before the body is read (REC-080, the marketing role list gap).
+    assertMarketingControlAccess(access);
     const body = await request.json();
     const entity = String(body?.entity ?? "");
 
