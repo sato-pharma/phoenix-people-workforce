@@ -884,6 +884,13 @@
       "decidedBy": "owner",
       "why": "22 tables: Phoenix CRM test data cleared from the live app on 3 Oct (1,145 test customers, 1,159 list events, 9 visits, 13 places, 18 photo records, 3 plans and smaller tables; none live now), plus the 11 pharmacy visits' names before that evening's name backfill (the visits are still live under their corrected names).",
       "sheet": "19 November 2026, the 3 October snapshot schemas, in chat"
+    },
+    "qena_split_backup_20261004": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "8 tables, 1,933 rows: the Qena territory before the 4 Oct brick move (4 bricks, since superseded; 2 blocks; 11 aliases; 1,276 customer mappings, 1,265 of which moved from Qena 1 to Qena 2; 2 direct-order pharmacies and their 2 codes; 54 stored address answers; 582 September import rows from two batches that no longer exist). Every surviving row has changed since and the customer map keeps no history, so the export is the lasting record of the mapping before the move; September is published on all three lines, so it can undo nothing.",
+      "sheet": "19 November 2026, the 4 October snapshot schema, in chat"
     }
   }
 }

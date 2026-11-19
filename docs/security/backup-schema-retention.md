@@ -276,8 +276,24 @@ reads them; no browser role, and not even `service_role`, can use the three sche
 | `crm_parity_backup_20261003` | 1 · 139,051 | the old CRM's visit mirror on 2 Oct: visit id, date and rep id, 1 Jan to 1 Oct 2026. 138,474 still match the live mirror; the nightly sync deleted the other 577 (two resigned reps' visits) between 3 and 19 Oct, and the deletion log keeps only their ids and dates, so the export is the one record of whose visits they were |
 | `phoenix_crm_backup_20261003` | 22 · 2,380 | Phoenix CRM test data cleared from the live app on 3 Oct (test customers, list events, visits, places, photo records, plans), none of it live now; plus the 11 pharmacy visits' names before that evening's name backfill, whose visits are still live under the corrected names |
 
-No dated table is next: the next snapshot to reach 90 days with no decision is the schema
-`qena_split_backup_20261004`, on 2 Jan 2027.
+**The 4 October schema, decided the same day.** `qena_split_backup_20261004`, "export, then drop",
+exported that day. It reaches 90 days on 2 Jan 2027. No migration creates it; nothing reads it; no
+browser role and not `service_role` can use the schema; staging has none.
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `bricks` | 4 | the four Qena bricks before the 4 Oct move; all four are since superseded by Qena 2 bricks |
+| `blocks` | 2 | the Qena 1 and Qena 2 blocks; unchanged since |
+| `aliases` | 11 | territory aliases pointing at those bricks; all re-pointed since |
+| `customer_map` | 1,276 | the customer mappings in Qena 1 before the move; 1,265 now sit in Qena 2. The customer map keeps no history, so the export is the lasting record of the mapping before the move |
+| `direct_pharmacies`, `direct_codes` | 2 · 2 | two direct-order pharmacies and their distributor codes; re-mapped since |
+| `ai_answers` | 54 | stored address answers naming the old bricks; re-pointed since |
+| `import_rows_sept_on` | 582 | September import rows from two batches that no longer exist; September is published on all three lines, so the copy can undo nothing |
+
+The next snapshots to reach 90 days with no decision are the 8 October group, on 6 Jan 2027: the
+schemas `crm_backup_20261008` and `phoenix_crm_merge_backup_20261008`, and six dated tables in `au`
+(`bak_20261008_luxor_notes_fix`, `bak_20261008_pd0021_decline_revert` and the four
+`bak_20261008_orphaned_direct_order*` tables).
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
