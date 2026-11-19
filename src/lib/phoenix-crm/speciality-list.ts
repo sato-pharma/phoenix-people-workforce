@@ -67,7 +67,11 @@ export const OTHER_SPECIALITY_LABEL = "Other";
 /** The longest speciality kept — the database rows were written to 80 by the rep's screens. */
 export const SPECIALITY_TEXT_MAX = 80;
 
-export type SpecialityListKind = "AM" | "PM" | "manager";
+/**
+ * Which pick-list a form draws: the customer's own list type (AM, PM or Pharmacy), or a manager's own list,
+ * which has none. Taking the list type as it is — never narrowed to AM-or-PM — keeps a pharmacy a pharmacy.
+ */
+export type SpecialityListKind = "AM" | "PM" | "Pharmacy" | "manager";
 
 export type SpecialityGroup = { label: string; items: readonly string[] };
 
@@ -76,19 +80,19 @@ export type SpecialityGroup = { label: string; items: readonly string[] };
  * list on the places and accounts, and each still offers the other group — an AM account names the
  * doctor met there, and a wrongly filed customer must still be pickable before it is moved.
  */
-export function specialityChoices(kind: SpecialityListKind): SpecialityGroup[] {
+export function specialityChoices(kind: SpecialityListKind | null): SpecialityGroup[] {
   // The words "doctor" and "account" are the retired names of the PM and AM lists and never reach a
   // screen (tests/phoenix-crm-am-pm-words.test.ts), so the two groups are named by what they hold.
-  const doctors: SpecialityGroup = { label: "Medical specialities", items: DOCTOR_SPECIALITIES };
-  const accounts: SpecialityGroup = {
+  const medical: SpecialityGroup = { label: "Medical specialities", items: DOCTOR_SPECIALITIES };
+  const places: SpecialityGroup = {
     label: "Hospitals, contracts and insurance",
-    items: kind === "manager" ? [...ACCOUNT_SPECIALITIES, PHARMACY_SPECIALITY] : ACCOUNT_SPECIALITIES,
+    items: kind === "manager" || kind === "Pharmacy" ? [...ACCOUNT_SPECIALITIES, PHARMACY_SPECIALITY] : ACCOUNT_SPECIALITIES,
   };
-  return kind === "AM" ? [accounts, doctors] : [doctors, accounts];
+  return kind === "AM" ? [places, medical] : [medical, places];
 }
 
 /** True when `value` is one of the names this kind of list offers — anything else shows as "Other". */
-export function isListedSpeciality(value: string | null | undefined, kind: SpecialityListKind): boolean {
+export function isListedSpeciality(value: string | null | undefined, kind: SpecialityListKind | null): boolean {
   if (!value) return false;
   return specialityChoices(kind).some((group) => group.items.includes(value));
 }

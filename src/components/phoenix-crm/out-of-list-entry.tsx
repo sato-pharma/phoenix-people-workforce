@@ -307,7 +307,7 @@ export function OutOfListEntry({
             className="sm:col-span-2"
             disabled={saving}
             id="phoenix-crm-outside-speciality"
-            kind={listType === "AM" ? "AM" : "PM"}
+            kind={listType}
             onChange={setSpeciality}
             value={speciality}
           />

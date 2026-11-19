@@ -35,7 +35,7 @@ export function CrmSpecialityField({
   className?: string;
   disabled?: boolean;
   id: string;
-  kind: SpecialityListKind;
+  kind: SpecialityListKind | null;
   onChange: (next: string) => void;
   value: string;
 }) {

@@ -93,6 +93,7 @@ export function runPhoenixCrmSpecialityListTests() {
   assert.equal(isListedSpeciality(PHARMACY_SPECIALITY, "AM"), false, "a rep's AM list never offers Pharmacy");
   assert.equal(isListedSpeciality(PHARMACY_SPECIALITY, "PM"), false, "a rep's PM list never offers Pharmacy");
   assert.equal(isListedSpeciality(PHARMACY_SPECIALITY, "manager"), true, "a manager's own list offers Pharmacy");
+  assert.equal(isListedSpeciality(PHARMACY_SPECIALITY, "Pharmacy"), true, "a pharmacy's own form offers Pharmacy");
   assert.equal(specialityChoices("PM")[0].items, DOCTOR_SPECIALITIES, "a PM list opens on the medical specialities");
   assert.equal(specialityChoices("AM")[0].items, ACCOUNT_SPECIALITIES, "an AM list opens on the places and accounts");
   for (const kind of ["AM", "PM", "manager"] as const) {

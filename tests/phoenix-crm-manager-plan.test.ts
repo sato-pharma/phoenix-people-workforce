@@ -1804,9 +1804,12 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(customerForm, /<CrmSelect disabled=\{bricks\.loading \|\| brickList\.length === 0\} id=\{`\$\{idPrefix\}-brick`\}/, "the brick is a drop-list, not a typed word");
   assert.equal(/brickName/.test(customerForm), false, "the form no longer types a brick");
   assert.match(customerForm, /address: address\.trim\(\) \|\| null,\s*brickId: brickId \|\| null,/, "the address and the brick id go as they stand, or as nothing");
-  for (const label of ["Speciality", "Phone", "Address", "Brick"]) {
+  for (const label of ["Phone", "Address", "Brick"]) {
     assert.match(customerForm, new RegExp(`label="${label}"`), `${label} carries no star: it is optional`);
   }
+  // The speciality is the one pick-list since 2026-11-19, drawn by CrmSpecialityField — still optional.
+  assert.match(customerForm, /<CrmSpecialityField [^>]*kind="manager"/, "the speciality is picked from the manager's own list");
+  assert.match(source("src/components/phoenix-crm/speciality-field.tsx"), /label="Speciality"/, "Speciality carries no star: it is optional");
   assert.match(customerForm, /label="Area \*"/, "the area stays chosen");
   assert.equal(/areas\.length > 1/.test(customerForm), false, "the area drop-list is always shown: the brick cascades from it");
   assert.equal(/\b(doctors?|accounts?)\b/i.test(customerForm), false, "the form says customers, never doctors or accounts");

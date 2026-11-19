@@ -1046,7 +1046,7 @@ export function ValidateScreen({
                 <CrmSpecialityField
                   disabled={saving}
                   id="phoenix-crm-new-speciality"
-                  kind={listType === "AM" ? "AM" : "PM"}
+                  kind={listType}
                   onChange={setSpeciality}
                   value={speciality}
                 />
@@ -1859,7 +1859,7 @@ export function EditDetailsScreen({
             className="sm:col-span-2"
             disabled={saving}
             id="phoenix-crm-details-speciality"
-            kind={customer.listType === "AM" ? "AM" : "PM"}
+            kind={customer.listType}
             onChange={(next) => {
               setSpeciality(next);
               setProblem(null);
