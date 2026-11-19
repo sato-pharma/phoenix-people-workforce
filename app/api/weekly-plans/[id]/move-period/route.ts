@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic";
 // HR / Super Admin re-dates a whole plan onto a different period, for when an employee picked the
 // wrong week in the editor and submitted an otherwise correct plan against it. Authorization, the
 // movable-status gate, the destination-period collision check and the item date shift all live in
-// the service (moveWeeklyPlanToPeriod): this route only carries the target date.
+// the service (moveWeeklyPlanToPeriod). The route asks the first half of that gate, the
+// weekly_plans approve grant, before it reads the body: the service opens with the closed legacy
+// form's 409 (plans moved) for everyone, so without it a refused role was told which bodies are good.
 function jsonError(error: unknown) {
   const message = clientSafeErrorMessage(error, "Unable to move this plan to another period.");
   const lower = message.toLowerCase();
@@ -45,7 +48,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
-    assertSignedIn(access); // REC-080: the caller is judged before the body.
+    // REC-080: the caller is judged before the body — the approve grant is the first half of moveWeeklyPlanToPeriod's own gate.
+    assertSignedIn(access);
+    await assertPermission(access, "weekly_plans", "approve");
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as { targetAnchorDate?: unknown };
     const targetAnchorDate = typeof body.targetAnchorDate === "string" ? body.targetAnchorDate.trim() : "";

@@ -185,10 +185,17 @@ export function runWeeklyPlanMovePeriodTests() {
   const route = readFileSync("app/api/weekly-plans/[id]/move-period/route.ts", "utf8");
   assert.ok(route.includes("assertSameOriginMutation(request)"), "the move route must carry the CSRF guard");
   assert.ok(route.includes("moveWeeklyPlanToPeriod(access,"), "the move route must delegate to the service");
-  assert.ok(
-    !route.includes("assertPermission"),
-    "the route must not re-implement the gate - authorization is the service's job, and two copies drift",
-  );
+  // The route asks the FIRST half of the service's gate before it reads the body (REC-080, 19 Nov 2026).
+  // The service opens with the closed legacy form's 409 for everyone (tests/weekly-plans-one-store.test.ts
+  // pins that order), so its own gate no longer runs first, and a refused role was answered 400 on an
+  // empty body. Two copies drift, so the route's copy must name exactly the grant the service asserts,
+  // and nothing wider; the HR/Super-Admin half stays the service's alone.
+  const routeGrants = [...route.matchAll(/assertPermission\(access, "([a-z_]+)", "([a-z]+)"\)/g)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(routeGrants, ["weekly_plans:approve"], "the route may ask only the service's own grant, weekly_plans approve");
+  const grantAt = route.indexOf('await assertPermission(access, "weekly_plans", "approve");');
+  const bodyAt = route.indexOf("request.json(");
+  assert.ok(grantAt >= 0 && bodyAt > grantAt, "the route asks the grant before it reads the body");
+  assert.ok(!route.includes("isHrReviewer"), "the HR/Super-Admin half is the service's job, not the route's");
 
   // ---- No button the server rejects -----------------------------------------------------------
   // The workspace flag must carry BOTH halves of the server gate. canAcknowledgeHr alone is only
