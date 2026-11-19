@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { AccessContext, PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { resolveCaseFileAdmission } from "../src/lib/marketing-requests/case-file-service.ts";
@@ -166,9 +167,29 @@ async function testTheList() {
   assert.deepEqual(summarizeMarketingWatchedRequests([]).total, 0, "an empty list counts zero, never a guess");
 }
 
+/**
+ * Owner, 2026-11-19: "no requests appeared anywhere on his account". He looked in Marketing Requests
+ * and the Marketing Inbox on his phone, never the separate Watched Products page — so both of those
+ * pages must lead with the watched list. Read from the page source because the pages are server
+ * components that need a live session to render.
+ */
+function testTheListLeadsHisMarketingPages() {
+  for (const path of ["app/employee-portals/marketing-requests/page.tsx", "app/employee-portals/marketing-requests/inbox/page.tsx"]) {
+    const source = readFileSync(path, "utf8");
+    assert.match(source, /<MarketingWatchedRequestsSection access=\{access\} \/>/, `${path} must render the watched list for a watcher`);
+    const listAt = source.indexOf("<MarketingWatchedRequestsSection");
+    const ownAt = Math.max(source.indexOf("<MarketingRequestDraftWorkspace"), source.indexOf("<MarketingRequestInbox"));
+    assert.ok(listAt > -1 && ownAt > listAt, `${path} must show the watched list ABOVE its own workspace, where a phone sees it first`);
+  }
+  const section = readFileSync("src/components/marketing-requests/marketing-watched-requests-section.tsx", "utf8");
+  const gateAt = section.indexOf("if (!isMarketingProductWatcher(access.hrId)) return null;");
+  assert.ok(gateAt > -1 && gateAt < section.indexOf("await getMarketingWatchedProductRequests"), "a non-watcher reads nothing: the named list is checked before the database");
+}
+
 export async function runMarketingProductWatchersTests() {
   testTheNamedList();
   testAdmission();
   testTheNotice();
+  testTheListLeadsHisMarketingPages();
   await testTheList();
 }

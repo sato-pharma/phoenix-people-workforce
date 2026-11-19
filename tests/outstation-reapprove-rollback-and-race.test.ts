@@ -6,7 +6,7 @@ import {
   isOutstationClaimChangedError,
   outstationClaimRevision,
 } from "../src/lib/outstation/claim-revision.ts";
-import { approveOutstationRequestForPayroll } from "../src/lib/outstation/service.ts";
+import { approveOutstationRequestForPayroll, releaseOutstationRequestToPayrollIfReady } from "../src/lib/outstation/service.ts";
 import {
   RpcRaise,
   atomically,
@@ -42,6 +42,12 @@ import {
 //       someone else landing after the version check (a journey stop re-pricing the trip) is refused, never
 //       approved unseen: the call carries the version that was checked.
 //   A claim the evidence gate holds is accepted by the same one call, with no payroll row and the "HELD" record.
+//   (c) THE RELEASE (owner: "move the release path onto the one-call approval too"). Once a held claim's evidence
+//       lands, releaseOutstationRequestToPayrollIfReady delivers its payroll row through the SAME call with no
+//       status: the claim is left exactly as it is, locked and required to still read accepted. A failure inside
+//       the call leaves every table as it was and the claim held for the next capture; two releases at once leave
+//       one payroll row; a claim rejected after the release read it is never pushed — even by a writer that forgot
+//       to move the version.
 
 const CLAIM_ID = 4521;
 const TRIP_ID = `OUTSTATION-${CLAIM_ID}`;
@@ -84,7 +90,8 @@ type Statement = "claim" | "report" | "expenses" | "audit";
 const TIMEOUT = () => new RpcRaise("57014", "canceling statement due to statement timeout", 500);
 
 /**
- * phx_accept_outstation_claim_for_payroll, statement by statement from 20261119132423, in one transaction.
+ * phx_accept_outstation_claim_for_payroll, statement by statement from its latest body (20261119143529, which keeps
+ * 20261119132423's approval and adds the release), in one transaction.
  * `failAt` makes that statement fail as a statement timeout would; `ran` records, per call, the statements reached.
  */
 function acceptClaimFunction(options: { failAt?: Statement; ran?: Statement[][] } = {}) {
@@ -98,18 +105,26 @@ function acceptClaimFunction(options: { failAt?: Statement; ran?: Statement[][] 
         if (options.failAt === statement) throw TIMEOUT();
       };
 
-      // 1. The claim, pinned to the version the reviewer approved: a claim that moved raises before anything else.
+      // 1. The claim, pinned to the version that was read; a claim that moved raises before anything else. An
+      //    approval updates it; a release (p_status null, 20261119143529) leaves it exactly as it is and requires it
+      //    to still read accepted.
       reach("claim");
+      const release = args.p_status == null;
       const claim = (draft.outstation_expense_requests ?? []).find(
-        (row) => Number(row.id) === Number(args.p_request_id) && String(row.updated_at) === String(args.p_expected_updated_at),
+        (row) =>
+          Number(row.id) === Number(args.p_request_id) &&
+          String(row.updated_at) === String(args.p_expected_updated_at) &&
+          (!release || String(row.status).startsWith("accepted")),
       );
-      if (!claim) throw new RpcRaise("P0001", "outstation_claim_changed: the claim changed after it was read, so it was not approved");
-      Object.assign(claim, {
-        approval_reason: args.p_approval_reason ?? "",
-        calculation_status: args.p_status,
-        status: args.p_status,
-        updated_at: args.p_updated_at,
-      });
+      if (!claim) throw new RpcRaise("P0001", "outstation_claim_changed: the claim changed after it was read, so nothing was written");
+      if (!release) {
+        Object.assign(claim, {
+          approval_reason: args.p_approval_reason ?? "",
+          calculation_status: args.p_status,
+          status: args.p_status,
+          updated_at: args.p_updated_at,
+        });
+      }
 
       // 2. The report row and the trip's row, only when rows are given.
       const incoming = Array.isArray(args.p_expense_rows) ? (args.p_expense_rows as Row[]) : [];
@@ -128,6 +143,12 @@ function acceptClaimFunction(options: { failAt?: Statement; ran?: Statement[][] 
           updated_at: report.updated_at,
         };
         const reports = (draft.outstation_expense_reports ??= []);
+        // The trip's own report when it already has one, read under the claim's lock (20261119143529).
+        if (!reportId) {
+          const tripIds = new Set(incoming.map((row) => String(row.trip_id)));
+          const owned = (draft.outstation_expenses ?? []).find((row) => tripIds.has(String(row.trip_id)) && row.report_id != null);
+          reportId = owned ? String(owned.report_id) : null;
+        }
         if (reportId) Object.assign(reports.find((row) => String(row.id) === reportId) ?? {}, values);
         else {
           reportId = `report-${(reportSerial += 1)}`;
@@ -377,16 +398,21 @@ async function twoApprovalsAtOnceApplyOnce(): Promise<void> {
  * (the read of the claim's `updated_at`): a write by someone else landing while the approval is being worked out.
  */
 function landAfterTheVersionCheck(tables: Tables, change: (tables: Tables) => void): void {
+  landAfterTheFirst(tables, (url) => url.pathname === "/rest/v1/outstation_expense_requests" && url.searchParams.get("select") === "updated_at", change);
+}
+
+/** Applies `change` just before the first request that follows the first request `matches` picks. */
+function landAfterTheFirst(tables: Tables, matches: (url: URL) => boolean, change: (tables: Tables) => void): void {
   const inner = globalThis.fetch;
-  let checked = false;
+  let passed = false;
   let landed = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (checked && !landed) {
+    if (passed && !landed) {
       landed = true;
       change(tables);
     }
-    if (url.pathname === "/rest/v1/outstation_expense_requests" && url.searchParams.get("select") === "updated_at") checked = true;
+    if (matches(url)) passed = true;
     return inner(input, init);
   }) as typeof fetch;
 }
@@ -456,10 +482,168 @@ async function aHeldClaimIsAcceptedWithNoPayrollRow(): Promise<void> {
   });
 }
 
+// ──────────────────────────────────────────────── (c) the release, once a held claim's evidence lands
+
+const releasedAudits = (tables: Tables) =>
+  (tables.audit_logs ?? []).filter((row) => String(row.summary) === `Outstation request ${CLAIM_ID} released into payroll — evidence complete.`);
+
+/** An accepted claim whose two photos and workload have just landed, with no payroll row yet: ready to release. */
+function releasableTables(): Tables {
+  return outstationTables("accepted_by_admin", {
+    car_evidence_image_path: "outstation/4521/arrival.jpg",
+    departure_evidence_image_path: "outstation/4521/departure.jpg",
+    evidence_gate_status: "complete",
+    workload_gate_status: "complete",
+  });
+}
+
+async function releaseIsAllOrNothingWhenAStatementFails(failAt: "expenses" | "audit"): Promise<void> {
+  const label = failAt === "expenses" ? "(c) release, payroll row" : "(c) release, record";
+  const tables = releasableTables();
+  const before = stored(tables);
+  const ran: Statement[][] = [];
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction({ failAt, ran }) }, tables }, async (seen) => {
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.equal(outcome.released, false, `${label}: a release whose one database step failed says it did not release`);
+    assert.match(outcome.reason, /could not be written, so nothing changed: the claim stays held/, `${label}: and says nothing changed: ${outcome.reason}`);
+    assert.equal(rpcCalls(seen, ACCEPT).length, 1, `${label}: the release made its one database call`);
+    const sent = rpcCalls(seen, ACCEPT)[0].body as { p_audits?: unknown[]; p_expense_rows?: unknown[]; p_status?: unknown };
+    assert.equal(sent.p_status, null, `${label}: as a release — no status, so the claim is not updated`);
+    assert.equal(sent.p_expense_rows?.length, 1, `${label}: carrying the trip's payroll row`);
+    assert.equal(sent.p_audits?.length, 2, `${label}: and both records`);
+    assert.deepEqual([ran[0][0], ran[0].at(-1)], ["claim", failAt], `${label}: the forced failure came after the claim was locked, inside the call`);
+    assert.deepEqual(tableWrites(seen), [], `${label}: HEADLINE: the release wrote nothing outside the one call`);
+    assert.deepEqual(stored(tables), before, `${label}: HEADLINE: every table afterwards equals the tables before — no report row, no payroll row, no record`);
+  });
+
+  // The next capture releases it again: the trip reaches payroll exactly once, and the claim itself never moved.
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async (seen) => {
+    const claimBefore = snapshot(tables).outstation_expense_requests;
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.equal(outcome.released, true, `${label}: the next release goes through`);
+    assert.deepEqual(
+      tables.outstation_expenses.map((row) => [row.trip_id, row.total, row.hr_approved]),
+      [[TRIP_ID, 520, true]],
+      `${label}: one payroll row for the trip, for the claimed 520.00`,
+    );
+    assert.equal(tables.outstation_expense_reports.length, 1, `${label}: one report row`);
+    assert.equal(pushedToPayrollAudits(tables).length, 1, `${label}: one "expense pushed to payroll" record`);
+    assert.equal(releasedAudits(tables).length, 1, `${label}: one "released into payroll" record`);
+    assert.deepEqual(tables.outstation_expense_requests, claimBefore, `${label}: HEADLINE: the release left the claim exactly as it was — not a column, not its version`);
+    assert.deepEqual(tableWrites(seen), [], `${label}: every write was the one call's`);
+  });
+}
+
+async function releaseIsAllOrNothingWhenThePayrollRowFails(): Promise<void> {
+  await releaseIsAllOrNothingWhenAStatementFails("expenses");
+}
+
+async function releaseIsAllOrNothingWhenTheRecordFails(): Promise<void> {
+  await releaseIsAllOrNothingWhenAStatementFails("audit");
+}
+
+async function twoReleasesAtOnceLeaveOnePayrollRow(): Promise<void> {
+  // A departure photo and the morning workload re-read land together, and each triggers a release.
+  const tables = releasableTables();
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async (seen) => {
+    releaseTogether((url, method) => method === "POST" && url.pathname === `/rest/v1/rpc/${ACCEPT}`, 2);
+    const outcomes = await Promise.all([
+      releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10")),
+      releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-11")),
+    ]);
+    await settle();
+    assert.equal(rpcCalls(seen, ACCEPT).length, 2, "(c) both releases reached the one call");
+    assert.ok(outcomes.some((outcome) => outcome.released), "(c) the trip is released");
+    assert.deepEqual(
+      tables.outstation_expenses.map((row) => [row.trip_id, row.total]),
+      [[TRIP_ID, 520]],
+      "(c) HEADLINE: two releases at once leave ONE payroll row for the trip, for 520.00 — never two, never 1,040.00",
+    );
+    assert.equal(tables.outstation_expense_reports.length, 1, "(c) and one report row");
+    assert.equal(tables.outstation_expense_requests[0].updated_at, STORED_AT, "(c) the claim's version never moved");
+  });
+}
+
+async function aClaimRejectedUnderTheReleaseIsNeverPushed(stampsTheVersion: boolean): Promise<void> {
+  const label = stampsTheVersion ? "(c) rejected under the release" : "(c) rejected by a writer that forgot the version";
+  const tables = releasableTables();
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async (seen) => {
+    let afterTheRejection: Tables | null = null;
+    landAfterTheVersionCheck(tables, (live) => {
+      Object.assign(live.outstation_expense_requests[0], {
+        calculation_status: "rejected_by_admin",
+        status: "rejected_by_admin",
+        ...(stampsTheVersion ? { updated_at: "2026-11-17T09:41:07.000001+00:00" } : {}),
+      });
+      afterTheRejection = stored(live);
+    });
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.notEqual(afterTheRejection, null, `${label}: the rejection landed after the release read the claim`);
+    assert.equal(rpcCalls(seen, ACCEPT).length, 1, `${label}: the release reached its one call`);
+    assert.equal(outcome.released, false, `${label}: HEADLINE: a claim rejected under the release is never released`);
+    assert.match(outcome.reason, /changed while it was being released, so nothing was written/, `${label}: and it says why`);
+    assert.deepEqual(tables.outstation_expenses, [], `${label}: no payroll row`);
+    assert.deepEqual(stored(tables), afterTheRejection, `${label}: the tables hold the rejection and nothing of the release`);
+    assert.deepEqual(tableWrites(seen), [], `${label}: and the release wrote nothing outside the call`);
+  });
+}
+
+async function aClaimRepricedBeforeThePinIsNotReleasedFromOldFigures(): Promise<void> {
+  // The release has read the claim at 520.00; before it reads the version it pins to, the claim is re-priced to 700.00
+  // and its version moves (it still reads accepted). A release that pinned the NEW version would push a row worked
+  // out from the OLD figures, and the database step could not tell.
+  const tables = releasableTables();
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async (seen) => {
+    let afterTheChange: Tables | null = null;
+    landAfterTheFirst(tables, (url) => url.pathname === "/rest/v1/outstation_expense_requests", (live) => {
+      Object.assign(live.outstation_expense_requests[0], {
+        expected_total_amount: 700,
+        fuel_amount: 300,
+        total_amount: 700,
+        updated_at: "2026-11-17T09:41:07.000001+00:00",
+      });
+      afterTheChange = stored(live);
+    });
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.notEqual(afterTheChange, null, "(c) re-priced: the change landed between the release's read of the claim and its pin");
+    assert.equal(outcome.released, false, "(c) re-priced: HEADLINE: the release refuses rather than push figures the claim no longer holds");
+    assert.match(outcome.reason, /changed while it was being released, so nothing was written/, "(c) re-priced: and it says why");
+    assert.deepEqual(tables.outstation_expenses, [], "(c) re-priced: no payroll row for the old 520.00");
+    assert.deepEqual(stored(tables), afterTheChange, "(c) re-priced: the tables hold the change and nothing of the release");
+    assert.deepEqual(tableWrites(seen), [], "(c) re-priced: and nothing was written outside the call");
+  });
+
+  // The next capture releases the claim as it now reads.
+  await withStandIn({ rpc: { [ACCEPT]: acceptClaimFunction() }, tables }, async () => {
+    const outcome = await releaseOutstationRequestToPayrollIfReady(CLAIM_ID, admin("B-10"));
+    await settle();
+    assert.equal(outcome.released, true, "(c) re-priced: the next release goes through");
+    assert.deepEqual(
+      tables.outstation_expenses.map((row) => [row.trip_id, row.total]),
+      [[TRIP_ID, 700]],
+      "(c) re-priced: and pays the claim as it now reads, 700.00",
+    );
+  });
+}
+
+async function aClaimRejectedUnderTheReleaseIsNeverPushedEvenUnstamped(): Promise<void> {
+  await aClaimRejectedUnderTheReleaseIsNeverPushed(true);
+  await aClaimRejectedUnderTheReleaseIsNeverPushed(false);
+}
+
 export async function runOutstationReapproveRollbackAndRaceTests(): Promise<void> {
   await approveIsAllOrNothingWhenThePayrollRowFails();
   await approveIsAllOrNothingWhenTheRecordFails();
   await twoApprovalsAtOnceApplyOnce();
   await aChangeAfterTheCheckIsRefusedNotApprovedUnseen();
   await aHeldClaimIsAcceptedWithNoPayrollRow();
+  await releaseIsAllOrNothingWhenThePayrollRowFails();
+  await releaseIsAllOrNothingWhenTheRecordFails();
+  await twoReleasesAtOnceLeaveOnePayrollRow();
+  await aClaimRejectedUnderTheReleaseIsNeverPushedEvenUnstamped();
+  await aClaimRepricedBeforeThePinIsNotReleasedFromOldFigures();
 }

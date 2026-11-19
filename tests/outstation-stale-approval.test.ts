@@ -241,25 +241,30 @@ export function runOutstationStaleApprovalTests() {
   // its payroll row and the records together. The pin moves with it: the call carries the checked stamp, and the
   // function's first statement updates the claim only while it still holds that stamp.
   const approveCheck = approve.indexOf("assertOutstationClaimUnchanged(");
-  const approveWrite = approve.indexOf('rpc("phx_accept_outstation_claim_for_payroll"');
+  const approveWrite = approve.indexOf("await writeClaimToPayrollInOneStep(");
   assert.ok(approveCheck > -1 && approveWrite > -1, "approve must check the version and then write");
   assert.ok(approveCheck < approveWrite, "approve must check the version BEFORE it writes");
   assert.match(approve, /checkedUpdatedAt = await readOutstationRequestStoredUpdatedAt\(requestId\)/);
   assert.ok(
-    approve.includes("p_expected_updated_at: checkedUpdatedAt"),
+    approve.includes("expectedUpdatedAt: checkedUpdatedAt") && service.includes("p_expected_updated_at: input.expectedUpdatedAt"),
     "approve must pin its write to the exact stamp it checked, so a change landing in between leaves nothing to approve",
   );
   const acceptFunction = cachedReadFile(
-    join(ROOT, "supabase/migrations/20261119132423_outstation_accept_claim_for_payroll_atomically.sql"),
+    join(ROOT, "supabase/migrations/20261119143529_outstation_release_claim_to_payroll_atomically.sql"),
   ).replace(/--[^\n]*/g, "");
   assert.match(
     acceptFunction,
-    /update public\.outstation_expense_requests[\s\S]*?where id = p_request_id\s+and updated_at = p_expected_updated_at\s+returning \* into v_request;\s+if not found then\s+raise exception 'outstation_claim_changed/,
+    /update public\.outstation_expense_requests[\s\S]*?where id = p_request_id\s+and updated_at = p_expected_updated_at\s+returning \* into v_request;\s+end if;\s+if not found then\s+raise exception 'outstation_claim_changed/,
     "the database step updates the claim only while it holds the checked stamp, and raises outstation_claim_changed before anything else when it does not",
   );
   assert.match(
+    service,
+    /claimChanged: String\(error\.message \?\? ""\)\.includes\("outstation_claim_changed"\)/,
+    "the one call reads the database's claim-changed refusal",
+  );
+  assert.match(
     approve,
-    /includes\("outstation_claim_changed"\)\) throw new OutstationClaimChangedError\("changed"\);/,
+    /if \(step\.claimChanged\) throw new OutstationClaimChangedError\("changed"\);/,
     "a write that matched no row means the claim moved: it must say so, not 'state changed'",
   );
   assert.ok(

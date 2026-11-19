@@ -199,7 +199,36 @@ A table is claimed only when it carries a **real date** *and* either ends in tha
 
 The verdict ladder, the dependency checks and the 90 days are the schema ones, unchanged — a
 foreign key, view or function that names the table beats its age, which matters *more* here than
-for a schema, because the live tables sit beside it. The emitted statement is
+for a schema, because the live tables sit beside it.
+
+🔴 **And the owner decides each table too (19 November 2026).** Until then a dated table went
+`EXPIRED` on age alone — the one thing REC-040 forbids for a schema — so the first three to reach 90
+days would have been printed for dropping with no decision behind them:
+`au.zz_brick_backfill_snapshot_20260827` on 25 Nov, `au.bak_20260828_d3_line_area_map` and
+`au.bak_20260828_d3_seats` on 26 Nov. Now `classifyTable()` and `classify()` share one ladder: a
+table is decided in [`scripts/backup-schema-decisions.json`](../../scripts/backup-schema-decisions.json)
+under `<schema>.<table>`, and past 90 days with no entry it is `UNDECIDED` with no drop statement.
+`readDecisions()` refuses a dotted key outside `public` / `au`. Export, then drop works the same:
+`node scripts/export-backup-schema.mjs au.<table>` writes `snapshot-exports/au.<table>/` with its own
+`manifest.json`, and no `drop table` is printed until it exists. The owner answered the first three
+in chat that day, each "export, then drop"; all three were exported the same day (166, 5 and 1
+rows). The 29 Aug Delta (3) pre-image he keeps, `delta3_defer_backup_20260829`, is untouched: the two
+28 Aug copies are not exact duplicates of it.
+
+**The four 9 September tables, decided the same day.** He answered these in chat too, each "export,
+then drop", and all four were exported that day. They reach 90 days on 8 Dec 2026:
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `au.zz_rollup_pre_20260909_all` | 6,980 | the sales roll-up for January to August 2026 (plus six early-September rows) as it stood on 9 Sep; July and August are published and January to June were re-valued on purpose since |
+| `au.zz_aug_rollup_pre_20260909` | 876 | an exact duplicate of the August rows inside the first (0 differences either way) |
+| `au.bak_20260909_pedia_ue_split_line_area_map` | 50 | Pedia's area map before the Upper Egypt split; 11 rows were edited in place since, so the export is the lasting record of them |
+| `au.bak_20260909_pedia_ue_split_seats` | 45 | Pedia's seats before the split; 10 were re-pointed that day, because a seat cannot carry a date |
+
+The next tables to reach 90 days with no decision are `au.bak_20260912_pedia_kfs_d1_line_area_map`
+and `au.bak_20260912_pedia_kfs_d1_seats`, on 11 Dec 2026.
+
+The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
 but a lone table in `public` could have had something come to depend on it, and a statement that
 refuses is the right answer at that moment.

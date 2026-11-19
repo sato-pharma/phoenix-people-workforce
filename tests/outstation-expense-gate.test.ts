@@ -195,12 +195,12 @@ export function runOutstationExpenseGateTests() {
   // is clear, and the one call writes exactly the planned rows — none when nothing was planned.
   assert.match(
     service,
-    /const plan = gate\.isPayrollEligible\s*\?\s*await planPayrollExpenseSave\([\s\S]*?:\s*null;/,
+    /const plan = gate\.isPayrollEligible\s*\?\s*await planAcceptedClaimPayrollRow\([\s\S]*?:\s*null;/,
     "the payroll push must be CONDITIONAL on the gate — an unconditional push is the whole bug this feature exists to prevent",
   );
   assert.match(
     service,
-    /p_expense_rows: plan\?\.rows \?\? \[\]/,
+    /p_expense_rows: input\.plan\?\.rows \?\? \[\]/,
     "and the one database call writes only the rows the gate let through — none for a held claim",
   );
   assert.match(

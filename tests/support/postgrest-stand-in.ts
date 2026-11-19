@@ -320,11 +320,14 @@ async function quiet(seen: Seen[]): Promise<void> {
 export async function withPostgrestStandIn(
   standIn: StandIn,
   body: (seen: Seen[]) => Promise<void>,
-  options: { resets?: Array<() => void> } = {},
+  options: { resets?: Array<() => void>; env?: Record<string, string> } = {},
 ): Promise<Seen[]> {
   const seen: Seen[] = [];
   const env = process.env as Record<string, string | undefined>;
+  // `options.env` adds settings for this body only — e.g. the dev sign-in headers a real route handler
+  // reads (NODE_ENV=development, PHOENIX_ENABLE_DEV_AUTH_HEADERS=true). Restored with the rest.
   const settings: Record<string, string> = {
+    ...(options.env ?? {}),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: "stand-in-anon-key-never-sent",
     NEXT_PUBLIC_SUPABASE_URL: STAND_IN_ORIGIN,
     SUPABASE_SERVICE_ROLE_KEY: "stand-in-service-key-never-sent",
@@ -459,6 +462,27 @@ export function registryModuleRow(
     version: 1,
   };
 }
+
+/** What a real route handler needs to accept the dev sign-in headers (`x-phoenix-role`, `x-phoenix-hr-id`). */
+export const DEV_AUTH_ENV: Record<string, string> = { NODE_ENV: "development", PHOENIX_ENABLE_DEV_AUTH_HEADERS: "true" };
+
+/** A same-origin request to a route handler, signed in through the dev headers as `role` / `hrId`. */
+export function devAuthRequest(method: string, path: string, who: { role: string; hrId: string }, body: unknown = {}): Request {
+  return new Request(`http://localhost:3000${path}`, {
+    body: JSON.stringify(body),
+    headers: {
+      "content-type": "application/json",
+      host: "localhost:3000",
+      origin: "http://localhost:3000",
+      "x-phoenix-hr-id": who.hrId,
+      "x-phoenix-role": who.role,
+    },
+    method,
+  });
+}
+
+/** The answer the shared rate limiter reads: allowed, no wait. */
+export const RATE_LIMIT_ALLOWS = { api_rate_limit_consume: () => [{ allowed: true, retry_after_seconds: 0 }] };
 
 /** The writes (insert, update, upsert, delete) to one table, in order. */
 export const writesTo = (seen: Seen[], table: string) => seen.filter((entry) => entry.kind === "write" && entry.table === table);
