@@ -1361,6 +1361,27 @@ export const MODULES = [
     keywords: ["hire hand-off", "hire handoff", "add employee", "joining form", "new hire login", "hand-off ledger"],
     tables: ["hire_handoff_steps"],
   },
+  // 🔴 SPLIT 2026-11-19, FOR THE REASON `phoenix-crm-approvals` RECORDS: `employees` measured a 4,048-byte
+  // pointer against the 4,000 margin the moment the Employee Master's change-history panel taught its rule.
+  // THE CHANGE HISTORY — the two append-only logs (the employee record's and the salary's), the views that
+  // read them, and the panel that shows them — is one family, read while editing a log trigger, a log view
+  // or the panel, so its rules move together. The rule that every write names the signed-in person stays
+  // in `employees`: it binds every write, not only the logs. `employees` KEEPS EVERY GLOB IT HAD, so a
+  // history file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "employees-history",
+    title: "Employees — the change history: the two logs and the panel that reads them",
+    scope: "The employee record's and the salary's append-only change logs, the views that name who changed what and how it arrived, and the Employee Master's Change History panel.",
+    globs: [
+      "src/lib/employees/change-history*.ts",
+      "src/components/employees/employee-change-history-card.tsx",
+      "app/api/employees/*/change-history/**",
+      "tests/{employee-change-history,employee-and-deduction-history}*",
+      "supabase/migrations/*change_log*",
+    ],
+    keywords: ["change history", "change log", "salary change log", "employee change log", "write channel", "who changed"],
+    tables: ["employee_change_log", "employee_salary_change_log", "v_employee_change_log", "v_employee_salary_change_log"],
+  },
   // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `employees` measured a
   // 3,984-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, and the rule that
   // completing a resignation ends the employee first (REC-028) took it to 4,065. The resignation

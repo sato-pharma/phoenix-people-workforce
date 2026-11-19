@@ -34,6 +34,7 @@ import {
 import { EmployeeImportReview } from "@/components/employees/employee-import-review";
 import { EmployeeCvBulkUpload } from "@/components/employees/employee-cv-bulk-upload";
 import { EmployeeCvManager, EmployeeCvPicker, type StagedCv } from "@/components/employees/employee-cv-controls";
+import { EmployeeChangeHistoryCard } from "@/components/employees/employee-change-history-card";
 import { EmployeeHiringDocumentsCard } from "@/components/employees/employee-hiring-documents-card";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
@@ -3608,6 +3609,10 @@ export function EmployeeManagement({
                   </div>
                 </section>
               ) : null}
+              {/* Last, below everything it describes: what changed on this record, who changed it,
+                  how it arrived and when. The route decides who may read it and whether pay is in
+                  it; the card draws nothing for a refused reader. */}
+              <EmployeeChangeHistoryCard hrId={masterDetailsEmployee.hrId} key={`history-${masterDetailsEmployee.hrId}`} />
             </div>
             <div className="border-t border-phx-line bg-phx-paper px-6 py-4 flex justify-end">
               <Button
