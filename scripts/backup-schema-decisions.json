@@ -1080,6 +1080,48 @@
       "decidedBy": "owner",
       "why": "2 tables, 104 rows: 51 resigned reps' seat rows and the vacant rows after them, as they stood before 20261012142941 moved a resignation's seat end to the day after the last working day (all 102 changed since, which is the fix), and one CNS rep's two seat rows before the owner set that seat's end to 9 Aug 2026. Holds personal fields.",
       "sheet": "19 November 2026, the 12 October snapshot schemas, in chat"
+    },
+    "address_brick_backup_20261013": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 6,921 rows: the before-picture of the 13 Oct address-first brick move. 1,462 customer mappings as they stood before the importer began reading the customer's address first (all 1,462 are on their new brick now) and 5,459 January-September invoice rows before they were re-stamped (all re-stamped since). The customer map keeps no history, so the export becomes the only record of where those customers sat before the move. Decided together with public.address_brick_moves_20261013.",
+      "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
+    },
+    "public.address_brick_moves_20261013": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 1,462 rows: the move log of the same 13 Oct address-first brick move, one row per customer mapping with the brick it left, the brick it went to and how the address was matched. All 1,462 sit on the brick it names as the destination. Row security on, no policy, no browser grant. Decided together with address_brick_backup_20261013.",
+      "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
+    },
+    "sos_backup_20261013": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "16 tables, 2,005 rows: the 13 Oct customer-map fixes in Tanta, Qusiya, Sohag city and a few single customers. 108 customer mappings before the fixes (105 differ now), 378 invoice rows before they were re-stamped (all re-stamped since), and the two Qusiya customer-code lists the fix worked from (652 and 867 codes). The customer map keeps no history, so the export becomes the only record of these mappings before the fixes.",
+      "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
+    },
+    "qusiya_backup_20261013": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "3 tables, 20 rows: the Qusiya before-picture of the same day, 4 customer mappings, 9 invoice rows and 7 summary rows. The 4 mappings are back where this copy holds them; 8 of the 9 invoice rows are stamped elsewhere now.",
+      "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
+    },
+    "store_split_backup_20261013": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 1,492 rows: the July-September store-split net for all three lines, taken early on 13 Oct before the rebuild that followed the Qena move. 443 rows differ now. July to September are published on all three lines.",
+      "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
+    },
+    "phoenix_crm_backup_20261013": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 105 rows: one rep seat's 105 Phoenix CRM customers as they stood before a clean-up on 13 Oct. All 105 still exist on the same seat and are now marked dropped (101 were pending, 4 outside). Holds personal fields, so its export stays outside the repository like every export.",
+      "sheet": "19 November 2026, the 13 October snapshot schemas, in chat"
     }
   }
 }
