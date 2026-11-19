@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -16,11 +17,22 @@ import {
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { logAppError } from "@/lib/error-monitor/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * A decision on one claim, from Outstation Requests and the Action Center (approve, reject, bulk approve):
+ * the reviewer's comment and the version of the claim on screen (claim-revision.ts). Both may be absent —
+ * the service refuses a blank version, and the reject below refuses a blank reason, with their own words.
+ */
+const DecisionBodySchema = z.object({
+  comment: z.string().nullable().optional(),
+  expectedRevision: z.string().nullable().optional(),
+});
 
 function isOutstationPayrollLockError(error: unknown) {
   return error instanceof Error && error.message.toLowerCase().includes("already been added to payroll");
@@ -148,10 +160,14 @@ export async function POST(
       );
     }
 
-    const body = await request.json().catch(() => ({})) as {
-      comment?: string | null;
-      expectedRevision?: string | null;
-    };
+    const parsedBody = await parseJsonBody(request, DecisionBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json(
+        { error: "invalid_request_body", message: parsedBody.message, success: false },
+        { status: 400 },
+      );
+    }
+    const body = parsedBody.data;
     const result = await approveOutstationRequestForPayroll(id, access, {
       comment: typeof body.comment === "string" ? body.comment : null,
       expectedRevision: expectedRevisionFrom(body),
@@ -199,10 +215,14 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json().catch(() => ({})) as {
-      comment?: string | null;
-      expectedRevision?: string | null;
-    };
+    const parsedBody = await parseJsonBody(request, DecisionBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json(
+        { error: "invalid_request_body", message: parsedBody.message, success: false },
+        { status: 400 },
+      );
+    }
+    const body = parsedBody.data;
     const comment = typeof body.comment === "string" ? body.comment.trim() : "";
     if (!comment) {
       return NextResponse.json(

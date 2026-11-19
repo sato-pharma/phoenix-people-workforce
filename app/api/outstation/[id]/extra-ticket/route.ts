@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -7,10 +8,25 @@ import { OUTSTATION_CLAIM_DECIDED_MESSAGE } from "@/lib/outstation/undecided-cla
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** One ticket: the file as a data URL (any size — the upload parser caps it), its name and its cost. */
+const ExtraTicketEntrySchema = z.object({
+  amount: z.union([z.number(), z.string()]).nullable().optional(),
+  dataUrl: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+/** What "Add tickets" sends (extra-ticket-manager.tsx). Every rule is still judged below and in the service. */
+const ExtraTicketBodySchema = z.object({
+  destination: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  tickets: z.array(ExtraTicketEntrySchema).nullable().optional(),
+});
 
 function extraTicketStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
@@ -55,10 +71,12 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
-    const rawTickets = Array.isArray(body.tickets)
-      ? (body.tickets as Array<Record<string, unknown>>)
-      : [];
+    const parsedBody = await parseJsonBody(request, ExtraTicketBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
+    const rawTickets = body.tickets ?? [];
     if (rawTickets.length === 0) {
       return NextResponse.json(
         { error: "no_tickets", message: "Upload at least one ticket to add." },

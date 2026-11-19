@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -6,10 +7,21 @@ import { readDepartureLocationRefusalReason } from "@/lib/outstation/departure-l
 import { recordOutstationDepartureLocationRefusal } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * `{ reason }`, the cause of the refused try (departure-photo-card.tsx). Left open on purpose: an unknown or
+ * missing cause from any client is recorded as not reported by readDepartureLocationRefusalReason, never refused.
+ */
+const LocationRefusalBodySchema = z
+  .object({
+    reason: z.unknown().optional(),
+  })
+  .nullable();
 
 /**
  * A departure photo refused for having no GPS location, reported by the web card or the Android
@@ -39,7 +51,11 @@ export async function POST(
       );
     }
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, LocationRefusalBodySchema, { fallback: {} });
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     await recordOutstationDepartureLocationRefusal(access, {
       reason: readDepartureLocationRefusalReason(body?.reason),
       requestId: id,

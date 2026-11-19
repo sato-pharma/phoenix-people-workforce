@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -7,12 +8,34 @@ import { submitMedicalRepSimpleExpenseRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseFormBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function formText(formData: FormData, key: string) {
-  return String(formData.get(key) ?? "").trim();
+/** A photo the rep picked; its size and type are judged by the service, never capped here. */
+const formPhoto = z.instanceof(File);
+
+/**
+ * The rep's own Expenses form (medical-rep-expenses.tsx): text fields set once each, and one `attachments`
+ * entry per photo — a single File for one, a list for several. Every field is optional here so the service
+ * still refuses a missing one with its own words (the photo count included, as a 400).
+ */
+const MedicalRepExpenseFormSchema = z.object({
+  amWorkload: z.string().optional(),
+  attachments: z.union([formPhoto, z.array(formPhoto)]).optional(),
+  goTicketAmount: z.string().optional(),
+  notes: z.string().optional(),
+  pmWorkload: z.string().optional(),
+  returnTicketAmount: z.string().optional(),
+  toLocation: z.string().optional(),
+  toPlaceId: z.string().optional(),
+  tripEndDate: z.string().optional(),
+  tripStartDate: z.string().optional(),
+});
+
+function formText(value: string | undefined) {
+  return String(value ?? "").trim();
 }
 
 function isFormFile(value: FormDataEntryValue): value is File {
@@ -54,8 +77,17 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 
-    const formData = await request.formData();
-    const attachmentFiles = formData.getAll("attachments").filter(isFormFile);
+    const parsedForm = await parseFormBody(request, MedicalRepExpenseFormSchema);
+    if (!parsedForm.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedForm.message }, { status: 400 });
+    }
+    const fields = parsedForm.data;
+    const pickedPhotos = Array.isArray(fields.attachments)
+      ? fields.attachments
+      : fields.attachments
+        ? [fields.attachments]
+        : [];
+    const attachmentFiles = pickedPhotos.filter(isFormFile);
     const attachments = await Promise.all(
       attachmentFiles.map(async (file) => ({
         bytes: Buffer.from(await file.arrayBuffer()),
@@ -66,18 +98,18 @@ export async function POST(request: Request) {
     );
 
     const requestRecord = await submitMedicalRepSimpleExpenseRequest(access, {
-      amWorkload: Number(formText(formData, "amWorkload") || "0"),
+      amWorkload: Number(formText(fields.amWorkload) || "0"),
       attachments,
-      goTicketAmount: Number(formText(formData, "goTicketAmount")),
-      notes: formText(formData, "notes"),
-      pmWorkload: Number(formText(formData, "pmWorkload") || "0"),
-      returnTicketAmount: Number(formText(formData, "returnTicketAmount")),
-      toLocation: formText(formData, "toLocation"),
+      goTicketAmount: Number(formText(fields.goTicketAmount)),
+      notes: formText(fields.notes),
+      pmWorkload: Number(formText(fields.pmWorkload) || "0"),
+      returnTicketAmount: Number(formText(fields.returnTicketAmount)),
+      toLocation: formText(fields.toLocation),
       // Empty when the rep typed without choosing a suggestion, or when an older client posts.
       // Optional on purpose: a submission must never be refused for want of a place id.
-      toPlaceId: formText(formData, "toPlaceId") || null,
-      tripEndDate: formText(formData, "tripEndDate"),
-      tripStartDate: formText(formData, "tripStartDate"),
+      toPlaceId: formText(fields.toPlaceId) || null,
+      tripEndDate: formText(fields.tripEndDate),
+      tripStartDate: formText(fields.tripStartDate),
     });
 
     return NextResponse.json({ request: requestRecord });

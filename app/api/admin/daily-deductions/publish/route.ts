@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertDailyDeductionsReadActor } from "@/lib/daily-deductions/permissions.ts";
 import { publishDailyTally } from "@/lib/daily-deductions/publish.ts";
@@ -10,12 +12,17 @@ import { listDailyPublications } from "@/lib/daily-deductions/service.ts";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PublishBody = {
-  rangeStart?: unknown;
-  rangeEnd?: unknown;
-  lines?: unknown;
-  notes?: unknown;
-};
+/**
+ * `{ rangeStart, rangeEnd, lines, notes? }`. No screen posts here any more (the page releases one line
+ * at a time through /release), so the shape is the route's own: each line goes to the service exactly
+ * as sent — `z.unknown()` keeps every key — and is validated structurally there.
+ */
+const PublishBodySchema = z.object({
+  rangeStart: z.string().nullish(),
+  rangeEnd: z.string().nullish(),
+  lines: z.array(z.unknown()).nullish(),
+  notes: z.string().nullish(),
+});
 
 /**
  * The owner's publish click. The lines are the reviewed running tally he saw on
@@ -32,7 +39,11 @@ export async function POST(request: Request) {
     await assertPermission(access, "deductions", "approve");
     // assertDailyDeductionsPublishActor runs inside publishDailyTally (Super Admin).
 
-    const body = (await request.json()) as PublishBody;
+    const parsed = await parseJsonBody(request, PublishBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
+    }
+    const body = parsed.data;
     if (typeof body.rangeStart !== "string" || typeof body.rangeEnd !== "string") {
       throw new Error("Validation: rangeStart and rangeEnd are required (YYYY-MM-DD).");
     }

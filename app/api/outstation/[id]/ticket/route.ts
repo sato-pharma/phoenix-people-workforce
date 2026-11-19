@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -13,6 +14,7 @@ import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage, errorMessageOf } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +23,18 @@ export const dynamic = "force-dynamic";
  * The employee attaches the ticket a train or bus claim arrived WITHOUT (missing-ticket.ts).
  * Evidence only — it carries no amount, unlike /extra-ticket, which adds a paid leg.
  */
+/** One ticket: the file as a data URL (any size — the upload parser caps it), its name, and a train read's note. */
+const MissingTicketEntrySchema = z.object({
+  dataUrl: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  scanToken: z.string().nullable().optional(),
+});
+
+/** What the missing-ticket card sends (missing-ticket-card.tsx): `{ tickets }`. */
+const MissingTicketBodySchema = z.object({
+  tickets: z.array(MissingTicketEntrySchema).nullable().optional(),
+});
+
 function missingTicketStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
   if (error instanceof TrainTicketRefusedError) return 400;
@@ -69,10 +83,12 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
-    const rawTickets = Array.isArray(body.tickets)
-      ? (body.tickets as Array<Record<string, unknown>>)
-      : [];
+    const parsedBody = await parseJsonBody(request, MissingTicketBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
+    const rawTickets = body.tickets ?? [];
     if (rawTickets.length === 0) {
       return NextResponse.json(
         { error: "no_tickets", message: "Upload the ticket to attach." },

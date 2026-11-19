@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -6,10 +7,16 @@ import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { releaseOutstationRequestWithoutEvidence } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** What Held Requests sends (held-requests-panel.tsx): the written reason. The service requires it and says so. */
+const EvidenceReleaseBodySchema = z.object({
+  reason: z.string().nullable().optional(),
+});
 
 /**
  * Release a request the evidence gate is holding on a photo that can never arrive.
@@ -55,7 +62,11 @@ export async function POST(
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, EvidenceReleaseBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const result = await releaseOutstationRequestWithoutEvidence(id, access, {
       reason: body.reason,
     });

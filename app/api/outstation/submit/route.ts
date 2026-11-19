@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
@@ -19,9 +20,53 @@ import { logError } from "@/lib/observability/log";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** A figure as a number, or as text — or null, which is what a blank box (NaN) becomes in JSON. */
+const submitNumberField = z.union([z.number(), z.string()]).nullable().optional();
+const submitTextField = z.string().nullable().optional();
+
+/** One ticket: the file as a data URL (any size — the upload parser caps it), its name, and a train read's note. */
+const SubmitTicketAttachmentSchema = z.object({
+  dataUrl: submitTextField,
+  name: submitTextField,
+  scanToken: submitTextField,
+});
+
+/**
+ * What Submit Expense posts (mobile-outstation-wizard.tsx: requestPayload, the arrival photo and the tickets).
+ * Loose: the body is handed whole to parseOutstationTypeFields, parseCarEvidenceMetadata and
+ * parseCarEvidenceImageDataUrl, which judge with their own words. The wizard also sends fields this route
+ * deliberately never reads (the visit counts, offlineCaptured, tripType — see below); they are accepted and
+ * ignored exactly as before. The arrival photo is a data URL of any size; the service caps it.
+ */
+const SubmitBodySchema = z.looseObject({
+  attachmentCount: submitNumberField,
+  capturedAccuracyMeters: submitNumberField,
+  capturedAt: submitTextField,
+  capturedLatitude: submitNumberField,
+  capturedLongitude: submitNumberField,
+  carEvidenceImageDataUrl: submitTextField,
+  carEvidenceMetadata: z.looseObject({}).nullable().optional(),
+  claimedTotalAmount: submitNumberField,
+  expenseType: submitTextField,
+  goTicketAmount: submitNumberField,
+  hasTicketAttachments: z.boolean().nullable().optional(),
+  kilometerReading: submitNumberField,
+  medicalTripHrId: submitTextField,
+  medicalTripName: submitTextField,
+  meetingAmount: submitNumberField,
+  notes: submitTextField,
+  otherAmount: submitNumberField,
+  returnTicketAmount: submitNumberField,
+  ticketAttachments: z.array(SubmitTicketAttachmentSchema).nullable().optional(),
+  transportationType: submitTextField,
+  tripEndDate: submitTextField,
+  tripStartDate: submitTextField,
+});
 
 function outstationSubmitStatus(error: unknown) {
   if (isForbiddenError(error)) {
@@ -61,7 +106,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonBody(request, SubmitBodySchema);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
     const outstationTypes = parseOutstationTypeFields(body);
     if (!outstationTypes.ok) {
       return NextResponse.json(
@@ -82,9 +131,7 @@ export async function POST(request: Request) {
       return NextResponse.json(MISSING_CAPTURED_COORDINATES, { status: 400 });
     }
 
-    const rawTicketAttachments = Array.isArray(body.ticketAttachments)
-      ? (body.ticketAttachments as Array<Record<string, unknown>>)
-      : [];
+    const rawTicketAttachments = body.ticketAttachments ?? [];
     const ticketAttachments = rawTicketAttachments.map((entry) => ({
       ...parseOutstationTicketAttachmentDataUrl({
         dataUrl: String(entry.dataUrl ?? ""),

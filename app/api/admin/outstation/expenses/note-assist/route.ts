@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
@@ -11,11 +12,24 @@ import {
 } from "@/lib/outstation/expense-note-assist";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const OUTCOMES: readonly ExpenseNoteOutcome[] = ["adjusted", "approved", "pending", "rejected"];
+
+/**
+ * What the review deck's rewrite button sends (deck-decision.tsx): the draft, the trip's facts and the outcome.
+ * An unreadable body is still null, and an unknown outcome still reads as "pending", exactly as before.
+ */
+const NoteAssistBodySchema = z
+  .object({
+    draft: z.string().nullable().optional(),
+    facts: z.array(z.unknown()).nullable().optional(),
+    outcome: z.string().nullable().optional(),
+  })
+  .nullable();
 
 /**
  * Rewrites an approver's rough comment into the system-voice note the employee reads.
@@ -38,15 +52,14 @@ export async function POST(request: Request) {
     if (unauthenticated) return unauthenticated;
     assertSystemAdministratorWorkspaceAccess(access, "outstation expense note");
 
-    const body = (await request.json().catch(() => null)) as {
-      draft?: unknown;
-      facts?: unknown;
-      outcome?: unknown;
-    } | null;
+    const parsedBody = await parseJsonBody(request, NoteAssistBodySchema, { fallback: null });
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: "invalid_request_body", message: parsedBody.message }, { status: 400 });
+    }
+    const body = parsedBody.data;
 
     const draft = typeof body?.draft === "string" ? body.draft : "";
-    const rawOutcome = String(body?.outcome ?? "") as ExpenseNoteOutcome;
-    const outcome = OUTCOMES.includes(rawOutcome) ? rawOutcome : "pending";
+    const outcome: ExpenseNoteOutcome = OUTCOMES.find((value) => value === body?.outcome) ?? "pending";
     // Shaped, then re-capped inside the domain module — the browser is the only source of these
     // and they end up in a prompt.
     const facts: ExpenseNoteFact[] = Array.isArray(body?.facts)

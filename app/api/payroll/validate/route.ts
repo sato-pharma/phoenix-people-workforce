@@ -1,5 +1,6 @@
 import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -11,9 +12,21 @@ import { findSalaryBatchForPeriod, payrollPeriodConflictForBatch } from "@/lib/p
 import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
 import { excelSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseFormBody } from "@/lib/http/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The payroll dashboard sends `file`, `month` and `year` (the period pickers' values, so strings — every
+ * non-file form value is a string). All three stay optional so a form missing one still gets the
+ * route's own "Salary file is required." / "Payroll month and year are required." answer.
+ */
+const PayrollValidateFormSchema = z.object({
+  file: z.instanceof(File).optional(),
+  month: z.string().optional(),
+  year: z.string().optional(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -23,10 +36,13 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payroll", "import");
 
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const rawMonth = formData.get("month");
-    const rawYear = formData.get("year");
+    const parsed = await parseFormBody(request, PayrollValidateFormSchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: "invalid_request", message: parsed.message }, { status: 400 });
+    }
+    const file = parsed.data.file;
+    const rawMonth = parsed.data.month;
+    const rawYear = parsed.data.year;
     const month = Number(rawMonth);
     const year = Number(rawYear);
 

@@ -17,6 +17,19 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { SignedOutRefusal } from "../src/lib/auth/signed-out-refusal.ts";
+import {
+  atomically,
+  RpcRaise,
+  snapshot,
+  withStandIn,
+  writesTo,
+  type Failure,
+  type Row,
+  type RpcAnswer,
+  type Seen,
+  type StandIn,
+  type Tables,
+} from "./support/postgrest-transaction-stand-in.ts";
 
 // REC-078 (enterprise audit 2026-11-13): behaviour tests, not source pins, for three things a payroll or
 // an access decision rests on. Each runs the REAL domain code against a stand-in PostgREST held in memory
@@ -35,149 +48,6 @@ import { SignedOutRefusal } from "../src/lib/auth/signed-out-refusal.ts";
 //      takes the others away); a module lock suspends a grant the role still holds; a signed-out caller
 //      gets the signed-out refusal. The cold start is pinned in tests/permission-matrix-cold-start.test.ts.
 
-type Row = Record<string, unknown>;
-type Failure = { status: number; body: Record<string, unknown> };
-type Seen = { method: string; table: string | null; rpc: string | null; params: URLSearchParams; body: unknown };
-type RpcAnswer = { status: number; body: unknown };
-type StandIn = {
-  tables: Record<string, Row[]>;
-  failReads?: Record<string, Failure>;
-  failWrites?: Record<string, Failure>;
-  rpc?: Record<string, (args: Record<string, unknown>) => RpcAnswer>;
-};
-
-const STAND_IN_ORIGIN = "http://127.0.0.1:54397";
-const RESERVED_PARAMS = new Set(["select", "order", "limit", "offset", "on_conflict", "columns"]);
-
-function json(body: unknown, status = 200): Response {
-  return new Response(body === undefined ? null : JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
-    status,
-  });
-}
-
-function matchesFilter(row: Row, key: string, raw: string): boolean {
-  const value = row[key];
-  if (raw.startsWith("eq.")) return String(value ?? "") === raw.slice(3);
-  if (raw.startsWith("neq.")) return String(value ?? "") !== raw.slice(4);
-  if (raw.startsWith("is.")) return raw.slice(3) === "null" ? value == null : String(value) === raw.slice(3);
-  if (raw.startsWith("in.(") && raw.endsWith(")")) {
-    return raw
-      .slice(4, -1)
-      .split(",")
-      .map((item) => item.replace(/^"|"$/g, ""))
-      .includes(String(value ?? ""));
-  }
-  throw new Error(`the stand-in does not understand the filter ${key}=${raw}`);
-}
-
-function filtered(rows: Row[], params: URLSearchParams): Row[] {
-  let out = rows.filter((row) => {
-    for (const [key, raw] of params) {
-      if (RESERVED_PARAMS.has(key)) continue;
-      if (!matchesFilter(row, key, raw)) return false;
-    }
-    return true;
-  });
-  const order = params.get("order");
-  if (order) {
-    const [column, direction] = order.split(".");
-    out = [...out].sort((left, right) => {
-      const a = String(left[column] ?? "");
-      const b = String(right[column] ?? "");
-      return direction === "desc" ? b.localeCompare(a) : a.localeCompare(b);
-    });
-  }
-  return out;
-}
-
-/**
- * Runs `body` against the REAL admin client pointed at an in-memory PostgREST. Every request is recorded;
- * a request to any other host throws. The fetch, both settings and the permission and lock caches are put
- * back afterwards, so nothing later in the shard talks to the stand-in (a leaked stub hangs a later test).
- */
-async function withStandIn(standIn: StandIn, body: (seen: Seen[]) => Promise<void>): Promise<void> {
-  const seen: Seen[] = [];
-  const env = process.env as Record<string, string | undefined>;
-  const realFetch = globalThis.fetch;
-  const realUrl = env.NEXT_PUBLIC_SUPABASE_URL;
-  const realKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  env.NEXT_PUBLIC_SUPABASE_URL = STAND_IN_ORIGIN;
-  env.SUPABASE_SERVICE_ROLE_KEY = "stand-in-key-never-sent";
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = input instanceof Request ? input : null;
-    const url = new URL(request ? request.url : String(input));
-    if (url.origin !== STAND_IN_ORIGIN) throw new Error(`the stand-in refuses to reach ${url.origin}`);
-    const method = String(init?.method ?? request?.method ?? "GET").toUpperCase();
-    const headers = new Headers(init?.headers ?? request?.headers ?? undefined);
-    const wantsObject = (headers.get("accept") ?? "").includes("vnd.pgrst.object");
-    const parsed: unknown = typeof init?.body === "string" && init.body ? JSON.parse(init.body) : null;
-
-    if (url.pathname.startsWith("/rest/v1/rpc/")) {
-      const name = decodeURIComponent(url.pathname.slice("/rest/v1/rpc/".length));
-      seen.push({ body: parsed, method, params: url.searchParams, rpc: name, table: null });
-      const handler = standIn.rpc?.[name];
-      if (!handler) return json({ code: "PGRST202", message: `stand-in has no function ${name}` }, 404);
-      const answer = handler((parsed ?? {}) as Record<string, unknown>);
-      return json(answer.body, answer.status);
-    }
-    if (!url.pathname.startsWith("/rest/v1/")) {
-      seen.push({ body: parsed, method, params: url.searchParams, rpc: null, table: url.pathname });
-      return json({}, 200);
-    }
-
-    const table = decodeURIComponent(url.pathname.slice("/rest/v1/".length));
-    seen.push({ body: parsed, method, params: url.searchParams, rpc: null, table });
-    const rows = (standIn.tables[table] ??= []);
-
-    if (method === "GET" || method === "HEAD") {
-      const failure = standIn.failReads?.[table];
-      if (failure) return json(failure.body, failure.status);
-      const matches = filtered(rows, url.searchParams);
-      if (wantsObject) {
-        if (matches.length !== 1) {
-          return json(
-            { code: "PGRST116", details: `The result contains ${matches.length} rows`, hint: null, message: "JSON object requested, multiple (or no) rows returned" },
-            406,
-          );
-        }
-        return json(matches[0]);
-      }
-      return json(matches);
-    }
-
-    const failure = standIn.failWrites?.[table];
-    if (failure) return json(failure.body, failure.status);
-    let written: Row[] = [];
-    if (method === "POST") {
-      written = (Array.isArray(parsed) ? parsed : [parsed]) as Row[];
-      rows.push(...written.map((row) => ({ ...row })));
-    } else if (method === "PATCH") {
-      for (const row of filtered(rows, url.searchParams)) {
-        Object.assign(row, parsed as Row);
-        written.push({ ...row });
-      }
-    } else if (method === "DELETE") {
-      written = filtered(rows, url.searchParams);
-      standIn.tables[table] = rows.filter((row) => !written.includes(row));
-    }
-    return json(wantsObject ? written[0] ?? null : written, method === "POST" ? 201 : 200);
-  }) as typeof fetch;
-
-  try {
-    await body(seen);
-  } finally {
-    globalThis.fetch = realFetch;
-    if (realUrl === undefined) delete env.NEXT_PUBLIC_SUPABASE_URL;
-    else env.NEXT_PUBLIC_SUPABASE_URL = realUrl;
-    if (realKey === undefined) delete env.SUPABASE_SERVICE_ROLE_KEY;
-    else env.SUPABASE_SERVICE_ROLE_KEY = realKey;
-    clearPermissionMatrixCache();
-    clearModuleLockCache();
-  }
-}
-
-const writesTo = (seen: Seen[], table: string) => seen.filter((request) => request.table === table && request.method !== "GET");
 const auditWrites = (seen: Seen[]) =>
   seen.filter((request) => request.method !== "GET" && /audit/i.test(request.table ?? "") && !/automated_payroll/.test(request.table ?? ""));
 
@@ -397,6 +267,91 @@ async function markPublishedHandsOverTheHeldList(): Promise<void> {
       );
     },
   );
+}
+
+/**
+ * phx_mark_automated_payroll_run_published, from 20261113160132, statement by statement: refuse a detail with no
+ * held list, move the run to published under the publish's claim, then insert the `published` record. One
+ * indivisible step: a raise anywhere keeps nothing. `failAfterPhase` raises after the phase write — the forced
+ * failure after the first write (REC-038 close-out, 19 Nov 2026).
+ */
+function markPublishedModel(failAfterPhase = false) {
+  return (args: Record<string, unknown>, tables: Tables): RpcAnswer =>
+    atomically(tables, (db) => {
+      const detail = args.p_detail as { held?: unknown } | null;
+      if (!detail || !Array.isArray(detail.held)) {
+        throw new RpcRaise("P0001", "automated_payroll_publish_hold_record_missing: the publish record has no held list");
+      }
+      const run = (db.automated_payroll_runs ?? []).find(
+        (row) => row.id === args.p_run_id && row.phase === "ready" && row.transition_token === args.p_transition_token,
+      );
+      if (!run) throw new RpcRaise("P0001", "automated_payroll_transition_claim_lost: [transition-claim-lost] the run was not marked published");
+      Object.assign(run, {
+        phase: "published",
+        published_batch_id: args.p_batch_id,
+        published_by: args.p_published_by,
+        transition_action: null,
+        transition_started_at: null,
+        transition_token: null,
+      });
+      if (failAfterPhase) throw new RpcRaise("XX000", "stand-in: the held record could not be inserted");
+      (db.automated_payroll_audit ??= []).push({ action: "published", actor_hr_id: args.p_actor_hr_id, detail: args.p_detail, run_id: args.p_run_id });
+      return { body: [{ ...run }], status: 200 };
+    });
+}
+
+/**
+ * THE HELD RECORD IS ALL OR NOTHING, AND ONE PUBLISH WINS (REC-038 close-out, 19 Nov 2026). The two tests the
+ * money-integrity close-out asks of every operation, driven through markRunPublished against the modelled function:
+ * (a) a failure after the first write leaves the run `ready` with no record — never published without one; (b) two
+ * publishes holding the same claim at once land exactly once, with one record.
+ */
+export async function runHeldRecordAtomicityBehaviourTests(): Promise<void> {
+  const ready = (): Tables => ({
+    automated_payroll_audit: [],
+    automated_payroll_runs: [
+      { id: "run-oct", month: 10, month_key: "2026-10", phase: "ready", transition_action: "Publishing to payslips", transition_started_at: "2026-11-19T09:00:00+00:00", transition_token: "token-oct", year: 2026 },
+    ],
+  });
+  const input = {
+    action: "published" as const,
+    batchId: "batch-oct",
+    detail: { held: [{ hrId: "B-77", name: "Held Person", reason: "Bank account not confirmed", secondPartWithheld: 6000 }] },
+    publishedBy: "B-10",
+  };
+
+  // (a) The forced failure after the first write.
+  {
+    const tables = ready();
+    const before = snapshot(tables);
+    await withStandIn({ rpc: { phx_mark_automated_payroll_run_published: markPublishedModel(true) }, tables }, async (seen) => {
+      await assert.rejects(
+        markRunPublished("run-oct", input, { transitionToken: "token-oct" }),
+        (error: Error) => error.message.startsWith("Conflict: the payslips for this run WERE written") && error.message.includes("Press Publish again"),
+        "HEADLINE: a publish whose record failed after the phase moved is told to press Publish again",
+      );
+      assert.deepEqual(tables, before, "HEADLINE (F-PAY-002): the run is still ready and no half record exists — never published without who was held");
+      assert.equal(writesTo(seen, "automated_payroll_runs").length + writesTo(seen, "automated_payroll_audit").length, 0, "and nothing was written outside the one call");
+    });
+  }
+
+  // (b) Two publishes at once, both holding the claim token: one lands, the other meets the cleared claim.
+  {
+    const tables = ready();
+    await withStandIn({ rpc: { phx_mark_automated_payroll_run_published: markPublishedModel() }, tables }, async () => {
+      const results = await Promise.allSettled([
+        markRunPublished("run-oct", input, { transitionToken: "token-oct" }),
+        markRunPublished("run-oct", input, { transitionToken: "token-oct" }),
+      ]);
+      const won = results.filter((result) => result.status === "fulfilled");
+      const lost = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      assert.equal(won.length, 1, "HEADLINE: exactly one of two simultaneous publishes marks the run");
+      assert.equal(lost.length, 1, "and the other is refused");
+      assert.ok(String(lost[0].reason?.message).startsWith(`Conflict: ${TRANSITION_CLAIM_LOST}`), "as a claim another action took, never a second publish");
+      assert.equal((tables.automated_payroll_audit ?? []).filter((row) => row.action === "published").length, 1, "one record of who was held");
+      assert.equal((tables.automated_payroll_runs ?? [])[0]?.phase, "published", "and the run is published once");
+    });
+  }
 }
 
 export async function runHeldSalaryRecordBehaviourTests(): Promise<void> {

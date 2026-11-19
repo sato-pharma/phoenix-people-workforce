@@ -1,5 +1,6 @@
 import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { assertPermission, canAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { assertSignedIn } from "@/lib/auth/require-signed-in";
@@ -12,11 +13,34 @@ import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payrol
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseJsonBody } from "@/lib/http/request-body";
 import { notifyPayslipAvailable } from "@/lib/payroll/notify-payslip-available";
 import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** Every workflow action this route runs — the values of `PayrollWorkflowAction`. */
+const PAYROLL_WORKFLOW_ACTIONS = [
+  "mark_part1_ready",
+  "mark_part1_paid",
+  "open_adjustments",
+  "mark_part2_ready",
+  "mark_review",
+  "approve",
+  "lock",
+  "reject",
+  "reopen",
+] as const satisfies readonly PayrollWorkflowAction[];
+
+/**
+ * The payroll dashboard sends `{ action, rejectedReason }` — the reason is a string on reject and left
+ * out (undefined) on every other action.
+ */
+const PayrollWorkflowBodySchema = z.object({
+  action: z.enum(PAYROLL_WORKFLOW_ACTIONS, { error: "Invalid action." }),
+  rejectedReason: z.string().nullish(),
+});
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -31,24 +55,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!(await canAccess(access, "payroll", "update"))) {
       await assertPermission(access, "payroll", "approve");
     }
-    const body = await request.json();
-    const action = String(body.action ?? "") as PayrollWorkflowAction;
-    const rejectedReason = body.rejectedReason ? String(body.rejectedReason) : undefined;
-
-    const validActions: PayrollWorkflowAction[] = [
-      "mark_part1_ready",
-      "mark_part1_paid",
-      "open_adjustments",
-      "mark_part2_ready",
-      "mark_review",
-      "approve",
-      "lock",
-      "reject",
-      "reopen",
-    ];
-    if (!validActions.includes(action)) {
-      return NextResponse.json({ success: false, error: "Invalid action." }, { status: 400 });
+    const parsed = await parseJsonBody(request, PayrollWorkflowBodySchema);
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.message }, { status: 400 });
     }
+    const action: PayrollWorkflowAction = parsed.data.action;
+    const rejectedReason = parsed.data.rejectedReason || undefined;
 
     await assertPermission(access, "payroll", action === "approve" ? "approve" : "update");
     const actorIdentity = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
