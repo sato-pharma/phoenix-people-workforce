@@ -502,7 +502,7 @@ const DARK_GROUND_KEEPS: Array<{ file: string; keep: string; why: string }> = [
     why: "the Field Force band's rep search, on bg-slate-900",
   },
   {
-    file: "src/components/layout/internal-messages-menu.tsx",
+    file: "src/components/layout/internal-messages-panel.tsx",
     keep: 'isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white',
     why: "the internal messages composer, whose admin mode is near-black",
   },

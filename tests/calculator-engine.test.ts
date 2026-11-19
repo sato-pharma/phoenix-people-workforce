@@ -29,10 +29,11 @@ import {
 
 const SOURCE_ROOT = new URL("../src/", import.meta.url);
 
-const WIDGET_SOURCE = readFileSync(
-  fileURLToPath(new URL("components/layout/calculator-widget.tsx", SOURCE_ROOT)),
-  "utf8",
-);
+// The button (calculator-widget.tsx) and the panel it loads on first use (calculator-panel.tsx),
+// read as one: every property below is about the calculator as a whole, wherever its code sits.
+const WIDGET_SOURCE = ["components/layout/calculator-widget.tsx", "components/layout/calculator-panel.tsx"]
+  .map((path) => readFileSync(fileURLToPath(new URL(path, SOURCE_ROOT)), "utf8"))
+  .join("\n");
 
 const TOPBAR_SOURCE = readFileSync(
   fileURLToPath(new URL("components/layout/topbar.tsx", SOURCE_ROOT)),

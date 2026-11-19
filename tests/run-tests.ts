@@ -73,6 +73,7 @@ import { runErrorMonitorRedactRouteTests } from "./error-monitor-redact-route.te
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runCalculatorEngineTests } from "./calculator-engine.test.ts";
+import { runTopbarLazyPanelsTests } from "./topbar-lazy-panels.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runCommandPaletteItemsTests } from "./command-palette-items.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
@@ -9662,6 +9663,12 @@ await runTest(
     + "percent and repeat-equals, paste sanitising that refuses ambiguity, and the non-blocking "
     + "panel contract: portal-mounted, no backdrop, no document listener, no outside-click dismiss)",
   runCalculatorEngineTests,
+);
+await runTest(
+  "topbar panels load on first use (the notifications, messages and calculator bodies are fetched by "
+    + "next/dynamic when the page is idle, on hover or on the click, never imported statically; a failed load "
+    + "shows a reload inside the panel, never the page error; the unread counts stay with the page)",
+  runTopbarLazyPanelsTests,
 );
 await runTest("expense claims mirror refresh (an interlock refusal is never success; parity read is bounded)", runExpenseClaimsRefreshTests);
 await runTest(

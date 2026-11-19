@@ -165,7 +165,10 @@ export function runNotificationAutoArchiveTests() {
   assert.match(routeSource, /clearAll === true/, "PATCH route must handle clearAll");
   assert.match(routeSource, /archiveAllInAppNotifications\(access\)/, "clearAll must call archiveAllInAppNotifications");
 
-  const bellSource = readFileSync("src/components/layout/in-app-notifications-bell.tsx", "utf8");
+  // The bell and the panel body it loads on first use, read as one component.
+  const bellSource = ["src/components/layout/in-app-notifications-bell.tsx", "src/components/layout/in-app-notifications-panel.tsx"]
+    .map((path) => readFileSync(path, "utf8"))
+    .join("\n");
   assert.match(bellSource, /clearAll: true/, "bell must send clearAll:true to the API");
   assert.match(bellSource, /Clear all notifications/, "bell must have a Clear all button");
   // The bell's unread marker shares the sidebar's alarm class so both surfaces pulse identically.
