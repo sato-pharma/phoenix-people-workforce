@@ -528,7 +528,22 @@ one's grants outside a migration.
 
 ## Performance advisors
 
-### IN PROGRESS — `multiple_permissive_policies` (WARN)
+### RESOLVED 2026-11-19 — `multiple_permissive_policies` (WARN), 0 findings
+- **`daily_deductions_lines`, `deductions_publication_lines`** — the last two. Each had an
+  `admin_select` and a `self_read` SELECT policy for `authenticated`; migration
+  `20261119020514_merge_deductions_lines_select_policies.sql` joins each pair into one
+  `<table>_read` policy with OR. Applied on staging and production on 2026-11-19 (through
+  `scripts/apply-sql-file.mjs`, because the Supabase connection asks its own confirmation
+  before a DROP and this session could not answer it). Proven identical on production: for
+  all 230 accounts plus one with no account, the set of lines each could read was
+  fingerprinted before and after, and all eight batch fingerprints matched. The advisor read
+  0 `multiple_permissive_policies` findings afterwards.
+- Found on the way, left alone: the employee half of both policies lets nobody through, before
+  and after, because its `exists` check reads `daily_deductions_publications` /
+  `deductions_publications`, whose only SELECT policy is admin-only. No screen depends on it:
+  the portal reads these lines with the service-role client.
+
+Earlier history:
 - **`payroll_expenses`, `salary_batches`** — already remediated (stale `{public}` SELECT
   policies dropped 2026-06-15; advisor count fell 7 → 5).
 - **`brick_reference_imports`, `brick_reference_rows`, `geo_bricks`, `geo_locations`,
