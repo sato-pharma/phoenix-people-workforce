@@ -95,6 +95,7 @@ import {
   Plus,
   Map as MapIcon,
   BadgeCheck,
+  Eye,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -418,6 +419,7 @@ function buildEmployeePortalSections({
   showAreaDirectOrdersTab = false,
   showMilestonesTab = false,
   showProductionPlanningTab = false,
+  showMarketingWatchedProductsTab = false,
   showPvTrainingEvidenceTab = false,
   showVacationApprovalsTab = false,
   showExcuseApprovalsTab = false,
@@ -667,6 +669,8 @@ function buildEmployeePortalSections({
         // after the drafts workspace went dark for them (owner, 2026-09-18).
         ...(showMarketingValidationTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
+        // Every request for the products this person follows by name, history included (owner, 2026-11-19).
+        ...(showMarketingWatchedProductsTab ? [{ href: "/employee-portals/marketing-requests/watching", label: "Watched Products", icon: Eye }] : []),
         // ROI Tracker — the marketing-ROI source of truth, and since 2026-09-22 the merged module (the
         // ROI pipeline and the former Coverage Report as two tabs), so it is offered on EITHER flag.
         ...(showMarketingRoiTrackingTab || showMarketingCoverageReportTab

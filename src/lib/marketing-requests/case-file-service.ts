@@ -29,6 +29,7 @@ import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { buildCaseFileDecisionBar } from "@/lib/marketing-requests/case-file-decision-bar";
 import { canCancelMarketingRequest } from "@/lib/marketing-requests/cancel";
 import { canReopenRejectedMarketingRequest } from "@/lib/marketing-requests/reopen-rule";
+import { watchedMarketingProductCodes } from "@/lib/marketing-requests/product-watchers";
 import {
   canPlaceMarketingRequestOnFinanceHold,
   MARKETING_FINANCE_HOLD_STATUS,
@@ -121,6 +122,8 @@ export type CaseFileAdmissionInput = {
   requesterHrId: string | null;
   /** PM/GPM only: the uppercased product codes this viewer owns. `null` = not a product-owner role. */
   viewerOwnedProductCodes: ReadonlySet<string> | null;
+  /** The uppercased product codes this viewer WATCHES by name (product-watchers.ts). Empty or absent = none. */
+  viewerWatchedProductCodes?: ReadonlySet<string> | null;
 };
 
 /**
@@ -177,6 +180,14 @@ export function resolveCaseFileAdmission(input: CaseFileAdmissionInput): Marketi
       input.requestProductCodes.some((code) => input.viewerOwnedProductCodes!.has(code))
     ) {
       admitted.push("product_owner");
+    }
+
+    // A named product watcher (owner, 2026-11-19) — any role. Unlike `product_owner` this is a stake
+    // the owner gave him in the requests themselves ("access ... he can comment"), so it reads the
+    // whole file and the conversation, like a CC reviewer, and it adds no rung: no decision control.
+    const watched = input.viewerWatchedProductCodes;
+    if (watched && watched.size > 0 && input.requestProductCodes.some((code) => watched.has(code))) {
+      admitted.push("product_watcher");
     }
   }
 
@@ -659,6 +670,7 @@ export async function getMarketingRequestCaseFile(
     requestProductCodes: requestProductCodes.codes,
     requesterHrId: request.requesterHrId,
     viewerOwnedProductCodes: ownedProductCodes.codes,
+    viewerWatchedProductCodes: watchedMarketingProductCodes(viewerHrId),
   });
 
   if (admittedAs.length === 0) {

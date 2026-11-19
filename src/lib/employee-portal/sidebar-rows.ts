@@ -102,6 +102,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
 
   { href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", section: "Marketing & ROI" },
   { href: "/employee-portals/marketing-requests", label: "Marketing Requests", section: "Marketing & ROI" },
+  { href: "/employee-portals/marketing-requests/watching", label: "Watched Products", section: "Marketing & ROI" },
   { href: "/employee-portals/roi-tracker", label: "ROI Tracker", section: "Marketing & ROI" },
   { href: "/employee-portals/market-awareness", label: "Market Awareness", section: "Marketing & ROI" },
   { href: "/employee-portals/marketing-functions", label: "Marketing Functions", section: "Marketing & ROI" },

@@ -238,10 +238,12 @@ export async function runMarketingInboxWaitingAndTitleTests() {
   /* 5. Both tabs render it, and the service builds it from the helper       */
   /* ---------------------------------------------------------------------- */
 
+  // Three since 2026-11-19: the Watched Products list (getMarketingWatchedProductRequests) titles its
+  // rows through the same helper, so a watcher reads the same title the approver does.
   assert.equal(
     (service.match(/requestTitle: marketingRequestTitle\(/g) ?? []).length,
-    2,
-    "the pending row and the history row must both build the title through the shared helper",
+    3,
+    "the pending row, the history row and the watched-products row must all build the title through the shared helper",
   );
   for (const file of [
     "src/components/employee-portal/marketing-request-inbox.tsx",
