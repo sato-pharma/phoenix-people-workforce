@@ -891,6 +891,69 @@
       "decidedBy": "owner",
       "why": "8 tables, 1,933 rows: the Qena territory before the 4 Oct brick move (4 bricks, since superseded; 2 blocks; 11 aliases; 1,276 customer mappings, 1,265 of which moved from Qena 1 to Qena 2; 2 direct-order pharmacies and their 2 codes; 54 stored address answers; 582 September import rows from two batches that no longer exist). Every surviving row has changed since and the customer map keeps no history, so the export is the lasting record of the mapping before the move; September is published on all three lines, so it can undo nothing.",
       "sheet": "19 November 2026, the 4 October snapshot schema, in chat"
+    },
+    "au.bak_20261008_orphaned_direct_orders": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "5 rows: the five Pedia direct orders left returned with two resigned district managers, as they stood before the hand close on 8 Oct (20261008040000). All five are still live, now cancelled, so the export is the lasting record of their returned state.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "au.bak_20261008_orphaned_direct_order_items": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "6 rows: the items of the same five orders, taken before the same close. All six are still live.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "au.bak_20261008_orphaned_direct_order_steps": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "18 rows: the approval steps of the same five orders, taken before the same close. All 18 are still live.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "au.bak_20261008_orphaned_direct_order_events": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "22 rows: the event history of the same five orders up to the close. All 22 are still live; the close added 5 more.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "au.bak_20261008_luxor_notes_fix": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 row: Pedia Luxor's area row before the 8 Oct notes fix (20261008153500). The row is live with the corrected notes and the same rep seat, so the export keeps only the old notes.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "au.bak_20261008_pd0021_decline_revert": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 row: one Pedia rep's employee, seat-history, vacancy, offer, login and access records while an offer withdrawal had wrongly marked the offer declined, taken by hand on 8 Oct before the revert. The rep is active today; the copy holds personal fields, so its export stays outside the repository like every export.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "crm_backup_20261008": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "5 tables, 16 rows: a test probe's rows deleted from Phoenix CRM on 8 Oct (5 customers, 8 list events, 1 place, 1 photo record and the photo file's storage row; the file itself is not in it). All test data; none of it is live.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "phoenix_crm_merge_backup_20261008": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "8 tables, 363 rows: the 329 customers in the same-seat duplicate groups and the 34 rows hanging off them (6 visits, 7 places, 18 plan items, 2 list requests, 1 off-plan visit), before the 8 Oct merge. All 329 customers still exist (the merged-away ones are archived as duplicates, not deleted) and the visits and places now sit on the kept customer. The merge's offline report folder no longer exists, so the export is the only lasting before-picture.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
+    },
+    "recruitment_backup_20261008": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "1 table, 2 rows: two offer letters for one Talent Acquisition Specialist candidate, created and sent on 8 Oct, never accepted, with no vacancy or HR id, then deleted from the live offers; no live offer goes to that candidate now. The copy holds the candidate's name and email, so its export stays outside the repository like every export.",
+      "sheet": "19 November 2026, the 8 October snapshots, in chat"
     }
   }
 }
