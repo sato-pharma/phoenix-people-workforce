@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
@@ -25,6 +27,7 @@ export async function POST(
 
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
     await assertVacationRouteRateLimit({
       actor: access.loginId ?? access.hrId,
       limit: 30,
@@ -32,6 +35,8 @@ export async function POST(
       scope: "vacation:decision",
       windowMs: 60_000,
     });
+    // REC-080: the caller is judged before the body — decideVacationRequest's own first gate.
+    await assertPermission(access, "leave", "approve");
     const body = await request.json();
     const decision = parseVacationDecision(body.decision);
     if (!decision) {
@@ -52,6 +57,9 @@ export async function POST(
     const message = vacationErrorMessage(error) || "Unable to decide vacation request.";
     if (isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:")) {
       return NextResponse.json({ error: "forbidden", message, success: false }, { status: 403 });
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ error: error.code, message, success: false }, { status: 401 });
     }
     // Lost a race: the request moved, or the approver's step was already decided, since the approver
     // read it (vacationDecisionWriteError). Nothing was written; the screen should reload, not retry blind.

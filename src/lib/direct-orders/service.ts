@@ -2667,7 +2667,8 @@ export type HeldDirectOrderRow = {
   holdReleaseDecidedAt: string | null;
 };
 
-function assertHeldDeskAccess(access: AccessContext): void {
+/** Exported so the held-decision route asks it before it reads the body (REC-080). */
+export function assertHeldDeskAccess(access: AccessContext): void {
   if (!(access.scope === "system" || access.role === "Super Admin")) {
     throw new Error("Forbidden: the Held Desk is System Admin only.");
   }

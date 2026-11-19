@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { decideDirectOrderPharmacyValidation } from "@/lib/direct-orders/pharmacy-validation";
+import {
+  assertValidationDeskAccess,
+  decideDirectOrderPharmacyValidation,
+} from "@/lib/direct-orders/pharmacy-validation";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -16,6 +20,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: the decision's own first gate, asked before the body is judged; it still asks it too.
+    assertValidationDeskAccess(access);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const decision = String(body.decision ?? "").trim();
     if (!["approve", "match", "reject"].includes(decision)) {

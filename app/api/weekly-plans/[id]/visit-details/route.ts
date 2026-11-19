@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWeeklyPlanRpcError, submitVisitDetails, type VisitDetailInput } from "@/lib/weekly-planning/service";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,10 @@ function jsonError(error: unknown) {
       { error: `weekly_plan_${error.code}`, message: error.message, success: false },
       { status: error.status },
     );
+  }
+  // A signed-out caller (assertSignedIn, REC-080) keeps its 401 rather than the 400 below.
+  if (error instanceof ApiError && error.status === 401) {
+    return NextResponse.json({ error: error.code, message: error.message, success: false }, { status: 401 });
   }
   const forbidden = isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:");
   return NextResponse.json(
@@ -28,6 +33,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: the caller is judged before the body.
     const { id } = await context.params;
     const body = await request.json().catch(() => ({})) as { details?: VisitDetailInput[] };
     if (!Array.isArray(body.details) || body.details.length === 0) {

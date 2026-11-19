@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -9,7 +11,7 @@ import {
   type BusinessCardRequestListFilter,
   type BusinessCardRequestStatus,
 } from "@/lib/business-cards/request-service";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +50,9 @@ export async function PATCH(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the body — the same gate updateBusinessCardRequestStatus opens with.
+    assertSignedIn(access);
+    await assertPermission(access, "business_card_requests", "update");
     const body = (await request.json().catch(() => ({}))) as { id?: unknown; status?: unknown };
     const id = typeof body.id === "string" ? body.id : "";
     const status = typeof body.status === "string" ? body.status : "";
@@ -65,6 +70,9 @@ export async function PATCH(request: Request) {
         { error: "forbidden", message: "You do not have permission to update business card requests." },
         { status: 403 },
       );
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ error: error.code, message: error.message }, { status: 401 });
     }
     const message = clientSafeErrorMessage(error, "Business card request update failed.");
     return NextResponse.json({ error: "business_card_request_update_failed", message }, { status: 400 });

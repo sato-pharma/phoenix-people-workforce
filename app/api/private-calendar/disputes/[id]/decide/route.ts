@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
-import { decidePrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
+import { assertDisputeDecisionActor, decidePrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -14,6 +15,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    // REC-080: the caller is judged before the body — the same Super Admin gate the decision asks.
+    assertSignedIn(access);
+    assertDisputeDecisionActor(access);
     const body = await request.json();
     const decision = body.decision === "accept" || body.decision === "reject" ? body.decision : null;
     if (!decision) throw validationError("decision must be 'accept' or 'reject'.");

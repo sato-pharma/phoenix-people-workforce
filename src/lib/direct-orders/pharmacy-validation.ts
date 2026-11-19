@@ -222,7 +222,8 @@ export function canDecideDirectOrderInvoiceValidations(access: AccessContext): b
   return canDecideDirectOrderPharmacyValidations(access) || access.role === "SFE Manager";
 }
 
-function assertValidationDeskAccess(access: AccessContext): void {
+/** Exported so the decision route asks it before it reads the body (REC-080). */
+export function assertValidationDeskAccess(access: AccessContext): void {
   if (!canDecideDirectOrderInvoiceValidations(access)) {
     throw forbiddenError("Forbidden: only a System Admin or an SFE Manager can decide pharmacy validations.");
   }

@@ -1,8 +1,10 @@
 import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { ApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   contractRenewalErrorMessage,
@@ -26,6 +28,12 @@ export async function POST(
 
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    // REC-080: every valid action asserts contracts update or approve below, so a caller holding
+    // neither is refused before the body is read. The per-action assertion still runs.
+    assertSignedIn(access);
+    if (!(await canAccess(access, "contracts", "update"))) {
+      await assertPermission(access, "contracts", "approve");
+    }
     const body = await request.json();
     const action = String(body.action ?? "") as ContractRenewalAction;
     const validActions: ContractRenewalAction[] = [
@@ -71,6 +79,9 @@ export async function POST(
     const message = contractRenewalErrorMessage(error);
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: message }, { status: 403 });
+    }
+    if (error instanceof ApiError && error.status === 401) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 401 });
     }
     if (isContractRenewalSchemaMissing(error)) {
       return NextResponse.json({ success: false, error: "Contract renewal workflow schema is not ready." }, { status: 409 });

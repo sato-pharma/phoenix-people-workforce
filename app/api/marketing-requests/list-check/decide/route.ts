@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
 import { decideMarketingListCheck } from "@/lib/marketing-requests/crm-list-check";
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    assertSignedIn(access); // REC-080: the caller is judged before the body.
     const body = (await request.json().catch(() => null)) as { checkId?: unknown; decision?: unknown } | null;
     const checkId = typeof body?.checkId === "string" ? body.checkId.trim() : "";
     const decision = body?.decision;

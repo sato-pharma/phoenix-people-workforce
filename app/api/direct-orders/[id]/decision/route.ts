@@ -1,5 +1,7 @@
 import { after, NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { decideDirectOrder, dispatchDirectOrderApprovedEmail } from "@/lib/direct-orders/service";
 import type { DirectOrderDecision } from "@/lib/direct-orders/types";
@@ -16,6 +18,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const { id } = await params;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
+    // REC-080: decideDirectOrder's own first gate, asked before the body is judged; it still asks it too.
+    await assertPermission(access, "direct_orders", "approve");
     const body = (await request.json().catch(() => ({}))) as { decision?: string; comment?: string | null };
     const decision = String(body.decision ?? "").trim() as DirectOrderDecision;
     if (!["approve", "reject", "return"].includes(decision)) {

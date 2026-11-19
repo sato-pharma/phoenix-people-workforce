@@ -6,6 +6,7 @@ import {
   getRunView,
   startOrResumeRun,
 } from "@/lib/automated-payroll/run-service";
+import { assertSignedIn } from "@/lib/auth/require-signed-in";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
+    assertSignedIn(access);
     const body = (await request.json().catch(() => ({}))) as { month?: number; year?: number };
     const month = Number(body.month);
     const year = Number(body.year);
