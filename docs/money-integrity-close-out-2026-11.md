@@ -175,9 +175,14 @@ judged on the step alone, as before. No database change.
 ## 5. Found and NOT fixed here
 
 1. ~~**Approving an outstation claim is not all or nothing.**~~ **Fixed on 19 Nov 2026 — one database call, see §2a.**
-2. **`reserveLateExpenses` deletes a run's earlier reservations before it inserts the new ones.** If the insert fails,
-   the earlier rows stay gone. A run reaching Part 2 confirm normally holds none, and an unconfirmed run pays no carried
-   trip, so the risk is low. The switch starts OFF and stays the owner's.
+2. ~~**`reserveLateExpenses` deletes a run's earlier reservations before it inserts the new ones.**~~ **Fixed on 19 Nov
+   2026** (owner: "make the late-trip reservation one step"). The replace is now one database call,
+   `phx_reserve_late_expenses` (migration `20261119163918_late_expense_reservations_replace_atomically.sql`): the delete
+   and the insert run in one transaction, so a failed insert — including a trip another run took a moment ago (23505) —
+   keeps the run's earlier reservations. The read that names another run's hold still runs first and writes nothing.
+   `tests/late-expenses-rollback-and-race.test.ts` now gives the run an earlier reservation and checks it survives a
+   failed call and a lost race; **the migration must be applied before that code is merged** (until it is, a Part 2
+   confirm that carries a late trip refuses and changes nothing).
 3. **`setCarryLateExpenses` reopens open runs' Expenses steps before the switch moves.** When its audit row then fails,
    the switch is put back but the reopened steps stay reopened. No money moves; HR re-confirms the step.
 4. ~~**A collection or a marketing cancel whose record fails after the database step committed reads as failed.**~~
@@ -258,3 +263,11 @@ The collection's and the cancel's breaks (§2b), each watched to fire and restor
 | model: the collection's records written outside the transaction | ONE audit row |
 | the cancel's audit row written by the app after the call | the cancel and its audit row were written by the one call |
 | model: the cancel's audit row written outside the transaction | ONE cancel audit row |
+
+The late-trip reservation's breaks (§5 item 2), each watched to fire and restored green:
+
+| Break | Assertion that fired |
+| --- | --- |
+| the release goes back before the one call | RACE: no release or insert of its own outside the one call |
+| model: the function keeps its delete when its insert fails | RESERVE LOSES A RACE: HEADLINE: the stored reservations are exactly as they were |
+| a lost race is not named as another run's hold | RACE: the loser is told with a LateExpenseRefusal |

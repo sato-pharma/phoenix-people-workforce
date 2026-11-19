@@ -35,7 +35,7 @@ import {
   releaseLateExpenseReservations,
   reserveLateExpenses,
   setCarryLateExpenses,
-  type LateExpenseDb,
+  type LateExpenseReserveDb,
   type LateExpenseRow,
   type PublishedRunForLateExpenses,
 } from "../src/lib/automated-payroll/late-expenses.ts";
@@ -79,12 +79,35 @@ type TableSpec = {
   writeResults?: Array<{ message: string; code?: string } | null>;
   /** Inserting a row whose value in this column already exists fails like a unique violation. */
   primaryKey?: string;
+  /** phx_reserve_late_expenses answers this instead (the reservations table's spec); the rows stay as they were. */
+  reserveError?: { message: string; code?: string };
 };
 
 type Write = { table: string; op: string; payload: unknown };
 
-function fakeDb(tables: Record<string, TableSpec>, writes: Write[] = []): LateExpenseDb {
+function fakeDb(tables: Record<string, TableSpec>, writes: Write[] = []): LateExpenseReserveDb {
   return {
+    /**
+     * phx_reserve_late_expenses (20261119163918) in one transaction: the run's earlier reservations are replaced by
+     * one row per trip, and a trip another run holds (the primary key) or a scripted failure keeps every row as it was.
+     */
+    rpc(name: string, args: Record<string, unknown>) {
+      if (name !== "phx_reserve_late_expenses") {
+        return Promise.resolve({ data: null, error: { code: "PGRST202", message: `the fake has no function ${name}` } });
+      }
+      const spec = (tables.automated_payroll_carried_expenses ??= { rows: [] });
+      spec.rows ??= [];
+      writes.push({ op: "rpc", payload: args, table: "automated_payroll_carried_expenses" });
+      if (spec.reserveError) return Promise.resolve({ data: null, error: spec.reserveError });
+      const runId = args.p_run_id;
+      const ids = [...new Set(args.p_expense_ids as string[])];
+      const kept = spec.rows.filter((row) => row.run_id !== runId);
+      if (ids.some((id) => kept.some((row) => row.expense_id === id))) {
+        return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } });
+      }
+      spec.rows = [...kept, ...ids.map((id) => ({ expense_id: id, run_id: runId }))];
+      return Promise.resolve({ data: ids.length, error: null });
+    },
     from(table: string) {
       const spec = (tables[table] ??= { rows: [] });
       spec.rows ??= [];
@@ -161,7 +184,7 @@ function fakeDb(tables: Record<string, TableSpec>, writes: Write[] = []): LateEx
       };
       return builder;
     },
-  } as unknown as LateExpenseDb;
+  } as unknown as LateExpenseReserveDb;
 }
 
 function expenseRow(overrides: Partial<LateExpenseRow> & { id: string }): LateExpenseRow {
@@ -1001,7 +1024,7 @@ export async function runAutomatedPayrollLateExpensesTests() {
           covered.carried,
           NAMES,
           fakeDb({
-            automated_payroll_carried_expenses: { rows: [], writeResults: [null, { message: "duplicate key", code: "23505" }] },
+            automated_payroll_carried_expenses: { rows: [], reserveError: { message: "duplicate key", code: "23505" } },
             automated_payroll_runs: { rows: [] },
           }),
         ),
@@ -1028,11 +1051,25 @@ export async function runAutomatedPayrollLateExpensesTests() {
           "run-nov",
           covered.carried,
           NAMES,
-          fakeDb({ automated_payroll_carried_expenses: { rows: [], writeResults: [null, { message: "boom" }] } }),
+          fakeDb({ automated_payroll_carried_expenses: { rows: [], reserveError: { message: "boom" } } }),
         ),
       /^Conflict: the carried outstation trips could not be reserved/,
       "a failed reservation refuses the confirm",
     );
+    {
+      // One step (REC-038, 19 Nov 2026): a reservation that fails keeps the run's earlier reservations.
+      const kept: Record<string, TableSpec> = {
+        automated_payroll_carried_expenses: { rows: [{ expense_id: "oct-trip", run_id: "run-nov" }], reserveError: { message: "boom" } },
+      };
+      const writes: Write[] = [];
+      await caught(() => reserveLateExpenses("run-nov", covered.carried, NAMES, fakeDb(kept, writes)));
+      assert.deepEqual(
+        kept.automated_payroll_carried_expenses.rows,
+        [{ expense_id: "oct-trip", run_id: "run-nov" }],
+        "HEADLINE: a failed reservation keeps the run's earlier reservations — the replace is one step",
+      );
+      assert.deepEqual(writes.map((write) => write.op), ["rpc"], "and the replace is one call, with no release before it");
+    }
   }
 
   {
