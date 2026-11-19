@@ -540,3 +540,42 @@ session the first time it touches git.
   `git switch other && git push` and `git push origin other` read the wrong range.
 - A command run from a subfolder: both the scan and this refusal look for `.gitleaks.toml` in the
   folder the push runs in, not in the folders above it.
+
+### The scan inside the command (20 Nov 2026)
+
+**Why.** The refusal worked, and sessions kept writing the refused shape anyway: 218 refusals in the
+week to 20 Nov 2026, each one a wasted round trip and a slower push. Asked, the owner chose *"Scan
+inside the command"*: keep the protection, lose the round trip.
+
+**What it does.** `commitPushRewrite` in `lib/secret-scan.mjs` answers the plain shape with
+`permissionDecision: "allow"` and an `updatedInput` command. The command is unchanged except that,
+just before its one `git push`, it gains:
+
+```
+{ gitleaks git "<repo root>" "--log-opts=origin/main..HEAD" --redact --no-banner || { s=$?; echo "C12 - …" >&2; false; }; } && git push …
+```
+
+By the time that runs the commit exists, so the scan reads exactly what the push will send. A finding,
+or a scanner that will not start, ends the chain before the push. The commit stays local, and the
+message says how to take it back (`git reset --soft HEAD~1`) or, for a finding judged a fixture, the
+stand-down.
+
+**Where it fires, and where it still refuses.** The rewrite is also an `allow`, so it only fires where
+nothing could come along that the repo's own permissions do not already grant:
+
+| The command | What happens |
+| --- | --- |
+| Bash: `cd`, assignments, `echo`, `git status/log/diff/show/rev-parse`, `git add`, `git commit` (a quoted-heredoc message included), then ONE `git push` to `origin` on a `claude/` or `codex/` branch | Rewritten |
+| The same with `;` or new lines instead of `&&`, `timeout N git push`, `git -C <folder>`, a pipe into `tail`/`head`/`grep`, a push from a subfolder | Rewritten |
+| `git -c k=v …`, `if`, a loop, a subshell, `||`, `git add -f`, `git rm`, `cherry-pick`, `merge`, force, another remote, two pushes, `main` | Refused, as before |
+| Anything pending under `.claude/` | Refused: C20 reads HEAD before the commit exists, so it could not check the mirror |
+| gitleaks not installed | Refused |
+| PowerShell | Refused: Windows PowerShell 5.1 has no `&&` |
+
+`commitPushRewrite` never throws. bash-guard fails open on an exception, which would let the command
+run unscanned, the very hole of 3 Nov, so any error is read as "refuse as before".
+
+**Proof.** `tests/secret-scan-push-guard.test.ts` §8 lists the rewritten and the refused shapes through
+the real hook; §8b runs the rewritten command in bash against a throwaway origin: a planted finding
+exits non-zero and the origin does not move, a clean commit is pushed. Breaking the stop block
+(`|| true` before it) makes "a finding: origin must NOT receive the new commit" fire.

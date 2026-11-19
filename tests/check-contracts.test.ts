@@ -206,9 +206,24 @@ export function runCheckContractsTests() {
     [],
     "check:contracts must not pass --env-file-if-exists: .env.local holds PRODUCTION Supabase credentials, and these gates read files",
   );
-  for (const flag of ["--experimental-strip-types", "--experimental-loader"]) {
-    assert.ok(TS_NODE_FLAGS.includes(flag), `check:contracts needs ${flag} to import a .ts gate`);
-  }
+  assert.ok(TS_NODE_FLAGS.includes("--experimental-strip-types"), "check:contracts needs --experimental-strip-types to import a .ts gate");
+  const importAt = TS_NODE_FLAGS.indexOf("--import");
+  assert.equal(
+    TS_NODE_FLAGS[importAt + 1],
+    "./tests/register-alias-loader.mjs",
+    "check:contracts needs the alias loader, registered by --import ./tests/register-alias-loader.mjs, for the @/… hops",
+  );
+  // 20 Nov 2026: under --experimental-loader a 41 MB split(/\r?\n/) took 9.5 s against 0.1 s, and the
+  // whole check ran ~19 s at the median. The same hooks through module.register cost nothing.
+  assert.ok(
+    !TS_NODE_FLAGS.some((flag) => flag.startsWith("--experimental-loader") || flag.startsWith("--loader")),
+    "check:contracts must not load the alias loader with --experimental-loader: it makes every allocating regex call 50-90x slower",
+  );
+  assert.match(
+    readFileSync(path.join(ROOT, "tests", "register-alias-loader.mjs"), "utf8"),
+    /register\("\.\/alias-loader\.mjs", import\.meta\.url\)/,
+    "tests/register-alias-loader.mjs must register tests/alias-loader.mjs",
+  );
 
   const launcher = stripComments(readFileSync(path.join(ROOT, "scripts", "check-contracts.mjs"), "utf8"));
   assert.doesNotMatch(

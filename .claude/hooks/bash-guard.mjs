@@ -89,6 +89,7 @@ import { fileURLToPath } from 'node:url';
 
 import { gitLayout } from '../../scripts/lib/git-layout.mjs';
 import {
+  commitPushRewrite,
   commitsAhead,
   pushRefusalReason,
   pushScanPlan,
@@ -1121,6 +1122,8 @@ try {
     );
   }
   let grepRewrite = null;
+  /** C12's commit-and-push with the scan put inside it — emitted last, like C1's rewrite. */
+  let scanRewrite = null;
   if (grepVerdicts.fixes.length) {
     const rewritten =
       input.tool_name === 'Bash' && strippedForGrep === cmd ? grepWithExcludes(cmd, grepSegments, grepVerdicts.fixes) : null;
@@ -1787,7 +1790,13 @@ try {
       commandSegments(withKnownSubstitutions(withoutHereStringBodies(pushText)).replace(/^[ \t]*#.*$/gm, '')),
       sessionDir,
     );
-    if (plan.refuse) {
+    // A commit then a push: where every part is work the repo already pre-approves, the scan goes
+    // INSIDE the command, between the two, instead of refusing it (owner, 20 Nov 2026). The scan in
+    // the command covers every commit the push sends, so no scan runs here for it.
+    if (plan.refuse === 'commit') {
+      scanRewrite = commitPushRewrite({ command: cmd, tool: input?.tool_name, baseCwd: sessionDir });
+    }
+    if (plan.refuse && !scanRewrite) {
       deny(
         pushRefusalReason(plan) +
           '\n\nThe stand-down also skips the scan and sends the commits unread, so it is only for a ' +
@@ -2628,6 +2637,25 @@ try {
         }
       }
     }
+  }
+
+  // C12's rewrite, emitted last for the same reason as C1's below: C20, C21 and the rest have all had
+  // their say, and a deny from any of them has already ended this hook.
+  if (scanRewrite) {
+    process.stdout.write(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason:
+            'bash-guard C12 put the secret scan between the commit and the push (gitleaks over ' +
+            'origin/main..HEAD in ' + scanRewrite.root + '), so a finding stops the push to ' +
+            scanRewrite.branch + ' after the commit exists.',
+          updatedInput: { ...input.tool_input, command: scanRewrite.command },
+        },
+      }),
+    );
+    process.exit(0);
   }
 
   // C1's rewrite, emitted last so every other clause above has had its say first. Only read-only
