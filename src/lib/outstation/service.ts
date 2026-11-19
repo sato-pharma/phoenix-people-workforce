@@ -96,6 +96,7 @@ import {
   type OutstationJourneyStop,
 } from "@/lib/outstation/chained-journey";
 import {
+  adminMissedStopRule,
   isJourneyStopOpen,
   journeyStopEvidenceKind,
   journeyStopEvidenceRefusal,
@@ -6134,10 +6135,6 @@ export async function rehearseOutstationJourneyStop(
 }
 
 /**
-/** A system administrator's missed stop joins an undecided claim only, the same list as an extra ticket. */
-const JOURNEY_STOP_OPEN_STATUSES = OUTSTATION_UNDECIDED_STATUSES;
-
-/**
  * A claim already accepted is already on its way to payroll, and the payout reads the payroll row.
  * True only when the row now carries the claim: a row in a batch, a figure a person typed, a confirmed
  * run that did not take it, or a failure all answer false. Never throws, because the stop is saved
@@ -6609,6 +6606,13 @@ export async function captureOutstationJourneyStop(
  * employee's own stop closes at the end of the trip's last Cairo day; this is the way back for a
  * claim nobody has decided yet.
  *
+ * It opens on the claims the employee's own stop opens on (isJourneyStopOpen): undecided ones, and a
+ * National Sales Manager's claim the system accepted, while no payroll run holds it and no person typed
+ * a figure on its payroll row. On a car trip the drive is paid in fuel; without a car HR adds the leg's
+ * ticket with the stop (adminMissedStopRule), even on that system-accepted claim, because HR is the one
+ * typing the figure (owner, 2026-11-19: Amr Naguib's train trip, Cairo to Sohag, then Sohag to Assiut,
+ * then home). An accepted claim's payroll row follows the new total through writeJourneyStopToClaim.
+ *
  * It is the employee's stop with three differences, each stated on the claim:
  *   - no live photo: the position and the time are the administrator's, typed from what he
  *     verified (a CRM visit, a call), so the stop is marked `addedByAdmin` and the approval reason
@@ -6618,8 +6622,7 @@ export async function captureOutstationJourneyStop(
  *   - the reviewer's version is required (`expectedRevision`), like an approval: the stop moves money.
  *
  * Everything else is the employee's path: the same measurement (measureJourneyStop), the same
- * pricing (priceJourneyStops), the same write (writeJourneyStopToClaim) — undecided claims only,
- * never one in payroll, at most MAX_JOURNEY_STOPS, every suspicious shape flagged and never refused.
+ * pricing (priceJourneyStops), the same write (writeJourneyStopToClaim) — never one in payroll, at most MAX_JOURNEY_STOPS, every suspicious shape flagged and never refused.
  */
 export async function addOutstationJourneyStopAsAdmin(
   requestId: number,
@@ -6630,8 +6633,15 @@ export async function addOutstationJourneyStopAsAdmin(
     longitude?: number | null;
     reason: string;
     stoppedAt: string;
+    /** The leg's ticket, for a trip without a car (adminMissedStopRule says whether it is asked). */
+    ticket?: { amount: number; files: OutstationTicketAttachmentUploadInput[] } | null;
   },
-): Promise<{ pricing: ChainedJourneyPricing; request: OutstationExpenseRequest; stop: OutstationJourneyStop }> {
+): Promise<{
+  payrollSynced: boolean | null;
+  pricing: ChainedJourneyPricing;
+  request: OutstationExpenseRequest;
+  stop: OutstationJourneyStop;
+}> {
   await assertOutstationAdminAccess(access, "approve");
 
   const supabase = getSupabaseAdmin();
@@ -6647,16 +6657,34 @@ export async function addOutstationJourneyStopAsAdmin(
   // The reviewer's version first: a stop decided on figures that have since moved is refused.
   assertOutstationClaimUnchanged({ current: (token as { updated_at: string }).updated_at, expected: input.expectedRevision });
 
-  if (request.expenseType !== "traveling" || request.transportationType !== "car") {
-    throw new Error("A stop can only be added to a car trip.");
+  if (request.expenseType !== "traveling") {
+    throw new Error("A stop can only be added to a trip.");
   }
-  if (!(JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status)) {
+  if (!isJourneyStopOpen(request.status, request.employeeRole)) {
     throw new Error("This trip has already been decided, so a stop can no longer be added.");
   }
   const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
   if (isOutstationExpenseInPayroll(linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
+  if (payrollRowHoldsPersonsFigure(linkedPayroll)) {
+    throw new Error(
+      "This trip has already been decided, so a stop can no longer be added: a person typed the amount payroll pays for it.",
+    );
+  }
+  const rule = adminMissedStopRule({
+    employeeRole: request.employeeRole,
+    transportationType: request.transportationType,
+  });
+  const ticketFiles = input.ticket?.files ?? [];
+  const stopTicketAmount = roundMoney(Number(input.ticket?.amount ?? 0) || 0);
+  const evidenceRefusal = journeyStopEvidenceRefusal({
+    hasPhoto: false,
+    rule,
+    ticketAmount: stopTicketAmount,
+    ticketFileCount: ticketFiles.length,
+  });
+  if (evidenceRefusal) throw new Error(evidenceRefusal);
   const existingStops = request.journeyStops ?? [];
   if (existingStops.length >= MAX_JOURNEY_STOPS) {
     throw new Error(`This trip already has ${MAX_JOURNEY_STOPS} stops, the most one trip may carry.`);
@@ -6707,13 +6735,23 @@ export async function addOutstationJourneyStopAsAdmin(
 
   const adminName =
     (await namesByHrId([access.hrId])).get(access.hrId) ?? access.loginId ?? "a system administrator";
+  const uploadedTickets =
+    ticketFiles.length > 0
+      ? await uploadOutstationTicketAttachments(
+          ticketFiles.map((file) => ({
+            ...file,
+            employeeHrId: request.employeeHrId,
+            requestDraftId: `outstation-stop-${randomUUID()}`,
+          })),
+        )
+      : [];
   const stop: OutstationJourneyStop = {
     ...measured.stop,
     addedByAdmin: { by: adminName, reason },
-    evidence: "location",
+    evidence: journeyStopEvidenceKind(rule, ticketFiles.length),
     photoPath: ADMIN_ADDED_STOP_PHOTO_PATH,
-    ticketAmount: 0,
-    ticketPaths: [],
+    ticketAmount: stopTicketAmount,
+    ticketPaths: uploadedTickets.map((ticket) => ticket.path),
   };
   const stops = [...existingStops, stop];
   const pricing = await priceJourneyStops({
@@ -6729,24 +6767,25 @@ export async function addOutstationJourneyStopAsAdmin(
       request.residenceAddress,
     ),
     stops,
-    travel: "car",
+    travel: rule.paysFuel ? "car" : "ticket",
     trip: { employeeHrId: request.employeeHrId, id: request.id },
     tripEndDate: request.tripEndDate,
     tripStartDate: request.tripStartDate,
   });
 
-  const { updated } = await writeJourneyStopToClaim({
+  const { payrollSynced, updated } = await writeJourneyStopToClaim({
     access,
-    paysFuel: true,
+    paysFuel: rule.paysFuel,
     pricing,
     request,
     source: "admin_journey_stop",
     stop,
     stops,
+    ticket: { amount: stopTicketAmount, uploaded: uploadedTickets },
     token: token as { updated_at: string },
     writtenAt: new Date().toISOString(),
   });
-  return { pricing, request: updated, stop };
+  return { payrollSynced, pricing, request: updated, stop };
 }
 
 /**

@@ -95,9 +95,21 @@ export function runOutstationExtraTicketAfterDecisionTests() {
     false,
     "service.ts must not carry its own copy of the open statuses - a second list is how the two drift apart",
   );
+  // Both journey stops — the employee's and HR's missed stop (one rule since 2026-11-19) — open through
+  // isJourneyStopOpen, which reads the same undecided list as an extra ticket.
+  for (const declaration of [
+    "export async function captureOutstationJourneyStop(",
+    "export async function addOutstationJourneyStopAsAdmin(",
+  ]) {
+    assert.match(
+      functionSlice(service, declaration),
+      /if \(!isJourneyStopOpen\(request\.status, request\.employeeRole\)\) \{/,
+      `${declaration} opens only where isJourneyStopOpen says so`,
+    );
+  }
   assert.match(
-    service,
-    /const JOURNEY_STOP_OPEN_STATUSES = OUTSTATION_UNDECIDED_STATUSES;/,
+    code("src/lib/outstation/journey-stop-rules.ts"),
+    /if \(isOutstationClaimUndecided\(status\)\) return true;/,
     "a journey stop and an extra ticket obey the same list",
   );
 
