@@ -832,7 +832,7 @@ export type OutsideCustomerDraft = Omit<NewCustomerDraft, "proposedGrade">;
 function customerKindOf(body: Record<string, unknown>, listType: PhoenixCrmListType): EntryRuleResult<{ customerType: string | null; speciality: string | null }> {
   const kind = splitCustomerKind({ customerType: body.customerType, speciality: body.speciality, listType });
   const problem = customerKindProblem({ ...kind, listType });
-  if (problem && (kind.customerType || "customerType" in body)) return { ok: false, error: problem };
+  if (problem && "customerType" in body) return { ok: false, error: problem };
   return { ok: true, value: kind };
 }
 
@@ -840,8 +840,7 @@ export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCusto
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const listType = parseListType(body.listType);
   if (!listType) return { ok: false, error: "Choose AM or PM." };
-  const kind = customerKindOf(body, listType);
-  if (!kind.ok) return kind;
+  // The name is checked first, then the type and the speciality.
   // A clinic doctor is written as three names, first, middle and last (owner, 2026-11-07,
   // pm-name-rules.ts); an AM account keeps its one name.
   if (listType === "PM") {
@@ -849,10 +848,14 @@ export function parseOutsideCustomer(raw: unknown): EntryRuleResult<OutsideCusto
     if (!full.ok) return full;
     const name = cleanText(full.value, CUSTOMER_NAME_MAX);
     if (!name) return { ok: false, error: "Write the first, middle and last name." };
+    const kind = customerKindOf(body, listType);
+    if (!kind.ok) return kind;
     return { ok: true, value: { listType, name, ...kind.value } };
   }
   const name = cleanText(body.name, CUSTOMER_NAME_MAX);
   if (!name || name.length < 3) return { ok: false, error: "Write the customer's full name." };
+  const kind = customerKindOf(body, listType);
+  if (!kind.ok) return kind;
   return { ok: true, value: { listType, name, ...kind.value } };
 }
 

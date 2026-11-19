@@ -217,13 +217,13 @@ update public.phoenix_crm_manager_customers c
 
 alter table public.phoenix_crm_customers enable trigger phoenix_crm_contact_truth_customer;
 
-drop trigger if exists phoenix_crm_customers_kind_apart on public.phoenix_crm_customers;
-create trigger phoenix_crm_customers_kind_apart
+-- Each trigger is replaced in place (PostgreSQL 14+), never dropped and re-created: a drop leaves the table
+-- without it for an instant. Reshaped so on 19 Nov 2026 after the apply; the end state is the same.
+create or replace trigger phoenix_crm_customers_kind_apart
   before insert or update of speciality, customer_type, list_type on public.phoenix_crm_customers
   for each row execute function public.phoenix_crm_customer_kind_apart();
 
-drop trigger if exists phoenix_crm_manager_customers_kind_apart on public.phoenix_crm_manager_customers;
-create trigger phoenix_crm_manager_customers_kind_apart
+create or replace trigger phoenix_crm_manager_customers_kind_apart
   before insert or update of speciality, customer_type on public.phoenix_crm_manager_customers
   for each row execute function public.phoenix_crm_customer_kind_apart();
 
@@ -253,7 +253,7 @@ grant execute on function public.phoenix_crm_contact_truth_calc(bigint) to servi
 create or replace function public.phoenix_crm_customers_write_contact_name_row()
 returns trigger
 language plpgsql
-set search_path to ''
+set search_path = ''
 as $function$
 begin
   insert into public.crm_contacts as c (
@@ -281,13 +281,12 @@ begin
 end
 $function$;
 
-drop trigger if exists phoenix_crm_customers_write_contact_name_row on public.phoenix_crm_customers;
-create trigger phoenix_crm_customers_write_contact_name_row
-  after insert or update of status, name, speciality, customer_type, phone on public.phoenix_crm_customers
+create or replace trigger phoenix_crm_customers_write_contact_name_row
+  after insert or update of status, name, speciality, customer_type, phone
+  on public.phoenix_crm_customers
   for each row
-  when (((new.reference_contact_crm_id is null) and (not new.is_test)
-         and (new.status = any (array['active'::text, 'pending'::text, 'dropped'::text]))
-         and (not new.campaign_visit_holder)))
+  when (new.reference_contact_crm_id is null and not new.is_test and new.status in ('active', 'pending', 'dropped')
+        and not new.campaign_visit_holder)
   execute function public.phoenix_crm_customers_write_contact_name_row();
 
 -- The two unified views: only the Phoenix customer's speciality expression changes, to the label's CASE

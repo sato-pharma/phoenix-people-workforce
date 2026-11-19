@@ -74,8 +74,6 @@ export function placeName(place: { label: string | null; zone: string | null; br
  * never says cannot, must, blocked or missing.
  */
 export const PENDING_PILL = "Not validated yet";
-/** Beside a customer still owed his type, or a clinic its speciality (owner, 2026-11-19); a visit asks for it first. */
-export const KIND_MISSING_PILL = "Speciality missing";
 /** Beside a customer whose third visit before validation the save would refuse (owner, 2026-10-28). */
 export const VALIDATE_FIRST_PILL = "Validate first";
 export const PENDING_COUNTS_NOTE = "Your visits here start counting once you validate.";
@@ -108,6 +106,13 @@ export function referenceLastVisitText(reference: { lastVisitedOn: string | null
 export function monthVisitsText(visits: number, target: number | null): string {
   return target === null ? `${plural(visits, "visit", "visits")} this month` : `${visits} of ${target} visits this month`;
 }
+
+/**
+ * Beside a customer still owed his type, or a clinic its speciality (owner, 2026-11-19, his own pick:
+ * the customer shows "Speciality missing"); his next Edit or visit asks for it first. Kept apart from the
+ * not-validated wording above, which is about a different wait.
+ */
+export const KIND_MISSING_PILL = "Speciality missing";
 
 /**
  * Where a customer stands in the running month against its grade's visits. Owner rules: over-visiting

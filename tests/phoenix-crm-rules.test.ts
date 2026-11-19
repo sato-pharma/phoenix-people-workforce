@@ -672,6 +672,8 @@ function runEntryRuleTests() {
   assert.deepEqual(valueOf(parseNewCustomer({ listType: "am", name: "  Al   Shorouk Hospital ", proposedGrade: "a", speciality: " " })), {
     listType: "AM",
     name: "Al Shorouk Hospital",
+    // Nothing picked and no form offering a type: the account is saved and asked later (owner, 2026-11-19).
+    customerType: null,
     speciality: null,
     proposedGrade: "A",
   });
