@@ -168,8 +168,11 @@ async function testTheListSwitchedOffTellsNobody() {
   });
   await run(tables, async () => {
     const { recipients } = await resolveNotificationPersonRecipients("resignation_workflow_alert", "Resignation workflow recipients");
-    assert.deepEqual(recipients, [], "SWITCHED OFF: the resolver names nobody");
-    await createSystemNotification(resignationAlert({ moduleOwnerHrIds: recipients.map((recipient) => recipient.hrId) }));
+    // Exactly what notifyResignationWorkflow hands the engine, read BEFORE the assertion below (which
+    // narrows the list's type to an empty one).
+    const moduleOwnerHrIds: string[] = recipients.map((recipient) => recipient.hrId).filter(Boolean);
+    assert.equal(recipients.length, 0, "SWITCHED OFF: the resolver names nobody");
+    await createSystemNotification(resignationAlert({ moduleOwnerHrIds }));
   });
   assert.deepEqual(told(tables), [], "SWITCHED OFF: nobody was told — not the CEO, not the Finance Manager, not HR Operations");
   assert.deepEqual(sentDeliveries(tables), [], "SWITCHED OFF: every delivery is a recorded skip");
