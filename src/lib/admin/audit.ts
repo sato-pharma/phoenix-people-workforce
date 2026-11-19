@@ -176,6 +176,10 @@ export type AuditEntityType =
   // behaviours onto the other, and each is wrong in the other's place.
   | "sato_email_template"
   | "sato_email_send"
+  // One press of Send in the Email Reply Composer with distribution lists picked (owner, 2026-11-19).
+  // Each email of 25 also writes its own manual_email_send_audit row; this is the one line that says
+  // which lists the send reached and how many people, which no per-email row can.
+  | "email_reply_bulk_send"
   // A picture or file uploaded for a Sato email. Its own type because an inline picture is handed a
   // permanent public address at that moment, before any mail exists to attach it to, so the record of
   // who minted it cannot live on the send row, which may never be written.

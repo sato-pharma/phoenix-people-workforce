@@ -1247,6 +1247,7 @@ import {
   runSatoEmailRenderTests,
 } from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
+import { runEmailReplyListsTests } from "./email-reply-lists.test.ts";
 import { runSatoEmailListGroupsTests } from "./sato-email-list-groups.test.ts";
 import { runSatoEmailTypedRecipientsTests } from "./sato-email-typed-recipients.test.ts";
 import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
@@ -10697,6 +10698,11 @@ await runTest(
 await runTest(
   "the distribution lists reach the Sato Email Composer and nothing else — the closing Cc names its roles in code, the older HR reply composer is untouched, and a composer send passes no origin and never bypasses the confidence gate",
   runSatoEmailListsOnlyComposerTests,
+);
+
+await runTest(
+  "the Email Reply Composer sends to distribution lists for the Super Admin alone, gated on the server before anything resolves, as manual Bcc mail with no origin, no confidence-gate bypass and no variables",
+  runEmailReplyListsTests,
 );
 
 await runTest(

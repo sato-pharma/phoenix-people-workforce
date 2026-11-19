@@ -422,6 +422,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
  */
 export const UNTYPED_SENDS: ReadonlyArray<{ channel: "email" | "telegram"; file: string; label: string }> = [
   { channel: "email", file: "app/api/admin/email-reply/send/route.ts", label: "A reply written in the Email Reply Composer" },
+  { channel: "email", file: "src/lib/email/email-reply-lists.ts", label: "An Email Reply Composer email sent to distribution lists" },
   { channel: "email", file: "app/api/notifications/test/route.ts", label: "A test email sent from the notification settings" },
   { channel: "email", file: "src/lib/ceo-email/service.ts", label: "A letter written in the CEO Email Composer" },
   { channel: "email", file: "src/lib/sato-email/service.ts", label: "An email written in the Sato Email Composer" },

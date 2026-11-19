@@ -37,6 +37,8 @@ export type ComposerPayload = ComposerRecipientSelections & {
   cc?: unknown;
   clientRequestId?: unknown;
   externalJustification?: unknown;
+  /** Distribution lists picked in the composer — a bulk send, handled by ./email-reply-lists.ts. */
+  listKeys?: unknown;
   recipientName?: unknown;
   replyMessage?: unknown;
   replyMessageHtml?: unknown;
