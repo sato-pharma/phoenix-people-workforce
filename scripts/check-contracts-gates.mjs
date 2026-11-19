@@ -61,12 +61,18 @@ import { availableBytes } from './run-tests-sharded-plan.mjs';
  * The other three are all load-bearing: `--experimental-strip-types` for every `.ts` import,
  * `--experimental-specifier-resolution=node` for the extensionless ones, and the alias loader for
  * the `@/…` hops (react-418-hydration-safe-text reaches @/lib/format/cairo-zone through two).
+ *
+ * 🔴 THE ALIAS LOADER GOES IN THROUGH `--import ./tests/register-alias-loader.mjs`, NEVER
+ * `--experimental-loader` (20 Nov 2026). The old flag makes every allocating regex call in the gate's
+ * own thread 50-90x slower — a 41 MB `split(/\r?\n/)` took 9.5 s against 0.1 s — so neutral-wording
+ * alone ran 7-9 s and the whole check ~19 s at the median, 944 times a week. Same hooks either way;
+ * `tests/check-contracts.test.ts` refuses the old flag coming back.
  */
 export const TS_NODE_FLAGS = [
   '--experimental-strip-types',
   '--experimental-specifier-resolution=node',
-  '--experimental-loader',
-  './tests/alias-loader.mjs',
+  '--import',
+  './tests/register-alias-loader.mjs',
 ];
 
 /** The child this launcher runs — relative to the repo root, which is also the required cwd. */

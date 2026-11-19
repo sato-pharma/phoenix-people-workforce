@@ -2971,9 +2971,21 @@ export function registryPatternToRegex(pattern: string) {
   return new RegExp(`^${segments.join("/")}$`);
 }
 
+/**
+ * Each registry pattern's expression, compiled once. `findAccessRegistryEntry` tests a route against
+ * every entry, and building ~1,000 expressions per lookup was 3.2 of the 5 s the coverage test spent
+ * (20 Nov 2026). No `g` flag, so `test` keeps no state and one shared expression answers the same.
+ */
+const compiledPatterns = new Map<string, RegExp>();
+
 function routeMatchesPattern(route: string, pattern: string) {
   if (pattern.endsWith("/**") && route === pattern.slice(0, -3)) return true;
-  return registryPatternToRegex(pattern).test(route);
+  let regex = compiledPatterns.get(pattern);
+  if (!regex) {
+    regex = registryPatternToRegex(pattern);
+    compiledPatterns.set(pattern, regex);
+  }
+  return regex.test(route);
 }
 
 export function findAccessRegistryEntry(route: string, method?: HttpMethod) {
