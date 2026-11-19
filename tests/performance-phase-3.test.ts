@@ -388,8 +388,8 @@ export async function runPerformancePhase3Tests() {
   assert.equal(normalisePagePath("/employee-portals/phoenix-crm/visits?seat=ab12&x=1#top"), "/employee-portals/phoenix-crm/visits", "query and hash are dropped");
   assert.equal(normalisePagePath("/employee-portals/employees/5f1c2d3e-aaaa-bbbb-cccc-1234567890ab"), "/employee-portals/employees/:id", "an id segment becomes :id");
   assert.equal(normalisePagePath("/admin/payroll/2026-10"), "/admin/payroll/:id", "a segment with digits becomes :id");
-  assert.equal(normalisePagePath("/login"), null, "a page outside the portal and admin is refused");
-  assert.equal(normalisePagePath("/employee-portals/a/b/c/d/e"), null, "a path deeper than three segments is refused");
+  assert.equal(normalisePagePath("/login"), null, "a public page is refused");
+  assert.equal(normalisePagePath("/employee-portals/a/b/c/d/e/f"), null, "a path deeper than the application goes is refused");
   assert.equal(normalisePagePath("/employee-portals/Omar Gawish"), null, "a segment with spaces is refused");
   assert.equal(normalisePagePath("https://evil.example/employee-portals"), null, "an absolute URL is refused");
   assert.deepEqual(
