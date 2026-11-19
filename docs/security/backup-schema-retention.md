@@ -233,8 +233,18 @@ day. They reach 90 days on 11 Dec 2026:
 | `au.bak_20260912_pedia_kfs_d1_line_area_map` | 61 | Pedia's area map before Kafr El-Sheikh 1 moved from Alex-BHR to Delta (1) from 1 Sep; the move is dated, so August still reads the old shape, and 16 areas' staffed/vacant marks were edited in place since, so the export is the lasting record of them |
 | `au.bak_20260912_pedia_kfs_d1_seats` | 49 | Pedia's seats before the move; only the Kafr El-Sheikh 1 rep seat changed since, and a seat cannot carry a date |
 
-The next tables to reach 90 days with no decision are `au.bak_20260919_ismailia_suez_line_area_map`
-and `au.bak_20260919_ismailia_suez_seats`, on 18 Dec 2026.
+**The two 19 September tables, decided the same day.** Both "export, then drop", both exported that
+day. They reach 90 days on 18 Dec 2026. Unlike the earlier ones, both were made with row-level
+security off; neither browser role holds a grant on them or on the `au` schema, so neither was ever
+reachable from the browser.
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `au.bak_20260919_ismailia_suez_line_area_map` | 4 | Anti Infective Suez and Ismailia before the two became one area in Delta (3) from 1 Sep; the change was made in place on the open September row, so the export is the lasting record of Ismailia as a rep-less area, and the migration's own undo |
+| `au.bak_20260919_ismailia_suez_seats` | 1 | the Suez rep seat before the change; only its label differs since |
+
+The next tables to reach 90 days with no decision are `au.bak_move_ai0002_b177_emp_20260923`,
+`au.bak_move_ai0002_b177_occ_20260923` and `au.bak_move_ai0002_b177_lam_20260923`, on 22 Dec 2026.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
