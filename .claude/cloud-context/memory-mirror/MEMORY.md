@@ -29,15 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [GitHub holds a toJSON(secrets) workflow as malicious](github-holds-a-workflow-that-reads-every-secret-as-malicious.md) - action_required, zero jobs; owner clicks Approve and run PER RUN; arm the token first.
-- [The fallback restore leaves the pull token on the website](the-fallback-restore-leaves-the-pull-token-on-the-website.md) - `restore` never clears `registryCredentials`; cleared 19 Nov 00:21 Cairo by environment patch (null), never by serviceInstanceUpdate.
-- [Retiring your own worktree leaves an empty folder](retiring-your-own-worktree-leaves-an-empty-folder.md) - "Permission denied" from git worktree remove, yet files gone and deregistered; judge by `git worktree list`.
-- [Dependabot security updates stay ON](dependabot-security-updates-stay-on.md) - his 13 Nov decision, reaffirmed 19 Nov "Keep them on"; the old 7 Nov "off" reason died with Wait for CI on 20 Oct.
-- [A baseline diff can be another session's unpushed migration](a-baseline-diff-can-be-another-sessions-unpushed-migration.md) - before refreshing production.sql, search every worktree's recent migrations; a live session may already carry the same change.
-- [Production refuses unencrypted database connections](production-database-refuses-unencrypted-connections.md) - SSL enforcement ON since 19 Nov 02:04 Cairo; a script from a checkout older than PR 550 is refused — update the checkout, never drop enforcement.
-- [The PHX backup drive is the same physical disk](the-phx-backup-drive-is-the-same-physical-disk.md) - E: is a partition of the one NVMe, so it survives a deletion, never a disk failure; 05-data-files vanished 11 Nov, recreated 19 Nov 02:47.
-- [The spare laptop keeps its own .env.local](the-spare-laptop-keeps-its-own-env-local.md) - not one of the 15 hard links; every rotation must be pushed to it too. Task "Phoenix Spare Database Password Refresh" fixes the 19 Nov password when the spare next answers.
-- [Internal messages: anyone may message anyone](internal-messages-anyone-may-message-anyone.md) - owner, 19 Nov (REC-053): no recipient scope by role or line; permission, send limits and audit row are the guards. REC-053 is closed.
 
 
 
