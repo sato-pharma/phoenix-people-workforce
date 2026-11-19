@@ -1052,6 +1052,34 @@
       "decidedBy": "owner",
       "why": "2 tables, 145 rows: the 60 held customer-map changes as they stood before being applied at 01:41 on 10 Oct (56 of those mappings have changed since), and the 30 customers behind 55 held changes before they were switched to unmapped and those holds refused at 02:00. The customer map keeps no history, so the export is the lasting record of the mappings before.",
       "sheet": "19 November 2026, the 10 October snapshot schemas, in chat"
+    },
+    "sos_backup_20261012": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "35 tables, 468,146 rows (96 MB): the before-picture of the 12 Oct Qena territory move and the repairs around it. 2,935 Qena customer mappings (1,465 now differ), 7,524 January-September invoice rows (all re-stamped since), the Qena bricks, aliases and line-area rows, full copies of the summary tables, achievement before and after for January-September, the July-September republish review and closing drift, Marketing ROI facts and the September store-split net. The customer map keeps no history, so the export becomes the only record of the stamping before the move. July to September are published on all three lines.",
+      "sheet": "19 November 2026, the 12 October snapshot schemas, in chat"
+    },
+    "phoenix_crm_merge_backup_20261012": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "10 tables, 686 rows: the 12 Oct evening merge of 170 duplicate Phoenix CRM doctor pairs (the plan, its results, both sides' customer rows and the few places, plan items and visit they carried). Every keeper and duplicate still exists; the duplicates are now marked dropped. The copy holds doctor names and phones, so its export stays outside the repository like every export.",
+      "sheet": "19 November 2026, the 12 October snapshot schemas, in chat"
+    },
+    "phx_backup_20261012": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 29 rows: duplicate Phoenix CRM venues removed on 12 Oct (10 on one brick and 19 across 8 rep seats). None of them exists now, so the export is the only record of them.",
+      "sheet": "19 November 2026, the 12 October snapshot schemas, in chat"
+    },
+    "au_backup_20261012": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 tables, 104 rows: 51 resigned reps' seat rows and the vacant rows after them, as they stood before 20261012142941 moved a resignation's seat end to the day after the last working day (all 102 changed since, which is the fix), and one CNS rep's two seat rows before the owner set that seat's end to 9 Aug 2026. Holds personal fields.",
+      "sheet": "19 November 2026, the 12 October snapshot schemas, in chat"
     }
   }
 }

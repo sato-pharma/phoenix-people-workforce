@@ -338,9 +338,27 @@ three lines, so none of them can undo a figure.
 | `sep_map_sync_20261010` | 1 · 3,729 | September invoice rows from four distributors before the sync to the corrected customer map; 3,650 sit where the sync put them |
 | `sos_backup_20261010` | 2 · 145 | 60 held customer-map changes before they were applied (56 since changed), and the 30 customers behind 55 held changes before they were switched to unmapped and those holds refused. The customer map keeps no history, so the export is the lasting record |
 
-The next snapshots to reach 90 days with no decision are the 12 October group, on 10 Jan 2027: the
-schemas `sos_backup_20261012`, `phoenix_crm_merge_backup_20261012`, `phx_backup_20261012` and
-`au_backup_20261012`. No snapshot is dated 11 October.
+**The 12 October schemas, decided the same day.** All four "export, then drop", all four exported that
+day. They reach 90 days on 10 Jan 2027. `phx_backup_20261012` was moved here from `public` by
+`20261023023133`; no migration creates the other three. Nothing depends on any of them or reads them;
+no role can use the four schemas; staging has none and the schema baseline names none. July to
+September are published on all three lines.
+
+In the same exchange the owner retired his 26 Oct 2026 answer "keep all the production backup
+schemas": asked which rule stands, he chose **"decide each one"**. Every snapshot gets its own decision
+here, and nothing is dropped without a verified export.
+
+| Schema | Tables · rows | What it holds |
+| --- | --- | --- |
+| `sos_backup_20261012` | 35 · 468,146 | the before-picture of the 12 Oct Qena territory move and the repairs around it: 2,935 Qena customer mappings (1,465 now differ), 7,524 January to September invoice rows (all re-stamped since), the Qena bricks, aliases and line-area rows, full copies of the summary tables, achievement before and after, the July to September republish review, Marketing ROI facts and the September store-split net. The customer map keeps no history, so the export is the lasting record of the stamping before the move |
+| `phoenix_crm_merge_backup_20261012` | 10 · 686 | the merge of 170 duplicate Phoenix CRM doctor pairs that evening: the plan, its results and both sides' rows. Every keeper and duplicate still exists; the duplicates are marked dropped. Holds personal fields |
+| `phx_backup_20261012` | 2 · 29 | duplicate Phoenix CRM venues removed that day (10 on one brick, 19 across 8 rep seats); none exists now |
+| `au_backup_20261012` | 2 · 104 | 51 resigned reps' seat rows and the vacant rows after them before `20261012142941` moved a resignation's seat end to the day after the last working day (all changed since, which is the fix), and one CNS rep's seat rows before the owner set that seat's end to 9 Aug 2026. Holds personal fields |
+
+The next snapshots to reach 90 days with no decision are the 13 October group, on 11 Jan 2027: the
+schemas `address_brick_backup_20261013`, `sos_backup_20261013`, `store_split_backup_20261013`,
+`qusiya_backup_20261013` and `phoenix_crm_backup_20261013`, and the table
+`public.address_brick_moves_20261013`.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
