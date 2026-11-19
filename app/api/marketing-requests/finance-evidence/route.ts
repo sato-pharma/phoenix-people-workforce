@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, errorMessageOf, toApiError } from "@/lib/http/api-errors";
 import {
+  assertCanUploadMarketingFinanceEvidence,
   uploadMarketingFinanceEvidence,
   type MarketingFinanceEvidenceType,
 } from "@/lib/marketing-requests/service";
@@ -54,6 +55,9 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // Refuse the caller before reading the upload (REC-080): a refused role used to reach the body
+    // parse first and get a 500.
+    assertCanUploadMarketingFinanceEvidence(access);
     const formData = await request.formData();
     const file = formData.get("file");
     if (!isFormFile(file)) {

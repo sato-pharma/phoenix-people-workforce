@@ -69,17 +69,14 @@ const INFRASTRUCTURE_TABLES: Readonly<Record<string, string>> = {
 // WRITE_GAPS lines nothing was written, and nothing was sent anywhere. The first kinds are follow-up work: the route judges its input
 // before it refuses the caller, so a stranger learns whether a body is good. The seventeen calls that looked
 // their record up first (the interview calendar, a company calendar event, a marketing conversation) now refuse
-// a signed-out caller before any lookup, and are judged like every other route.
+// a signed-out caller before any lookup, and are judged like every other route. So are the ten answers that
+// refused with the wrong status (a 400 Forbidden, a 500 sign-in, a body or upload read before the caller):
+// each route now refuses the caller first, with 401 or 403.
 const BODY_FIRST = "answers 400 on the harness's empty body before any refusal of this caller; nothing is written";
 const MARKETING_ROLE_LIST =
   "the real gate is the marketing role list (assertMarketingWorkspaceAccess), which admits the Financial Advisor — " +
   "the registry's expenses label is not what the route checks; answers 400 on the empty body, nothing is written";
 const PLANS_MOVED = "a retired weekly Plans endpoint: answers 409 (plans moved) to everyone before any check; nothing is written";
-const REFUSAL_AS_400 = "the refusal itself (Forbidden: Employee cannot create …) is answered 400 instead of 403; nothing is written";
-const INPUT_AS_500 = "the interview calendar judges the body before the caller and answers its own input refusal as 500; nothing is written";
-const MULTIPART_FIRST =
-  "reads the body as multipart form data before it refuses the caller, so the harness's JSON body throws a 500; nothing is written";
-const SIGN_IN_AS_500 = "the sign-in refusal (Authentication is required) is answered as a 500 AI failure instead of 401; nothing is written";
 const ROI_READ_ONLY =
   "a read-only report that uses POST only to carry its filter: the Medical Rep is a marketing role and sees only their own " +
   "requests, and with no HR id that is none, so 200 with no rows";
@@ -202,20 +199,6 @@ const ANSWER_GAPS: Readonly<Record<string, string>> = {
   "POST /api/weekly-plans/:id/request-edit signed-out": PLANS_MOVED,
   "POST /api/weekly-plans/:id/request-visit-details refused-role": PLANS_MOVED,
   "POST /api/weekly-plans/:id/request-visit-details signed-out": PLANS_MOVED,
-  // REFUSAL_AS_400 (2)
-  "POST /api/business-card-requests signed-out": REFUSAL_AS_400,
-  "POST /api/support/requests signed-out": REFUSAL_AS_400,
-  // INPUT_AS_500 (3)
-  "POST /api/recruitment/interview-calendar/bookings signed-out": INPUT_AS_500,
-  "POST /api/recruitment/interview-calendar/requests/:id/schedule signed-out": INPUT_AS_500,
-  "POST /api/recruitment/interview-calendar/sessions signed-out": INPUT_AS_500,
-  // MULTIPART_FIRST (4)
-  "POST /api/marketing-requests/bulk-upload refused-role": MULTIPART_FIRST,
-  "POST /api/marketing-requests/finance-evidence refused-role": MULTIPART_FIRST,
-  "POST /api/marketing-requests/finance-evidence signed-out": MULTIPART_FIRST,
-  "POST /api/recruitment/interview-calendar/bookings/:id/cv signed-out": MULTIPART_FIRST,
-  // SIGN_IN_AS_500 (1)
-  "POST /api/recruitment/candidates/:id/cv-extract signed-out": SIGN_IN_AS_500,
   // ROI_READ_ONLY (5)
   "POST /api/marketing-requests/coverage-report refused-role": ROI_READ_ONLY,
   "POST /api/marketing-requests/coverage-report/export refused-role": ROI_READ_ONLY,

@@ -23,8 +23,11 @@ function stringField(value: unknown): string {
 
 function errorResponse(error: unknown, fallback = "Business card request failed.") {
   const message = clientSafeErrorMessage(error, fallback);
-  const unauthenticated = message.toLowerCase().includes("authentication is required");
-  return { message, status: unauthenticated ? 401 : 400 };
+  const lower = message.toLowerCase();
+  // A refusal is a 403, never a 400 (REC-080, 19 Nov 2026): "Forbidden: Employee cannot create …"
+  // used to come back as a bad request.
+  const status = lower.includes("authentication is required") ? 401 : lower.startsWith("forbidden") ? 403 : 400;
+  return { message, status };
 }
 
 export async function GET(request: Request) {

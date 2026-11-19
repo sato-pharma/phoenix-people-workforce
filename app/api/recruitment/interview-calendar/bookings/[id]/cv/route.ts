@@ -6,6 +6,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
 import {
   CV_UPLOAD_LIMIT_BYTES,
+  assertSignedInToChangeCalendar,
   getInterviewExternalCv,
   interviewCalendarCaller,
   replaceInterviewExternalCv,
@@ -39,6 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    assertSignedInToChangeCalendar(access);
     const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     await assertInterviewBookingVisible(access, id);

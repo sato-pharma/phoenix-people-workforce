@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
-import { clientSafeErrorMessage, toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
+import { clientSafeErrorMessage, forbiddenError, toApiError, unauthorizedError } from "@/lib/http/api-errors";
 import {
   buildBulkImportPreview,
   executeBulkImport,
@@ -60,6 +61,11 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     if (access.source === "guest") {
       throw unauthorizedError();
+    }
+    // Preview and execute are both Super Admin's alone (the service asks again). Asked here, before
+    // the upload is read, so a refused role gets a 403 instead of the body parse failing first (REC-080).
+    if (!canAccessSystemAdministratorWorkspace(access)) {
+      throw forbiddenError("Only Super Admin users can use the bulk marketing request import.");
     }
     const formData = await request.formData();
     const file = formData.get("file");
