@@ -758,6 +758,34 @@
       "decidedBy": "owner",
       "why": "1 row: the D24 rep seat as it stood on 28 Aug, before the Delta (3) move that has been live since 1 Sep.",
       "sheet": "19 November 2026, the first snapshot tables, in chat"
+    },
+    "au.zz_rollup_pre_20260909_all": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "6,980 rows: the sales roll-up (units and value by month, line, area and product) for January to August 2026, plus six early-September Anti Infective rows, as it stood on 9 Sep. July and August are published and January to June were re-valued on purpose since, so it can undo nothing.",
+      "sheet": "19 November 2026, the 9 September snapshot tables, in chat"
+    },
+    "au.zz_aug_rollup_pre_20260909": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "876 rows: an exact duplicate of the August rows inside au.zz_rollup_pre_20260909_all (0 differences either way, 19 Nov). August is published.",
+      "sheet": "19 November 2026, the 9 September snapshot tables, in chat"
+    },
+    "au.bak_20260909_pedia_ue_split_line_area_map": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "50 rows: Pedia's area map before the Upper Egypt split (20260909223000). The split is dated, so August still reads the old shape from au.line_area_map, and August is published; 11 rows were edited in place since, so the export is the lasting record of them as of 9 Sep.",
+      "sheet": "19 November 2026, the 9 September snapshot tables, in chat"
+    },
+    "au.bak_20260909_pedia_ue_split_seats": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "45 rows: Pedia's seats before the Upper Egypt split (20260909223000). 10 seats were re-pointed to the new districts that day, since a seat cannot carry a date; the export is the lasting record of where they sat. August is published.",
+      "sheet": "19 November 2026, the 9 September snapshot tables, in chat"
     }
   }
 }

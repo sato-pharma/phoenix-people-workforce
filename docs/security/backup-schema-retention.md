@@ -213,8 +213,20 @@ under `<schema>.<table>`, and past 90 days with no entry it is `UNDECIDED` with 
 `manifest.json`, and no `drop table` is printed until it exists. The owner answered the first three
 in chat that day, each "export, then drop"; all three were exported the same day (166, 5 and 1
 rows). The 29 Aug Delta (3) pre-image he keeps, `delta3_defer_backup_20260829`, is untouched: the two
-28 Aug copies are not exact duplicates of it. The next table to reach 90 days with no decision is
-`au.zz_rollup_pre_20260909_all` and its neighbours, on 8 Dec 2026.
+28 Aug copies are not exact duplicates of it.
+
+**The four 9 September tables, decided the same day.** He answered these in chat too, each "export,
+then drop", and all four were exported that day. They reach 90 days on 8 Dec 2026:
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `au.zz_rollup_pre_20260909_all` | 6,980 | the sales roll-up for January to August 2026 (plus six early-September rows) as it stood on 9 Sep; July and August are published and January to June were re-valued on purpose since |
+| `au.zz_aug_rollup_pre_20260909` | 876 | an exact duplicate of the August rows inside the first (0 differences either way) |
+| `au.bak_20260909_pedia_ue_split_line_area_map` | 50 | Pedia's area map before the Upper Egypt split; 11 rows were edited in place since, so the export is the lasting record of them |
+| `au.bak_20260909_pedia_ue_split_seats` | 45 | Pedia's seats before the split; 10 were re-pointed that day, because a seat cannot carry a date |
+
+The next tables to reach 90 days with no decision are `au.bak_20260912_pedia_kfs_d1_line_area_map`
+and `au.bak_20260912_pedia_kfs_d1_seats`, on 11 Dec 2026.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
