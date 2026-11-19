@@ -78,9 +78,6 @@ const BODY_FIRST_PINNED =
   "a retired weekly Plans endpoint whose real gate (weekly_plans:approve) sits in the service, which answers 409 (plans " +
   "moved) to everyone; tests/weekly-plan-move-period.test.ts forbids a permission check in the route and " +
   "tests/weekly-plans-one-store.test.ts forbids importing a gate from the service, so the empty body answers 400 first; nothing is written";
-const MARKETING_ROLE_LIST =
-  "the real gate is the marketing role list (assertMarketingWorkspaceAccess), which admits the Financial Advisor — " +
-  "the registry's expenses label is not what the route checks; answers 400 on the empty body, nothing is written";
 const PLANS_MOVED = "a retired weekly Plans endpoint: answers 409 (plans moved) to everyone before any check; nothing is written";
 const ROI_READ_ONLY =
   "a read-only report that uses POST only to carry its filter: the Medical Rep is a marketing role and sees only their own " +
@@ -103,12 +100,6 @@ const PASSKEY_CHALLENGE =
 const ANSWER_GAPS: Readonly<Record<string, string>> = {
   // BODY_FIRST_PINNED (1)
   "POST /api/weekly-plans/:id/move-period refused-role": BODY_FIRST_PINNED,
-  // MARKETING_ROLE_LIST (5)
-  "PATCH /api/marketing-requests/control refused-role": MARKETING_ROLE_LIST,
-  "POST /api/marketing-requests/:id/comment refused-role": MARKETING_ROLE_LIST,
-  "POST /api/marketing-requests/:id/decision refused-role": MARKETING_ROLE_LIST,
-  "POST /api/marketing-requests/ceo-approvals/export refused-role": MARKETING_ROLE_LIST,
-  "POST /api/marketing-requests/list-check/decide refused-role": MARKETING_ROLE_LIST,
   // PLANS_MOVED (14)
   "PATCH /api/weekly-plans/:id refused-role": PLANS_MOVED,
   "PATCH /api/weekly-plans/:id signed-out": PLANS_MOVED,
