@@ -4,6 +4,7 @@
 // rides in the body so the RPC can detect a stale tab and refuse rather than deciding the wrong rep.
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
@@ -19,6 +20,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   try {
     const access = await resolveAccessContext(request);
+    // The approve key first, before anything is read or written (enterprise audit F-CRM-016). The
+    // district scope inside decideEarlyBirdsCandidate still decides WHICH district; this decides
+    // WHO may decide at all: Super Admin, the District Manager, and the Regional and National Sales
+    // Managers above him. A Medical Rep and the read-only company-wide seats are refused here.
+    await assertPermission(access, "early_birds", "approve");
     const { id } = await context.params;
 
     const body = (await request.json().catch(() => ({}))) as {
