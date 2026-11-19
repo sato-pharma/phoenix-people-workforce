@@ -379,7 +379,8 @@
     "ag2-agent-reviewer@local-desktop-app-uploads": false,
     "ag2-agent-reviewer@inline": false,
     "backend-performance-review@inline": false,
-    "backend-performance-review@local-desktop-app-uploads": false
+    "backend-performance-review@local-desktop-app-uploads": false,
+    "sato-brick-area-mapper@inline": false
   },
   "extraKnownMarketplaces": {
     "cloudflare": {
