@@ -12,7 +12,12 @@ import {
   loadMarketingCoverageExportSalesDetail,
   parseMarketingCoverageFilterState,
 } from "@/lib/marketing-requests/coverage-report-service";
-import { loadMarketingRoiExportDetail, resolveMarketingExporterName, writeMarketingRoiExportAudit } from "@/lib/marketing-requests/roi-report-service";
+import {
+  assertRoiReportViewer,
+  loadMarketingRoiExportDetail,
+  resolveMarketingExporterName,
+  writeMarketingRoiExportAudit,
+} from "@/lib/marketing-requests/roi-report-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +46,9 @@ function exportApiError(error: unknown) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // The caller first, before the rate limit and the body: signed in, a marketing role, and linked to an
+    // employee record when what the report shows depends on who they are (assertRoiReportViewer).
+    assertRoiReportViewer(access);
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:marketing:coverage-report" });
     let body: unknown = {};
     try {

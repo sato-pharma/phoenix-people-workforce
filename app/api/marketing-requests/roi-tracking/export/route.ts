@@ -8,6 +8,7 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildMarketingRoiReportWorkbook, type BulkMatchedSalesLine } from "@/lib/export/marketing-roi-workbook";
 import {
+  assertRoiReportViewer,
   getMarketingRequestViewSales,
   getMarketingRoiReport,
   loadMarketingRoiExportDetail,
@@ -44,6 +45,9 @@ function exportApiError(error: unknown) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // The caller first, before the rate limit and the body: signed in, a marketing role, and linked to an
+    // employee record when what the report shows depends on who they are (assertRoiReportViewer).
+    assertRoiReportViewer(access);
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:marketing:roi-tracking" });
     let body: unknown = {};
     try {
