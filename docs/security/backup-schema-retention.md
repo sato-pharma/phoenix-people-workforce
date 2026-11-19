@@ -463,7 +463,23 @@ move.
 | --- | --- | --- |
 | `phoenix_crm_merge_backup_20261028` | 14 · 584 | the before-picture of the 28 Oct duplicate-doctor merge behind the owner's "Merge and hide" ([`phoenix-crm-manager-ride-alongs.md`](../../.claude/rules/phoenix-crm-manager-ride-alongs.md)): 126 doctor rows (50 of them test rows) with their places, visits, plan items, list events and list requests, and the record of the 63 duplicate groups (61 merged; two on one approved day were only hidden). 62 of the 63 extra rows are gone from the live list today. Four of the tables are empty. Holds doctor names and phone numbers |
 
-The next snapshots to reach 90 days with no decision are `phoenix_crm_backup_20261101` and the table
+**All 175 decided snapshots dropped at once, 20 Nov 2026.** The owner chose to stop dropping one
+snapshot at a time on its 90th day and to drop every snapshot already decided "export, then drop", that
+night, in one change. That was 147 snapshot schemas and 28 snapshot tables in `au` and `public`, 744
+tables and 1,083,832 rows, every one of the decisions above. Before it ran:
+`audit-backup-schemas.mjs --retention-days 1` listed exactly those 175 as decided, with nothing depending
+on any of them, and every one's export in `snapshot-exports/` was re-hashed against its manifest (744
+files, 0 mismatches). The one decided schema never exported, `zz_search_proof`, was exported first.
+Migration `20261120013609_drop_175_decided_snapshots` went in through `scripts/apply-sql-file.mjs` on
+production, then staging, because the Supabase connector declines DDL. Read straight after, both
+databases hold 0 of the 175. Production went from 166 extra schemas (470.7 MB) to 19 (262.7 MB), and the
+schema baseline was refreshed in the same change. The dated drop tasks for each snapshot were removed.
+The exports are now the only copy: production has no point-in-time recovery, and the daily backups
+reach back seven days.
+
+Still kept: the six standing exceptions above (`recovery`, `private`, `analytics`, `_au_rollback`,
+`internal`, and `delta3_defer_backup_20260829` by the owner's word), and the snapshots with no decision
+yet. The next of those to reach 90 days are `phoenix_crm_backup_20261101` and the table
 `au.bak_20261101_pedia_sharkia_line_area_map`, on 30 Jan 2027.
 
 The emitted statement is

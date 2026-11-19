@@ -2632,6 +2632,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // and phx_cancel_marketing_request(uuid,text,text,timestamptz,jsonb), as on staging. Re-applying is a no-op
   // (`drop function if exists`).
   "20261119153902_drop_superseded_collection_and_cancel_forms.sql",
+  // Applied 2026-11-20 about 01:40 Cairo through scripts/apply-sql-file.mjs on production, then staging, the
+  // standing route: supabase-production's apply_migration answered {"status":"declined"} to these DDL
+  // statements. That route writes NO ledger row. The file only drops: 147 snapshot schemas and 28 snapshot
+  // tables the owner decided "export, then drop", every one exported and re-hashed against its manifest first
+  // (744 files, 0 mismatches). Proven straight after on BOTH ozucdzovmcqvepbozvqf and cifwmndunmlxjhyjugxa:
+  // 0 of the 147 names in pg_namespace and 0 of the 28 schema.table names in pg_class. Re-applying it is a
+  // no-op (every statement is `if exists`).
+  "20261120013609_drop_175_decided_snapshots.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
