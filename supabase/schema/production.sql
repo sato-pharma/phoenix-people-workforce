@@ -65328,7 +65328,7 @@ CREATE TABLE public.page_timings (
     CONSTRAINT page_timings_metric_check CHECK ((metric = ANY (ARRAY['ttfb'::text, 'fcp'::text, 'lcp'::text, 'interactive'::text, 'first_data'::text, 'soft'::text]))),
     CONSTRAINT page_timings_p50_ms_check CHECK ((p50_ms >= 0)),
     CONSTRAINT page_timings_p90_ms_check CHECK ((p90_ms >= 0)),
-    CONSTRAINT page_timings_path_check CHECK (((char_length(path) <= 200) AND (path ~ '^/(employee-portals|admin)(/([a-z][a-z-]{0,48}|:id)){0,3}$'::text)))
+    CONSTRAINT page_timings_path_check CHECK (((char_length(path) <= 200) AND (path ~ '^/[a-z][a-z0-9-]{0,48}(/([a-z][a-z0-9-]{0,48}|:id)){0,5}$'::text)))
 );
 
 ALTER TABLE public.page_timings OWNER TO postgres;

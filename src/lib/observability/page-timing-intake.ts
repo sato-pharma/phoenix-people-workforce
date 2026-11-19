@@ -11,8 +11,8 @@
 
 /** A hard-load beacon is ~200 bytes; a batch of ten taps is ~700. */
 export const PAGE_TIMING_MAX_BODY_BYTES = 1_024;
-/** Distinct page shapes the process will keep; the portal has far fewer than this. */
-export const PAGE_TIMING_MAX_NAMES = 300;
+/** Distinct page shapes the process will keep; the application has about 520 pages. */
+export const PAGE_TIMING_MAX_NAMES = 600;
 /** Beacons one address may send per window; a person opens a page every few seconds at most. */
 export const PAGE_TIMING_RATE_LIMIT = 60;
 export const PAGE_TIMING_RATE_WINDOW_MS = 60_000;
@@ -21,17 +21,91 @@ export const PAGE_TIMING_MAX_MS = 120_000;
 /** Taps one beacon may carry. The browser sends a batch at this many, or when the tab hides. */
 export const PAGE_TIMING_SOFT_BATCH_LIMIT = 10;
 
-const PAGE_SHAPE = /^\/(employee-portals|admin)(\/([a-z][a-z-]{0,48}|:id)){0,3}$/;
+/**
+ * The first part of every signed-in page's address, and only those. Every page under them is timed: the
+ * portal, the admin shell and the office sections (sales, the workspace, recruitment, attendance, coaching,
+ * leave, Customer 360, probation and the rest). Until 19 November 2026 only the portal and the admin shell
+ * were kept, so 106 office pages were never timed (enterprise audit, F-PLT-015). Public, print and share
+ * pages stay out: login, password set-up and reset, privacy, terms, share, join, print, the connector, dev
+ * and the WhatsApp link.
+ *
+ * tests/page-timings.test.ts reads app/ and fails when a section is added or removed without this list.
+ */
+export const PAGE_TIMING_SECTIONS: readonly string[] = [
+  "employee-portals",
+  "admin",
+  // The office sections, in app/(admin)/.
+  "attendance",
+  "business-cards",
+  "business-review",
+  "coaching",
+  "contracts",
+  "customer-360",
+  "cv-database",
+  "cv-lookup",
+  "devices",
+  "employee-360",
+  "employees",
+  "hiring-documents",
+  "hiring-pack",
+  "hr-calendar",
+  "hr-reminders",
+  "hr-reports",
+  "leave-management",
+  "mailbox-offboarding",
+  "medical-insurance",
+  "milestones",
+  "new-hire-mailboxes",
+  "offers",
+  "organogram",
+  "payroll",
+  "probation",
+  "recruitment",
+  "reports",
+  "resignations",
+  "retention",
+  "sales",
+  "spotlight",
+  "workspace",
+  // Signed-in pages at the top of app/.
+  "employee",
+  "marketing-requests",
+  "overview",
+  "payslips",
+];
 
-/** `/employee-portals/phoenix-crm/visits?x=1` -> `/employee-portals/phoenix-crm/visits`; ids -> `:id`. Null if not a portal page. */
+/**
+ * Page names that hold a digit and are not ids. Every other part holding a digit is an id and becomes
+ * `:id`; before 19 November 2026 these two did too, so the Employee 360 pages were filed as `:id`.
+ */
+export const PAGE_TIMING_DIGIT_PAGE_NAMES: readonly string[] = ["customer-360", "employee-360"];
+
+/** Parts after the section. The deepest page today has four (a rep's day: `/admin/field-crm/day/:id/:id`). */
+const PAGE_TIMING_MAX_DEPTH = 5;
+
+const SECTIONS = new Set(PAGE_TIMING_SECTIONS);
+const DIGIT_PAGE_NAMES = new Set(PAGE_TIMING_DIGIT_PAGE_NAMES);
+const PAGE_NAME = /^[a-z][a-z-]{0,48}$/;
+
+/**
+ * `/employee-portals/phoenix-crm/visits?x=1` -> `/employee-portals/phoenix-crm/visits`; ids -> `:id`.
+ * Null if the page is not a signed-in page, is deeper than the application goes, or has a part that is
+ * neither a page name nor an id.
+ */
 export function normalisePagePath(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > 200) return null;
   const bare = raw.split(/[?#]/)[0]!.toLowerCase().replace(/\/+$/, "");
-  const shaped = bare
-    .split("/")
-    .map((segment) => (/\d/.test(segment) ? ":id" : segment))
-    .join("/");
-  return PAGE_SHAPE.test(shaped) ? shaped : null;
+  if (!bare.startsWith("/")) return null;
+  const [section, ...rest] = bare.slice(1).split("/");
+  if (!section || !SECTIONS.has(section) || rest.length > PAGE_TIMING_MAX_DEPTH) return null;
+  const shaped = [section];
+  for (const part of rest) {
+    if (DIGIT_PAGE_NAMES.has(part)) shaped.push(part);
+    else if (/\d/.test(part)) shaped.push(":id");
+    else if (PAGE_NAME.test(part)) shaped.push(part);
+    else return null;
+  }
+  return `/${shaped.join("/")}`;
 }
 
 /** `hard`: the document loaded (a sign-in, a bookmark, a reload). `soft`: a tap inside the app reached its page. */
@@ -118,7 +192,7 @@ function hardReport(body: Record<string, unknown>, device: PageTimingDevice): Pa
  * The reports one beacon carries, or none. A body is
  * `{ device, hard?: { path, ttfb, fcp, lcp, interactive, firstData }, soft?: [{ path, ms }] }`; the first
  * beacon put the hard load's `path`, `fcp` and `lcp` at the top level, and a browser holding that bundle
- * for a day still sends it. Unknown fields are dropped; a path outside the portal and the admin shell, a
+ * for a day still sends it. Unknown fields are dropped; a path outside the signed-in sections, a
  * negative or absurd number, a tap with no page and anything past the tap limit are refused.
  */
 export function sanitizePageTimings(parsed: unknown): PageTimingReport[] {
