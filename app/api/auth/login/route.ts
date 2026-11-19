@@ -22,7 +22,7 @@ import { BLOCKED_SIGN_IN_MESSAGE, readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { isNativeClientRequest } from "@/lib/auth/native-session";
 import { mintTemporaryPasswordSetupToken } from "@/lib/auth/password-setup";
-import { trustedDeviceCookieName } from "@/lib/auth/second-step";
+import { SECOND_STEP_SWITCHED_ON, trustedDeviceCookieName } from "@/lib/auth/second-step";
 import { issueTrustedDevice, resetSecondStep, secondStepAtSignIn } from "@/lib/auth/second-step-store";
 import {
   createSessionToken,
@@ -468,7 +468,9 @@ export async function POST(request: Request) {
     // a header anyone can send, so it excuses nothing. Only CI smoke mode is left out: its one hardcoded
     // account is a National Sales Manager, which the step does not ask, and that mode makes no database call.
     // 🔴 A read that fails here THROWS into the 500 below. Never catch it into a pass.
-    const secondStep = ciSmokeMode
+    // 🔴 SWITCHED OFF (owner, 19 Nov 2026: "remove the auth code feature"): while SECOND_STEP_SWITCHED_ON is
+    // false nobody is asked, and the step makes no database call. Never switch it back on unasked.
+    const secondStep = ciSmokeMode || !SECOND_STEP_SWITCHED_ON
       ? ({ by: "not_required", kind: "pass" } as const)
       : await secondStepAtSignIn({
           account: user.loginId,

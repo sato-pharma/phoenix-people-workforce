@@ -10,7 +10,7 @@ import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
 import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
-import { secondStepRequiredForRole } from "@/lib/auth/second-step";
+import { SECOND_STEP_SWITCHED_ON, secondStepRequiredForRole } from "@/lib/auth/second-step";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
@@ -157,8 +157,8 @@ export default async function AdminProfilePage({
         {activeTab === "devices" && (
           <div className="px-4 sm:px-6 lg:px-8">
             <BiometricDevicesCard />
-            {/* The second sign-in step is asked of Super Admin accounts only (src/lib/auth/second-step.ts). */}
-            {secondStepRequiredForRole(access.role) && !access.seatView ? <SecondStepCard /> : null}
+            {/* The second sign-in step is switched off (owner, 19 Nov 2026), so no card shows (src/lib/auth/second-step.ts). */}
+            {SECOND_STEP_SWITCHED_ON && secondStepRequiredForRole(access.role) && !access.seatView ? <SecondStepCard /> : null}
           </div>
         )}
         {activeTab === "notifications" && (

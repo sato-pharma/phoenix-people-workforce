@@ -83,6 +83,7 @@ the primary by absolute path with no error. Never send parallel subagents into o
   dead-parent test/build leftovers; never a session, the app, a dev server or the foreground app. Log: `logs/ram-cleaner.log`.
   Elevated = `scripts/install-ram-cleaner-elevated.ps1` (his UAC Yes): runs a copy in admin-write-only
   `C:\ProgramData\PhoenixRamCleaner` (log there); 🔴 never point an elevated task at a user-writable script or dll.
+  Log lines are `[time] OK|FAIL` (the hourly Telegram task "Phoenix RAM Cleaner - Failure Alert" reads the last one).
 - 🔴 **THE SPARE LAPTOP RUNS THE DEV SERVER AND THE TESTS** (owner, 2026-11-07: "16+8 = 24 GB", "Dev server and
   tests") — `localhost:3000` here IS the spare's dev server (running again since his 05:26 restart, after 04:06's
   "KILL DEV"). 🥇 **GOLDEN RULE: LOCAL DEV ALWAYS POINTS TO PRODUCTION, NEVER STAGING** (owner, 2026-11-07 05:30:

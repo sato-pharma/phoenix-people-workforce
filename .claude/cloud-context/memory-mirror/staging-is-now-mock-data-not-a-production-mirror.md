@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 52493c41-8681-4061-aa67-4d730444cc29
-  modified: 2026-11-18T22:56:56.877Z
+  modified: 2026-11-19T00:45:00.000Z
 ---
 
 **Staging `cifwmndunmlxjhyjugxa` is a full physical clone of production, taken 2026-08-29 ~08:00 UTC —
@@ -42,9 +42,15 @@ Consequences that bite:
   IDs equal production's. Whatever the 6 Oct mask did to that table is gone. The pre-mask backup
   schema `masking_backup_20261006` (6,896 name rows, 163 sign-in rows) was DROPPED the same night on
   the owner's word ("Delete masking backup", then "Drop it anyway" after the MCP drop was declined),
-  through `scripts/apply-sql-file.mjs … staging`. Other staging backup schemas still carry real names
-  (`staging_reconcile_backup_20260929`, `ops_backup.v2_vacation_requests_20260824`,
-  `deductions_governance_backup_20260830.deduction_candidates`) — not touched, not asked.
+  through `scripts/apply-sql-file.mjs … staging`. The three other backups that carried real data
+  (`staging_reconcile_backup_20260929` employees_pre 179 + public_employees_pre 198,
+  `ops_backup.v2_vacation_requests_20260824` 320, `deductions_governance_backup_20260830.deduction_candidates`
+  206) were SCRUBBED in place on 19 Nov 2026 ~02:45 Cairo (owner: "scrub the three staging backups"),
+  same route: every person is now `Employee <HR ID>` (Arabic `موظف <HR ID>`), email `<hrid>@staging.invalid`;
+  national/insurance/health-card IDs, phones, birth dates, bank, addresses, pay, CV/photo paths, free-text
+  notes and attachment file names are NULL or generic. Rows and HR IDs kept. Proof: 0 of 1,440 rows in
+  seven tables matched any of 1,162 real values from live `employees` (the same search matched 245 of
+  245 live rows). The live `employees` table itself is still real, by the 3 Nov decision.
 - 🔴 **A clone overwrites `ireports360_sync_notify` with production's `true` — re-apply `false` after
   any re-clone** or a staging sync test Telegrams every Super Admin. See
   [[ireports360-sync-notify-disabled-on-staging]].

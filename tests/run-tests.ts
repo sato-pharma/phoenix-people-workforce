@@ -1798,6 +1798,7 @@ import { runCanSeeEmployeeBlankIdTests } from "./can-see-employee-blank-id.test.
 import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
 import { runSupabaseWriteTargetGuardTests } from "./supabase-write-target-guard.test.ts";
 import { runMigrationDriftCheckFlagsTests } from "./migration-drift-check-flags.test.ts";
+import { runMigrationLedgerOrphansTests } from "./migration-ledger-orphans.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-payroll-expense-step-approved-only.test.ts";
 import { runDuplicateExpenseHoldTests } from "./duplicate-expense-hold.test.ts";
@@ -3197,6 +3198,7 @@ import { runSyntheticJourneySignInStepTests } from "./synthetic-journey-sign-in-
 import { runSyntheticJourneysRunHistoryFitTests } from "./synthetic-journeys-run-history-fit.test.ts";
 import { runStoredContentTypeTests } from "./stored-content-type.test.ts";
 import { runReviewFindings20261119Tests } from "./review-findings-2026-11-19.test.ts";
+import { runEmailTemplateKeepsRecordPayloadTests } from "./email-template-keeps-record-payload.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -6729,6 +6731,11 @@ await runTest(
   "the drift check's --no-grace flag (a sweep is one command, the parsed flag actually reaches "
   + "selectMissingMigrations, and an unknown flag is REFUSED rather than reporting the narrow run as the wide one)",
   runMigrationDriftCheckFlagsTests,
+);
+await runTest(
+  "the drift check's reverse direction (every ledger row is a file, the seven-day shelter holds even under "
+  + "--no-grace, and the adoption-day list of untraced rows only shrinks)",
+  runMigrationLedgerOrphansTests,
 );
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense step proposes only approved trips, and surfaces the undecided ones", runAutomatedPayrollExpenseStepApprovedOnlyTests);
@@ -12677,6 +12684,7 @@ await runTest("smoke-suite sign-in step is saved under its own code (sign-in, no
 await runTest("Synthetic Journeys Run History fits a phone: the table is the desktop's alone and a phone gets cards with every run's facts and its View button, never a sideways scroll", runSyntheticJourneysRunHistoryFitTests);
 await runTest("the WhatsApp inbox and held-email buckets take exact type lists, and a file of any other type is kept as a plain download, never refused, so no file is lost and no held email becomes unapprovable", runStoredContentTypeTests);
 await runTest("the 19 Nov 2026 review fixes: leave decided earliest start first, an interview that did not happen proves no half, a waiting mailbox is never mailed, no password hash in the audit copy, every companion credited once, an interview-only half day charged its other half, the error alert only where a Telegram reaches", runReviewFindings20261119Tests);
+await runTest("an email template body may not drop the details table its default carries (the only way a sender's record reaches the email), and a resignation notice shows a readable status", runEmailTemplateKeepsRecordPayloadTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

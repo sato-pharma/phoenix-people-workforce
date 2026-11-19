@@ -2,6 +2,24 @@
 
 Integration audit INT-005 and INT-006. Built 13 Nov 2026 on the owner's choices, made that evening.
 
+## 🔴 Switched off on 19 Nov 2026
+
+The owner's words: "remove the auth code feature". Since then:
+
+- **No account is asked for an authenticator code at sign-in, the Super Admin accounts included.** A right
+  password signs straight in, as it did before 13 Nov. The switch is `SECOND_STEP_SWITCHED_ON = false` in
+  `src/lib/auth/second-step.ts`. The login route reads it before the step, so the step makes no database call.
+- **The profile's Devices tab shows no "Second sign-in step" card.** The "Biometric sign-in" card beside it is
+  unchanged. Adding a passkey to a Super Admin account still asks for the account's password, because that guard
+  stops a borrowed session from adding a passkey that would outlive a password change. It does not read the switch.
+- **Nothing was deleted.** The rules, the three tables, the keys already set up, the recovery codes and the
+  remembered browsers stay as they were, unused. The sections below describe how the step runs when it is
+  switched on. Switching it back on is that one line, and only on the owner's word.
+- The synthetic journeys' sign-in waits for whichever comes first, the next page or the code field, so it passes
+  either way.
+
+The leaked-password check further down was switched off separately, on 18 Nov 2026.
+
 Before this, a password alone opened every account: 0 of the sign-in accounts had a second factor, so one
 stolen Super Admin password opened payroll, permissions and every record.
 
