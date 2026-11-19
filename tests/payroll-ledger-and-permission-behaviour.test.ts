@@ -17,7 +17,19 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { SignedOutRefusal } from "../src/lib/auth/signed-out-refusal.ts";
-import { atomically, RpcRaise, snapshot, withStandIn, writesTo, type Row, type RpcAnswer, type Seen, type Tables } from "./support/postgrest-stand-in.ts";
+import {
+  atomically,
+  RpcRaise,
+  snapshot,
+  withStandIn,
+  writesTo,
+  type Failure,
+  type Row,
+  type RpcAnswer,
+  type Seen,
+  type StandIn,
+  type Tables,
+} from "./support/postgrest-stand-in.ts";
 
 // REC-078 (enterprise audit 2026-11-13): behaviour tests, not source pins, for three things a payroll or
 // an access decision rests on. Each runs the REAL domain code against a stand-in PostgREST held in memory
