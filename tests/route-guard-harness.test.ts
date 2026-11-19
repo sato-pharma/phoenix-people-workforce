@@ -73,13 +73,10 @@ const INFRASTRUCTURE_TABLES: Readonly<Record<string, string>> = {
 // refused with the wrong status (a 400 Forbidden, a 500 sign-in, a body or upload read before the caller):
 // each route now refuses the caller first, with 401 or 403. Eighty of the eighty-one answers that judged the
 // body first now refuse a signed-out caller (assertSignedIn) and a refused role (the domain's own gate, asked
-// before the body) first, or had a registry entry that named the wrong gate. One is left, below.
+// before the body) first, or had a registry entry that named the wrong gate. The eighty-first, the weekly-plan
+// move-period, now asks the service's own approve grant in the route before the body.
 // The five ROI and Coverage report answers that gave a Medical Rep login with no HR id an empty 200 now refuse it
 // with 403 (assertRoiReportViewer in roi-report-service.ts): that role's reach is built from its HR id.
-const BODY_FIRST_PINNED =
-  "a retired weekly Plans endpoint whose real gate (weekly_plans:approve) sits in the service, which answers 409 (plans " +
-  "moved) to everyone; tests/weekly-plan-move-period.test.ts forbids a permission check in the route and " +
-  "tests/weekly-plans-one-store.test.ts forbids importing a gate from the service, so the empty body answers 400 first; nothing is written";
 const BEACON_204 = "a page beacon that answers 204 to everyone by design, so a page never sees an error; with no signed-in seat it records nothing";
 const SEAT_VIEW_EXIT = "leaving a seat view always succeeds by design: it clears the caller's own seat-view cookie and writes nothing without a seat view";
 const OWN_LAYOUT = "resets the caller's own sidebar layout; with no HR id there is no layout to reset, so 200 with nothing written";
@@ -96,8 +93,6 @@ const PASSKEY_CHALLENGE =
  * The call must still write nothing; a write needs its own line in WRITE_GAPS.
  */
 const ANSWER_GAPS: Readonly<Record<string, string>> = {
-  // BODY_FIRST_PINNED (1)
-  "POST /api/weekly-plans/:id/move-period refused-role": BODY_FIRST_PINNED,
   // BEACON_204 (8)
   "POST /api/activity/track refused-role": BEACON_204,
   "POST /api/activity/track signed-out": BEACON_204,
