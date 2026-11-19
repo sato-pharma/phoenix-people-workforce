@@ -28,7 +28,7 @@ decides reviews that already exist.
    `customer_pending`.
 3. **Do NOT restamp the visits.** A send-back keeps every visit's earlier distance (owner, 19 Nov
    2026: "Keep earlier distances"), and the app's own reject paths no longer re-measure either
-   (`.claude/rules/phoenix-crm-place-checks.md`, the first rule). A re-measure against the places the
+   (`.claude/rules/phoenix-crm-place-decisions.md`, the first rule). A re-measure against the places the
    customer has left turned a doctor's visits at the refused clinic "far" from his second one. Only
    taking the rejection back measures them again.
 
