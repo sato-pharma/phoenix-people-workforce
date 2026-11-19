@@ -464,10 +464,17 @@ async function collectionSavedEvenWhenTheReadBackFails(): Promise<void> {
       }
       return inner(input, init);
     }) as typeof fetch;
-    const order = await recordDirectOrderCollection(SUPER_ADMIN, { expected: SCREEN_LOADED, paidAmount: 500, paymentDate: "2026-11-02", requestId: ORDER_ID });
+    let refusal: unknown = null;
+    let order: Awaited<ReturnType<typeof recordDirectOrderCollection>> | null = null;
+    try {
+      order = await recordDirectOrderCollection(SUPER_ADMIN, { expected: SCREEN_LOADED, paidAmount: 500, paymentDate: "2026-11-02", requestId: ORDER_ID });
+    } catch (error) {
+      refusal = error;
+    }
     assert.equal(orderReads, 2, "precondition: the read-back after the call was the read that failed");
+    assert.equal(refusal, null, "READ-BACK: HEADLINE: Finance is never refused for a collection that committed");
     assert.deepEqual(
-      [order.paidAmount, order.paymentDate, order.remainingAmount],
+      [order?.paidAmount, order?.paymentDate, order?.remainingAmount],
       [500, "2026-11-02", 400],
       "READ-BACK: HEADLINE: a committed collection is answered as saved, with the figures written, never refused",
     );
