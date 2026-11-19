@@ -1,4 +1,3 @@
-import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { resolveEmployeeIdentityId, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
@@ -165,10 +164,19 @@ export async function cancelMarketingRequest(params: {
   // wrote the cancelled request back to approved or rejected. phx_decide_marketing_request_step now
   // also refuses any request that is no longer `pending_approval`, under the same lock, so the two
   // guards hold each other up.
+  //
+  // Its required audit row is written INSIDE that transaction (REC-038 close-out, 19 Nov 2026; owner: "fix the
+  // direct-order collection and marketing cancel the same way"): the summary below, the status it replaced and the
+  // rungs it closed. It used to be written after the commit, so a record that failed left the request cancelled while
+  // the Super Admin was told the cancel had failed.
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
-  const { data, error } = await supabase.rpc("phx_cancel_marketing_request", {
+  const { error } = await supabase.rpc("phx_cancel_marketing_request", {
     p_actor_hr_id: actorHrId,
+    p_audit: {
+      actor_login_id: params.access.loginId ?? params.access.hrId,
+      summary: `Marketing request ${request.requestCode ?? requestId} cancelled (was "${request.status}"). Reason: ${reason}`,
+    },
     p_cancelled_at: now,
     p_expected_status: request.status,
     p_request_id: requestId,
@@ -186,19 +194,6 @@ export async function cancelMarketingRequest(params: {
     }
     throw error;
   }
-  const closedApprovalSteps = Number((data as { closedSteps?: number } | null)?.closedSteps ?? 0);
-
-  await writeRequiredAuditLog({
-    actorLoginId: params.access.loginId ?? params.access.hrId,
-    entityId: requestId,
-    entityType: "marketing_request",
-    newValues: { status: MARKETING_CANCELLED_STATUS, closedApprovalSteps },
-    oldValues: { status: request.status },
-    summary:
-      `Marketing request ${request.requestCode ?? requestId} cancelled `
-      + `(was "${request.status}"). Reason: ${reason}`,
-  });
-
   bumpCustomer360Cache("marketing request cancelled");
   return { requestCode: request.requestCode, requestId, status: MARKETING_CANCELLED_STATUS };
 }
