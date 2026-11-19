@@ -17,7 +17,7 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { SignedOutRefusal } from "../src/lib/auth/signed-out-refusal.ts";
-import { withStandIn, writesTo, type Row, type Seen } from "./support/postgrest-stand-in.ts";
+import { atomically, RpcRaise, snapshot, withStandIn, writesTo, type Row, type RpcAnswer, type Seen, type Tables } from "./support/postgrest-stand-in.ts";
 
 // REC-078 (enterprise audit 2026-11-13): behaviour tests, not source pins, for three things a payroll or
 // an access decision rests on. Each runs the REAL domain code against a stand-in PostgREST held in memory
@@ -255,6 +255,91 @@ async function markPublishedHandsOverTheHeldList(): Promise<void> {
       );
     },
   );
+}
+
+/**
+ * phx_mark_automated_payroll_run_published, from 20261113160132, statement by statement: refuse a detail with no
+ * held list, move the run to published under the publish's claim, then insert the `published` record. One
+ * indivisible step: a raise anywhere keeps nothing. `failAfterPhase` raises after the phase write — the forced
+ * failure after the first write (REC-038 close-out, 19 Nov 2026).
+ */
+function markPublishedModel(failAfterPhase = false) {
+  return (args: Record<string, unknown>, tables: Tables): RpcAnswer =>
+    atomically(tables, (db) => {
+      const detail = args.p_detail as { held?: unknown } | null;
+      if (!detail || !Array.isArray(detail.held)) {
+        throw new RpcRaise("P0001", "automated_payroll_publish_hold_record_missing: the publish record has no held list");
+      }
+      const run = (db.automated_payroll_runs ?? []).find(
+        (row) => row.id === args.p_run_id && row.phase === "ready" && row.transition_token === args.p_transition_token,
+      );
+      if (!run) throw new RpcRaise("P0001", "automated_payroll_transition_claim_lost: [transition-claim-lost] the run was not marked published");
+      Object.assign(run, {
+        phase: "published",
+        published_batch_id: args.p_batch_id,
+        published_by: args.p_published_by,
+        transition_action: null,
+        transition_started_at: null,
+        transition_token: null,
+      });
+      if (failAfterPhase) throw new RpcRaise("XX000", "stand-in: the held record could not be inserted");
+      (db.automated_payroll_audit ??= []).push({ action: "published", actor_hr_id: args.p_actor_hr_id, detail: args.p_detail, run_id: args.p_run_id });
+      return { body: [{ ...run }], status: 200 };
+    });
+}
+
+/**
+ * THE HELD RECORD IS ALL OR NOTHING, AND ONE PUBLISH WINS (REC-038 close-out, 19 Nov 2026). The two tests the
+ * money-integrity close-out asks of every operation, driven through markRunPublished against the modelled function:
+ * (a) a failure after the first write leaves the run `ready` with no record — never published without one; (b) two
+ * publishes holding the same claim at once land exactly once, with one record.
+ */
+export async function runHeldRecordAtomicityBehaviourTests(): Promise<void> {
+  const ready = (): Tables => ({
+    automated_payroll_audit: [],
+    automated_payroll_runs: [
+      { id: "run-oct", month: 10, month_key: "2026-10", phase: "ready", transition_action: "Publishing to payslips", transition_started_at: "2026-11-19T09:00:00+00:00", transition_token: "token-oct", year: 2026 },
+    ],
+  });
+  const input = {
+    action: "published" as const,
+    batchId: "batch-oct",
+    detail: { held: [{ hrId: "B-77", name: "Held Person", reason: "Bank account not confirmed", secondPartWithheld: 6000 }] },
+    publishedBy: "B-10",
+  };
+
+  // (a) The forced failure after the first write.
+  {
+    const tables = ready();
+    const before = snapshot(tables);
+    await withStandIn({ rpc: { phx_mark_automated_payroll_run_published: markPublishedModel(true) }, tables }, async (seen) => {
+      await assert.rejects(
+        markRunPublished("run-oct", input, { transitionToken: "token-oct" }),
+        (error: Error) => error.message.startsWith("Conflict: the payslips for this run WERE written") && error.message.includes("Press Publish again"),
+        "HEADLINE: a publish whose record failed after the phase moved is told to press Publish again",
+      );
+      assert.deepEqual(tables, before, "HEADLINE (F-PAY-002): the run is still ready and no half record exists — never published without who was held");
+      assert.equal(writesTo(seen, "automated_payroll_runs").length + writesTo(seen, "automated_payroll_audit").length, 0, "and nothing was written outside the one call");
+    });
+  }
+
+  // (b) Two publishes at once, both holding the claim token: one lands, the other meets the cleared claim.
+  {
+    const tables = ready();
+    await withStandIn({ rpc: { phx_mark_automated_payroll_run_published: markPublishedModel() }, tables }, async () => {
+      const results = await Promise.allSettled([
+        markRunPublished("run-oct", input, { transitionToken: "token-oct" }),
+        markRunPublished("run-oct", input, { transitionToken: "token-oct" }),
+      ]);
+      const won = results.filter((result) => result.status === "fulfilled");
+      const lost = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      assert.equal(won.length, 1, "HEADLINE: exactly one of two simultaneous publishes marks the run");
+      assert.equal(lost.length, 1, "and the other is refused");
+      assert.ok(String(lost[0].reason?.message).startsWith(`Conflict: ${TRANSITION_CLAIM_LOST}`), "as a claim another action took, never a second publish");
+      assert.equal((tables.automated_payroll_audit ?? []).filter((row) => row.action === "published").length, 1, "one record of who was held");
+      assert.equal((tables.automated_payroll_runs ?? [])[0]?.phase, "published", "and the run is published once");
+    });
+  }
 }
 
 export async function runHeldSalaryRecordBehaviourTests(): Promise<void> {

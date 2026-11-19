@@ -181,12 +181,12 @@ export async function withStandIn(standIn: StandIn, body: (seen: Seen[]) => Prom
 
     const table = decodeURIComponent(url.pathname.slice("/rest/v1/".length));
     seen.push({ body: parsed, method, params: url.searchParams, rpc: null, table });
-    const rows = (standIn.tables[table] ??= []);
-
     if (method === "GET" || method === "HEAD") {
       const failure = standIn.failReads?.[table];
       if (failure) return json(failure.body, failure.status);
-      const matches = filtered(rows, url.searchParams);
+      // A read never creates a table: a stray background read from an earlier test (the audit outbox drain, say)
+      // must not change the tables a test compares before and after.
+      const matches = filtered(standIn.tables[table] ?? [], url.searchParams);
       if (wantsObject) {
         if (matches.length !== 1) {
           return json(
@@ -201,6 +201,7 @@ export async function withStandIn(standIn: StandIn, body: (seen: Seen[]) => Prom
 
     const failure = standIn.failWrites?.[table];
     if (failure) return json(failure.body, failure.status);
+    const rows = (standIn.tables[table] ??= []);
     const count = (writeCounts.get(table) ?? 0) + 1;
     writeCounts.set(table, count);
     const nth = standIn.failNthWrite?.[table];
