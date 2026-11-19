@@ -19,6 +19,28 @@ import {
 export const WHATSAPP_INBOX_MESSAGES_TABLE = "whatsapp_inbox_messages";
 export const WHATSAPP_INBOX_CONVERSATIONS_TABLE = "whatsapp_inbox_conversations";
 
+/**
+ * Where a delivery is filed. The recruitment inbox (both company lines, read by HR Resourcing) and the
+ * Approvals WhatsApp store (the approvals line, the Super Admin alone, owner 19 Nov 2026) are the same
+ * shape in separate tables — separate on purpose, so no query that forgets a line filter can show one
+ * screen's chats on the other.
+ */
+export type InboxStore = { messagesTable: string; conversationsTable: string; applyStatusFunction: string; label: string };
+
+export const RECRUITMENT_INBOX_STORE: InboxStore = {
+  applyStatusFunction: "whatsapp_inbox_apply_status",
+  conversationsTable: WHATSAPP_INBOX_CONVERSATIONS_TABLE,
+  label: "whatsapp_inbox",
+  messagesTable: WHATSAPP_INBOX_MESSAGES_TABLE,
+};
+
+export const APPROVALS_WHATSAPP_STORE: InboxStore = {
+  applyStatusFunction: "approvals_whatsapp_apply_status",
+  conversationsTable: "approvals_whatsapp_conversations",
+  label: "approvals_whatsapp",
+  messagesTable: "approvals_whatsapp_messages",
+};
+
 /** The inbox-specific facts a send carries in `OutboundLogContext.detail.inbox`. */
 export type InboxSendDetail = {
   sentByHrId?: string | null;
@@ -46,7 +68,8 @@ function isTestSuite(): boolean {
   return process.env.PHOENIX_TEST_SUITE === "1";
 }
 
-function inboundRow(record: InboxMessageRecord): Record<string, unknown> {
+/** The row for one message parsed out of a webhook delivery. Pure; exported for the test. */
+export function buildInboxInboundRow(record: InboxMessageRecord): Record<string, unknown> {
   const outbound = record.direction === "outbound";
   return {
     body: record.body,
@@ -83,7 +106,7 @@ export type InboxDeliveryResult = { recorded: number; duplicates: number; failed
  * would throw away every new message beside it. The conversation trigger skips a known wamid itself;
  * a 23505 is the rarer race where two copies arrive at once, and is equally "already recorded".
  */
-export async function recordInboxDelivery(payload: unknown): Promise<InboxDeliveryResult> {
+export async function recordInboxDelivery(payload: unknown, store: InboxStore = RECRUITMENT_INBOX_STORE): Promise<InboxDeliveryResult> {
   const result: InboxDeliveryResult = { duplicates: 0, failed: 0, recorded: 0, statusesApplied: 0 };
   if (isTestSuite()) return result;
   let delivery: ReturnType<typeof parseInboxDelivery>;
@@ -97,7 +120,7 @@ export async function recordInboxDelivery(payload: unknown): Promise<InboxDelive
   try {
     const supabase = getSupabaseAdmin();
     for (const record of delivery.messages) {
-      const { error } = await supabase.from(WHATSAPP_INBOX_MESSAGES_TABLE).insert(inboundRow(record));
+      const { error } = await supabase.from(store.messagesTable).insert(buildInboxInboundRow(record));
       if (!error) {
         result.recorded += 1;
         continue;
@@ -110,10 +133,10 @@ export async function recordInboxDelivery(payload: unknown): Promise<InboxDelive
       result.failed += 1;
       logWarning("WhatsApp inbox message not recorded", {
         context: { code: error.code ?? null, message: error.message ?? null },
-        labels: { event: "whatsapp_inbox_record_failed", wamid: record.wamid },
+        labels: { event: `${store.label}_record_failed`, wamid: record.wamid },
       });
     }
-    result.statusesApplied = await applyInboxStatuses(delivery.statuses);
+    result.statusesApplied = await applyInboxStatuses(delivery.statuses, store);
   } catch (error) {
     logWarning("WhatsApp inbox recording threw", { error, labels: { event: "whatsapp_inbox_record_threw" } });
   }
@@ -121,13 +144,13 @@ export async function recordInboxDelivery(payload: unknown): Promise<InboxDelive
 }
 
 /** Forward-only ticks; the database function refuses a step backwards. Never throws. */
-export async function applyInboxStatuses(statuses: InboxStatusUpdate[]): Promise<number> {
+export async function applyInboxStatuses(statuses: InboxStatusUpdate[], store: InboxStore = RECRUITMENT_INBOX_STORE): Promise<number> {
   if (statuses.length === 0 || isTestSuite()) return 0;
   let applied = 0;
   try {
     const supabase = getSupabaseAdmin();
     for (const update of statuses) {
-      const { data, error } = await supabase.rpc("whatsapp_inbox_apply_status", {
+      const { data, error } = await supabase.rpc(store.applyStatusFunction, {
         p_at: update.at ?? new Date().toISOString(),
         p_failure_detail: update.failureDetail,
         p_status: update.status,
@@ -137,7 +160,7 @@ export async function applyInboxStatuses(statuses: InboxStatusUpdate[]): Promise
         if (error.code === "PGRST202" || isMissingTable(error)) return applied;
         logWarning("WhatsApp inbox status not applied", {
           context: { code: error.code ?? null },
-          labels: { event: "whatsapp_inbox_status_failed", wamid: update.wamid },
+          labels: { event: `${store.label}_status_failed`, wamid: update.wamid },
         });
         continue;
       }
@@ -167,6 +190,8 @@ export function buildInboxOutboundRow(input: {
   event: string;
   result: { ok: true; wamid: string | null } | { ok: false; reason: string; detail: string | null };
   inbox?: InboxSendDetail | null;
+  /** Columns only one store has — the approvals store's broadcast_id. */
+  extra?: Record<string, unknown> | null;
   now?: Date;
 }): Record<string, unknown> | null {
   const to = typeof input.payload.to === "string" ? input.payload.to.replace(/\D+/g, "") : "";
@@ -211,27 +236,31 @@ export function buildInboxOutboundRow(input: {
     status_at: at,
     template_name: template ? text(template.name) : null,
     wamid: input.result.ok ? input.result.wamid : null,
+    ...(input.extra ?? {}),
   };
 }
 
 /** Records one Phoenix send in the inbox. Never throws, never changes the send result. */
-export async function recordInboxOutbound(input: Parameters<typeof buildInboxOutboundRow>[0]): Promise<void> {
+export async function recordInboxOutbound(
+  input: Parameters<typeof buildInboxOutboundRow>[0],
+  store: InboxStore = RECRUITMENT_INBOX_STORE,
+): Promise<void> {
   if (isTestSuite()) return;
   try {
     const row = buildInboxOutboundRow(input);
     if (!row) return;
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from(WHATSAPP_INBOX_MESSAGES_TABLE).insert(row);
+    const { error } = await supabase.from(store.messagesTable).insert(row);
     if (error && !isMissingTable(error) && error.code !== "23505") {
       logWarning("WhatsApp inbox outbound message not recorded", {
         context: { code: error.code ?? null, message: error.message ?? null },
-        labels: { event: "whatsapp_inbox_outbound_record_failed" },
+        labels: { event: `${store.label}_outbound_record_failed` },
       });
     }
   } catch (error) {
     logWarning("WhatsApp inbox outbound recording threw", {
       error,
-      labels: { event: "whatsapp_inbox_outbound_record_threw" },
+      labels: { event: `${store.label}_outbound_record_threw` },
     });
   }
 }

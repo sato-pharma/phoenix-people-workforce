@@ -641,6 +641,26 @@ export const accessRegistry = [
   // The third editor on the same screen: the automatic WhatsApp replies the bot sends by itself.
   // Same helper, same gate, same reason the two above carry `guard: "domain-helper"`.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/whatsapp-auto-replies", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  // The Approvals WhatsApp screen (the third number, +20 10 40631155): Super Admin only, by the owner's word
+  // ("Super Admin only", 19 Nov 2026). Every route asks `approvalsWhatsAppForbidden(access)` — a role test, not a
+  // permission-matrix grant, so no other role can be widened into it. `permission: null` + `domain-helper` says so.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/conversations", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/conversations", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/conversations/*", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/conversations/*/messages", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/conversations/*/read", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/media/*", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/templates", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/templates", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/recipients", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/lists", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/lists", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/lists/*", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/admin/approvals-whatsapp/lists/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/broadcasts", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/broadcasts", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/approvals-whatsapp/broadcasts/*", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/approvals-whatsapp/broadcasts/*/resume", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/**", permission: { resource: "admin", action: "read" } }),
 
   sessionApi({ methods: allMethods, pattern: "/api/attendance/agent/**", permission: { resource: "employees", action: "read" } }),
