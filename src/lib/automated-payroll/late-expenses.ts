@@ -96,6 +96,8 @@ const COVERAGE_TOLERANCE = 0.5;
 
 /** The only thing this file asks of a database client. A test hands in a fake. */
 export type LateExpenseDb = Pick<ReturnType<typeof getSupabaseAdmin>, "from">;
+/** The client the reservation needs: the reads above, plus the one database call that replaces the run's rows. */
+export type LateExpenseReserveDb = LateExpenseDb & Pick<ReturnType<typeof getSupabaseAdmin>, "rpc">;
 
 export type LateExpenseRow = {
   id: string;
@@ -1366,17 +1368,20 @@ export async function assertLateExpensesPublishable(
  * Reserves the carried trips a Part 2 confirm records, one row per trip (`expense_id` is the primary
  * key), so a second run's confirm cannot record the same trip. This run's earlier reservations are
  * replaced. A trip another run holds refuses the confirm, naming the trip and that run's month.
+ *
+ * ONE STEP (REC-038 close-out, 19 Nov 2026; owner: "make the late-trip reservation one step"): the replace is
+ * phx_reserve_late_expenses, which deletes the run's earlier rows and inserts the new ones in one transaction. It
+ * was a release followed by an insert, so a failed insert left the earlier reservations gone. The read that names
+ * another run's hold writes nothing and runs first.
  */
 export async function reserveLateExpenses(
   runId: string,
   carried: ReadonlyArray<LateExpenseCarriedEntry>,
   names: ReadonlyMap<string, string>,
-  client?: LateExpenseDb,
+  client?: LateExpenseReserveDb,
 ): Promise<void> {
   const db = client ?? getSupabaseAdmin();
-  await releaseLateExpenseReservations(runId, db);
   const ids = [...new Set(carried.map((entry) => entry.id))];
-  if (ids.length === 0) return;
 
   const refuseHeldElsewhere = async () => {
     const holders = (
@@ -1408,8 +1413,9 @@ export async function reserveLateExpenses(
     );
   };
 
-  await refuseHeldElsewhere();
-  const { error } = await db.from(RESERVATIONS_TABLE).insert(ids.map((id) => ({ expense_id: id, run_id: runId })));
+  if (ids.length > 0) await refuseHeldElsewhere();
+  // The replace, in one database call: with no trips it only releases the run's earlier reservations.
+  const { error } = await db.rpc("phx_reserve_late_expenses", { p_expense_ids: ids, p_run_id: runId });
   if (error) {
     // Another run's confirm took one in the moment between: say which.
     if ((error as { code?: string }).code === "23505") {
@@ -1422,6 +1428,7 @@ export async function reserveLateExpenses(
         carried.map((entry) => entry.compact),
       );
     }
+    // The whole replace rolled back: the run keeps the reservations it had.
     throw new Error(
       "Conflict: the carried outstation trips could not be reserved for this run, so nothing was confirmed. " +
         `Confirm Part 2 again in a moment. (${databaseFailureNote(error, "automated_payroll_late_expense_reserve_failed")})`,

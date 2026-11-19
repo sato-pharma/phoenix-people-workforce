@@ -7,7 +7,7 @@ import {
   reserveLateExpenses,
   setCarryLateExpenses,
   type LateExpenseCarriedEntry,
-  type LateExpenseDb,
+  type LateExpenseReserveDb,
 } from "../src/lib/automated-payroll/late-expenses.ts";
 // Loaded up front so the error row a refusal logs resolves its module from the cache and lands inside
 // the stand-in below, never after it has been taken down.
@@ -45,7 +45,7 @@ import { withStandIn } from "./support/postgrest-transaction-stand-in.ts";
  */
 
 type Row = Record<string, unknown>;
-type Op = "select" | "insert" | "upsert" | "delete";
+type Op = "select" | "insert" | "upsert" | "delete" | "rpc";
 type DbError = { message: string; code?: string };
 type TableSpec = { rows: Row[]; primaryKey?: string };
 type Failure = { table: string; op: Op; nth: number; error: DbError };
@@ -60,9 +60,45 @@ function rowsOf(tables: Record<string, TableSpec>): Record<string, Row[]> {
  * A client over shared tables. Every request — read or write — is logged in `steps` when it is answered;
  * `failures` makes the nth write of one kind to one table fail.
  */
-function memoryDb(tables: Record<string, TableSpec>, steps: Step[], failures: Failure[] = []): LateExpenseDb {
+function memoryDb(tables: Record<string, TableSpec>, steps: Step[], failures: Failure[] = []): LateExpenseReserveDb {
   const counts = new Map<string, number>();
   return {
+    /**
+     * phx_reserve_late_expenses (20261119163918), answered on the next turn like every other request: in one
+     * transaction the run's earlier reservations are replaced by one row per trip. A trip another run holds (the
+     * primary key, 23505) or a forced failure keeps every row as it was — the delete is undone with the insert.
+     */
+    rpc(name: string, args: Record<string, unknown>) {
+      return new Promise((settled) => {
+        setImmediate(() => {
+          if (name !== "phx_reserve_late_expenses") {
+            settled({ data: null, error: { code: "PGRST202", message: `the stand-in has no function ${name}` } });
+            return;
+          }
+          const spec = (tables[RESERVATIONS] ??= { primaryKey: "expense_id", rows: [] });
+          const key = `${RESERVATIONS}|rpc`;
+          const count = (counts.get(key) ?? 0) + 1;
+          counts.set(key, count);
+          const failure = failures.find((candidate) => candidate.table === RESERVATIONS && candidate.op === "rpc" && candidate.nth === count);
+          if (failure) {
+            steps.push({ error: failure.error, op: "rpc", payload: args, table: RESERVATIONS });
+            settled({ data: null, error: failure.error });
+            return;
+          }
+          const ids = [...new Set(args.p_expense_ids as string[])];
+          const kept = spec.rows.filter((row) => row.run_id !== args.p_run_id);
+          if (ids.some((id) => kept.some((row) => row.expense_id === id))) {
+            const duplicate = { code: "23505", message: `duplicate key value violates unique constraint "${RESERVATIONS}_pkey"` };
+            steps.push({ error: duplicate, op: "rpc", payload: args, table: RESERVATIONS });
+            settled({ data: null, error: duplicate });
+            return;
+          }
+          spec.rows = [...kept, ...ids.map((id) => ({ expense_id: id, run_id: args.p_run_id }))];
+          steps.push({ error: null, op: "rpc", payload: args, table: RESERVATIONS });
+          settled({ data: ids.length, error: null });
+        });
+      });
+    },
     from(table: string) {
       const spec = (tables[table] ??= { rows: [] });
       const filters: Array<(row: Row) => boolean> = [];
@@ -162,7 +198,7 @@ function memoryDb(tables: Record<string, TableSpec>, steps: Step[], failures: Fa
       };
       return builder;
     },
-  } as unknown as LateExpenseDb;
+  } as unknown as LateExpenseReserveDb;
 }
 
 const NAMES = new Map([["b12", "Dina Hamdy Fadel"]]);
@@ -189,12 +225,17 @@ async function twoRunsReserveTheSameTripAtOnce(): Promise<void> {
   ]);
 
   const reservationSteps = steps.filter((step) => step.table === RESERVATIONS);
-  const firstInsert = reservationSteps.findIndex((step) => step.op === "insert");
-  const readsBeforeInsert = reservationSteps.slice(0, firstInsert).filter((step) => step.op === "select").length;
-  assert.ok(readsBeforeInsert >= 2, "RACE: both runs looked for another holder before either wrote — a real race, not one after the other");
-  const inserts = reservationSteps.filter((step) => step.op === "insert");
-  assert.equal(inserts.length, 2, "RACE: both runs attempted the reservation");
-  assert.equal(inserts.filter((step) => step.error?.code === "23505").length, 1, "RACE: the trip's key refused the second insert");
+  const firstReserve = reservationSteps.findIndex((step) => step.op === "rpc");
+  const readsBeforeReserve = reservationSteps.slice(0, firstReserve).filter((step) => step.op === "select").length;
+  assert.ok(readsBeforeReserve >= 2, "RACE: both runs looked for another holder before either wrote — a real race, not one after the other");
+  const reserves = reservationSteps.filter((step) => step.op === "rpc");
+  assert.equal(reserves.length, 2, "RACE: both runs made the one reserving call");
+  assert.equal(reserves.filter((step) => step.error?.code === "23505").length, 1, "RACE: the trip's key refused the second");
+  assert.deepEqual(
+    reservationSteps.filter((step) => step.op !== "select" && step.op !== "rpc"),
+    [],
+    "RACE: no release or insert of its own outside the one call",
+  );
 
   const won = results.filter((result) => result.status === "fulfilled");
   const lost = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
@@ -216,38 +257,69 @@ async function twoRunsReserveTheSameTripAtOnce(): Promise<void> {
 }
 
 async function aFailedReservationLeavesTheReservationsAsTheyWere(): Promise<void> {
-  // Another run already holds a different trip; the run being confirmed holds none, as a run arriving
-  // at its Part 2 confirm normally does (a reopen or a cancel releases them).
-  const tables: Record<string, TableSpec> = {
-    [RESERVATIONS]: { primaryKey: "expense_id", rows: [{ expense_id: "aug-trip-7", run_id: "run-dec" }] },
-    automated_payroll_runs: runs(),
-  };
-  const before = rowsOf(tables);
-  const steps: Step[] = [];
-  let outcome: unknown = "reserved";
-  try {
-    await reserveLateExpenses(
-      "run-nov",
-      [SEPTEMBER_TRIP],
-      NAMES,
-      memoryDb(tables, steps, [{ error: { code: "57014", message: "canceling statement due to statement timeout" }, nth: 1, op: "insert", table: RESERVATIONS }]),
+  // The run being confirmed already holds a trip from an earlier confirm, and another run holds a different trip.
+  // A reservation that fails — inside the one call, or lost to another run in a race — must leave both exactly as
+  // they were (REC-038, 19 Nov 2026: the release and the insert were two calls, so a failed insert left the run's
+  // earlier reservations gone).
+  for (const failure of ["timeout", "race"] as const) {
+    const label = failure === "timeout" ? "RESERVE FAILS" : "RESERVE LOSES A RACE";
+    const tables: Record<string, TableSpec> = {
+      [RESERVATIONS]: {
+        primaryKey: "expense_id",
+        rows: [
+          { expense_id: "aug-trip-7", run_id: "run-dec" },
+          { expense_id: "oct-trip-3", run_id: "run-nov" },
+        ],
+      },
+      automated_payroll_runs: runs(),
+    };
+    const before = rowsOf(tables);
+    const steps: Step[] = [];
+    const failures: Failure[] =
+      failure === "timeout"
+        ? [{ error: { code: "57014", message: "canceling statement due to statement timeout" }, nth: 1, op: "rpc", table: RESERVATIONS }]
+        : [];
+    // The race: another run takes the September trip between this run's look and its call.
+    const db = memoryDb(tables, steps, failures);
+    const racing: LateExpenseReserveDb =
+      failure === "race"
+        ? ({
+            from: db.from.bind(db),
+            rpc: (name: string, args: Record<string, unknown>) => {
+              tables[RESERVATIONS].rows.push({ expense_id: "sep-trip-1", run_id: "run-dec" });
+              before[RESERVATIONS].push({ expense_id: "sep-trip-1", run_id: "run-dec" });
+              return db.rpc(name as never, args as never);
+            },
+          } as unknown as LateExpenseReserveDb)
+        : db;
+    let outcome: unknown = "reserved";
+    try {
+      await reserveLateExpenses("run-nov", [SEPTEMBER_TRIP], NAMES, racing);
+    } catch (error) {
+      outcome = error;
+    }
+    assert.ok(outcome instanceof Error, `${label}: the caller is refused — a reservation that did not land is never answered as reserved`);
+    if (failure === "timeout") {
+      assert.match(
+        outcome.message,
+        /^Conflict: the carried outstation trips could not be reserved for this run, so nothing was confirmed\. Confirm Part 2 again in a moment\./,
+        `${label}: and is told nothing was confirmed`,
+      );
+    } else {
+      assert.ok(outcome instanceof LateExpenseRefusal, `${label}: the loser is told with a LateExpenseRefusal naming the run that holds the trip`);
+    }
+    const writes = steps.filter((step) => step.op !== "select");
+    assert.deepEqual(
+      writes.map((step) => `${step.op} ${step.table}${step.error ? " (failed)" : ""}`),
+      [`rpc ${RESERVATIONS} (failed)`],
+      `${label}: one reserving call, refused — no release before it and no write after it`,
     );
-  } catch (error) {
-    outcome = error;
+    assert.deepEqual(
+      rowsOf(tables),
+      before,
+      `${label}: HEADLINE: the stored reservations are exactly as they were — the run keeps its earlier trip, the other run's untouched`,
+    );
   }
-  assert.ok(outcome instanceof Error, "RESERVE FAILS: the caller is refused — a reservation that did not land is never answered as reserved");
-  assert.match(
-    outcome.message,
-    /^Conflict: the carried outstation trips could not be reserved for this run, so nothing was confirmed\. Confirm Part 2 again in a moment\./,
-    "RESERVE FAILS: and is told nothing was confirmed",
-  );
-  const writes = steps.filter((step) => step.op !== "select");
-  assert.deepEqual(
-    writes.map((step) => `${step.op} ${step.table}${step.error ? " (failed)" : ""}`),
-    [`delete ${RESERVATIONS}`, `insert ${RESERVATIONS} (failed)`],
-    "RESERVE FAILS: the release of its own reservations, then the refused insert — and no write after it",
-  );
-  assert.deepEqual(rowsOf(tables), before, "RESERVE FAILS: the stored reservations are exactly as they were — still none for this run, the other run's untouched");
 }
 
 async function theSwitchIsPutBackWhenItsAuditRowFails(): Promise<void> {
