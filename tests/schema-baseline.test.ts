@@ -277,7 +277,7 @@ export function runSchemaBaselineTests() {
   }
 
   // The file as psql is fed it: one line changes, so a psql error's line number is the file's own.
-  const restorable = restorableBaseline(committed);
+  const restorable: string = restorableBaseline(committed);
   const baseLines = committed.split("\n");
   const restoredLines = restorable.split("\n");
   assert.equal(restoredLines.length, baseLines.length, "the line count is kept");
