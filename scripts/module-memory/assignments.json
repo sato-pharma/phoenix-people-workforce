@@ -1198,6 +1198,7 @@
   "restore-drill-kit-and-the-rclone-token-file": "engineering",
   "restoring-env-cannot-undo-a-memoized-client": "phoenix-crm",
   "restricted-skus-are-all-head-office-line": "sales-closing",
+  "retiring-your-own-worktree-leaves-an-empty-folder": "git-worktrees",
   "reusing-a-squash-merged-branch-makes-a-conflicting-pr": "git-worktrees",
   "revalidatetag-max-cancels-expire-zero-and-never-crosses-processes": "time-off",
   "revert-2026-06-21-full-day": "engineering",
