@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { todayInCairo } from "@/lib/date-only";
 import type { DirectOrderCollectionHistoryEntry } from "@/lib/direct-orders/collection-rules";
@@ -126,7 +127,7 @@ export function DirectOrderCollectionControl({
   const tabClass = (active: boolean) =>
     cn(
       "px-3 py-1 text-phx-xs font-bold disabled:opacity-50",
-      active ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+      active ? "bg-slate-900 text-white" : `border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 ${adminSoftDepthClassName}`,
     );
 
   return (
@@ -239,7 +240,7 @@ export function DirectOrderCollectionControl({
                     <button
                       type="button"
                       disabled={busy}
-                      className="border border-slate-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      className={`border border-slate-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:shadow-none ${adminSoftDepthClassName}`}
                       onClick={() => setPayment(String(outstanding))}
                     >
                       Remaining {money(outstanding)}
