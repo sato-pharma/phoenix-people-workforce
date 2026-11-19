@@ -227,6 +227,7 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "outstation", eventType: "request_submitted", label: "An outstation request is waiting for your approval", sentFrom: [OUTSTATION] },
   { module: "outstation", eventType: "request_rejected", label: "Your outstation request was rejected", sentFrom: [OUTSTATION] },
   { module: "outstation", eventType: "outstation_departure_photo_due", label: "Take your outstation departure photo", sentFrom: [OUTSTATION] },
+  { module: "outstation", eventType: "journey_stop_added_by_hr", label: "HR added a stop to your outstation trip", sentFrom: [OUTSTATION] },
   { module: "outstation", eventType: "outstation_sla_reminder", label: "An outstation request is waiting too long for approval", sentFrom: [OUTSTATION] },
 
   // ── Accounts and sign-in ────────────────────────────────────────────────────────────────────
