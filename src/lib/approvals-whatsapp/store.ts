@@ -7,6 +7,7 @@
 import { resolveEmployeeDisplayName, tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
+import { loadReferenceAreas, loadReferenceDepartments } from "@/lib/reference/reference-lists";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { storedContentType, WHATSAPP_INBOX_MEDIA_TYPES } from "@/lib/uploads/stored-content-type";
@@ -113,7 +114,7 @@ type EmployeeRow = {
   qualification: string | null;
 };
 
-/** Every employee with what a recipient filter or a template field needs. One read of each table, no row cap. */
+/** Every employee with what a recipient filter or a template field needs. One employee read, no row cap; names from the reference lists. */
 export async function loadApprovalsEmployees(): Promise<ApprovalsEmployee[]> {
   const supabase = getSupabaseAdmin();
   const [employees, departments, areas] = await Promise.all([
@@ -125,8 +126,9 @@ export async function loadApprovalsEmployees(): Promise<ApprovalsEmployee[]> {
           .order("hr_id", { ascending: true }),
       "hr_id",
     ),
-    allRows<{ id: number; name: string }>(() => supabase.from("departments").select("id, name").order("id", { ascending: true }), "id"),
-    allRows<{ id: number; name: string }>(() => supabase.from("areas").select("id, name").order("id", { ascending: true }), "id"),
+    // Department and area names come from the shared reference lists (a minute old at most), never a second direct read.
+    loadReferenceDepartments(),
+    loadReferenceAreas(),
   ]);
   const departmentNames = new Map(departments.map((row) => [Number(row.id), row.name]));
   const areaNames = new Map(areas.map((row) => [Number(row.id), row.name]));
