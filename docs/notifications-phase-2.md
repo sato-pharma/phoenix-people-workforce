@@ -99,8 +99,8 @@ like a direct one, so moving a send onto the outbox cannot hide it from the unty
 
 **The silent default is visible.** A type with neither its own policy row nor its module's `.*` row fell
 to `defaultPolicy` (in-app, email and push to the named employee) with nothing said. It now logs
-`notification_policy_default_used`, a warning, once per type per process. The 64 registered types that
-take the default today are named in `DEFAULT_POLICY_ACKNOWLEDGED` (`policy.ts`), each module with its
+`notification_policy_default_used`, a warning, once per type per process. The 63 registered types that
+take the default today (64 until the resignation reminder was fixed, below) are named in `DEFAULT_POLICY_ACKNOWLEDGED` (`policy.ts`), each module with its
 reason — today's behaviour, acknowledged, not ruled on — and the test refuses a registered type with
 neither a row nor an acknowledgement, and an acknowledgement for a type that has since gained a row.
 No policy value moved.
@@ -113,16 +113,46 @@ Fixing any of these changes who is told, so each is the owner's decision.
    `marketing_requests.request_completed`, `system.announcement`, `telegram.daily_hr_digest` (the
    digest goes out as `system.daily_hr_digest`), `telegram.delivery_escalation`. They are kept, listed in
    `tests/notification-type-registry.test.ts` as `POLICY_KEYS_NOTHING_SENDS`.
-2. **The resignation reminder misses its policy.** `resignation_sla_reminder` is sent under the module
-   `resignation`, but the policy row is `resignations.*` (in-app, email, Telegram, push; high priority;
-   permission-based recipients). So the reminder takes the default instead: in-app, email and push to
-   the named employee only, no Telegram. Moving it onto `resignations` would change its channels and
-   audience.
-3. **Event names that match only their module's wildcard row** (137 types in 26 modules). They get
+2. **The resignation reminder missed its policy — FIXED on the owner's word, 19 Nov 2026** ("fix the
+   resignation reminder's policy"; section 2a below).
+3. **Event names that match only their module's wildcard row** (137 types in 26 modules as counted for
+   this report; 138 since the resignation reminder joined `resignations.*`). They get
    whatever the module's `.*` row says, with no row of their own. The largest groups: recruitment 23
    (interview reminders, intake alarms, the stale-send nudges), weekly plans 18, vacation 14, direct
    orders 13, attendance digest 8, and six each for Market Awareness, offers, payroll and Phoenix CRM.
    Each would need its own row only where the module's row is not what that event should do.
+
+### 2a. The resignation reminder takes the resignations policy (fixed 19 Nov 2026)
+
+The daily reminder that a resignation has waited more than five days for a decision
+(`runResignationSlaDaily`, `src/lib/resignations/service.ts`, 06:36 Cairo) was sent under the module
+`resignation`. Every other resignation notice, and the policy row, is `resignations`, so the
+`resignations.*` row never reached it.
+
+**What it did before.** Its own channel list decided: **email and phone push only**, high priority, to each
+person on its own recipient list. (The report above first said "in-app, email and push": that is the
+default row's list, but the reminder's own list overrode it, so it never reached the bell.)
+
+**What it does now.** It is sent under `resignations` with no channel list of its own, so the row decides:
+**in-app (the bell), email, Telegram and phone push**, high priority — the same four channels as every other
+resignation notice. A person's resignations preferences now apply to it too.
+
+**Who is told did not change.** The reminder still names its people itself: the `resignation_sla_reminder`
+recipient list (Super Admin unless edited on the notification recipients screen), one notice per person.
+A notice that names its recipient goes to that person alone; the row's permission-based rule only picks
+people for notices that name nobody. Telegram reaches only the people who have linked it.
+
+**The trap the move uncovered.** Under `resignations` an email must name the employee it is about
+(`employeeSubjectWorkflowModules` in `system.ts`), or the identity guard refuses it for good. The reminder
+named nobody, so moving the module alone would have **silently stopped its email**. It now passes the
+leaver's HR id as `subjectHrId`, which is what the other resignation notices do. A resignation row with no
+HR id would still have its email refused, while the bell, Telegram and push copies go.
+
+Pinned by `tests/resignation-reminder-policy.test.ts`, which runs the real reminder against the in-memory
+database (`tests/support/postgrest-stand-in.ts`) with sending switched off and reads the notice and its
+four deliveries. Each part of the fix was undone in turn and caught by its own assertion: the module, the
+old channel list, the missing `subjectHrId` (the email then stops at the identity guard), and the
+acknowledgement in `DEFAULT_POLICY_ACKNOWLEDGED`.
 
 ## 3. Every scheduled route records a heartbeat (REC-049)
 

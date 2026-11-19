@@ -102,8 +102,8 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "probation", eventType: "milestone_day60", label: "A new hire reached Day 60 of probation", sentFrom: ["src/lib/probation/intelligence/milestone-emails.ts"] },
   { module: "probation", eventType: "milestone_day75", label: "A new hire reached Day 75 of probation", sentFrom: ["src/lib/probation/intelligence/milestone-emails.ts"] },
   { module: "resignations", eventType: "workflow_updated", label: "A resignation moved to its next step", sentFrom: ["src/lib/resignations/service.ts"] },
-  // Sent under the singular `resignation`, so the `resignations.*` policy row does not reach it.
-  { module: "resignation", eventType: "resignation_sla_reminder", label: "A resignation is waiting too long for a decision", sentFrom: ["src/lib/resignations/service.ts"] },
+  // Sent under `resignations` since 19 Nov 2026 (it went under the singular `resignation`, which the `resignations.*` row never reached).
+  { module: "resignations", eventType: "resignation_sla_reminder", label: "A resignation is waiting too long for a decision", sentFrom: ["src/lib/resignations/service.ts"] },
 
   // ── Deductions ──────────────────────────────────────────────────────────────────────────────
   { module: "deductions", eventType: "deduction_pushed", label: "A payroll deduction was recorded against you", sentFrom: ["src/lib/deductions/notify-deduction.ts"] },
@@ -481,7 +481,6 @@ export const NOTIFICATION_MODULE_LABELS: Readonly<Record<string, string>> = {
   recruitment: "Recruitment",
   "recruitment.website-apply": "Careers website",
   report_it: "Report It (safety reports)",
-  resignation: "Resignation reminders",
   resignations: "Resignations",
   retention_risk: "Retention risk",
   sales: "Sales",
