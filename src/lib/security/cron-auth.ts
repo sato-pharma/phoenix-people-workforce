@@ -4,6 +4,7 @@ import { previousCronSecret } from "@/lib/auth/previous-secret";
 import { ApiError } from "@/lib/http/api-errors";
 import { logCronUnauthorized, logStructured } from "@/lib/observability/log";
 import { bearerSecretMatches, secretMatches } from "@/lib/security/constant-time";
+import { rememberRequestJob } from "@/lib/supabase/request-actor";
 
 /**
  * The cron/worker authorization POLICY, in one place.
@@ -78,6 +79,11 @@ export type CronAuthOptions = {
  *     const denied = assertCronAuthorized(request, "cron/background-jobs");
  *     if (denied) return denied;
  *
+ * Once it lets a job in, the job's name is remembered for the request (rememberRequestJob): every
+ * database write the run makes carries it, and the employee and salary change logs name the job
+ * instead of reading "No person recorded" (owner, 19 Nov 2026: "Name scheduled jobs"). A refused
+ * caller is never remembered.
+ *
  * Returns a response rather than throwing because 22 of the 23 routes emit their 401 BEFORE their
  * `try` block — several have no `try` at all — so a throwing guard would force a control-flow
  * change into every call site instead of a two-line substitution.
@@ -92,7 +98,10 @@ export function assertCronAuthorized(
   // shared CRON_SECRET and authorize a caller who holds the wrong one.
   const ownToken = Boolean(options && "secret" in options);
   const secret = options && "secret" in options ? options.secret : process.env.CRON_SECRET;
-  if (cronSecretAuthorized(request, secret)) return null;
+  if (cronSecretAuthorized(request, secret)) {
+    rememberRequestJob(job);
+    return null;
+  }
   // The old CRON_SECRET, during the rotation window only, and only while the new one is SET — an
   // unset CRON_SECRET still fails closed. Logged so `railway logs | grep cron_previous_secret` lists
   // the jobs still to move.
@@ -100,6 +109,7 @@ export function assertCronAuthorized(
     logStructured("INFO", `Cron authorized with the previous CRON_SECRET: ${job}`, {
       labels: { event: "cron_previous_secret", job },
     });
+    rememberRequestJob(job);
     return null;
   }
   logCronUnauthorized(job, request);

@@ -5,6 +5,7 @@ import {
   buildChangeHistoryEntries,
   channelLabel,
   referenceIdsOf,
+  scheduledJobName,
   type RecordChangeRow,
   type ReferenceNames,
   type SalaryChangeRow,
@@ -234,6 +235,52 @@ export function runEmployeeChangeHistoryTests() {
     assert.equal(born.who, "No person recorded", "an unattributed write says no person was recorded, never 'Unknown user'");
   }
 
+  // 4b. A scheduled job names itself (owner, 19 Nov 2026: "Name scheduled jobs"): no person, a job →
+  //     "Scheduled job: <its name>", on both logs; a person always comes first.
+  {
+    const entries = buildChangeHistoryEntries({
+      recordRows: [
+        recordRow({
+          id: "exit",
+          changed_at: "2026-11-20T05:04:00Z",
+          actor_source: "job",
+          actor_job: "cron/daily/resignation-sla",
+          write_channel: "api",
+          changed_fields: ["employment_status"],
+          old_values: { employment_status: "active" },
+          new_values: { employment_status: "resigned" },
+        }),
+        recordRow({
+          id: "person-and-job",
+          changed_at: "2026-11-20T05:00:00Z",
+          actor_hr_id: "A-1",
+          actor_source: "app",
+          actor_job: "cron/probation-milestones",
+          changed_fields: ["nickname"],
+          new_values: { nickname: "Sara" },
+        }),
+      ],
+      salaryRows: [
+        salaryRow({ id: "pay-job", actor_name: null, actor_source: "job", actor_job: "cron/hire-handoff-reconcile" }),
+      ],
+      includeMoney: true,
+      names: NAMES,
+    });
+    const who = Object.fromEntries(entries.map((entry) => [entry.id, entry.who]));
+    assert.equal(
+      who["record-exit"],
+      "Scheduled job: Resignation approval reminders",
+      "a morning job reads by its own name in the daily-jobs list, never 'No person recorded' and never its route",
+    );
+    assert.equal(who["salary-pay-job"], "Scheduled job: Hire handoff reconcile", "the salary log names the job too");
+    assert.equal(who["record-person-and-job"], "Sara Adel", "a named person always comes before a job");
+  }
+  assert.equal(scheduledJobName("cron/probation-milestones"), "Probation milestones");
+  assert.equal(scheduledJobName("notifications/daily"), "Morning jobs", "the morning fan-out runs every morning job in one request");
+  assert.equal(scheduledJobName("cron/phoenix-crm-visit-rollup"), "Phoenix CRM visit rollup", "an initialism stays in capitals");
+  assert.equal(scheduledJobName("cron/daily/not-a-real-key"), "Not a real key", "an unknown morning job still reads as words");
+  assert.equal(scheduledJobName("notifications/contract-renewals"), "Notifications contract renewals");
+
   // 5. How a write arrived, in words; a row from before 19 Nov says the channel was not recorded.
   assert.equal(channelLabel("api"), "Through Phoenix");
   assert.equal(channelLabel("database_job"), "Scheduled database job");
@@ -267,6 +314,13 @@ export function runEmployeeChangeHistoryTests() {
       "the salary log is not even read for a viewer who may not see pay — not read and then filtered",
     );
     assert.doesNotMatch(service, /\.(insert|update|upsert|delete)\(/, "the history reader never writes");
+    for (const columns of ["RECORD_COLUMNS", "SALARY_COLUMNS"]) {
+      assert.match(
+        service,
+        new RegExp(`const ${columns} =\\s+"[^"]*\\bactor_job\\b[^"]*";`),
+        `${columns} must read actor_job, or a job's change reads "No person recorded" again`,
+      );
+    }
 
     const panel = readFileSync("src/components/employees/employee-management.tsx", "utf8");
     assert.match(
