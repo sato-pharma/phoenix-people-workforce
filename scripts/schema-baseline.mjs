@@ -37,6 +37,7 @@ import {
   explainDrift,
   freshnessQuery,
   normalizeDump,
+  objectLineDiff,
   restorableBaseline,
   restorePrelude,
   rolesNamedIn,
@@ -227,6 +228,17 @@ function restoreCheck() {
   list("in the restored database, not in the file", diff.added);
   list("in the file, missing from the restored database", diff.removed);
   list("restored differently from the file", diff.changed);
+  if (diff.changed.length > 0) {
+    // What changed in each, so the run log names the difference itself (- the file, + the restored database).
+    const fileObjects = splitObjects(baseline);
+    const restoredObjects = splitObjects(restored);
+    for (const key of diff.changed.slice(0, LIST_LIMIT)) {
+      const lines = objectLineDiff(fileObjects.get(key) ?? "", restoredObjects.get(key) ?? "");
+      console.log(`  ${key}:`);
+      for (const line of lines.slice(0, 12)) console.log(`      ${line}`);
+      if (lines.length > 12) console.log(`      … and ${lines.length - 12} more line(s)`);
+    }
+  }
   summary([
     "## Schema restore check",
     "",
