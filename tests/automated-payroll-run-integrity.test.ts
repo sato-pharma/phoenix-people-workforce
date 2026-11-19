@@ -52,7 +52,9 @@ function bounded(source: string, start: string): string {
   assert.ok(at >= 0, `could not find ${start}`);
   const end = source.indexOf("\nexport ", at + start.length);
   const body = source.slice(at, end > 0 ? end : undefined);
-  assert.ok(body.length > 200 && body.length < 23000, `${start} slice must stay bounded (${body.length})`);
+  // 26,000: publishToPayslips grew past 23,000 when it began claiming before its figures and renewing its claim
+  // before each money write (F-PAY-014, 19 Nov 2026). The bound only proves the slice ended at the next export.
+  assert.ok(body.length > 200 && body.length < 26000, `${start} slice must stay bounded (${body.length})`);
   return body;
 }
 
@@ -80,12 +82,19 @@ export async function runAutomatedPayrollRunIntegrityTests() {
   // ---- (18b) the way back exists, and undoes what the confirm did --------------------------------
   const reopen = bounded(runService, "export async function unconfirmPart2");
   assert.match(reopen, /if \(run\.phase !== "ready"\)/, "reopening only makes sense from ready");
-  assert.match(reopen, /releaseCarryForwardForCancelledRun\(runId\)/,
+  // Since REC-038 (19 Nov 2026) the whole reopen is one database call, phx_reopen_automated_payroll_part2.
+  assert.ok(reopen.includes("reopenPart2Atomically("), "Reopen Part 2 goes through the one all-or-nothing call");
+  const reopenPart2Sql = readFileSync(
+    "supabase/migrations/20261119120941_automated_payroll_cancel_and_reopen_part2_atomically.sql",
+    "utf8",
+  );
+  const reopenPart2Fn = reopenPart2Sql.slice(reopenPart2Sql.indexOf("create or replace function public.phx_reopen_automated_payroll_part2("));
+  assert.match(reopenPart2Fn, /update public\.automated_payroll_carry_forward\s+set applied_run_id = null/,
     "reopening must undo this run's carry-forward marks: a run that is no longer confirmed has " +
       "collected nothing, and leaving them forgives real money");
-  assert.match(reopen, /phase: "part2"/, "and it must actually put the run back");
-  assert.match(reopen, /part2ConfirmedAt: null/, "clearing the confirmation stamp");
-  assert.match(reopen, /action: "part2_unconfirmed"/, "on the record, like every other reversal");
+  assert.match(reopenPart2Fn, /set phase = 'part2'/, "and it must actually put the run back");
+  assert.match(reopenPart2Fn, /part2_confirmed_at = null/, "clearing the confirmation stamp");
+  assert.match(reopenPart2Fn, /'part2_unconfirmed'/, "on the record, like every other reversal");
 
   // ---- (20) reopening Part 1 clears what confirming Part 1 stamped -------------------------------
   const reopenPart1 = bounded(runService, "export async function unconfirmPart1");

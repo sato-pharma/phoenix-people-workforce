@@ -367,6 +367,82 @@ export async function reopenPart1Atomically(
   return mapRun(row);
 }
 
+type UndoMoveResult = { run: MonthlySalaryRun; ledger: { released: number; discarded: number } };
+
+function mapUndoMoveResult(data: unknown): UndoMoveResult {
+  const payload = (Array.isArray(data) ? data[0] : data) as
+    | { run?: RunRow | null; released?: unknown; discarded?: unknown }
+    | null
+    | undefined;
+  if (!payload?.run) throw new Error("Not found: payroll run does not exist.");
+  return {
+    run: mapRun(payload.run),
+    ledger: { released: Number(payload.released ?? 0), discarded: Number(payload.discarded ?? 0) },
+  };
+}
+
+/**
+ * CANCEL AND REOPEN PART 2 ARE ONE DATABASE CALL EACH (REC-038, 19 Nov 2026), like Reopen Part 1. The override
+ * record (when finance had the files and a reason was given), the reserved late trips, the carry-forward release
+ * and discard, the move's own audit row and the phase used to be four or five calls, and a failure after the
+ * first left the run still open with its trips back on the list or its ledger half released.
+ * phx_cancel_automated_payroll_run / phx_reopen_automated_payroll_part2 do them all in one transaction under the
+ * move's claim, so a failure leaves the run exactly as it was.
+ */
+async function undoMoveAtomically(
+  fn: "phx_cancel_automated_payroll_run" | "phx_reopen_automated_payroll_part2",
+  id: string,
+  input: { actorHrId: string; overrideDetail: Record<string, unknown> | null },
+  options: { transitionToken: string },
+  words: { notDone: string; failed: string; event: string },
+): Promise<UndoMoveResult> {
+  const { data, error } = await getSupabaseAdmin().rpc(fn, {
+    p_run_id: id,
+    p_transition_token: options.transitionToken,
+    p_actor_hr_id: input.actorHrId,
+    p_override_detail: input.overrideDetail,
+  });
+  if (error) {
+    const message = String(error.message ?? "");
+    if (message.includes("automated_payroll_transition_claim_lost")) {
+      throw new Error(
+        `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before ${words.notDone}, and another ` +
+          "action has taken the run. Nothing was changed — refresh the page and read where the run is before repeating it.",
+      );
+    }
+    throw new Error(`Conflict: ${words.failed} Try again. (${databaseFailureNote(error, words.event)})`);
+  }
+  return mapUndoMoveResult(data);
+}
+
+export function cancelRunAtomically(
+  id: string,
+  input: { actorHrId: string; overrideDetail: Record<string, unknown> | null },
+  options: { transitionToken: string },
+): Promise<UndoMoveResult> {
+  return undoMoveAtomically("phx_cancel_automated_payroll_run", id, input, options, {
+    notDone: "the run could be cancelled",
+    failed:
+      "the run could not be cancelled, so nothing was changed: it is still open, its late trips are still set aside " +
+      "and its carry-forward ledger is untouched.",
+    event: "automated_payroll_cancel_failed",
+  });
+}
+
+export function reopenPart2Atomically(
+  id: string,
+  input: { actorHrId: string; overrideDetail: Record<string, unknown> | null },
+  options: { transitionToken: string },
+): Promise<UndoMoveResult> {
+  return undoMoveAtomically("phx_reopen_automated_payroll_part2", id, input, options, {
+    notDone: "Part 2 could be reopened",
+    failed:
+      "Part 2 could not be reopened, so nothing was changed: it is still confirmed, its late trips are still set " +
+      "aside and its carry-forward ledger is untouched.",
+    event: "automated_payroll_reopen_part2_failed",
+  });
+}
+
 /**
  * Keep a live claim live (F-PAY-014): restart its 15-minute clock, in one statement conditioned on the token.
  * True while this token still holds the run; false once the claim lapsed and another action took it, which

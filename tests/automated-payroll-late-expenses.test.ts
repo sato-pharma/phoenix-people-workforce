@@ -1100,7 +1100,25 @@ export async function runAutomatedPayrollLateExpensesTests() {
     );
     assert.equal((confirmStepBody.match(/loadExpenseStepTrips\(/g) ?? []).length, 1, "never a second read");
   }
-  for (const signature of ["export async function unconfirmPart1(", "export async function unconfirmPart2(", "export async function cancelRun("]) {
+  // Cancel and Reopen Part 2 release the reservations INSIDE their one database call since REC-038 (19 Nov 2026):
+  // phx_cancel_automated_payroll_run / phx_reopen_automated_payroll_part2 delete them in the same transaction as
+  // the ledger and the phase, so neither can be left half done.
+  {
+    const sql = readFileSync("supabase/migrations/20261119120941_automated_payroll_cancel_and_reopen_part2_atomically.sql", "utf8");
+    for (const [signature, fn, call] of [
+      ["export async function cancelRun(", "phx_cancel_automated_payroll_run", "cancelRunAtomically("],
+      ["export async function unconfirmPart2(", "phx_reopen_automated_payroll_part2", "reopenPart2Atomically("],
+    ] as const) {
+      const body = bodyOf(service, signature);
+      assert.ok(body.indexOf(call) > body.indexOf("whileClaimed(runId, transition"), `${signature} makes its one call under its claim`);
+      const start = sql.indexOf(`create or replace function public.${fn}(`);
+      const fnBody = sql.slice(start, sql.indexOf("$$;", start));
+      const releaseAt = fnBody.indexOf("delete from public.automated_payroll_carried_expenses");
+      assert.ok(releaseAt > 0, `HEADLINE: ${fn} releases the run's reserved late trips`);
+      assert.ok(releaseAt < fnBody.indexOf("update public.automated_payroll_carry_forward"), `${fn} releases them before the carry-forward ledger`);
+    }
+  }
+  for (const signature of ["export async function unconfirmPart1("]) {
     const body = bodyOf(service, signature);
     const claimed = body.indexOf("whileClaimed(runId, transition");
     const releaseAt = body.indexOf("await releaseLateExpenseReservations(runId);");
@@ -1113,12 +1131,6 @@ export async function runAutomatedPayrollLateExpensesTests() {
       assert.ok(releaseAt < ledgerAt, `HEADLINE: ${signature} releases the reservations BEFORE the carry-forward ledger`);
     }
   }
-  assert.ok(
-    ["export async function unconfirmPart2(", "export async function cancelRun("].every((signature) =>
-      bodyOf(service, signature).includes("releaseCarryForwardForCancelledRun(runId)"),
-    ),
-    "cancel and Part 2 reopen both release the ledger, so the order above is checked for both",
-  );
 
   // ---- 6. Publish ------------------------------------------------------------------------------------
   const stamped = parseLateExpensesCarried({

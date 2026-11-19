@@ -458,14 +458,32 @@ export function runAutomatedPayrollAssembleTests() {
   // explanatory comment inside cancelRun, so removing the real call would still
   // pass — verified: it did. Assert on the executable call only.
   const cancelBody = stripComments(cancelBodyRaw);
+  // Since REC-038 (19 Nov 2026) the ledger is undone INSIDE phx_cancel_automated_payroll_run, in the same
+  // transaction as the phase write — so cancelRun must call that one function, and the function must do both
+  // halves (release what this run consumed, discard what it created and nobody recovered).
   assert.ok(
-    cancelBody.includes("await releaseCarryForwardForCancelledRun("),
-    "cancelRun must actually CALL releaseCarryForwardForCancelledRun — otherwise cancelling after Part 2 confirm silently forgives recovered debt",
+    cancelBody.includes("cancelRunAtomically("),
+    "cancelRun must actually CALL cancelRunAtomically — otherwise cancelling after Part 2 confirm silently forgives recovered debt",
   );
-  assert.ok(
-    cancelBody.indexOf("await releaseCarryForwardForCancelledRun(") < cancelBody.indexOf('phase: "cancelled"'),
-    "the ledger must be released BEFORE the run is marked cancelled",
+  const cancelSql = readFileSync(
+    new URL("../supabase/migrations/20261119120941_automated_payroll_cancel_and_reopen_part2_atomically.sql", import.meta.url),
+    "utf8",
   );
+  const cancelFn = cancelSql.slice(
+    cancelSql.indexOf("create or replace function public.phx_cancel_automated_payroll_run("),
+    cancelSql.indexOf("$$;", cancelSql.indexOf("create or replace function public.phx_cancel_automated_payroll_run(")),
+  );
+  assert.match(
+    cancelFn,
+    /update public\.automated_payroll_carry_forward\s+set applied_run_id = null,[\s\S]*?where applied_run_id = p_run_id;/,
+    "the cancel releases the balances this run had marked recovered",
+  );
+  assert.match(
+    cancelFn,
+    /delete from public\.automated_payroll_carry_forward\s+where source_run_id = p_run_id\s+and applied_run_id is null;/,
+    "and discards the balances this run created that nobody recovered",
+  );
+  assert.match(cancelFn, /set phase = 'cancelled'/, "in the same function that marks the run cancelled");
 
   // ---- the Part-2 gate marker is a STABLE contract between run-service and the
   // API route. The route keys the "prompt HR to acknowledge" branch off this

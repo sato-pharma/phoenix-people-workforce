@@ -20,7 +20,7 @@ import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
 import { databaseFailureNote } from "./db-error.ts";
 import { assertPayrollDownloadAllowed, recordPayrollFileDownload } from "./download-log.ts";
-import { guardUndoAfterDownloads, recordBankFileDownloaded } from "./bank-file-downloads.ts";
+import { guardUndoAfterDownloads, planUndoAfterDownloads, recordBankFileDownloaded } from "./bank-file-downloads.ts";
 import { holdRun } from "./run-hold.ts";
 import {
   landQueuedPayrollResyncsForPeriod,
@@ -133,7 +133,6 @@ import {
   markCarryForwardApplied,
   outstandingCarryForwardFor,
   recordOverpaidCarryForward,
-  releaseCarryForwardForCancelledRun,
 } from "./carry-forward.ts";
 import { buildBankCoverage, describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
 import {
@@ -179,7 +178,9 @@ import {
   listStepStates,
   markRunPublished,
   renewRunTransition,
+  cancelRunAtomically,
   reopenPart1Atomically,
+  reopenPart2Atomically,
   updateRun,
   upsertDraftRows,
   upsertStepState,
@@ -776,32 +777,21 @@ export async function cancelRun(
 
   // One transition at a time (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part1", "part2", "ready"], "Cancelling this run");
-  const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
-    // A file that has left for the bank is not undone by cancelling the run — refuse first, before
-    // the ledger is touched, unless he says why (bank-file-downloads.ts). A read failure refuses too, and a
-    // used override is recorded here first, or the cancel is refused (REC-035).
-    const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "cancel", override: options.overrideDownloaded });
-    // Undo this run's effect on the carry-forward ledger BEFORE marking it
-    // cancelled. A run whose Part 2 was confirmed has already marked previous
-    // months' overpayments as recovered — but a cancelled run pays nobody, so
-    // leaving that would silently forgive real money (the exact bug the ledger
-    // exists to prevent). See releaseCarryForwardForCancelledRun.
-    // The carried late trips it set aside go back on the list FIRST: a release that fails then refuses the
-    // cancel before the ledger is touched (late-expenses.ts).
-    await releaseLateExpenseReservations(runId);
-    const released = await releaseCarryForwardForCancelledRun(runId);
-    const cancelled = await updateRun(runId, { phase: "cancelled" }, { transitionToken: transition });
-    return { ledger: released, updated: cancelled, override };
-  });
-  await writeAutomatedPayrollAudit({
-    runId,
-    actorHrId: actorId(access),
-    action: "run_cancelled",
-    detail: {
-      carryForwardReleased: ledger.released,
-      carryForwardDiscarded: ledger.discarded,
-      ...(override.overridden ? { cancelledAfterBankFileDownload: true, overrideReason: override.reason } : {}),
-    },
+  const { run: updated } = await whileClaimed(runId, transition, async () => {
+    // A file that has left for the bank is not undone by cancelling the run — refuse first, before anything
+    // is written, unless he says why (bank-file-downloads.ts). A read failure refuses too (REC-035).
+    const override = await planUndoAfterDownloads({ runId, action: "cancel", override: options.overrideDownloaded });
+    // ONE DATABASE CALL (REC-038, 19 Nov 2026; phx_cancel_automated_payroll_run): the override record, the late
+    // trips the run set aside going back on the list, this run's effect on the carry-forward ledger undone, the
+    // run_cancelled audit row and the phase — all or nothing. A run whose Part 2 was confirmed has already marked
+    // previous months' overpayments as recovered, and a cancelled run pays nobody, so leaving that would
+    // silently forgive real money (the exact bug the ledger exists to prevent). They were separate calls, and
+    // a failure after the first left the run open with its trips released or its ledger half undone.
+    return cancelRunAtomically(
+      runId,
+      { actorHrId: actorId(access), overrideDetail: override.overrideDetail },
+      { transitionToken: transition },
+    );
   });
   return updated;
 }
@@ -2131,31 +2121,19 @@ export async function unconfirmPart2(
 
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["ready"], "Reopening Part 2");
-  const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
+  const { run: updated } = await whileClaimed(runId, transition, async () => {
     // `ready` is the state finance takes the files in: a reopen after a recorded download is refused
     // exactly like a cancel, unless he says why, and a failed read refuses too (REC-035). Only a Part 2 or
-    // full-month file counts, and a used override is recorded here first, or the reopen is refused.
-    const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "reopen_part2", override: options.overrideDownloaded });
-    // The carried late trips it set aside go back on the list FIRST: a release that fails then refuses the
-    // reopen before the ledger is touched (late-expenses.ts).
-    await releaseLateExpenseReservations(runId);
-    const released = await releaseCarryForwardForCancelledRun(runId);
-    const reopened = await updateRun(
+    // full-month file counts.
+    const override = await planUndoAfterDownloads({ runId, action: "reopen_part2", override: options.overrideDownloaded });
+    // ONE DATABASE CALL (REC-038, 19 Nov 2026; phx_reopen_automated_payroll_part2): the override record, the
+    // carried late trips back on the list, the carry-forward ledger released, the part2_unconfirmed audit row
+    // and the phase back to part2 — all or nothing, where they used to be separate calls.
+    return reopenPart2Atomically(
       runId,
-      { phase: "part2", part2ConfirmedAt: null, part2ConfirmedBy: null },
+      { actorHrId: actorId(access), overrideDetail: override.overrideDetail },
       { transitionToken: transition },
     );
-    return { ledger: released, updated: reopened, override };
-  });
-  await writeAutomatedPayrollAudit({
-    runId,
-    actorHrId: actorId(access),
-    action: "part2_unconfirmed",
-    detail: {
-      carryForwardReleased: ledger.released,
-      carryForwardDiscarded: ledger.discarded,
-      ...(override.overridden ? { reopenedAfterBankFileDownload: true, overrideReason: override.reason } : {}),
-    },
   });
   // A decision parked after Part 2 was confirmed was waiting for exactly this (resync-outbox.ts).
   await landParkedResyncs(updated);
