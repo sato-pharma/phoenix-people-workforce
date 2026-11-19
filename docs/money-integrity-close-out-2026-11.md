@@ -240,3 +240,14 @@ The outstation approval's breaks (§2a), each watched to fire and restored green
 | the release reports a moved claim as released | (c) rejected under the release: HEADLINE: never released |
 | model: the release does not require the claim to read accepted | (c) rejected by a writer that forgot the version: HEADLINE: never released |
 | model: no report lookup under the lock | (c) and one report row |
+
+The collection's and the cancel's breaks (§2b), each watched to fire and restored green:
+
+| Break | Assertion that fired |
+| --- | --- |
+| the collection's audit row written by the app after the call | ONE audit row |
+| a read-back failure after a committed collection refuses again | READ-BACK: HEADLINE: Finance is never refused for a collection that committed |
+| the "still outstanding" sentence loses its `{remaining}` placeholder | RECORDS (outstanding): one event on the order's timeline, in the words the app used to write |
+| model: the collection's records written outside the transaction | ONE audit row |
+| the cancel's audit row written by the app after the call | the cancel and its audit row were written by the one call |
+| model: the cancel's audit row written outside the transaction | ONE cancel audit row |
