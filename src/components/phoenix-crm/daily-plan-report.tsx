@@ -23,6 +23,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import type { CrmResource } from "@/components/phoenix-crm/api";
 import { CustomerPhoneLink } from "@/components/phoenix-crm/customer-phone";
 import { countText, dayLabel, dayLabelLong, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
+import { visitTallyText } from "@/components/phoenix-crm/labels";
 import {
   CrmBlock,
   CrmCard,
@@ -201,12 +202,22 @@ function listHeading(listType: PhoenixCrmDoctorListType, count: number): string 
   return count === 0 ? `${listType} · nothing planned` : `${listType} · ${plural(count, "customer", "customers")}`;
 }
 
-function CustomerCard({ customer }: { customer: DailyPlanCustomer }) {
+/**
+ * The customer's visit tally (owner, 19 Nov 2026: every screen that shows a rep's weekly plan shows the last visit,
+ * the visits this month and the visits in total). Nothing when the read failed (`tally` null or absent).
+ */
+function TallyLine({ customer, today }: { customer: DailyPlanCustomer; today: string }) {
+  if (!customer.tally) return null;
+  return <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{visitTallyText(customer.tally, today)}</p>;
+}
+
+function CustomerCard({ customer, today }: { customer: DailyPlanCustomer; today: string }) {
   const facts = dailyPlanCustomerFacts(customer);
   const place = placeLine(customer);
   const where = dailyPlanWhereText(customer);
   return (
     <CrmCard meta={customerMeta(customer)} status={<VisitPill customer={customer} />} title={<span dir="auto">{customer.name}</span>}>
+      <TallyLine customer={customer} today={today} />
       <CrmFacts
         facts={[
           // An empty place shows nothing - no "Where" line at all, never "No place yet".
@@ -241,7 +252,7 @@ function CustomerCard({ customer }: { customer: DailyPlanCustomer }) {
   );
 }
 
-function CustomerRow({ customer }: { customer: DailyPlanCustomer }) {
+function CustomerRow({ customer, today }: { customer: DailyPlanCustomer; today: string }) {
   const facts = dailyPlanCustomerFacts(customer);
   const place = placeLine(customer);
   const where = dailyPlanWhereText(customer);
@@ -252,6 +263,7 @@ function CustomerRow({ customer }: { customer: DailyPlanCustomer }) {
           {customer.name}
         </p>
         <p className="mt-0.5 text-xs text-slate-500">{customerMeta(customer)}</p>
+        <TallyLine customer={customer} today={today} />
         {customer.phone ? (
           <p className="mt-0.5 text-xs">
             <CustomerPhoneLink phone={customer.phone} />
@@ -329,7 +341,7 @@ function DayBlock({ day, idPrefix, today }: { day: DailyPlanDay; idPrefix: strin
               <Fragment key={list.listType}>
                 <p className="px-4 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{listHeading(list.listType, list.customers.length)}</p>
                 {list.customers.map((customer) => (
-                  <CustomerCard customer={customer} key={customer.customerId} />
+                  <CustomerCard customer={customer} key={customer.customerId} today={today} />
                 ))}
               </Fragment>
             ))}
@@ -359,7 +371,7 @@ function DayBlock({ day, idPrefix, today }: { day: DailyPlanDay; idPrefix: strin
                   </th>
                 </tr>
                 {list.customers.map((customer) => (
-                  <CustomerRow customer={customer} key={customer.customerId} />
+                  <CustomerRow customer={customer} key={customer.customerId} today={today} />
                 ))}
               </tbody>
             ))}

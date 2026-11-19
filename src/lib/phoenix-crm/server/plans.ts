@@ -113,6 +113,8 @@ import { loadSeatDaysOff, loadSeatPendingLeave } from "@/lib/phoenix-crm/server/
 import { assertRepMayChangeWeek, editAcknowledgedAt, loadPlanEditState, repStateOf } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
+import { loadVisitTallies } from "@/lib/phoenix-crm/server/visit-tally";
+import { tallyForCustomer } from "@/lib/phoenix-crm/visit-tally";
 import { readinessStamps } from "@/lib/phoenix-crm/server/readiness-reuse";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -570,6 +572,9 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read. It needs the
     // places alone, so it follows the customer list inside the wave, never after it (2026-10-16).
     customersRead.then(({ placesByCustomer, venueNames }) => venueNamesOf(placesByCustomer, venueNames)),
+    // Each customer's last visit, visits this month and visits in total (owner, 19 Nov 2026), for the rep
+    // AND whoever reviews his plan. Fail-soft: a failed read draws no line, never takes the plan down.
+    loadVisitTallies([seat.seatId], isTest, today),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -583,6 +588,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     leave,
     pendingLeave,
     venueNames,
+    visitTallies,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -629,6 +635,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       }),
       reference: references.get(customerId) ?? null,
       insight: insights.get(customerId) ?? null,
+      tally: tallyForCustomer(visitTallies, customerId),
       places,
     };
   });

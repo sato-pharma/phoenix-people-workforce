@@ -41,6 +41,8 @@ import { loadManagerCustomers } from "@/lib/phoenix-crm/server/manager-customers
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { managerWriterReach } from "@/lib/phoenix-crm/server/manager-plan-writers";
 import { loadVisitCompanionIds } from "@/lib/phoenix-crm/server/visit-companions";
+import { loadVisitTallies } from "@/lib/phoenix-crm/server/visit-tally";
+import { tallyForCustomer } from "@/lib/phoenix-crm/visit-tally";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -254,12 +256,15 @@ export async function loadManagerCustomerMarks(
   const monthAhead = through < monthStart;
   const withOwn = raw.own === "true" || raw.own === true;
 
-  const [customers, config, repVisits, ownVisits, ownList] = await Promise.all([
+  // The visit tally (owner, 19 Nov 2026): each customer's last visit ever and his visits in total on these
+  // territories, through today — never windowed on the planned month, whose visits are the pips. Never throws.
+  const [customers, config, repVisits, ownVisits, ownList, tallies] = await Promise.all([
     readCustomers(seatIds, isTest),
     loadPhoenixCrmConfig(),
     monthAhead ? Promise.resolve([] as Row[]) : readRepVisits(seatIds, isTest, monthStart, through),
     monthAhead ? Promise.resolve([] as Row[]) : readOwnVisits(writer.hrId, isTest, monthStart, through),
     withOwn ? loadManagerCustomers(writer.hrId, isTest) : Promise.resolve([]),
+    loadVisitTallies(seatIds, isTest, viewer.cairoToday),
   ]);
 
   // Everyone a chain or product-manager visit lists past its fixed places (owner, 2026-10-27: "Everything
@@ -294,6 +299,7 @@ export async function loadManagerCustomerMarks(
       yourOwn: 0,
       pharmacy: textOrNull(row.primary_pharmacy_name),
       marketing: marketing.get(id) ?? [],
+      tally: tallyForCustomer(tallies, id),
     };
   }
   for (const visit of repVisits) {
@@ -335,5 +341,11 @@ export async function loadManagerCustomerMarks(
     if (insight) insight.yourOwn += 1;
   }
 
-  return { month: day.slice(0, 7), monthName: MONTH_NAMES[Number(day.slice(5, 7)) - 1] ?? day.slice(0, 7), monthAhead, insights };
+  return {
+    month: day.slice(0, 7),
+    monthName: MONTH_NAMES[Number(day.slice(5, 7)) - 1] ?? day.slice(0, 7),
+    monthAhead,
+    insights,
+    today: viewer.cairoToday,
+  };
 }

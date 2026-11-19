@@ -214,7 +214,7 @@ export async function runRepsWeeklyPlansTests() {
     // there to be one of them. So the golden rule is asserted where the table now LIVES, and the
     // board is still checked for the pattern it must never grow back.
     assert.ok(
-      board.includes("<PlanDoctorsTable days={board.days} />"),
+      board.includes("<PlanDoctorsTable days={board.days} today={board.today} />"),
       "the board must render the CONTACT LIST's own table for the plan's doctors — a second table written beside it could match on the day it was written and silently stop matching on the next change to a cell",
     );
 
