@@ -21,6 +21,7 @@ import {
   type MilestoneSpec,
   type PlainDate,
 } from "@/lib/milestones/periods";
+import { dataUrlToBlob } from "@/components/outstation/prepare-ticket-attachment";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { documentScriptNonce, withScriptNonce } from "@/lib/security/csp-nonce";
 import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry } from "@/lib/milestones/service";
@@ -1133,8 +1134,9 @@ export function MilestonesWorkspace({
     setSavingPhoto(true);
     setError(null);
     try {
-      const source = await fetch(upload.dataUri);
-      const blob = await source.blob();
+      // Decoded in place, never `fetch(dataUri)`: this page's security policy has no `data:` under
+      // connect-src, so the browser refused that fetch with "Failed to fetch" and no photo was saved.
+      const blob = dataUrlToBlob(upload.dataUri);
       if (blob.size > MAX_RECORD_PHOTO_BYTES) {
         throw new Error("A record photo must be 5 MB or smaller. Send a smaller copy.");
       }

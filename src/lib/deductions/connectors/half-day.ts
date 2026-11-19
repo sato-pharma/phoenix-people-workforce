@@ -318,7 +318,8 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     // "active" and "on_leave" are the directory's two live statuses (isActiveLifecycleStatus).
     if (status !== "active" && status !== "on_leave" && !lastDay) continue;
     // CRM must know him before a day of his can be judged: before his first record of the month
-    // there is nothing to measure a half against (onboarding, or a long unrecorded leave).
+    // there is nothing to measure a half against (onboarding, or a long unrecorded leave). A month
+    // with no CRM record at all is never judged — the full-day readers' no-signal guards agree.
     const firstSignal = firstSignalByPerson.get(compact);
     if (!firstSignal) continue;
 
@@ -327,8 +328,14 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
     for (const day of judgedDays) {
       if (hireDate && day < hireDate) continue;
       if (lastDay && day > lastDay) continue;
-      if (day < firstSignal) continue;
       const key = `${compact}:${day}`;
+      // 🔴 Read BEFORE the first-record gate. A day only ONE half of which his interviews cover is
+      // dropped by every full-day reader, and those readers judge a day before his first visit of the
+      // month (they skip only a month with no signal at all) — so skipping it here charged nothing:
+      // a District Manager's interview morning on the 4th, first located visit on the 8th, owes its
+      // afternoon at 0.5 (owner, 2026-11-18).
+      const interviewHalf = provenWorked.interviewHalfOnly.get(key);
+      if (day < firstSignal && !interviewHalf) continue;
       // PHOENIX CRM, WHETHER OR NOT THE TEAM WAS STARTED. On an unstarted team his Phoenix visits
       // never reach the read door, so `byPersonDay` holds neither half of his day and the rule reads
       // the worked half as uncovered. Suppressed here rather than fed into `cover` or `byPersonDay`,
@@ -337,7 +344,6 @@ export async function collectHalfDayCandidates(input: { month: number; year: num
       // 🔴 EXCEPT a day only ONE half of which his interviews cover (owner, 2026-11-18: two or more
       // interviews in a half are that half day worked). Every full-day reader drops it, so it is
       // judged here: the interviews account for their half and the other half is the half day.
-      const interviewHalf = provenWorked.interviewHalfOnly.get(key);
       if (provenWorked.keys.has(key) && !interviewHalf) continue;
       // The contracted half travels with the person, not with the day, so it is merged onto
       // whatever else is on file for this day rather than stored per day.

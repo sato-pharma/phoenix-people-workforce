@@ -159,6 +159,8 @@ type VisitRow = {
   manager_hr_id: string | null;
   senior_hr_id: string | null;
   product_manager_hr_id: string | null;
+  /** Everyone on the visit (`phoenix_crm_visit_companions`): a chain's second manager above stands in no fixed place. */
+  companions?: ReadonlyArray<{ hr_id: string | null }> | null;
 };
 
 type ActivityRow = { activity_date: string | null; rep_hr_id: string | null; activity_type: string | null };
@@ -198,14 +200,15 @@ export function foldPhoenixWorkEvidence(input: {
   for (const row of input.visits) {
     const date = isoDay(row.visit_date);
     if (!date) continue;
-    // Everyone named on the visit was there — the rep, and whichever manager, senior or product
-    // manager stood beside him. One visit credits each of them once.
-    const participants = new Set<string>();
-    for (const raw of [row.rep_hr_id, row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id]) {
+    // Everyone named on the visit was there — the rep, whichever manager, senior or product manager
+    // stood beside him, and every companion (since 2026-11-17 a district manager's second manager
+    // above is on `phoenix_crm_visit_companions` alone). One visit credits each of them once.
+    const participants = new Map<string, string>();
+    for (const raw of [row.rep_hr_id, row.manager_hr_id, row.senior_hr_id, row.product_manager_hr_id, ...(row.companions ?? []).map((companion) => companion.hr_id)]) {
       const hrId = storedHrId(raw);
-      if (hrId) participants.add(hrId);
+      if (hrId && !participants.has(hrId.toUpperCase())) participants.set(hrId.toUpperCase(), hrId);
     }
-    for (const hrId of participants) dayOf(hrId, date).visits += 1;
+    for (const hrId of participants.values()) dayOf(hrId, date).visits += 1;
   }
 
   for (const row of input.activities) {
@@ -266,7 +269,7 @@ export async function loadPhoenixWorkEvidenceDays(input: {
     read<VisitRow>("visits", () =>
       supabase
         .from(PHOENIX_CRM_VISITS_TABLE)
-        .select("visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id")
+        .select("visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id,companions:phoenix_crm_visit_companions(hr_id)")
         .eq("is_test", false)
         .is("imported_from_ireports360_at", null)
         .gte("visit_date", start)

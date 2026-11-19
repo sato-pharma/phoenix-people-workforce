@@ -54,15 +54,22 @@ export async function alertNewError(report: NewErrorReport): Promise<void> {
     }
     takenInWindow = slots.windowStartedAt;
 
-    const { recipients } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, "New error alert recipients");
-    if (recipients.length === 0) {
+    const { recipients, warnings } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, "New error alert recipients");
+    // Only the people a Telegram can reach. Sent to someone with no linked chat, the alert was written `skipped` under
+    // its once-ever key, and linking Telegram afterwards could never let that error through again.
+    const reachable = recipients.filter((recipient) => recipient.hasTelegram !== false);
+    if (reachable.length === 0) {
       releaseNewErrorAlertSlot(slots, takenInWindow);
+      // A failed read answers zero people (or nobody linked) with a warning, never a throw: forgotten again, so the next
+      // occurrence retries it, exactly as the catch below does for a throw. Nobody linked with no warning stays
+      // remembered — a retry would change nothing until a chat is linked, and the next process tells him then.
+      if (warnings.length > 0) seen.delete(signature);
       return;
     }
 
     const { message, title } = newErrorAlertText(report);
     const results = await Promise.all(
-      recipients.map((recipient) =>
+      reachable.map((recipient) =>
         createSystemNotification({
           actionUrl: SCREEN_URL,
           actorId: ACTOR,

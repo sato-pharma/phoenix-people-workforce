@@ -16,6 +16,11 @@
  * silent "no interviews" there would be a charge. The Phoenix CRM "Interviews" day activity still
  * counts as before.
  *
+ * 🔴 AN INTERVIEW THAT DID NOT HAPPEN PROVES NOTHING (`interviewProofRefusal`): one marked Didn't come
+ * (or one of its reasons — Will reschedule, No answer, Withdrew) stays on the calendar and covers no
+ * half; and nobody proves his own day with an interview he put on the calendar himself after it had
+ * started. HR's back-dated booking for him still counts (owner, 8 Nov 2026: "don't block anything").
+ *
  * Best-effort, like every other calendar source: a failed read answers `ready: false` (the screen then
  * says the source could not be read) and never throws the whole month away.
  */
@@ -23,7 +28,7 @@
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { privateCalendarHrIdKey, privateCalendarSourceLabels, type PrivateCalendarItem } from "@/lib/private-calendar/logic";
 import { listInterviewsForPrivateCalendar, type PrivateCalendarInterviewRow } from "@/lib/recruitment/interview-calendar";
-import { PLATFORM_LABEL } from "@/lib/recruitment/interview-calendar-types";
+import { interviewOutcomeGroup, PLATFORM_LABEL } from "@/lib/recruitment/interview-calendar-types";
 import { cairoDateKey, cairoLocalToUtc, cairoMinutesOfDay } from "@/lib/recruitment/interview-calendar-week";
 import { interviewHalfOf, selectInterviewHalfDays, type InterviewHalfDay } from "@/lib/private-calendar/interview-halves";
 
@@ -42,9 +47,27 @@ function clean(value: string | null | undefined) {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * Why this interview proves no half day for this attendee, or null when it can. Pure.
+ *
+ * Not when the candidate did not come (Didn't come or one of its reasons: no interview took place), and
+ * not for the person who put it on the calendar himself after it had started.
+ */
+export function interviewProofRefusal(interview: PrivateCalendarInterviewRow, hrId: string): string | null {
+  if (interviewOutcomeGroup(interview.outcome ?? null) === "did_not_come") {
+    return "The candidate did not come, so it counts toward no half day.";
+  }
+  const bookedLateBy = privateCalendarHrIdKey(interview.bookedLateByHrId ?? null);
+  if (bookedLateBy && bookedLateBy === privateCalendarHrIdKey(hrId)) {
+    return "It was put on the calendar by this person after it had started, so it counts toward no half day.";
+  }
+  return null;
+}
+
 /** One interview attendance as a calendar item. Pure, so the shape is pinned by a test with no database. */
 export function mapInterviewToPrivateCalendarItem(attendance: InterviewAttendance): PrivateCalendarItem {
   const { interview, hrId, isLead } = attendance;
+  const refusal = interviewProofRefusal(interview, hrId);
   const startsAt = new Date(interview.startsAt);
   const date = cairoDateKey(startsAt);
   const from = cairoMinutesOfDay(startsAt);
@@ -59,8 +82,9 @@ export function mapInterviewToPrivateCalendarItem(attendance: InterviewAttendanc
   detailLines.push(`Your part: ${isLead ? "Lead interviewer" : "Panel"}`);
   return {
     activityKind: "interview",
-    approvalImpact:
-      "Shown from the recruitment interview calendar. Two or more interviews in the morning (starting before 1 PM) or in the afternoon (from 1 PM) count as that half day worked; a single interview does not.",
+    approvalImpact: refusal
+      ? `Shown from the recruitment interview calendar. ${refusal}`
+      : "Shown from the recruitment interview calendar. Two or more interviews in the morning (starting before 1 PM) or in the afternoon (from 1 PM) count as that half day worked; a single interview does not.",
     chipLines: [`${time} Interview`, ...(role ? [role] : [])],
     description: null,
     detailLines,
@@ -72,7 +96,8 @@ export function mapInterviewToPrivateCalendarItem(attendance: InterviewAttendanc
     endDate: date,
     exceptionFlags: [],
     id: `interview-${interview.id}-${privateCalendarHrIdKey(hrId)}`,
-    interviewHalf: interviewHalfOf(from),
+    // No half for an interview that proves nothing — `isCovered` counts only the items that carry one.
+    ...(refusal ? {} : { interviewHalf: interviewHalfOf(from) }),
     managerName: null,
     severity: "info",
     source: "interview",
@@ -154,7 +179,7 @@ export function everyInterviewAttendance(interviews: readonly PrivateCalendarInt
 /** The person-days whose interviews cover a half day, from the attendances. Pure. */
 export function interviewHalfDaysFromAttendances(attendances: readonly InterviewAttendance[]): InterviewHalfDay[] {
   return selectInterviewHalfDays(
-    attendances.map(({ hrId, interview }) => {
+    attendances.filter(({ hrId, interview }) => interviewProofRefusal(interview, hrId) === null).map(({ hrId, interview }) => {
       const startsAt = new Date(interview.startsAt);
       return { date: cairoDateKey(startsAt), half: interviewHalfOf(cairoMinutesOfDay(startsAt)), hrId, interviewId: interview.id };
     }),

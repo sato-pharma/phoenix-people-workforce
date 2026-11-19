@@ -22,12 +22,14 @@ import {
   TABLE_FILTER_OPS,
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
+  assertNoTypedSignInProbe,
   holdsTypedSignInText,
   maskUnrecognizedIdentifiers,
   exportRowCap,
   orderTiebreakers,
   planTableRead,
   readableTables,
+  redactSecretJsonKeys,
   rowsThatFit,
   schemaFromOpenApi,
   signInMaskExtraColumns,
@@ -129,9 +131,17 @@ async function loadAccountKeys(): Promise<ReadonlySet<string>> {
   return keys;
 }
 
+/** Refuse a filter or an order that would read masked sign-in text back one guess at a time (table-guard.ts). */
+async function guardTypedSignInProbe(plan: TableReadPlan): Promise<void> {
+  if (!holdsTypedSignInText(plan.table)) return;
+  assertNoTypedSignInProbe(plan, await loadAccountKeys());
+}
+
 /** One page of a guarded plan, with PostgREST's row count (exact on small tables, the planner's estimate on huge ones). */
 async function readPage(plan: TableReadPlan, known: readonly string[], offset: number, size: number) {
-  const page = await readPageRows(plan, known, offset, size);
+  const read = await readPageRows(plan, known, offset, size);
+  // A secret kept under its own key inside a json column (an audit row's old password hash) never leaves either.
+  const page = { ...read, rows: read.rows.map((row) => redactSecretJsonKeys(row) as Record<string, unknown>) };
   if (!holdsTypedSignInText(plan.table)) return page;
   // Text a person typed into the sign-in box is shown only when it names an account (see maskUnrecognizedIdentifiers).
   const extra = signInMaskExtraColumns(plan.table, plan.columns);
@@ -218,6 +228,7 @@ export const readTableTool = defineTool({
   run: async (_ctx, input) => {
     const schema = await loadPublicSchema();
     const plan = planTableRead(input, schema);
+    await guardTypedSignInProbe(plan);
     const page = await readPage(plan, schema.get(plan.table) ?? [], plan.offset, plan.limit);
     // Whole rows only: a page too big for one answer is shortened, never cut mid-row or mid-word.
     const kept = page.rows.slice(0, rowsThatFit(page.rows));
@@ -284,6 +295,7 @@ export const exportTableTool = defineTool({
     const started = Date.now();
     const schema = await loadPublicSchema();
     const plan = planTableRead({ ...input, limit: TABLE_EXPORT_MAX_ROWS }, schema, TABLE_EXPORT_MAX_ROWS);
+    await guardTypedSignInProbe(plan);
     const rowCap = exportRowCap(plan.columns.length);
     const known = schema.get(plan.table) ?? [];
     const rows: Record<string, unknown>[] = [];

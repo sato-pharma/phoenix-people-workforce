@@ -15545,6 +15545,25 @@ CREATE FUNCTION public.phoenix_crm_report_manager_visits(p_hr_ids text[], p_from
     join public.phoenix_crm_customers c on c.id = v.customer_id and c.validated_at is not null
     where v.visit_date between p_from and p_to
       and (p_include_test or not v.is_test)
+    union all
+    -- Everyone else who went (2026-11-19). phoenix_crm_visit_companions holds the fixed places too, so a
+    -- person already in one of them is skipped — the arms above count him once, in his own place. Past
+    -- the fixed places a product-side person is a product manager on the visit, and a manager-side person
+    -- stands above the visit's manager, which is where a senior is counted. Someone past the fixed places
+    -- is only ever on a chain or a product_manager visit (phoenix_crm_set_visit_companions refuses any
+    -- other list), so no `kind` filter either; the double-visit figure (kind = 'double') cannot inflate.
+    select pe.hr_id,
+      (case when vc.side = 'product' then 'product_manager' else 'senior' end)::text,
+      v.visit_date, v.seat_id, v.rep_hr_id, v.kind, v.list_type
+    from people pe
+    join public.phoenix_crm_visit_companions vc on vc.hr_id = pe.hr_id and vc.visit_id is not null
+    join public.phoenix_crm_countable_visits_with_history v on v.id = vc.visit_id
+    join public.phoenix_crm_customers c on c.id = v.customer_id and c.validated_at is not null
+    where v.visit_date between p_from and p_to
+      and (p_include_test or not v.is_test)
+      and vc.hr_id is distinct from upper(btrim(v.manager_hr_id))
+      and vc.hr_id is distinct from upper(btrim(v.senior_hr_id))
+      and vc.hr_id is distinct from upper(btrim(v.product_manager_hr_id))
   )
   select coalesce(jsonb_agg(to_jsonb(t) order by t.hr_id, t.visit_date, t.seat_id), '[]'::jsonb)
   from (

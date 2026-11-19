@@ -101,6 +101,9 @@ export type CrmDayVisitRow = {
   agent_hr_id: string | null;
   double_hr_id: string | null;
   double2_hr_id: string | null;
+  /** Everyone on a Phoenix visit beside the rep (the door's `companion_hr_ids`). A third or later
+   * companion stands in neither slot, only here. Null on a vendor row. */
+  companion_hr_ids?: string[] | null;
 };
 
 /** Short human-readable label for the CRM entry that won a day (regular > CP > AV, same
@@ -149,7 +152,7 @@ export function crmDayKind(rows: ReadonlyArray<Pick<CrmDayVisitRow, "visit_type"
 }
 
 export const DAY_MAP_VISIT_COLUMNS =
-  "visit_date,visit_type,visit_type_description,comment,customer_name,agent_hr_id,double_hr_id,double2_hr_id";
+  "visit_date,visit_type,visit_type_description,comment,customer_name,agent_hr_id,double_hr_id,double2_hr_id,companion_hr_ids";
 
 /** Above this many distinct employees, fetching each person's own visits by index stops being
  * cheaper than one sequential window scan, so we fall back to the company-wide scan. The
@@ -294,9 +297,15 @@ export async function scanCompanyVisitsByEmployee(
     // BOTH partner slots. `doubleHrIds` above already returns a slot-2 row, so without the slot here
     // the row arrived and was silently discarded — and the day the chain's other person spent in the
     // field read as a day he did not work, which is the owner's reported defect itself.
-    for (const rawHrId of [visit.agent_hr_id, visit.double_hr_id, visit.double2_hr_id]) {
+    //
+    // …and EVERY companion. The partner read already returns a visit whose person stands only in
+    // `companion_hr_ids` (a third or later companion on a chain), so without them here the row arrived
+    // and was dropped, and that day read as one he did not work. Once per person per visit.
+    const credited = new Set<string>();
+    for (const rawHrId of [visit.agent_hr_id, visit.double_hr_id, visit.double2_hr_id, ...(visit.companion_hr_ids ?? [])]) {
       const hrId = normalizeAttendanceHrId(rawHrId ?? "");
-      if (!hrId || !wanted.has(hrId)) continue;
+      if (!hrId || !wanted.has(hrId) || credited.has(hrId)) continue;
+      credited.add(hrId);
       const byDate = result.get(hrId) ?? new Map<string, CrmDayVisitRow[]>();
       const list = byDate.get(dateIso) ?? [];
       list.push(visit);

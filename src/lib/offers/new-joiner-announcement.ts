@@ -135,6 +135,55 @@ export function pickNewJoinerAudience(
   return Array.from(audience.values());
 }
 
+/**
+ * The audience without anyone whose company mailbox is still waiting to be created. The joining form
+ * gives a Head Office hire an active record and a company address at once, while the mailbox itself
+ * waits on the New Hire Mailboxes queue; mailing that address hard-bounces, and a hard bounce blocks
+ * every later email to it (password setup, salary notices) until a Super Admin lifts the block.
+ * `pendingKeys` are canonical HR id keys. PURE.
+ */
+export function withoutPendingMailboxes<T extends { hrId: string }>(
+  rows: readonly T[],
+  pendingKeys: ReadonlySet<string>,
+): T[] {
+  if (pendingKeys.size === 0) return [...rows];
+  return rows.filter((row) => !pendingKeys.has(canonicalHrIdKey(row.hrId) ?? ""));
+}
+
+/**
+ * The canonical HR id keys, among `hrIds`, whose new-hire mailbox task is still `pending`. An absent
+ * table reads as none (a deploy can reach production before its migration); any other failure
+ * throws, so the caller's catch logs it and no address that may bounce is mailed.
+ */
+async function readPendingMailboxKeys(hrIds: readonly string[]): Promise<Set<string>> {
+  const keys = [
+    ...new Set(
+      hrIds
+        .flatMap((hrId) => [String(hrId ?? "").trim().toLowerCase(), canonicalHrIdKey(hrId) ?? ""])
+        .filter((key) => key.length > 0),
+    ),
+  ];
+  if (keys.length === 0) return new Set();
+  const [{ getSupabaseAdmin }, { NEW_HIRE_MAILBOX_TABLE, isNewHireMailboxSchemaMissing }] = await Promise.all([
+    import("@/lib/supabase/server"),
+    import("@/lib/new-hire-mailbox/service"),
+  ]);
+  const { data, error } = await getSupabaseAdmin()
+    .from(NEW_HIRE_MAILBOX_TABLE)
+    .select("employee_hr_id_key")
+    .in("employee_hr_id_key", keys)
+    .eq("status", "pending");
+  if (error) {
+    if (isNewHireMailboxSchemaMissing(error)) return new Set();
+    throw new Error(`The new-hire mailbox read failed: ${error.message}`);
+  }
+  return new Set(
+    ((data ?? []) as Array<{ employee_hr_id_key: string | null }>)
+      .map((row) => canonicalHrIdKey(row.employee_hr_id_key) ?? "")
+      .filter((key) => key.length > 0),
+  );
+}
+
 function stated(value: string | null | undefined, fallback: string): string {
   const text = String(value ?? "").trim();
   return text.length > 0 ? text : fallback;
@@ -245,9 +294,11 @@ export async function announceNewJoinerToHeadOffice(input: {
     const isHeadOffice = (row: NewJoinerDirectoryRow) => isHeadOfficeRow({ lineId: row.lineId, lineName: row.lineName });
     const active = everyone.filter((row) => directory.isActiveLifecycleStatus(row.employmentStatus));
     const audience = pickNewJoinerAudience(active, { chainRows: everyone, hire, isHeadOffice });
+    // Never an address whose mailbox is still waiting to be created: it would bounce and be blocked.
+    const pendingMailboxes = await readPendingMailboxKeys(audience.map((row) => row.hrId));
     const to = Array.from(
       new Set(
-        audience
+        withoutPendingMailboxes(audience, pendingMailboxes)
           .map((row) => pickDeliverableEmail(row.workEmail)?.toLowerCase() ?? "")
           .filter((address) => address.length > 0),
       ),

@@ -52,7 +52,8 @@ export async function collectNoRecordsDailyCandidates(input: {
   const end = `${monthKey}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
 
   const [days, jobTitleByCanonicalKey, outageDates, baseSalaryByCompact, provenWorked] = await Promise.all([
-    getCompanyNoActivityDays({ access: systemAccessContext, start, end }),
+    // With the days only interviews cover: their uncovered half is charged at 0.5 (no-records-select.ts).
+    getCompanyNoActivityDays({ access: systemAccessContext, start, end, interviewHalfDays: true }),
     loadJobTitlesByCanonicalKey(),
     getCompanyWideOutageDates(start, end),
     getBaseSalaryMap(),
@@ -72,6 +73,7 @@ export async function collectNoRecordsDailyCandidates(input: {
     outageDates,
     baseSalaryByCompact,
     provenWorkedDayKeys: provenWorked.keys,
+    interviewHalfOnly: provenWorked.interviewHalfOnly,
     month: input.month,
     year: input.year,
   });

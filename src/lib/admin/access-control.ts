@@ -250,6 +250,12 @@ async function listPermissionOverrides(): Promise<PermissionOverrideRow[]> {
     .filter((row): row is PermissionOverrideRow => row !== null);
 }
 
+/** The stored account row carries its bcrypt hash; the audit keeps only that one existed (audit_logs is readable by the table tools). */
+export function withoutPasswordHash(values: Record<string, unknown> | null | undefined): Record<string, unknown> | null | undefined {
+  if (!values || !("password_hash" in values)) return values;
+  return { ...values, password_hash: values.password_hash ? "[managed]" : null };
+}
+
 async function auditUserChange(input: {
   actor?: AccessActor | null;
   entityId: string;
@@ -262,7 +268,7 @@ async function auditUserChange(input: {
     entityId: input.entityId,
     entityType: "user",
     newValues: input.newValues,
-    oldValues: input.oldValues,
+    oldValues: withoutPasswordHash(input.oldValues),
     summary: input.summary,
   });
 }

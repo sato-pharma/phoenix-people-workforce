@@ -32,10 +32,13 @@ import {
   TABLE_PAGE_BUDGET_CHARS,
   TABLE_READ_MAX_ROWS,
   TABLE_TOOL_ROLES,
+  HIDDEN_SECRET_TEXT,
+  assertNoTypedSignInProbe,
   isDeniedColumn,
   exportRowCap,
   isDeniedTable,
   maskUnrecognizedIdentifiers,
+  redactSecretJsonKeys,
   orderTiebreakers,
   planTableRead,
   readableTables,
@@ -554,6 +557,48 @@ function testToolSources() {
   const org = source("org.ts");
   assert.ok(org.includes("canSeeDoctorCoverage(") && org.includes('canAccess(ctx, "crm_visits", "read")'), "KPIs mirror the KPIs page's two gates");
   assert.ok(org.includes('canAccess(ctx, "organogram", "read")'), "the organogram asks organogram:read");
+
+  // Review findings, 2026-11-19.
+  // A device-enrollment template's payload enrolls a device as the owner, so the table is never read.
+  assert.equal(isDeniedTable("headwind_enrollment_template"), true, "the device-enrollment template is denied like every other credential table");
+  // A json column can carry a secret under its own key: an audit row's old_values held the account's password hash.
+  assert.deepEqual(
+    redactSecretJsonKeys({ id: 7, old_values: { full_name: "A", password_hash: "$2b$12$abc", nested: [{ token: "t", ok: 1 }] }, new_values: null }),
+    { id: 7, old_values: { full_name: "A", password_hash: HIDDEN_SECRET_TEXT, nested: [{ token: HIDDEN_SECRET_TEXT, ok: 1 }] }, new_values: null },
+    "RED every key the column deny list refuses is hidden, at any depth, and nothing else in the row changes",
+  );
+  assert.equal(redactSecretJsonKeys("plain text"), "plain text", "a scalar passes through");
+  assert.ok(tables.includes("redactSecretJsonKeys(row)"), "every page the reader and the export take is redacted before it leaves");
+  // The mask hides typed sign-in text in the rows; a filter or an order on its column would read it back one guess at a time.
+  type ProbePlan = Parameters<typeof assertNoTypedSignInProbe>[0];
+  const probe = (plan: Partial<ProbePlan> & Pick<ProbePlan, "table">) => () => assertNoTypedSignInProbe({ filters: [], orderBy: null, ...plan }, accounts);
+  refuses(probe({ table: "auth_login_attempts", filters: [{ column: "login_id", op: "ilike", value: "a%" }] }), /exact login id/, "RED a prefix guess at typed text is refused");
+  refuses(probe({ table: "auth_login_attempts", filters: [{ column: "login_id", op: "gte", value: "m" }] }), /exact login id/, "a range guess read with the row count is refused");
+  refuses(probe({ table: "auth_login_attempts", filters: [{ column: "login_id", op: "eq", value: "Hunter2!2026" }] }), /exact login id/, "an exact guess that names no account is refused too");
+  refuses(probe({ table: "auth_login_attempts", orderBy: { column: "login_id", ascending: true } }), /never sorted/, "where the masked rows sort would give the text away");
+  refuses(probe({ table: "audit_logs", filters: [{ column: "entity_id", op: "ilike", value: "%2026%" }] }), /another entity_type/, "an audit sign-in row's entity_id is guarded the same way");
+  assert.doesNotThrow(probe({ table: "auth_login_attempts", filters: [{ column: "login_id", op: "eq", value: "B-10" }] }), "a real login id still answers who failed to sign in");
+  assert.doesNotThrow(probe({ table: "auth_login_attempts", filters: [{ column: "login_id", op: "in", value: ["owner", "PD-0042"] }] }), "and so does a list of them");
+  assert.doesNotThrow(probe({ table: "auth_login_attempts", filters: [{ column: "login_id", op: "is", value: null }] }), "an is-null filter reads no text");
+  assert.doesNotThrow(
+    probe({ table: "audit_logs", filters: [{ column: "entity_type", op: "eq", value: "employee" }, { column: "entity_id", op: "ilike", value: "B-1%" }], orderBy: { column: "entity_id", ascending: true } }),
+    "an audit read held to another entity_type never reaches a sign-in row",
+  );
+  assert.doesNotThrow(probe({ table: "employees", filters: [{ column: "full_name", op: "ilike", value: "a%" }], orderBy: { column: "full_name", ascending: true } }), "every other table is untouched");
+  assert.ok(tables.includes("assertNoTypedSignInProbe(plan, await loadAccountKeys())"), "the guard checks against the account list the mask uses");
+  assert.equal((tables.match(/await guardTypedSignInProbe\(plan\);/g) ?? []).length, 2, "the reader and the export both run the guard before the first read");
+  // An area is the whole name or the code — never a part of a name ("Cairo" is not Heliopolis's sales).
+  assert.ok(!sales.includes("label.includes(wanted)"), "RED a part of an area's name is never taken as the area");
+  assert.ok(
+    sales.includes("labelOf(row.areaCode as string) === wanted || normalizeSearchText(row.areaCode) === wanted"),
+    "an area is matched by its whole name or its code, and a near name is only offered back",
+  );
+  // Leave: the report windows by START date, so a request that began before the window and still runs overlaps it.
+  assert.ok(!hr.includes("dateFrom: input.from"), "RED the report is never asked to drop a leave that started before the window");
+  assert.ok(hr.includes("(row.endDate || row.startDate) >= input.from"), "a request still running at the window's start is kept");
+  assert.ok(hr.includes("(!input.status || row.status === input.status)"), "a status the report cannot filter is filtered here, never widened to all");
+  assert.ok(hr.includes("summarizeVacationRequests(rows)"), "the summary counts the very rows the answer lists");
+  assert.ok(customerList.includes('.eq("campaign_visit_holder", false)'), "a Campaign visit holder is imported history, never a customer");
 }
 
 export async function runChatgptConnectorToolsTests() {

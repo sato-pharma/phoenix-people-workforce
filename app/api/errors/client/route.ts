@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 
 import { resolveActivityModule } from "@/lib/activity/modules";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { isTestAccount } from "@/lib/auth/test-persona";
 import {
   CLIENT_ERROR_MAX_BODY_BYTES,
   CLIENT_ERROR_RATE_LIMIT,
   CLIENT_ERROR_RATE_WINDOW_MS,
+  SERVER_ERROR_FORWARD_RATE_LIMIT,
   clientErrorBodyTooLarge,
   sanitizeClientErrorReport,
 } from "@/lib/error-monitor/client-error-intake";
@@ -36,15 +38,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "too_large" }, { status: 413 });
   }
 
+  // Anyone can post here, so the Super Admin's new-error Telegram needs more than a claim. A server error
+  // is believed only with the proof instrumentation.ts signs (a cron hit or webhook has no cookie, and an
+  // employee can type `source: "server"`); a browser crash is believed from a signed-in reporter.
+  //
+  // Checked BEFORE the limit: a proven forward is counted in its own bucket, never against the caller address,
+  // which every forward shares — the in-process capture is gone since #518, so a refused forward was a lost error.
+  const forwardedByThisServer = await verifyServerErrorForward(request.headers.get(SERVER_FORWARD_PROOF_HEADER));
+
   try {
     await assertApiRateLimit({
-      identifier: rateLimitIdentity({ request }),
-      limit: CLIENT_ERROR_RATE_LIMIT,
+      identifier: forwardedByThisServer ? "server-forward" : rateLimitIdentity({ request }),
+      limit: forwardedByThisServer ? SERVER_ERROR_FORWARD_RATE_LIMIT : CLIENT_ERROR_RATE_LIMIT,
       // A crash report must not depend on the database being up — but it must not go unlimited while
       // the database is down either (audit, 2026-10-26, point 22). When the bucket store cannot be
       // read, this address is counted in this process instead, in a bounded map.
       onStoreError: "memory",
-      scope: "client_error_report",
+      scope: forwardedByThisServer ? "server_error_forward" : "client_error_report",
       windowMs: CLIENT_ERROR_RATE_WINDOW_MS,
     });
   } catch (error) {
@@ -83,11 +93,11 @@ export async function POST(request: Request) {
     if (report.message) {
       const access = await resolveAccessContext(request);
       const activityModule = resolveActivityModule(report.route);
-      // Anyone can post here, so the Super Admin's new-error Telegram needs more than a claim. A server error
-      // is believed only with the proof instrumentation.ts signs (a cron hit or webhook has no cookie, and an
-      // employee can type `source: "server"`); a browser crash is believed from a signed-in reporter.
-      const forwardedByThisServer = await verifyServerErrorForward(request.headers.get(SERVER_FORWARD_PROOF_HEADER));
-      const alert = forwardedByThisServer || (report.source === "client" && Boolean(access.hrId || access.loginId));
+      // Never for a TEST account: this route is a dry run for it (it is not on test-persona.ts's lists), so the
+      // row and the Telegram are only pretended — and the pretend run still left the error remembered as told,
+      // so a real employee's first meeting with the same error then sent no Telegram.
+      const alert =
+        !isTestAccount(access) && (forwardedByThisServer || (report.source === "client" && Boolean(access.hrId || access.loginId)));
 
       eventId = await logAppError({
         alert,
