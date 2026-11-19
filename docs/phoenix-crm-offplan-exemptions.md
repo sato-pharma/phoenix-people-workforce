@@ -65,8 +65,9 @@ DONOT FOLLOW THE CAP IN THIS POLYCLINIC ONLY"* — Mohamed Ahmed Mohamed Hassan 
 *"This module I filter by the medical rep. Then after I filter by the medical rep, all his polyclinics appear. Okay, I
 have the option to, for example, open or close the toggle. When I open the toggle, then no cap for this rep in this
 polyclinic. And also have the option to, for example, instead of making the cap 3, make it 5, make it 7."* From here on
-an exception of this kind needs no migration. The page is `/admin/field-crm/venue-caps`, the Super Admin's and, since
-2026-11-03, the SFE Manager's (`canManageVenueCaps`, on the page and in the service).
+an exception of this kind needs no migration. The page is `/admin/field-crm/venue-caps`, the Super Admin's alone since
+19 Nov 2026 (`canManageVenueCaps`, on the page and in the service); the SFE Manager had it from 2026-11-03 — see
+"Amendment, 19 Nov 2026" below.
 
 **It opens on the exceptions** (owner, 2026-11-03: *"the first thing that appears in the module are the reps who are
 taking exceptions or the polyclinics who are taking exceptions at which rep. And who put this exception? And when?"*).
@@ -127,8 +128,8 @@ On 24 November the usual 2 a day and 8 a week apply again with no job and no han
 ## The Rep Exceptions page (owner, 2026-11-03)
 
 *"Build a module for admin only to open or close this feature by a toggle or be able to control duration for any rep if
-needed exception."* `/admin/field-crm/rep-exceptions`, the Super Admin's and, since 2026-11-03, the SFE Manager's
-(`canManageRepExceptions`, never a test account). It opens on the exceptions in force with who set each and when. Under
+needed exception."* `/admin/field-crm/rep-exceptions`, the Super Admin's alone since 19 Nov 2026 (the SFE Manager had it from 2026-11-03;
+`canManageRepExceptions`, never a test account; see "Amendment, 19 Nov 2026" below). It opens on the exceptions in force with who set each and when. Under
 them sit the reps who once had one, and the filter brings up any other rep.
 
 - **The switch** writes or ends the same rep-wide dated row the first-month section above describes, so the door, the
@@ -195,5 +196,19 @@ reads logins and the audit trail and the module may not.
 - The hospital is not a shared place today (no shared-place row; the hospital account has one place). Its doctors are
   covered once the rep seats them in a venue of his own whose folded name contains "الجوي". Until then only visits to the
   hospital account itself are exempt.
-- A new exception is a row in `phoenix_crm_offplan_exemptions`, set by the Super Admin or the SFE Manager on these pages or
+- A new exception is a row in `phoenix_crm_offplan_exemptions`, set by the Super Admin on these pages (the SFE Manager too, 3–19 Nov 2026) or
   with the owner's word — never a settings change.
+
+## Amendment, 19 Nov 2026 — the two pages are the Super Admin's alone
+
+Owner, 19 Nov 2026: *"i want khaled bedair when try to access them he is not and page show to him server error"*, then
+*"i know they are fine but i want to make him when he goes to those pages the screen tell him server down"*.
+
+- **Rep Exceptions and Polyclinic Caps admit the Super Admin only** — `canManageRepExceptions` and `canManageVenueCaps`
+  no longer call `canUseSfeFieldControls` (which still opens New Hire Accounts to the SFE Manager, untouched).
+- **The SFE Manager is shown a server-down screen, never a refusal.** Both pages check his role first and render
+  `FieldControlOutage` ("Server temporarily unavailable"), the admin shell's own error card with no error attached, so
+  nothing reaches the error log. A save sent from a page he left open answers 503 `service_unavailable` with the same
+  sentence. The wording lives in `src/lib/phoenix-crm/field-control-outage.ts`.
+- **He keeps the two sidebar cards**, so he still "goes to those pages" and meets the screen there.
+- Every exception he set from 3 to 19 Nov 2026 stays in force as written; nothing was rewritten.

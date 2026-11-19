@@ -1,5 +1,5 @@
 /**
- * Phoenix CRM — the Polyclinic Caps page of the Super Admin and the SFE Manager, server side: every exception, the
+ * Phoenix CRM — the Polyclinic Caps page of the Super Admin (alone since 19 Nov 2026), server side: every exception, the
  * reps, one rep's polyclinics, and the one write. The rule, his words and what stays untouched are in `../venue-cap-rules.ts`.
  *
  * 🔴 EVERY ANSWER COMES FROM THE DATABASE'S OWN MATCH. `phoenix_crm_venue_cap_board` says whether a venue is
@@ -10,9 +10,10 @@
  * rep has left is refused rather than written.
  */
 
-import { forbiddenError, validationError } from "@/lib/http/api-errors";
+import { ApiError, forbiddenError, validationError } from "@/lib/http/api-errors";
+import { FIELD_CONTROL_OUTAGE_MESSAGE, seesFieldControlOutage } from "@/lib/phoenix-crm/field-control-outage";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { canUseSfeFieldControls, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { personKey, seatOccupants, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -32,13 +33,20 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-/** The Super Admin and the SFE Manager (owner, 2026-11-03), and never a test account. */
+/**
+ * The Super Admin ALONE, and never a test account (owner, 19 Nov 2026: "i want to make him when he goes to those
+ * pages the screen tell him server down"). The SFE Manager had it from 3 Nov 2026 to 19 Nov 2026; he is now
+ * answered as if the server were down (`../field-control-outage.ts`), never told he was refused.
+ */
 export function canManageVenueCaps(viewer: PhoenixCrmViewer): boolean {
-  return canUseSfeFieldControls(viewer);
+  if (viewer.isTestPersona) return false;
+  return viewer.isSuperAdmin && viewer.canUpdate;
 }
 
 function assertManager(viewer: PhoenixCrmViewer): void {
-  if (!canManageVenueCaps(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager manage polyclinic caps.");
+  if (canManageVenueCaps(viewer)) return;
+  if (seesFieldControlOutage(viewer.role)) throw new ApiError(503, "service_unavailable", FIELD_CONTROL_OUTAGE_MESSAGE);
+  throw forbiddenError("Only the Super Admin manages polyclinic caps.");
 }
 
 /** Every occupied rep seat, one entry per PERSON: a person on two territories is one row on the page. */
