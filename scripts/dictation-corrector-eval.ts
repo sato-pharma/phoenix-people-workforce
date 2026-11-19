@@ -47,7 +47,7 @@ refuseUnknownFlags({
 // so the output is never ambiguous about which corpus produced the numbers.
 //
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//        --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+//        --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
 //        scripts/dictation-corrector-eval.ts [--min-hits 5] [--out <path>] \
 //        [--token-cache <path>] [--freeze <path>]
 //

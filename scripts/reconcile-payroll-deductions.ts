@@ -1,7 +1,7 @@
 // Does a payroll run charge what the Deductions module approved? Read-only.
 //
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+//     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
 //     scripts/reconcile-payroll-deductions.ts [YYYY-MM | <run id>] [--all]
 //
 // Or: pnpm run payroll:reconcile-deductions                  (the newest run of the current month)

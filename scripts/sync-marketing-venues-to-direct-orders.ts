@@ -14,7 +14,7 @@
  *
  * Usage, from the folder holding the change:
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/sync-marketing-venues-to-direct-orders.ts [--apply]
  */
 import {

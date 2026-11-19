@@ -14,7 +14,7 @@
 // RUN IT THROUGH THE ALIAS LOADER, because it imports the live inference module rather than copying
 // a hundred governorate spellings that would then drift:
 //
-//   node --experimental-strip-types --experimental-specifier-resolution=node //        --experimental-loader ./tests/alias-loader.mjs scripts/backfill-cvs-to-drive.mjs
+//   node --experimental-strip-types --experimental-specifier-resolution=node //        --import ./tests/register-alias-loader.mjs scripts/backfill-cvs-to-drive.mjs
 //
 // RESUMABLE BY CONSTRUCTION. A row is claimed by `drive_mirror_file_id` being set, so a run that is
 // interrupted — or a laptop that goes to sleep, which on this machine is the likely outcome of a

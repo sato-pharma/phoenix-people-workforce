@@ -7,7 +7,7 @@
  *
  * Run from the repo root (from a worktree, through node — never pnpm):
  *   node --experimental-strip-types --experimental-specifier-resolution=node \
- *     --experimental-loader ./tests/alias-loader.mjs \
+ *     --import ./tests/register-alias-loader.mjs \
  *     docs/audits/phoenix-crm-integration-audit/scripts/dump-sidebar.ts
  */
 import { writeFileSync } from "node:fs";

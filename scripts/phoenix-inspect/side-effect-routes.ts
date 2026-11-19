@@ -4,7 +4,7 @@
  * own source and its access registry (lib/side-effect-routes.ts). lib/fence.mjs refuses all of them.
  *
  *   node --experimental-strip-types --experimental-specifier-resolution=node \
- *     --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-inspect/side-effect-routes.ts
+ *     --import ./tests/register-alias-loader.mjs scripts/phoenix-inspect/side-effect-routes.ts
  *
  * `--check` writes nothing and exits 1 when the committed file is stale. `--stdout` prints instead of
  * writing. Pure: no database, no network, no environment variables.

@@ -83,7 +83,7 @@ refuseUnknownFlags({
 //
 // Usage (from the worktree root):
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//        --experimental-loader ./tests/alias-loader.mjs \
+//        --import ./tests/register-alias-loader.mjs \
 //        scripts/recruitment-split-forwarded-candidates.ts [--dry-run]
 // ─────────────────────────────────────────────────────────────────────────────
 

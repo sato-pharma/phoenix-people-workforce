@@ -2,7 +2,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./scripts/needs-you-fit-loader.mjs scripts/measure-rankings-fit.mjs
+//     --import ./scripts/register-needs-you-fit-loader.mjs scripts/measure-rankings-fit.mjs
 //
 // (`pnpm run ui:measure-rankings-fit` from the PRIMARY checkout; never `pnpm` inside a worktree —
 // AGENTS.md §5.)

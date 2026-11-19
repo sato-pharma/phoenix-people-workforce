@@ -24,7 +24,7 @@
  *
  * Usage (from the repo root, with a populated .env.local — this READS PRODUCTION):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/check-sos-month-complete.ts [period] [--fail-on-incomplete]
  *
  * With no period it asks about the PREVIOUS calendar month in Cairo — the one being closed.

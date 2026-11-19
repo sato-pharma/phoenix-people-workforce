@@ -48,7 +48,7 @@
  *
  * Usage (from the repo root, with a populated .env.local — this READS PRODUCTION):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/check-half-day-trace-independence.ts [YYYY-MM] [--all-days] [--limit N]
  */
 import { queryCheckins, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads";

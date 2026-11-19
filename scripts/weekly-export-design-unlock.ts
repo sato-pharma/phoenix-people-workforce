@@ -25,7 +25,7 @@
  * its worst case: pnpm runs its deps check first, sees the moved lockfile, and offers to delete the
  * PRIMARY's node_modules. Invoke node directly from the folder holding the change:
  *   node --experimental-strip-types --experimental-specifier-resolution=node \
- *     --experimental-loader ./tests/alias-loader.mjs scripts/weekly-export-design-unlock.ts --unlock
+ *     --import ./tests/register-alias-loader.mjs scripts/weekly-export-design-unlock.ts --unlock
  * The FOLDER matters: run it in the primary while the edit sits in a worktree and it re-pins the
  * UNCHANGED source — a silent no-op that prints success.
  */

@@ -80,7 +80,7 @@ export async function runWeeklyExportDesignLockTests() {
         drift.map((line) => `    - ${line}`).join("\n") +
         `\n    Re-pinning is NOT the fix. Revert the change, or have the owner run:\n` +
         `      node --experimental-strip-types --experimental-specifier-resolution=node \\\n` +
-        `        --experimental-loader ./tests/alias-loader.mjs \\\n` +
+        `        --import ./tests/register-alias-loader.mjs \\\n` +
         `        scripts/weekly-export-design-unlock.ts --unlock`,
     );
   }

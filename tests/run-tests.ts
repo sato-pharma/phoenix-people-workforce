@@ -1794,6 +1794,7 @@ import { runCiCacheMainOnlyTests } from "./ci-cache-main-only.test.ts";
 import { runReleaseGateTests } from "./release-gate.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
 import { runCheckContractsTests } from "./check-contracts.test.ts";
+import { runNoExperimentalLoaderTests } from "./no-experimental-loader.test.ts";
 import { runRunTestsRegistrationShapeTests } from "./run-tests-registration-shape.test.ts";
 import { runPhxLiveBannerTests } from "./phx-live-banner.test.ts";
 import { runSelectCensusTests } from "./select-census.test.ts";
@@ -6723,6 +6724,10 @@ await runTest(
 await runTest(
   "check:contracts runs the suite's OWN offline contract gates and cannot quietly stop running them: every gate in scripts/check-contracts-gates.mjs is held against tests/run-tests.ts by its export AND by the opening of the name it is registered under, so a renamed or retired gate is caught here instead of leaving the script importing something nothing gates the merge with; each named file exists and really exports that symbol; no gate reaches a Supabase client, the env bag or the Next runtime (which is why the Office-allocation board row is deliberately absent — it imports src/lib/needs-you/sources.ts); the child is never given --env-file-if-exists, because .env.local holds PRODUCTION credentials and this is a check a session runs casually on every branch; its cwd is pinned to the repo root, since access-registry-coverage resolves app/api from process.cwd() and a run from a subdirectory would measure a smaller tree and PASS; it is wired as a package script and kept OUT of the `ci` chain, which ci-gate-parity would otherwise redden; the shard split covers every gate exactly once at every shard count and never packs the two expensive gates together; the parent REFUSES a run whose shard printed no coverage line, ran a gate twice, missed one or named an unknown one, because a bad divisor is a smaller run reporting success rather than a failure; and the shard count is bounded by free memory as well as by CPUs, so a box with a dozen sessions open serialises instead of tripping the memory watchdog",
   runCheckContractsTests,
+);
+await runTest(
+  "no node in the repository loads its module hooks with the experimental loader flag (20 Nov 2026: on Node 24 that flag alone, with an empty hooks file, makes every allocating regex call in the main thread 50-90x slower): no package.json script and no tracked script, test, source file or workflow names it, test and coverage run tests/run-tests.ts with --import ./tests/register-alias-loader.mjs, each of the four register-*.mjs files registers a hooks file that really sits beside it, and every --import in package.json names a file that exists",
+  runNoExperimentalLoaderTests,
 );
 await runTest(
   "every runTest( call in this very file is (\"a name\", aRunFunction) — two arguments, a quoted name (single OR double, since 65 registered names contain a double quote) and a bare run function, with runTest's own declaration counted and skipped: this file conflicts on nearly every merge, git rerere replays a resolution whose surrounding lines have shifted, and the tail of one registration lands in the head of the next — which was 3 of the 17 checks/Typecheck reds between 9 and 13 Oct 2026, reaching CI as TS2554 'Expected 2 arguments, but got 4'/'got 1'. Two tests then stop running with both names and both imports still present, so test-wiring-complete passes, `pnpm run test` type-checks nothing and reports success, and the only evidence sits in a DIFFERENT required job from the one that runs the tests. Floored at 2,000 parsed calls so a reader that stopped understanding this file fails loudly instead of sweeping zero calls clean",

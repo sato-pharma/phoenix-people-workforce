@@ -1,7 +1,7 @@
 // Regenerates src/lib/geo/neighbourhood-index-generated.ts from the production brick table.
 //
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//        --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+//        --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
 //        scripts/generate-neighbourhood-index.ts
 //
 // READ-ONLY against the database. It selects from source_of_sales_bricks and areas and writes one

@@ -40,7 +40,7 @@
  *
  * Usage:
  *   node --env-file-if-exists=.env.production.rls.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/phoenix-crm-convert-ireports360-visits.ts [--apply] [--out=<folder>]
  */
 import fs from "node:fs";

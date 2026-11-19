@@ -13,7 +13,7 @@
  * generator beside it is an asset nobody can reproduce once its author has gone.
  *
  * Run from the repo root (never `pnpm exec` from a worktree — AGENTS.md §5):
- *   node --experimental-strip-types --experimental-loader ./tests/alias-loader.mjs \
+ *   node --experimental-strip-types --import ./tests/register-alias-loader.mjs \
  *     scripts/build-house-band-asset.ts
  */
 import { mkdir, writeFile } from "node:fs/promises";

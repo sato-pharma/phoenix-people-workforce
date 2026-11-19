@@ -30,7 +30,7 @@
  *
  * Usage (from the repo root, with a populated .env.local — this READS PRODUCTION):
  *   node --env-file=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/check-store-split-drift.ts [--all] [--fail-on-drift] [period ...]
  */
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";

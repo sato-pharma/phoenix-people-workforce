@@ -21,7 +21,7 @@
  *
  * Usage (from a tree on origin/main; it reads the database .env.local points at, PRODUCTION):
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/dm-line-achievement.ts [--period=2026-09] [--lines=CNS,Pedia,Anti Infective]
  */
 import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";

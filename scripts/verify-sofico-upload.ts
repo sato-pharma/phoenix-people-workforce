@@ -3,7 +3,7 @@
 // which coded template recognizes the file, the batch status, and the recomputed totals.
 //
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//        --experimental-loader ./tests/alias-loader.mjs \
+//        --import ./tests/register-alias-loader.mjs \
 //        scripts/verify-sofico-upload.ts [CODE] ["path.xlsx"]
 
 import { existsSync, readFileSync } from "node:fs";

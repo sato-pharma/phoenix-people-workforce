@@ -39,7 +39,7 @@
  *
  * Usage:
  *   node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node \
- *     --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-settle-on-photo.ts [--out=<folder>]
+ *     --import ./tests/register-alias-loader.mjs scripts/phoenix-crm-settle-on-photo.ts [--out=<folder>]
  */
 import fs from "node:fs";
 import path from "node:path";

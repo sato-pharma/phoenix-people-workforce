@@ -4,7 +4,7 @@
  * its starting point.
  *
  *   node --env-file-if-exists=.env.local --experimental-strip-types \
- *     --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
+ *     --experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \
  *     scripts/system-audit-historical.ts --app-errors <snapshot.csv> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--out <dir>]
  *
  *   ...the same with --apply to write the ledger.

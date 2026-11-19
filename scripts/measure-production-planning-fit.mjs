@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 //   node scripts/measure-production-planning-fit.mjs --capture xlsx/../planner-fixture.json
 //   node --experimental-strip-types --experimental-specifier-resolution=node \
-//     --experimental-loader ./scripts/needs-you-fit-loader.mjs \
+//     --import ./scripts/register-needs-you-fit-loader.mjs \
 //     scripts/measure-production-planning-fit.mjs --fixture <that file>
 //
 // (`pnpm run ui:measure-production-planning-fit -- --fixture <file>` from the PRIMARY checkout;
@@ -103,7 +103,7 @@ if (!fixturePath || !fs.existsSync(fixturePath)) {
       "tests/production-planning-fit-fixture.test.ts:\n" +
       "    --fixture tests/fixtures/production-planning-fit.json\n" +
       "To refresh it against live data:  node --env-file=.env.local --experimental-strip-types " +
-      "--experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \\\n" +
+      "--experimental-specifier-resolution=node --import ./tests/register-alias-loader.mjs \\\n" +
       "    scripts/measure-production-planning-fit.mjs --capture <file>\n" +
       "There is still no built-in default on purpose: a synthetic fixture measures a table nobody " +
       "will ever see, and a refreshed capture must stay out of git once these materials are priced.",
