@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  buildDirectOrderCollectionHistory,
   canRecordDirectOrderCollection,
   deriveDirectOrderCollection,
   DIRECT_ORDER_FINANCE_HR_ID,
+  resolveAddedDirectOrderPayment,
 } from "../src/lib/direct-orders/collection-rules.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -239,6 +241,90 @@ export async function runDirectOrderCollectionTests() {
     // prefix are matched rather than assumed away.
     /withdrawn\s*>?\s*and must stay withdrawn/.test(spec),
     "the spec must record that accumulating was proposed, withdrawn, and must stay withdrawn",
+  );
+
+  // ── "Add a payment" (owner, 19 Nov 2026: "understand what he wants and tailor it in the system") ──
+  // Ahmed El Maraghy was adding instalments up by hand (25,000 → 74,246 → 109,246 on one order). The add mode
+  // takes ONE payment and adds it to the total the screen showed; correcting a typo stays the other mode.
+  assert.deepEqual(
+    resolveAddedDirectOrderPayment({ alreadyPaid: 74246, addAmount: 35000, salesValue: 120000 }),
+    { ok: true, addAmount: 35000, paidAmount: 109246 },
+    "74,246 already collected plus a 35,000 payment is 109,246 — the sum he used to do by hand",
+  );
+  assert.deepEqual(
+    resolveAddedDirectOrderPayment({ alreadyPaid: null, addAmount: 1155.004, salesValue: 6693 }),
+    { ok: true, addAmount: 1155, paidAmount: 1155 },
+    "the first payment on an order with nothing recorded is the total, rounded to the piastre",
+  );
+  assert.deepEqual(
+    resolveAddedDirectOrderPayment({ alreadyPaid: 0.1, addAmount: 0.2, salesValue: 10 }),
+    { ok: true, addAmount: 0.2, paidAmount: 0.3 },
+    "money is added to the piastre, never 0.30000000000000004",
+  );
+  const over = resolveAddedDirectOrderPayment({ alreadyPaid: 600, addAmount: 500, salesValue: 1000 });
+  assert.equal(over.ok, false, "a payment above what is still owed is refused");
+  assert.match(over.ok ? "" : over.message, /more than the 400\.00 EGP still outstanding \(600\.00 EGP is already recorded\)/);
+  const overNet = resolveAddedDirectOrderPayment({ alreadyPaid: 600, addAmount: 350, salesValue: 1000, offsetTotal: 100 });
+  assert.equal(overNet.ok, false, "marketing settlements count against what is still owed");
+  assert.deepEqual(
+    resolveAddedDirectOrderPayment({ alreadyPaid: 600, addAmount: 400, salesValue: 1000 }),
+    { ok: true, addAmount: 400, paidAmount: 1000 },
+    "the exact remainder settles the order in full",
+  );
+  for (const bad of [0, -5, Number.NaN, null, undefined]) {
+    assert.equal(
+      resolveAddedDirectOrderPayment({ alreadyPaid: 100, addAmount: bad, salesValue: 1000 }).ok,
+      false,
+      `a payment of ${String(bad)} is refused`,
+    );
+  }
+
+  // ── The payment history: each instalment is the difference the event itself recorded ──────────
+  const history = buildDirectOrderCollectionHistory([
+    {
+      event_type: "collection_recorded",
+      created_at: "2026-11-03T10:00:00Z",
+      actor_hr_id: "B-185",
+      metadata: { previousPaidAmount: 25000, paidAmount: 74246, paymentDate: "2026-11-03", remainingAmount: 45754 },
+    },
+    {
+      event_type: "collection_recorded",
+      created_at: "2026-11-01T10:00:00Z",
+      actor_hr_id: "B-185",
+      metadata: { previousPaidAmount: null, paidAmount: 25000, paymentDate: "2026-11-01", remainingAmount: 95000 },
+    },
+    {
+      event_type: "collection_recorded",
+      created_at: "2026-11-04T10:00:00Z",
+      actor_hr_id: "B-185",
+      metadata: { previousPaidAmount: 74246, paidAmount: 74246, paymentDate: "2026-11-04", remainingAmount: 45754 },
+    },
+    {
+      event_type: "collection_cleared",
+      created_at: "2026-11-05T10:00:00Z",
+      actor_hr_id: "S-1",
+      metadata: { previousPaidAmount: 74246, paidAmount: null },
+    },
+    { event_type: "approved", created_at: "2026-10-30T10:00:00Z", actor_hr_id: "C-1", metadata: {} },
+  ]);
+  assert.deepEqual(
+    history.map((entry) => [entry.kind, entry.amount, entry.total, entry.paymentDate]),
+    [
+      ["payment", 25000, 25000, "2026-11-01"],
+      ["payment", 49246, 74246, "2026-11-03"],
+      ["correction", 0, 74246, "2026-11-04"],
+      ["cleared", null, null, null],
+    ],
+    "oldest first, each payment its own difference, a same-total save a correction, a clear named, other events left out",
+  );
+
+  // The screen offers both modes in words, and the add mode says it adds.
+  assert.match(controlCode, />\s*Add a payment\s*</, "the add mode is named on the screen");
+  assert.match(controlCode, />\s*Correct the total\s*</, "and the replace mode is named apart from it");
+  assert.match(
+    controlCode,
+    /aria-label="This payment, in EGP — added to the total already recorded"/,
+    "the payment field's accessible name says it ADDS, so it can never be mistaken for the total",
   );
 
   console.log("  direct-orders collection: labelled as a total, pre-filled, and its limits documented");

@@ -10,6 +10,7 @@ import type { DirectOrderInvoiceContentType, DirectOrderInvoiceSlotCount } from 
 // compile time and has no runtime edge, which is why this does not need a third module.
 import type { DirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
 import type { SamePharmacyCrossUseFlag } from "@/lib/direct-orders/same-pharmacy-cross-use";
+import type { DirectOrderCollectionHistoryEntry } from "@/lib/direct-orders/collection-rules";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Order Request module — shared types.
@@ -945,6 +946,11 @@ export type DirectOrderApprovalDetail = {
    * been PAID. Everyone else sees the figures read-only.
    */
   canRecordCollection: boolean;
+  /**
+   * The order's payment history, oldest first — each instalment with its date, the total after it and who
+   * recorded it (19 Nov 2026). Optional so a hand-built detail in a test needs none; absent reads as empty.
+   */
+  collectionHistory?: Array<DirectOrderCollectionHistoryEntry & { byName: string | null }>;
   /**
    * Whether THIS viewer is the Administrator, who may record a service fee owed to the pharmacy's
    * doctor as a request raised and executed in one click, settled against this order.

@@ -2619,6 +2619,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // trigger approvals_whatsapp_attach_conversation present; bucket approvals-whatsapp-media private. Staging takes the
   // whole file through staging-migrate on the merge. Re-applying is a no-op (`if not exists` / `create or replace`).
   "20261119141357_approvals_whatsapp_module.sql",
+  // Applied 19 Nov 2026 about 17:40 Cairo by scripts/apply-sql-file.mjs, the standing route, after the production MCP's
+  // apply_migration declined it ({"status":"declined"}). It writes NO ledger row. Production had never received
+  // 20261119145916 either, so from the 17:10 Cairo deploy of #614 every collection and every marketing cancel failed
+  // ("Could not record the collection.") — the code called the 7- and 5-argument forms and production held only the
+  // older 5- and 4-argument ones. 20261119145916 went on first through apply_migration (ledger name
+  // direct_order_collection_and_marketing_cancel_write_records), its bodies equal to staging's (comment- and
+  // whitespace-stripped md5 of prosrc: collection d174def6909421b9f8212c6bbab9f595, cancel
+  // 2a32449ede7d84a844781c5077c12246, on both projects); both answered their own not-found exception through
+  // /rest/v1/rpc. Then this file dropped the older forms. Read back on ozucdzovmcqvepbozvqf (project name Phoenix HR)
+  // straight after: pg_proc holds exactly phx_record_direct_order_collection(uuid,numeric,date,numeric,date,jsonb,jsonb)
+  // and phx_cancel_marketing_request(uuid,text,text,timestamptz,jsonb), as on staging. Re-applying is a no-op
+  // (`drop function if exists`).
+  "20261119153902_drop_superseded_collection_and_cancel_forms.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

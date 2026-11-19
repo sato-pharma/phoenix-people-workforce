@@ -620,6 +620,7 @@ export function DirectOrderRequestDetail({
           remainingAmount={request.remainingAmount}
           canEdit={canRecordCollection}
           status={request.status}
+          history={detail.collectionHistory ?? []}
         />
 
         {canSettleServiceFee && serviceFeeDefaults ? (
