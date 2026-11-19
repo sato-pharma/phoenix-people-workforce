@@ -814,6 +814,27 @@
       "decidedBy": "owner",
       "why": "1 row: the Suez rep seat before the same change; only its label differs since (AIF Suez & Ismailia rep, now AIF Ismailia and Suez rep).",
       "sheet": "19 November 2026, the 19 September snapshot tables, in chat"
+    },
+    "au.bak_move_ai0002_b177_emp_20260923": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "2 rows: the full employee records of the two reps moved from Anti Infective to Pedia from 1 Oct (20260923175143), as they stood on 23 Sep. Several fields have changed since, so the export is the lasting record of them as of that day. It holds personal and salary fields: the export stays on the laptop, never in the repository.",
+      "sheet": "19 November 2026, the 23 September snapshot tables, in chat"
+    },
+    "au.bak_move_ai0002_b177_occ_20260923": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "6 rows: the seat-holder history of the two rep seats in both lines before the same move. Every row is still live; only end dates (set by the move) and two placeholder start dates differ since. September and October are published.",
+      "sheet": "19 November 2026, the 23 September snapshot tables, in chat"
+    },
+    "au.bak_move_ai0002_b177_lam_20260923": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-19",
+      "decidedBy": "owner",
+      "why": "4 rows: the two areas in both lines before the same move. All four are still live; only the 1 Oct end date the move gave them differs.",
+      "sheet": "19 November 2026, the 23 September snapshot tables, in chat"
     }
   }
 }

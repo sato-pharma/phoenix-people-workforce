@@ -243,8 +243,20 @@ reachable from the browser.
 | `au.bak_20260919_ismailia_suez_line_area_map` | 4 | Anti Infective Suez and Ismailia before the two became one area in Delta (3) from 1 Sep; the change was made in place on the open September row, so the export is the lasting record of Ismailia as a rep-less area, and the migration's own undo |
 | `au.bak_20260919_ismailia_suez_seats` | 1 | the Suez rep seat before the change; only its label differs since |
 
-The next tables to reach 90 days with no decision are `au.bak_move_ai0002_b177_emp_20260923`,
-`au.bak_move_ai0002_b177_occ_20260923` and `au.bak_move_ai0002_b177_lam_20260923`, on 22 Dec 2026.
+**The three 23 September tables, decided the same day.** All three "export, then drop", all three
+exported that day. They reach 90 days on 22 Dec 2026. Like the 19 September pair, they were made with
+row-level security off and no browser grant. The employee copy holds personal and salary fields, so
+its export stays in the exports folder beside the repository and is never committed.
+
+| Table | Rows | What it holds |
+| --- | --- | --- |
+| `au.bak_move_ai0002_b177_emp_20260923` | 2 | the employee records of the two reps moved from Anti Infective to Pedia from 1 Oct, as of 23 Sep; several fields changed since |
+| `au.bak_move_ai0002_b177_occ_20260923` | 6 | the seat-holder history of their two seats in both lines; every row is still live, only dates differ |
+| `au.bak_move_ai0002_b177_lam_20260923` | 4 | the two areas in both lines; all still live, only the 1 Oct end date differs |
+
+The next tables to reach 90 days with no decision are `au.bak_20261002_luxor_rep_seat_revert`,
+`au.bak_20261002_ped_d16_occupancy`, `au.bak_20261002_ped_ue_split_occupancy` and
+`au.monthly_targets_pedia_oct2026_backup_20261002`, on 31 Dec 2026.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
