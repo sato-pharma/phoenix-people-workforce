@@ -2878,3 +2878,259 @@ export function selectMissingMigrations(
     .filter((migration) => !isRecorded(migration, remote))
     .sort((a, b) => a.version.localeCompare(b.version));
 }
+
+// ── THE REVERSE DIRECTION: ledger rows with no file in the repository ─────────────────────────────
+//
+// Everything above asks "is every file in the ledger?". Nothing asked the opposite, "is every ledger
+// row a file?", and that gap hid a real change for three weeks: public.phx_reassign_replacement_
+// ownership(text,text,date) was applied to production by hand on 26 Oct 2026 (ledger row
+// 20261026034726) with no migration file anywhere in the repository. The forward check stays green
+// for that shape for ever, because there is no file to be missing. The 18 Nov 2026 Supabase audit
+// found it by hand and captured the live body into
+// 20261118234849_capture_phx_reassign_replacement_ownership_live_body.sql (PR 542); this is the check
+// that audit asked for, so the next one is found the night after it happens.
+//
+// A row is ACCOUNTED FOR when it matches a file in supabase/migrations/ OR in the pre-baseline
+// archive (supabase/_migrations_archive/), by the same three keys isRecorded() uses, reversed:
+//   1. VERSION — the file's 14-digit version.
+//   2. NAME — the MCP apply_migration pattern stamps the server's clock as the version, so only the
+//      name matches.
+//   3. A FILE VERSION INSIDE THE NAME — the historical rows that put a whole alternate filename in
+//      the `name` column.
+// What is left is an ORPHAN: something changed the database under a name the repository has never
+// held. Either a hand change nobody committed (capture the live body into a migration, as
+// 20261118234849 did) or a file applied under a different name than it was committed with
+// (acknowledge it below with the evidence that ties the two together).
+//
+// Measured when it was added (19 Nov 2026, read-only through phx_ci_migration_versions): production
+// held 1,593 ledger rows and 56 orphans, staging 1,639 and 49 — 78 distinct rows older than the grace
+// window, plus two from that night still inside it. Those 78 are frozen in
+// LEDGER_ORPHANS_PRESENT_AT_ADOPTION so the check starts green and fails on the NEXT one.
+
+/** The pre-baseline archive. Files there are still the repository's record of those ledger rows. */
+export const MIGRATIONS_ARCHIVE_DIR = path.join(__dirname, "..", "..", "supabase", "_migrations_archive");
+
+export type LedgerRow = { version: string; name: string | null };
+export type MigrationFile = { fileName: string; version: string; name: string };
+
+/**
+ * A ledger row this new is not yet an orphan. The documented route applies a migration to production
+ * BEFORE its pull request merges (the new-migration skill, phase 6), so for the hours or days between
+ * that apply and the owner's merge the row exists and its file is only on a branch. Seven days, not
+ * the forward check's 48 hours: a pull request can wait days for the owner's word, and a row that
+ * outlives a week with no file on main is the finding, whatever the reason.
+ *
+ * Judged by the row's VERSION read as a UTC timestamp, because the ledger keeps no applied-at time.
+ * MCP versions are UTC; a version copied from a Cairo-stamped filename reads up to three hours
+ * younger than it is, which only lengthens the shelter by that much. A version that is not a valid
+ * 14-digit timestamp has no age and is NEVER sheltered — an unknown age must not silence a gap.
+ */
+export const LEDGER_ORPHAN_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Every archived migration file, in every folder under the archive. */
+export function loadArchivedMigrations(dir: string = MIGRATIONS_ARCHIVE_DIR): MigrationFile[] {
+  if (!fs.existsSync(dir)) return [];
+  const out: MigrationFile[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...loadArchivedMigrations(full));
+      continue;
+    }
+    const m = FILENAME_RE.exec(entry.name);
+    if (m) out.push({ fileName: entry.name, version: m[1], name: m[2] });
+  }
+  return out;
+}
+
+/** The ledger version as a UTC instant, or null when it is not a real 14-digit timestamp. */
+export function ledgerVersionTimeMs(version: string): number | null {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(version);
+  if (!m) return null;
+  const [year, month, day, hour, minute, second] = m.slice(1).map(Number);
+  const ms = Date.UTC(year, month - 1, day, hour, minute, second);
+  const back = new Date(ms);
+  // Date.UTC rolls 20261340… over into a later month instead of refusing it; a rolled date is no date.
+  if (
+    back.getUTCFullYear() !== year || back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day
+    || back.getUTCHours() !== hour || back.getUTCMinutes() !== minute || back.getUTCSeconds() !== second
+  ) {
+    return null;
+  }
+  return ms;
+}
+
+/** The versions and names of a set of files, in the shape ledgerRowHasFile reads. */
+export function ledgerFileIndex(files: MigrationFile[]): { versions: Set<string>; names: Set<string> } {
+  return { versions: new Set(files.map((f) => f.version)), names: new Set(files.map((f) => f.name)) };
+}
+
+/** Does this ledger row match a file, by version, by name, or by a file version inside its name? */
+export function ledgerRowHasFile(
+  row: LedgerRow,
+  files: { versions: Set<string>; names: Set<string> },
+): boolean {
+  if (files.versions.has(row.version)) return true;
+  const name = row.name ?? "";
+  if (name !== "" && files.names.has(name)) return true;
+  for (const embedded of name.match(/\d{14}/g) ?? []) {
+    if (files.versions.has(embedded)) return true;
+  }
+  return false;
+}
+
+/** The key an acknowledged orphan is filed under: the row's version and name, exactly as recorded. */
+export function ledgerOrphanKey(row: LedgerRow): string {
+  return `${row.version} ${row.name ?? ""}`;
+}
+
+// Ledger rows already investigated and accepted as having no file of their own. One entry per row,
+// keyed by ledgerOrphanKey (version, a space, the name exactly as the ledger holds it), with the
+// evidence beside it. Add one ONLY after tying the row to the change it recorded: a file applied
+// under another name (name the file), or a change that was undone or superseded (name what replaced
+// it). A hand change still live with no file is NOT acknowledged — it is captured into a migration.
+export const ACKNOWLEDGED_LEDGER_ORPHANS = new Map<string, string>([
+  [
+    "20261026034726 reassign_ownership_adopts_unowned_vacancies",
+    "production. Applied by hand on 26 Oct 2026 with no file. Captured on 18 Nov 2026 into "
+      + "20261118234849_capture_phx_reassign_replacement_ownership_live_body.sql (PR 542): md5(prosrc) of "
+      + "public.phx_reassign_replacement_ownership(text,text,date) was 6f4ad6cc6c93ab751681bafce6295950 on both "
+      + "projects, equal to the body in that file.",
+  ],
+  [
+    "20261026034703 reassign_ownership_adopts_unowned_vacancies",
+    "staging. The same change as production's 20261026034726, applied 23 seconds earlier; the same capture file "
+      + "and the same md5 cover it.",
+  ],
+]);
+
+/**
+ * The orphans already in both ledgers on the day this check was added, NOT YET TRACED one by one.
+ *
+ * 🔴 THIS LIST ONLY SHRINKS. It exists so the check could start green without pretending 78 rows had
+ * been investigated: each entry is a row nobody has yet tied to a file or to the change that undid it,
+ * and the value beside it says which ledger holds it. Trace one, and it either leaves (its file now
+ * matches, or it moves to ACKNOWLEDGED_LEDGER_ORPHANS with the evidence) or it is captured into a
+ * migration. Never add a row here: a new orphan is the finding this check exists to raise.
+ * tests/migration-ledger-orphans.test.ts refuses an entry younger than LEDGER_ORPHAN_ADOPTION_CUTOFF,
+ * a duplicate, an entry also acknowledged, and an entry whose row now matches a file.
+ */
+export const LEDGER_ORPHAN_ADOPTION_CUTOFF = "20261112000000";
+export const LEDGER_ORPHANS_PRESENT_AT_ADOPTION = new Map<string, string>([
+  ["20260629173609 analytics_sos_head_office_lock", "production + staging"],
+  ["20260629201215 backfill_resignation_decision_hr_ids", "production + staging"],
+  ["20260629204654 backfill_salary_and_sales_batch_approver_hr_ids", "production + staging"],
+  ["20260705123736 remove_coaching_report_email_dark_block", "production + staging"],
+  ["20260718152837 au_reactivate_kept_region_office_areas_hotfix", "production + staging"],
+  ["20260718155139 au_resync_area_name_all_active_areas_hotfix", "production + staging"],
+  ["20260720211728 territory_drilldown_pharmacies_product_grain_v2", "production + staging"],
+  ["20260727223301 crm_effective_view_add_vendor_columns", "production + staging"],
+  ["20260727224423 reconcile_visits_effective_view_vstar", "production + staging"],
+  ["20260804161607 secure_adhoc_backup_tables_enable_rls_20260804", "production + staging"],
+  ["20260804183818 direct_orders_factory_price_snapshot_drop_not_null", "production + staging"],
+  ["20260804184302 direct_orders_drop_factory_price_snapshot", "production + staging"],
+  ["20260805163359 secure_anon_exposed_tables_rls", "production + staging"],
+  ["20260805164144 sos_import_rows_client_address_source", "production + staging"],
+  ["20260805211701 closing_channel_totals_sync_comments", "production + staging"],
+  ["20260805220602 closing_channel_breakdown_sync_comments", "production + staging"],
+  ["20260808212342 early_birds_module_tables", "production + staging"],
+  ["20260808212424 early_birds_module_rpcs", "production + staging"],
+  ["20260809104249 closing_publication_snapshot", "production + staging"],
+  ["20260826181406 direct_orders_carry_area_and_brick_part1_direct_feed", "production + staging"],
+  ["20260826181449 direct_orders_carry_area_and_brick_part2_channel_breakdown", "production + staging"],
+  ["20260829201319 sales_inbox_arrivals", "staging"],
+  ["20260829203726 drop_sales_inbox_arrivals_feature_not_taken", "staging"],
+  ["20260830091216 temp_vacation_cover_reroute_hossam_plans_to_rasha", "production"],
+  ["20260903045927 departed_access_sweep_returns_revoked_ids", "staging"],
+  ["20260905015203 revert_candidate_status", "staging"],
+  ["20260905021326 bulk_candidate_decision_execute_grants", "production"],
+  ["20260905021341 bulk_candidate_decision_execute_grants", "staging"],
+  ["20260905105910 hr009_test_signature_preimage", "production"],
+  ["20260905121442 hiring_pack_test_prints_preimage_20260905", "production"],
+  ["20260905122643 b129_nda_diagnostic_preimage_20260905", "production"],
+  ["20260905131233 retire_hr_backup_20260905", "production"],
+  ["20260905131748 retire_four_dead_backup_schemas_20260830", "production"],
+  ["20260905132503 retire_eight_spent_backup_schemas", "production"],
+  ["20260905140913 cv_extraction_full_text_search", "staging"],
+  ["20260905141003 cv_extraction_full_text_search", "production"],
+  ["20260905141134 cv_search_ranked_candidate_ids", "staging"],
+  ["20260905141154 cv_search_ranked_candidate_ids", "production"],
+  ["20260905141747 cv_search_point_existing_at_the_index", "staging"],
+  ["20260905141819 cv_search_uses_the_index", "staging"],
+  ["20260905141946 cv_search_last_term_prefix", "staging"],
+  ["20260905142025 cv_search_point_existing_at_the_index", "production"],
+  ["20260906213532 channels_by_rep_revoke_public_execute", "production"],
+  ["20260907070846 market_awareness_test_rows_preimage", "production"],
+  ["20260907082116 revert_vacation_cover_reroute_hossam_plans_to_rasha", "production"],
+  ["20260909193011 org_tree_hides_retired_seats_cairo_date", "production"],
+  ["20260911013637 delete_unused_sales_managers_list", "production"],
+  ["20260911015025 finance_team_drop_empty_financial_advisor_role", "production"],
+  ["20260927221844 add_offers_candidate_id", "staging"],
+  ["20260927222000 add_offers_candidate_id", "production"],
+  ["20260929142803 drop_dead_employee_label_columns", "production"],
+  ["20260929163118 drop_employee_area_and_department_label_columns", "production"],
+  ["20261003155008 phoenix_crm_restore_validation_fix_unique_place", "staging"],
+  ["20261003155025 phoenix_crm_restore_validation_fix_unique_place", "production"],
+  ["20261005211510 phoenix_crm_customer_name_fold_function", "production"],
+  ["20261007064232 automated_payroll_draft_cell_history_capture", "staging"],
+  ["20261007064313 automated_payroll_draft_cell_history_capture", "production"],
+  ["20261007064323 automated_payroll_draft_cell_history_comments", "staging"],
+  ["20261008112534 probation_dv_visit_key_rollback_until_deploy", "staging"],
+  ["20261008121216 probation_dv_visit_in_each_chain_evaluators_day_reapply", "staging"],
+  ["20261008164011 production_planning_guamusin_schema", "production"],
+  ["20261008164107 production_planning_guamusin_seed", "production"],
+  ["20261008223716 dispute_center_tables", "staging"],
+  ["20261008223751 dispute_center_bucket", "staging"],
+  ["20261008223804 dispute_center_append_only_and_rls", "staging"],
+  ["20261008223956 dispute_center_tables", "production"],
+  ["20261008224006 dispute_center_bucket", "production"],
+  ["20261008224022 dispute_center_append_only_and_rls", "production"],
+  ["20261010090255 crm_roster_employees_hr_key_expression_index", "production"],
+  ["20261010103535 phx_auth_session_bundle_two_arg", "staging"],
+  ["20261010103602 phx_auth_session_bundle_two_arg", "production"],
+  ["20261013040337 phoenix_crm_place_notes_policies", "staging"],
+  ["20261013040342 phoenix_crm_place_notes_policies", "production"],
+  ["20261013104240 refused_readings_blocked_permission_pairing_not_null", "staging"],
+  ["20261103134600 production_planning_saginkgo", "staging"],
+  ["20261104155252 phx_transfer_au_seat_without_area_name", "staging"],
+  ["20261105191321 phoenix_crm_customer_last_visits_no_own", "staging"],
+  ["20261105191332 phoenix_crm_customer_last_visits_no_own", "production"],
+]);
+
+/**
+ * Ledger rows with no file in the repository, OLDEST FIRST — the reverse of selectMissingMigrations.
+ *
+ * `ignoreGraceWindow` stands the seven-day shelter down. The checker passes it only to LIST the rows
+ * still inside the shelter, never to judge them, and `--no-grace` does not reach it: the nightly
+ * staging sweep runs `--no-grace`, and a row inside the shelter is normally a migration applied by
+ * the documented route while its pull request waits for the owner's word.
+ */
+export function selectLedgerOrphans(
+  rows: LedgerRow[],
+  files: MigrationFile[],
+  options: { nowMs: number; ignoreGraceWindow?: boolean },
+): LedgerRow[] {
+  const index = ledgerFileIndex(files);
+  return rows
+    .filter((row) => !ACKNOWLEDGED_LEDGER_ORPHANS.has(ledgerOrphanKey(row)))
+    .filter((row) => !LEDGER_ORPHANS_PRESENT_AT_ADOPTION.has(ledgerOrphanKey(row)))
+    .filter((row) => {
+      if (options.ignoreGraceWindow === true) return true;
+      const at = ledgerVersionTimeMs(row.version);
+      return at === null || options.nowMs - at >= LEDGER_ORPHAN_GRACE_MS;
+    })
+    .filter((row) => !ledgerRowHasFile(row, index))
+    .sort((a, b) => a.version.localeCompare(b.version));
+}
+
+/**
+ * The adoption-day rows this ledger still holds with no file — how much of
+ * LEDGER_ORPHANS_PRESENT_AT_ADOPTION is left to trace. The check prints the count on every run so the
+ * list is seen shrinking (or not), instead of sitting silently behind a green result.
+ */
+export function selectUntracedAdoptionOrphans(rows: LedgerRow[], files: MigrationFile[]): LedgerRow[] {
+  const index = ledgerFileIndex(files);
+  return rows.filter(
+    (row) => LEDGER_ORPHANS_PRESENT_AT_ADOPTION.has(ledgerOrphanKey(row)) && !ledgerRowHasFile(row, index),
+  );
+}

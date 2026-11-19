@@ -232,6 +232,70 @@ the job-summary report and the Telegram alert — because every leg is `continue
 two conditions are the only thing that turns a finding into a message. The same test pins that for
 every leg, which is the 2026-08-06 incident (three days, 412 exposed customer names) one edit away.
 
+### The reverse check — every ledger row must be a file
+
+Added on 19 Nov 2026 at the owner's word ("add the reverse ledger check"), after the 18 Nov Supabase
+audit.
+
+**Why.** Everything above asks whether every file is in the ledger. Nothing asked the opposite.
+`public.phx_reassign_replacement_ownership(text,text,date)` was changed on production by hand on
+26 Oct 2026 (ledger row `20261026034726`) with no file in the repository, and the forward check stays
+green for that shape for ever, because there is no file to be missing. The audit found it by hand
+three weeks later and captured the live body into
+`20261118234849_capture_phx_reassign_replacement_ownership_live_body.sql` (PR 542).
+
+**What it judges.** `scripts/check-migrations-applied.ts` now reports two halves, FORWARD and
+REVERSE, and exits 1 when either fails. A ledger row is accounted for when a file in
+`supabase/migrations/` or in the pre-baseline archive (`supabase/_migrations_archive/`, 450 files)
+matches it in one of three ways:
+
+- by version;
+- by name, because the MCP apply stamps the server's clock as the version;
+- by a file version inside the name, for the historical rows that carry a whole alternate filename.
+
+The rules live in `scripts/lib/migration-inventory.ts`, under "THE REVERSE DIRECTION".
+
+**The shelter.** A row younger than seven days (its version read as UTC) is listed but not judged.
+The documented route applies a migration before its pull request merges, so a young row with no file
+on `main` is normally a pull request still waiting for the owner's word. 🔴 **`--no-grace` does NOT
+lift it.** The nightly staging sweep runs `--no-grace`, and lifting the shelter would turn that leg red
+for the route working as designed. A version that is not a real timestamp has no age, and it is never
+sheltered.
+
+**What was there on day one.** Measured read-only that night:
+
+- **Production:** 1,593 ledger rows, 56 of them with no file.
+- **Staging:** 1,639 ledger rows, 49 of them with no file.
+
+Of those:
+
+- Two per project were that night's own work, inside the shelter.
+- One per project was the reassign-ownership change. It is acknowledged in
+  `ACKNOWLEDGED_LEDGER_ORPHANS` with the capture file and its md5.
+- The other 78 distinct rows are frozen in `LEDGER_ORPHANS_PRESENT_AT_ADOPTION`, each marked with
+  the ledger that holds it. That way the check started green and fails on the next one.
+
+Every run prints how many frozen rows are left: 53 on production and 46 on staging that night.
+
+🔴 **That list only shrinks.** It is not a list of investigated rows: it is the backlog nobody has
+traced yet. `tests/migration-ledger-orphans.test.ts` refuses:
+
+- an entry younger than its cutoff (`20261112000000`);
+- a key written twice;
+- an entry that is also acknowledged;
+- an entry whose row now matches a file;
+- any growth past its ceiling of 78.
+
+**When it fails.** First find what the row changed: search the repository for the name, and read the
+objects it names in the catalog. Then:
+
+- **A hand change still live with no file:** capture the LIVE body into a new migration and apply it.
+  Then acknowledge the row with the capture's name and the md5 that ties them.
+- **A file applied under a different name, or a change since undone or superseded:** add an evidenced
+  entry to `ACKNOWLEDGED_LEDGER_ORPHANS` naming that file or what replaced it.
+
+Never delete a ledger row, and never write one to make the check green.
+
 ## Migration Pipeline
 
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new
