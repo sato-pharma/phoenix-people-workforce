@@ -25,6 +25,7 @@ import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { isWhatsAppImportSender, parseWhatsAppImportSenders } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { findWhatsAppInboxLine } from "@/lib/whatsapp-inbox/lines";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 const DEFAULT_SILENCE_ALERT_HOURS = 24;
@@ -95,9 +96,42 @@ export type WhatsAppWebhookRouting = {
   echoesSubscribed: boolean | null;
   /** A per-number override, when the number carries one. It wins over the app-level URL. */
   numberOverrideUrl: string | null;
+  /**
+   * Lines whose WhatsApp business account no longer lists the Phoenix app among its subscribed apps.
+   * Meta then delivers NONE of that line's messages to the webhook, while the app-level subscription,
+   * the callback URL and the number's own API answer all still read healthy — so nothing above could
+   * see it. Each business account is asked separately (the two lines sit in two accounts).
+   */
+  unsubscribedLines?: WhatsAppLineAccount[];
+  /** Phone number ids whose business account was read and DOES list the Phoenix app. */
+  subscribedLineIds?: string[];
+  /** Phone number ids whose business account could not be asked (unknown line, Graph error). */
+  unverifiedLineIds?: string[];
   /** Human-readable reasons, safe to put straight into a log or an alert. */
   problems: string[];
 };
+
+/** One intake line and the WhatsApp business account Meta keeps its subscription on. */
+export type WhatsAppLineAccount = {
+  phoneNumberId: string;
+  businessAccountId: string;
+  label: string;
+  displayNumber: string;
+};
+
+/**
+ * Whether GET /{business-account-id}/subscribed_apps lists the app. True or false only when Meta's
+ * answer is readable; null otherwise, so an unreadable answer is never read as "unsubscribed" and can
+ * never set off a re-subscribe on a guess. Pure.
+ */
+export function appIsSubscribedToAccount(body: unknown, appId: string): boolean | null {
+  const data = (body as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return null;
+  return data.some((entry) => {
+    const app = (entry as { whatsapp_business_api_data?: { id?: unknown } } | null)?.whatsapp_business_api_data;
+    return String(app?.id ?? "").trim() === appId;
+  });
+}
 
 /**
  * Turns the raw Graph answers into a routing verdict. Pure, so every failure mode is testable
@@ -116,6 +150,10 @@ export function evaluateWebhookRouting(input: {
   numberOverrideUrl: string | null;
   /** False when the check could not run at all (missing app secret, Graph error). */
   answerable: boolean;
+  /** Lines whose business account was read and does NOT list the Phoenix app. */
+  unsubscribedLines?: readonly WhatsAppLineAccount[];
+  subscribedLineIds?: readonly string[];
+  unverifiedLineIds?: readonly string[];
 }): WhatsAppWebhookRouting {
   const expected = normalizeCallbackUrl(input.expectedCallbackUrl);
   const callbackUrl = input.subscription?.callback_url ?? null;
@@ -128,9 +166,19 @@ export function evaluateWebhookRouting(input: {
     : null;
   const numberOverrideUrl = input.numberOverrideUrl;
 
-  const base = { active, callbackUrl, echoesSubscribed, messagesSubscribed, numberOverrideUrl };
+  const unsubscribedLines = [...(input.unsubscribedLines ?? [])];
+  const base = {
+    active,
+    callbackUrl,
+    echoesSubscribed,
+    messagesSubscribed,
+    numberOverrideUrl,
+    subscribedLineIds: [...(input.subscribedLineIds ?? [])],
+    unsubscribedLines,
+    unverifiedLineIds: [...(input.unverifiedLineIds ?? [])],
+  };
   if (!input.answerable) {
-    return { ...base, ok: null, problems: [] };
+    return { ...base, ok: null, problems: [], subscribedLineIds: [], unsubscribedLines: [], unverifiedLineIds: [] };
   }
 
   const problems: string[] = [];
@@ -149,6 +197,14 @@ export function evaluateWebhookRouting(input: {
   const override = normalizeCallbackUrl(numberOverrideUrl);
   if (override !== null && override !== expected) {
     problems.push(`the number's own webhook override points at ${override}, not ${expected}`);
+  }
+  // Found 19 Nov 2026: the Recruitment line (+20 10 98500699) received no applicant from 11 Nov 22:40
+  // Cairo while the HR handset, on the same webhook, kept receiving — every check above read healthy.
+  // A business account that drops the app is exactly that shape, and only asking the account sees it.
+  for (const line of unsubscribedLines) {
+    problems.push(
+      `the WhatsApp business account behind the ${line.label} (${line.displayNumber}) is not subscribed to the Phoenix app, so Meta delivers none of that line's messages here`,
+    );
   }
 
   return { ...base, ok: problems.length === 0, problems };
@@ -256,7 +312,7 @@ export type WhatsAppIntakeHealth = WhatsAppIntakeHealthCore & {
   probes: WhatsAppNumberProbe[];
 };
 
-function graphApiVersion(): string {
+export function graphApiVersion(): string {
   return process.env.WHATSAPP_GRAPH_API_VERSION?.trim() || DEFAULT_GRAPH_API_VERSION;
 }
 
@@ -641,7 +697,47 @@ export async function fetchWebhookRouting(): Promise<WhatsAppWebhookRouting> {
     overrides.find((url) => url !== null) ??
     null;
 
-  return evaluateWebhookRouting({ answerable: true, expectedCallbackUrl, numberOverrideUrl, subscription });
+  // Each line's business account, asked whether it still lists this app. One read per account: an
+  // account serving two configured lines is asked once. A line the registry cannot place in an
+  // account, or an answer that cannot be read, is UNVERIFIED — never "unsubscribed".
+  const accounts = new Map<string, WhatsAppLineAccount[]>();
+  const unverifiedLineIds: string[] = [];
+  for (const phoneNumberId of resolveConfiguredPhoneNumberIds()) {
+    const line = findWhatsAppInboxLine(phoneNumberId);
+    if (!line?.businessAccountId) {
+      unverifiedLineIds.push(phoneNumberId);
+      continue;
+    }
+    const entry: WhatsAppLineAccount = {
+      businessAccountId: line.businessAccountId,
+      displayNumber: line.displayNumber,
+      label: line.label,
+      phoneNumberId,
+    };
+    accounts.set(line.businessAccountId, [...(accounts.get(line.businessAccountId) ?? []), entry]);
+  }
+  const unsubscribedLines: WhatsAppLineAccount[] = [];
+  const subscribedLineIds: string[] = [];
+  await Promise.all(
+    [...accounts.entries()].map(async ([businessAccountId, lines]) => {
+      const verdict = appIsSubscribedToAccount(await get(`${businessAccountId}/subscribed_apps`, token), appId);
+      for (const line of lines) {
+        if (verdict === true) subscribedLineIds.push(line.phoneNumberId);
+        else if (verdict === false) unsubscribedLines.push(line);
+        else unverifiedLineIds.push(line.phoneNumberId);
+      }
+    }),
+  );
+
+  return evaluateWebhookRouting({
+    answerable: true,
+    expectedCallbackUrl,
+    numberOverrideUrl,
+    subscribedLineIds,
+    subscription,
+    unsubscribedLines,
+    unverifiedLineIds,
+  });
 }
 
 // A coexistence history replay is not an arrival — it is the past being delivered late. Excluding
@@ -811,6 +907,26 @@ export async function measurePublicReach(now: Date, windowHours: number): Promis
 }
 
 /**
+ * The alert line for lines that went quiet while the channel did not. It says what the run proved,
+ * so nobody re-checks by hand what was just read: when every quiet line's business account still
+ * lists the app and the routing passed, Meta is handing its messages to us, so the gap is applicants
+ * not writing to that number — not delivery. Pure.
+ */
+export function quietLinesDetail(
+  silentLines: readonly Pick<WhatsAppNumberProbe, "displayNumber" | "phoneNumberId">[],
+  routing: WhatsAppWebhookRouting | null,
+  thresholdHours: number,
+): string {
+  const labels = silentLines.map((probe) => probe.displayNumber ?? probe.phoneNumberId).join(", ");
+  const verified = new Set(routing?.subscribedLineIds ?? []);
+  const allDelivered = routing?.ok === true && silentLines.every((probe) => verified.has(probe.phoneNumberId));
+  const cause = allDelivered
+    ? "its WhatsApp business account is still subscribed to the Phoenix app and its routing checks out, so Meta is delivering it — the likeliest cause is that applicants are no longer messaging this number (check the adverts and apply links that carry it)"
+    : "its business account's subscription to the Phoenix app could not be confirmed on this run — check that line's webhook routing";
+  return `Line(s) ${labels} have gone quiet (>${thresholdHours}h) while the API is healthy; ${cause}.`;
+}
+
+/**
  * Composes the per-number API probes + a channel-wide silence window + a PER-NUMBER silence check
  * into one reportable status. Per-number silence uses the `deliveredToPhoneNumberId` stamped on each
  * intake event, so a line that goes quiet while another stays busy is caught (a channel-wide check
@@ -867,10 +983,9 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
       isNumberSilent({ lastInboundAt: probe.lastInboundAt ? new Date(probe.lastInboundAt) : null, now, ok: probe.ok, thresholdHours: threshold }),
     );
     if (silentLines.length > 0) {
-      const labels = silentLines.map((probe) => probe.displayNumber ?? probe.phoneNumberId).join(", ");
       return {
         ...core,
-        detail: `Line(s) ${labels} have gone quiet (>${threshold}h) while the API is healthy — check that line's webhook routing.`,
+        detail: quietLinesDetail(silentLines, core.routing, threshold),
         probes: enriched,
         status: "silent",
       };

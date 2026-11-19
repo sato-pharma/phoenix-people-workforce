@@ -335,8 +335,49 @@ read back from `debug_token`, so there is no extra env var to drift):
 2. `GET /{phone-number-id}?fields=webhook_configuration` — a **per-number override beats the
    app-level URL**, so a stale one silently reroutes every message while everything else looks right.
 
+3. `GET /{business-account-id}/subscribed_apps` — **each line's WhatsApp business account must
+   list the app** (added 19 Nov 2026). The two lines sit in two accounts (`src/lib/whatsapp-inbox/lines.ts`:
+   Recruitment line `2265574670642375`, HR handset `365968989943377`), and Meta delivers a line's
+   messages only while its account lists the app. A readable list without the app names the line and
+   fails the routing; an unreadable answer leaves the line **unverified**, never "unsubscribed".
+
 An unanswerable check (no `WHATSAPP_APP_SECRET`, or Graph unreachable) yields `ok: null` — never
 `false`. A network blip must not page anyone with a fake misconfiguration.
+
+### A line whose business account dropped the app is put back automatically (19 Nov 2026)
+
+**What happened.** The Recruitment line, **+20 10 98500699** — the number every advert and `PX-` apply
+link carries — received its last applicant CV on **Wednesday 11 November 2026 at 22:40 Cairo**
+(production `ats_cv_intake_events`, read by the owner on 19 Nov). It had been taking 54 in 30 days. The
+HR handset, on the same webhook, kept receiving (66 that week, the newest at 14:20 on the 19th). The
+per-line silence check fired every 10 minutes of every working window from Monday 16 November (the
+96-hour threshold after Wednesday night), and all it could say was "gone quiet — check that line's
+webhook routing": the API probe passed, the app-level subscription passed, the number carried no
+override. Nothing asked the line's business account, which is where Meta keeps the delivery.
+
+**What runs now** (owner, 19 Nov 2026: "automate this"):
+
+- the routing check reads each line's business account (step 3 above). An account without the app turns
+  the status into `webhook_misrouted`, so the notice reads "WhatsApp CV intake is not being delivered
+  here" and names the line;
+- the intake job then re-subscribes that account itself (`whatsapp-line-resubscribe.ts`): the same
+  idempotent `POST /{business-account-id}/subscribed_apps` the connect screen makes when a number is
+  linked. **Production only** (`APP_ENV=production`) — staging may hold another app's token, and
+  subscribing a production account to it would hand that app every applicant's message too. Once an
+  hour per account, never on an unreadable answer, never for an account the line registry does not
+  name, never logging the token. `PHOENIX_WHATSAPP_AUTO_RESUBSCRIBE=off` switches it off;
+- the notice ends with what was done: "Phoenix re-subscribed the Recruitment line (+20 10 98500699) to
+  its app automatically at … Cairo, so its messages should arrive again", or Meta's refusal in its own
+  words and "it needs a person in WhatsApp Manager". A success is a `whatsapp_line_resubscribed`
+  warning; a refusal is a `whatsapp_line_resubscribe_failed` error row;
+- a line quiet while its account is **confirmed** subscribed now says so: "Meta is delivering it — the
+  likeliest cause is that applicants are no longer messaging this number (check the adverts and apply
+  links that carry it)". Unconfirmed, it says the subscription could not be confirmed, never more.
+
+**Whether this is what silenced the Recruitment line is not proven yet** — no session had the token
+to ask Meta on 19 Nov. The first 10-minute run after this ships answers it: either the notice names the
+line and re-subscribes it, or the quiet-line notice says the account is subscribed and points at the
+adverts. Pinned by `tests/whatsapp-line-subscription.test.ts`.
 
 ### `public_channel_dead` — the only check that can see an outage the config cannot
 
