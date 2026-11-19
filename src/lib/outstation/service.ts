@@ -2160,8 +2160,8 @@ export async function notifyEmployeeOfAdminJourneyStop(input: {
       tripEndDate: r.tripEndDate,
       tripStartDate: r.tripStartDate,
     });
-    await createSystemNotificationForRecipients(
-      {
+    // Through the one notices door (approvals-one-door.test.ts), as information to the employee alone.
+    await raiseApproval({ module: "outstation", step: "fyi" }, { via: "notice", notice: {
         actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
         category: "general",
         channels: ["in_app", "telegram", "email"],
@@ -2194,13 +2194,12 @@ export async function notifyEmployeeOfAdminJourneyStop(input: {
         },
         module: "outstation",
         priority: "normal",
+        recipientHrId: r.employeeHrId,
         recordId: String(r.id),
         subjectHrId: r.employeeHrId,
         telegram: { buttons: [{ label: "Open Phoenix", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
         title: "HR added a stop to your trip",
-      },
-      [r.employeeHrId],
-    );
+      } });
   } catch (error) {
     logError("Outstation admin stop notification failed (non-blocking)", {
       error,

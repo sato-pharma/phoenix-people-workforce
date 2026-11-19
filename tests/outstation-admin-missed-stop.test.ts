@@ -167,7 +167,8 @@ export function runOutstationAdminMissedStopTests(): void {
   assert.match(notice, /eventType: "journey_stop_added_by_hr"/);
   assert.match(notice, /templateKey: "general"/, "the email is the plain template, never the submit one");
   assert.match(notice, /subjectHrId: r\.employeeHrId/, "without the subject the email half is refused");
-  assert.match(notice, /\[r\.employeeHrId\],?\s*\)/, "it goes to the employee alone");
+  assert.match(notice, /recipientHrId: r\.employeeHrId,/, "it goes to the employee alone");
+  assert.match(notice, /raiseApproval\(\{ module: "outstation", step: "fyi" \}, \{ via: "notice", notice: \{/, "through the one notices door");
   assert.match(notice, /\} catch \(error\) \{\s*logError\(/, "a failed notice never undoes the saved stop");
   assert.match(
     readFileSync(join(root, "src/lib/notifications/notification-types.ts"), "utf8"),
