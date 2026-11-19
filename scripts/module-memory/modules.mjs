@@ -1566,6 +1566,22 @@ export const MODULES = [
     keywords: ["email composer", "sato composer", "ceo composer", "ceo email", "composer", "dictation", "closing line"],
     tables: ["ceo_email", "sato_email"],
   },
+  // 🔴 SPLIT 2026-11-19, FOR THE SAME REASON: `notifications` measured a 3,976-byte pointer against the
+  // 4,000 margin when the named-recipients rule arrived. WHO a notice reaches — the policy's recipient
+  // strategies, the admin-editable role lists, the vacant-seat stand-in — moves together; `notifications`
+  // keeps every glob it had, so a recipients file loads the PAIR.
+  {
+    id: "notification-recipients",
+    title: "Notifications — who a notice reaches",
+    scope: "Who a notice is addressed to: the policy table's recipient strategies, the admin-editable role lists and their on/off switch, named-recipient lists a sender passes, and the vacant-seat stand-in.",
+    globs: [
+      "src/lib/notifications/{policy,role-recipients,recipients,vacant-seat}.ts",
+      "app/**/notification-recipients/**",
+      "tests/{named-recipients-never-widen,vacant-seat-recipients,notification-role-recipients}.test.ts",
+    ],
+    keywords: ["recipient strategy", "permission_based", "moduleOwnerHrIds", "role recipients", "notification recipients", "vacant seat", "stand-in"],
+    tables: ["notification_role_policies"],
+  },
   // ── The Turbify console is ONE console driven by TWO robots, so it gets its own module ──
   //
   // Found 2026-10-02: `src/lib/turbify/**` was claimed by NO module, so the four files holding the

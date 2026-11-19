@@ -906,10 +906,35 @@ function inManagerChain(candidate: RecipientCandidate, subject: RecipientCandida
   return false;
 }
 
+/** The metadata keys a sender uses to name the people a permission-based notice goes to. */
+export const NAMED_PERMISSION_RECIPIENT_KEYS = ["permissionRecipientHrId", "permissionRecipientHrIds", "moduleOwnerHrId", "moduleOwnerHrIds"] as const;
+
+/**
+ * Whether the sender NAMED this notice's people — any of the keys present, even as an empty list.
+ *
+ * A NAMED NOTICE GOES TO THOSE PEOPLE OR TO NOBODY (owner, 19 Nov 2026: "start the resignation alert
+ * fallback task"). The resignation alert, both payroll alerts, the employee-import alert and the
+ * attendance stall alert name their audience from an admin-editable list. When that list came back
+ * empty — a failed read, nobody on it resolving, or the list switched OFF on the recipients screen —
+ * `permissionBasedRecipients` fell back to every active login and told each company-scope holder
+ * of the permission: for a resignation the CEO, the Finance Manager and HR Operations, whom the
+ * owner's 2026-08-09 rule leaves out. An empty named list now resolves to nobody, so the
+ * fail-closed path records the skip. A sender that names nobody keeps the fallback.
+ */
+export function notificationNamesItsRecipients(metadata: Record<string, unknown> | undefined): boolean {
+  if (!metadata) return false;
+  return NAMED_PERMISSION_RECIPIENT_KEYS.some(
+    (key) => Object.prototype.hasOwnProperty.call(metadata, key) && metadata[key] !== undefined,
+  );
+}
+
 async function permissionBasedRecipients(input: ResolveNotificationRecipientsInput, policy: NotificationPolicy, subject: RecipientCandidate | null) {
   if (!policy.permissionResource) return [];
-  const explicit = await explicitRecipientCandidates(input, ["permissionRecipientHrId", "permissionRecipientHrIds", "moduleOwnerHrId", "moduleOwnerHrIds"]);
-  const candidates = explicit.length > 0 ? explicit : await activeAuthCandidates();
+  const named = notificationNamesItsRecipients(input.metadata);
+  const explicit = await explicitRecipientCandidates(input, [...NAMED_PERMISSION_RECIPIENT_KEYS]);
+  // Named → exactly those people (none resolved → nobody). Only a notice that names nobody looks
+  // through every active login for the permission and the subject's scope.
+  const candidates = named ? explicit : await activeAuthCandidates();
   const employeesByHrId = new Map(
     candidates
       .map((candidate) => [candidate.recipient.hrId ?? "", candidate.employee] as const)
@@ -921,7 +946,7 @@ async function permissionBasedRecipients(input: ResolveNotificationRecipientsInp
   for (const candidate of candidates) {
     const context = accessContextFor(candidate);
     if (!context || !await canAccess(context, policy.permissionResource, policy.permissionAction)) continue;
-    if (explicit.length > 0) {
+    if (named) {
       output.push(candidate.recipient);
       continue;
     }
@@ -1000,6 +1025,7 @@ export async function resolveNotificationRecipientsWithGovernance(input: Resolve
     } else if (strategy === "hr" || strategy === "admin" || strategy === "module_owner" || strategy === "permission_based") {
       const scoped = await permissionBasedRecipients(input, policy, subject);
       if (scoped.length > 0) recipients.push(...scoped);
+      else if (notificationNamesItsRecipients(input.metadata)) warnings.push({ code: "named_recipients_unresolved", detail: `${strategy}: the sender named this notice's recipients and none of them resolved to an active person holding the permission; nobody else was told.`, strategy });
       else warnings.push({ code: "permission_recipient_missing", detail: `${strategy} requires exact permission and organizational scope; no broad fallback was used.`, strategy });
     } else if (strategy === "assigned_approver" || strategy === "workflow_step_approver" || strategy === "role_based") {
       const keys = strategy === "assigned_approver"

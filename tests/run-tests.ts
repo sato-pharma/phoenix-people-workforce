@@ -3242,6 +3242,7 @@ import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.t
 import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 import { runNotificationRegistryLooseEndsTests } from "./notification-registry-loose-ends.test.ts";
 import { runResignationReminderPolicyTests } from "./resignation-reminder-policy.test.ts";
+import { runNamedRecipientsNeverWidenTests } from "./named-recipients-never-widen.test.ts";
 import { runSyntheticJourneyAdviceTests } from "./synthetic-journey-advice.test.ts";
 import { runSyntheticJourneyRunStatusTests } from "./synthetic-journey-run-status.test.ts";
 import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declared-page.test.ts";
@@ -12783,6 +12784,7 @@ await runTest("every transition table in code has a registry row and a Workflow 
 await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 await runTest("the notification registry's loose ends (REC-084 phase 2, 19 Nov 2026): the bell's categories are derived from the registry and unchanged, every category a notice is written under is registered and every registered one is written or kept for history, every registered type has a policy row or an acknowledged default, and the default fallback logs a warning instead of staying silent", runNotificationRegistryLooseEndsTests);
 await runTest("the resignation reminder takes the resignations policy (owner, 19 Nov 2026): the real daily reminder, run against the in-memory database, stores its notice under resignations and opens in-app, email, Telegram and push like every other resignation notice; its email names the leaver so the identity guard lets it through; and only the reminder's own recipient list is told", runResignationReminderPolicyTests);
+await runTest("a notice that names its recipients goes to them or to nobody (owner, 19 Nov 2026): the resignation alert with an empty, switched-off or unresolvable named list tells nobody — never the CEO, the Finance Manager or HR Operations through the permission fallback — and records the skip; a named list reaches exactly its people; a notice that names nobody keeps the fallback", runNamedRecipientsNeverWidenTests);
 await runTest("smoke-test advice on the Synthetic Journeys page (a failed assertion is never 'the page did not respond'; a cancelled prefetch and another host's refusal are not the app's failure; the app's own 401, 403, 404 and 500 are named)", runSyntheticJourneyAdviceTests);
 await runTest("smoke-test run status on the Synthetic Journeys page (every check passed and the one skip said why is healthy; a skip with no reason is still a warning; a skip never hides a failure or stands in for a pass)", runSyntheticJourneyRunStatusTests);
 await runTest("smoke check that skips itself shows its real page (the Outstation Expenses export reads /admin/outstation/expenses, not the word unknown; a check that named no page still reads unknown)", runSyntheticJourneyDeclaredPageTests);

@@ -154,6 +154,42 @@ four deliveries. Each part of the fix was undone in turn and caught by its own a
 old channel list, the missing `subjectHrId` (the email then stops at the identity guard), and the
 acknowledgement in `DEFAULT_POLICY_ACKNOWLEDGED`.
 
+### 2b. A notice that names its recipients goes to them or to nobody (fixed 19 Nov 2026)
+
+On the owner's word ("start the resignation alert fallback task"), found while fixing 2a.
+
+**The gap.** Five senders name their audience from an admin-editable list and pass it to the engine as
+`metadata.moduleOwnerHrIds`: the resignation alert (`resignation_workflow_alert`), the payroll workflow and
+payroll upload alerts (`payroll_workflow_alert`), the employee-import alert and the attendance stall alert.
+Their policy rows pick recipients `permission_based`, and `permissionBasedRecipients` (`policy.ts`) used the
+named people when there were some. When the list came back **empty**, it looked through every active login
+instead and told each one holding the permission with company scope, or in the subject's manager chain.
+For a resignation that is the Super Admin, the CEO, the Finance Manager and HR Operations — the owner's
+2026-08-09 rule leaves the CEO out on purpose.
+
+The list comes back empty in three ways:
+
+- a failed read (`resolveNotificationPersonRecipients` returns no one with a warning);
+- nobody on the list resolving to an active person (`candidatesByHrIds` needs an active `employees` row);
+- **the list switched OFF on the notification recipients screen** — the worst case, because "off" meant
+  "everyone with the permission".
+
+**The fix.** `notificationNamesItsRecipients(metadata)` says whether the sender named its people: any of
+`permissionRecipientHrId(s)` / `moduleOwnerHrId(s)` present, even as an empty list or null. A named notice
+uses exactly those people; if none resolve it resolves to nobody, the fail-closed path records the skip,
+and the warning reads `named_recipients_unresolved`. A notice that names nobody keeps the fallback (no
+sender above does that).
+
+**What changes for who is told.** Nothing while the lists work. Only in the three failure cases above: the
+alert used to reach every company-scope holder of the permission, and now reaches nobody, with the skip on
+record. For the payroll alerts that fallback was every company-scope holder of payroll access.
+
+Pinned by `tests/named-recipients-never-widen.test.ts`, which drives the real engine and the real resolver
+against the in-memory database (`tests/support/postgrest-stand-in.ts`) with the resignation alert's own
+shape. On the old fallback each of its three failure cases fails with its own message — the empty list
+told the CEO — and all pass on the fix. The rule lives in the new `notification-recipients` module memory,
+split out of `notifications` the same day (its pointer had reached 3,976 of 4,000 bytes).
+
 ## 3. Every scheduled route records a heartbeat (REC-049)
 
 `tests/scheduled-route-heartbeats.test.ts` reads every route under `app/api/cron/**`, the two morning
