@@ -730,14 +730,15 @@ export async function getCompanyNoActivityDays(input: {
   const items = suppressFieldVisitAttendanceProblems(allItems);
 
   const mappedEmployees = employees.map(mapPrivateCalendarEmployee);
-  const isExpectedWorkday = expectedWorkdayResolver(employees, attendancePolicyRows);
-  const exceptions = derivePrivateCalendarExceptions({
+  // One pass for both runs of the engine below (the second takes the interviews out), so each applies the
+  // employment window through the one resolver.
+  const enginePass = {
     employees: mappedEmployees,
     end: input.end,
-    isExpectedWorkday,
-    items,
+    isExpectedWorkday: expectedWorkdayResolver(employees, attendancePolicyRows),
     start: input.start,
-  });
+  };
+  const exceptions = derivePrivateCalendarExceptions({ ...enginePass, items });
 
   // These days become deduction lines, which store the full name, not the name the calendar prints.
   const fullNameByHrId = new Map(employees.map((employee) => [employee.hrId, employee.fullName]));
@@ -759,11 +760,8 @@ export async function getCompanyNoActivityDays(input: {
   // at 0.5 — the Half Day (CRM) tab judges only reps and district managers. Never the weekly gap notice.
   const reported = new Set(days.map((day) => `${day.employeeHrId}|${day.date}`));
   const withoutInterviews = derivePrivateCalendarExceptions({
-    employees: mappedEmployees,
-    end: input.end,
-    isExpectedWorkday,
+    ...enginePass,
     items: items.filter((item) => item.source !== "interview"),
-    start: input.start,
   });
   for (const day of noActivityDays(withoutInterviews)) {
     if (!reported.has(`${day.employeeHrId}|${day.date}`)) days.push({ ...day, coveredOnlyByInterviews: true });
