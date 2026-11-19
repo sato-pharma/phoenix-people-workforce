@@ -24673,10 +24673,10 @@ $$;
 ALTER FUNCTION public.phx_brick_move_period_net_status(p_since_days integer) OWNER TO postgres;
 
 --
--- Name: phx_cancel_marketing_request(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: phx_cancel_marketing_request(uuid, text, text, timestamp with time zone, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone) RETURNS jsonb
+CREATE FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -24717,6 +24717,18 @@ begin
      and is_cc = false;
   get diagnostics v_closed_steps = row_count;
 
+  -- The cancel's required audit row: the durable record of why an in-flight request was abandoned (the reason is in
+  -- the app's summary), the status it replaced and how many rungs this cancel closed.
+  insert into audit_logs (actor_login_id, entity_id, entity_type, new_values, old_values, summary)
+  values (
+    coalesce(nullif(p_audit ->> 'actor_login_id', ''), 'system'),
+    p_request_id::text,
+    'marketing_request',
+    jsonb_build_object('status', 'cancelled', 'closedApprovalSteps', v_closed_steps),
+    jsonb_build_object('status', v_status),
+    p_audit ->> 'summary'
+  );
+
   return jsonb_build_object(
     'requestId',      p_request_id,
     'previousStatus', v_status,
@@ -24726,13 +24738,13 @@ begin
 end;
 $$;
 
-ALTER FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone) OWNER TO postgres;
+ALTER FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb) OWNER TO postgres;
 
 --
--- Name: FUNCTION phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone) IS 'Cancels a marketing request (compare-and-set on the status the caller read) and closes its open approval rungs as skipped, under the request row lock.';
+COMMENT ON FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb) IS 'Cancels a marketing request (compare-and-set on the status the caller read), closes its open approval rungs as skipped and writes its audit row, under the request row lock, in one transaction (REC-038, 19 Nov 2026).';
 
 --
 -- Name: phx_capture_deduction_dispute_state(uuid); Type: FUNCTION; Schema: public; Owner: postgres
@@ -38455,10 +38467,10 @@ $$;
 ALTER FUNCTION public.phx_record_conversation_comments_no_update() OWNER TO postgres;
 
 --
--- Name: phx_record_direct_order_collection(uuid, numeric, date, numeric, date); Type: FUNCTION; Schema: public; Owner: postgres
+-- Name: phx_record_direct_order_collection(uuid, numeric, date, numeric, date, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date) RETURNS jsonb
+CREATE FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -38466,6 +38478,7 @@ declare
   v_order     public.direct_order_requests%rowtype;
   v_value     numeric(18, 2);
   v_paid      numeric(18, 2);
+  v_date      date;
   v_offsets   numeric(18, 2);
   v_remaining numeric(18, 2);
 begin
@@ -38492,63 +38505,92 @@ begin
 
   if p_paid_amount is null then
     -- Clearing: one explicit "nothing collected" state. The amount and the date reset together.
+    v_paid := null;
+    v_date := null;
     if v_offsets <= 0 then
       v_remaining := null;
     else
       v_remaining := greatest(0, round(v_value - v_offsets, 2));
     end if;
+  else
+    if coalesce(v_order.status, '') <> 'approved' then
+      raise exception 'direct_order_collection_not_approved';
+    end if;
+    if p_paid_amount <= 0 then
+      raise exception 'direct_order_collection_amount_invalid';
+    end if;
+    if v_value <= 0 then
+      raise exception 'direct_order_collection_no_value';
+    end if;
 
-    update public.direct_order_requests
-       set paid_amount      = null,
-           payment_date     = null,
-           remaining_amount = v_remaining,
-           updated_at       = now()
-     where id = p_order_id;
+    -- Round BEFORE comparing, exactly as collection-rules.ts does.
+    v_paid := round(p_paid_amount, 2);
+    if v_paid > v_value then
+      raise exception 'direct_order_collection_exceeds_value';
+    end if;
+    if v_offsets > 0 and round(v_paid + v_offsets, 2) > v_value then
+      raise exception 'direct_order_collection_exceeds_net_value';
+    end if;
+    if p_payment_date is null then
+      raise exception 'direct_order_collection_date_required';
+    end if;
 
-    return jsonb_build_object(
-      'paidAmount',              null,
-      'paymentDate',             null,
-      'remainingAmount',         v_remaining,
-      'previousPaidAmount',      v_order.paid_amount,
-      'previousPaymentDate',     v_order.payment_date,
-      'previousRemainingAmount', v_order.remaining_amount
-    );
+    v_date := p_payment_date;
+    v_remaining := round(v_value - v_paid - v_offsets, 2);
   end if;
-
-  if coalesce(v_order.status, '') <> 'approved' then
-    raise exception 'direct_order_collection_not_approved';
-  end if;
-  if p_paid_amount <= 0 then
-    raise exception 'direct_order_collection_amount_invalid';
-  end if;
-  if v_value <= 0 then
-    raise exception 'direct_order_collection_no_value';
-  end if;
-
-  -- Round BEFORE comparing, exactly as collection-rules.ts does.
-  v_paid := round(p_paid_amount, 2);
-  if v_paid > v_value then
-    raise exception 'direct_order_collection_exceeds_value';
-  end if;
-  if v_offsets > 0 and round(v_paid + v_offsets, 2) > v_value then
-    raise exception 'direct_order_collection_exceeds_net_value';
-  end if;
-  if p_payment_date is null then
-    raise exception 'direct_order_collection_date_required';
-  end if;
-
-  v_remaining := round(v_value - v_paid - v_offsets, 2);
 
   update public.direct_order_requests
      set paid_amount      = v_paid,
-         payment_date     = p_payment_date,
+         payment_date     = v_date,
          remaining_amount = v_remaining,
          updated_at       = now()
    where id = p_order_id;
 
+  -- The collection's required audit row, with the figures this function wrote and the ones they replaced. trim_scale
+  -- writes 500.00 as 500, as the app's own JSON did.
+  insert into public.audit_logs (actor_login_id, entity_id, entity_type, new_values, old_values, summary)
+  values (
+    coalesce(nullif(p_audit ->> 'actor_login_id', ''), 'system'),
+    p_order_id::text,
+    'direct_order_request',
+    jsonb_build_object(
+      'paidAmount', trim_scale(v_paid),
+      'paymentDate', v_date,
+      'remainingAmount', trim_scale(v_remaining)
+    ),
+    jsonb_build_object(
+      'paidAmount', trim_scale(v_order.paid_amount),
+      'paymentDate', v_order.payment_date,
+      'remainingAmount', trim_scale(v_order.remaining_amount)
+    ),
+    p_audit ->> 'summary'
+  );
+
+  -- The order's timeline entry. The app's sentence for a remainder still owed carries {remaining}, filled here with the
+  -- remainder computed under the lock; otherwise its other sentence (cleared, or paid in full) is written as given.
+  insert into public.direct_order_events (request_id, actor_hr_id, event_type, message, metadata)
+  values (
+    p_order_id,
+    nullif(p_event ->> 'actor_hr_id', ''),
+    p_event ->> 'event_type',
+    case
+      when v_paid is not null and v_remaining > 0 and (p_event ->> 'message_outstanding') is not null
+        then replace(p_event ->> 'message_outstanding', '{remaining}', trim_scale(v_remaining)::text)
+      else p_event ->> 'message'
+    end,
+    jsonb_build_object(
+      'previousPaidAmount', trim_scale(v_order.paid_amount),
+      'paidAmount', trim_scale(v_paid),
+      'remainingAmount', trim_scale(v_remaining),
+      'paymentDate', v_date,
+      -- Recorded so the trail proves the month was untouched, not merely that we intended it.
+      'salesMonthUnchanged', nullif(v_order.sales_month, '')
+    )
+  );
+
   return jsonb_build_object(
     'paidAmount',              v_paid,
-    'paymentDate',             p_payment_date,
+    'paymentDate',             v_date,
     'remainingAmount',         v_remaining,
     'previousPaidAmount',      v_order.paid_amount,
     'previousPaymentDate',     v_order.payment_date,
@@ -38557,13 +38599,13 @@ begin
 end;
 $$;
 
-ALTER FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date) OWNER TO postgres;
+ALTER FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb) OWNER TO postgres;
 
 --
--- Name: FUNCTION phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date); Type: COMMENT; Schema: public; Owner: postgres
+-- Name: FUNCTION phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date) IS 'Records or clears (p_paid_amount null) the cash collected on a direct order, under the order row lock, compare-and-set against the paid amount and date the caller read. remaining_amount = sales_value - paid - offsets.';
+COMMENT ON FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb) IS 'Records or clears (p_paid_amount null) the cash collected on a direct order, under the order row lock, compare-and-set against the paid amount and date the caller read, and writes its audit row and order event in the same transaction (REC-038, 19 Nov 2026). remaining_amount = sales_value - paid - offsets.';
 
 --
 -- Name: phx_record_direct_order_offset(uuid, uuid, numeric, text, text); Type: FUNCTION; Schema: public; Owner: postgres
@@ -102033,11 +102075,11 @@ REVOKE ALL ON FUNCTION public.phx_brick_move_period_net_status(p_since_days inte
 GRANT ALL ON FUNCTION public.phx_brick_move_period_net_status(p_since_days integer) TO service_role;
 
 --
--- Name: FUNCTION phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb); Type: ACL; Schema: public; Owner: postgres
 --
 
-REVOKE ALL ON FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phx_capture_deduction_dispute_state(p_candidate_id uuid); Type: ACL; Schema: public; Owner: postgres
@@ -103296,11 +103338,11 @@ REVOKE ALL ON FUNCTION public.phx_record_conversation_comments_no_update() FROM 
 GRANT ALL ON FUNCTION public.phx_record_conversation_comments_no_update() TO service_role;
 
 --
--- Name: FUNCTION phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date); Type: ACL; Schema: public; Owner: postgres
+-- Name: FUNCTION phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb); Type: ACL; Schema: public; Owner: postgres
 --
 
-REVOKE ALL ON FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date) TO service_role;
+REVOKE ALL ON FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_record_direct_order_collection(p_order_id uuid, p_paid_amount numeric, p_payment_date date, p_expected_paid_amount numeric, p_expected_payment_date date, p_audit jsonb, p_event jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phx_record_direct_order_offset(p_request_id uuid, p_order_id uuid, p_amount numeric, p_note text, p_actor_hr_id text); Type: ACL; Schema: public; Owner: postgres
