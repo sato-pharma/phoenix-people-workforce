@@ -458,49 +458,29 @@ export async function runHrAtomicWritesTests() {
   );
 
   // ── 5. F-HR-010 — no leave path writes a step on its own any more ─────────────────────────────
-  assert.doesNotMatch(
-    vacationService,
-    /recordVacationApprovalStepDecision|closeSiblingPendingHrApprovalSteps/,
-    "THE F-HR-010 FIX: the separate step writers are gone — no decision path can decide a step before its request moves",
-  );
+  // RETIRED 19 Nov 2026 (REC-078, phase 2): the source pins that read applyVacationDecisionSequential
+  // and applyVacationDecisionLegacy for the single call — that each decides the step and moves the
+  // request through ONE rpc carrying p_step_id and the whole patch, never updates the request or a
+  // step row itself, maps a lost race to 409 in both the paid and non-paid branch, hands Sick leave's
+  // step the old writer's values, and writes the event and audit row only after the call — are now
+  // RUN, not read, by tests/leave-decision-behaviour.test.ts against the in-memory PostgREST, which
+  // calls decideVacationRequest and asserts the calls it makes and what a refusal leaves behind.
+  // What stays here is what that test cannot reach: the SQL itself (above), the whitelist agreeing
+  // with the columns both paths build, and the three pins below, which cover paths it does not drive.
   assert.doesNotMatch(
     vacationService,
     /\.from\(vacationApprovalStepsTable\)\s*\.update\(\{\s*decided_at: now/,
     "no step row is decided by a separate update anywhere in the service (resubmission's reset to pending is not a decision)",
-  );
-  for (const [fn, name] of [[sequential, "applyVacationDecisionSequential"], [sick, "applyVacationDecisionLegacy (Sick leave)"]] as const) {
-    assert.doesNotMatch(fn, /\.from\(vacationRequestsTable\)\s*\.update\(/, `${name} must not move the request with its own update outside the function`);
-    assert.match(
-      fn,
-      /\.rpc\("phx_apply_vacation_step_decision", \{[\s\S]*?p_step_id: step\.id,[\s\S]*?p_request_patch: updatePayload,\s+\}\);\s+if \(error\) throw vacationDecisionWriteError\(error\);/,
-      `${name} decides the step and moves the request in one call, and throws before anything else is written`,
-    );
-    const atomicAt = fn.indexOf('rpc("phx_apply_vacation_step_decision"');
-    const eventAt = fn.indexOf("eventType: `approval_${step.stepKey}_${decisionValue}`");
-    const auditAt = fn.indexOf("await writeRequiredAuditLog(");
-    assert.ok(eventAt !== -1 && auditAt !== -1, `${name}: the decision event and its audit row must still be written`);
-    assert.ok(atomicAt < eventAt && atomicAt < auditAt, `${name}: the event and the audit row follow the atomic write — a refused decision records neither`);
-  }
-  assert.match(
-    sick,
-    /p_step_status: decisionValue,\s+p_decision_comment: nullableText\(input\.decisionComment\),\s+p_overridden_by_hr_id: null,\s+p_actor_hr_id: input\.actorHrId \?\? null,/,
-    "Sick leave hands the function the same step values the old writer stored (comment through nullableText, no override)",
   );
   assert.match(
     sick,
     /const stepsAfterDecision = steps\.map\(\(candidate\) =>\s+candidate\.id === step\.id \? \{ \.\.\.candidate, status: decisionValue \} : candidate\s+\);/,
     "Sick leave's finality rules read the step as it will be once the call commits",
   );
-  assert.match(sequential, /\.rpc\("phx_apply_vacation_paid_approval_with_step", \{[\s\S]*?p_step_id: step\.id,/, "the paid branch writes its step inside the same transaction as the paid approval");
   assert.match(
     sequential,
     /const stepOverriddenByHrId = overrideContext \? hrIdForStorage\(input\.actorHrId\) \|\| null : null;/,
     "the override column is stored through hrIdForStorage",
-  );
-  assert.equal(
-    (sequential.match(/if \(error\) throw vacationDecisionWriteError\(error\);/g) ?? []).length,
-    2,
-    "both sequential branches (paid and non-paid) map a lost race to a 409",
   );
 
   // ── 6. A lost race on a leave decision is 409, never 500 or 400 ────────────────────────────────

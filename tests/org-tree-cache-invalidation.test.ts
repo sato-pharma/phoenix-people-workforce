@@ -50,39 +50,14 @@ export function runOrgTreeCacheInvalidationTests() {
   }
 
   // ── invalidateExecutiveDashboardCache reacts to the organogram-affecting modules ────────────
-  {
-    assert.match(
-      invalidation,
-      /ORG_TREE_MODULES[\s\S]{0,40}=\s*\[\s*"employees"\s*,\s*"vacancies"\s*,\s*"resignations"\s*\]/,
-      "the org-tree module list must cover employees, vacancies and resignations — the three modules every seat-affecting write path already passes",
-    );
-
-    const fnStart = invalidation.indexOf("export function invalidateExecutiveDashboardCache(");
-    const fnEnd = invalidation.indexOf("\n}\n", fnStart);
-    assert.ok(fnStart > -1 && fnEnd > fnStart, "invalidateExecutiveDashboardCache must exist as a single contiguous function");
-    const fnBody = invalidation.slice(fnStart, fnEnd);
-
-    assert.match(
-      fnBody,
-      /uniqueModules\.some\(\(module\)\s*=>\s*ORG_TREE_MODULES\.includes\(module\)\)/,
-      "the function body must branch on whether any passed module is organogram-affecting",
-    );
-    assert.match(
-      fnBody,
-      /revalidateTag\(\s*"sos-reference"\s*,\s*\{\s*expire:\s*0\s*\}\s*\)/,
-      "the organogram branch must EXPIRE the sos-reference tag the org tree reads share — \"max\" serves the old tree to the next read",
-    );
-
-    // The whole function stays wrapped in the existing try/catch — revalidateTag throws outside a
-    // request scope (a cron), and this is best-effort exactly like every other branch here.
-    const tryIdx = invalidation.indexOf("try {", fnStart);
-    const catchIdx = invalidation.indexOf("} catch (error) {", fnStart);
-    const orgBranchIdx = fnBody.indexOf("ORG_TREE_MODULES.includes(module)");
-    assert.ok(
-      tryIdx > -1 && catchIdx > tryIdx && tryIdx < fnStart + orgBranchIdx && fnStart + orgBranchIdx < catchIdx,
-      "the new branch must sit inside the function's existing try/catch, not bypass it",
-    );
-  }
+  // RETIRED 19 Nov 2026 (REC-079, phase 2): the source pins on invalidateExecutiveDashboardCache's
+  // text — the ORG_TREE_MODULES list naming employees, vacancies and resignations, the branch that
+  // tests it, the { expire: 0 } on "sos-reference" and the branch sitting inside the try/catch. The
+  // test stub of next/cache now records every call, so tests/dashboard-invalidation-behaviour.test.ts
+  // CALLS the function for each of the three modules and asserts the tree is expired at once, that a
+  // module moving no seat leaves it alone, and that a bust which throws never fails the write. What
+  // stays here is what that test does not reach: the two org-tree reads' tag, the seat transfer
+  // calling the hub, and the hub importing no module's tag.
 
   // ── transferEmployeeSeat now invalidates — the one write path that called nothing at all ──────
   {
