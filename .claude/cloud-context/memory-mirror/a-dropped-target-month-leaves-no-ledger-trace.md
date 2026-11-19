@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3dfa5eb2-1cfe-4ea8-b767-855d5e601f89
-  modified: 2026-10-12T14:53:41.427Z
+  modified: 2026-11-19T14:59:11.297Z
 ---
 
 Pedia October 2026 held **zero** target rows on 12 Oct 2026 — every area, not only the Qena 2 gap he
@@ -23,6 +23,11 @@ missing month is never evidence of nothing having happened, and "why" may simply
 for `monthly_targets%backup%` before telling him a month's figures are lost. Row values there are
 rounded per row, so a sum of `round(target_value,2)` comes to 5,277,761.11 against the raw
 5,277,761.03 — quote whichever matches the artifact you are handing him.
+
+**Exported 19 Nov 2026, table dropped on his word from 31 Dec 2026.** He decided "export, then drop"
+(`scripts/backup-schema-decisions.json`); the 144 rows are in
+`F:\Phoenix Workforce\snapshot-exports\au.monthly_targets_pedia_oct2026_backup_20261002\` (CSV + manifest
+with its SHA-256). After the drop that folder is the only copy — look there, not in `au`.
 
 **A second, separate cause of a one-area hole: the upload template only offers areas whose seat was
 filled when he downloaded it.** `parseTargetsWorkbook` maps by header name, and the template lists
