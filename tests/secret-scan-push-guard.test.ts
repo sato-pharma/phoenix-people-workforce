@@ -81,7 +81,7 @@ function repoFixture(root: string, ahead: number): string {
   return work;
 }
 
-/** A fake `gitleaks` first on PATH that appends the folder it ran in to `log` and exits 0. */
+/** A fake `gitleaks` first on PATH that appends the folder it ran in to `log` and exits PHX_FAKE_GITLEAKS_EXIT (0). */
 function fakeGitleaksEnv(root: string, log: string): NodeJS.ProcessEnv {
   const bin = join(root, "fakebin");
   mkdirSync(bin, { recursive: true });
@@ -103,7 +103,7 @@ function fakeGitleaksEnv(root: string, log: string): NodeJS.ProcessEnv {
         "  require('fs').appendFileSync(process.env.PHX_FAKE_GITLEAKS_LOG, process.cwd() + '\\n');\n" +
         "  const range = process.argv.find((a) => a.startsWith('--log-opts=')) || '';\n" +
         "  require('fs').appendFileSync(process.env.PHX_FAKE_GITLEAKS_LOG + '.ranges', range.slice(11) + '\\n');\n" +
-        "  process.exit(0);\n" +
+        "  process.exit(Number(process.env.PHX_FAKE_GITLEAKS_EXIT || 0));\n" +
         "}\n",
     );
     env.NODE_OPTIONS = `--require "${preload.replace(/\\/g, "/")}"`; // NODE_OPTIONS reads a backslash as an escape
@@ -112,7 +112,7 @@ function fakeGitleaksEnv(root: string, log: string): NodeJS.ProcessEnv {
     writeFileSync(
       script,
       '#!/bin/sh\npwd -P >> "$PHX_FAKE_GITLEAKS_LOG"\n' +
-        'printf \'%s\\n\' "${3#--log-opts=}" >> "$PHX_FAKE_GITLEAKS_LOG.ranges"\nexit 0\n',
+        'printf \'%s\\n\' "${3#--log-opts=}" >> "$PHX_FAKE_GITLEAKS_LOG.ranges"\nexit "${PHX_FAKE_GITLEAKS_EXIT:-0}"\n',
     );
     chmodSync(script, 0o755);
   }
@@ -132,6 +132,17 @@ function runGuard(cwd: string, command: string, env: NodeJS.ProcessEnv, toolName
     stdio: ["pipe", "pipe", "pipe"],
     timeout: 60000,
   });
+}
+
+/** The command bash-guard rewrote it to, or "" when it did not rewrite it. */
+function rewriteOf(stdout: string): string {
+  const start = stdout.indexOf('{"hookSpecificOutput"');
+  if (start < 0) return "";
+  const parsed = JSON.parse(stdout.slice(start)) as {
+    hookSpecificOutput?: { permissionDecision?: string; updatedInput?: { command?: string } };
+  };
+  const out = parsed.hookSpecificOutput;
+  return out?.permissionDecision === "allow" ? String(out.updatedInput?.command ?? "") : "";
 }
 
 /** The reason bash-guard refused with, or "" when it let the command through. */
@@ -249,47 +260,107 @@ export function runSecretScanPushGuardTests(): void {
     // when the new commit does not exist, so the range scan reads zero commits on a fresh branch (the
     // shape that carried a JWT out, and the next push was refused for it) and everything but the new
     // commit on a branch already ahead. `behind` and `ahead` are those two states.
+    //
+    // Since 20 Nov 2026 (the owner's choice: 218 refusals a week) the plain Bash shape is REWRITTEN with
+    // the scan between the commit and the push, so it reads the new commit; every other shape is still
+    // refused. `behind` sits on `main`, which is never a rewrite target, so it stays refused.
     const exactShape = 'git add leak.ts && git commit -m "add it" && git push -u origin codex/probe';
-    for (const [state, repo] of [["a branch with nothing past origin/main", behind], ["a branch already ahead", ahead]]) {
-      rmSync(log, { force: true });
-      const reason = refusalOf(runGuard(repo, exactShape, env));
-      assert.match(reason, /C12/, `git add && git commit && git push must be refused on ${state}`);
-      assert.match(reason, /two commands/i, "the refusal must say how to get past it");
-      assert.deepEqual(scannedFolders(log), [], "there is nothing worth scanning yet, so it refuses without scanning");
-    }
+    rmSync(log, { force: true });
+    const onMain = refusalOf(runGuard(behind, exactShape, env));
+    assert.match(onMain, /C12/, "git add && git commit && git push from main must still be refused");
+    assert.match(onMain, /two commands/i, "the refusal must say how to get past it");
+    assert.deepEqual(scannedFolders(log), [], "there is nothing worth scanning yet, so it refuses without scanning");
+
+    /** The scan over the branch sits directly in front of the push, chained so its failure stops it. */
+    const scanThenPush = (command: string): boolean =>
+      /\{ gitleaks git "[^"]+" "--log-opts=origin\/main\.\.HEAD" [^{}]*\|\| \{ s=\$\?; [^{}]*false; \}; \} && (timeout \d+ )?git push(\s|$)/.test(
+        command,
+      );
+    rmSync(log, { force: true });
+    const rewritten = rewriteOf(runGuard(ahead, exactShape, env));
+    assert.ok(scanThenPush(rewritten), `a branch already ahead must be rewritten with the scan before the push; got ${rewritten}`);
+    assert.deepEqual(scannedFolders(log), [], "the hook itself scans nothing: the scan runs inside the command");
 
     // ...in every spelling sessions really use. Measured over the Phoenix sessions on 3 Nov 2026.
     const heredocCommit = "git add leak.ts && git commit -q -F - <<'EOF'\nfix: a message\n\nmore words\nEOF\ngit push";
-    const refused: Array<[string, string, string?]> = [
+    const rewrites: Array<[string, string]> = [
       ["a semicolon chain", 'git add leak.ts; git commit -m "add it"; git push'],
       ["one command per line", 'git add leak.ts\ngit commit -m "add it"\ngit push -u origin HEAD'],
       ["a heredoc commit message", heredocCommit],
       ["a substituted commit message", "git commit -m \"$(cat <<'EOF'\nfix: a message\nEOF\n)\" && git push"],
-      ["a flag on the commit", 'git -c commit.gpgsign=false commit -m "add it" && git push'],
       ["the push hung up in a timeout", 'git commit -m "add it" && timeout 60 git push -u origin HEAD'],
       ["the push piped on", 'git commit -m "add it" 2>&1 | tail -1 && git push 2>&1 | tail -2'],
-      ["an `if` block", 'git commit -m "add it"; if [ $? -eq 0 ]; then git push; fi'],
-      ["a commit message naming --help, which stands the scan down", 'git commit -m "document --help" && git push'],
+      ["a commit message naming --help", 'git commit -m "document --help" && git push'],
       ["a commit message naming --dry-run", 'git commit -m "add --dry-run" && git push'],
+      ["a comment holding an apostrophe", `# don't forget\ngit commit -m "add it"\ngit push`],
+    ];
+    for (const [label, command] of rewrites) {
+      const out = runGuard(ahead, command, env);
+      assert.equal(refusalOf(out), "", `commit then push must not be refused: ${label}`);
+      const into = rewriteOf(out);
+      assert.ok(scanThenPush(into), `commit then push must be rewritten with the scan first: ${label}; got ${into}`);
+      assert.equal(into.match(/\{ gitleaks git /g)?.length, 1, `the scan goes in exactly once: ${label}`);
+    }
+
+    // Whatever the rewrite will not reason about is refused, as before.
+    const refused: Array<[string, string, string?]> = [
+      ["a flag on the commit", 'git -c commit.gpgsign=false commit -m "add it" && git push'],
+      ["an `if` block", 'git commit -m "add it"; if [ $? -eq 0 ]; then git push; fi'],
       ["git -C on both", 'git -C "$WT" commit -m "add it" && git -C "$WT" push'],
       ["git -C on a folder with a space", 'git -C "F:/a b" commit -m "add it" && git -C "F:/a b" push'],
       ["a cherry-pick, which also makes the commit", "git cherry-pick abc1234 && git push"],
       ["a merge, which also makes the commit", "git merge --no-edit some-branch && git push"],
+      ["a forced push", 'git commit -m "add it" && git push -f'],
+      ["another remote", 'git commit -m "add it" && git push upstream'],
+      ["two pushes", 'git commit -m "add it" && git push && git push'],
+      ["a push on failure", 'git commit -m "add it" || git push'],
+      ["a forced add", 'git add -f leak.ts && git commit -m "add it" && git push'],
+      ["a delete before it", 'rm -rf build && git commit -m "add it" && git push'],
       ["PowerShell's here-string message", "git add leak.ts; git commit -q -m @'\nfix: it's a message\n'@; git push", "PowerShell"],
       ["PowerShell's own success chain", 'git add leak.ts; git commit -m "add it"; if ($?) { git push }', "PowerShell"],
       ["PowerShell's try block", 'try { git commit -m "add it"\n git push -u origin HEAD } finally { Pop-Location }', "PowerShell"],
-      ["a comment holding an apostrophe, which reads as an open quote", `# don't forget\ngit commit -m "add it"\ngit push`],
     ];
     for (const [label, command, tool] of refused) {
       assert.match(refusalOf(runGuard(ahead, command, env, tool)), /C12/, `commit then push must be refused: ${label}`);
     }
 
     // A `cd` into the repo counts, because that is where the push runs.
-    assert.match(
-      refusalOf(runGuard(elsewhere, `cd "${ahead}" && ${exactShape}`, env)),
-      /C12/,
-      "cd <repo> && git add && git commit && git push must be refused from another folder",
+    assert.ok(
+      scanThenPush(rewriteOf(runGuard(elsewhere, `cd "${ahead}" && ${exactShape}`, env))),
+      "cd <repo> && git add && git commit && git push from another folder must be rewritten",
     );
+
+    // 8b. The rewrite RUN for real: a finding keeps the new commit off origin, a clean scan sends it.
+    // A failure here means the scan sits after the push, or its failure does not stop the chain.
+    const live = repoFixture(join(root, "live"), 1);
+    const remoteTip = (): string => {
+      try {
+        return execFileSync("git", ["rev-parse", "--verify", "-q", "codex/probe"], {
+          cwd: join(root, "live", "origin.git"),
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+      } catch {
+        return "";
+      }
+    };
+    const localTip = (): string => execFileSync("git", ["rev-parse", "HEAD"], { cwd: live, encoding: "utf8" }).trim();
+    for (const [label, exit, sent] of [["a finding", "1", false], ["a clean scan", "0", true]] as const) {
+      writeFileSync(join(live, `${exit}.txt`), `${label}\n`);
+      const command = `git add ${exit}.txt && git commit -q -m "${label}" && git push -q -u origin codex/probe`;
+      const run = rewriteOf(runGuard(live, command, env));
+      assert.ok(run, `${label}: the plain shape must be rewritten`);
+      rmSync(`${log}.ranges`, { force: true });
+      let status = 0;
+      try {
+        execFileSync("bash", ["-c", run], { cwd: live, env: { ...env, PHX_FAKE_GITLEAKS_EXIT: exit }, stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
+      } catch (err) {
+        status = (err as { status?: number }).status ?? -1;
+      }
+      assert.deepEqual(scannedRanges(log), ["origin/main..HEAD"], `${label}: the scan must run once, over the branch`);
+      assert.equal(remoteTip() === localTip(), sent, `${label}: origin must ${sent ? "" : "NOT "}receive the new commit`);
+      assert.equal(status === 0, sent, `${label}: the command must ${sent ? "succeed" : "fail"}; exit ${status}`);
+    }
 
     // 9. Everything that is not a commit followed by a push still goes through.
     const allowed: Array<[string, string, string?]> = [
@@ -457,7 +528,10 @@ export function runSecretScanPushGuardTests(): void {
     expectScan("a session in a subfolder", sub, "git push", ahead);
     expectScan("git -C on a subfolder", elsewhere, `git -C "${sub}" push`, ahead);
     expectScan("cd into a subfolder", ahead, 'cd "sub folder" && git push', ahead);
-    expectRefusal("commit then push from a subfolder", sub, 'git commit -m "add it" && git push', /both commits and pushes/);
+    if (!scanThenPush(rewriteOf(runGuard(sub, 'git commit -m "add it" && git push', env)))) {
+      failures.push("commit then push from a subfolder: must be rewritten with the scan first");
+    }
+    expectRefusal("commit then push with a flag, from a subfolder", sub, 'git -c a.b=c commit -m "add it" && git push', /both commits and pushes/);
 
     // 15. What sends nothing, or is not a push at all, costs nothing, and the stand-down is unchanged.
     const quietCases: Array<[string, string, string?, Record<string, string>?]> = [

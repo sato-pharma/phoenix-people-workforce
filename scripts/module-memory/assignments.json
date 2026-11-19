@@ -1363,6 +1363,7 @@
   "supabase-direct-db-host-is-ipv6-only-use-pooler": "database",
   "supabase-dual-project-schema": "database",
   "supabase-mcp-and-cli-revoked-2026-08-02": "database",
+  "supabase-mcp-declines-a-write-that-holds-ddl": "platform",
   "supabase-outstanding-invoices-banner-2026-11-02": "database",
   "supabase-secret-key-refuses-a-browser-user-agent": "sessions",
   "supabase-staging-mcp-server-sees-zero-projects": "database",

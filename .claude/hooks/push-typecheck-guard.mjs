@@ -164,17 +164,10 @@ function contractsPassFor(commonDir, sha) {
  * the remote already knows → its tracking ref; a first push → the merge base with the remote's default
  * branch. `null` when git can answer neither, which says nothing and so reminds of nothing.
  */
-function pushBase(root, remote, branch, sha) {
-  const resolveRef = (ref) => {
-    try {
-      return gitOut(root, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]);
-    } catch {
-      return null;
-    }
-  };
-  const tracking = resolveRef(`refs/remotes/${remote}/${branch}`);
+function pushBase(root, refs, remote, branch, sha) {
+  const tracking = refs.get(`refs/remotes/${remote}/${branch}`) ?? null;
   const defaults = [`refs/remotes/${remote}/HEAD`, `refs/remotes/${remote}/main`, `refs/remotes/${remote}/master`];
-  const candidate = tracking ?? defaults.map(resolveRef).find(Boolean) ?? null;
+  const candidate = tracking ?? defaults.map((ref) => refs.get(ref)).find(Boolean) ?? null;
   if (!candidate) return null;
   // A rebase or a force-push moves the tracking ref off this history, so ask for the shared ancestor.
   try {
@@ -185,8 +178,8 @@ function pushBase(root, remote, branch, sha) {
 }
 
 /** The `tests/**.test.ts(x)` files this push ADDS, sorted. Empty when it adds none, or git cannot say. */
-function addedTestFiles(root, remote, branch, sha) {
-  const base = pushBase(root, remote, branch, sha);
+function addedTestFiles(root, refs, remote, branch, sha) {
+  const base = pushBase(root, refs, remote, branch, sha);
   if (!base || base === sha) return [];
   try {
     return gitOut(root, ['diff', '--name-only', '--diff-filter=A', base, sha])
@@ -276,33 +269,43 @@ function main() {
   const read = readPush(push.args);
   if (read.skip) return allow();
 
+  // 🔴 ONE git process per question, never one per value (20 Nov 2026 audit): a git launch costs
+  // ~90 ms on this laptop against ~20 ms of git work, and this hook used to launch eleven on every
+  // push — about 1.1 s, run one after another with bash-guard's secret scan in the same dispatcher.
+  // Now it is four: these values, the remote refs, then the merge base and the diff.
   let root;
   let current = '';
   let sha;
   let commonDir;
   try {
-    root = gitOut(dir, ['rev-parse', '--show-toplevel']);
-    try {
-      current = gitOut(root, ['branch', '--show-current']);
-    } catch {
-      // detached or unreadable — whatIsPushed handles an empty branch
-    }
-    sha = gitOut(root, ['rev-parse', 'HEAD']);
-    commonDir = gitOut(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  } catch {
+    // A detached HEAD prints `HEAD` for its symbolic name; an unborn one fails the whole call → allow.
+    const lines = gitOut(dir, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir', 'HEAD', '--symbolic-full-name', 'HEAD']).split(/\r?\n/);
+    if (lines.length < 4) return allow();
+    [root, commonDir, sha] = lines;
+    current = lines[3].startsWith('refs/heads/') ? lines[3].slice('refs/heads/'.length) : '';
+  } catch (e) {
+    if (e?.[Symbol.for('phx.hook-exit')]) throw e; // the allow above ended this hook (hook-dispatch.mjs)
     return allow();
   }
   if (!SHA_RE.test(sha)) return allow();
   const pushed = whatIsPushed(read.refspecs, current);
   if (!pushed.sends) return allow();
 
-  // Nothing new to send: origin already holds this commit, so there is nothing to stop.
+  // Every remote ref this hook may ask about, in one read. for-each-ref matches a pattern up to a
+  // slash too (`origin/feat` also returns `origin/feat/x`), so the map is keyed by the EXACT name.
+  const wanted = [pushed.branch, 'HEAD', 'main', 'master'].map((name) => `refs/remotes/${read.remote}/${name}`);
+  const refs = new Map();
   try {
-    if (gitOut(root, ['rev-parse', '--verify', '-q', `refs/remotes/${read.remote}/${pushed.branch}`]) === sha) return allow();
-  } catch (e) {
-    if (e?.[Symbol.for('phx.hook-exit')]) throw e; // the allow above ended this hook (hook-dispatch.mjs)
-    // no remote-tracking ref yet — a first push of the branch
+    for (const line of gitOut(root, ['for-each-ref', '--format=%(refname) %(objectname)', ...wanted]).split(/\r?\n/)) {
+      const [name, object] = line.trim().split(' ');
+      if (wanted.includes(name) && SHA_RE.test(object ?? '')) refs.set(name, object);
+    }
+  } catch {
+    // unreadable — treated as a first push with no default branch known, which reminds of nothing
   }
+
+  // Nothing new to send: origin already holds this commit, so there is nothing to stop.
+  if (refs.get(`refs/remotes/${read.remote}/${pushed.branch}`) === sha) return allow();
 
   const record = recordFor(commonDir, sha);
   const short = sha.slice(0, 9);
@@ -337,7 +340,7 @@ function main() {
   // the rule satisfied, so it says nothing further; a recorded FAIL is named as what it is.
   const testVerdict = record?.stages?.test?.verdict;
   if (testVerdict !== 'PASS') {
-    const added = addedTestFiles(root, read.remote, pushed.branch, sha);
+    const added = addedTestFiles(root, refs, read.remote, pushed.branch, sha);
     if (added.length) {
       said.push(newTestFileReminder(added, short, testVerdict === 'FAIL' ? 'the record holds `test` FAIL' : 'no `test` verdict is recorded'));
     }
