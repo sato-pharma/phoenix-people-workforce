@@ -285,8 +285,8 @@ create or replace trigger phoenix_crm_customers_write_contact_name_row
   after insert or update of status, name, speciality, customer_type, phone
   on public.phoenix_crm_customers
   for each row
-  when (new.reference_contact_crm_id is null and not new.is_test and new.status in ('active', 'pending', 'dropped')
-        and not new.campaign_visit_holder)
+  when ( new.reference_contact_crm_id is null and not new.is_test and new.status in ('active', 'pending', 'dropped')
+        and not new.campaign_visit_holder )
   execute function public.phoenix_crm_customers_write_contact_name_row();
 
 -- The two unified views: only the Phoenix customer's speciality expression changes, to the label's CASE
