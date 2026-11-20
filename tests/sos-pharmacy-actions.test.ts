@@ -3,12 +3,33 @@ import { readFileSync } from "node:fs";
 
 import {
   buildPharmacyActions,
+  clampLookback,
   classifyRowKind,
+  LOOKBACK_CLOSINGS,
+  MAX_LOOKBACK_CLOSINGS,
   findSharedCustomerKeys,
   type PeriodRows,
   type PharmacyActionRow,
 } from "../src/lib/sales/sos-pharmacy-actions.ts";
 import { buildMonthPace } from "../src/lib/sales/sos-month-pace.ts";
+import {
+  pharmacyActionSheetRows,
+  pharmacyListColumns,
+  pharmacyProductSheetRows,
+  pharmacyActionsFileName,
+  periodLabel,
+  seatLineKey,
+  truncatedPercent,
+} from "../src/lib/sales/sos-pharmacy-actions-workbook.ts";
+import {
+  brickOptionsOf,
+  filterBricks,
+  filterPharmacyItems,
+  foldSearchText,
+  hasListFilter,
+  listFilterWords,
+  readChannel,
+} from "../src/lib/sales/sos-pharmacy-actions-filter.ts";
 
 // The portal Source of Sales pharmacy action lists. Every rule here is the owner's own pick
 // (2026-09-14): STOPPED = bought in any of the 3 closings before the latest and nothing in the
@@ -45,6 +66,176 @@ function periods(byPeriod: Record<string, PharmacyActionRow[]>): PeriodRows[] {
 }
 
 export function runSosPharmacyActionsTests() {
+  // ── DURATION: "compare with the N months before" (owner, 2026-11-20) ──────────────────────────
+  // One month back is exactly his "did not buy in October, bought in September": a pharmacy that
+  // bought only two months back is NOT stopped against one month, and IS against three.
+  {
+    const byPeriod = {
+      [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
+      [P1]: [row({ clientCode: "KEEP", salesValue: 50 }), row({ clientCode: "SEPT", salesValue: 80 })],
+      [P2]: [row({ clientCode: "KEEP", salesValue: 50 }), row({ clientCode: "AUG", salesValue: 70 })],
+      [P3]: [row({ clientCode: "KEEP", salesValue: 50 })],
+    };
+    const one = buildPharmacyActions({ periods: periods(byPeriod), lookback: 1 });
+    assert.deepEqual(one.priorPeriods, [P1], "one month back compares with the month before only");
+    assert.deepEqual(one.stopped.map((item) => item.name), ["Pharmacy SEPT"], "bought in the month before, nothing now");
+    assert.equal(one.historyComplete, true, "one month asked, one month there");
+    const three = buildPharmacyActions({ periods: periods(byPeriod) });
+    assert.deepEqual(three.priorPeriods, [P1, P2, P3], "the default stays three");
+    assert.deepEqual(three.stopped.map((item) => item.name).sort(), ["Pharmacy AUG", "Pharmacy SEPT"]);
+    const six = buildPharmacyActions({ periods: periods(byPeriod), lookback: 6 });
+    assert.equal(six.priorPeriods.length, 3, "a longer look-back reads only what is published");
+    assert.equal(six.historyComplete, false, "and says the history is short");
+    assert.equal(clampLookback(undefined), LOOKBACK_CLOSINGS);
+    assert.equal(clampLookback("nonsense"), LOOKBACK_CLOSINGS);
+    assert.equal(clampLookback("0"), 1);
+    assert.equal(clampLookback(99), MAX_LOOKBACK_CLOSINGS);
+    assert.equal(clampLookback("2"), 2);
+  }
+
+  // ── ADVANCED FILTERS: brick, bought through, search — they only narrow ──────────────────────
+  {
+    const byPeriod = {
+      [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
+      [P1]: [
+        row({ clientCode: "A", salesValue: 80, clientName: "صيدلية الأمل", clientAddress: "شارع النصر", brickName: "Shubra" }),
+        row({ clientCode: "B", salesValue: 60, brickName: "Shubra", isDirect: true }),
+        row({ clientCode: "C", salesValue: 40, brickName: "Maadi", areaCode: "CA2", sheetAreaCode: "CA2", areaName: "Cairo 2", sheetAreaName: "Cairo 2" }),
+      ],
+    };
+    const result = buildPharmacyActions({ periods: periods(byPeriod), lookback: 1, listLimit: Number.POSITIVE_INFINITY });
+    const names = (items: { name: string }[]) => items.map((item) => item.name).sort();
+    assert.equal(result.stopped.length, 3);
+    assert.equal(hasListFilter({}), false);
+    assert.equal(hasListFilter({ areaCode: "CA1" }), false, "the area pick is the screen's scope switch, not an advanced filter");
+    assert.equal(hasListFilter({ search: "  " }), false);
+    assert.equal(hasListFilter({ brickName: "Shubra" }), true);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { brickName: "shubra" })), ["Pharmacy B", "صيدلية الأمل"], "brick by name, case folded");
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { channel: "direct" })), ["Pharmacy B"]);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { channel: "distributor" })), ["Pharmacy C", "صيدلية الأمل"]);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { areaCode: "ca2" })), ["Pharmacy C"]);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { search: "صيدليه الامل" })), ["صيدلية الأمل"], "Arabic letter forms fold: ة/ه and أ/ا");
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { search: "النصر" })), ["صيدلية الأمل"], "search reads the address");
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { search: "maadi" })), ["Pharmacy C"], "search reads the brick");
+    assert.deepEqual(filterPharmacyItems(result.stopped, { brickName: "Shubra", channel: "direct", search: "pharmacy" }).length, 1, "filters combine");
+    assert.equal(foldSearchText("  أحمد   إبراهيم  "), "احمد ابراهيم");
+    assert.equal(readChannel("direct"), "direct");
+    assert.equal(readChannel("DROP TABLE"), null, "an unknown channel is no filter, never an error");
+
+    const bricks = [
+      { brickId: "B7", brickName: "Shubra", areaCode: "CA1", areaName: "Cairo 1" },
+      { brickId: "B8", brickName: "Maadi", areaCode: "CA2", areaName: "Cairo 2" },
+    ];
+    assert.deepEqual(filterBricks(bricks, { search: "maa" }).map((entry) => entry.brickId), ["B8"]);
+    assert.deepEqual(filterBricks(bricks, { channel: "direct" }), [], "an untapped brick has no channel to match");
+    assert.deepEqual(brickOptionsOf([result.stopped, bricks]), ["Maadi", "Shubra"], "each brick once, A to Z");
+    assert.equal(listFilterWords({ brickName: "Shubra", channel: "direct", search: "amal" }), "brick Shubra · direct orders only · matching “amal”");
+    assert.equal(listFilterWords({}), "");
+  }
+
+  // ── THE SHEET DOWNLOAD (owner, 2026-11-20): uncapped, each pharmacy's month-by-month history ──
+  // "Did not buy in October, bought in September" is a filter on the sheet's month columns, so the
+  // history must carry a 0 for a month with no purchase, newest first, and the cap must not apply.
+  {
+    const many = Array.from({ length: 205 }, (_, index) => row({ clientCode: `S${index}`, salesValue: 10 + index }));
+    const byPeriod = {
+      [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
+      [P1]: [...many, row({ clientCode: "KEEP", salesValue: 300 }), row({ clientCode: "SEPT", salesValue: 30, productCode: "P9", productName: "Zeta", effectiveUnits: 7 }), row({ clientCode: "SEPT", salesValue: 5, productCode: "P2", productName: "Alpha" })],
+      [P2]: [row({ clientCode: "JUNE", salesValue: 20 })],
+      [P3]: [],
+    };
+    const screen = buildPharmacyActions({ periods: periods(byPeriod) });
+    assert.equal(screen.stopped.length, 200, "the screen keeps its cap");
+    assert.equal(screen.stopped[0].history, undefined, "the screen never carries the history");
+
+    const sheet = buildPharmacyActions({ periods: periods(byPeriod), listLimit: Number.POSITIVE_INFINITY, includeHistory: true });
+    assert.equal(sheet.stopped.length, 207, "the sheet lists every stopped pharmacy (205 + SEPT + JUNE)");
+    assert.equal(sheet.counts.stopped, screen.counts.stopped, "the same rule decides both");
+    const sept = sheet.stopped.find((item) => item.key === "IBN|SEPT");
+    assert.deepEqual(sept?.history, [
+      { period: LATEST, value: 0 },
+      { period: P1, value: 35 },
+      { period: P2, value: 0 },
+      { period: P3, value: 0 },
+    ]);
+    assert.deepEqual(sept?.productsBought, ["Alpha", "Zeta"], "products by name, sorted");
+    const keep = sheet.dropping.find((item) => item.key === "IBN|KEEP");
+    assert.ok(keep, "a pharmacy that kept buying less is dropping, not stopped");
+
+    const rows = pharmacyActionSheetRows({
+      items: [sept!, ...sheet.stopped.filter((item) => item.key === "IBN|JUNE")],
+      periods: [LATEST, P1, P2, P3],
+      peopleByArea: new Map([["CA1", { repName: "Mona Adel", managerName: "Hany Saad" }]]),
+      distributorNameOf: (code) => (code === "IBN" ? "Ibn Sina" : "Unnamed distributor"),
+    });
+    assert.equal(rows[0].distributor, "Ibn Sina", "the distributor by name, never its code");
+    assert.deepEqual(
+      rows.map((entry) => [entry.pharmacy, entry.product]),
+      [["Pharmacy SEPT", "Alpha"], ["Pharmacy SEPT", "Zeta"], ["Pharmacy JUNE", "Product One"]],
+      "one row per pharmacy AND product",
+    );
+    assert.equal(rows[0].rep, "Mona Adel");
+    assert.equal(rows[0].manager, "Hany Saad");
+    assert.deepEqual(
+      rows.slice(0, 2).map((entry) => [entry[`u_${P1}`], entry[`v_${P1}`], entry[`u_${LATEST}`], entry[`v_${LATEST}`]]),
+      [[10, 5, 0, 0], [7, 30, 0, 0]],
+      "each product's own units beside its own EGP — a unit count is never a sum of two products (never 17)",
+    );
+    assert.equal(rows[0].lastBought, "Jul 2026", "last bought, per product");
+    assert.deepEqual(
+      sept?.productHistory?.map((product) => [product.productName, product.months.map((month) => month.units)]),
+      [["Alpha", [0, 10, 0, 0]], ["Zeta", [0, 7, 0, 0]]],
+      "each product's units per closing, newest first, 0 for a month it bought none",
+    );
+    assert.equal(screen.stopped[0].productHistory, undefined, "the screen never carries the units");
+    const columns = pharmacyListColumns([LATEST, P1]);
+    const monthLabels = columns.filter((column) => /^[uv]_/.test(column.key)).map((column) => column.label);
+    assert.deepEqual(
+      monthLabels,
+      [`${periodLabel(P1)} units`, `${periodLabel(P1)} (EGP)`, `${periodLabel(LATEST)} units`, `${periodLabel(LATEST)} (EGP)`],
+      "oldest first, each month's units directly beside its EGP",
+    );
+    assert.ok(
+      columns.filter((column) => column.key.startsWith("u_")).every((column) => column.numeric && column.excludeFromTotal),
+      "units are numbers to filter on, and the total row never adds them",
+    );
+    assert.ok(
+      columns.filter((column) => column.key.startsWith("v_")).every((column) => column.numeric && !column.excludeFromTotal),
+      "EGP is the one figure the total row adds",
+    );
+    const boxes = pharmacyProductSheetRows({
+      lists: [
+        { label: "Stopped buying", items: [sept!] },
+        { label: "Dropping 30%+", items: [keep!] },
+      ],
+      periods: [LATEST, P1],
+      peopleByArea: new Map(),
+    });
+    assert.deepEqual(
+      boxes.map((entry) => [entry.list, entry.pharmacy, entry.product, entry[`u_${P1}`], entry[`v_${P1}`]]),
+      [
+        ["Stopped buying", "Pharmacy SEPT", "Alpha", 10, 5],
+        ["Stopped buying", "Pharmacy SEPT", "Zeta", 7, 30],
+        ["Dropping 30%+", "Pharmacy KEEP", "Product One", 10, 300],
+      ],
+      "the Boxes by product tab: every list on one sheet, a List column, one row per pharmacy and product",
+    );
+    const bare = pharmacyActionSheetRows({ items: [{ ...sept!, productHistory: undefined }], periods: [LATEST, P1], peopleByArea: new Map() });
+    assert.deepEqual(
+      bare.map((entry) => [entry.product, entry[`u_${P1}`], entry[`v_${P1}`]]),
+      [["", null, 35]],
+      "without product detail: one row, the pharmacy's EGP, units blank (never a made-up 0)",
+    );
+    assert.ok(!Object.values(rows[0]).includes("CA1"), "geography by name, never by code");
+    const vacant = pharmacyActionSheetRows({ items: [sept!], periods: [LATEST], peopleByArea: new Map() });
+    assert.equal(vacant[0].rep, "Vacant", "an area with no rep says so");
+
+    assert.equal(truncatedPercent(-0.2996), -29.9, "cut toward zero, never rounded across a line");
+    assert.equal(truncatedPercent(null), null);
+    assert.equal(seatLineKey("Anti Infective"), seatLineKey("anti_infective"), "the closing line meets the seat model's line code");
+    assert.equal(pharmacyActionsFileName("Anti Infective", "2026-10"), "anti-infective-pharmacies-stopped-dropping-new-2026-10.xlsx");
+  }
+
   // ── PER AREA: every tile's count and money come from one area-scoped set ─────
   // A rep with two areas picked one and saw that area's COUNTS beside every area's EGP, and a
   // "Buying pharmacies" figure that never narrowed (2026-09-25). byArea is computed from the

@@ -1,13 +1,23 @@
 ---
 name: the-spare-laptop-was-reinstalled-2026-11-20
-description: "20 Nov 2026 the owner reinstalled Windows on the spare laptop; a one-paste bootstrap plus the self-removing 'Phoenix Spare Rebuild' task rebuild it — the host key, maybe the user name, and everything on C: are new"
+description: "20 Nov 2026 the spare laptop went to UBUNTU SERVER 26.04 (user phoenix, systemd phoenix-dev, ~/phoenix); the Windows reinstall of that morning below is history — every spare script is bash now"
 metadata:
   node_type: memory
   type: project
   originSessionId: 13be9376-17b9-44e2-82bc-bc64a093c5df
-  modified: 2026-11-20T11:04:05.594Z
+  modified: 2026-11-20T16:02:17.693Z
 ---
 
+## 🔴 NOW: Ubuntu Server (owner, 20 Nov ~13:50 "put Ubuntu Server on the spare, keep D to G and sato pharma")
+- Installed 20 Nov ~17:00 by autoinstall from the USB stick (L: ESD-USB on the main laptop's stick — 🔴 its G: partition is HIS, never touch it). Only the old Windows C: (nvme0n1p3) became ext4 `/`; D CHAOS, E Scripts, F 2025, G BitLocker and Sato Pharma kept; mounted by fstab (ntfs3, nofail) at `/mnt/chaos`, `/mnt/scripts`, `/mnt/2025`, `/mnt/sato-pharma`. Old Windows user files: `/mnt/chaos/Old Windows files (saved 2026-11-20)`.
+- 🔴 **First install trap:** the firmware refused the EFI boot entry (`efivarfs_set_variable ... Cannot allocate memory`, curthooks setup_grub). Fixed by `efi_no_storage_paranoia` on the stick's kernel line (carried into the installed system). Boot order now Ubuntu (0001) first; "UEFI OS" in the Esc menu is the USB stick.
+- 🔴 **Wi-Fi trap:** after `sudo wifi-join` wpa_supplicant connected but networkd showed `Network File: n/a (unmanaged)` for a while — it came right later (`10-netplan-wlo1.network`, routable). It happened AGAIN at 17:53 when he re-ran wifi-join: `netplan apply` leaves wlo1 unmanaged until a restart; `sudo reboot` brought it back in under 2 min. `wifi-join` v2 (installed 18:01, source in the 13be9376 scratchpad `ubuntu\wifi-join`) shows the password as typed, asks y/n, runs `networkctl reload` + `reconfigure` after apply, waits 60 s and names a refused password. The prompt `[sudo: authenticate] Password:` is sudo-rs (Ubuntu 26.04) asking the SPARE's password, not the Wi-Fi's. Password file: `~/.claude/scripts/spare-linux-password.txt` (never print it) — the owner chose his own password 20 Nov ~18:00 and it was set with chpasswd; the generated one is in `.bak-20261120-before-owner-choice`. `phoenix` has passwordless sudo (`/etc/sudoers.d/90-phoenix`); SSH is key-only.
+- Layout: checkout `~/phoenix/phoenix-workforce` on ext4 (cloned from the D: copy, shallow, refs/spare/*), `.env.local` production; systemd `phoenix-dev.service` runs `~/phoenix/dev-server-run.sh` (source `~/.claude/scripts/spare-dev-server-run.sh`; warm-up from `~/phoenix/warm-routes.txt`, log `~/phoenix/warm.log`, `Restart=always` backing off to 10 min, Nice -5); timer `phoenix-dev-nightly` 04:00 Cairo runs `~/phoenix/nightly-restart.sh`. Stop on purpose: `sudo systemctl stop phoenix-dev`. kdump (512 MB reserve) and cloud-init purged. Node 24.22.3 (nodejs.org tarball, /usr/local), pnpm 11.13.1, first install 5 min.
+- Main laptop: `spare.ps1` now runs BASH (base64 → temp file, stdin /dev/null); `spare-test.ps1` custom commands are bash, flock lock, `~/phoenix/runs/<id>`, node_modules symlink; `spare-follow-production.ps1` same logic over bash; Windows copies `*.bak-20261120-windows`. `spare-bootstrap/rebuild/speedup/browser-guard/laptop-ssh-setup.ps1` start with a WINDOWS-ONLY-RETIRED throw. known_hosts anchors replaced (old: `known_hosts.bak-20261120-linux`); `spare-user.txt` = phoenix. The browser guard has no Linux port.
+- Proven 20 Nov 17:38–17:48: a restart came back on its own in 55 s (Wi-Fi, drives, phoenix-dev, warm-up 6 pages 68 s, 3,570 MB available, 7,628 MB total once the crash-dump reserve went), localhost:3000 answered 200 through the tunnel; the full suite via spare-test.ps1 ran 3146 of 3147 + 1 skipped (CV worker), 0 red, 8 min. The stick's `autoinstall.yaml` was renamed `.off` so booting it can never wipe a disk again.
+- The PR 649 preview folder survives at `/mnt/chaos/Phoenix/preview-649` — its session's Monday script assumed Windows.
+
+## History: the Windows reinstall that morning
 Owner, 20 Nov 2026 ~11:15 Cairo: "the spare laptop Windows was down, so I reinstalled its Windows ... I hate manual work. Automate." Everything on its C: is gone (OpenSSH, Node, Git, pnpm, the "Phoenix Dev Server" and "Phoenix Spare Browser Guard" tasks); D:\Phoenix may have survived if D: is its own partition.
 
 What was built (main laptop, `~/.claude/scripts`):
@@ -32,4 +42,4 @@ Groups 1 and 2 of the spare list (owner, 20 Nov ~13:00: "start group one ... dro
 - Git on the spare: `core.fscache`, `core.preloadindex`, `core.untrackedCache` true. Lean sets webpack `cache=false`, so `.next\dev\cache` (2.3 GB, written before lean) was dead weight and was deleted 20 Nov ~13:15. `spare-tunnel.ps1` already had `ServerAliveInterval=15`.
 
 **Why:** a fresh Windows breaks the trust anchor silently — `spare-address.ps1` just says "not found" forever.
-**How to apply:** if the spare is ever reinstalled again, re-run the same page and re-register "Phoenix Spare Rebuild"; never hand-edit the anchor. Related: [[the-spare-laptop-changes-address-it-is-not-off]], [[the-spare-laptop-keeps-its-own-env-local]].
+**How to apply:** the spare is Linux now — send bash through `spare.ps1`, never PowerShell, and never run the retired Windows scripts. If Ubuntu is ever reinstalled, the autoinstall files are in the session scratchpad of 13be9376 (`ubuntu\autoinstall.yaml`, `wifi-join`) and the host-key anchor must be replaced the same way (read the keys over an accepted session, rewrite the `phoenix-spare` lines). Related: [[the-spare-laptop-changes-address-it-is-not-off]], [[the-spare-laptop-keeps-its-own-env-local]].
