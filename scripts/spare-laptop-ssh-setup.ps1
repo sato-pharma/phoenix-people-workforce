@@ -1,3 +1,4 @@
+throw 'WINDOWS-ONLY-RETIRED: the spare runs Ubuntu Server since 20 Nov 2026 (owner: "put Ubuntu Server on the spare"). This script drove its Windows and must not run against Linux. Use spare.ps1 (bash), spare-test.ps1, spare-follow-production.ps1.'
 # Phoenix spare laptop - lets the main laptop run the dev server and tests here (owner, 2026-11-07).
 # Paste into Windows PowerShell opened with "Run as administrator" ON THE SPARE LAPTOP. Safe to run again.
 # Key-only login, from this home network only; passwords are switched off for remote login.

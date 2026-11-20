@@ -292,6 +292,14 @@
               "sweep"
             ],
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/speak-arabic-reply.mjs"
+            ],
+            "timeout": 10
           }
         ]
       }

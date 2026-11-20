@@ -28,8 +28,8 @@ const LOCAL_ENV = "F:/Phoenix Workforce/phoenix-workforce/.env.local";
 const PRODUCTION_REF = "ozucdzovmcqvepbozvqf";
 const EXPECTED_NEW_FP = "7e100cf2"; // the password set on 19 Nov 2026; refuse to push anything else
 const OLD_FP = "3a5f8159"; // the refused one, for bare password keys only
-const SPARE_ENV = "D:/Phoenix/phoenix-workforce/.env.local";
-const SPARE_REPO = "D:/Phoenix/phoenix-workforce";
+const SPARE_ENV = "/home/phoenix/phoenix/phoenix-workforce/.env.local";   // Ubuntu since 2026-11-20 (was D:/Phoenix/...)
+const SPARE_REPO = "/home/phoenix/phoenix/phoenix-workforce";
 
 const fp = (v) => crypto.createHash("sha256").update(v).digest("hex").slice(0, 8);
 const cairo = () => new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 16).replace("T", " ");

@@ -50,8 +50,10 @@ if (Test-Path -LiteralPath $runSrc) {
   }
 }
 
-# THE DEV SERVER IS STARTED WHEN IT IS NOT RUNNING (2026-11-13), never while an install is running or the packages are incomplete.
-$srv = @(Spare 'cd ~/phoenix/phoenix-workforce; if systemctl is-active -q phoenix-dev; then echo "SRV up"; elif pgrep -f "pnpm.*install" >/dev/null; then echo "SRV installing"; elif [ ! -e node_modules/.bin/next ]; then echo "SRV no-packages"; else sudo systemctl start phoenix-dev; echo "SRV started"; fi')
+# THE DEV SERVER IS STARTED WHEN IT IS NOT RUNNING (2026-11-13), never while an install is running or the packages are incomplete,
+# and never while a pull request preview holds localhost:3000 (owner, 2026-11-20: "Set up PR preview"; spare-preview.ps1) -
+# starting it would end the preview (the two units conflict). The preview brings the live server back when it ends.
+$srv = @(Spare 'cd ~/phoenix/phoenix-workforce; if systemctl is-active -q phoenix-dev; then echo "SRV up"; elif systemctl is-active -q phoenix-preview; then echo "SRV preview"; elif pgrep -f "pnpm.*install" >/dev/null; then echo "SRV installing"; elif [ ! -e node_modules/.bin/next ]; then echo "SRV no-packages"; else sudo systemctl start phoenix-dev; echo "SRV started"; fi')
 if ("$srv" -match 'SRV started') { Log 'dev server was not running on the spare (a restart or a power cut) - started it' }
 
 if ($Target -eq 'production') {
@@ -116,7 +118,7 @@ if [ -n "`$lock_changed" ] || [ `$broken = 1 ]; then
     echo "install try `$try failed (exit `$code): `$(tail -n 3 ~/phoenix/last-install.log | tr '\n' '/')"
     [ `$try = 1 ] && sleep 60
   done
-  sudo systemctl start phoenix-dev
+  systemctl is-active -q phoenix-preview || sudo systemctl start phoenix-dev   # a pull request preview holds localhost:3000 until it ends (spare-preview.ps1)
   if [ `$ok = 1 ]; then echo 'packages reinstalled and verified complete, dev server restarted'; else echo 'INSTALL FAILED - packages are incomplete and the dev server will not start; output in ~/phoenix/last-install.log; the next run retries'; fi
 fi
 echo "now at `$(git log -1 --format='%h %s')"

@@ -1,3 +1,4 @@
+throw 'WINDOWS-ONLY-RETIRED: the spare runs Ubuntu Server since 20 Nov 2026 (owner: "put Ubuntu Server on the spare"). This script drove its Windows and must not run against Linux. Use spare.ps1 (bash), spare-test.ps1, spare-follow-production.ps1.'
 # Phoenix spare laptop - DEV SERVER SPEED-UP (owner 2026-11-20: "I want the dev server to be super fast. Use all resources of the other laptop.")
 # Paste ONCE into Windows PowerShell opened with "Run as administrator" ON THE SPARE LAPTOP. Safe to run again. Restarts the spare at the end.
 # These are antivirus, power and startup settings, so they are run by the owner's own paste, never remotely.

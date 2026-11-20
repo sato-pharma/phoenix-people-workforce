@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 13129 | `9b5e6a9f461e55a6` |
+| `CLAUDE.md` | 13760 | `d0ad0bd0eb5ec37c` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -31,6 +31,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/session-census.mjs` | 13231 | `255cc0191545ab46` |
 | `hooks/session-start-dispatch.mjs` | 13235 | `13f1f75576642dde` |
 | `hooks/spawn-probe.mjs` | 2523 | `8201ad53322df322` |
+| `hooks/speak-arabic-reply.mjs` | 1195 | `b8a3195313797372` |
 | `hooks/statusline.mjs` | 12556 | `9f4e1c651a78acb3` |
 | `hooks/suggestion-context.mjs` | 9285 | `184d0a26d6e240ce` |
 | `hooks/supabase-prompt-allow.mjs` | 4533 | `30324934431e1924` |
@@ -109,19 +110,23 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/slowness-sentinel-watch.ps1` | 2519 | `4523c5301ee076e8` |
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
 | `scripts/spare-address.ps1` | 9088 | `fd8ab944a982d43d` |
-| `scripts/spare-bootstrap.ps1` | 10306 | `85d11867a845b518` |
-| `scripts/spare-browser-guard.ps1` | 5743 | `cf1529a8a651e269` |
-| `scripts/spare-db-password-refresh.mjs` | 9203 | `d3457d933700661a` |
+| `scripts/spare-bootstrap.ps1` | 10556 | `76a97228f186bf4e` |
+| `scripts/spare-browser-guard.ps1` | 5993 | `71c76fcb5205ef6c` |
+| `scripts/spare-db-password-refresh.mjs` | 9275 | `c7310d6769dfe0a7` |
 | `scripts/spare-db-password-refresh.ps1` | 1110 | `19e5bfebc75143f5` |
 | `scripts/spare-dev-server-run.ps1` | 6728 | `17357c7260562a63` |
 | `scripts/spare-dev-server-run.sh` | 4624 | `17d636d00f77ab79` |
-| `scripts/spare-follow-production.ps1` | 9964 | `1cc4415a840a3ec7` |
-| `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
-| `scripts/spare-rebuild.ps1` | 16066 | `a340f988ba99e056` |
-| `scripts/spare-speedup.ps1` | 4856 | `3acafdb715e7e366` |
+| `scripts/spare-follow-production.ps1` | 10526 | `566282e48ebac597` |
+| `scripts/spare-laptop-ssh-setup.ps1` | 3560 | `c701f0d120aa2857` |
+| `scripts/spare-preview-run.sh` | 2592 | `9ba23b471413cb9d` |
+| `scripts/spare-preview-setup.sh` | 2997 | `524d791a6644b52c` |
+| `scripts/spare-preview.ps1` | 11900 | `733b744c7d6ef156` |
+| `scripts/spare-rebuild.ps1` | 16316 | `5b795fcfadebcab4` |
+| `scripts/spare-speedup.ps1` | 5106 | `4459848498f3df20` |
 | `scripts/spare-test.ps1` | 10390 | `68bfca328740e19d` |
 | `scripts/spare-tunnel.ps1` | 2618 | `c0c4f69081da25ae` |
 | `scripts/spare.ps1` | 2341 | `87027b073fc6b6c2` |
+| `scripts/speak-arabic-reply.py` | 8351 | `e78662242152815a` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
 | `scripts/tests/archive/run-all.mjs` | 4108 | `5ae84e5c757c2d1c` |
 | `scripts/tests/archive/test-busy-lock.mjs` | 7494 | `6cdb2fcde5618427` |
@@ -144,4 +149,4 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/xlsx-snapshot-watch.ps1` | 14496 | `5ad89fa2d06b8a4b` |
 | `scripts/xlsx-snapshot.cmd` | 3542 | `e5634c4dda32d8a9` |
 | `scripts/xlsx-tripwire.ps1` | 25606 | `2e060f5e3887bc24` |
-| `settings.json` | 19722 | `231fc25f40100e4f` |
+| `settings.json` | 19940 | `6294fd1eb2b98693` |

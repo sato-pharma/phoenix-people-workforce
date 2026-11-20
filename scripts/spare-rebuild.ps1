@@ -1,3 +1,4 @@
+throw 'WINDOWS-ONLY-RETIRED: the spare runs Ubuntu Server since 20 Nov 2026 (owner: "put Ubuntu Server on the spare"). This script drove its Windows and must not run against Linux. Use spare.ps1 (bash), spare-test.ps1, spare-follow-production.ps1.'
 <#
 .SYNOPSIS
   Finishes rebuilding the spare laptop after a fresh Windows, from the main laptop, with no hands (owner, 2026-11-20:

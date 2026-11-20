@@ -1,3 +1,4 @@
+throw 'WINDOWS-ONLY-RETIRED: the spare runs Ubuntu Server since 20 Nov 2026 (owner: "put Ubuntu Server on the spare"). This script drove its Windows and must not run against Linux. Use spare.ps1 (bash), spare-test.ps1, spare-follow-production.ps1.'
 # Phoenix spare laptop - REBUILD AFTER A FRESH WINDOWS (v4.1,owner 2026-11-20: "I reinstalled its Windows ... I hate manual work. Automate.")
 # Paste ONCE into Windows PowerShell opened with "Run as administrator" ON THE SPARE LAPTOP. Safe to run again.
 # It installs remote login (key only, home network only), Git, Node.js 24 and pnpm, keeps the laptop awake on the charger,
