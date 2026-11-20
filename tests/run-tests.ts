@@ -1211,6 +1211,7 @@ import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runEmployeeRecordGapsTests } from "./employee-record-gaps.test.ts";
 import { runMedicalInsuranceTests } from "./medical-insurance.test.ts";
 import { runMedicalInsuranceLibanoSheetTests } from "./medical-insurance-libano-sheet.test.ts";
+import { runMedicalInsuranceCostLetterTests } from "./medical-insurance-cost-letter.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -5555,6 +5556,10 @@ await runTest(
 await runTest(
   "medical insurance: additions and deletions go on Libano-Suisse's own Additions and Deletions workbook, cell for cell, with nobody's data left in the template",
   runMedicalInsuranceLibanoSheetTests,
+);
+await runTest(
+  "medical insurance: the Medical Cover Statement prints the Cost tab's own monthly figures, family beside the employee, never the split's percentages, and refuses a short figure",
+  runMedicalInsuranceCostLetterTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "

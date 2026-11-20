@@ -41,6 +41,7 @@ import {
   uploadMedicalInsuranceFile,
 } from "./file-storage";
 import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
+import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
 import { buildMonthlySplit } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import type {
@@ -428,6 +429,28 @@ export async function getMedicalInsuranceMoney(): Promise<MedicalInsuranceMoneyV
     rateCard: policy.rateCard,
     year: yearCost(state),
   };
+}
+
+/**
+ * One employee's Medical Cover Statement (owner, 2026-11-21), from the same monthly split the Cost tab shows,
+ * so the paper and the tab can never disagree. `memberId` is the employee's own row on the register. Callers
+ * assert medical_insurance_invoices first: it carries amounts.
+ */
+export async function getMedicalInsuranceCostLetter(memberId: string): Promise<CostLetter> {
+  const id = memberId.trim();
+  if (!id) throw new MedicalInsuranceInputError("Choose an employee first.");
+  const asOf = todayInCairo();
+  const policy = await requirePolicy(asOf);
+  const state = await loadState(policy, asOf);
+  const split = buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard });
+  const row = split.rows.find((candidate) => candidate.employee?.memberId === id);
+  if (!row) throw new MedicalInsuranceInputError("That employee is not covered on the policy today, so there is no monthly cost to show.");
+  try {
+    return buildCostLetter(row, { endsOn: policy.endsOn, insurer: policy.insurer, policyNumber: policy.policyNumber, startsOn: policy.startsOn });
+  } catch (error) {
+    if (error instanceof CostLetterError) throw new MedicalInsuranceInputError(error.message);
+    throw error;
+  }
 }
 
 // ── Cleaning what a person typed ───────────────────────────────────────────────────────────────
