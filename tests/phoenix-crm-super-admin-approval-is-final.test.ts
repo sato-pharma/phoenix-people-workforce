@@ -3,7 +3,14 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
-import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, approvalLockedFor } from "../src/lib/phoenix-crm/super-admin-approval-rules.ts";
+import { decideDirectOrderHold } from "../src/lib/direct-orders/hold-decision.ts";
+import {
+  LIST_STANDING_EVENTS,
+  PLACE_STANDING_EVENTS,
+  SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT,
+  actedBySuperAdmin,
+  approvalLockedFor,
+} from "../src/lib/phoenix-crm/super-admin-approval-rules.ts";
 
 /**
  * Phoenix CRM — what the Super Admin approved, only the Super Admin rejects.
@@ -19,7 +26,13 @@ import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, approvalLockedFor } from "../src/li
  *      to the browser roles;
  *   3. the refuse service asks BEFORE the upsert that wipes who approved the review;
  *   4. the refusal reaches the screen as a 403 with the plain sentence;
- *   5. every screen that drew a Reject or Refuse draws the sentence instead, and bulk reject skips it.
+ *   5. every screen that drew a Reject or Refuse draws the sentence instead, and bulk reject skips it;
+ *   6. (owner, 2026-11-20) every other way the SFE Manager could undo or contradict the Super Admin is
+ *      refused before its write: moving or removing a place, dropping, moving or bringing back a customer,
+ *      refusing a step he approved, returning a plan he approved, turning round his doctor-list answer;
+ *   7. (owner, 2026-11-20, "Direct orders, marketing requests") the same in those two modules: a rung he
+ *      approved, an order he approved, a pharmacy he ruled on, a customer, link, licence, setting or venue
+ *      he decided — none is reversed, refused, re-approved, merged away or overwritten below him.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -51,7 +64,8 @@ function checkRule(): void {
   // An empty set of Super Admins locks nothing — which is why the loader throws on a failed read.
   assert.equal(approvalLockedFor({ viewerIsSuperAdmin: false, approvedBy: "B-10", superAdmins: new Set() }), false);
 
-  assert.match(SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, /^The administrator approved this, so only the administrator can take it back\.$/);
+  // His words, 2026-11-20: "this is the system administrator decision and you have no right to overcome it".
+  assert.match(SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, /^This is the system administrator's decision\. You have no right to override it\.$/);
 
   const loader = read("src/lib/phoenix-crm/server/super-admin-approval.ts");
   assert.match(loader, /\.rpc\("phoenix_crm_super_admin_hr_ids"\)/, "the screen asks the database who counts, through the guard's own definition");
@@ -178,8 +192,133 @@ function checkScreens(): void {
   assert.match(deck, /<PlaceInUseRefuse row=\{row\}/, "the review deck reuses the gated Refuse button rather than a second one");
 }
 
+/** The body of one exported function, from its name to the first line that closes it at column zero. */
+function functionBody(path: string, name: string): string {
+  const source = read(path);
+  const match = new RegExp(`export async function ${name}\\([\\s\\S]*?\\n\\}`).exec(source);
+  assert.ok(match, `${name} is still an exported function in ${path}`);
+  return match[0];
+}
+
+/** The guard is called in this function, and before the write it protects. */
+function guardsBefore(path: string, name: string, guard: string, write: string, why: string): void {
+  const body = functionBody(path, name);
+  const at = body.indexOf(guard);
+  const writeAt = body.indexOf(write);
+  assert.ok(at > -1, `${name} asks ${guard.trim()} — ${why}`);
+  assert.ok(writeAt > -1, `${name} still makes the write ${write}`);
+  assert.ok(at < writeAt, `${name} refuses BEFORE ${write} — ${why}`);
+}
+
+function checkEverySfeUndo(): void {
+  const superAdmins = new Set([canonicalHrIdKey("B-10") as string]);
+  assert.equal(actedBySuperAdmin(["S-01", " b-10 "], superAdmins), true, "any one of the actors being the Super Admin locks it");
+  assert.equal(actedBySuperAdmin(["S-01", null, undefined, ""], superAdmins), false, "nobody's act is not his");
+  assert.equal(actedBySuperAdmin([42, {}], superAdmins), false, "a value that is not an HR id is nobody");
+
+  // The bulk loads and housekeeping he runs over thousands of rows never freeze a list — production, 20 Nov 2026:
+  // 3,413 customer_pending rows carry his id. Nor does his rejection of a photo.
+  for (const housekeeping of ["customer_pending", "customer_loaded", "list_loaded", "customer_renamed", "customer_merged_in", "validation_review_rejected", "visit_locations_restamped"]) {
+    assert.ok(!(LIST_STANDING_EVENTS as readonly string[]).includes(housekeeping), `${housekeeping} is not a decision about the list`);
+    assert.ok(!(PLACE_STANDING_EVENTS as readonly string[]).includes(housekeeping), `${housekeeping} is not a decision about the place`);
+  }
+  for (const decided of ["customer_validated", "validation_review_approved", "customer_restored", "customer_moved_in", "customer_dropped", "request_decided"]) {
+    assert.ok((LIST_STANDING_EVENTS as readonly string[]).includes(decided), `${decided} decides where the customer stands`);
+  }
+  for (const decided of ["place_added", "place_moved", "place_restored", "place_seated", "validation_review_approved"]) {
+    assert.ok((PLACE_STANDING_EVENTS as readonly string[]).includes(decided), `${decided} decides where the place is`);
+  }
+
+  const loader = read("src/lib/phoenix-crm/server/super-admin-approval.ts");
+  assert.match(loader, /export function superAdminDecisionStands\(\): Error \{\n  return forbiddenError\(SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT\);/, "every lock refuses with a 403 and the one sentence");
+  assert.match(loader, /if \(viewerIsSuperAdmin\) return;/, "the Super Admin himself is never blocked");
+  assert.match(loader, /select\("created_by_hr_id, admin_photo_by_hr_id"\)/, "a place he created or photographed is his");
+  assert.match(loader, /if \(row\.decided_by_role === "administrator"\) throw superAdminDecisionStands\(\);/, "a plan he approved as the Administrator is his");
+
+  const PLACE = "src/lib/phoenix-crm/server/place-move.ts";
+  guardsBefore(PLACE, "movePlace", "await assertPlaceIsNotSuperAdmins(viewer, placeId, isTest);", '"phoenix_crm_move_place"', "a place he placed, moved or approved");
+  guardsBefore(PLACE, "retirePlace", "await assertPlaceIsNotSuperAdmins(", '"phoenix_crm_update_place"', "a place he placed, moved or approved");
+
+  const LIST = "src/lib/phoenix-crm/server/list.ts";
+  guardsBefore(LIST, "sfeDropFromList", "await assertListStandingIsNotSuperAdmins(viewer, customerId, isTest);", '"phoenix_crm_create_request"', "a customer he kept, validated or moved");
+  guardsBefore(LIST, "moveCustomerToSeat", "await assertListStandingIsNotSuperAdmins(", '"phoenix_crm_move_customer"', "a customer he kept, validated or moved");
+  guardsBefore(LIST, "sfeBringBack", "await assertListStandingIsNotSuperAdmins(viewer, customerId, isTest);", '"phoenix_crm_create_request"', "a customer he dropped");
+  guardsBefore(
+    LIST,
+    "decideListRequest",
+    "await assertSuperAdminDecisionStands(viewer.isSuperAdmin, [request.manager_decided_by_hr_id, request.admin_decided_by_hr_id]);",
+    '"phoenix_crm_decide_request"',
+    "a step he approved is not refused later",
+  );
+  assert.match(functionBody(LIST, "decideListRequest"), /manager_decided_by_hr_id, admin_decided_by_hr_id"\)/, "and the request read names who took the earlier steps");
+
+  guardsBefore("src/lib/phoenix-crm/server/plans.ts", "transitionPlan", "await assertApprovedPlanStands(viewer, planRow);", '"phoenix_crm_plan_transition"', "a week he approved");
+  guardsBefore("src/lib/phoenix-crm/server/monthly-plans.ts", "decideMonthlyPlan", "await assertApprovedPlanStands(viewer, headerRow);", '"phoenix_crm_monthly_plan_transition"', "a month he approved");
+  assert.match(functionBody("src/lib/phoenix-crm/server/monthly-plans.ts", "decideMonthlyPlan"), /decided_by_hr_id, decided_by_role"\)/, "the month read names who approved it");
+
+  guardsBefore(
+    "src/lib/phoenix-crm/server/unplanned.ts",
+    "decideUnplannedVisit",
+    "await assertSuperAdminDecisionStands(viewer.isSuperAdmin, [row.manager_decided_by_hr_id, row.admin_decided_by_hr_id]);",
+    '"phoenix_crm_decide_unplanned_visit"',
+    "an off-plan or recorded visit he approved is not refused later",
+  );
+  guardsBefore(
+    "src/lib/phoenix-crm/server/plan-edits.ts",
+    "decidePlanEdit",
+    "await assertSuperAdminDecisionStands(viewer.isSuperAdmin, [row.manager_decided_by_hr_id, row.admin_decided_by_hr_id]);",
+    '"phoenix_crm_decide_plan_edit_request"',
+    "a week edit he approved is not refused later",
+  );
+  guardsBefore(
+    "src/lib/marketing-requests/crm-list-check.ts",
+    "decideMarketingListCheck",
+    'await assertSuperAdminDecisionStands(access.role === "Super Admin", [row.decided_by_hr_id]);',
+    "const update = await supabase",
+    "his doctor-list answer is not turned round",
+  );
+}
+
+function checkDirectOrdersAndMarketing(): void {
+  const ORDERS = "src/lib/direct-orders/service.ts";
+  const helper = read("src/lib/direct-orders/super-admin-decision.ts");
+  assert.match(helper, /access\.role === "Super Admin" \|\| access\.scope === "system"/, "Direct Orders' own test for the Super Admin");
+  assert.match(helper, /\.in\("status", \["approved_new", "matched_existing", "rejected"\]\)/, "every claim he decided, either way, is his ruling");
+  assert.match(helper, /if \(row\.hold_release_ground === "kept_held"\) actors\.push\(row\.hold_release_decided_by_hr_id\);/, "so is his ruling that a pharmacy's orders stay held");
+  assert.match(helper, /if \(row\.hold_release_ground === "admin_released"\) actors\.push\(row\.hold_release_decided_by_hr_id\);/, "an order he released into the chain is his");
+
+  // The ladder: a rung he approved is not rejected or returned later — the CEO keeps his say.
+  guardsBefore(ORDERS, "decideDirectOrder", "await assertSuperAdminDecisionStands(isSuperAdmin, approvedStepActors(steps));", '"phx_apply_direct_order_decision"', "a rung he approved");
+  assert.match(functionBody(ORDERS, "decideDirectOrder"), /if \(input\.decision !== "approve" && access\.role !== "CEO"\) \{/, "only a reject or a return is refused, and never the CEO's");
+  guardsBefore(ORDERS, "reverseDirectOrder", "approvedStepActors(await loadSteps(original.id))", ".insert({", "an order he approved is reversed by nobody below him");
+  guardsBefore(ORDERS, "confirmDirectOrderCleanup", "await assertPharmacyRulingStands(access, mergedId);", '.from("direct_order_pharmacies")', "a pharmacy he ruled on is not merged away");
+  guardsBefore(ORDERS, "confirmDirectOrderCleanup", "await assertOrderCarriedBySuperAdminStands(access, {", "cancelled", "an order he carried is not cancelled as a duplicate");
+  guardsBefore(ORDERS, "updateDirectOrderPharmacyDetails", "await assertPharmacyRulingStands(access, input.pharmacyId);", ".update(", "who and where a pharmacy he ruled on is");
+  guardsBefore(ORDERS, "replaceDirectOrderPharmacyCodes", "await assertPharmacyRulingStands(access, input.pharmacyId);", ".delete()", "the codes of a pharmacy he ruled on");
+  assert.match(read(ORDERS), /verified_at: new Date\(\)\.toISOString\(\),\s*\}\)\s*\.eq\("id", input\.pharmacyId\)\s*\.neq\("verification_status", "verified"\);/, "a confirmed pharmacy keeps the name of whoever confirmed it");
+  guardsBefore("src/lib/direct-orders/pharmacy-validation.ts", "decideDirectOrderPharmacyValidation", 'if (input.decision !== "reject") await assertPharmacyRulingStands(access, pharmacyId);', 'status: "approved_new"', "a pharmacy he refused is not approved through another claim");
+
+  // His "stays held" beats a code that would otherwise prove the pharmacy — and the SFE clean-up, which asks the same rule.
+  const provenCode = { distributorCode: "UCP", customerCode: "123456", mappedBrickId: "B1" } as never;
+  const kept = decideDirectOrderHold({ verificationStatus: "pending_review", declaredBrickId: "B1", distributorCodes: [provenCode], holdReleaseGround: "kept_held" });
+  assert.deepEqual([kept.hold, kept.ground], [true, "admin_kept_held"], "a pharmacy he ruled stays held stays held, whatever code arrives");
+  const proven = decideDirectOrderHold({ verificationStatus: "pending_review", declaredBrickId: "B1", distributorCodes: [provenCode], holdReleaseGround: null });
+  assert.equal(proven.hold, false, "without his ruling the same code still proves the pharmacy");
+
+  const MARKETING = "src/lib/marketing-requests/service.ts";
+  guardsBefore(MARKETING, "createMarketingValidationRecord", "const keepsSuperAdminsVerdict = Boolean(existingCustomerRow) && !isVenueOnly", ".update({ ...capturedColumns", "a customer he validated keeps his verdict");
+  assert.match(functionBody(MARKETING, "createMarketingValidationRecord"), /\.\.\.\(keepsSuperAdminsVerdict \? \{\} : \{\n\s+validated_at: adminValidatedAt,/, "the evidence is still saved; only the verdict columns stay his");
+  guardsBefore(MARKETING, "createMarketingValidationRecord", "const linkVerdictStands = Boolean(existingLinkRow)", '.from("marketing_customer_pharmacies")\n              .update(', "an approved link keeps its verdict");
+  assert.match(functionBody(MARKETING, "createMarketingValidationRecord"), /existingLinkRow\?\.validation_status === "admin_approved" \|\|/, "an admin-approved link is never rewritten by a capture");
+  guardsBefore("src/lib/marketing-requests/pharmacy-license-verdict.ts", "recordMarketingPharmacyLicenseVerdict", "await assertSuperAdminDecisionStands(false, [previous.license_name_checked_by_hr_id]);", "...licenseVerdictColumns(", "his licence verdict is not turned round");
+  guardsBefore(MARKETING, "mergeMarketingVenue", "await assertSuperAdminDecisionStands(access.role === \"Super Admin\", [", "moveMarketingVenueChildren(", "a venue he validated is not merged away");
+  guardsBefore(MARKETING, "updateMarketingControlSetting", "await assertSuperAdminDecisionStands(access.role === \"Super Admin\", [", ".update({", "a setting he set last");
+}
+
 export function runPhoenixCrmSuperAdminApprovalIsFinalTests(): void {
   checkRule();
+  checkEverySfeUndo();
+  checkDirectOrdersAndMarketing();
   checkDatabase();
   checkService();
   checkScreens();

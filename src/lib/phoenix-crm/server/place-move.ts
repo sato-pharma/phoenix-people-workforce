@@ -25,6 +25,7 @@ import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/se
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { canDecideSharedPlaces, sharedPlaceForSeating } from "@/lib/phoenix-crm/server/shared-places";
 import { settleVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
+import { assertPlaceIsNotSuperAdmins } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { followLineTwinCopiesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -80,6 +81,8 @@ export async function movePlace(viewer: PhoenixCrmViewer, raw: unknown): Promise
   throwIfError(error);
   const place = data as Row | null;
   if (!place) throw notFoundError("This place is no longer on the list. Reload the list.");
+  // What the Super Admin placed, moved or approved, only the Super Admin moves (owner, 2026-11-20).
+  await assertPlaceIsNotSuperAdmins(viewer, placeId, isTest);
 
   const target: PlaceMoveTarget = body.target === "pin" || body.target === "photo" ? (body.target as PlaceMoveTarget) : "coordinates";
   let point: { lat: number; lon: number; accuracyMeters: number | null };
@@ -148,6 +151,8 @@ export async function retirePlace(viewer: PhoenixCrmViewer, raw: unknown): Promi
   if (!reason || reason.length < PLACE_MOVE_REASON_MIN) {
     throw validationError(`Write why the place is removed (at least ${PLACE_MOVE_REASON_MIN} characters).`);
   }
+  // What the Super Admin placed, moved or approved, only the Super Admin removes (owner, 2026-11-20).
+  await assertPlaceIsNotSuperAdmins(viewer, String(body.placeId).toLowerCase(), isTest);
   const result = await callPhoenixCrm<Row>("phoenix_crm_update_place", {
     p: {
       seat_id: seat.seatId,

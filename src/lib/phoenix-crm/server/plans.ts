@@ -89,6 +89,7 @@ import {
   type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { assertApprovedPlanStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import {
   ensureReferenceCustomersForView,
   loadMonthVisitCounts,
@@ -1067,6 +1068,8 @@ export async function transitionPlan(
       throw conflictError("This week is over, so its plan can no longer be returned. Reload the page.");
     }
     if (!note) throw validationError("Write a note for the rep on what to change.");
+    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
+    await assertApprovedPlanStands(viewer, planRow);
     // One day alone: a working day of this week he can still change (the database refuses any other).
     if (day !== null) {
       if (!fieldWeekDays(String(planRow.week_start)).includes(day)) throw validationError("Choose a day of this week to return.");
