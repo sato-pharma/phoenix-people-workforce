@@ -2261,6 +2261,7 @@ import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-co
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
+import { runPhoenixCrmAdminPhotoTests } from "./phoenix-crm-admin-photo.test.ts";
 import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
@@ -8725,6 +8726,11 @@ await runTest(
 await runTest(
   "Phoenix CRM validates a customer on a trusted point (owner, 2026-11-10: \"we will search all locations for this customer in phx crm, then we will compare with the locations of checkins of this customer from the old crm until we find a trusted point\"): a tight cluster over months is trusted with the 600 m and 6 km strays left out, scattered readings or agreement on fewer than three days are not and say why, a Phoenix reading rougher than the visit line is dropped and the point is a median; a visit copied from iReports360 is never counted beside its own check-in, a retired place still counts and a pin equal to the photo reading counts once; the old check-ins are iReports360 rows only (never the view's Phoenix mirror) and never paged; the signboard reader skips a place with no photo; the route, the service, the button and the screen are the Super Admin's alone; and the migration keeps a photo required on every other place",
   runPhoenixCrmTrustedPointTests,
+);
+
+await runTest(
+  "Phoenix CRM lets the Super Admin validate a customer with a photo he uploads while the rep captures the location (owner, 2026-11-20: \"make a button for me to press on watch the rep while capturing location ... while this button is on, the rep will capture the location\"): the rep's reading stands only with a known accuracy within 250 m and never at 0,0, and a watch is open only while watching or captured and inside its 30 minutes; the Super Admin's route asks update and every one of his services asks who first, the rep's route asks create and his services ask his own validation gate, the rep receives four keys and no watch, time, accuracy or person, and his card never asks on a timer; the database function is a known writer, closed to the browser roles, and refuses a validation before the rep's reading arrives",
+  runPhoenixCrmAdminPhotoTests,
 );
 
 await runTest(

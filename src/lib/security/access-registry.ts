@@ -1187,6 +1187,13 @@ export const accessRegistry = [
   // `canPlaceOnTrustedPoint` in the service. GET is the preview, POST writes the place.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/trusted-point", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/trusted-point", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Validating a customer with a photo the Super Admin uploads, the location being the rep's own live reading
+  // (owner, 2026-11-20): the Super Admin alone — `update` at the route, `canValidateWithAdminPhoto` in the service.
+  // The rep's half (`/ask`) is `create` at the route and `territoryForValidation` in the service.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/admin-photo", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/admin-photo", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/admin-photo/ask", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/admin-photo/ask", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The rep drops a customer he met outside his list (no approval: he was never on it).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/outside/drop", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The SFE Manager brings a customer back from the Archive himself.

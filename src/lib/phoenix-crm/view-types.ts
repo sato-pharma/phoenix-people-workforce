@@ -35,6 +35,7 @@ export type {
 export type { AddedVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
 export type { PlaceMoveResult, PlaceMoveTarget, SeatedInVenueResult } from "@/lib/phoenix-crm/server/place-move";
 export type { TrustedPointApplied, TrustedPointLocation, TrustedPointPreview } from "@/lib/phoenix-crm/server/trusted-point";
+export type { AdminPhotoApplied, AdminPhotoRepAsk, AdminPhotoState } from "@/lib/phoenix-crm/server/admin-photo";
 export type { PlannedActivityDraft, PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 export type { DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 export type { DayInterview } from "@/lib/phoenix-crm/server/interview-cvs";
