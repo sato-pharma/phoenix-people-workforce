@@ -70,6 +70,7 @@ export const READINESS_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_share_line_validation",
   "phoenix_crm_update_place",
   "phoenix_crm_validate_customer",
+  "phoenix_crm_validate_with_admin_photo",
   "phoenix_crm_withdraw_request",
 ]);
 
