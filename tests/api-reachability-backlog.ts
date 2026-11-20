@@ -66,7 +66,13 @@ export type ApiReachabilityGapKind =
    */
   | "operator-only-mutation"
   /** Nothing anywhere names it and no page is its twin. The finding this guard exists to surface. */
-  | "no-caller-anywhere";
+  | "no-caller-anywhere"
+  /**
+   * Called by a separate app the company ships from ANOTHER repository — the Phoenix Camera
+   * (sato-pharma/phoenix-field-camera) — with a bearer session token, and refused to a browser with a
+   * 404 by the handler itself. Its caller exists; this repository simply cannot see it.
+   */
+  | "called-by-a-separate-app";
 
 export type ApiReachabilityGap = {
   /** The URL the handler serves, dynamic segments as `[param]`, exactly as the census reports it. */
@@ -85,9 +91,27 @@ export const API_REACHABILITY_GAP_KINDS: readonly ApiReachabilityGapKind[] = [
   "server-page-reads-the-service",
   "operator-only-mutation",
   "no-caller-anywhere",
+  "called-by-a-separate-app",
 ];
 
 export const API_REACHABILITY_BACKLOG: readonly ApiReachabilityGap[] = [
+  // ── called by the Phoenix Camera, a separate app in its own repository ───────────────────────
+  {
+    route: "/api/phoenix-crm/field-camera/pack",
+    authMode: "session",
+    kind: "called-by-a-separate-app",
+    reason:
+      "The Phoenix Camera's offline pack (owner, 20 Nov 2026: each rep logs in with his HR ID and keeps his own list and plan on the phone). Called by the camera app in sato-pharma/phoenix-field-camera with the rep's bearer token; loadFieldCameraPack answers a browser 404, so no web screen may call it. docs/phoenix-crm-field-camera.md, \"Camera 2.0\".",
+    recorded: "2026-11-20",
+  },
+  {
+    route: "/api/phoenix-crm/field-camera/sync",
+    authMode: "session",
+    kind: "called-by-a-separate-app",
+    reason:
+      "The Phoenix Camera's sync (owner, 20 Nov 2026: \"the application will synchronize with Phoenix ... the validation will register and the visit will register\"). Called by the camera app in sato-pharma/phoenix-field-camera when the network returns; syncFieldCameraVisit answers a browser 404. docs/phoenix-crm-field-camera.md, \"Camera 2.0\".",
+    recorded: "2026-11-20",
+  },
   // ── the server half of a UI that is deliberately switched off ────────────────────────────────
   {
     route: "/api/admin/workflow-control/compare",

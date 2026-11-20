@@ -40,14 +40,14 @@ import {
   type AdminPhotoStatus,
 } from "@/lib/phoenix-crm/admin-photo-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { seatOccupants } from "@/lib/phoenix-crm/scope";
+import { seatOccupants, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { SEAL_MAX_AGE_HOURS } from "@/lib/phoenix-crm/field-camera/seal-rules";
 import { readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { hasSealTrailer } from "@/lib/phoenix-crm/field-camera/seal-format";
-import { checkFieldCameraPhoto, type FieldCameraReport } from "@/lib/phoenix-crm/server/field-camera";
+import { checkFieldCameraPhoto, type FieldCameraCheck, type FieldCameraReport } from "@/lib/phoenix-crm/server/field-camera";
 import { decodeJpegDataUrl, uploadPhotoBytesForSlot } from "@/lib/phoenix-crm/server/photos";
 import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
@@ -169,6 +169,8 @@ export type AdminPhotoLocation = {
 /** What the Super Admin reads about a Phoenix Camera seal that held. */
 export type AdminPhotoSealView = {
   takenAtText: string;
+  /** Where the seal's position came from, in words. */
+  source: string;
   satellites: string;
   phone: string;
   /** Short and stable, so the same phone is recognisable photo after photo. */
@@ -240,6 +242,9 @@ async function watchView(watch: WatchRow): Promise<AdminPhotoWatchView> {
       seal: report
         ? {
             takenAtText: adminPhotoTimeText(report.takenAtUtc),
+            source: !report.provider || report.provider === "gps"
+              ? "The Phoenix Camera seal (satellites)"
+              : "The Phoenix Camera seal (Wi-Fi, mobile network and satellites)",
             satellites: `${report.satellitesUsed} used of ${report.satellitesSeen} seen`,
             phone: `${report.deviceModel} · Android ${report.androidSdk} · ${report.securityLevel === "StrongBox" ? "StrongBox chip" : "secure chip"}`,
             phoneKey: report.deviceKey.slice(0, 12).toUpperCase(),
@@ -422,6 +427,95 @@ export async function applyAdminPhotoValidation(viewer: PhoenixCrmViewer, valida
     customerName: customer.name,
     location: locationOf(columns),
   };
+}
+
+// ── The rep's own sealed photo, synced by the camera ──────────────────────────────────────────────
+
+/**
+ * 🔴 THE REP'S OWN PHOENIX CAMERA PHOTO VALIDATES HIS CUSTOMER WHEN IT SYNCS (owner, 20 Nov 2026: "we're not
+ * relying on WhatsApp ... the application will synchronize with Phoenix ... the validation will register and the
+ * visit will register"). The same watch row and the same `phoenix_crm_validate_with_admin_photo` as the Super
+ * Admin's sealed upload, with the REP as the actor: the seal was judged in full by the caller
+ * (`checkFieldCameraPhoto`, the seal naming this rep), so no reading from anywhere else is taken.
+ *
+ * A customer who already has a place is left as he is (a place is validated once, fixed for good) and so is one
+ * the trusted-point board holds; the visit goes on either way. Returns whether this call validated him.
+ */
+export async function validateWithRepSeal(
+  viewer: PhoenixCrmViewer,
+  input: { seat: OrgSeat; isTest: boolean; customerId: string; bytes: Uint8Array; sealed: FieldCameraCheck },
+): Promise<{ validated: boolean; placeId: string | null }> {
+  const customer = await loadCustomer(input.customerId);
+  if (customer.seatId !== input.seat.seatId || customer.isTest !== input.isTest) {
+    throw forbiddenError("This customer is not on your list.");
+  }
+  if (customer.status !== "pending" && customer.status !== "active") return { validated: false, placeId: null };
+  const placed = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select("id")
+    .eq("customer_id", customer.id)
+    .eq("status", "active")
+    .limit(1);
+  throwIfError(placed.error);
+  if ((placed.data ?? []).length > 0) return { validated: false, placeId: null };
+  if (await blockedReasonFor(customer)) return { validated: false, placeId: null };
+
+  const actor = viewer.hrId.trim().toUpperCase();
+  const uploaded = await uploadPhotoBytesForSlot(
+    { hrId: viewer.hrId, seat: input.seat, isTest: input.isTest, purpose: "place", cairoToday: viewer.cairoToday },
+    Buffer.from(input.bytes),
+  );
+  await callPhoenixCrm<string>("phoenix_crm_take_photo", {
+    p_path: uploaded.path,
+    p_hr_id: viewer.hrId,
+    p_seat_id: input.seat.seatId,
+    p_purpose: "place",
+    p_is_test: input.isTest,
+  });
+  await closeOpenWatches(customer.id);
+  const { payload, report } = input.sealed;
+  const inserted = await getSupabaseAdmin()
+    .from(TABLE)
+    .insert({
+      customer_id: customer.id,
+      seat_id: customer.seatId,
+      is_test: customer.isTest,
+      photo_path: uploaded.path,
+      armed_by_hr_id: actor,
+      status: "captured",
+      watch_until: new Date().toISOString(),
+      rep_source: "sealed_photo",
+      rep_hr_id: payload.hrId,
+      rep_lat: payload.lat,
+      rep_lon: payload.lon,
+      rep_accuracy_meters: payload.accuracyMeters,
+      rep_captured_at: payload.takenAtUtc,
+      seal_id: report.sealId,
+      seal_report: report,
+    })
+    .select(WATCH_COLUMNS)
+    .single();
+  if (inserted.error?.code === "23505" && /seal_idx/.test(`${inserted.error.message ?? ""} ${inserted.error.details ?? ""}`)) {
+    return { validated: false, placeId: null };
+  }
+  throwIfError(inserted.error);
+  const watch = watchOf(inserted.data as Row);
+  const columns = await locationColumnsFor(watch);
+  const result = await callPhoenixCrm<Row>("phoenix_crm_validate_with_admin_photo", {
+    p: { validation_id: watch.id, actor_hr_id: actor, location: columns },
+  });
+  const config = await loadPhoenixCrmConfig();
+  await restampVisitLocationsQuietly({
+    seatId: watch.seatId,
+    isTest: watch.isTest,
+    customerId: watch.customerId,
+    actorHrId: actor,
+    settings: config.settings,
+    scope: "unplaced",
+  });
+  await withdrawValidationNotConfirmed(watch.customerId);
+  await shareAcrossLinesQuietly(watch.customerId);
+  return { validated: true, placeId: String(result.place_id) };
 }
 
 // ── The rep's side ─────────────────────────────────────────────────────────────────────────────────
