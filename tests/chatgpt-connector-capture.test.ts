@@ -16,7 +16,7 @@
  *      picture goes out as an image block, its video in `_meta`, and never as base64 in the text.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -35,6 +35,7 @@ import {
 } from "@/lib/chatgpt-connector/browser/fence";
 import { CAPTURE_VIEWER_URI, captureViewerHtml, IMAGE_META_KEY, VIDEO_META_KEY } from "@/lib/chatgpt-connector/browser/viewer";
 import { allConnectorTools, buildConnectorServer, runConnectorTool, toolsForRole } from "@/lib/chatgpt-connector/server";
+import { CONNECTOR_FILE_CONTENT_TYPES } from "@/lib/chatgpt-connector/files";
 import { defineTool, type ConnectorTool } from "@/lib/chatgpt-connector/types";
 
 const ORIGIN = "http://127.0.0.1:8080";
@@ -149,6 +150,17 @@ async function toolsAndResult() {
   const screens = readFileSync(path.join(process.cwd(), "src/lib/chatgpt-connector/tools/screens.ts"), "utf8");
   assert.equal((screens.match(/checkCapturePath\(/g) ?? []).length, 2, "both tools check the path before any browser opens");
 
+  // The examples ChatGPT is shown are real pages. The first live capture asked for /admin/employees,
+  // the tool's own example, and got a 404: "(admin)" is a route group and adds nothing to the address.
+  const fence = readFileSync(path.join(process.cwd(), "src/lib/chatgpt-connector/browser/fence.ts"), "utf8");
+  const groups = readdirSync(path.join(process.cwd(), "app")).filter((name) => /^\(.+\)$/.test(name));
+  const examples = [...`${screens}\n${fence}`.matchAll(/for example ((?:\/[a-z0-9-]+)+)(?: or ((?:\/[a-z0-9-]+)+))?/g)].flatMap((match) => match.slice(1).filter(Boolean));
+  assert.ok(examples.length >= 3, "the tool's description and the path hint both give example pages");
+  for (const example of examples) {
+    const candidates = ["", ...groups].map((group) => path.join(process.cwd(), "app", group, example, "page.tsx"));
+    assert.ok(candidates.some((file) => existsSync(file)), `${example}, an example page shown to ChatGPT, is a real Phoenix page`);
+  }
+
   const ctx = createAccessContext({ hrId: "B-10", loginId: "owner", role: "Super Admin", source: "session" });
   const picture = Buffer.from("not really a jpeg").toString("base64");
   const video = Buffer.from("not really a video").toString("base64");
@@ -211,7 +223,31 @@ async function toolsAndResult() {
   await bare.close();
 }
 
+/**
+ * The bucket accepts every type the connector stores. On 20 Nov 2026 both screenshots ChatGPT asked
+ * for failed on production with "mime type image/png is not supported": the job-exports bucket's
+ * type list (20261119013709) predated the capture tools. The newest migration that sets that list
+ * must name every CONNECTOR_FILE_CONTENT_TYPES value.
+ */
+function storageAcceptsEveryKind() {
+  const dir = path.join(process.cwd(), "supabase/migrations");
+  const pattern = /allowed_mime_types = array\[([^\]]*)\]\s*where id = 'job-exports'/;
+  const latest = readdirSync(dir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((name) => pattern.exec(readFileSync(path.join(dir, name), "utf8")))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .at(-1);
+  assert.ok(latest, "a migration sets job-exports' allowed_mime_types");
+  const allowed = [...latest[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  for (const [kind, type] of Object.entries(CONNECTOR_FILE_CONTENT_TYPES)) {
+    assert.ok(allowed.includes(type), `job-exports accepts ${type}, the type the connector stores a ${kind} under`);
+  }
+  assert.ok(allowed.includes("application/json"), "the background worker's JSON exports stay accepted");
+}
+
 export async function runChatgptConnectorCaptureTests() {
+  storageAcceptsEveryKind();
   requestFence();
   capturePath();
   encoderAndOrigin();

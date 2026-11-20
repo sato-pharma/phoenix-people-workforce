@@ -146,7 +146,7 @@ export function classifyCaptureRequest(
  */
 export function checkCapturePath(raw: unknown, routes: SideEffectRoutes): { ok: true; path: string } | { ok: false; reason: string } {
   const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value) return { ok: false, reason: "Give the page's address inside Phoenix, starting with /, for example /admin/employees." };
+  if (!value) return { ok: false, reason: "Give the page's address inside Phoenix, starting with /, for example /employees." };
   if (value.length > 400) return { ok: false, reason: "That page address is too long." };
   if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\") || /[\u0000-\u001f]/.test(value)) {
     return { ok: false, reason: "Give a page address inside Phoenix that starts with a single /, not a full web address." };
