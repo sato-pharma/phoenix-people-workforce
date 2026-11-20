@@ -1,3 +1,4 @@
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 import type { BrickUniverseEntry, PharmacyActionItem } from "@/lib/sales/sos-pharmacy-actions";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7,8 +8,8 @@ import type { BrickUniverseEntry, PharmacyActionItem } from "@/lib/sales/sos-pha
 //
 // 🔴 A filter only NARROWS a list the viewer's scope already produced — it never widens it, and it is
 // never a second rule for stopped / dropping / new. Brick is matched by NAME (the screen shows names,
-// never codes); search reads the pharmacy's name, address and brick, folding the Arabic letter forms
-// that distributors spell differently (أ إ آ → ا, ة → ه, ى → ي).
+// never codes); search reads the pharmacy's name, address and brick through the one customer name
+// key (foldCustomerName), with ة read as ه for a person typing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type PharmacyChannel = "direct" | "distributor";
@@ -27,16 +28,13 @@ export function readChannel(value: string | null | undefined): PharmacyChannel |
   return value === "direct" || value === "distributor" ? value : null;
 }
 
-/** Lower case, Arabic letter forms folded, diacritics and tatweel dropped, spaces collapsed. */
+/**
+ * The one customer name key (foldCustomerName: alef forms, ى, harakat, tatweel, case, punctuation),
+ * plus ة → ه for SEARCH only: a person typing "صيدليه" means "صيدلية". The key itself keeps the two
+ * apart on purpose, so this extra step never reaches a match or a merge — only this filter.
+ */
 export function foldSearchText(value: string | null | undefined): string {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[ً-ْـ]/g, "")
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ة/g, "ه")
-    .replace(/ى/g, "ي")
-    .replace(/\s+/g, " ")
-    .trim();
+  return foldCustomerName(value).replace(/ة/g, "ه");
 }
 
 const sameName = (left: string | null | undefined, right: string | null | undefined) =>
