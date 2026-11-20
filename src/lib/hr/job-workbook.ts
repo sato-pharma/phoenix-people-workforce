@@ -875,6 +875,12 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
     hasWrittenJd: false,
   },
   {
+    jobTitle: "Senior Product Manager",
+    role: "Product Manager",
+    purpose: "The Product Manager seat at a seniority grade: same line, same products, same work.",
+    hasWrittenJd: false,
+  },
+  {
     jobTitle: "Group Product Manager",
     role: "Group Product Manager",
     purpose: "Owns a product group across lines, with the marketing decision authority above Product Manager.",

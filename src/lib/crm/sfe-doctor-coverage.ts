@@ -76,6 +76,7 @@
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { collapseDuplicateVisitSubmissions, getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { isProductManagerTitle } from "@/lib/employees/job-function";
 import { scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
 import { crmTerritoryFrom } from "@/lib/crm/rep-name";
 import { cairoTodayIso } from "@/lib/crm/dates";
@@ -1327,7 +1328,7 @@ export function buildDoctorCoverageBoard(
   const productManagerKeys = new Set<string>();
   for (const rep of repRows.values()) {
     if (!rep.agentHrId) continue;
-    if (orgByHrId?.get(rep.agentHrId)?.title?.trim().toLowerCase() === "product manager") {
+    if (isProductManagerTitle(orgByHrId?.get(rep.agentHrId)?.title)) {
       productManagerKeys.add(rep.repKey);
     }
   }
