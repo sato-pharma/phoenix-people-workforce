@@ -17,6 +17,11 @@ metadata:
 - Proven 20 Nov 17:38–17:48: a restart came back on its own in 55 s (Wi-Fi, drives, phoenix-dev, warm-up 6 pages 68 s, 3,570 MB available, 7,628 MB total once the crash-dump reserve went), localhost:3000 answered 200 through the tunnel; the full suite via spare-test.ps1 ran 3146 of 3147 + 1 skipped (CV worker), 0 red, 8 min. The stick's `autoinstall.yaml` was renamed `.off` so booting it can never wipe a disk again.
 - The PR 649 preview folder survives at `/mnt/chaos/Phoenix/preview-649` — its session's Monday script assumed Windows.
 
+## 🔴 PR PREVIEW (owner, 20 Nov ~18:15: "I will be able to see the change in the code before I merge, right?" → "Set up PR preview")
+- `~/.claude/scripts/spare-preview.ps1 <PR> [-Hours 2]` / `status` / `stop` — ONLY on his own word; it REPLACES localhost:3000 (8 GB holds one dev server) for him and every session, production DB.
+- Spare side: user `phxpreview` (no sudo, own pnpm store seeded from phoenix's), folder `/home/phxpreview/app` = `git archive <live commit>` + the PR's diff as one patch, log `/home/phxpreview/preview.log`; unit `phoenix-preview` (`Conflicts=phoenix-dev`, `RuntimeMaxSec` via `/run/systemd/system/phoenix-preview.service.d/time.conf`, `ExecStopPost` starts phoenix-dev unless `/run/phoenix-preview-switching`); run script `/usr/local/lib/phoenix-preview/run.sh` (source `spare-preview-run.sh`; setup `spare-preview-setup.sh`, re-run automatically when the source changes). `spare-follow-production.ps1` and `nightly-restart.sh` leave a running preview alone.
+- Proven 20 Nov 18:20–18:25 on PR 663: setup + first install 97 s, ready in 2 min 8 s, served as phxpreview, Command Center rendered (132/155); `stop` → live answered in 32 s; a `RuntimeMaxSec=5` dummy ran its ExecStopPost 5 s in. Skill note: PR 672.
+
 ## History: the Windows reinstall that morning
 Owner, 20 Nov 2026 ~11:15 Cairo: "the spare laptop Windows was down, so I reinstalled its Windows ... I hate manual work. Automate." Everything on its C: is gone (OpenSSH, Node, Git, pnpm, the "Phoenix Dev Server" and "Phoenix Spare Browser Guard" tasks); D:\Phoenix may have survived if D: is its own partition.
 
