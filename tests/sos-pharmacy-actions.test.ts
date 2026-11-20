@@ -15,6 +15,7 @@ import { buildMonthPace } from "../src/lib/sales/sos-month-pace.ts";
 import {
   pharmacyActionSheetRows,
   pharmacyListColumns,
+  pharmacyProductSheetRows,
   pharmacyActionsFileName,
   periodLabel,
   seatLineKey,
@@ -201,6 +202,23 @@ export function runSosPharmacyActionsTests() {
     assert.ok(
       columns.filter((column) => column.key.startsWith("v_")).every((column) => column.numeric && !column.excludeFromTotal),
       "EGP is the one figure the total row adds",
+    );
+    const boxes = pharmacyProductSheetRows({
+      lists: [
+        { label: "Stopped buying", items: [sept!] },
+        { label: "Dropping 30%+", items: [keep!] },
+      ],
+      periods: [LATEST, P1],
+      peopleByArea: new Map(),
+    });
+    assert.deepEqual(
+      boxes.map((entry) => [entry.list, entry.pharmacy, entry.product, entry[`u_${P1}`], entry[`v_${P1}`]]),
+      [
+        ["Stopped buying", "Pharmacy SEPT", "Alpha", 10, 5],
+        ["Stopped buying", "Pharmacy SEPT", "Zeta", 7, 30],
+        ["Dropping 30%+", "Pharmacy KEEP", "Product One", 10, 300],
+      ],
+      "the Boxes by product tab: every list on one sheet, a List column, one row per pharmacy and product",
     );
     const bare = pharmacyActionSheetRows({ items: [{ ...sept!, productHistory: undefined }], periods: [LATEST, P1], peopleByArea: new Map() });
     assert.deepEqual(

@@ -106,6 +106,27 @@ export function pharmacyActionSheetRows(input: {
   return rows;
 }
 
+/**
+ * The Boxes by product tab: all three lists on ONE sheet, a List column first, then exactly the list
+ * sheets' row per pharmacy and product — so one filter reads every product's units and EGP across
+ * stopped, dropping and new (owner, 2026-11-20: he asked for this tab back beside the simpler lists).
+ */
+export function pharmacyProductSheetRows(input: {
+  lists: { label: string; items: readonly PharmacyActionItem[] }[];
+  periods: readonly string[];
+  peopleByArea: ReadonlyMap<string, AreaPeople>;
+  distributorNameOf?: (code: string) => string;
+}): ExportRow[] {
+  return input.lists.flatMap((list) =>
+    pharmacyActionSheetRows({
+      items: list.items,
+      periods: input.periods,
+      peopleByArea: input.peopleByArea,
+      distributorNameOf: input.distributorNameOf,
+    }).map((row) => ({ list: list.label, ...row })),
+  );
+}
+
 /** The three list sheets' columns. Exported for the test that pins units beside EGP and out of the total. */
 export function pharmacyListColumns(periods: readonly string[]): ExportColumn[] {
   // Oldest month on the left, the month the list is read as of on the right — the way a person reads a
@@ -244,6 +265,21 @@ export async function buildPharmacyActionsWorkbook(input: {
       }),
     });
   }
+
+  // Boxes by product: the three lists together, one row per pharmacy and product, a List column to filter.
+  addPhoenixTableSheet(workbook, {
+    theme: "house",
+    title: "Boxes by product",
+    subtitle: `${scopeWords} · every list on one sheet, one row per pharmacy and product · units are per product and never added across products`,
+    sheetName: "Boxes by product",
+    columns: [{ key: "list", label: "List", width: 15 }, ...columns],
+    rows: pharmacyProductSheetRows({
+      lists: lists.map((list) => ({ label: list.sheet, items: inArea(actions[list.key]) })),
+      periods,
+      peopleByArea: input.peopleByArea,
+      distributorNameOf: input.distributorNameOf,
+    }),
+  });
 
   return workbook.xlsx.writeBuffer();
 }
