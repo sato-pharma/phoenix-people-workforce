@@ -205,3 +205,12 @@ export function buildMonthlySplit(input: { asOf: string; members: readonly Month
     unpriced: rows.reduce((total, row) => total + row.unpriced, 0),
   };
 }
+
+/**
+ * The rows a Medical Cover Statement can be made for (cost-letter.ts): an employee still on the register, by
+ * name. A relative whose employee left has no one to hand it to. Here, not in cost-letter.ts, so the tab that
+ * lists them does not carry the PDF renderer into the browser.
+ */
+export function costLetterRows(rows: readonly MonthlySplitRow[]): MonthlySplitRow[] {
+  return rows.filter((row) => row.employee !== null).sort((a, b) => (a.employee?.name ?? "").localeCompare(b.employee?.name ?? ""));
+}

@@ -15,8 +15,9 @@ import { MedicalInsuranceBenefitsTab } from "./medical-insurance-benefits";
 import { MedicalInsuranceCostTab } from "./medical-insurance-cost";
 import { MedicalInsuranceDocumentsTab } from "./medical-insurance-documents";
 import { MedicalInsuranceMembersTab } from "./medical-insurance-members";
+import { MedicalInsuranceStatementsTab } from "./medical-insurance-statements";
 
-type TabId = "actions" | "benefits" | "cost" | "documents" | "members" | "overview";
+type TabId = "actions" | "benefits" | "cost" | "documents" | "members" | "overview" | "statements";
 
 type Props = {
   canCreate: boolean;
@@ -44,6 +45,7 @@ export function MedicalInsurancePage({ canCreate, canEdit, canExport, error, mon
         { id: "members", label: "Members", note: `${view.members.length} on the register` },
         { id: "benefits", label: "Benefits", note: "Plan A, B or C" },
         ...(money ? [{ id: "cost" as const, label: "Cost and invoices", note: egpWords(money.year.totals.projected) }] : []),
+        ...(money ? [{ id: "statements" as const, label: "Cost statements", note: "One PDF per employee" }] : []),
         { id: "documents", label: "Documents", note: `${view.documents.length + (money?.documents.length ?? 0)} on file` },
       ]
     : [];
@@ -85,7 +87,7 @@ export function MedicalInsurancePage({ canCreate, canEdit, canExport, error, mon
 
       {view ? (
         <>
-          <div className={cn("grid grid-cols-2 gap-px border border-phx-line bg-phx-line", money ? "lg:grid-cols-6" : "lg:grid-cols-5")} role="tablist">
+          <div className={cn("grid grid-cols-2 gap-px border border-phx-line bg-phx-line", money ? "lg:grid-cols-7" : "lg:grid-cols-5")} role="tablist">
             {tabs.map(({ id, label, note }) => (
               <button
                 aria-selected={tab === id}
@@ -106,6 +108,7 @@ export function MedicalInsurancePage({ canCreate, canEdit, canExport, error, mon
           {tab === "members" ? <MedicalInsuranceMembersTab canCreate={canCreate} canEdit={canEdit} canExport={canExport} view={view} /> : null}
           {tab === "benefits" ? <MedicalInsuranceBenefitsTab view={view} /> : null}
           {tab === "cost" && money ? <MedicalInsuranceCostTab money={money} policy={view.policy} /> : null}
+          {tab === "statements" && money ? <MedicalInsuranceStatementsTab money={money} /> : null}
           {tab === "documents" ? <MedicalInsuranceDocumentsTab canEdit={canEdit} money={money} view={view} /> : null}
         </>
       ) : null}
