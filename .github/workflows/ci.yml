@@ -784,18 +784,19 @@ jobs:
         run: node scripts/vuln-scan.mjs
 
       # COPY-PASTE REPORT (owner, 2026-11-20: "add jscpd as a report-only check on changed files").
-      # jscpd 5 scans src/ and app/, builds a baseline from the base ref's own tree with the same
-      # settings, and the script reports only the clones absent from it — the ones THIS PR copied —
-      # as warning annotations and a job summary. ~1,000 copied blocks already on main are left out.
-      # Pull requests only (a push to main has no diff to report on). Like the vulnerability scan above
-      # it is DELIBERATELY NON-BLOCKING: the script always exits 0, says "could not run" rather than
-      # "clean" when it cannot prove it looked, and `continue-on-error` covers anything else. It gets
-      # its own timeout for the same reason the scan does — `continue-on-error` cannot absorb a step
-      # that never ends. Measured 2026-11-20 on this repo: 1.2 s and a 214 MB peak for ~230k lines;
-      # jscpd 4 (JavaScript) ran out of memory on the same slice. HEAD^1 is the base side of the
-      # pull request's merge commit, present at `fetch-depth: 2`. Account: scripts/ci-duplicates-report.mjs.
+      # jscpd 5 scans src/ and app/, builds a baseline from HEAD^1's own tree with the same settings,
+      # and the script reports only the clones absent from it — the ones THIS change copied — as
+      # warning annotations and a job summary. ~1,000 copied blocks already on main are left out.
+      # HEAD^1 is present at `fetch-depth: 2`: on a pull request it is the base side of the merge
+      # commit, on a push to main the commit before the merge. 🔴 NO EVENT CONDITION: a step of
+      # `static` that runs on one event only fails tests/ci-tree-reuse-dryrun.test.ts, because a PR run
+      # must run every work step a push run does. Like the vulnerability scan above it is DELIBERATELY
+      # NON-BLOCKING: the script always exits 0, says "could not run" rather than "clean" when it
+      # cannot prove it looked, and `continue-on-error` covers anything else. It gets its own timeout
+      # for the same reason the scan does — `continue-on-error` cannot absorb a step that never ends.
+      # Measured 2026-11-20 on this repo: 1.2 s and a 214 MB peak for ~230k lines; jscpd 4
+      # (JavaScript) ran out of memory on the same slice. Account: scripts/ci-duplicates-report.mjs.
       - name: Copy-paste report (reports, does not gate)
-        if: github.event_name == 'pull_request'
         continue-on-error: true
         timeout-minutes: 4
         run: node scripts/ci-duplicates-report.mjs --base HEAD^1

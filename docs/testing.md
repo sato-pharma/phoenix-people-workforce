@@ -277,10 +277,13 @@ There is no longer a separate `preview-smoke` job — the login smoke test moved
 full Playwright E2E suite runs only on manual `workflow_dispatch` (the `full-e2e` job).
 
 **The copy-paste report (owner, 2026-11-20: "add jscpd as a report-only check on changed files").**
-On a pull request only, `static` runs `node scripts/ci-duplicates-report.mjs --base HEAD^1`: jscpd 5
-(the Rust engine, devDependency pinned exactly) scans `src/` and `app/`, builds a baseline from the
-base side of the merge commit with the same settings, and the script reports only the clones absent
-from it — the blocks THIS PR copied — as up to ten warning annotations plus a job-summary table. The
+On every run, `static` runs `node scripts/ci-duplicates-report.mjs --base HEAD^1`: jscpd 5
+(the Rust engine, devDependency pinned exactly) scans `src/` and `app/`, builds a baseline from
+`HEAD^1` with the same settings (a pull request's base side of the merge commit; on a push to `main`,
+the commit before the merge), and the script reports only the clones absent from it — the blocks THIS
+change copied — as up to ten warning annotations plus a job-summary table. 🔴 **No event condition on
+the step:** `tests/ci-tree-reuse-dryrun.test.ts` refuses a `static` step that runs on one event only,
+because a PR run must run every work step a push run does. The
 ~1,000 copied blocks already on `main` (1,012 in `app/api` alone, measured that day) are never listed.
 🔴 **It never gates:** the script always exits 0, the step is `continue-on-error` with its own
 4-minute timeout, and a scan that read under 1,000 files, a report it does not understand, a missing

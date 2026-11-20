@@ -10180,7 +10180,7 @@ await runTest(
   "the pull request copy-paste report names only the blocks THIS PR copied (jscpd's isNew against the base ref, "
   + "never the ~1,000 already on main), cannot call a PR clean below its coverage floor or on a report it does not "
   + "understand, pins each warning to a repo-relative file within GitHub's ten-per-step cap, and runs in ci.yml's "
-  + "static job on pull requests only, continue-on-error with its own timeout, so it can never redden a required check",
+  + "static job on every event (no event condition), continue-on-error with its own timeout, so it can never redden a required check",
   runCiDuplicatesReportTests,
 );
 await runTest(

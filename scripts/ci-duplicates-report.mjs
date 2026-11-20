@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * The copy-paste report for a pull request: which blocks of product code the PR COPIES, compared with
- * the branch it merges into. Report-only — it prints, annotates and writes the job summary, and it
+ * The copy-paste report for a change: which blocks of product code it COPIES, compared with the commit
+ * before it (a pull request's base, or main before a push). Report-only — it prints, annotates and writes the job summary, and it
  * always exits 0. The CI step that runs it (`static`, "Copy-paste report") is non-blocking as well.
  *
  * WHY ONLY THE NEW ONES. The whole product tree already carries about a thousand copied blocks (measured
@@ -34,6 +34,14 @@ import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
+// Before anything below can write or spawn. A no-op when the module is imported (the test does).
+refuseUnknownFlags({
+  name: "ci-duplicates-report",
+  entry: import.meta.url,
+  known: ["--base"],
+  hints: ["node scripts/ci-duplicates-report.mjs [--base <ref>]   (default origin/main)"],
+});
+
 /** The product code. Tests are left out: a test repeating its arrange step is not a defect. */
 export const SCAN_PATHS = ["src", "app"];
 export const JSCPD_ARGS = [
@@ -59,7 +67,7 @@ export function newClonesFrom(report, { root, floor = SOURCES_FLOOR }) {
     throw new Error("the jscpd report has no statistics.total or duplicates — not a report this script understands");
   }
   if (!(Number(total.sources) >= floor)) {
-    throw new Error(`the scan analysed ${total.sources ?? 0} files, under the floor of ${floor} — it cannot vouch for this PR`);
+    throw new Error(`the scan analysed ${total.sources ?? 0} files, under the floor of ${floor} — it cannot vouch for this change`);
   }
   // jscpd's --absolute on Windows writes the extended-length form `\\?\F:\…` (measured 2026-11-20), which
   // path.relative cannot place, so the prefix goes first. On the Linux runner a path is plain `/home/…`.
@@ -103,11 +111,11 @@ export function annotationsFor(clones, limit = ANNOTATION_LIMIT) {
 export function summaryFor({ clones, sources, totalClones }, base) {
   const head = `### Copy-paste report (does not block the merge)\n\nScanned ${sources} files in ${SCAN_PATHS.join(" and ")} against \`${base}\`.\n\n`;
   if (clones.length === 0) {
-    return `${head}No new copied blocks. (${totalClones} copied blocks were already there before this PR.)\n`;
+    return `${head}No new copied blocks. (${totalClones} copied blocks were already there before this change.)\n`;
   }
   const rows = clones.map((c) =>
     `| ${c.lines} | \`${c.first.file}\` ${c.first.start}-${c.first.end} | \`${c.second.file}\` ${c.second.start}-${c.second.end} |`);
-  return `${head}**${clones.length} new copied block${clones.length === 1 ? "" : "s"}** in this PR:\n\n`
+  return `${head}**${clones.length} new copied block${clones.length === 1 ? "" : "s"}** in this change:\n\n`
     + "| Lines | Here | Also here |\n| --- | --- | --- |\n"
     + `${rows.join("\n")}\n`;
 }
@@ -120,7 +128,7 @@ function writeSummary(markdown) {
 /** Never a red step: anything that stops the report is a warning that says so, never "clean". */
 function cannotReport(reason) {
   console.log(`::warning title=${escapeProperty("Copy-paste report did not run")}::${escapeData(reason)}`);
-  writeSummary(`### Copy-paste report (does not block the merge)\n\nIt could not run, so it says nothing about this PR: ${reason}\n`);
+  writeSummary(`### Copy-paste report (does not block the merge)\n\nIt could not run, so it says nothing about this change: ${reason}\n`);
   return 0;
 }
 
@@ -167,13 +175,6 @@ export function main(argv = process.argv.slice(2)) {
   // Deliberately 0: this reports, it never gates. See the header.
   return 0;
 }
-
-refuseUnknownFlags({
-  name: "ci-duplicates-report",
-  entry: import.meta.url,
-  known: ["--base"],
-  hints: ["node scripts/ci-duplicates-report.mjs [--base <ref>]   (default origin/main)"],
-});
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   process.exit(main());

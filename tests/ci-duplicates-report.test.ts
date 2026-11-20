@@ -97,23 +97,23 @@ export async function runCiDuplicatesReportTests() {
   // ── The summary says which case it is ──────────────────────────────────────────────────────────
   const clean = summaryFor({ clones: [], sources: 6500, totalClones: 1012 }, "HEAD^1");
   assert.match(clean, /does not block the merge/);
-  assert.match(clean, /No new copied blocks\. \(1012 copied blocks were already there before this PR\.\)/);
+  assert.match(clean, /No new copied blocks\. \(1012 copied blocks were already there before this change\.\)/);
   const found = summaryFor(result, "HEAD^1");
   assert.match(found, /\*\*2 new copied blocks\*\*/);
   assert.match(found, /\| 28 \| `src\/lib\/outstation\/x\.ts` 10-37 \| `src\/lib\/outstation\/y\.ts` 40-67 \|/);
-  assert.match(summaryFor({ ...result, clones: result.clones.slice(0, 1) }, "HEAD^1"), /\*\*1 new copied block\*\* in this PR/);
+  assert.match(summaryFor({ ...result, clones: result.clones.slice(0, 1) }, "HEAD^1"), /\*\*1 new copied block\*\* in this change/);
 
-  // ── ci.yml runs it on pull requests only, without ever blocking ────────────────────────────────
+  // ── ci.yml runs it on every run of static, without ever blocking ───────────────────────────────
   const workflow = readFileSync(".github/workflows/ci.yml", "utf8").replaceAll("\r\n", "\n");
   const staticJob = workflow.slice(workflow.indexOf("\n  static:\n"), workflow.indexOf("\n  unit:\n"));
   const at = staticJob.indexOf("- name: Copy-paste report");
   assert.ok(at > 0, "the copy-paste report step lives in the static job");
   // The step ends at its first blank line: the next step's comment block must not lend it a matching line.
   const step = `${staticJob.slice(at, staticJob.indexOf("\n\n", at))}\n`;
-  assert.match(step, /\n\s+if: github\.event_name == 'pull_request'\n/, "a push to main has no PR diff to report on");
+  assert.doesNotMatch(step, /github\.event_name/, "no event condition: a PR run of static must run every work step a push run does (tests/ci-tree-reuse-dryrun.test.ts)");
   assert.match(step, /\n\s+continue-on-error: true\n/, "a report must never turn a required check red");
   assert.match(step, /\n\s+timeout-minutes: [1-5]\n/, "continue-on-error cannot absorb a step that never ends: it needs its own timeout");
-  assert.match(step, /\n\s+run: node scripts\/ci-duplicates-report\.mjs --base HEAD\^1\n$/,"the base is the merge commit's first parent, the branch the PR merges into");
+  assert.match(step, /\n\s+run: node scripts\/ci-duplicates-report\.mjs --base HEAD\^1\n$/,"the base is HEAD's first parent: the branch a PR merges into, or main before a push");
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   assert.match(pkg.devDependencies?.jscpd ?? "", /^5\.\d+\.\d+$/, "jscpd 5 (the Rust engine), pinned exactly — jscpd 4 ran out of memory on this repo");
 }
