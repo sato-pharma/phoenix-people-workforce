@@ -48,6 +48,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertSuperAdminDecisionStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 
 type Row = Record<string, unknown>;
 
@@ -490,7 +491,7 @@ export async function decideMarketingListCheck(
   const supabase = getSupabaseAdmin();
   const read = await supabase
     .from("marketing_customer_list_checks")
-    .select("id, customer_id, matched_crm_customer_id, state, decided_state")
+    .select("id, customer_id, matched_crm_customer_id, state, decided_state, decided_by_hr_id")
     .eq("id", input.checkId)
     .maybeSingle();
   if (read.error) throw read.error;
@@ -498,6 +499,12 @@ export async function decideMarketingListCheck(
   if (!row) throw notFoundError("That row is no longer on the list check.");
   if (input.decision === "same" && !row.matched_crm_customer_id) {
     throw validationError("There is no doctor on the rep's list to confirm this customer against.");
+  }
+  // 🔴 An answer the Super Admin gave is never turned round by anybody else (owner, 2026-11-20: "the SFE can
+  // never return it back"). Giving the same answer again changes nothing and is let through.
+  const nextState = input.decision === "same" ? "on_list" : "not_on_list";
+  if (row.decided_state && row.decided_state !== nextState) {
+    await assertSuperAdminDecisionStands(access.role === "Super Admin", [row.decided_by_hr_id]);
   }
   const now = new Date().toISOString();
   const update = await supabase
