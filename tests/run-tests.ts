@@ -2845,6 +2845,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runDevServerLeanTests } from "./dev-server-lean.test.ts";
 import { runDevServerGracefulRestartTests } from "./dev-server-graceful-restart.test.ts";
+import { runDevServerPageRetentionTests } from "./dev-server-page-retention.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
@@ -11162,8 +11163,13 @@ await runTest(
 );
 
 await runTest(
-  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 92% of the cap or after 90 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
+  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 86% of the cap or after 20 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
   runDevServerGracefulRestartTests,
+);
+
+await runTest(
+  "the dev server keeps more compiled pages only when asked: PHOENIX_DEV_PAGES_KEPT and PHOENIX_DEV_PAGE_IDLE_MINUTES reach Next's onDemandEntries outside production, unset or nonsense leaves Next's 5 pages and 1 minute, and the installed Next still reads both",
+  runDevServerPageRetentionTests,
 );
 
 await runTest(
