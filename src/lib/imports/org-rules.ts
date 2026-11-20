@@ -51,4 +51,7 @@ export const positionRules: Record<string, string> = {
   // employee import never demotes it back to plain "Medical Representative".
   senior_medical_representative: "Senior Medical Representative",
   senior_medical_rep: "Senior Medical Representative",
+  // And the product-manager grade (AI-0037, 2026-11-20): keep its own spelling so an employee import
+  // never demotes it back to plain "Product Manager".
+  senior_product_manager: "Senior Product Manager",
 };
