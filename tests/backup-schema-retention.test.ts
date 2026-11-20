@@ -15,6 +15,7 @@ import {
   datesIn,
   isSnapshotTableName,
   readDecisions,
+  readStandingDecision,
   snapshotDateOf,
 } from "../scripts/audit-backup-schemas.mjs";
 import { csvField, toCsv } from "../scripts/export-backup-schema.mjs";
@@ -545,4 +546,44 @@ export function runBackupSchemaRetentionTests() {
     /relispartition = false/.test(source),
     "partitioned children must be excluded in SQL — the name test cannot tell them from a snapshot",
   );
+
+  // ---------------------------------------------------------------- the standing decision (20 Nov 2026)
+  // His words that night: every copy with no decision of its own is "export, then drop" at 90 days,
+  // automatically. It is a FALLBACK — each case below has its negative control.
+  const standing = readStandingDecision();
+  assert.ok(standing, "the owner's 20 Nov standing decision is recorded in backup-schema-decisions.json");
+  assert.equal(standing?.decision, "export-then-drop", "his standing decision is export, then drop");
+  assert.equal(standing?.standing, true, "a standing decision says so, so every reading names the rule that decided it");
+
+  const fresh = { schema: "phoenix_crm_backup_20261119", tables: ["places"], blockers: [] };
+  assert.equal(classify(fresh, { today: "2027-03-01" }).verdict, VERDICT.UNDECIDED, "control: with no standing rule, past 90 days is UNDECIDED");
+  assert.equal(classify(fresh, { today: "2027-03-01", standing }).verdict, VERDICT.EXPIRED, "with it, past 90 days it EXPIRES on his standing decision");
+  assert.equal(classify(fresh, { today: "2026-12-01", standing }).verdict, VERDICT.YOUNG, "inside 90 days it is still YOUNG — the rule never shortens the window");
+
+  const ownKeep = { [fresh.schema]: { decision: "keep" as const, decidedOn: "2026-11-20", decidedBy: "owner", why: "test" } };
+  assert.equal(
+    classify(fresh, { today: "2027-03-01", standing, decisions: ownKeep }).verdict,
+    VERDICT.PROTECTED,
+    "a snapshot's own entry always beats the standing rule — his keep holds",
+  );
+  assert.equal(
+    classify({ ...fresh, blockers: ["function public.f references it"] }, { today: "2027-03-01", standing }).verdict,
+    VERDICT.PINNED,
+    "the standing rule never reaches past a live dependency",
+  );
+  for (const schema of Object.keys(EXEMPT_SCHEMAS)) {
+    assert.notEqual(
+      classify({ schema, tables: [], blockers: [] }, { today: "2031-01-01", retentionDays: 1, standing }).verdict,
+      VERDICT.EXPIRED,
+      `${schema} is exempt — no standing rule can expire it`,
+    );
+  }
+  assert.equal(
+    classify({ schema: "undated_scratch", tables: ["rows"], blockers: [] }, { today: "2031-01-01", retentionDays: 1, standing }).verdict,
+    VERDICT.UNDATED,
+    "an undated schema stays UNDATED — the standing rule carries no date",
+  );
+  const freshTable = { schema: "au", table: "bak_20261117_cns_kfs2_line_area_map", blockers: [] };
+  assert.equal(classifyTable(freshTable, { today: "2027-03-01" }).verdict, VERDICT.UNDECIDED, "control: a dated table with no rule is UNDECIDED");
+  assert.equal(classifyTable(freshTable, { today: "2027-03-01", standing }).verdict, VERDICT.EXPIRED, "a dated table expires on the standing rule too");
 }

@@ -1,5 +1,12 @@
 {
-  "about": "The owner's decision for each snapshot schema, one entry per schema, read by scripts/audit-backup-schemas.mjs. A dated snapshot TABLE in public or au is decided the same way under <schema>.<table>. A schema or table past 90 days with no entry here is never offered for dropping. decision: drop | export-then-drop | keep (keep takes an optional until date). Rule: docs/security/backup-schema-retention.md, 'The owner decides each one'.",
+  "about": "The owner's decision for each snapshot schema, one entry per schema, read by scripts/audit-backup-schemas.mjs. A dated snapshot TABLE in public or au is decided the same way under <schema>.<table>. A schema or table past 90 days with no entry here is never offered for dropping. decision: drop | export-then-drop | keep (keep takes an optional until date). Rule: docs/security/backup-schema-retention.md, 'The owner decides each one'. standing: the owner's decision for every snapshot with no entry of its own (20 Nov 2026), a fallback that never overrides an entry, an exemption, a live dependency or a missing date.",
+  "standing": {
+    "decision": "export-then-drop",
+    "decidedOn": "2026-11-20",
+    "decidedBy": "owner",
+    "why": "Asked about the 15 snapshots with no decision and every copy made after them, he chose export now and drop at 90 days, and the same decision automatically for every new copy, so no snapshot is put to him one at a time again. One monthly task exports and drops whatever has passed 90 days.",
+    "sheet": "20 November 2026, the 15 undecided snapshots and every later one, in chat"
+  },
   "decisions": {
     "ez_split_backup_20260826": {
       "decision": "export-then-drop",
