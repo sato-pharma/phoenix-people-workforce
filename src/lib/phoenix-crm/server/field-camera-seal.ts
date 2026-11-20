@@ -22,7 +22,14 @@ import {
   SEAL_ATTESTATION_CHALLENGE,
   splitSealedFile,
 } from "@/lib/phoenix-crm/field-camera/seal-format";
-import { parseSealPayload, sealPayloadProblems, sealPayloadWarnings, type SealPayload } from "@/lib/phoenix-crm/field-camera/seal-rules";
+import {
+  parseSealPayload,
+  sealIntegrityProblems,
+  sealLocationProblems,
+  sealPayloadProblems,
+  sealPayloadWarnings,
+  type SealPayload,
+} from "@/lib/phoenix-crm/field-camera/seal-rules";
 
 export type SealIdentity = { packageName: string; signingDigest: string; challenge: string };
 
@@ -44,6 +51,10 @@ export type SealVerdict =
       /** Every certificate's serial (lower-case hex), for Google's revocation list. */
       serials: string[];
       warnings: string[];
+      /** The genuineness problems (`sealIntegrityProblems`); always empty unless `purpose` is "camera_sync". */
+      integrity: string[];
+      /** Why the position cannot stand (`sealLocationProblems`); always empty unless `purpose` is "camera_sync". */
+      location: string[];
     }
   | { ok: false; problem: string };
 
@@ -200,7 +211,17 @@ function serialHex(cert: X509Certificate): string {
 /** Judge a sealed file. `rootsPem` are the trusted anchors (Google's in production, a test root in the tests). */
 export function verifySealedPhoto(
   bytes: Uint8Array,
-  options: { rootsPem: readonly string[]; identity: SealIdentity; nowMs?: number },
+  options: {
+    rootsPem: readonly string[];
+    identity: SealIdentity;
+    nowMs?: number;
+    /**
+     * "camera_sync" (the rep's own camera sending its queue) never refuses on what the payload says — only on a
+     * seal that is not ours or was changed; the rest is returned for the Super Admin's camera page (owner, 20 Nov
+     * 2026: "Phoenix will not reject anything"). The Super Admin's own upload keeps refusing on every problem.
+     */
+    purpose?: "admin_upload" | "camera_sync";
+  },
 ): SealVerdict {
   const refuse = (problem: string): SealVerdict => ({ ok: false, problem });
   const parts = splitSealedFile(bytes);
@@ -276,8 +297,12 @@ export function verifySealedPhoto(
     return refuse("The seal was made by a modified copy of the Phoenix Camera.");
   }
 
-  const problems = sealPayloadProblems(payload, options.nowMs ?? Date.now());
-  if (problems.length > 0) return refuse(problems[0]);
+  const nowMs = options.nowMs ?? Date.now();
+  const cameraSync = options.purpose === "camera_sync";
+  if (!cameraSync) {
+    const problems = sealPayloadProblems(payload, nowMs);
+    if (problems.length > 0) return refuse(problems[0]);
+  }
 
   return {
     ok: true,
@@ -287,5 +312,25 @@ export function verifySealedPhoto(
     securityLevel: attestation.securityLevel >= 2 ? "StrongBox" : "TEE",
     serials: certs.map(serialHex),
     warnings: sealPayloadWarnings(payload),
+    integrity: cameraSync ? sealIntegrityProblems(payload, nowMs) : [],
+    location: cameraSync ? sealLocationProblems(payload) : [],
   };
+}
+
+/**
+ * What a seal SAYS, before anything about it is believed — for the Super Admin's camera page when the seal itself
+ * does not hold (a changed picture, a modified app), so he still sees who, which customer and when it claims.
+ * Never used to decide anything.
+ */
+export function readUnverifiedSealPayload(bytes: Uint8Array): SealPayload | null {
+  const parts = splitSealedFile(bytes);
+  if (!parts) return null;
+  try {
+    const seal = JSON.parse(parts.sealText) as { payload?: unknown };
+    if (typeof seal.payload !== "string") return null;
+    const payload = parseSealPayload(seal.payload);
+    return typeof payload === "string" ? null : payload;
+  } catch {
+    return null;
+  }
 }

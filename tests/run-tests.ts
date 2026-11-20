@@ -2263,6 +2263,7 @@ import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validat
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
 import { runPhoenixCrmAdminPhotoTests } from "./phoenix-crm-admin-photo.test.ts";
 import { runPhoenixCrmFieldCameraSealTests } from "./phoenix-crm-field-camera-seal.test.ts";
+import { runPhoenixCrmCameraItemsTests } from "./phoenix-crm-camera-items.test.ts";
 import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
@@ -8737,6 +8738,11 @@ await runTest(
 await runTest(
   "Phoenix CRM trusts a photo from the Phoenix Camera only when its seal holds (owner, 2026-11-20: a separate camera app for a clinic with no network — \"take every precaution against fake locations and fraud, and keep its seal\"): a good file holds and names its seal and phone key; a changed picture, a changed payload, a key outside Google's roots, an unlocked phone, a key kept in software, another app, a re-signed copy, another challenge and a key with no attestation are refused; a fake location, fewer than 4 satellites, a stale fix, a rough reading, a photo over 72 hours old or later than now and satellite time far from Phoenix's clock refuse, while a drifted phone clock and USB debugging only warn; production trusts Google's roots and our release identity only, a sealed file is judged before it is uploaded and born captured with the seal's reading, the browser sends it whole, and one seal validates one customer",
   runPhoenixCrmFieldCameraSealTests,
+);
+
+await runTest(
+  "Phoenix CRM rejects nothing the Phoenix Camera sends and leaves the decision to the Super Admin (owner, 2026-11-20: \"Phoenix will not reject anything ... leave the decision to the decision maker\"): the time is Phoenix's anchor, else the satellites inside a seal that holds, else not confirmed; the same Phoenix day (ending 02:00) under the daily limit of 3 records at once, the fourth, the next day, a failed seal, no location, an unconfirmed time and a new customer wait with every reason at once, and over 36 hours goes to the archive; the phone hears only received, a resend is the same item, a visit rule makes it wait, a business card always waits and a name photo goes through the reader; the camera page, its two routes and its card are the Super Admin's alone (never the SFE), an approved visit goes through his Record a missed visit door and a rejected recorded item is taken back whole; a customer whose name photo waits is not refused a third visit, a no-timetable building is never refused for a timetable, the board fits the screen and the two new tables are closed to the browser roles",
+  runPhoenixCrmCameraItemsTests,
 );
 
 await runTest(
