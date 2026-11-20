@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LANDING_INK, LandingPanel, LandingRailLine } from "@/components/employee-portal/landing-kit";
 import type { VacationApprovalDetail } from "@/lib/approvals-hub/service";
 import { RequestTracker } from "@/components/approvals-hub/request-tracker";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
@@ -23,12 +24,28 @@ type Props = {
   earlierWaitingMessage?: string | null;
 };
 
+/** The white sheet a stand-alone line sits on: the kit's hairline and the soft depth token. */
+const SHEET = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
 function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2">
-      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="text-sm font-semibold text-slate-900">{value === null || value === undefined || value === "" ? "—" : value}</dd>
+    <div className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0">
+      <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+      <dd className={`break-words text-sm font-semibold ${LANDING_INK}`} dir="auto">
+        {value === null || value === undefined || value === "" ? "—" : value}
+      </dd>
     </div>
+  );
+}
+
+function Back({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] underline-offset-4 transition-colors hover:underline motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`}
+    >
+      <ArrowLeft aria-hidden="true" className="h-4 w-4" /> Back to list
+    </Link>
   );
 }
 
@@ -37,46 +54,36 @@ export function VacationRequestDetail({ detail, backHref, whoElseIsOff, earlierW
   if (detail.notFound || !r) {
     return (
       <div className="space-y-4">
-        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-          <ArrowLeft className="h-4 w-4" /> Back to list
-        </Link>
-        <p className={`${adminSoftPanelClassName} px-4 py-6 text-sm text-slate-600`}>
-          This request could not be found, or you do not have access to it.
-        </p>
+        <Back href={backHref} />
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-amber-500">This request could not be found, or you do not have access to it.</LandingRailLine>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-        <ArrowLeft className="h-4 w-4" /> Back to list
-      </Link>
+      <Back href={backHref} />
 
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
-        <div>
-          <h2 className="text-lg font-black text-slate-900">{r.employeeName}</h2>
-          <p className="text-sm text-slate-600">
-            {detail.typeLabel} · {Number(r.durationDays)} day{r.durationDays === 1 ? "" : "s"}
-          </p>
-        </div>
-        <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
-          {requestStatusLabel(r.status)}
-        </span>
+      {/* The head is the name and its standing alone (no sentence under a header); the leave type and
+          its length are the first rows of Request details. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-3">
+        <h2 className={`min-w-0 break-words text-lg font-black ${LANDING_INK}`} dir="auto">{r.employeeName}</h2>
+        <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600">{requestStatusLabel(r.status)}</span>
       </div>
 
       {detail.readOnly && detail.readOnlyReason ? (
-        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
-          {detail.readOnlyReason}
-        </p>
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-slate-400">{detail.readOnlyReason}</LandingRailLine>
+        </div>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className={adminPanelClassName}>
-          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
-          </header>
-          <dl className="px-4 py-2">
+        <LandingPanel title="Request details">
+          <dl className="px-3 py-1 sm:px-4">
+            <Row label="Type" value={detail.typeLabel} />
+            <Row label="Duration" value={`${Number(r.durationDays)} day${r.durationDays === 1 ? "" : "s"}`} />
             <Row label="From" value={r.startDate} />
             <Row label="To" value={r.endDate} />
             <Row label="Payment" value={r.paymentStatus} />
@@ -88,8 +95,8 @@ export function VacationRequestDetail({ detail, backHref, whoElseIsOff, earlierW
             <Row label="Notes" value={r.notes} />
           </dl>
           {detail.canReviewAttachments && (r.sickAttachmentObjectPath || r.compensatoryAttachmentObjectPath) ? (
-            <div className="border-t border-slate-100 px-4 py-3">
-              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-500">
+            <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
+              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                 Evidence{r.attachments.length > 1 ? ` — ${r.attachments.length} documents` : ""}
               </p>
               {/* Every uploaded file with the date IT arrived, so a document sent days after the
@@ -121,7 +128,7 @@ export function VacationRequestDetail({ detail, backHref, whoElseIsOff, earlierW
               ) : null}
             </div>
           ) : null}
-        </section>
+        </LandingPanel>
 
         <div className="space-y-4">
           <RequestTracker
@@ -163,9 +170,9 @@ export function VacationRequestDetail({ detail, backHref, whoElseIsOff, earlierW
           {detail.adminOverride && !detail.adminOverride.available && detail.adminOverride.reason && detail.adminOverride.availableAt ? (
             // The wait, visible before it unlocks. Without this the button simply is not there and
             // HR cannot tell a request that is merely young from one the rule refuses to touch.
-            <p className={`${adminSoftPanelClassName} px-4 py-3 text-phx-xs font-semibold text-slate-600`}>
-              {detail.adminOverride.reason}
-            </p>
+            <div className={SHEET}>
+              <LandingRailLine rail="bg-slate-400">{detail.adminOverride.reason}</LandingRailLine>
+            </div>
           ) : null}
         </div>
       </div>
