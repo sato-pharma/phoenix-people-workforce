@@ -1415,7 +1415,7 @@ function MedicalRepCommandCenter({
             <div className="@container">
               {/* ONE column under 18rem. A small Android phone on Large text lays the page out at
                   ~280px, where two tiles get ~100px each and "ACHIEVEMENT" alone fills it. */}
-              <div className="grid grid-cols-1 gap-2 @[18rem]:grid-cols-2 @3xl:grid-cols-4 @[18rem]:group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
+              <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4 group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
                 <Suspense fallback={<RepTileLoading label="Achievement" />}>
                   <RepAchievementCard kpiMonth={kpiMonth} sales={cards.sales} />
                 </Suspense>

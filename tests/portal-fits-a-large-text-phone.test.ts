@@ -80,12 +80,11 @@ export function runPortalFitsALargeTextPhoneTests() {
   assert.match(intel, /whitespace-nowrap text-phx-xs font-black uppercase/, `${CENTER}: the identity labels never break ("REPORTS / TO")`);
   assert.match(intel, /\[overflow-wrap:break-word\]/, `${CENTER}: the identity VALUE wraps inside its cell, never clips`);
 
-  // 4. The rep's KPI tiles: the period stacks under the label in a narrow tile, and one column under
-  //    18rem.
+  // 4. The rep's KPI tiles: the period stacks under the label in a narrow tile. The grid itself stays
+  //    2x2 (his 2026-09-30 rule, pinned by tests/phoenix-crm-today.test.ts) — never a width query on it.
   const tile = componentBody(center, "RepTile");
   assert.match(tile, /flex flex-col gap-0\.5 @\[13rem\]:flex-row/, `${CENTER}: a tile's period stacks under its label below 13rem`);
   assert.doesNotMatch(tile, /className="ml-auto whitespace-nowrap/, `${CENTER}: an unconditional ml-auto period is what cut "OCT 2026" at the tile edge`);
-  assert.match(center, /grid grid-cols-1 gap-2 @\[18rem\]:grid-cols-2/, `${CENTER}: the four rep tiles are one column under 18rem`);
 
   // 5. Sales vs Target (and every portal CommandBand): the aside wraps under the ring rather than being
   //    squeezed.
