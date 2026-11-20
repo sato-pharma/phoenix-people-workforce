@@ -8280,6 +8280,73 @@ $$;
 ALTER FUNCTION public.phoenix_crm_archive_outside(p jsonb) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_camera_add_customer(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_camera_add_customer(p jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_item uuid := nullif(trim(coalesce(p ->> 'item_id', '')), '')::uuid;
+  v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
+  v_row public.phoenix_crm_camera_items%rowtype;
+  v_customer_id uuid;
+  v_list text := p ->> 'list_type';
+  v_name text := nullif(trim(coalesce(p ->> 'name', '')), '');
+begin
+  if v_item is null or v_actor is null or v_name is null or v_list not in ('AM', 'PM') then
+    raise exception 'phoenix_crm:bad_input';
+  end if;
+  select i.* into v_row from public.phoenix_crm_camera_items i where i.id = v_item;
+  if not found then
+    raise exception 'phoenix_crm:camera_item_not_found';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('phoenix_crm:seat:' || v_row.seat_id));
+  select i.* into v_row from public.phoenix_crm_camera_items i where i.id = v_item for update;
+  if v_row.intent <> 'new_customer' or v_row.decision is not null or v_row.customer_id is not null then
+    raise exception 'phoenix_crm:camera_item_decided';
+  end if;
+
+  insert into public.phoenix_crm_customers (
+    seat_id, line_code, list_type, name, speciality, customer_type, grade, potential_grade, phone,
+    origin, status, created_by_hr_id, is_test
+  )
+  values (
+    v_row.seat_id,
+    coalesce(nullif(p ->> 'line_code', ''), v_row.line_code),
+    v_list,
+    left(v_name, 200),
+    nullif(left(coalesce(p ->> 'speciality', ''), 120), ''),
+    nullif(left(coalesce(p ->> 'customer_type', ''), 80), ''),
+    nullif(p ->> 'grade', ''),
+    nullif(p ->> 'potential_grade', ''),
+    nullif(p ->> 'phone', ''),
+    'new',
+    'pending',
+    v_row.rep_hr_id,
+    v_row.is_test
+  )
+  returning id into v_customer_id;
+
+  update public.phoenix_crm_camera_items i
+  set customer_id = v_customer_id, updated_at = now()
+  where i.id = v_item;
+
+  insert into public.phoenix_crm_list_events (seat_id, customer_id, event_type, actor_hr_id, details, is_test)
+  values (
+    v_row.seat_id, v_customer_id, 'customer_added', v_actor,
+    jsonb_build_object('mode', 'field_camera', 'camera_item_id', v_item, 'rep_hr_id', v_row.rep_hr_id),
+    v_row.is_test
+  );
+
+  return jsonb_build_object('customer_id', v_customer_id);
+end;
+$$;
+
+ALTER FUNCTION public.phoenix_crm_camera_add_customer(p jsonb) OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_cancel_visit_ask(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -66194,6 +66261,65 @@ COMMENT ON TABLE public.phoenix_crm_behaviour_integrity IS 'Phoenix CRM behaviou
 COMMENT ON COLUMN public.phoenix_crm_behaviour_integrity.measured IS 'False when the month held too few visits to judge. NOT CHECKED, which is not the same as clean.';
 
 --
+-- Name: phoenix_crm_camera_items; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_camera_items (
+    id uuid NOT NULL,
+    intent text NOT NULL,
+    seat_id text NOT NULL,
+    line_code text,
+    rep_hr_id text NOT NULL,
+    customer_id uuid,
+    proposed_customer jsonb,
+    is_test boolean DEFAULT false NOT NULL,
+    photo_path text,
+    photo_kind text DEFAULT 'place'::text NOT NULL,
+    seal_id text,
+    seal_holds boolean DEFAULT false NOT NULL,
+    seal_problems text[] DEFAULT '{}'::text[] NOT NULL,
+    location_problems text[] DEFAULT '{}'::text[] NOT NULL,
+    seal_report jsonb,
+    seal_payload jsonb,
+    location_status text,
+    lat double precision,
+    lon double precision,
+    accuracy_meters numeric,
+    fix_age_ms bigint,
+    taken_at timestamp with time zone,
+    time_source text NOT NULL,
+    taken_day date,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    visit_draft jsonb,
+    outcome text NOT NULL,
+    reasons text[] DEFAULT '{}'::text[] NOT NULL,
+    rule_refusal text,
+    visit_id uuid,
+    validated_place_id uuid,
+    reader jsonb,
+    decision text,
+    decided_by_hr_id text,
+    decided_at timestamp with time zone,
+    decision_note text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_camera_items_customer CHECK (((intent = 'new_customer'::text) OR (customer_id IS NOT NULL))),
+    CONSTRAINT phoenix_crm_camera_items_decided CHECK ((((decision IS NULL) = (decided_at IS NULL)) AND ((decision IS NULL) = (decided_by_hr_id IS NULL)))),
+    CONSTRAINT phoenix_crm_camera_items_decision_check CHECK (((decision IS NULL) OR (decision = ANY (ARRAY['approved'::text, 'rejected'::text])))),
+    CONSTRAINT phoenix_crm_camera_items_decision_note_check CHECK (((decision_note IS NULL) OR (char_length(decision_note) <= 500))),
+    CONSTRAINT phoenix_crm_camera_items_intent_check CHECK ((intent = ANY (ARRAY['visit'::text, 'validate'::text, 'new_customer'::text]))),
+    CONSTRAINT phoenix_crm_camera_items_location_status_check CHECK (((location_status IS NULL) OR (location_status = ANY (ARRAY['locked'::text, 'cached'::text, 'late'::text, 'none'::text])))),
+    CONSTRAINT phoenix_crm_camera_items_outcome_check CHECK ((outcome = ANY (ARRAY['recorded'::text, 'waiting'::text, 'archived'::text]))),
+    CONSTRAINT phoenix_crm_camera_items_photo_kind_check CHECK ((photo_kind = ANY (ARRAY['place'::text, 'door_sign'::text, 'banner'::text, 'prescription'::text, 'business_card'::text]))),
+    CONSTRAINT phoenix_crm_camera_items_position CHECK (((lat IS NULL) = (lon IS NULL))),
+    CONSTRAINT phoenix_crm_camera_items_proposed CHECK (((intent = 'new_customer'::text) = (proposed_customer IS NOT NULL))),
+    CONSTRAINT phoenix_crm_camera_items_proposed_customer_check CHECK (((proposed_customer IS NULL) OR (jsonb_typeof(proposed_customer) = 'object'::text))),
+    CONSTRAINT phoenix_crm_camera_items_time_source_check CHECK ((time_source = ANY (ARRAY['anchor'::text, 'satellites'::text, 'unconfirmed'::text]))),
+    CONSTRAINT phoenix_crm_camera_items_visit_draft_check CHECK (((visit_draft IS NULL) OR (jsonb_typeof(visit_draft) = 'object'::text)))
+);
+
+ALTER TABLE public.phoenix_crm_camera_items OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_countable_visits_with_history; Type: VIEW; Schema: public; Owner: postgres
 --
 
@@ -66500,6 +66626,29 @@ ALTER TABLE public.phoenix_crm_double_visit_requests OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.phoenix_crm_double_visit_requests IS 'A rep''s request for a double visit with an AM or PM account, raised by the last question of the visit (owner, 2026-10-16): up to three field days, any number of the people offered. It can be edited (the days) and never cancelled. Each person asked answers on his own row in phoenix_crm_double_visit_request_people. The rep reads his own; every manager reads the requests of the territories in his scope, and each person asked reads his own. It never reads or writes the district manager''s own double-visit plan.';
+
+--
+-- Name: phoenix_crm_field_camera_releases; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_field_camera_releases (
+    version_code integer NOT NULL,
+    version_name text NOT NULL,
+    sha256 text NOT NULL,
+    size_bytes bigint NOT NULL,
+    storage_path text NOT NULL,
+    notes text,
+    published_by_hr_id text NOT NULL,
+    published_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_field_camera_releases_notes_check CHECK (((notes IS NULL) OR (char_length(notes) <= 500))),
+    CONSTRAINT phoenix_crm_field_camera_releases_sha256_check CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT phoenix_crm_field_camera_releases_size_bytes_check CHECK (((size_bytes > 0) AND (size_bytes <= 104857600))),
+    CONSTRAINT phoenix_crm_field_camera_releases_storage_path_check CHECK ((storage_path ~~ 'releases/%'::text)),
+    CONSTRAINT phoenix_crm_field_camera_releases_version_code_check CHECK ((version_code > 0)),
+    CONSTRAINT phoenix_crm_field_camera_releases_version_name_check CHECK (((char_length(version_name) >= 1) AND (char_length(version_name) <= 20)))
+);
+
+ALTER TABLE public.phoenix_crm_field_camera_releases OWNER TO postgres;
 
 --
 -- Name: phoenix_crm_line_lookalike_answers; Type: TABLE; Schema: public; Owner: postgres
@@ -68021,7 +68170,9 @@ CREATE TABLE public.phoenix_crm_settings (
     offplan_daily_cap integer DEFAULT 2 NOT NULL,
     offplan_weekly_cap integer DEFAULT 8 NOT NULL,
     visit_resend_enabled boolean DEFAULT true NOT NULL,
+    camera_daily_cap integer DEFAULT 3 NOT NULL,
     CONSTRAINT phoenix_crm_settings_am_cap CHECK (((am_daily_cap >= 1) AND (am_daily_cap <= 60))),
+    CONSTRAINT phoenix_crm_settings_camera_cap CHECK (((camera_daily_cap >= 1) AND (camera_daily_cap <= 20))),
     CONSTRAINT phoenix_crm_settings_far_apart CHECK (((far_apart_km > (0)::numeric) AND (far_apart_km <= (500)::numeric))),
     CONSTRAINT phoenix_crm_settings_grade_targets_shape CHECK (((jsonb_typeof(grade_targets) = 'object'::text) AND (jsonb_typeof((grade_targets -> 'PM'::text)) = 'object'::text) AND (jsonb_typeof((grade_targets -> 'AM'::text)) = 'object'::text))),
     CONSTRAINT phoenix_crm_settings_offplan_daily_cap_check CHECK (((offplan_daily_cap >= 1) AND (offplan_daily_cap <= 20))),
@@ -77394,6 +77545,13 @@ ALTER TABLE ONLY public.phoenix_crm_behaviour_integrity
     ADD CONSTRAINT phoenix_crm_behaviour_integrity_pkey PRIMARY KEY (id);
 
 --
+-- Name: phoenix_crm_camera_items phoenix_crm_camera_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_camera_items
+    ADD CONSTRAINT phoenix_crm_camera_items_pkey PRIMARY KEY (id);
+
+--
 -- Name: phoenix_crm_customer_moves phoenix_crm_customer_moves_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -77483,6 +77641,13 @@ ALTER TABLE ONLY public.phoenix_crm_double_visit_requests
 
 ALTER TABLE ONLY public.phoenix_crm_far_visit_holds
     ADD CONSTRAINT phoenix_crm_far_visit_holds_pkey PRIMARY KEY (visit_id);
+
+--
+-- Name: phoenix_crm_field_camera_releases phoenix_crm_field_camera_releases_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_field_camera_releases
+    ADD CONSTRAINT phoenix_crm_field_camera_releases_pkey PRIMARY KEY (version_code);
 
 --
 -- Name: phoenix_crm_imported_visit_sources phoenix_crm_imported_visit_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -84983,6 +85148,30 @@ CREATE INDEX phoenix_crm_admin_photo_validations_seat_idx ON public.phoenix_crm_
 CREATE INDEX phoenix_crm_behaviour_integrity_board_idx ON public.phoenix_crm_behaviour_integrity USING btree (strong DESC, month DESC);
 
 --
+-- Name: phoenix_crm_camera_items_name_review_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_camera_items_name_review_idx ON public.phoenix_crm_camera_items USING btree (customer_id) WHERE ((outcome = 'waiting'::text) AND (photo_kind <> 'place'::text));
+
+--
+-- Name: phoenix_crm_camera_items_outcome_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_camera_items_outcome_idx ON public.phoenix_crm_camera_items USING btree (outcome, received_at DESC);
+
+--
+-- Name: phoenix_crm_camera_items_rep_day_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_camera_items_rep_day_idx ON public.phoenix_crm_camera_items USING btree (rep_hr_id, taken_day);
+
+--
+-- Name: phoenix_crm_camera_items_seal_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX phoenix_crm_camera_items_seal_idx ON public.phoenix_crm_camera_items USING btree (seal_id) WHERE (seal_id IS NOT NULL);
+
+--
 -- Name: phoenix_crm_customer_moves_customer_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -91521,6 +91710,13 @@ ALTER TABLE ONLY public.phoenix_crm_admin_photo_validations
     ADD CONSTRAINT phoenix_crm_admin_photo_validations_place_id_fkey FOREIGN KEY (place_id) REFERENCES public.phoenix_crm_places(id);
 
 --
+-- Name: phoenix_crm_camera_items phoenix_crm_camera_items_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_camera_items
+    ADD CONSTRAINT phoenix_crm_camera_items_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.phoenix_crm_customers(id);
+
+--
 -- Name: phoenix_crm_customer_moves phoenix_crm_customer_moves_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -96494,6 +96690,18 @@ ALTER TABLE public.phoenix_crm_behaviour_integrity ENABLE ROW LEVEL SECURITY;
 CREATE POLICY phoenix_crm_behaviour_integrity_service_role ON public.phoenix_crm_behaviour_integrity TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: phoenix_crm_camera_items; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_camera_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_camera_items phoenix_crm_camera_items_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_camera_items_service_role ON public.phoenix_crm_camera_items TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_customer_moves; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -96612,6 +96820,18 @@ ALTER TABLE public.phoenix_crm_far_visit_holds ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY phoenix_crm_far_visit_holds_service_role ON public.phoenix_crm_far_visit_holds TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: phoenix_crm_field_camera_releases; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_field_camera_releases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_field_camera_releases phoenix_crm_field_camera_releases_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_field_camera_releases_service_role ON public.phoenix_crm_field_camera_releases TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: phoenix_crm_imported_visit_sources; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -100435,6 +100655,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_apply_ireports360_conversion(p_items js
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_archive_outside(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_archive_outside(p jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_camera_add_customer(p jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_camera_add_customer(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_camera_add_customer(p jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_cancel_visit_ask(p jsonb); Type: ACL; Schema: public; Owner: postgres
@@ -107324,6 +107551,12 @@ GRANT ALL ON TABLE public.phoenix_crm_admin_photo_validations TO service_role;
 GRANT ALL ON TABLE public.phoenix_crm_behaviour_integrity TO service_role;
 
 --
+-- Name: TABLE phoenix_crm_camera_items; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_camera_items TO service_role;
+
+--
 -- Name: TABLE phoenix_crm_countable_visits_with_history; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -107376,6 +107609,12 @@ GRANT ALL ON TABLE public.phoenix_crm_double_visit_request_people TO service_rol
 --
 
 GRANT ALL ON TABLE public.phoenix_crm_double_visit_requests TO service_role;
+
+--
+-- Name: TABLE phoenix_crm_field_camera_releases; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_field_camera_releases TO service_role;
 
 --
 -- Name: TABLE phoenix_crm_line_lookalike_answers; Type: ACL; Schema: public; Owner: postgres

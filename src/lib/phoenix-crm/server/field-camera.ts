@@ -14,7 +14,7 @@
 
 import { validationError } from "@/lib/http/api-errors";
 import { GOOGLE_ATTESTATION_ROOTS } from "@/lib/phoenix-crm/field-camera/google-roots";
-import { RELEASE_IDENTITY, verifySealedPhoto } from "@/lib/phoenix-crm/server/field-camera-seal";
+import { readUnverifiedSealPayload, RELEASE_IDENTITY, verifySealedPhoto } from "@/lib/phoenix-crm/server/field-camera-seal";
 import type { SealPayload } from "@/lib/phoenix-crm/field-camera/seal-rules";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -54,11 +54,20 @@ export type FieldCameraReport = {
   takenAtUtc: string;
   hrId: string;
   repName: string;
-  lat: number;
-  lon: number;
-  accuracyMeters: number;
-  satellitesUsed: number;
-  satellitesSeen: number;
+  /** Null when the camera found no position (camera 2.1.0, `locationStatus` "none"). */
+  lat: number | null;
+  lon: number | null;
+  accuracyMeters: number | null;
+  satellitesUsed: number | null;
+  satellitesSeen: number | null;
+  /** Where the position came from (`gps`, `fused`, `network`); absent on seals checked before camera 1.2.0, all `gps`. */
+  provider?: string | null;
+  /** How the camera found the position (camera 2.1.0); absent before it, all `locked`. */
+  locationStatus?: string;
+  /** Shutter minus the position's time, in milliseconds (positive = before the shutter); absent before camera 2.1.0. */
+  fixAgeMs?: number | null;
+  /** Which clock the time came from (`satellites`, `phoenix`, `phone`); absent before camera 1.2.0, all `satellites`. */
+  timeSource?: string;
   deviceModel: string;
   androidSdk: number;
   appVersion: string;
@@ -67,7 +76,12 @@ export type FieldCameraReport = {
   warnings: string[];
 };
 
-export type FieldCameraCheck = { payload: SealPayload; report: FieldCameraReport };
+export type FieldCameraCheck = {
+  payload: SealPayload;
+  report: FieldCameraReport;
+  /** True when this seal already stands behind a watch on the SAME customer — a resend of one sync (`allowResend`). */
+  alreadyUsed: boolean;
+};
 
 /**
  * Judge a sealed file for a watch on `seat`. Throws a validation error naming the first thing that does not hold;
@@ -75,7 +89,15 @@ export type FieldCameraCheck = { payload: SealPayload; report: FieldCameraReport
  */
 export async function checkFieldCameraPhoto(
   bytes: Uint8Array,
-  context: { occupantHrIds: readonly string[] },
+  context: {
+    occupantHrIds: readonly string[];
+    /**
+     * The camera's own sync sends a visit again until Phoenix answers, so a seal already used FOR THE CUSTOMER IT
+     * NAMES is that same sync arriving twice, not a photo reused for a second customer. Never set by the Super
+     * Admin's upload, where every second use is refused.
+     */
+    allowResend?: boolean;
+  },
 ): Promise<FieldCameraCheck> {
   const verdict = verifySealedPhoto(bytes, { rootsPem: GOOGLE_ATTESTATION_ROOTS.map((root) => root.pem), identity: RELEASE_IDENTITY });
   if (!verdict.ok) throw validationError(`The Phoenix Camera seal does not hold: ${verdict.problem}`, "phoenix_crm_admin_photo_bad_seal");
@@ -101,12 +123,18 @@ export async function checkFieldCameraPhoto(
   const admin = getSupabaseAdmin();
   const used = await admin
     .from("phoenix_crm_admin_photo_validations")
-    .select("id")
+    .select("id, customer_id")
     .eq("seal_id", verdict.sealId)
     .neq("status", "cancelled")
-    .limit(1);
+    .limit(5);
   throwIfError(used.error);
-  if ((used.data ?? []).length > 0) {
+  const usedRows = (used.data ?? []) as { customer_id: string | null }[];
+  const resent =
+    context.allowResend === true &&
+    payload.visit !== null &&
+    usedRows.length > 0 &&
+    usedRows.every((row) => String(row.customer_id ?? "").toLowerCase() === payload.visit?.customerId);
+  if (usedRows.length > 0 && !resent) {
     throw validationError("This sealed photo was already used for a customer. Each photo validates one customer.", "phoenix_crm_admin_photo_seal_used");
   }
 
@@ -148,6 +176,7 @@ export async function checkFieldCameraPhoto(
 
   return {
     payload,
+    alreadyUsed: resent,
     report: {
       sealId: verdict.sealId,
       deviceKey: verdict.deviceKey,
@@ -161,6 +190,131 @@ export async function checkFieldCameraPhoto(
       accuracyMeters: payload.accuracyMeters,
       satellitesUsed: payload.satellitesUsed,
       satellitesSeen: payload.satellitesSeen,
+      provider: payload.provider,
+      locationStatus: payload.locationStatus,
+      fixAgeMs: payload.fixAgeMs,
+      timeSource: payload.timeSource,
+      deviceModel: payload.deviceModel,
+      androidSdk: payload.androidSdk,
+      appVersion: payload.appVersion,
+      phoneClockUtc: payload.phoneClockUtc,
+      networkTimeUtc: payload.networkTimeUtc,
+      warnings,
+    },
+  };
+}
+
+// ── The rep's own camera sending its queue: nothing is refused, everything is told ─────────────────────────
+
+/** What the camera's sync learns about one sealed file — never a refusal (owner, 20 Nov 2026: "Phoenix will not reject anything"). */
+export type FieldCameraInspection = {
+  /** What the seal says. Read without belief when the seal itself does not hold (`report` null). */
+  payload: SealPayload | null;
+  /** The seal is ours, unchanged, from a genuine phone, and names this territory's own rep. */
+  sealHolds: boolean;
+  /** Red on the Super Admin's page: why the photo or the phone cannot be trusted. */
+  sealProblems: string[];
+  /** Why the position cannot stand as the customer's place (none at all, too rough, outside ten minutes). */
+  locationProblems: string[];
+  /** The report kept beside the item; null when the seal does not hold at all. */
+  report: FieldCameraReport | null;
+  /** True when this same seal already stands behind the same customer: the same sync arriving twice. */
+  alreadyUsed: boolean;
+};
+
+/**
+ * `checkFieldCameraPhoto` for the camera's own sync: the same checks, each one COLLECTED instead of thrown, so the
+ * item reaches the Super Admin's camera page with every reason in plain words. Google's list unread is a note,
+ * not a problem: the phone's chip already vouched, and it is the only check that depends on Google answering.
+ */
+export async function inspectFieldCameraPhoto(
+  bytes: Uint8Array,
+  context: { occupantHrIds: readonly string[]; viewerHrId: string; seatId: string },
+): Promise<FieldCameraInspection> {
+  const verdict = verifySealedPhoto(bytes, {
+    rootsPem: GOOGLE_ATTESTATION_ROOTS.map((root) => root.pem),
+    identity: RELEASE_IDENTITY,
+    purpose: "camera_sync",
+  });
+  if (!verdict.ok) {
+    return {
+      payload: readUnverifiedSealPayload(bytes),
+      sealHolds: false,
+      sealProblems: [`The Phoenix Camera seal does not hold: ${verdict.problem}`],
+      locationProblems: [],
+      report: null,
+      alreadyUsed: false,
+    };
+  }
+  const { payload } = verdict;
+  const sealProblems = [...verdict.integrity];
+  const warnings = [...verdict.warnings];
+  const revocation = await loadRevokedSerials();
+  if (!revocation) {
+    warnings.push("Google's list of withdrawn phone certificates could not be read; the phone's own chip vouched for the seal.");
+  } else {
+    if (verdict.serials.some((serial) => revocation.revoked.has(serial.replace(/^0+/, "")))) {
+      sealProblems.push("Google has withdrawn this phone's security certificate.");
+    }
+    if (!revocation.fresh) warnings.push("Google's list of withdrawn phone certificates could not be read just now; the last copy Phoenix read was used.");
+  }
+
+  const admin = getSupabaseAdmin();
+  const used = await admin
+    .from("phoenix_crm_admin_photo_validations")
+    .select("id, customer_id")
+    .eq("seal_id", verdict.sealId)
+    .neq("status", "cancelled")
+    .limit(5);
+  throwIfError(used.error);
+  const usedRows = (used.data ?? []) as { customer_id: string | null }[];
+  const alreadyUsed =
+    payload.visit !== null &&
+    usedRows.length > 0 &&
+    usedRows.every((row) => String(row.customer_id ?? "").toLowerCase() === payload.visit?.customerId);
+  if (usedRows.length > 0 && !alreadyUsed) sealProblems.push("This sealed photo was already used for another customer.");
+
+  const occupants = context.occupantHrIds.map((id) => id.trim().toUpperCase()).filter(Boolean);
+  const viewer = context.viewerHrId.trim().toUpperCase();
+  const history = await admin
+    .from("phoenix_crm_admin_photo_validations")
+    .select("rep_hr_id")
+    .eq("seal_report->>deviceKey", verdict.deviceKey)
+    .neq("rep_hr_id", payload.hrId)
+    .limit(5);
+  throwIfError(history.error);
+  const others = [...new Set(((history.data ?? []) as { rep_hr_id: string | null }[]).map((row) => row.rep_hr_id).filter((id): id is string => Boolean(id)))];
+  const names = await loadPeopleNames([payload.hrId, ...occupants, ...others]);
+  if (payload.hrId !== viewer) sealProblems.push(`The photo was sealed under ${nameOf(names, payload.hrId, payload.hrId)}'s login, not the login that sent it.`);
+  if (occupants.length > 0 && !occupants.includes(payload.hrId)) {
+    sealProblems.push(`The photo was sealed by ${nameOf(names, payload.hrId, payload.hrId)}, not by this territory's rep.`);
+  }
+  if (payload.visit && payload.visit.seatId !== context.seatId) sealProblems.push("The photo was taken for another territory.");
+  if (others.length > 0) warnings.push(`This phone sealed photos for ${others.map((id) => nameOf(names, id, id)).join(", ")} before.`);
+
+  return {
+    payload,
+    sealHolds: sealProblems.length === 0,
+    sealProblems,
+    locationProblems: verdict.location,
+    alreadyUsed,
+    report: {
+      sealId: verdict.sealId,
+      deviceKey: verdict.deviceKey,
+      securityLevel: verdict.securityLevel,
+      revocation: revocation?.fresh ? "checked" : "last_copy",
+      takenAtUtc: payload.takenAtUtc,
+      hrId: payload.hrId,
+      repName: payload.repName,
+      lat: payload.lat,
+      lon: payload.lon,
+      accuracyMeters: payload.accuracyMeters,
+      satellitesUsed: payload.satellitesUsed,
+      satellitesSeen: payload.satellitesSeen,
+      provider: payload.provider,
+      locationStatus: payload.locationStatus,
+      fixAgeMs: payload.fixAgeMs,
+      timeSource: payload.timeSource,
       deviceModel: payload.deviceModel,
       androidSdk: payload.androidSdk,
       appVersion: payload.appVersion,

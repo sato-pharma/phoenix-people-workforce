@@ -449,6 +449,16 @@ const ROUTE_GATES: RouteGate[] = [
   // MONOTONIC time against, so an offline visit never needs a timestamp from a clock a rep can move.
   // Same permission and audience as entering a visit, because that is what it dates.
   post("time-anchor", "create"),
+  // The Phoenix Camera as the rep's offline visit app (owner, 20 Nov 2026): the pack the phone keeps for a day
+  // with no network, and the sync that records a sealed photo's validation and its visit. Both the app's alone
+  // (`captureClientOf`), at the gate entering a visit takes, because that is what they are.
+  get("field-camera/pack", "create"),
+  post("field-camera/sync", "create"),
+  // The Super Admin's Camera reviews page (owner, 20 Nov 2026: "leave the decision to the decision maker"):
+  // approve or reject an item the camera sent, and the daily limit. `update` is the Super Admin's gate here,
+  // and the service behind each route also asks canEnterMissedRecords, the door his "Record a missed visit" takes.
+  post("camera-reviews/decide", "update"),
+  post("camera-reviews/cap", "update"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
   // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.
@@ -1176,6 +1186,11 @@ const LATER_MIGRATIONS = [
   // nullable column and a widened timings CHECK on phoenix_crm_places, and one NEW function,
   // phoenix_crm_validate_with_admin_photo. It replaces nothing.
   "supabase/migrations/20261120125729_phoenix_crm_admin_photo_validations.sql",
+  // The Phoenix Camera's items, its daily limit and its releases (owner, 20 Nov 2026: "Phoenix will not
+  // reject anything ... leave the decision to the decision maker"): two NEW tables, phoenix_crm_camera_items
+  // and phoenix_crm_field_camera_releases, a column on phoenix_crm_settings, a private bucket, and one NEW
+  // function, phoenix_crm_camera_add_customer. It replaces nothing.
+  "supabase/migrations/20261120225652_phoenix_crm_camera_items.sql",
 ];
 
 /**
@@ -1455,13 +1470,17 @@ function runMigrationTests() {
     // Super Admin — so it has a bucket of its own and one file that opens it.
     // An Interviews day's CVs (2026-10-29) are a candidate's own papers — a fourth kind, a bucket of its
     // own, and one file that opens it.
-    const bucketFor = file.endsWith("/voice-notes.ts")
-      ? "PHOENIX_CRM_VOICE_BUCKET"
-      : file.endsWith("/visit-recordings.ts")
-        ? "PHOENIX_CRM_RECORDING_BUCKET"
-        : file.endsWith("/interview-cvs.ts")
-          ? "PHOENIX_CRM_INTERVIEW_CV_BUCKET"
-          : "PHOENIX_CRM_PHOTO_BUCKET";
+    // The Phoenix Camera's items and its releases (2026-11-20) are a fifth: what the camera sent before anybody
+    // decided it, in a private bucket of their own, and one file that opens it.
+    const bucketFor = file.endsWith("/camera-items.ts")
+      ? "CAMERA_BUCKET"
+      : file.endsWith("/voice-notes.ts")
+        ? "PHOENIX_CRM_VOICE_BUCKET"
+        : file.endsWith("/visit-recordings.ts")
+          ? "PHOENIX_CRM_RECORDING_BUCKET"
+          : file.endsWith("/interview-cvs.ts")
+            ? "PHOENIX_CRM_INTERVIEW_CV_BUCKET"
+            : "PHOENIX_CRM_PHOTO_BUCKET";
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
       assert.equal(match[1].trim(), bucketFor, `${file} opens a bucket other than the one it owns`);
     }

@@ -40,6 +40,7 @@ import {
   removeMedicalInsuranceFile,
   uploadMedicalInsuranceFile,
 } from "./file-storage";
+import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
 import { buildMonthlySplit } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import type {
@@ -1285,7 +1286,9 @@ function memberLine(row: MemberDbRow, rows: ReadonlyMap<string, MemberDbRow>, em
  * that the rule no longer names. A deleted employee's spouse and children are listed with them, one row
  * each, as the insurer's sheet has a row per person. `everyone` is every person covered today.
  */
-export async function prepareLibanoMemberFile(body: Record<string, unknown>): Promise<{ policyId: string; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
+export async function prepareLibanoMemberFile(
+  body: Record<string, unknown>,
+): Promise<{ policyId: string; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
   const kind = body.kind;
   if (kind !== "additions" && kind !== "deletions" && kind !== "everyone") throw new MedicalInsuranceInputError("Choose additions, deletions or everyone covered.");
   const asOf = todayInCairo();
@@ -1303,6 +1306,7 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
     const orphans = open.filter((row) => row.member_type !== "employee" && !ordered.includes(row));
     return {
       kind,
+      policy: { endsOn: policy.endsOn, startsOn: policy.startsOn },
       policyId: policy.id,
       rows: [...ordered, ...orphans].map((row) => memberLine(row, rowsById, state.employeeRows, row.coverage_starts_on)),
     };
@@ -1336,7 +1340,10 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
         rows.push(memberLine(row, rowsById, state.employeeRows, action.effectiveOn));
       }
     }
-    return { kind, policyId: policy.id, rows };
+    if (rows.length > LIBANO_DELETIONS_SHEET_ROWS) {
+      throw new MedicalInsuranceInputError(`Libano-Suisse's deletions sheet holds ${LIBANO_DELETIONS_SHEET_ROWS} people, families included; this file has ${rows.length}. Tick fewer and export twice.`);
+    }
+    return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
   }
 
   const rows = actions.map((action): LibanoMemberLine => {
@@ -1367,5 +1374,5 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
   if (gaps.length > 0) {
     throw new MedicalInsuranceInputError(`Libano-Suisse's file needs a date of birth and sex for everyone. Fill them on the Employee Master, or untick: ${gaps.join(", ")}.`);
   }
-  return { kind, policyId: policy.id, rows };
+  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
 }

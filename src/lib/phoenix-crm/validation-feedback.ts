@@ -154,8 +154,14 @@ export const VALIDATION_REFUSAL_REASON_KEYS: readonly ValidationRefusalReason[] 
  * screen, and a decision already stored keeps rendering whatever reason it carries. A building's
  * refusal is the one place that must refuse a key too — `buildingRefusalReason`.
  */
-export function reasonsFor(kind: ValidationPickKind): typeof VALIDATION_REFUSAL_REASONS[number][] {
-  return VALIDATION_REFUSAL_REASONS.filter((reason) => (reason.kinds as readonly string[]).includes(kind));
+export function reasonsFor(kind: ValidationPickKind, options: { buildingHasNoTimetable?: boolean } = {}): typeof VALIDATION_REFUSAL_REASONS[number][] {
+  return VALIDATION_REFUSAL_REASONS.filter(
+    (reason) =>
+      (reason.kinds as readonly string[]).includes(kind) &&
+      // 🔴 A building the administrator marked as having no timetable is never refused for a missing one
+      // (owner, 20 Nov 2026: "No timetable" is hidden for a no-timetable building).
+      !(options.buildingHasNoTimetable && reason.key === "schedule_missing"),
+  );
 }
 
 /**

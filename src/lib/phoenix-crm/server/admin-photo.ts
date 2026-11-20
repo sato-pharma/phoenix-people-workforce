@@ -40,8 +40,8 @@ import {
   type AdminPhotoStatus,
 } from "@/lib/phoenix-crm/admin-photo-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { seatOccupants } from "@/lib/phoenix-crm/scope";
-import { SEAL_MAX_AGE_HOURS } from "@/lib/phoenix-crm/field-camera/seal-rules";
+import { seatOccupants, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { SEAL_MAX_AGE_HOURS, type SealPayload } from "@/lib/phoenix-crm/field-camera/seal-rules";
 import { readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
@@ -63,6 +63,16 @@ const TABLE = "phoenix_crm_admin_photo_validations";
 const WATCH_COLUMNS =
   "id, customer_id, seat_id, is_test, photo_path, status, armed_by_hr_id, armed_at, watch_until, rep_hr_id, rep_lat, rep_lon, rep_accuracy_meters, rep_captured_at, place_id, closed_at, rep_source, seal_report";
 const WATCH_ENDED = "This request has ended. Ask for it again.";
+const SEAL_NO_POSITION = "The Phoenix Camera seal does not hold: the photo carries no location.";
+
+/**
+ * The seal's position as the place's reading, or null when the camera found none. A seal with no position can still
+ * record a visit for the Super Admin to judge; it can never become a customer's place.
+ */
+export function sealedPosition(payload: SealPayload): { lat: number; lon: number; accuracyMeters: number } | null {
+  if (payload.lat === null || payload.lon === null || payload.accuracyMeters === null) return null;
+  return { lat: payload.lat, lon: payload.lon, accuracyMeters: payload.accuracyMeters };
+}
 
 /** Who may validate with an uploaded photo: the Super Admin, exactly as he validates on a trusted point. */
 export function canValidateWithAdminPhoto(viewer: PhoenixCrmViewer): boolean {
@@ -169,6 +179,8 @@ export type AdminPhotoLocation = {
 /** What the Super Admin reads about a Phoenix Camera seal that held. */
 export type AdminPhotoSealView = {
   takenAtText: string;
+  /** Where the seal's position came from, in words. */
+  source: string;
   satellites: string;
   phone: string;
   /** Short and stable, so the same phone is recognisable photo after photo. */
@@ -240,6 +252,9 @@ async function watchView(watch: WatchRow): Promise<AdminPhotoWatchView> {
       seal: report
         ? {
             takenAtText: adminPhotoTimeText(report.takenAtUtc),
+            source: !report.provider || report.provider === "gps"
+              ? "The Phoenix Camera seal (satellites)"
+              : "The Phoenix Camera seal (Wi-Fi, mobile network and satellites)",
             satellites: `${report.satellitesUsed} used of ${report.satellitesSeen} seen`,
             phone: `${report.deviceModel} · Android ${report.androidSdk} · ${report.securityLevel === "StrongBox" ? "StrongBox chip" : "secure chip"}`,
             phoneKey: report.deviceKey.slice(0, 12).toUpperCase(),
@@ -306,6 +321,9 @@ export async function armAdminPhotoValidation(viewer: PhoenixCrmViewer, raw: unk
   const bytes = decodeJpegDataUrl(body.imageDataUrl);
   // A Phoenix Camera file is judged BEFORE anything is uploaded: a seal that does not hold leaves no trace.
   const sealed = hasSealTrailer(bytes) ? await checkFieldCameraPhoto(bytes, { occupantHrIds: seatOccupants(seat) }) : null;
+  // The upload refuses a seal with no position already (`sealPayloadProblems`); this only keeps that promise typed.
+  const sealedAt = sealed ? sealedPosition(sealed.payload) : null;
+  if (sealed && !sealedAt) throw validationError(SEAL_NO_POSITION, "phoenix_crm_admin_photo_bad_seal");
   const uploaded = await uploadPhotoBytesForSlot(
     { hrId: viewer.hrId, seat, isTest: customer.isTest, purpose: "place", cairoToday: viewer.cairoToday },
     bytes,
@@ -337,9 +355,9 @@ export async function armAdminPhotoValidation(viewer: PhoenixCrmViewer, raw: unk
             watch_until: new Date().toISOString(),
             rep_source: "sealed_photo",
             rep_hr_id: sealed.payload.hrId,
-            rep_lat: sealed.payload.lat,
-            rep_lon: sealed.payload.lon,
-            rep_accuracy_meters: sealed.payload.accuracyMeters,
+            rep_lat: sealedAt?.lat,
+            rep_lon: sealedAt?.lon,
+            rep_accuracy_meters: sealedAt?.accuracyMeters,
             rep_captured_at: sealed.payload.takenAtUtc,
             seal_id: sealed.report.sealId,
             seal_report: sealed.report,
@@ -422,6 +440,107 @@ export async function applyAdminPhotoValidation(viewer: PhoenixCrmViewer, valida
     customerName: customer.name,
     location: locationOf(columns),
   };
+}
+
+// ── The rep's own sealed photo, synced by the camera ──────────────────────────────────────────────
+
+/**
+ * 🔴 THE REP'S OWN PHOENIX CAMERA PHOTO VALIDATES HIS CUSTOMER WHEN IT SYNCS (owner, 20 Nov 2026: "we're not
+ * relying on WhatsApp ... the application will synchronize with Phoenix ... the validation will register and the
+ * visit will register"). The same watch row and the same `phoenix_crm_validate_with_admin_photo` as the Super
+ * Admin's sealed upload, with the REP as the actor: the seal was judged in full by the caller
+ * (`inspectFieldCameraPhoto`, the seal naming this rep), so no reading from anywhere else is taken.
+ *
+ * A customer who already has a place is left as he is (a place is validated once, fixed for good) and so is one
+ * the trusted-point board holds; so is a seal with no position. Returns whether this call validated him.
+ *
+ * `slot` is the rep whose photo it is (the photo slot is his); `actorHrId` is who decided — the rep when it lands
+ * at once, the Super Admin when he approves it from the camera page.
+ */
+export async function validateWithRepSeal(
+  slot: Pick<PhoenixCrmViewer, "hrId" | "cairoToday">,
+  input: {
+    seat: OrgSeat;
+    isTest: boolean;
+    customerId: string;
+    bytes: Uint8Array;
+    sealed: { payload: SealPayload; report: FieldCameraReport };
+    actorHrId?: string;
+  },
+): Promise<{ validated: boolean; placeId: string | null }> {
+  const position = sealedPosition(input.sealed.payload);
+  if (!position) return { validated: false, placeId: null };
+  const customer = await loadCustomer(input.customerId);
+  if (customer.seatId !== input.seat.seatId || customer.isTest !== input.isTest) {
+    throw forbiddenError("This customer is not on your list.");
+  }
+  if (customer.status !== "pending" && customer.status !== "active") return { validated: false, placeId: null };
+  const placed = await getSupabaseAdmin()
+    .from("phoenix_crm_places")
+    .select("id")
+    .eq("customer_id", customer.id)
+    .eq("status", "active")
+    .limit(1);
+  throwIfError(placed.error);
+  if ((placed.data ?? []).length > 0) return { validated: false, placeId: null };
+  if (await blockedReasonFor(customer)) return { validated: false, placeId: null };
+
+  const actor = (input.actorHrId ?? slot.hrId).trim().toUpperCase();
+  const uploaded = await uploadPhotoBytesForSlot(
+    { hrId: slot.hrId, seat: input.seat, isTest: input.isTest, purpose: "place", cairoToday: slot.cairoToday },
+    Buffer.from(input.bytes),
+  );
+  await callPhoenixCrm<string>("phoenix_crm_take_photo", {
+    p_path: uploaded.path,
+    p_hr_id: slot.hrId,
+    p_seat_id: input.seat.seatId,
+    p_purpose: "place",
+    p_is_test: input.isTest,
+  });
+  await closeOpenWatches(customer.id);
+  const { payload, report } = input.sealed;
+  const inserted = await getSupabaseAdmin()
+    .from(TABLE)
+    .insert({
+      customer_id: customer.id,
+      seat_id: customer.seatId,
+      is_test: customer.isTest,
+      photo_path: uploaded.path,
+      armed_by_hr_id: actor,
+      status: "captured",
+      watch_until: new Date().toISOString(),
+      rep_source: "sealed_photo",
+      rep_hr_id: payload.hrId,
+      rep_lat: position.lat,
+      rep_lon: position.lon,
+      rep_accuracy_meters: position.accuracyMeters,
+      rep_captured_at: payload.takenAtUtc,
+      seal_id: report.sealId,
+      seal_report: report,
+    })
+    .select(WATCH_COLUMNS)
+    .single();
+  if (inserted.error?.code === "23505" && /seal_idx/.test(`${inserted.error.message ?? ""} ${inserted.error.details ?? ""}`)) {
+    return { validated: false, placeId: null };
+  }
+  throwIfError(inserted.error);
+  const watch = watchOf(inserted.data as Row);
+  const columns = await locationColumnsFor(watch);
+  const result = await callPhoenixCrm<Row>("phoenix_crm_validate_with_admin_photo", {
+    p: { validation_id: watch.id, actor_hr_id: actor, location: columns },
+  });
+  const config = await loadPhoenixCrmConfig();
+  await restampVisitLocationsQuietly({
+    seatId: watch.seatId,
+    isTest: watch.isTest,
+    customerId: watch.customerId,
+    actorHrId: actor,
+    settings: config.settings,
+    scope: "unplaced",
+  });
+  await withdrawValidationNotConfirmed(watch.customerId);
+  await shareAcrossLinesQuietly(watch.customerId);
+  return { validated: true, placeId: String(result.place_id) };
 }
 
 // ── The rep's side ─────────────────────────────────────────────────────────────────────────────────

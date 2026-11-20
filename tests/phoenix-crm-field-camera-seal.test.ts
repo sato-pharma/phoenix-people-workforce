@@ -12,7 +12,15 @@ import {
   hasSealTrailer,
   splitSealedFile,
 } from "../src/lib/phoenix-crm/field-camera/seal-format.ts";
-import { parseSealPayload, sealPayloadProblems, sealPayloadWarnings, type SealPayload } from "../src/lib/phoenix-crm/field-camera/seal-rules.ts";
+import {
+  SEAL_NO_LOCATION,
+  parseSealPayload,
+  sealIntegrityProblems,
+  sealLocationProblems,
+  sealPayloadProblems,
+  sealPayloadWarnings,
+  type SealPayload,
+} from "../src/lib/phoenix-crm/field-camera/seal-rules.ts";
 import { RELEASE_IDENTITY, verifySealedPhoto, type SealIdentity } from "../src/lib/phoenix-crm/server/field-camera-seal.ts";
 
 /**
@@ -153,11 +161,44 @@ function payloadRulesBehave(): void {
   assert.match(problems({ mockAppActive: true })[0], /fake-location app was switched on/);
   assert.match(problems({ rooted: true })[0], /rooted/);
   assert.match(problems({ emulator: true })[0], /real phone/);
-  assert.match(problems({ provider: "network" })[0], /satellites/);
-  assert.match(problems({ timeSource: "phone" })[0], /satellites/);
+  // The rep never waits for the satellites: the phone's combined position stands beside the satellites alone.
+  assert.deepEqual(problems({ provider: "fused", satellitesUsed: 0 }), []);
+  assert.deepEqual(problems({ provider: "network", satellitesUsed: 0 }), []);
+  assert.match(problems({ provider: "passive" })[0], /own location service/);
+  assert.match(problems({ timeSource: "guess" })[0], /which clock/);
+  assert.deepEqual(problems({ timeSource: "phoenix" }), []);
+  assert.deepEqual(problems({ timeSource: "phone", networkTimeUtc: null }), []);
+  // Four satellites are asked of a position from the satellites alone, and only of one.
   assert.match(problems({ satellitesUsed: 3 })[0], /at least 4/);
   assert.deepEqual(problems({ satellitesUsed: 4 }), []);
-  assert.match(problems({ fixAgeMs: 61_000 })[0], /more than a minute old/);
+  // Ten minutes either side of the shutter (owner, 20 Nov 2026, point 3): the photo is taken at once, sealed with the
+  // closest good position from the ten minutes before, else the first one in the ten minutes after.
+  assert.deepEqual(problems({ fixAgeMs: 600_000 }), []);
+  assert.match(problems({ fixAgeMs: 600_001 })[0], /more than 10 minutes before the photo/);
+  assert.deepEqual(problems({ fixAgeMs: -600_000 }), []);
+  assert.match(problems({ fixAgeMs: -600_001 })[0], /more than 10 minutes after the photo/);
+
+  // "No location" is still a seal: it parses, carries no numbers, and says so in its location problems only.
+  const noFix = payloadOf({ locationStatus: "none", lat: null, lon: null, accuracyMeters: null, satellitesUsed: null, satellitesSeen: null, fixAgeMs: null, provider: null });
+  assert.equal(noFix.lat, null);
+  assert.equal(noFix.locationStatus, "none");
+  assert.deepEqual(sealIntegrityProblems(noFix, now), [], "no position is not a fraud signal");
+  assert.deepEqual(sealLocationProblems(noFix), [SEAL_NO_LOCATION]);
+  assert.deepEqual(sealPayloadProblems(noFix, now), [SEAL_NO_LOCATION], "the Super Admin's upload still refuses it");
+  assert.equal(typeof parseSealPayload(JSON.stringify({ ...base, locationStatus: "none" })), "string", "a seal saying none with numbers is refused");
+  assert.equal(typeof parseSealPayload(JSON.stringify({ ...base, locationStatus: "nowhere" })), "string", "an unknown location status is refused");
+  assert.equal(payloadOf({}).locationStatus, "locked", "a seal from before camera 2.1.0 reads as locked");
+  assert.equal(payloadOf({ locationStatus: "late", fixAgeMs: -120_000 }).locationStatus, "late");
+  // The camera's sync splits the two: a fake-location app is red, a rough position only keeps it from being a place.
+  assert.match(sealIntegrityProblems(payloadOf({ mock: true }), now)[0], /fake-location app/);
+  assert.deepEqual(sealLocationProblems(payloadOf({ mock: true })), []);
+  assert.deepEqual(sealIntegrityProblems(payloadOf({ accuracyMeters: 41 }), now), []);
+  assert.match(sealLocationProblems(payloadOf({ accuracyMeters: 41 }))[0], /98% sure/);
+  // The owner's "at least 98% accurate": 40 m (Android's 68% radius) is 98% within 74 m; one metre more refuses.
+  assert.deepEqual(problems({ accuracyMeters: 40 }), []);
+  assert.match(problems({ accuracyMeters: 41 })[0], /98% sure of the place only to 76 m, and 74 m is the most accepted/);
+  // The satellites' and Phoenix's clocks are compared only when the time is the satellites'.
+  assert.deepEqual(problems({ timeSource: "phoenix", networkTimeUtc: "2026-11-20T09:40:00.000Z" }), []);
   assert.ok(problems({ accuracyMeters: 400 }).length > 0, "a reading rougher than the validated place's line refuses");
   assert.ok(problems({ lat: 0, lon: 0 }).length > 0, "0,0 refuses");
   assert.match(problems({ takenAtUtc: new Date(now + 10 * 60_000).toISOString() })[0], /later than now/);
@@ -172,6 +213,87 @@ function payloadRulesBehave(): void {
   const warnings = sealPayloadWarnings(payloadOf({ phoneClockUtc: "2026-11-20T09:50:00.000Z", networkTimeUtc: null, developerOptions: true, adb: true }));
   assert.equal(warnings.length, 4);
   assert.match(warnings.join(" "), /clock was 10 minutes off/);
+  // A position over a minute old is never silent: the Super Admin reads its age beside the photo.
+  assert.deepEqual(sealPayloadWarnings(payloadOf({ fixAgeMs: 60_000 })), []);
+  assert.deepEqual(sealPayloadWarnings(payloadOf({ fixAgeMs: -20_000 })), [], "a location locked just after the shutter is the normal case");
+  const old = sealPayloadWarnings(payloadOf({ fixAgeMs: 110_000 }));
+  assert.equal(old.length, 1);
+  assert.match(old[0], /taken 2 minutes before the photo/);
+  // The phone's own clock is the last resort, and the Super Admin is told when it was the one used.
+  const phoneTime = sealPayloadWarnings(payloadOf({ timeSource: "phone", networkTimeUtc: null, phoneClockUtc: "2026-11-20T09:50:00.000Z" }));
+  assert.equal(phoneTime.length, 1);
+  assert.match(phoneTime[0], /phone's own clock/);
+  assert.match(sealPayloadWarnings(payloadOf({ timeSource: "phoenix", phoneClockUtc: "2026-11-20T09:50:00.000Z" }))[0], /off Phoenix's time/);
+}
+
+// Camera 2.0, the rep's offline visit app (owner, 20 Nov 2026): the signed visit block names the territory, the
+// customer, the visit's own id and the offline clock, so nothing the phone sends beside the photo can move them.
+function visitBlockBehaves(): void {
+  const base = JSON.parse(JSON.parse(splitSealedFile(fileOf("valid"))!.sealText).payload) as Record<string, unknown>;
+  const parse = (visit: unknown) => parseSealPayload(JSON.stringify({ ...base, visit }));
+  const customerId = "0b1e8a52-7c1f-4f3e-9d5a-2a4b6c8d0e1f";
+  const visitId = "6f2d9c41-3b7a-4e8f-a1c2-d3e4f5a6b7c8";
+  const anchorId = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+
+  const none = parseSealPayload(JSON.stringify(base));
+  assert.equal(typeof none, "object");
+  assert.equal((none as SealPayload).visit, null, "a photo taken for the Super Admin's upload carries no visit");
+
+  const online = parse({ seatId: " PED-CAI-01 ", customerId: customerId.toUpperCase(), visitId });
+  assert.equal(typeof online, "object", String(online));
+  assert.deepEqual((online as SealPayload).visit, {
+    seatId: "PED-CAI-01",
+    customerId,
+    visitId,
+    offline: null,
+    intent: "visit",
+    photoKind: "place",
+    newCustomer: null,
+  });
+
+  // Camera 2.1.0 names which of the four doctor's-name photos it is; camera 2.2.0 a validation alone or a new customer.
+  const doorSign = parse({ seatId: "PED-CAI-01", customerId, visitId, photoKind: "door_sign", intent: "validate" });
+  assert.equal((doorSign as SealPayload).visit?.photoKind, "door_sign");
+  assert.equal((doorSign as SealPayload).visit?.intent, "validate");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, photoKind: "selfie" }), "string", "an unknown photo kind is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, intent: "delete" }), "string", "an unknown intent is refused");
+  const newCustomer = { listType: "AM", name: "Dr Ahmed Samir Fawzy", nameParts: { first: "Ahmed", middle: "Samir", last: "Fawzy" }, customerType: "Clinic", speciality: "Pediatrics", proposedGrade: "b", phone: null };
+  const added = parse({ seatId: "PED-CAI-01", customerId, visitId, intent: "new_customer", newCustomer });
+  assert.equal(typeof added, "object", String(added));
+  assert.equal((added as SealPayload).visit?.newCustomer?.proposedGrade, "B");
+  assert.deepEqual((added as SealPayload).visit?.newCustomer?.nameParts, { first: "Ahmed", middle: "Samir", last: "Fawzy" });
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, intent: "new_customer" }), "string", "a new customer with no details is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, newCustomer }), "string", "details on a plain visit are refused");
+
+  const offline = parse({ seatId: "PED-CAI-01", customerId, visitId, offline: { anchorId, elapsedMs: 3_600_000.4, bootId: "42" } });
+  assert.deepEqual((offline as SealPayload).visit?.offline, { anchorId, elapsedMs: 3_600_000, bootId: "42" });
+
+  assert.equal(typeof parse("visit"), "string", "a visit that is not an object is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId: "not-a-uuid", visitId }), "string", "a customer that is not an id is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId: "1" }), "string", "a visit id that is not a uuid is refused");
+  assert.equal(typeof parse({ seatId: "", customerId, visitId }), "string", "a visit with no territory is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, offline: { anchorId, elapsedMs: -1 } }), "string", "a negative uptime is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, offline: { anchorId: "x", elapsedMs: 5 } }), "string", "an anchor that is not an id is refused");
+}
+
+function syncWiringHolds(): void {
+  // What the sync does with an item (record it at once or keep it for the Super Admin, never refuse it) is pinned
+  // by tests/phoenix-crm-camera-items.test.ts since camera 2.1 (owner, 20 Nov 2026). The seal half stays here.
+  const camera = read("src/lib/phoenix-crm/server/field-camera.ts");
+  assert.match(camera, /allowResend/, "the used-seal check knows a resend");
+
+  const service = read("src/lib/phoenix-crm/server/admin-photo.ts");
+  const rep = service.slice(service.indexOf("export async function validateWithRepSeal("));
+  assert.ok(rep.length > 0 && rep.indexOf("blockedReasonFor(") > 0, "the rep's sealed validation passes the same door as every validation");
+  assert.ok(rep.indexOf("uploadPhotoBytesForSlot(") > 0, "the sealed picture itself is the validated photo");
+
+  for (const path of ["app/api/phoenix-crm/field-camera/pack/route.ts", "app/api/phoenix-crm/field-camera/sync/route.ts"]) {
+    const route = read(path);
+    assert.match(route, /assertPermission\(access, "phoenix_crm", "create"\)/, `${path} is gated like entering a visit`);
+    assert.match(route, /captureClientOf\(request\.headers\)/, `${path} asks which client is calling`);
+  }
+  const syncRoute = read("app/api/phoenix-crm/field-camera/sync/route.ts");
+  assert.ok(syncRoute.indexOf("assertSameOriginMutation(request)") < syncRoute.indexOf("resolveAccessContext(request)"), "the sync checks its origin first");
 }
 
 function wiringHolds(): void {
@@ -214,5 +336,7 @@ function wiringHolds(): void {
 export function runPhoenixCrmFieldCameraSealTests(): void {
   verifierHolds();
   payloadRulesBehave();
+  visitBlockBehaves();
   wiringHolds();
+  syncWiringHolds();
 }

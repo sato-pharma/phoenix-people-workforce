@@ -1031,6 +1031,7 @@
   "pharmacy-database-sync-runs-only-by-hand": "sales-imports",
   "phase24-rls-smoke-cannot-run-locally": "database",
   "phoenix-blocks-the-microphone-app-wide-voice-notes-need-two-header-changes": "platform",
+  "phoenix-camera-stays-its-own-app": "phoenix-crm-validation",
   "phoenix-crm-countable-visits-does-not-exclude-test-rows": "org",
   "phoenix-crm-email-has-never-sent-in-production": "phoenix-crm",
   "phoenix-crm-has-no-fraud-in-it-and-its-only-strong-flags-are-coarse-location": "phoenix-crm",

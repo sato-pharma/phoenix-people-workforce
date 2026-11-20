@@ -2,6 +2,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
+import { buildLibanoMovementWorkbook, LIBANO_BRANCH_NAME } from "@/lib/medical-insurance/libano-movement-sheet";
 import { medicalInsuranceErrorResponse, medicalInsuranceWorkbookResponse, readJsonBody } from "@/lib/medical-insurance/route-helpers";
 import { prepareLibanoMemberFile } from "@/lib/medical-insurance/service";
 import { buildLibanoMemberFileWorkbook, medicalInsuranceFileDay } from "@/lib/medical-insurance/workbooks";
@@ -26,7 +27,12 @@ export async function POST(request: Request) {
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:medical-insurance-movements" });
 
     const file = await prepareLibanoMemberFile(await readJsonBody(request));
-    const buffer = await buildLibanoMemberFileWorkbook(file);
+    // Additions and deletions go on Libano-Suisse's own Additions and Deletions workbook, exactly as they issued it;
+    // everyone covered keeps the opening census layout (the 39-column "Output draft").
+    const buffer =
+      file.kind === "everyone"
+        ? await buildLibanoMemberFileWorkbook(file)
+        : await buildLibanoMovementWorkbook({ kind: file.kind, policy: { ...file.policy, holder: LIBANO_BRANCH_NAME }, rows: file.rows });
     const generatedAtIso = new Date().toISOString();
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,

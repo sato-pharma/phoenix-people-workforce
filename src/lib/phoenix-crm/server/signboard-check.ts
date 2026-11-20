@@ -927,6 +927,22 @@ export async function readPlaceSignboard(input: {
 }
 
 /**
+ * Read a doctor's-name photo the Phoenix Camera sealed (owner, 20 Nov 2026, point 6: the door sign, the banner or
+ * the prescription). The door's own reader on bytes the seal already vouched for: no storage path, because the
+ * camera's photo never went through a photo slot. Only `match` validates on it; anything else waits for the
+ * Super Admin as "doctor's name photo", and his decisions are kept beside the reading to correct the reader.
+ */
+export async function readSealedNamePhoto(input: {
+  bytes: Uint8Array;
+  customerName: string;
+  listType: PhoenixCrmListType;
+  photoBrick?: string | null;
+}): Promise<PhoenixCrmSignboardCheck> {
+  if (!hasAiApiKey()) return unjudged("no_api_key");
+  return judgeBytes({ bytes: input.bytes, customerName: input.customerName, listType: input.listType, mode: "door", photoBrick: input.photoBrick ?? null });
+}
+
+/**
  * Read the signboard of a place already in the database, for the nightly sweep.
  *
  * `downloadPhoto` is legitimate here and only here: the sweep runs as the system over rows it found
