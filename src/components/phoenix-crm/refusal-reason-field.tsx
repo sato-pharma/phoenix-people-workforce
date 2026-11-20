@@ -36,12 +36,15 @@ export function RefusalReasonField({
   disabled,
   id,
   kind = "signboard",
+  buildingHasNoTimetable = false,
   onChange,
   value,
 }: {
   id: string;
   /** What the photo is. `schedule` is a seated customer's timetable, `building` a polyclinic's own door; everything else is a signboard. */
   kind?: ValidationPickKind;
+  /** The building has no timetable (the administrator's exception): "No timetable in the photo" is not offered. */
+  buildingHasNoTimetable?: boolean;
   value: ValidationRefusalReason | "";
   onChange: (next: ValidationRefusalReason | "") => void;
   disabled?: boolean;
@@ -58,7 +61,7 @@ export function RefusalReasonField({
         value={value}
       >
         <option value="">{VALIDATION_REASON_PLACEHOLDER}</option>
-        {reasonsFor(kind).map((reason) => (
+        {reasonsFor(kind, { buildingHasNoTimetable }).map((reason) => (
           <option key={reason.key} value={reason.key}>
             {reason.label}
           </option>

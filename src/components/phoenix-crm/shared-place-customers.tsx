@@ -352,7 +352,7 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
 
   return (
     <div className="space-y-2">
-      <RefusalReasonField disabled={saving !== null} id={`seated-reason-${scope}-${customer.key}`} kind="schedule" onChange={setReason} value={reason} />
+      <RefusalReasonField buildingHasNoTimetable={noTimetable} disabled={saving !== null} id={`seated-reason-${scope}-${customer.key}`} kind="schedule" onChange={setReason} value={reason} />
       <DecisionComment disabled={saving !== null} id={`seated-note-${scope}-${customer.key}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">

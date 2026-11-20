@@ -29,6 +29,9 @@ const REFUSALS: Record<string, Refusal> = {
   location_in_review: { status: 409, message: "The system is still checking this customer's location. It confirms it automatically." },
   review_not_found: { status: 404, message: "This place is no longer waiting. Reload the page." },
   review_decided: { status: 409, message: "This place was already decided. Reload the page." },
+  // The Camera reviews page (owner, 2026-11-20). Only the Super Admin decides a camera item.
+  camera_item_not_found: { status: 404, message: "This camera item is no longer there. Reload the page." },
+  camera_item_decided: { status: 409, message: "This camera item was already decided. Reload the page." },
   // What the Super Admin approved, only the Super Admin rejects (owner, 2026-11-16). Read by the SFE Manager.
   approved_by_super_admin: { status: 403, message: SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT },
   // A doctor's full name waiting for the Super Admin (owner, 2026-11-07, pm-name-rules.ts).

@@ -109,6 +109,37 @@ A resend of the same sync is the same visit (the same uuid) and the same seal (`
 every use was this customer counts as a resend, never a second validation). What goes back to the phone is
 "recorded" or the refusal's plain words — no distance, accuracy or check is named (golden rule #1).
 
+## Camera reviews — Phoenix rejects nothing, the Super Admin decides
+
+The owner's rulings of 20 November 2026: *"Phoenix will not reject anything … leave the decision to the decision
+maker."* Every photo the camera syncs becomes one `phoenix_crm_camera_items` row, keyed by the seal's visit id so a
+resend is the same item, and the phone hears one answer: received. The rep's screens say "sent" and nothing else.
+
+**What records at once** (`cameraArrival` in `src/lib/phoenix-crm/camera-item-rules.ts`): the seal holds in full; the
+photo was taken on the same Phoenix day it arrived (the day ends at 02:00 Cairo); it carries a location; its time is
+confirmed; and the rep has fewer than the daily limit recorded that day (3 by default, the Super Admin's Daily limit
+tab, 1 to 20, in `phoenix_crm_settings.camera_daily_cap`). Anything else **waits**, with every reason at once — the
+fourth item, the next day, a failed seal, no location, a time not confirmed, a new customer. Over 36 hours old it goes
+to the archive. A visit rule Phoenix would apply to a typed visit makes the item wait rather than refuse it.
+
+**The time** is Phoenix's own anchor when the seal carries one, else the satellites inside a seal that holds, else
+"time not confirmed". **The location** is the closest good fix within ten minutes of the shutter; the page shows the
+gap, the rep sees no numbers.
+
+**Name photos and business cards.** A name photo goes through the photo reader: a clear reading validates, anything
+else waits. A business card always waits, and counts only beside a location inside the polyclinic. A customer whose
+name photo waits is not refused a third visit, and a building with no timetable is never refused for one.
+
+**The page** — `/admin/field-crm/camera-reviews`, the Super Admin's alone (`canEnterMissedRecords`), never the SFE. Tabs:
+Waiting, Recorded, Archive, Daily limit. Each row shows the photo, the rep, the time taken and the time it arrived, every
+check, and the seal in red when it failed. **Approve** records the visit through his *Record a missed visit* door, in his
+name; **Reject** on a recorded item takes it back whole. Routes: `camera-reviews/decide` and `camera-reviews/cap`, both at
+`phoenix_crm` `update` behind `assertSameOriginMutation`.
+
+**The update button.** `scripts/phoenix-camera-publish-release.ts` uploads a signed APK under `releases/` in the same
+private bucket and writes one `phoenix_crm_field_camera_releases` row; every pack then carries it as `latestApp` with a
+link that lasts a day. A dry run is the default; publishing reaches every rep's phone and is the owner's word alone.
+
 ## The signing key
 
 PKCS12 at `C:/Users/satoh/.phoenix-secrets/phoenix-camera/` with a copy in `F:/Phoenix Secrets Backup/phoenix-camera/`;
