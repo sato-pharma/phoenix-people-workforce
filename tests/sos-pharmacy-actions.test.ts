@@ -13,8 +13,10 @@ import {
 } from "../src/lib/sales/sos-pharmacy-actions.ts";
 import { buildMonthPace } from "../src/lib/sales/sos-month-pace.ts";
 import {
+  boxesByProductText,
   pharmacyActionSheetRows,
   pharmacyActionsFileName,
+  pharmacyProductSheetRows,
   seatLineKey,
   truncatedPercent,
 } from "../src/lib/sales/sos-pharmacy-actions-workbook.ts";
@@ -137,7 +139,7 @@ export function runSosPharmacyActionsTests() {
     const many = Array.from({ length: 205 }, (_, index) => row({ clientCode: `S${index}`, salesValue: 10 + index }));
     const byPeriod = {
       [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
-      [P1]: [...many, row({ clientCode: "KEEP", salesValue: 300 }), row({ clientCode: "SEPT", salesValue: 30, productCode: "P9", productName: "Zeta" }), row({ clientCode: "SEPT", salesValue: 5, productCode: "P2", productName: "Alpha" })],
+      [P1]: [...many, row({ clientCode: "KEEP", salesValue: 300 }), row({ clientCode: "SEPT", salesValue: 30, productCode: "P9", productName: "Zeta", effectiveUnits: 7 }), row({ clientCode: "SEPT", salesValue: 5, productCode: "P2", productName: "Alpha" })],
       [P2]: [row({ clientCode: "JUNE", salesValue: 20 })],
       [P3]: [],
     };
@@ -172,7 +174,29 @@ export function runSosPharmacyActionsTests() {
     assert.equal(rows[0][`m_${P1}`], 35, "the September column holds its value");
     assert.equal(rows[0][`m_${LATEST}`], 0, "the month it stopped reads 0, never blank");
     assert.equal(rows[0].lastBought, "Jul 2026");
-    assert.equal(rows[0].products, "Alpha · Zeta");
+    assert.equal(
+      rows[0].products,
+      "Alpha: May 0 · Jun 0 · Jul 10 · Aug 0 | Zeta: May 0 · Jun 0 · Jul 7 · Aug 0",
+      "boxes beside the money, one count per product, oldest month first — never one total of 17",
+    );
+    assert.deepEqual(
+      sept?.productHistory?.map((product) => [product.productName, product.months.map((month) => month.units)]),
+      [["Alpha", [0, 10, 0, 0]], ["Zeta", [0, 7, 0, 0]]],
+      "each product's boxes per closing, newest first, 0 for a month it bought none",
+    );
+    assert.equal(screen.stopped[0].productHistory, undefined, "the screen never carries the boxes");
+    const productRows = pharmacyProductSheetRows({
+      lists: [{ label: "Stopped buying", items: [sept!] }],
+      periods: [LATEST, P1, P2, P3],
+      peopleByArea: new Map(),
+    });
+    assert.deepEqual(
+      productRows.map((entry) => [entry.product, entry[`u_${P1}`], entry[`v_${P1}`], entry[`u_${LATEST}`]]),
+      [["Alpha", 10, 5, 0], ["Zeta", 7, 30, 0]],
+      "one row per pharmacy AND product: a box count is never a sum of two products",
+    );
+    assert.equal(productRows[0].list, "Stopped buying");
+    assert.equal(boxesByProductText({ ...sept!, productHistory: undefined }, [LATEST]), "Alpha · Zeta", "without boxes it falls back to the names");
     assert.ok(!Object.values(rows[0]).includes("CA1"), "geography by name, never by code");
     const vacant = pharmacyActionSheetRows({ items: [sept!], periods: [LATEST], peopleByArea: new Map() });
     assert.equal(vacant[0].rep, "Vacant", "an area with no rep says so");

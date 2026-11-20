@@ -112,6 +112,12 @@ export type PharmacyActionItem = {
   history?: { period: string; value: number }[];
   /** Every product this pharmacy bought across the loaded closings, by name. Sheet download only. */
   productsBought?: string[];
+  /**
+   * Boxes and EGP of EACH product in each loaded closing, NEWEST FIRST, 0 for a month it bought none.
+   * Sheet download only. 🔴 Boxes are per product and are never added across products (two products,
+   * or two strengths of one, are not one count) — only EGP sums across them.
+   */
+  productHistory?: { productName: string; months: { period: string; units: number; value: number }[] }[];
 };
 
 export type CrossSellItem = PharmacyActionItem & {
@@ -259,6 +265,8 @@ type PharmacyAggregate = {
   identityValue: number;
   valueByPeriod: Map<string, number>;
   productsByPeriod: Map<string, Set<string>>;
+  /** product code → period → [boxes, EGP]. Filled only when the history is asked for. */
+  byProductPeriod: Map<string, Map<string, [number, number]>>;
 };
 
 function areaNameOf(row: PharmacyActionRow): string {
@@ -356,6 +364,7 @@ export function buildPharmacyActions(input: {
         identityValue: value,
         valueByPeriod: new Map(),
         productsByPeriod: new Map(),
+        byProductPeriod: new Map(),
       };
       // Identity follows the newest month, and inside it the biggest row: a renamed pharmacy shows its
       // current name, and a pharmacy that moved area shows where it buys now.
@@ -376,6 +385,16 @@ export function buildPharmacyActions(input: {
         const bought = aggregate.productsByPeriod.get(period) ?? new Set<string>();
         bought.add(code);
         aggregate.productsByPeriod.set(period, bought);
+        if (!productNames.has(code)) productNames.set(code, text(row.productName) || code);
+      }
+      if (input.includeHistory && text(row.productCode)) {
+        const code = upper(row.productCode);
+        const months = aggregate.byProductPeriod.get(code) ?? new Map<string, [number, number]>();
+        const cell = months.get(period) ?? [0, 0];
+        cell[0] += money(row.effectiveUnits);
+        cell[1] += value;
+        months.set(period, cell);
+        aggregate.byProductPeriod.set(code, months);
         if (!productNames.has(code)) productNames.set(code, text(row.productName) || code);
       }
       pharmacies.set(key, aggregate);
@@ -409,6 +428,16 @@ export function buildPharmacyActions(input: {
             ]
               .map((code) => productNames.get(code) ?? code)
               .sort((left, right) => left.localeCompare(right)),
+            productHistory: [...aggregate.byProductPeriod]
+              .map(([code, months]) => ({
+                productName: productNames.get(code) ?? code,
+                months: windowPeriods.map((period) => {
+                  const cell = months.get(period);
+                  return { period, units: round2(cell?.[0] ?? 0), value: round2(cell?.[1] ?? 0) };
+                }),
+              }))
+              .filter((product) => product.months.some((month) => Math.abs(month.units) > EPSILON || Math.abs(month.value) > EPSILON))
+              .sort((left, right) => left.productName.localeCompare(right.productName)),
           }
         : {}),
     };
