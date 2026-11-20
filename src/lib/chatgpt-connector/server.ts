@@ -3,7 +3,9 @@
  * ONE person's access context — the owner or the CEO, checked live by identity.ts before this runs.
  *
  * Every tool is read-only and runs as that person: the tool asserts the same permission and scope
- * the matching Phoenix screen does. A tool the person's seat may not use is not even listed.
+ * the matching Phoenix screen does. A tool the person's seat may not use is not even listed. The two
+ * capture tools (tools/screens.ts) open the live page behind a GET-only fence and show the result in
+ * the capture viewer (browser/viewer.ts), which this server lists as an MCP Apps resource.
  *
  * Each call is bounded (40 s), turns a ToolRefusal into a plain message ChatGPT reads to the person,
  * turns any other failure into a short "could not" without the internals, and leaves one audit row
@@ -17,8 +19,10 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 
+import { CAPTURE_VIEWER_URI, captureToolMeta, captureViewerResource, IMAGE_META_KEY, VIDEO_META_KEY } from "./browser/viewer";
 import { FILE_TOOLS } from "./files";
 import { DOMAIN_TOOLS } from "./tools";
+import { CAPTURE_TOOLS } from "./tools/screens";
 import { ToolRefusal, type ConnectorRole, type ConnectorTool, type ToolAnswer } from "./types";
 
 export const CONNECTOR_TOOL_TIMEOUT_MS = 40_000;
@@ -32,10 +36,11 @@ export const CONNECTOR_INSTRUCTIONS = [
   "Sales and target figures come only from the published monthly closing. Never add units of different products; compare by value.",
   "Show people by name, never by HR number alone. Dates are Cairo dates.",
   "When the person wants a sheet or a PDF, call phoenix_make_sheet or phoenix_make_pdf with the rows, and give them the download link it returns.",
+  "When the person wants to SEE a Phoenix page, call phoenix_screenshot_page; for a moving look at one to three pages, call phoenix_record_video. Both open the live page read-only as the person, and return a picture or video plus a link only they can open.",
 ].join(" ");
 
 export function allConnectorTools(): ConnectorTool[] {
-  return [...DOMAIN_TOOLS, ...FILE_TOOLS] as ConnectorTool[];
+  return [...DOMAIN_TOOLS, ...FILE_TOOLS, ...CAPTURE_TOOLS] as ConnectorTool[];
 }
 
 export function toolsForRole(role: string, tools: ConnectorTool[] = allConnectorTools()): ConnectorTool[] {
@@ -76,10 +81,25 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 }
 
 type ToolResult = {
-  content: Array<{ type: "text"; text: string }>;
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
   structuredContent?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
   isError?: boolean;
 };
+
+/**
+ * A capture's pictures as MCP image blocks, and its video (and the picture again, for a host that only
+ * hands the view `window.openai`) in `_meta` for the capture viewer — never in the text ChatGPT reads.
+ */
+function mediaParts(answer: ToolAnswer): Pick<ToolResult, "_meta"> & { images: Array<{ type: "image"; data: string; mimeType: string }> } {
+  const attachments = answer.attachments ?? [];
+  const images = attachments.flatMap((item) => (item.type === "image" ? [{ type: "image" as const, data: item.data, mimeType: item.mimeType }] : []));
+  const video = attachments.find((item) => item.type === "video");
+  const meta: Record<string, unknown> = {};
+  if (images[0]) meta[IMAGE_META_KEY] = { data: images[0].data, mimeType: images[0].mimeType };
+  if (video) meta[VIDEO_META_KEY] = { data: video.data, mimeType: video.mimeType, url: video.url };
+  return { images, ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}) };
+}
 
 /** Runs one tool for one person. Exported for the tests; the MCP server calls it per request. */
 export async function runConnectorTool(
@@ -97,9 +117,11 @@ export async function runConnectorTool(
     }
     const answer = await withTimeout(tool.run(ctx, input as never), options.timeoutMs ?? CONNECTOR_TOOL_TIMEOUT_MS);
     const rendered = renderAnswer(answer);
+    const media = mediaParts(answer);
     result = {
-      content: [{ type: "text", text: rendered.text }],
+      content: [{ type: "text", text: rendered.text }, ...media.images],
       structuredContent: rendered.cut ? { summary: answer.summary, cut: true } : { summary: answer.summary, data: answer.data as unknown },
+      ...(media._meta ? { _meta: media._meta } : {}),
     };
   } catch (error) {
     if (error instanceof ToolRefusal) {
@@ -136,6 +158,15 @@ export async function runConnectorTool(
 
 export function buildConnectorServer(ctx: AccessContext, tools: ConnectorTool[] = toolsForRole(ctx.role ?? "")): McpServer {
   const server = new McpServer({ name: "phoenix", title: "Phoenix", version: "1.0.0" }, { instructions: CONNECTOR_INSTRUCTIONS });
+  if (tools.some((tool) => tool.viewer)) {
+    const viewer = captureViewerResource();
+    server.registerResource(
+      "phoenix-capture",
+      CAPTURE_VIEWER_URI,
+      { title: "Phoenix capture", description: "Shows a screenshot or video of a live Phoenix page.", mimeType: viewer.mimeType },
+      async () => ({ contents: [viewer] }),
+    );
+  }
   for (const tool of tools) {
     server.registerTool(
       tool.name,
@@ -144,6 +175,7 @@ export function buildConnectorServer(ctx: AccessContext, tools: ConnectorTool[] 
         description: tool.description,
         inputSchema: tool.input,
         annotations: { title: tool.title, readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        ...(tool.viewer ? { _meta: captureToolMeta("Opening the page in Phoenix", "Capture ready") } : {}),
       },
       // The SDK validates the input against `tool.input` before this runs.
       (async (input: unknown) => runConnectorTool(ctx, tool, input)) as never,

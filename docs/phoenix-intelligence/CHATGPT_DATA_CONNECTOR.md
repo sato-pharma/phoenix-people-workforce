@@ -95,6 +95,52 @@ only when it is its actor's typed text; a blocked address and every other row st
 `maskUnrecognizedIdentifiers` (`tools/table-guard.ts`), runs on every page of the reader and the export, and refuses the read
 when the list of accounts cannot be loaded.
 
+## Screenshots and videos (20 Nov 2026)
+
+The owner asked for it in his words: "I WANT THE CINNECTER BE ABLE TO TAKE SCEEN SHOTS AND RE CORD
+VIDEOS". He chose the live data connector over the masked staging inspector. Two tools do it, in
+`src/lib/chatgpt-connector/tools/screens.ts`. Both seats, the owner and the CEO, can use them.
+
+- **`phoenix_screenshot_page`** takes `{ path, viewport?, fullPage? }`. `path` is a page inside
+  Phoenix, starting with `/`. The screen is desktop 1440, tablet 768 or mobile 390. A full-page capture
+  stops at 12,000 pixels.
+- **`phoenix_record_video`** takes `{ paths[1..3], viewport? }`. It opens each page and scrolls it to the
+  bottom, for about 16 seconds of video in all. ffmpeg joins the frames into an MP4 (libx264), or a WebM
+  when libx264 is missing.
+
+**How a capture runs.** Chromium is the same browser the offer-letter PDFs use (`withChromiumSlot`). It
+opens the page on this server's own loopback address: `http://127.0.0.1:$PORT`, or
+`PHOENIX_CAPTURE_ORIGIN` when that is set. It signs in with a five-minute Phoenix session minted for the
+person who asked (`browser/session.ts`). The session's user agent is "Phoenix ChatGPT connector capture",
+and it is revoked when the capture ends, with reason `chatgpt_connector_capture`. So the picture shows
+exactly what that person's own screen shows.
+
+**What stops a capture from changing anything** (`browser/fence.ts`):
+
+- The page path is checked before any browser opens. It must be inside Phoenix, never `/api`, never a
+  page whose server render writes, and never a download, sign-out or cron address.
+- Every request the page sends goes through the fence. Only GET and HEAD pass. Every other method, and
+  every Server Action, is answered 204 and never reaches Phoenix, so a page that "saves" saved nothing.
+  The answer counts each one it stopped.
+- GETs that write are refused too: every API route and every page whose render writes, from the list
+  built from source (`scripts/phoenix-inspect/generated/side-effect-routes.json`, traced into the image
+  by `next.config.ts`), plus the inspector's never-touch paths. **If that list cannot be read, the fence
+  fails closed and no capture runs.**
+- Downloads are denied, pop-ups are closed and dialogs are dismissed. Requests to other sites are https
+  only.
+
+**What comes back.** The picture or video is stored like the sheets and PDFs: a `connector_files` row
+(the kinds `png`, `mp4` and `webm` were added by `20261120111031`) and a link that only the same
+person opens, for 7 days. ChatGPT shows the result in the **capture viewer** (`browser/viewer.ts`,
+`ui://phoenix/capture-v1.html`). It is an MCP Apps view, because ChatGPT does not show a tool's own image
+block. The picture goes out as an image block. The video goes in the result's `_meta` (`phoenix/video`)
+when it is 5 MB or less. Base64 never goes in the text ChatGPT reads. The viewer fetches nothing from
+outside. Change the page, and bump the version in its URI.
+
+**Settings.** `PHOENIX_FFMPEG_PATH` gives ffmpeg's path (default `ffmpeg`, installed in the runner image
+by the `Dockerfile`). `PHOENIX_CAPTURE_ORIGIN` overrides the loopback address. When ffmpeg is missing,
+the video tool says so and the screenshot tool still works.
+
 ## The kill switch
 
 To end every ChatGPT connection at once, run this on production:
@@ -119,8 +165,9 @@ connection. Removing the connector in ChatGPT does too.
 | The MCP server, audit and limits | `src/lib/chatgpt-connector/server.ts` |
 | The tools, module by module | `src/lib/chatgpt-connector/tools/` |
 | The sheet and PDF tools | `src/lib/chatgpt-connector/files.ts` |
-| Tables | `supabase/migrations/20261117130928_chatgpt_connector_oauth.sql` |
-| Tests | `tests/chatgpt-connector-oauth.test.ts`, `tests/chatgpt-connector-tools.test.ts` |
+| Screenshots and videos (fence, session, browser, viewer) | `src/lib/chatgpt-connector/browser/`, `tools/screens.ts` |
+| Tables | `supabase/migrations/20261117130928_chatgpt_connector_oauth.sql`, `20261120111031_chatgpt_connector_capture_file_kinds.sql` |
+| Tests | `tests/chatgpt-connector-oauth.test.ts`, `tests/chatgpt-connector-tools.test.ts`, `tests/chatgpt-connector-capture.test.ts` |
 
 To add a tool, put it in the right `tools/<module>.ts` file and use `defineTool`. Assert the page's own
 permission, narrow the rows with the page's scope helper, and return `{ summary, data }`. Never add a

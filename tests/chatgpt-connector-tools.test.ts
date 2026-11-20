@@ -467,7 +467,7 @@ function testToolSources() {
     assert.ok(index.includes(tool), `${tool} is in DOMAIN_TOOLS`);
   }
   const names = [...all.matchAll(/name:\s*"([^"]+)"/g)].map((match) => match[1]).filter((name) => name.includes("_"));
-  assert.equal(names.length, 13, "thirteen tools are defined");
+  assert.equal(names.length, 15, "fifteen tools are defined: thirteen readers plus the screenshot and video tools (screens.ts)");
   for (const name of names) assert.match(name, /^phoenix_[a-z_]+$/, `${name} is snake_case and starts with phoenix_`);
 
   const tables = source("tables.ts");
