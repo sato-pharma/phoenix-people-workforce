@@ -24,6 +24,8 @@ import {
   annualRate,
   deletionRefund,
   openingStatement,
+  premiumInstalmentCount,
+  pricingAge,
   sumMoney,
   type MedicalInsuranceCategory,
   type MedicalInsuranceMemberType,
@@ -418,6 +420,9 @@ export type PolicyYearCost = {
    * counted). Those lines carry no movement, so this is the amount the "Still to do" table shows for them.
    */
   plannedOpening: { people: number; total: number };
+  /** How many instalments the year is paid in (the rate card's `premiumInstalments`), and from which day. */
+  premiumInstalments: number;
+  policyStartsOn: string;
   totals: {
     opening: number;
     additions: number;
@@ -444,7 +449,7 @@ export function plannedLinesTotal(year: Pick<PolicyYearCost, "planned" | "planne
 /**
  * The year's cost under the contract: the opening bill for everyone on the policy from its first day, then
  * every joiner's charge and leaver's refund on the register, then what the rule says is still to be done.
- * The age that prices a person is their age on the day their cover starts.
+ * The age that prices a person is the insurer's: the year their cover starts less the year of birth (`pricingAge`).
  */
 export function buildPolicyYearCost(input: {
   actions: readonly MedicalInsuranceAction[];
@@ -461,7 +466,7 @@ export function buildPolicyYearCost(input: {
   let unpriced = 0;
 
   const priceOf = (category: MedicalInsuranceCategory | null, birthDate: string | null, coverageStart: string): Price => {
-    if (!category) return { age: ageOn(birthDate, coverageStart), annual: null, band: null, reason: "Plan not decided" };
+    if (!category) return { age: pricingAge(birthDate, coverageStart), annual: null, band: null, reason: "Plan not decided" };
     const rate = annualRate(rateCard, { birthDate, category, coverageStart });
     const band = rate.band >= 0 ? ageBandWords(rateCard.ageBands[rate.band]) : null;
     return rate.priced ? { age: rate.age, annual: rate.annual, band, reason: null } : { age: rate.age, annual: null, band, reason: rate.reason };
@@ -572,6 +577,8 @@ export function buildPolicyYearCost(input: {
     openingPeople,
     planned,
     plannedOpening: { people: openingAdds.length, total: plannedOpening },
+    policyStartsOn: policy.startsOn,
+    premiumInstalments: premiumInstalmentCount(rateCard),
     totals: {
       additions,
       deletions,

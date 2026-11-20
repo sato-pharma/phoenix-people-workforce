@@ -139,7 +139,7 @@ export function policyNumberWords(policy: Pick<MedicalInsurancePolicyView, "poli
  * beside the cost, because every figure on the tab rests on these.
  */
 export const MEDICAL_INSURANCE_OPEN_POINTS: readonly string[] = [
-  "The age that picks a person's band is taken on the day their cover starts. The policy does not say which day it means.",
+  "The age that picks a person's band is the insurer's: the year cover starts less the year of birth, as Libano-Suisse's Initial Breakdown priced all 139 people. For a joiner the year of their own first day is assumed.",
   "A joiner is charged the 1.55% tax and the EGP 30 card on top of the premium, and a leaver's refund gives back the tax but not the card. The policy states the fees only for the opening bill.",
   "The policy's annex refunds a deletion for the rest of the term whether or not a claim was made. The cost counts it by the day from the day after the last covered day. A person removed because they were never an employee on the policy dates is refunded from the first day.",
   "The policy quotes every band up to 79. Anyone 80 or over has no rate: they are counted but not priced until Libano-Suisse quotes one.",

@@ -14,7 +14,8 @@
 // WHAT THE RULE DOES NOT SAY, AND THIS FILE ASSUMES (each one is said on the Cost tab):
 //   * A person's monthly cost is their annual premium plus the contract's 1.55% tax and supervision, divided
 //     by twelve. The EGP 30 card and the EGP 90 issue fee are charged once, so they are in no month.
-//   * The premium is the one the contract prices: the plan, and the age band on the day cover starts.
+//   * The premium is the one the contract prices: the plan, and the insurer's age band (the year cover starts
+//     less the year of birth).
 //
 // 🔴 ONLY THE SUPER ADMIN SEES THIS. It is built into `MedicalInsuranceMoneyView`, which is read only after
 // medical_insurance_invoices:read has passed (view.ts). It decides nothing and moves nothing: no payroll, no
@@ -33,7 +34,7 @@ export const EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY = 120;
 
 export const MONTHLY_SPLIT_ASSUMPTIONS: readonly string[] = [
   "A month of cover is the person's annual premium plus the 1.55% tax and supervision, divided by twelve. The EGP 30 card and the EGP 90 issue fee are charged once and are in no month.",
-  "The premium is the contract's: the person's plan, and their age band on the day their cover starts.",
+  "The premium is the contract's: the person's plan, and the age band the insurer prices (the year their cover starts less the year of birth).",
 ];
 
 export type MonthlySplitMember = {
