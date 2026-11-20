@@ -12,8 +12,8 @@ import { filterPharmacyItems, listFilterWords, type PharmacyListFilter } from "@
 // (sos-pharmacy-actions.ts); this file only lays them out, one sheet per list, with each pharmacy's
 // month-by-month history so a manager can filter for exactly the pattern he wants.
 //
-// 🔴 It is the SAME result the screen reads, built uncapped — never a second rule. Value only, EGP;
-// units are never added across products. Geography by NAME, never by code. El Qema never reaches it:
+// 🔴 It is the SAME result the screen reads, built uncapped — never a second rule. Each month's units
+// stand beside its EGP, one row per pharmacy and product; units are never added across products. Geography by NAME, never by code. El Qema never reaches it:
 // the loader never passes revealSource, and Main Stores rows are not pharmacies.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -40,7 +40,15 @@ export function seatLineKey(value: string | null | undefined): string {
 
 export type PharmacyActionSheetKey = "stopped" | "dropping" | "newPharmacies";
 
-/** Every pharmacy of one list, grouped by area name (the order inside an area is the list's own). */
+/**
+ * Every pharmacy of one list, ONE ROW PER PHARMACY AND PRODUCT, grouped by area name (the order inside
+ * an area is the list's own). Each month stands as two plain numbers side by side — its units, then its
+ * EGP — so a person can sort and filter on any one of them (owner, 2026-11-20: "beside every value
+ * column, add units … separate everything to be able to filter").
+ *
+ * 🔴 A row is ONE product, so a unit count is never a sum of two products (or two strengths of one);
+ * the sheet's total row adds EGP only — every units column is kept out of it.
+ */
 export function pharmacyActionSheetRows(input: {
   items: readonly PharmacyActionItem[];
   /** Newest first, as the result carries them. */
@@ -55,10 +63,10 @@ export function pharmacyActionSheetRows(input: {
   distributorNameOf?: (code: string) => string;
 }): ExportRow[] {
   const ordered = [...input.items].sort((left, right) => left.areaName.localeCompare(right.areaName));
-  return ordered.map((item) => {
+  const rows: ExportRow[] = [];
+  for (const item of ordered) {
     const people = input.peopleByArea.get(item.areaCode.toUpperCase());
-    const valueOf = new Map((item.history ?? []).map((entry) => [entry.period, entry.value]));
-    const row: ExportRow = {
+    const base: ExportRow = {
       area: item.areaName,
       rep: people?.repName ?? "Vacant",
       manager: people?.managerName ?? "",
@@ -68,81 +76,44 @@ export function pharmacyActionSheetRows(input: {
       channel: item.isDirect ? "Direct order" : "Distributor",
       distributor: input.distributorNameOf ? input.distributorNameOf(item.key.split("|")[0] ?? "") : "",
     };
-    for (const period of input.periods) row[`m_${period}`] = valueOf.get(period) ?? 0;
-    row.priorAverage = item.priorAverage;
-    row.change = truncatedPercent(item.change);
-    row.lastBought = periodLabel(item.lastBoughtPeriod);
-    row.closingsBought = item.closingsBought;
-    row.products = boxesByProductText(item, input.periods);
-    return row;
-  });
-}
-
-const formatBoxes = (units: number) => (Number.isInteger(units) ? String(units) : units.toFixed(2));
-
-/**
- * Each product's boxes month by month, oldest first: "Conviban 25 mg: Sep 4 · Oct 0 | Tebofortine 40 mg:
- * Sep 12 · Oct 6". 🔴 One count per product — boxes of two products are never added into one figure.
- */
-export function boxesByProductText(item: PharmacyActionItem, periods: readonly string[]): string {
-  const oldestFirst = [...periods].reverse();
-  const products = item.productHistory ?? [];
-  if (products.length === 0) return (item.productsBought ?? []).join(" · ");
-  return products
-    .map((product) => {
-      const byPeriod = new Map(product.months.map((month) => [month.period, month.units]));
-      const months = oldestFirst.map((period) => `${periodLabel(period).slice(0, 3)} ${formatBoxes(byPeriod.get(period) ?? 0)}`);
-      return `${product.productName}: ${months.join(" · ")}`;
-    })
-    .join(" | ");
-}
-
-/**
- * The same three lists, one row per pharmacy AND product, so boxes stand as numbers a person can sort
- * and filter. 🔴 Every row is ONE product, so a box count is never a sum of two products; the sheet's
- * total row adds EGP only — the box columns are kept out of it.
- */
-export function pharmacyProductSheetRows(input: {
-  lists: { label: string; items: readonly PharmacyActionItem[] }[];
-  periods: readonly string[];
-  peopleByArea: ReadonlyMap<string, AreaPeople>;
-  distributorNameOf?: (code: string) => string;
-}): ExportRow[] {
-  const rows: ExportRow[] = [];
-  for (const list of input.lists) {
-    const ordered = [...list.items].sort((left, right) => left.areaName.localeCompare(right.areaName));
-    for (const item of ordered) {
-      const people = input.peopleByArea.get(item.areaCode.toUpperCase());
-      for (const product of item.productHistory ?? []) {
-        const byPeriod = new Map(product.months.map((month) => [month.period, month]));
-        const row: ExportRow = {
-          list: list.label,
-          area: item.areaName,
-          rep: people?.repName ?? "Vacant",
-          brick: item.brickName,
-          pharmacy: item.name,
-          distributor: input.distributorNameOf ? input.distributorNameOf(item.key.split("|")[0] ?? "") : "",
-          product: product.productName,
-        };
-        for (const period of input.periods) {
-          row[`u_${period}`] = byPeriod.get(period)?.units ?? 0;
-          row[`v_${period}`] = byPeriod.get(period)?.value ?? 0;
-        }
-        rows.push(row);
+    const products = item.productHistory ?? [];
+    if (products.length === 0) {
+      // No product detail loaded: one row, the pharmacy's EGP per month, units left blank (never 0).
+      const valueOf = new Map((item.history ?? []).map((entry) => [entry.period, entry.value]));
+      const row: ExportRow = { ...base, product: "" };
+      for (const period of input.periods) {
+        row[`u_${period}`] = null;
+        row[`v_${period}`] = valueOf.get(period) ?? 0;
       }
+      row.lastBought = periodLabel(item.lastBoughtPeriod);
+      rows.push(row);
+      continue;
+    }
+    for (const product of products) {
+      const byPeriod = new Map(product.months.map((month) => [month.period, month]));
+      const row: ExportRow = { ...base, product: product.productName };
+      for (const period of input.periods) {
+        row[`u_${period}`] = byPeriod.get(period)?.units ?? 0;
+        row[`v_${period}`] = byPeriod.get(period)?.value ?? 0;
+      }
+      const lastBought = [...product.months]
+        .sort((left, right) => right.period.localeCompare(left.period))
+        .find((month) => Math.abs(month.units) > 0.0001 || Math.abs(month.value) > 0.0001);
+      row.lastBought = periodLabel(lastBought?.period);
+      rows.push(row);
     }
   }
   return rows;
 }
 
-function sheetColumns(periods: readonly string[], earlier: number): ExportColumn[] {
-  // Oldest month on the left, the month the list is read as of on the right — the way a person reads a trend.
-  const months = [...periods].reverse().map<ExportColumn>((period, index, all) => ({
-    key: `m_${period}`,
-    label: index === all.length - 1 ? `${periodLabel(period)} (EGP) — this closing` : `${periodLabel(period)} (EGP)`,
-    numeric: true,
-    width: 16,
-  }));
+/** The three list sheets' columns. Exported for the test that pins units beside EGP and out of the total. */
+export function pharmacyListColumns(periods: readonly string[]): ExportColumn[] {
+  // Oldest month on the left, the month the list is read as of on the right — the way a person reads a
+  // trend — and each month's units directly beside its EGP.
+  const months = [...periods].reverse().flatMap<ExportColumn>((period) => [
+    { key: `u_${period}`, label: `${periodLabel(period)} units`, numeric: true, excludeFromTotal: true, width: 12 },
+    { key: `v_${period}`, label: `${periodLabel(period)} (EGP)`, numeric: true, width: 15 },
+  ]);
   return [
     { key: "area", label: "Area", width: 22 },
     { key: "rep", label: "Medical rep", width: 24 },
@@ -152,17 +123,9 @@ function sheetColumns(periods: readonly string[], earlier: number): ExportColumn
     { key: "address", label: "Address", width: 40 },
     { key: "channel", label: "Bought through", width: 14 },
     { key: "distributor", label: "Distributor", width: 18 },
+    { key: "product", label: "Product", width: 26 },
     ...months,
-    {
-      key: "priorAverage",
-      label: earlier === 1 ? "Month before (EGP)" : `Average of the ${earlier} months before (EGP)`,
-      numeric: true,
-      width: 18,
-    },
-    { key: "change", label: "Change vs average %", numeric: true, excludeFromTotal: true, width: 14 },
     { key: "lastBought", label: "Last bought", width: 13 },
-    { key: "closingsBought", label: `Months bought (of ${periods.length})`, numeric: true, excludeFromTotal: true, width: 12 },
-    { key: "products", label: "Boxes by product, month by month", width: 60 },
   ];
 }
 
@@ -265,12 +228,12 @@ export async function buildPharmacyActionsWorkbook(input: {
     rows: summaryRows,
   });
 
-  const columns = sheetColumns(periods, earlier);
+  const columns = pharmacyListColumns(periods);
   for (const list of lists) {
     addPhoenixTableSheet(workbook, {
       theme: "house",
       title: list.title,
-      subtitle: `${scopeWords} · ${list.rule}`,
+      subtitle: `${scopeWords} · ${list.rule} · one row per pharmacy and product · units are per product and never added across products`,
       sheetName: list.sheet,
       columns,
       rows: pharmacyActionSheetRows({
@@ -281,34 +244,6 @@ export async function buildPharmacyActionsWorkbook(input: {
       }),
     });
   }
-
-  // Boxes beside the money: one row per pharmacy and product, the boxes and EGP of each month.
-  const oldestFirst = [...periods].reverse();
-  addPhoenixTableSheet(workbook, {
-    theme: "house",
-    title: "Boxes by product",
-    subtitle: `${scopeWords} · one row per pharmacy and product · boxes are per product and are never added across products`,
-    sheetName: "Boxes by product",
-    columns: [
-      { key: "list", label: "List", width: 14 },
-      { key: "area", label: "Area", width: 20 },
-      { key: "rep", label: "Medical rep", width: 22 },
-      { key: "brick", label: "Brick", width: 20 },
-      { key: "pharmacy", label: "Pharmacy", width: 32 },
-      { key: "distributor", label: "Distributor", width: 16 },
-      { key: "product", label: "Product", width: 26 },
-      ...oldestFirst.flatMap<ExportColumn>((period) => [
-        { key: `u_${period}`, label: `${periodLabel(period)} boxes`, numeric: true, excludeFromTotal: true, width: 11 },
-        { key: `v_${period}`, label: `${periodLabel(period)} (EGP)`, numeric: true, width: 14 },
-      ]),
-    ],
-    rows: pharmacyProductSheetRows({
-      lists: lists.map((list) => ({ label: list.title === "Dropping 30% or more" ? "Dropping 30%+" : list.title, items: inArea(actions[list.key]) })),
-      periods,
-      peopleByArea: input.peopleByArea,
-      distributorNameOf: input.distributorNameOf,
-    }),
-  });
 
   return workbook.xlsx.writeBuffer();
 }

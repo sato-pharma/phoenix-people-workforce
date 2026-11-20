@@ -13,10 +13,10 @@ import {
 } from "../src/lib/sales/sos-pharmacy-actions.ts";
 import { buildMonthPace } from "../src/lib/sales/sos-month-pace.ts";
 import {
-  boxesByProductText,
   pharmacyActionSheetRows,
+  pharmacyListColumns,
   pharmacyActionsFileName,
-  pharmacyProductSheetRows,
+  periodLabel,
   seatLineKey,
   truncatedPercent,
 } from "../src/lib/sales/sos-pharmacy-actions-workbook.ts";
@@ -168,35 +168,46 @@ export function runSosPharmacyActionsTests() {
       distributorNameOf: (code) => (code === "IBN" ? "Ibn Sina" : "Unnamed distributor"),
     });
     assert.equal(rows[0].distributor, "Ibn Sina", "the distributor by name, never its code");
-    assert.equal(rows.length, 2);
+    assert.deepEqual(
+      rows.map((entry) => [entry.pharmacy, entry.product]),
+      [["Pharmacy SEPT", "Alpha"], ["Pharmacy SEPT", "Zeta"], ["Pharmacy JUNE", "Product One"]],
+      "one row per pharmacy AND product",
+    );
     assert.equal(rows[0].rep, "Mona Adel");
     assert.equal(rows[0].manager, "Hany Saad");
-    assert.equal(rows[0][`m_${P1}`], 35, "the September column holds its value");
-    assert.equal(rows[0][`m_${LATEST}`], 0, "the month it stopped reads 0, never blank");
-    assert.equal(rows[0].lastBought, "Jul 2026");
-    assert.equal(
-      rows[0].products,
-      "Alpha: May 0 · Jun 0 · Jul 10 · Aug 0 | Zeta: May 0 · Jun 0 · Jul 7 · Aug 0",
-      "boxes beside the money, one count per product, oldest month first — never one total of 17",
+    assert.deepEqual(
+      rows.slice(0, 2).map((entry) => [entry[`u_${P1}`], entry[`v_${P1}`], entry[`u_${LATEST}`], entry[`v_${LATEST}`]]),
+      [[10, 5, 0, 0], [7, 30, 0, 0]],
+      "each product's own units beside its own EGP — a unit count is never a sum of two products (never 17)",
     );
+    assert.equal(rows[0].lastBought, "Jul 2026", "last bought, per product");
     assert.deepEqual(
       sept?.productHistory?.map((product) => [product.productName, product.months.map((month) => month.units)]),
       [["Alpha", [0, 10, 0, 0]], ["Zeta", [0, 7, 0, 0]]],
-      "each product's boxes per closing, newest first, 0 for a month it bought none",
+      "each product's units per closing, newest first, 0 for a month it bought none",
     );
-    assert.equal(screen.stopped[0].productHistory, undefined, "the screen never carries the boxes");
-    const productRows = pharmacyProductSheetRows({
-      lists: [{ label: "Stopped buying", items: [sept!] }],
-      periods: [LATEST, P1, P2, P3],
-      peopleByArea: new Map(),
-    });
+    assert.equal(screen.stopped[0].productHistory, undefined, "the screen never carries the units");
+    const columns = pharmacyListColumns([LATEST, P1]);
+    const monthLabels = columns.filter((column) => /^[uv]_/.test(column.key)).map((column) => column.label);
     assert.deepEqual(
-      productRows.map((entry) => [entry.product, entry[`u_${P1}`], entry[`v_${P1}`], entry[`u_${LATEST}`]]),
-      [["Alpha", 10, 5, 0], ["Zeta", 7, 30, 0]],
-      "one row per pharmacy AND product: a box count is never a sum of two products",
+      monthLabels,
+      [`${periodLabel(P1)} units`, `${periodLabel(P1)} (EGP)`, `${periodLabel(LATEST)} units`, `${periodLabel(LATEST)} (EGP)`],
+      "oldest first, each month's units directly beside its EGP",
     );
-    assert.equal(productRows[0].list, "Stopped buying");
-    assert.equal(boxesByProductText({ ...sept!, productHistory: undefined }, [LATEST]), "Alpha · Zeta", "without boxes it falls back to the names");
+    assert.ok(
+      columns.filter((column) => column.key.startsWith("u_")).every((column) => column.numeric && column.excludeFromTotal),
+      "units are numbers to filter on, and the total row never adds them",
+    );
+    assert.ok(
+      columns.filter((column) => column.key.startsWith("v_")).every((column) => column.numeric && !column.excludeFromTotal),
+      "EGP is the one figure the total row adds",
+    );
+    const bare = pharmacyActionSheetRows({ items: [{ ...sept!, productHistory: undefined }], periods: [LATEST, P1], peopleByArea: new Map() });
+    assert.deepEqual(
+      bare.map((entry) => [entry.product, entry[`u_${P1}`], entry[`v_${P1}`]]),
+      [["", null, 35]],
+      "without product detail: one row, the pharmacy's EGP, units blank (never a made-up 0)",
+    );
     assert.ok(!Object.values(rows[0]).includes("CA1"), "geography by name, never by code");
     const vacant = pharmacyActionSheetRows({ items: [sept!], periods: [LATEST], peopleByArea: new Map() });
     assert.equal(vacant[0].rep, "Vacant", "an area with no rep says so");
