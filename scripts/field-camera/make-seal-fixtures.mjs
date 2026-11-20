@@ -17,6 +17,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { refuseArguments } from "../lib/refuse-arguments.mjs";
+
+// This script takes no arguments, so it says so instead of ignoring one (scripts/lib/refuse-arguments.mjs).
+refuseArguments({
+  name: "field-camera/make-seal-fixtures",
+  usage: `make-seal-fixtures: rebuild tests/fixtures/field-camera/seal-fixtures.json from fresh TEST keys.
+
+  node scripts/field-camera/make-seal-fixtures.mjs      rebuild the fixtures
+  node scripts/field-camera/make-seal-fixtures.mjs -h   this text
+
+It takes no arguments and has no dry run: every run makes new keys, so the whole file changes.`,
+  hints: ["to see the cases without writing, read tests/fixtures/field-camera/seal-fixtures.json"],
+});
+
 const PACKAGE = "com.satopharma.phoenixcamera";
 const DIGEST = "4417e26fb1a41c4d374297f305f043edeee00e11c55a14bd5ae69fff1ff1f4f1";
 const CHALLENGE = "PHOENIX-CAMERA-SEAL-V1";

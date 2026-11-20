@@ -13,7 +13,7 @@ import {
   splitSealedFile,
 } from "../src/lib/phoenix-crm/field-camera/seal-format.ts";
 import { parseSealPayload, sealPayloadProblems, sealPayloadWarnings, type SealPayload } from "../src/lib/phoenix-crm/field-camera/seal-rules.ts";
-import { RELEASE_IDENTITY, verifySealedPhoto, type SealIdentity } from "../src/lib/phoenix-crm/field-camera/seal.ts";
+import { RELEASE_IDENTITY, verifySealedPhoto, type SealIdentity } from "../src/lib/phoenix-crm/server/field-camera-seal.ts";
 
 /**
  * Phoenix CRM — the Phoenix Camera's sealed photo (owner, 2026-11-20: a separate Android camera app that photographs

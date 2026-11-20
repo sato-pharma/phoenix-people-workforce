@@ -1,7 +1,7 @@
 /**
  * The Phoenix Camera seal — what its PAYLOAD must say before Phoenix lets it stand as a validated place.
  * Pure (no crypto, no database), so the test holds every rule; the signature and the phone's attestation are
- * judged in seal.ts, the history and the revocation list in server/field-camera.ts.
+ * judged in server/field-camera-seal.ts, the history and the revocation list in server/field-camera.ts.
  *
  * Owner, 20 Nov 2026: "with every precaution against fake locations and fraud". Each refusal below is one trick:
  *   - a fake-location app feeding the phone a point (Android marks the fix, and the app looks for one switched on);

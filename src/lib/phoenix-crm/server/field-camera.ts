@@ -3,7 +3,7 @@
  * (owner, 20 Nov 2026: the separate camera app for a clinic with no network, "with every precaution against fake
  * locations and fraud, and keep its seal").
  *
- * seal.ts judges the file itself (the picture, the signature, the phone's secure chip, our app, the payload). This
+ * field-camera-seal.ts judges the file itself (the picture, the signature, the phone's secure chip, our app, the payload). This
  * adds what needs Phoenix or the internet:
  *   - GOOGLE'S REVOCATION LIST: a phone whose attestation key leaked is refused. A list that cannot be read is
  *     said, never taken as clean, and does not refuse (the phone's chip already vouched).
@@ -14,7 +14,7 @@
 
 import { validationError } from "@/lib/http/api-errors";
 import { GOOGLE_ATTESTATION_ROOTS } from "@/lib/phoenix-crm/field-camera/google-roots";
-import { RELEASE_IDENTITY, verifySealedPhoto } from "@/lib/phoenix-crm/field-camera/seal";
+import { RELEASE_IDENTITY, verifySealedPhoto } from "@/lib/phoenix-crm/server/field-camera-seal";
 import type { SealPayload } from "@/lib/phoenix-crm/field-camera/seal-rules";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";

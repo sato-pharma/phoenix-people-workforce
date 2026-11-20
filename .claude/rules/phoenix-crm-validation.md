@@ -5,7 +5,7 @@ paths:
   - "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-customers,shared-place-list,shared-place-screens,place-match-board,validated-place-list,validation-review-queue,validation-reviews-board,signboard-retake-screen,live-photo-capture,capture-location,full-name-checks,pm-name-fields,trusted-point-screen,line-lookalike-board}.tsx"
   - "src/components/phoenix-crm/location-receiver.ts"
   - "src/lib/phoenix-crm/field-camera/**"
-  - "src/lib/phoenix-crm/server/field-camera.ts"
+  - "src/lib/phoenix-crm/server/field-camera{,-seal}.ts"
   - "scripts/field-camera/**"
   - "app/**/field-crm/validation-reviews/**"
   - "app/api/phoenix-crm/{shared-places,validation-reviews,full-names}/**"

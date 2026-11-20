@@ -660,7 +660,7 @@ export const MODULES = [
       "src/components/phoenix-crm/location-receiver.ts",
       // The Phoenix Camera seal (2026-11-20): what makes an offline sealed photo stand in for the live reading.
       "src/lib/phoenix-crm/field-camera/**",
-      "src/lib/phoenix-crm/server/field-camera.ts",
+      "src/lib/phoenix-crm/server/field-camera{,-seal}.ts",
       "scripts/field-camera/**",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/{shared-places,validation-reviews,full-names}/**",

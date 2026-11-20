@@ -9,7 +9,7 @@ build my own, but you must take every precaution against fake locations and frau
 | Half | Where | What it does |
 | --- | --- | --- |
 | The camera | `sato-pharma/phoenix-field-camera` (private; a separate repository, never under `mobile/`) | Live camera only, the satellites' fix and time, a stamp burned into the picture, and a seal signed by a key held in the phone's secure chip. Built and signed by that repository's `build` workflow. |
-| The verifier | `src/lib/phoenix-crm/field-camera/` and `src/lib/phoenix-crm/server/field-camera.ts` | Reads the seal from the uploaded file and decides whether it may stand in for the rep's live reading. |
+| The verifier | `src/lib/phoenix-crm/field-camera/` (the browser-safe format and the payload rules), `src/lib/phoenix-crm/server/field-camera-seal.ts` (the signature and the phone's chain) and `src/lib/phoenix-crm/server/field-camera.ts` | Reads the seal from the uploaded file and decides whether it may stand in for the rep's live reading. |
 
 ## The file
 
