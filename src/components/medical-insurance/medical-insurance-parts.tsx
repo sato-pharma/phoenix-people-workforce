@@ -31,7 +31,15 @@ export async function sendJson(url: string, method: "DELETE" | "PATCH" | "POST",
 
 /** Posts a JSON body and saves the file that comes back under the name the server gave it. */
 export async function downloadPosted(url: string, body: unknown, fallbackName: string) {
-  const response = await fetch(url, { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" });
+  await saveAnswerFile(await fetch(url, { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" }), fallbackName);
+}
+
+/** Reads a file with GET and saves it under the name the server gave it; a refusal keeps the server's own words. */
+export async function downloadGot(url: string, fallbackName: string) {
+  await saveAnswerFile(await fetch(url), fallbackName);
+}
+
+async function saveAnswerFile(response: Response, fallbackName: string) {
   await readAnswer(response);
   const named = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1];
   const link = document.createElement("a");
