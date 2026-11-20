@@ -43,7 +43,7 @@ export default async function EmployeePortalVacationControlPage() {
       errorBoundaryTitle="Vacation Control unavailable"
       title="Vacation Control"
     >
-      <VacationControl initialData={initialData} initialError={initialError} />
+      <VacationControl initialData={initialData} initialError={initialError} showHero={false} />
     </EmployeePortalPageShell>
   );
 }

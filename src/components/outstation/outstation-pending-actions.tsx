@@ -1,8 +1,8 @@
 "use client";
 
-import { BellRing } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { LandingTitle } from "@/components/employee-portal/landing-kit";
 import {
   DeparturePhotoCard,
   type DeparturePhotoPendingRequest,
@@ -37,17 +37,10 @@ export function OutstationPendingActions({
 
   return (
     <section aria-label="Needs you now" className="grid gap-3">
-      <div className="flex items-start gap-2 border-l-2 border-orange-500 bg-white px-3 py-2">
-        <BellRing aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-        <div className="min-w-0">
-          <p className="text-sm font-black text-slate-900">
-            Needs you now · {count === 1 ? "1 item" : `${count} items`}
-          </p>
-          <p className="mt-0.5 text-phx-md leading-relaxed text-slate-600">
-            Finish these on claims you already submitted. Each one holds its claim back until it is done.
-          </p>
-        </div>
-      </div>
+      {/* The heading alone: the tick, then what is owed and how many — no sentence under it. */}
+      <LandingTitle>
+        Needs you now · <span className="tabular-nums">{count === 1 ? "1 item" : `${count} items`}</span>
+      </LandingTitle>
       <DeparturePhotoCard
         employeeHrId={employeeHrId}
         onCaptured={() => router.refresh()}

@@ -1,19 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { CheckCircle2, RefreshCcw, Send, Undo2, XCircle } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS, LandingRailLine, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import {
   PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
   PortalSection,
   PortalSkeleton,
-  portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
-import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-kit";
+import { phxButtonAccentClassName, phxFieldClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
 import type { NativeVacationDayRequestRow, NativeVacationDayView } from "@/lib/crm/native-visits/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { cn } from "@/lib/utils";
 
 /**
  * Working on an approved vacation day (CRM phase 6, rule 9). A rep asks; his manager and HR each
@@ -67,6 +71,33 @@ function answeredAt(value: string | null) {
   return value ? ` · ${TIME_FORMAT.format(new Date(value))}` : "";
 }
 
+/** The extra classes every decision button carries: the keyboard ring, and no motion when asked. */
+const DECISION_EXTRA = `flex-1 sm:flex-none ${LANDING_FOCUS} motion-reduce:transition-none`;
+
+/** A page-level message: a white sheet with the tone's rail at the left. */
+function RailSheet({ children, rail, role }: { children: string; rail: string; role: "alert" | "status" }) {
+  return (
+    <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role={role}>
+      <LandingRailLine rail={rail}>{children}</LandingRailLine>
+    </div>
+  );
+}
+
+/** A message inside a card or form: coloured small text on a thin rail. */
+function RailNote({ children, tone }: { children: string; tone: "rose" | "emerald" }) {
+  return (
+    <p
+      className={cn(
+        "border-l-2 pl-3 text-sm font-semibold",
+        tone === "rose" ? "border-rose-500 text-rose-700" : "border-emerald-500 text-emerald-800",
+      )}
+      role={tone === "rose" ? "alert" : "status"}
+    >
+      {children}
+    </p>
+  );
+}
+
 function requestFields(row: NativeVacationDayRequestRow, withRep: boolean) {
   return [
     ...(withRep ? [{ label: "Rep", value: row.repName }] : []),
@@ -89,6 +120,7 @@ export function NativeVisitVacationDaysWorkspace() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
+  const fieldId = useId();
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -147,17 +179,19 @@ export function NativeVisitVacationDaysWorkspace() {
   }
 
   const refresh = (
-    <Button onClick={() => void load()} size="sm" type="button" variant="outline">
-      <RefreshCcw />
+    <button className={landingActionClassName("outline")} onClick={() => void load()} type="button">
+      <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" />
       Refresh
-    </Button>
+    </button>
   );
 
   if (!view) {
     return loadError ? (
-      <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
+      <RailSheet rail="bg-rose-500" role="alert">
+        {loadError}
+      </RailSheet>
     ) : (
-      <div aria-busy="true" className="grid min-w-0 gap-4">
+      <div aria-busy="true" className="grid min-w-0 gap-3">
         <span className="sr-only">Loading vacation-day requests</span>
         <PortalSkeleton className="h-28 w-full" />
         <PortalSkeleton className="h-40 w-full" />
@@ -180,54 +214,58 @@ export function NativeVisitVacationDaysWorkspace() {
   const answered = view.toDecide.filter((row) => !row.decideAs);
 
   return (
-    <div className="grid min-w-0 gap-4">
-      {loadError ? <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p> : null}
+    <div className="grid min-w-0 gap-3">
+      {loadError ? (
+        <RailSheet rail="bg-rose-500" role="alert">
+          {loadError}
+        </RailSheet>
+      ) : null}
 
       {view.canRequest ? (
-        <PortalSection
-          description="Use this only for a day HR already approved as your vacation. Visits on that day save once your manager and HR both approve."
-          title="Ask to work on a vacation day"
-        >
-          <div className="grid min-w-0 gap-4 px-4 py-4 sm:px-5">
-            <label className="grid gap-1">
-              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Day</span>
-              {/* One date needs no full-width bar on a desk; a phone keeps the whole width. */}
+        <PortalSection title="Ask to work on a vacation day">
+          <div className="grid min-w-0 gap-4 px-3 py-4 sm:px-4">
+            {/* One date needs no full-width bar on a desk; a phone keeps the whole width. */}
+            <FormField htmlFor={`${fieldId}-day`} label="Day">
               <input
-                className={`${portalInputClassName} sm:max-w-xs`}
+                className={cn(phxFieldClassName, "sm:max-w-xs")}
+                id={`${fieldId}-day`}
                 onChange={(event) => setVisitDate(event.target.value)}
                 type="date"
                 value={visitDate}
               />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Why you need to work</span>
+            </FormField>
+            <FormField htmlFor={`${fieldId}-reason`} label="Why you need to work">
               <textarea
-                className={`${portalInputClassName} min-h-24`}
+                className={cn(phxTextareaClassName, "min-h-24")}
+                id={`${fieldId}-reason`}
                 maxLength={1000}
                 onChange={(event) => setReason(event.target.value)}
                 value={reason}
               />
-            </label>
-            {formError ? <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p> : null}
-            {formNote ? (
-              <p className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{formNote}</p>
-            ) : null}
-            <div>
-              <Button disabled={formBusy || !visitDate || !reason.trim()} onClick={() => void submitRequest()} type="button">
-                <Send />
+            </FormField>
+            {formError ? <RailNote tone="rose">{formError}</RailNote> : null}
+            {formNote ? <RailNote tone="emerald">{formNote}</RailNote> : null}
+            <div className="border-t border-slate-200 pt-3">
+              <button
+                className={cn(phxButtonAccentClassName, LANDING_FOCUS, "motion-reduce:transition-none")}
+                disabled={formBusy || !visitDate || !reason.trim()}
+                onClick={() => void submitRequest()}
+                type="button"
+              >
+                <Send aria-hidden="true" className="h-4 w-4" />
                 Send to my manager and HR
-              </Button>
+              </button>
             </div>
           </div>
         </PortalSection>
       ) : null}
 
       {view.canRequest ? (
-        <PortalSection actions={refresh} description="Your requests from the last 30 days." title="Your requests">
+        <PortalSection actions={refresh} title="Your requests">
           {view.mine.length === 0 ? (
             <PortalEmptyState message="You have not asked to work on a vacation day." title="No requests" />
           ) : (
-            <div className="grid gap-px bg-slate-100">
+            <div className="grid gap-px bg-slate-200">
               {view.mine.map((row) => (
                 <PortalRecordCard
                   accent={accentFor(row.status)}
@@ -235,17 +273,17 @@ export function NativeVisitVacationDaysWorkspace() {
                     row.canCancel ? (
                       <div className="grid w-full gap-2">
                         <div>
-                          <Button
+                          <button
+                            className={landingActionClassName("outline")}
                             disabled={busyId === row.id}
                             onClick={() => void act(row, { action: "cancel", requestId: row.id }, "Could not withdraw it.")}
                             type="button"
-                            variant="outline"
                           >
-                            <Undo2 />
+                            <Undo2 aria-hidden="true" className="h-3.5 w-3.5" />
                             Withdraw
-                          </Button>
+                          </button>
                         </div>
-                        {rowError[row.id] ? <p className="text-sm text-red-700">{rowError[row.id]}</p> : null}
+                        {rowError[row.id] ? <RailNote tone="rose">{rowError[row.id]}</RailNote> : null}
                       </div>
                     ) : undefined
                   }
@@ -262,15 +300,11 @@ export function NativeVisitVacationDaysWorkspace() {
       ) : null}
 
       {view.canDecideAsManager || view.canDecideAsHr ? (
-        <PortalSection
-          actions={view.canRequest ? undefined : refresh}
-          description="Approve only when the rep really has to work that day. A refusal must say why."
-          title="Waiting for your answer"
-        >
+        <PortalSection actions={view.canRequest ? undefined : refresh} title="Waiting for your answer">
           {waiting.length === 0 ? (
             <PortalEmptyState message="No request is waiting for your answer." title="Nothing waiting" />
           ) : (
-            <div className="grid gap-px bg-slate-100">
+            <div className="grid gap-px bg-slate-200">
               {waiting.map((row) => (
                 <PortalRecordCard
                   accent="amber"
@@ -278,14 +312,15 @@ export function NativeVisitVacationDaysWorkspace() {
                     <div className="grid w-full gap-2">
                       <input
                         aria-label="Note (needed to refuse)"
-                        className={portalInputClassName}
+                        className={phxFieldClassName}
                         maxLength={500}
                         onChange={(event) => setNotes((current) => ({ ...current, [row.id]: event.target.value }))}
                         placeholder="Note (needed to refuse)"
                         value={notes[row.id] ?? ""}
                       />
                       <div className="flex flex-wrap gap-2">
-                        <Button
+                        <button
+                          className={approvalActionClassName("approve", "regular", DECISION_EXTRA)}
                           disabled={busyId === row.id}
                           onClick={() =>
                             void act(
@@ -296,10 +331,11 @@ export function NativeVisitVacationDaysWorkspace() {
                           }
                           type="button"
                         >
-                          <CheckCircle2 />
+                          <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
                           {row.decideAs === "hr" ? "Approve as HR" : "Approve as manager"}
-                        </Button>
-                        <Button
+                        </button>
+                        <button
+                          className={approvalActionClassName("reject", "regular", DECISION_EXTRA)}
                           disabled={busyId === row.id}
                           onClick={() =>
                             void act(
@@ -309,13 +345,12 @@ export function NativeVisitVacationDaysWorkspace() {
                             )
                           }
                           type="button"
-                          variant="destructive"
                         >
-                          <XCircle />
+                          <XCircle aria-hidden="true" className="h-4 w-4" />
                           Refuse
-                        </Button>
+                        </button>
                       </div>
-                      {rowError[row.id] ? <p className="text-sm text-red-700">{rowError[row.id]}</p> : null}
+                      {rowError[row.id] ? <RailNote tone="rose">{rowError[row.id]}</RailNote> : null}
                     </div>
                   }
                   key={row.id}
@@ -331,8 +366,8 @@ export function NativeVisitVacationDaysWorkspace() {
       ) : null}
 
       {answered.length > 0 ? (
-        <PortalSection description="Requests you have answered, or that are no longer waiting for you." title="Answered">
-          <div className="grid gap-px bg-slate-100">
+        <PortalSection title="Answered">
+          <div className="grid gap-px bg-slate-200">
             {answered.map((row) => (
               <PortalRecordCard
                 accent={accentFor(row.status)}
