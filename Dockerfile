@@ -117,6 +117,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 #
 # Noto covers both halves: Arabic for the papers, and Latin so a name or a figure inside them is
 # not a different face from the rest of the line.
+#
+# ffmpeg joins the ChatGPT connector's screen-recording frames into a video
+# (src/lib/chatgpt-connector/browser/capture.ts, owner 20 Nov 2026). Alpine's build carries libx264,
+# so the video is an MP4; without it the connector falls back to WebM, and without ffmpeg at all the
+# video tool says so and the screenshot tool still works.
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -125,7 +130,8 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     font-noto \
-    font-noto-arabic
+    font-noto-arabic \
+    ffmpeg
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 

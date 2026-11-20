@@ -327,6 +327,9 @@ const nextConfig: NextConfig = {
       "./node_modules/pdf-parse/**",
       "./node_modules/mammoth/**",
       "./node_modules/word-extractor/**",
+      // The ChatGPT connector's capture fence reads the source-built list of routes whose GET writes
+      // (src/lib/chatgpt-connector/browser/fence.ts). Missing, the fence fails CLOSED and no capture runs.
+      "./scripts/phoenix-inspect/generated/side-effect-routes.json",
     ],
   },
   experimental: {
