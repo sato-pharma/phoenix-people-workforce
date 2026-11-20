@@ -30,6 +30,7 @@
 
 ## Inbox — new notes land here
 - [Supabase MCP declines a write holding DDL](supabase-mcp-declines-a-write-that-holds-ddl.md) — "SQL execution was declined" was a temp table; one CTE statement ran
+- [Home Wi-Fi hops between router and extender](home-wifi-hops-between-router-and-extender.md) — "DNS broken / GitHub slow" at home was the laptop switching networks every ~2 min; read WLAN events 8001/8003 first
 
 
 
