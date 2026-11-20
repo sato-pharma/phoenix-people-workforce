@@ -7,7 +7,8 @@
  * same permission the matching page asserts, and narrows rows with the same scope helper the page uses.
  *
  * Every tool is read-only. A tool never writes, sends, publishes or approves anything; the two file
- * tools only build a file for the same person to download (src/lib/chatgpt-connector/files.ts).
+ * tools only build a file for the same person to download (src/lib/chatgpt-connector/files.ts), and the
+ * two capture tools only open a page read-only behind a GET-only fence (src/lib/chatgpt-connector/browser/).
  *
  * Owner decision, 17 Nov 2026: the live app, everything the person's role can see (pay, bank, ID and
  * medical included), the owner and the CEO only, files built by Phoenix. Account:
@@ -29,7 +30,17 @@ export type ConnectorRole = (typeof CONNECTOR_ROLES)[number];
 export type ToolAnswer = {
   summary: string;
   data: unknown;
+  /**
+   * Pictures and videos the capture tools return (src/lib/chatgpt-connector/browser/). An image goes
+   * out as an MCP image block; a video rides in the result's `_meta` for the capture viewer, never in
+   * the text ChatGPT reads, and always carries the download link as well.
+   */
+  attachments?: ToolAttachment[];
 };
+
+export type ToolAttachment =
+  | { type: "image"; mimeType: "image/jpeg" | "image/png"; data: string; label: string }
+  | { type: "video"; mimeType: "video/mp4" | "video/webm"; data: string | null; url: string; label: string };
 
 /** One connector tool. `input` is a zod raw shape (an object of zod schemas), validated by the MCP SDK. */
 export type ConnectorTool<Shape extends z.ZodRawShape = z.ZodRawShape> = {
@@ -41,6 +52,8 @@ export type ConnectorTool<Shape extends z.ZodRawShape = z.ZodRawShape> = {
   input: Shape;
   /** The seats allowed to call it. Omitted = both connector seats. */
   roles?: readonly ConnectorRole[];
+  /** True for the capture tools: ChatGPT shows their result in the capture viewer (browser/viewer.ts). */
+  viewer?: boolean;
   run: (ctx: AccessContext, input: z.infer<z.ZodObject<Shape>>) => Promise<ToolAnswer>;
 };
 

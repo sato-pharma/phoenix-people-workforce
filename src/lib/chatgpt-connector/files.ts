@@ -26,7 +26,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { connectorOrigin } from "./oauth";
 import { defineTool, ToolRefusal, type ConnectorTool } from "./types";
 
-const CONNECTOR_FILE_DAYS = 7;
+export const CONNECTOR_FILE_DAYS = 7;
 const MAX_SHEET_ROWS = 50_000;
 const MAX_PDF_ROWS = 3_000;
 const MAX_COLUMNS = 60;
@@ -45,7 +45,17 @@ const table = {
 
 export type StoredConnectorFile = { id: string; url: string; fileName: string; sizeBytes: number; expiresAt: string };
 
-function safeFileName(title: string, extension: "xlsx" | "pdf") {
+/** What the connector stores: the two built files, and the screenshot and video captures (browser/). */
+export type ConnectorFileKind = "xlsx" | "pdf" | "png" | "mp4" | "webm";
+export const CONNECTOR_FILE_CONTENT_TYPES: Record<ConnectorFileKind, string> = {
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pdf: "application/pdf",
+  png: "image/png",
+  mp4: "video/mp4",
+  webm: "video/webm",
+};
+
+function safeFileName(title: string, extension: ConnectorFileKind) {
   const base = title.replace(/[^\p{L}\p{N} _-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Phoenix";
   return `${base}.${extension}`;
 }
@@ -56,15 +66,14 @@ function ownerFolder(ctx: AccessContext) {
 
 export async function storeConnectorFile(
   ctx: AccessContext,
-  input: { kind: "xlsx" | "pdf"; title: string; body: Buffer },
+  input: { kind: ConnectorFileKind; title: string; body: Buffer },
   db = getSupabaseAdmin(),
 ): Promise<StoredConnectorFile> {
   if (!ctx.loginId) throw new ToolRefusal("Sign in to Phoenix again.");
   const id = randomUUID();
   const fileName = safeFileName(input.title, input.kind);
   const storagePath = `connector/${ownerFolder(ctx)}/${id}.${input.kind}`;
-  const contentType =
-    input.kind === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf";
+  const contentType = CONNECTOR_FILE_CONTENT_TYPES[input.kind];
   const { error: uploadError } = await db.storage.from(JOB_EXPORTS_BUCKET).upload(storagePath, input.body, { contentType, upsert: false });
   if (uploadError) throw uploadError;
   const expiresAt = new Date(Date.now() + CONNECTOR_FILE_DAYS * 86_400_000).toISOString();
