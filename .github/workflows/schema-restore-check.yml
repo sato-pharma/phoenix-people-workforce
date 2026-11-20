@@ -14,6 +14,12 @@ name: Schema Restore Check
 # error, any object missing, added or different, or a check that could not run, turns the run red and
 # alerts Telegram. Account: docs/security/schema-restore-check.md.
 #
+# THEN THE ACCESS TESTS (added 2026-11-20). Once the database has been rebuilt and found to be production,
+# `node scripts/db-access-tests.mjs` runs supabase/tests/database/access.test.sql in it with pgTAP: made-up
+# people sign in as each role and the salary and employee rows they get back are counted, and the whole
+# database's grants are asked of the permission engine. One transaction, rolled back. A failed access test
+# turns the run red and its alert says ACCESS, not REBUILD. Account: the same doc, "The access tests".
+#
 # IT NEVER TOUCHES PRODUCTION. The restore job reads no secret and has no database URL but its own
 # container's; the script refuses any target that is not 127.0.0.1 (assertScratchUrl). Only the notify
 # job reads a secret — the Telegram pair, in the main-only main-secrets environment.
@@ -41,6 +47,9 @@ on:
       - ".github/workflows/schema-restore-check.yml"
       - "scripts/schema-baseline.mjs"
       - "scripts/lib/schema-baseline.mjs"
+      - "scripts/db-access-tests.mjs"
+      - "scripts/lib/db-access-tests.mjs"
+      - "supabase/tests/database/**"
 
 permissions:
   contents: read
@@ -64,7 +73,9 @@ jobs:
     if: ${{ !inputs.test_alert }}
     timeout-minutes: 20
     outputs:
-      headline: ${{ steps.restore.outputs.headline }}
+      # The access tests run only after a clean restore, so their headline wins whenever they ran.
+      headline: ${{ steps.access.outputs.headline || steps.restore.outputs.headline }}
+      access_failed: ${{ steps.access.outcome == 'failure' }}
     services:
       # Production's own version (list_projects, 19 Nov 2026: 17.6.1.141). The major is pinned to
       # RESTORE_PG_MAJOR in scripts/lib/schema-baseline.mjs by tests/schema-baseline.test.ts; when
@@ -102,6 +113,16 @@ jobs:
           PGPASSWORD: postgres
         run: node scripts/schema-baseline.mjs --restore-check
 
+      # Only after the restore passed: the tests need production's grants, policies and functions in place.
+      - name: Access tests (pgTAP) — who the database lets in
+        id: access
+        timeout-minutes: 5
+        env:
+          SCHEMA_BASELINE_DOCKER: "1"
+          SCHEMA_RESTORE_URL: postgresql://supabase_admin@127.0.0.1:5432/postgres
+          PGPASSWORD: postgres
+        run: node scripts/db-access-tests.mjs
+
   notify:
     needs: restore
     # A red restore, a cancelled one, or a self-test. Never on a pass, and never for a skipped restore
@@ -119,6 +140,7 @@ jobs:
           IS_TEST: ${{ inputs.test_alert }}
           RESULT: ${{ needs.restore.result }}
           HEADLINE: ${{ needs.restore.outputs.headline }}
+          ACCESS_FAILED: ${{ needs.restore.outputs.access_failed }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
@@ -143,6 +165,9 @@ jobs:
           fi
           if [ "$IS_TEST" = "true" ]; then
             TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the schema restore check with the test flag to confirm this channel still works.\n\nIf you are reading this, a schema baseline that cannot rebuild production would also reach you.\n\n%s' "$RUN_URL")
+          elif [ "$ACCESS_FAILED" = "true" ]; then
+            DETAIL="${HEADLINE:-the access tests failed before they could say why — read the run}"
+            TEXT=$(printf 'DATABASE ACCESS TESTS FAILED\n%s\n\nThe weekly check rebuilt production from supabase/schema/production.sql and the rebuilt database let someone see or change more than the access rules say, or less.\n\n%s\n\nRead which test failed, then decide whether the access change was meant. Read docs/security/schema-restore-check.md, "The access tests".\n\n%s' "$STREAK_LINE" "$DETAIL" "$RUN_URL")
           else
             DETAIL="${HEADLINE:-the restore job ended ${RESULT} before it could say why — read the run}"
             TEXT=$(printf 'SCHEMA BASELINE CANNOT REBUILD PRODUCTION\n%s\n\nThe weekly check restored supabase/schema/production.sql into a fresh Supabase database and it did not come back as production.\n\n%s\n\nProduction has no point-in-time recovery, so this file is the rebuild plan. Read docs/security/schema-restore-check.md.\n\n%s' "$STREAK_LINE" "$DETAIL" "$RUN_URL")

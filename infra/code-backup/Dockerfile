@@ -6,7 +6,8 @@
 # shared builders hit Docker Hub's anonymous limit, `429 Too Many Requests`, which stopped four website deploys on
 # 2026-10-09 (docs/deployment.md, "The base image is pulled from AWS's mirror, not Docker Hub"). The digest is the
 # multi-arch index of alpine:3.21, read the same from both registries on 2026-11-18; move it on purpose with
-# `docker buildx imagetools inspect public.ecr.aws/docker/library/alpine:3.21`.
+# `docker buildx imagetools inspect public.ecr.aws/docker/library/alpine:3.21`. Dependabot's docker entry
+# (.github/dependabot.yml) proposes the tag's current digest monthly; a move off 3.21 stays deliberate.
 FROM public.ecr.aws/docker/library/alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab
 
 RUN apk add --no-cache age bash ca-certificates coreutils curl git jq postgresql17-client rclone tar

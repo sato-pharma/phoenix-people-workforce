@@ -19,7 +19,9 @@
 # the digest is what is pulled. Read 2026-10-23 from public.ecr.aws, Docker Hub and mirror.gcr.io — all three
 # answered the same multi-arch index digest below. To move it on purpose, read the tag's current digest
 #   docker buildx imagetools inspect public.ecr.aws/docker/library/node:24-alpine
-# and replace the digest here. Pinned by tests/dockerfile-reproducible.test.ts.
+# and replace the digest here. Pinned by tests/dockerfile-reproducible.test.ts. Since 20 Nov 2026 Dependabot's
+# docker entry (.github/dependabot.yml) proposes the tag's current digest once a month, so Node and Alpine
+# security fixes arrive as a PR; a Node major stays a deliberate upgrade.
 FROM public.ecr.aws/docker/library/node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS base
 
 # Install dependencies only when needed
@@ -117,6 +119,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 #
 # Noto covers both halves: Arabic for the papers, and Latin so a name or a figure inside them is
 # not a different face from the rest of the line.
+#
+# ffmpeg joins the ChatGPT connector's screen-recording frames into a video
+# (src/lib/chatgpt-connector/browser/capture.ts, owner 20 Nov 2026). Alpine's build carries libx264,
+# so the video is an MP4; without it the connector falls back to WebM, and without ffmpeg at all the
+# video tool says so and the screenshot tool still works.
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -125,7 +132,8 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     font-noto \
-    font-noto-arabic
+    font-noto-arabic \
+    ffmpeg
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 

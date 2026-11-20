@@ -55420,7 +55420,7 @@ CREATE TABLE public.connector_files (
     expires_at timestamp with time zone NOT NULL,
     downloaded_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT connector_files_kind_check CHECK ((kind = ANY (ARRAY['xlsx'::text, 'pdf'::text])))
+    CONSTRAINT connector_files_kind_check CHECK ((kind = ANY (ARRAY['xlsx'::text, 'pdf'::text, 'png'::text, 'mp4'::text, 'webm'::text])))
 );
 
 ALTER TABLE public.connector_files OWNER TO postgres;
