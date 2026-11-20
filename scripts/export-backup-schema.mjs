@@ -30,8 +30,10 @@ import {
   EXPORT_ROOT,
   PRODUCTION_REF,
   SNAPSHOT_TABLE_SCHEMAS,
+  EXEMPT_SCHEMAS,
   envVar,
   readDecisions,
+  readStandingDecision,
   refOf,
   toPooler,
 } from "./audit-backup-schemas.mjs";
@@ -69,7 +71,9 @@ async function main() {
     throw new Error(`a single table is exported only from ${SNAPSHOT_TABLE_SCHEMAS.join(" or ")}; export the whole schema ${schema} instead`);
   }
 
-  const decision = readDecisions()[target];
+  // Its own entry first; with none, the owner's standing decision (20 Nov 2026) — but never for a
+  // schema the audit holds back for good, which no standing rule can decide.
+  const decision = readDecisions()[target] ?? (EXEMPT_SCHEMAS[schema] ? null : readStandingDecision());
   if (decision?.decision !== "export-then-drop") {
     throw new Error(`${target} is not decided "export-then-drop" in scripts/backup-schema-decisions.json — nothing exported`);
   }
