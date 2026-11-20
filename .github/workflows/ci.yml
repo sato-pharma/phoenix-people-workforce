@@ -783,6 +783,23 @@ jobs:
         timeout-minutes: 3
         run: node scripts/vuln-scan.mjs
 
+      # COPY-PASTE REPORT (owner, 2026-11-20: "add jscpd as a report-only check on changed files").
+      # jscpd 5 scans src/ and app/, builds a baseline from the base ref's own tree with the same
+      # settings, and the script reports only the clones absent from it — the ones THIS PR copied —
+      # as warning annotations and a job summary. ~1,000 copied blocks already on main are left out.
+      # Pull requests only (a push to main has no diff to report on). Like the vulnerability scan above
+      # it is DELIBERATELY NON-BLOCKING: the script always exits 0, says "could not run" rather than
+      # "clean" when it cannot prove it looked, and `continue-on-error` covers anything else. It gets
+      # its own timeout for the same reason the scan does — `continue-on-error` cannot absorb a step
+      # that never ends. Measured 2026-11-20 on this repo: 1.2 s and a 214 MB peak for ~230k lines;
+      # jscpd 4 (JavaScript) ran out of memory on the same slice. HEAD^1 is the base side of the
+      # pull request's merge commit, present at `fetch-depth: 2`. Account: scripts/ci-duplicates-report.mjs.
+      - name: Copy-paste report (reports, does not gate)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 4
+        run: node scripts/ci-duplicates-report.mjs --base HEAD^1
+
       # STRATEGY MATTERS MORE THAN THE KEY HERE, and it is not obvious from the logs.
       # eslint's --cache defaults to --cache-strategy metadata, which decides a file is unchanged
       # by comparing size + MTIME. actions/checkout writes every file fresh on every run, so every

@@ -276,6 +276,20 @@ settings again before relying on this paragraph — it is a dated reading, like 
 There is no longer a separate `preview-smoke` job — the login smoke test moved into `validate`. The
 full Playwright E2E suite runs only on manual `workflow_dispatch` (the `full-e2e` job).
 
+**The copy-paste report (owner, 2026-11-20: "add jscpd as a report-only check on changed files").**
+On a pull request only, `static` runs `node scripts/ci-duplicates-report.mjs --base HEAD^1`: jscpd 5
+(the Rust engine, devDependency pinned exactly) scans `src/` and `app/`, builds a baseline from the
+base side of the merge commit with the same settings, and the script reports only the clones absent
+from it — the blocks THIS PR copied — as up to ten warning annotations plus a job-summary table. The
+~1,000 copied blocks already on `main` (1,012 in `app/api` alone, measured that day) are never listed.
+🔴 **It never gates:** the script always exits 0, the step is `continue-on-error` with its own
+4-minute timeout, and a scan that read under 1,000 files, a report it does not understand, a missing
+binary or a bad base ref each print "could not run" — never "no new copies". 🔴 **It matches tokens,
+not meaning:** a payroll, leave or sales rule rewritten in other words is invisible to it, so the
+domain-first rule is still the reviewer's job. jscpd 4 (JavaScript) ran out of memory at a 448 MB cap
+on ~230k lines here; jscpd 5 did the same slice in 1.2 s at a 214 MB peak. Pinned by
+`tests/ci-duplicates-report.test.ts`.
+
 🔴 **`main` branch protection requires TWO checks green before a merge can land — `validate` and
 `checks` — not the 6 this paragraph claimed until 2026-09-30.** There is no required human review
 (solo owner), and per AGENTS.md §3 a merge to `main` then deploys to production as soon as that

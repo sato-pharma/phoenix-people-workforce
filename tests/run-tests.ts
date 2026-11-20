@@ -2637,6 +2637,7 @@ import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.te
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runVulnScanTests } from "./vuln-scan.test.ts";
+import { runCiDuplicatesReportTests } from "./ci-duplicates-report.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
@@ -10174,6 +10175,13 @@ await runTest(
   + "across chunks, a transitive finding points at an override rather than a manifest bump (Dependabot is direct-only "
   + "and can never fix one), and the REAL lockfile is asserted to parse with a plausible scoped count",
   runVulnScanTests,
+);
+await runTest(
+  "the pull request copy-paste report names only the blocks THIS PR copied (jscpd's isNew against the base ref, "
+  + "never the ~1,000 already on main), cannot call a PR clean below its coverage floor or on a report it does not "
+  + "understand, pins each warning to a repo-relative file within GitHub's ten-per-step cap, and runs in ci.yml's "
+  + "static job on pull requests only, continue-on-error with its own timeout, so it can never redden a required check",
+  runCiDuplicatesReportTests,
 );
 await runTest(
   "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
