@@ -48,6 +48,17 @@ export type InvoiceComparison = {
   instalment?: { number: number; of: number } | null;
 };
 
+/**
+ * What is wrong with a bill's dates, in the words the form shows, or null. An opening bill needs its first covered
+ * day: on a policy paid in instalments that day picks the quarter, and without it every instalment would be held
+ * against the first one, cards and issue fee included (the form did not ask for it until 20 November 2026).
+ */
+export function invoiceDatesProblem(kind: MedicalInsuranceInvoiceKind, coversFrom: string | null, coversTo: string | null): string | null {
+  if (coversFrom && coversTo && coversTo < coversFrom) return "The bill's last day is before its first.";
+  if (kind === "opening" && !coversFrom) return "Enter the first day the bill covers, so it is compared with the right instalment.";
+  return null;
+}
+
 function inside(line: CostLine, from: string | null, to: string | null): boolean {
   return (!from || line.day >= from) && (!to || line.day <= to);
 }
