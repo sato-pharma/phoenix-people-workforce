@@ -16,7 +16,7 @@
  *      picture goes out as an image block, its video in `_meta`, and never as base64 in the text.
  */
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -149,6 +149,17 @@ async function toolsAndResult() {
   }
   const screens = readFileSync(path.join(process.cwd(), "src/lib/chatgpt-connector/tools/screens.ts"), "utf8");
   assert.equal((screens.match(/checkCapturePath\(/g) ?? []).length, 2, "both tools check the path before any browser opens");
+
+  // The examples ChatGPT is shown are real pages. The first live capture asked for /admin/employees,
+  // the tool's own example, and got a 404: "(admin)" is a route group and adds nothing to the address.
+  const fence = readFileSync(path.join(process.cwd(), "src/lib/chatgpt-connector/browser/fence.ts"), "utf8");
+  const groups = readdirSync(path.join(process.cwd(), "app")).filter((name) => /^\(.+\)$/.test(name));
+  const examples = [...`${screens}\n${fence}`.matchAll(/for example ((?:\/[a-z0-9-]+)+)(?: or ((?:\/[a-z0-9-]+)+))?/g)].flatMap((match) => match.slice(1).filter(Boolean));
+  assert.ok(examples.length >= 3, "the tool's description and the path hint both give example pages");
+  for (const example of examples) {
+    const candidates = ["", ...groups].map((group) => path.join(process.cwd(), "app", group, example, "page.tsx"));
+    assert.ok(candidates.some((file) => existsSync(file)), `${example}, an example page shown to ChatGPT, is a real Phoenix page`);
+  }
 
   const ctx = createAccessContext({ hrId: "B-10", loginId: "owner", role: "Super Admin", source: "session" });
   const picture = Buffer.from("not really a jpeg").toString("base64");
