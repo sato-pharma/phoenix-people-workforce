@@ -18,6 +18,13 @@
  *      validates the customer in one transaction under the seat's lock.
  *   4. CANCEL / WATCH AGAIN (Super Admin).
  *
+ * 🔴 A PHOTO SEALED BY THE PHOENIX CAMERA CARRIES ITS OWN READING (owner, 20 Nov 2026: the separate camera app for
+ * a clinic with no network). At ARM the seal is judged in full (`checkFieldCameraPhoto`: the picture unchanged,
+ * the phone's secure chip, our app, no fake location, satellite time); when it holds, the watch is born
+ * `captured` with the seal's satellite fix as the rep's reading and `rep_source = 'sealed_photo'`, its window
+ * already closed, so no rep is asked and nothing the rep sends can replace it. When it does not hold, nothing is
+ * uploaded and the refusal names why. A file with no seal takes the four steps above, unchanged.
+ *
  * 🔴 NO PHOTO, NO VALIDATION; NO REP READING, NO VALIDATION — the database refuses a watch with no reading and a
  * place with no photo. 🔴 THE SUPER ADMIN'S ALONE on his side (`canDecideSharedPlaces`, never a test persona),
  * checked before anything is read. 🔴 Golden rule #1 on the rep's side: he reads "capture the location of this
@@ -33,11 +40,15 @@ import {
   type AdminPhotoStatus,
 } from "@/lib/phoenix-crm/admin-photo-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { seatOccupants } from "@/lib/phoenix-crm/scope";
+import { SEAL_MAX_AGE_HOURS } from "@/lib/phoenix-crm/field-camera/seal-rules";
 import { readTestFlag, territoryForRead, territoryForValidation, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
-import { uploadPhotoForSlot } from "@/lib/phoenix-crm/server/photos";
+import { hasSealTrailer } from "@/lib/phoenix-crm/field-camera/seal-format";
+import { checkFieldCameraPhoto, type FieldCameraReport } from "@/lib/phoenix-crm/server/field-camera";
+import { decodeJpegDataUrl, uploadPhotoBytesForSlot } from "@/lib/phoenix-crm/server/photos";
 import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { canDecideSharedPlaces } from "@/lib/phoenix-crm/server/shared-places";
@@ -50,7 +61,7 @@ type Row = Record<string, unknown>;
 
 const TABLE = "phoenix_crm_admin_photo_validations";
 const WATCH_COLUMNS =
-  "id, customer_id, seat_id, is_test, photo_path, status, armed_by_hr_id, armed_at, watch_until, rep_hr_id, rep_lat, rep_lon, rep_accuracy_meters, rep_captured_at, place_id, closed_at";
+  "id, customer_id, seat_id, is_test, photo_path, status, armed_by_hr_id, armed_at, watch_until, rep_hr_id, rep_lat, rep_lon, rep_accuracy_meters, rep_captured_at, place_id, closed_at, rep_source, seal_report";
 const WATCH_ENDED = "This request has ended. Ask for it again.";
 
 /** Who may validate with an uploaded photo: the Super Admin, exactly as he validates on a trusted point. */
@@ -78,6 +89,9 @@ type WatchRow = {
   repLon: number | null;
   repAccuracyMeters: number | null;
   repCapturedAt: string | null;
+  /** `sealed_photo` when the reading is a Phoenix Camera seal's, `live` when the rep sent it. */
+  repSource: "live" | "sealed_photo";
+  sealReport: FieldCameraReport | null;
 };
 
 function watchOf(row: Row): WatchRow {
@@ -95,6 +109,8 @@ function watchOf(row: Row): WatchRow {
     repLon: numberOrNull(row.rep_lon),
     repAccuracyMeters: numberOrNull(row.rep_accuracy_meters),
     repCapturedAt: typeof row.rep_captured_at === "string" ? row.rep_captured_at : null,
+    repSource: row.rep_source === "sealed_photo" ? "sealed_photo" : "live",
+    sealReport: row.seal_report && typeof row.seal_report === "object" ? (row.seal_report as FieldCameraReport) : null,
   };
 }
 
@@ -150,7 +166,21 @@ export type AdminPhotoLocation = {
   regionName: string | null;
 };
 
+/** What the Super Admin reads about a Phoenix Camera seal that held. */
+export type AdminPhotoSealView = {
+  takenAtText: string;
+  satellites: string;
+  phone: string;
+  /** Short and stable, so the same phone is recognisable photo after photo. */
+  phoneKey: string;
+  revocationChecked: boolean;
+  warnings: string[];
+};
+
 export type AdminPhotoReadingView = {
+  /** `sealed_photo`: the reading came inside the Phoenix Camera's seal, not from the rep's List. */
+  source: "live" | "sealed_photo";
+  seal: AdminPhotoSealView | null;
   repName: string;
   lat: number;
   lon: number;
@@ -204,8 +234,20 @@ async function watchView(watch: WatchRow): Promise<AdminPhotoWatchView> {
     // Resolved only once a reading is there: the screen stops asking the moment it sees one, so the billed
     // address lookup runs once per reading, never once per poll.
     const [names, columns] = await Promise.all([loadPeopleNames([watch.repHrId]), locationColumnsFor(watch)]);
+    const report = watch.repSource === "sealed_photo" ? watch.sealReport : null;
     reading = {
-      repName: nameOf(names, watch.repHrId, "The rep"),
+      source: watch.repSource,
+      seal: report
+        ? {
+            takenAtText: adminPhotoTimeText(report.takenAtUtc),
+            satellites: `${report.satellitesUsed} used of ${report.satellitesSeen} seen`,
+            phone: `${report.deviceModel} · Android ${report.androidSdk} · ${report.securityLevel === "StrongBox" ? "StrongBox chip" : "secure chip"}`,
+            phoneKey: report.deviceKey.slice(0, 12).toUpperCase(),
+            revocationChecked: report.revocation === "checked",
+            warnings: report.warnings,
+          }
+        : null,
+      repName: nameOf(names, watch.repHrId, report?.repName ?? "The rep"),
       lat: watch.repLat,
       lon: watch.repLon,
       accuracyMeters: watch.repAccuracyMeters,
@@ -219,7 +261,7 @@ async function watchView(watch: WatchRow): Promise<AdminPhotoWatchView> {
     photoPath: watch.photoPath,
     armedAtText: adminPhotoTimeText(watch.armedAt),
     watchUntilText: adminPhotoTimeText(watch.watchUntil),
-    open: adminPhotoWatchIsOpen(watch),
+    open: watch.repSource === "live" && adminPhotoWatchIsOpen(watch),
     reading,
   };
 }
@@ -261,9 +303,12 @@ export async function armAdminPhotoValidation(viewer: PhoenixCrmViewer, raw: unk
   const blocked = await blockedReasonFor(customer);
   if (blocked) throw conflictError(blocked, "phoenix_crm_admin_photo_blocked");
 
-  const uploaded = await uploadPhotoForSlot(
+  const bytes = decodeJpegDataUrl(body.imageDataUrl);
+  // A Phoenix Camera file is judged BEFORE anything is uploaded: a seal that does not hold leaves no trace.
+  const sealed = hasSealTrailer(bytes) ? await checkFieldCameraPhoto(bytes, { occupantHrIds: seatOccupants(seat) }) : null;
+  const uploaded = await uploadPhotoBytesForSlot(
     { hrId: viewer.hrId, seat, isTest: customer.isTest, purpose: "place", cairoToday: viewer.cairoToday },
-    body.imageDataUrl,
+    bytes,
   );
   await callPhoenixCrm<string>("phoenix_crm_take_photo", {
     p_path: uploaded.path,
@@ -274,15 +319,36 @@ export async function armAdminPhotoValidation(viewer: PhoenixCrmViewer, raw: unk
   });
 
   await closeOpenWatches(customer.id);
-  const { error } = await getSupabaseAdmin().from(TABLE).insert({
+  const base = {
     customer_id: customer.id,
     seat_id: customer.seatId,
     is_test: customer.isTest,
     photo_path: uploaded.path,
-    status: "watching",
     armed_by_hr_id: viewer.hrId.trim().toUpperCase(),
-    watch_until: adminPhotoWatchUntil(),
-  });
+  };
+  const { error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .insert(
+      sealed
+        ? {
+            ...base,
+            status: "captured",
+            // Closed at birth: no rep is asked, and nothing the rep sends can replace the seal's reading.
+            watch_until: new Date().toISOString(),
+            rep_source: "sealed_photo",
+            rep_hr_id: sealed.payload.hrId,
+            rep_lat: sealed.payload.lat,
+            rep_lon: sealed.payload.lon,
+            rep_accuracy_meters: sealed.payload.accuracyMeters,
+            rep_captured_at: sealed.payload.takenAtUtc,
+            seal_id: sealed.report.sealId,
+            seal_report: sealed.report,
+          }
+        : { ...base, status: "watching", watch_until: adminPhotoWatchUntil() },
+    );
+  if (error?.code === "23505" && sealed && /seal_idx/.test(`${error.message ?? ""} ${error.details ?? ""}`)) {
+    throw conflictError("This sealed photo was already used for a customer. Each photo validates one customer.", "phoenix_crm_admin_photo_seal_used");
+  }
   throwIfError(error);
   return loadAdminPhotoState(viewer, customer.id);
 }
@@ -293,6 +359,9 @@ export async function rewatchAdminPhotoValidation(viewer: PhoenixCrmViewer, vali
   const watch = await loadWatch(validationId);
   territoryForRead(viewer, watch.seatId, watch.isTest);
   if (watch.status !== "watching" && watch.status !== "captured") throw conflictError("This request is closed. Upload the photo again.", "phoenix_crm_admin_photo_closed");
+  if (watch.repSource === "sealed_photo") {
+    throw conflictError("This photo carries its own sealed location. Press Stop and upload again to start over.", "phoenix_crm_admin_photo_sealed");
+  }
   const { error } = await getSupabaseAdmin()
     .from(TABLE)
     .update({ status: "watching", watch_until: adminPhotoWatchUntil(), rep_hr_id: null, rep_lat: null, rep_lon: null, rep_accuracy_meters: null, rep_captured_at: null })
@@ -320,6 +389,10 @@ export async function applyAdminPhotoValidation(viewer: PhoenixCrmViewer, valida
   territoryForRead(viewer, watch.seatId, watch.isTest);
   if (watch.status === "watching") throw conflictError("The rep's location has not arrived yet.", "phoenix_crm_admin_photo_no_reading");
   if (watch.status !== "captured") throw conflictError("This request is closed. Reload the page.", "phoenix_crm_admin_photo_closed");
+  // A sealed photo is used within 72 hours of being taken — at Apply too, not only at upload.
+  if (watch.repSource === "sealed_photo" && (!watch.repCapturedAt || Date.now() - Date.parse(watch.repCapturedAt) > SEAL_MAX_AGE_HOURS * 3_600_000)) {
+    throw conflictError(`This sealed photo is more than ${SEAL_MAX_AGE_HOURS} hours old. Ask the rep for a new one.`, "phoenix_crm_admin_photo_seal_old");
+  }
   const customer = await loadCustomer(watch.customerId);
   const blocked = await blockedReasonFor(customer);
   if (blocked) throw conflictError(blocked, "phoenix_crm_admin_photo_blocked");
@@ -367,6 +440,7 @@ export async function loadAdminPhotoAsks(viewer: PhoenixCrmViewer, seatId: unkno
     .select("id, customer_id, status, watch_until")
     .eq("seat_id", seat.seatId)
     .eq("is_test", isTest)
+    .eq("rep_source", "live")
     .in("status", ["watching", "captured"])
     .gt("watch_until", new Date().toISOString())
     .limit(20);
@@ -396,7 +470,7 @@ export async function sendAdminPhotoReading(viewer: PhoenixCrmViewer, raw: unkno
   const { seat, isTest } = territoryForValidation(viewer, body.seatId, readTestFlag(body.test));
   const watch = await loadWatch(body.askId);
   if (watch.seatId !== seat.seatId || watch.isTest !== isTest) throw forbiddenError("This customer is not on your list.");
-  if (!adminPhotoWatchIsOpen(watch)) throw conflictError(WATCH_ENDED, "phoenix_crm_admin_photo_closed");
+  if (watch.repSource !== "live" || !adminPhotoWatchIsOpen(watch)) throw conflictError(WATCH_ENDED, "phoenix_crm_admin_photo_closed");
   const problem = adminPhotoReadingProblem({ lat: body.lat, lon: body.lon, accuracyMeters: body.accuracyMeters });
   if (problem) throw validationError(problem, "phoenix_crm_admin_photo_rough_fix");
   const { data, error } = await getSupabaseAdmin()
@@ -410,6 +484,7 @@ export async function sendAdminPhotoReading(viewer: PhoenixCrmViewer, raw: unkno
       rep_captured_at: new Date().toISOString(),
     })
     .eq("id", watch.id)
+    .eq("rep_source", "live")
     .in("status", ["watching", "captured"])
     .gt("watch_until", new Date().toISOString())
     .select("id");

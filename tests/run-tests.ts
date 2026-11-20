@@ -2262,6 +2262,7 @@ import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.t
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
 import { runPhoenixCrmAdminPhotoTests } from "./phoenix-crm-admin-photo.test.ts";
+import { runPhoenixCrmFieldCameraSealTests } from "./phoenix-crm-field-camera-seal.test.ts";
 import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
@@ -8732,6 +8733,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lets the Super Admin validate a customer with a photo he uploads while the rep captures the location (owner, 2026-11-20: \"make a button for me to press on watch the rep while capturing location ... while this button is on, the rep will capture the location\"): the rep's reading stands only with a known accuracy within 250 m and never at 0,0, and a watch is open only while watching or captured and inside its 30 minutes; the Super Admin's route asks update and every one of his services asks who first, the rep's route asks create and his services ask his own validation gate, the rep receives four keys and no watch, time, accuracy or person, and his card never asks on a timer; the database function is a known writer, closed to the browser roles, and refuses a validation before the rep's reading arrives",
   runPhoenixCrmAdminPhotoTests,
+);
+
+await runTest(
+  "Phoenix CRM trusts a photo from the Phoenix Camera only when its seal holds (owner, 2026-11-20: a separate camera app for a clinic with no network — \"take every precaution against fake locations and fraud, and keep its seal\"): a good file holds and names its seal and phone key; a changed picture, a changed payload, a key outside Google's roots, an unlocked phone, a key kept in software, another app, a re-signed copy, another challenge and a key with no attestation are refused; a fake location, fewer than 4 satellites, a stale fix, a rough reading, a photo over 72 hours old or later than now and satellite time far from Phoenix's clock refuse, while a drifted phone clock and USB debugging only warn; production trusts Google's roots and our release identity only, a sealed file is judged before it is uploaded and born captured with the seal's reading, the browser sends it whole, and one seal validates one customer",
+  runPhoenixCrmFieldCameraSealTests,
 );
 
 await runTest(

@@ -5,9 +5,9 @@ import * as React from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
-import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { phxFieldClassName, phxFieldGridTwoClassName, phxHintClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { formatLeftDay } from "@/lib/employees/left-flag";
-import { INVOICE_KIND_WORDS, MEDICAL_INSURANCE_INVOICE_KINDS, type MedicalInsuranceInvoiceKind } from "@/lib/medical-insurance/compare";
+import { INVOICE_KIND_WORDS, invoiceDatesProblem, MEDICAL_INSURANCE_INVOICE_KINDS, type MedicalInsuranceInvoiceKind } from "@/lib/medical-insurance/compare";
 import { ageBandWords, MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory, type MedicalInsuranceRateCard } from "@/lib/medical-insurance/cost";
 import { plannedLinesTotal, type CostLine } from "@/lib/medical-insurance/eligibility";
 import { EMPLOYEE_MINIMUM_OWN_SHARE_MONTHLY, LIFE_INSURANCE_PER_PERSON_MONTHLY, MONTHLY_SPLIT_ASSUMPTIONS, type MonthlySplit, type MonthlySplitPerson, type MonthlySplitRow } from "@/lib/medical-insurance/monthly-split";
@@ -242,7 +242,7 @@ function OpeningPanel({ view }: { view: MedicalInsuranceMoneyView }) {
 
   return (
     <AdminTableShell
-      description="Everyone on the policy from its first day, laid out as the policy's schedule is: per plan and age band, each band's premium the rate times its people. Ages are taken on the policy's first day."
+      description="Everyone on the policy from its first day, laid out as the policy's schedule is: per plan and age band, each band's premium the rate times its people, before the 1.55% tax. Ages are the insurer's: 2026 less the year of birth."
       title="The opening bill"
     >
       <div className="hidden md:block">
@@ -596,6 +596,7 @@ function RecordBillPanel() {
   const [file, setFile] = React.useState<File | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const set = (key: keyof typeof blank) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFields((current) => ({ ...current, [key]: event.target.value }));
+  const datesProblem = invoiceDatesProblem(fields.kind, fields.coversFrom || null, fields.coversTo || null);
 
   function record() {
     const form = new FormData();
@@ -613,7 +614,7 @@ function RecordBillPanel() {
 
   return (
     <AdminTableShell
-      description="Type the bill's figures as Libano-Suisse printed them. It is compared with what the plan says it should be: an opening bill with the opening statement, additions and deletions with the joiners and leavers inside its dates. It pays nothing and writes nothing to payroll."
+      description="Type the bill's figures as Libano-Suisse printed them. It is compared with what the plan says it should be: an opening bill or premium instalment with its share of the opening statement (the year's premium and tax are paid quarterly, the first bill also carrying the cards and the issue fee), additions and deletions with the joiners and leavers inside its dates. It pays nothing and writes nothing to payroll."
       title="Record a bill"
     >
       <div className="space-y-3 p-4">
@@ -636,14 +637,16 @@ function RecordBillPanel() {
             <span className={phxLabelClassName}>{fields.kind === "deletions" ? "Total credited (EGP)" : "Total due (EGP)"}</span>
             <input className={phxFieldClassName} inputMode="decimal" onChange={set("totalDue")} value={fields.totalDue} />
           </label>
-          {fields.kind === "additions" || fields.kind === "deletions" ? (
+          {fields.kind !== "other" ? (
             <>
               <label className="block">
-                <span className={phxLabelClassName}>People who {fields.kind === "additions" ? "joined" : "left"} from</span>
+                <span className={phxLabelClassName}>
+                  {fields.kind === "opening" ? "Cover from (picks the instalment)" : `People who ${fields.kind === "additions" ? "joined" : "left"} from`}
+                </span>
                 <input className={phxFieldClassName} onChange={set("coversFrom")} type="date" value={fields.coversFrom} />
               </label>
               <label className="block">
-                <span className={phxLabelClassName}>Up to</span>
+                <span className={phxLabelClassName}>{fields.kind === "opening" ? "Cover up to" : "Up to"}</span>
                 <input className={phxFieldClassName} onChange={set("coversTo")} type="date" value={fields.coversTo} />
               </label>
             </>
@@ -657,7 +660,8 @@ function RecordBillPanel() {
             <input className={phxFieldClassName} onChange={set("note")} value={fields.note} />
           </label>
         </div>
-        <Button className="h-10" disabled={busy || !fields.invoiceNumber.trim() || !fields.totalDue.trim()} onClick={record}>{busy ? "Recording" : "Record and compare"}</Button>
+        <Button className="h-10" disabled={busy || !fields.invoiceNumber.trim() || !fields.totalDue.trim() || datesProblem !== null} onClick={record}>{busy ? "Recording" : "Record and compare"}</Button>
+        {datesProblem && (fields.invoiceNumber.trim() || fields.totalDue.trim()) ? <p className={phxHintClassName}>{datesProblem}</p> : null}
         <SaveError error={error} />
       </div>
     </AdminTableShell>
@@ -669,9 +673,9 @@ function InvoicePanel({ defaultOpen, invoice }: { defaultOpen: boolean; invoice:
   const [open, setOpen] = React.useState(defaultOpen);
   const { comparison } = invoice;
   const base = `/api/medical-insurance/invoices/${invoice.id}`;
-  const dates = invoice.coversFrom || invoice.coversTo
-    ? `People from ${invoice.coversFrom ? formatLeftDay(invoice.coversFrom) : "the start"} to ${invoice.coversTo ? formatLeftDay(invoice.coversTo) : "today"}. `
-    : "";
+  const from = invoice.coversFrom ? formatLeftDay(invoice.coversFrom) : "the start";
+  const to = invoice.coversTo ? formatLeftDay(invoice.coversTo) : invoice.kind === "opening" ? "the end of the instalment" : "today";
+  const dates = invoice.coversFrom || invoice.coversTo ? (invoice.kind === "opening" ? `Covers ${from} to ${to}. ` : `People from ${from} to ${to}. `) : "";
 
   return (
     <AdminTableShell
@@ -687,7 +691,10 @@ function InvoicePanel({ defaultOpen, invoice }: { defaultOpen: boolean; invoice:
       <Tiles
         tiles={[
           { label: "They billed", value: egpWords(comparison.billed) },
-          { label: "The plan says", value: comparison.expected === null ? "Not compared" : egpWords(comparison.expected) },
+          {
+            label: comparison.instalment ? `The plan says (instalment ${comparison.instalment.number} of ${comparison.instalment.of})` : "The plan says",
+            value: comparison.expected === null ? "Not compared" : egpWords(comparison.expected),
+          },
           { label: "Difference", value: comparison.difference === null ? "Not compared" : signed(comparison.difference) },
         ]}
       />

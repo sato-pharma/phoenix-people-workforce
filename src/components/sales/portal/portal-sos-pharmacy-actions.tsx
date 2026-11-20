@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Ban, Gauge, Store, TrendingDown, UserPlus } from "lucide-react";
+import { Ban, Download, Gauge, Store, TrendingDown, UserPlus } from "lucide-react";
 
 import {
   BandChoice,
@@ -16,9 +16,24 @@ import {
 } from "@/components/sales/target-visuals";
 import type { MonthPaceResult, MonthPaceRow } from "@/lib/sales/sos-month-pace";
 import type { PortalPharmacyActionsPayload } from "@/lib/sales/sos-pharmacy-actions-loader";
-import type { BrickUniverseEntry, CrossSellItem, PharmacyActionItem, PharmacyAreaSummary } from "@/lib/sales/sos-pharmacy-actions";
+import {
+  LOOKBACK_CLOSINGS,
+  MAX_LOOKBACK_CLOSINGS,
+  type BrickUniverseEntry,
+  type CrossSellItem,
+  type PharmacyActionItem,
+  type PharmacyAreaSummary,
+} from "@/lib/sales/sos-pharmacy-actions";
+import {
+  brickOptionsOf,
+  filterBricks,
+  filterPharmacyItems,
+  hasListFilter,
+  readChannel,
+  type PharmacyListFilter,
+} from "@/lib/sales/sos-pharmacy-actions-filter";
 import { closingIntro, earlierClosings, paceWords, wholePercentText } from "@/lib/sales/sos-portal-words";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { phxButtonGhostClassName, phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
 // "Where my sales come from" — the pharmacy action lists and the weekly month pace, above the
@@ -94,6 +109,8 @@ const formatPct = wholePercentText;
 
 // A phone tap target is at least 40px; the compact 32px control returns from `md` up.
 const SELECT_CLASS = cn(phxSelectClassName, "min-w-0 max-w-full px-2 text-xs hover:border-orange-300 md:h-8");
+const SEARCH_CLASS = cn(phxFieldClassName, "min-w-0 w-full px-2 text-xs md:h-8");
+const FILTER_LABEL = "mb-1 block whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.18em] text-slate-500";
 /** The shared chip, grown to a 40px tap target on a phone. Appended as a plain string, never cn(). */
 const TAP_CHIP = "min-h-10 md:min-h-0";
 
@@ -423,17 +440,63 @@ function LoadingState({ subtitle }: { subtitle: string }) {
   );
 }
 
+/** One area's (or the whole) summary narrowed by the advanced filters: lists filtered, counts and money summed from them. */
+function narrowScope(base: PharmacyAreaSummary, filter: PharmacyListFilter): PharmacyAreaSummary {
+  const stopped = filterPharmacyItems(base.stopped, filter);
+  const dropping = filterPharmacyItems(base.dropping, filter);
+  const newPharmacies = filterPharmacyItems(base.newPharmacies, filter);
+  const top = filterPharmacyItems(base.top, filter);
+  const crossSell = filterPharmacyItems(base.crossSell, filter);
+  const untappedBricks = filterBricks(base.untappedBricks, filter);
+  const sum = (items: PharmacyActionItem[], pick: (item: PharmacyActionItem) => number) =>
+    Math.round(items.reduce((total, item) => total + pick(item), 0) * 100) / 100;
+  return {
+    ...base,
+    stopped,
+    dropping,
+    newPharmacies,
+    top,
+    crossSell,
+    untappedBricks,
+    counts: {
+      activePharmacies: top.length,
+      stopped: stopped.length,
+      dropping: dropping.length,
+      newPharmacies: newPharmacies.length,
+      crossSell: crossSell.length,
+      untappedBricks: untappedBricks.length,
+    },
+    valueAtStake: {
+      stopped: sum(stopped, (item) => item.priorAverage),
+      dropping: sum(dropping, (item) => item.priorAverage - item.latestValue),
+      newPharmacies: sum(newPharmacies, (item) => item.latestValue),
+    },
+  };
+}
+
 export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
   const [line, setLine] = useState<string | null>(null);
+  // The closing the lists are read AS OF. null = the newest published one, as the page always opened.
+  const [period, setPeriod] = useState<string | null>(null);
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [area, setArea] = useState("");
   const [tab, setTab] = useState<TabKey>("stopped");
   const [shown, setShown] = useState(PAGE_SIZE);
+  // "Compare with the N closings before" — null = the default three. Reloads, like the month.
+  const [months, setMonths] = useState<number | null>(null);
+  // The advanced filters only narrow the lists already loaded; the sheet applies them to every pharmacy.
+  const [brick, setBrick] = useState("");
+  const [channel, setChannel] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
-    const query = line ? `?line=${encodeURIComponent(line)}` : "";
+    const params = new URLSearchParams();
+    if (line) params.set("line", line);
+    if (period) params.set("period", period);
+    if (months) params.set("months", String(months));
+    const query = params.toString() ? `?${params.toString()}` : "";
     fetch(`/api/employee-portals/source-of-sales/actions${query}`, { cache: "no-store", signal: controller.signal })
       .then(async (result) => (await result.json()) as ApiResponse)
       .then((next) => {
@@ -446,7 +509,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [line]);
+  }, [line, period, months]);
 
   const data = response?.data;
   const actions = data?.actions ?? null;
@@ -465,20 +528,42 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
   };
   const selectArea = (next: string) => {
     setArea(next);
+    setBrick("");
+    setShown(PAGE_SIZE);
+  };
+  const selectMonths = (next: number) => {
+    setLoading(true);
+    setShown(PAGE_SIZE);
+    setMonths(next);
+  };
+  const clearFilters = () => {
+    setBrick("");
+    setChannel("");
+    setSearch("");
     setShown(PAGE_SIZE);
   };
   const selectLine = (next: string) => {
     setLoading(true);
     setArea("");
     setShown(PAGE_SIZE);
+    setPeriod(null);
+    setBrick("");
     setLine(next);
+  };
+  const selectPeriod = (next: string) => {
+    setLoading(true);
+    setShown(PAGE_SIZE);
+    setPeriod(next);
   };
 
   if (loading) return <LoadingState subtitle={subtitle} />;
 
   // The selectors sit on the band's bottom rail, like the period/line chips on the sibling pages.
+  // Months the lists can be read as of: every published closing that has one before it to compare with.
+  const monthOptions = (data?.publishedPeriods ?? []).slice(0, -1);
+  const shownPeriod = actions?.latestPeriod ?? "";
   const bandFooter =
-    (data?.availableLines.length ?? 0) > 1 || areaOptions.length > 1 ? (
+    (data?.availableLines.length ?? 0) > 1 || areaOptions.length > 1 || monthOptions.length > 1 ? (
       <>
         {data && data.availableLines.length > 1 ? (
           <BandChoice
@@ -492,7 +577,29 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
             selected={data.line ?? ""}
           />
         ) : null}
-        {data && data.availableLines.length > 1 && areaOptions.length > 1 ? (
+        {data && data.availableLines.length > 1 && (monthOptions.length > 1 || areaOptions.length > 1) ? (
+          <span aria-hidden className="mx-2 hidden h-4 w-px bg-slate-200 sm:inline-block" />
+        ) : null}
+        {monthOptions.length > 1 ? (
+          <label className="flex min-w-0 max-w-full items-center gap-2">
+            <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.18em] text-slate-500">Month</span>
+            <select
+              aria-label="Month"
+              className={SELECT_CLASS}
+              onChange={(event) => {
+                if (event.target.value !== shownPeriod) selectPeriod(event.target.value);
+              }}
+              value={shownPeriod}
+            >
+              {monthOptions.map((option) => (
+                <option key={option} value={option}>
+                  {formatPeriod(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {monthOptions.length > 1 && areaOptions.length > 1 ? (
           <span aria-hidden className="mx-2 hidden h-4 w-px bg-slate-200 sm:inline-block" />
         ) : null}
         {areaOptions.length > 1 ? (
@@ -525,7 +632,29 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
   // Every count and every EGP figure on the band, the tiles and the tie-back line comes from ONE
   // source: the whole result, or the server's per-area summary when an area is picked. Never count
   // one and sum the other — the lists are capped, so a client-side sum undercounts.
-  const scope: PharmacyAreaSummary | null = actions ? (area ? actions.byArea?.[area] ?? EMPTY_AREA : actions) : null;
+  const areaScope: PharmacyAreaSummary | null = actions ? (area ? actions.byArea?.[area] ?? EMPTY_AREA : actions) : null;
+
+  // The advanced filters narrow the lists on screen; counts and money then come from the narrowed lists.
+  // The screen's lists hold the first ACTION_LIST_LIMIT of each, so when one was cut the note below
+  // says so and points to the sheet, which filters every pharmacy.
+  const listFilter: PharmacyListFilter = { brickName: brick || null, channel: readChannel(channel), search: search || null };
+  const filterOn = hasListFilter(listFilter);
+  const scope: PharmacyAreaSummary | null = areaScope && filterOn ? narrowScope(areaScope, listFilter) : areaScope;
+  const listsCut = Boolean(
+    areaScope &&
+      (areaScope.stopped.length < areaScope.counts.stopped ||
+        areaScope.dropping.length < areaScope.counts.dropping ||
+        areaScope.newPharmacies.length < areaScope.counts.newPharmacies),
+  );
+  const brickOptions = areaScope
+    ? brickOptionsOf([areaScope.stopped, areaScope.dropping, areaScope.newPharmacies, areaScope.top, areaScope.crossSell, areaScope.untappedBricks])
+    : [];
+  // Every closing published before the month shown, up to six — the choices "Compare with" offers.
+  const publishedList = data.publishedPeriods ?? [];
+  const shownIndex = actions?.latestPeriod ? publishedList.indexOf(actions.latestPeriod) : -1;
+  const earlierAvailable = shownIndex >= 0 ? Math.min(MAX_LOOKBACK_CLOSINGS, publishedList.length - shownIndex - 1) : 0;
+  const comparedWith = actions?.priorPeriods.length ?? 0;
+  const monthsChoices = Array.from({ length: Math.max(earlierAvailable, comparedWith) }, (_, index) => index + 1);
 
   const renderList = (): ReactNode => {
     if (!actions) return null;
@@ -610,6 +739,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
   const activeTab = TABS.find((entry) => entry.key === tab) ?? TABS[0];
   const countOf = (key: TabKey): number => {
     if (!scope) return 0;
+    if (filterOn && key === "top") return scope.top.length;
     return key === "top" ? scope.counts.activePharmacies : scope.counts[key];
   };
   const totals = scope?.latestTotals;
@@ -645,7 +775,29 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
     <div className="space-y-6">
       <CommandBand surface="portal" footer={bandFooter} kicker={BAND_KICKER} stats={bandStats} subtitle={subtitle} title={BAND_TITLE} />
 
-      <SectionCard icon={Store} title="Where my sales come from">
+      <SectionCard
+        actions={
+          actions ? (
+            <a
+              className="inline-flex min-h-10 items-center gap-1.5 border border-orange-300 bg-white px-3 py-1 text-xs font-bold text-orange-700 transition-colors hover:border-orange-500 hover:bg-orange-50 md:min-h-0"
+              href={`/api/employee-portals/source-of-sales/actions/export?${new URLSearchParams({
+                ...(data.line ? { line: data.line } : {}),
+                ...(actions.latestPeriod ? { period: actions.latestPeriod } : {}),
+                ...(area ? { area } : {}),
+                ...(comparedWith > 0 ? { months: String(comparedWith) } : {}),
+                ...(brick ? { brick } : {}),
+                ...(listFilter.channel ? { channel: listFilter.channel } : {}),
+                ...(search.trim() ? { q: search.trim() } : {}),
+              }).toString()}`}
+            >
+              <Download className="h-3 w-3" />
+              Download sheet
+            </a>
+          ) : undefined
+        }
+        icon={Store}
+        title="Where my sales come from"
+      >
         <div className="p-4">
           {!actions ? (
             <p className="text-sm font-semibold text-slate-600">{data.message ?? "No published closing to read yet."}</p>
@@ -659,6 +811,92 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   historyComplete: actions.historyComplete,
                 })}
               </p>
+
+              <div className="mb-4 grid grid-cols-1 gap-3 border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-2 lg:grid-cols-5">
+                {monthsChoices.length > 0 ? (
+                  <label className="min-w-0">
+                    <span className={FILTER_LABEL}>Compare with</span>
+                    <select
+                      aria-label="Compare with"
+                      className={cn(SELECT_CLASS, "w-full")}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        if (next !== comparedWith) selectMonths(next);
+                      }}
+                      value={comparedWith}
+                    >
+                      {monthsChoices.map((choice) => (
+                        <option key={choice} value={choice}>
+                          {`${choice === 1 ? "The month before" : `The ${choice} months before`}${choice === LOOKBACK_CLOSINGS ? " (usual)" : ""}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {brickOptions.length > 1 ? (
+                  <label className="min-w-0">
+                    <span className={FILTER_LABEL}>Brick</span>
+                    <select
+                      aria-label="Brick"
+                      className={cn(SELECT_CLASS, "w-full")}
+                      onChange={(event) => {
+                        setBrick(event.target.value);
+                        setShown(PAGE_SIZE);
+                      }}
+                      value={brick}
+                    >
+                      <option value="">Every brick</option>
+                      {brickOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="min-w-0">
+                  <span className={FILTER_LABEL}>Bought through</span>
+                  <select
+                    aria-label="Bought through"
+                    className={cn(SELECT_CLASS, "w-full")}
+                    onChange={(event) => {
+                      setChannel(event.target.value);
+                      setShown(PAGE_SIZE);
+                    }}
+                    value={channel}
+                  >
+                    <option value="">Distributor and direct</option>
+                    <option value="distributor">Distributor only</option>
+                    <option value="direct">Direct order only</option>
+                  </select>
+                </label>
+                <label className="min-w-0">
+                  <span className={FILTER_LABEL}>Search</span>
+                  <input
+                    aria-label="Search pharmacies"
+                    className={SEARCH_CLASS}
+                    onChange={(event) => {
+                      setSearch(event.target.value);
+                      setShown(PAGE_SIZE);
+                    }}
+                    placeholder="Pharmacy, address or brick"
+                    type="search"
+                    value={search}
+                  />
+                </label>
+                <div className="flex min-w-0 items-end">
+                  {filterOn ? (
+                    <button className={cn(phxButtonGhostClassName, "min-h-10 w-full text-xs md:min-h-0")} onClick={clearFilters} type="button">
+                      Clear filters
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {filterOn && listsCut ? (
+                <p className="-mt-2 mb-4 text-phx-xs font-semibold text-amber-700">
+                  The screen holds the first 200 pharmacies of each list, so these counts may be short. Download sheet applies the same filters to every pharmacy.
+                </p>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <Tile
@@ -699,7 +937,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                 />
               </div>
 
-              {totals && totals.total > 0 ? (
+              {!filterOn && totals && totals.total > 0 ? (
                 <p className="mt-4 border-l-2 border-orange-200 pl-3 text-phx-xs font-semibold leading-5 text-slate-500">
                   {`Your ${formatPeriod(actions.latestPeriod)} closing: ${formatEgp(totals.total)} = ${tieBack.join(" + ")}. Only pharmacies are listed — Main Stores and wholesaler shares are split across areas and have no single pharmacy to visit.`}
                 </p>
