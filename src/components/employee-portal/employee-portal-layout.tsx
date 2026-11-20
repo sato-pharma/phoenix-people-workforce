@@ -832,7 +832,11 @@ function EmployeePortalGreeting({ firstName }: { firstName: string }) {
   }
 
   return (
-    <p className="text-phx-xs font-black uppercase tracking-[0.22em] text-orange-600 sm:text-phx-xs sm:tracking-[0.26em]">
+    // Under 360px CSS wide — a small Android phone, or any phone on Large text, which Chrome lays out
+    // narrower — the eyebrow steps aside and the bar shows the role alone: the column has ~90px
+    // there, and "EMPLOYEE PORTAL" at 0.22em needed 130px, so it ran under the search icon. The
+    // OFFLINE line above is a different branch and is never hidden.
+    <p className="hidden text-phx-xs font-black uppercase tracking-[0.16em] text-orange-600 min-[360px]:block min-[400px]:tracking-[0.22em] sm:text-phx-xs sm:tracking-[0.26em]">
       <span className={greeting ? "sm:hidden" : undefined}>Employee Portal</span>
       {greeting ? (
         <span className="hidden normal-case tracking-[0.02em] sm:inline">
@@ -1026,7 +1030,11 @@ function PortalQuickActions({
   if (actions.length === 0) return null;
 
   return (
-    <div className="relative shrink-0" ref={ref}>
+    // Desktop only (lg+). Below lg the phone bar's own floating "+" opens the SAME list
+    // (PortalBottomNavQuickActions, lg:hidden), so on a phone this was a second identical orange "+"
+    // on every screen — and its 40px squeezed the identity column until "Employee Portal / Medical
+    // Representative" broke into four lines and climbed out of the 54px bar on Android and iPhone.
+    <div className="relative hidden shrink-0 lg:block" ref={ref}>
       <button
         aria-expanded={open}
         aria-haspopup="menu"
@@ -1553,7 +1561,7 @@ export function EmployeePortalTopNav({
       >
         {/* The brand's three-colour hairline along the bar's top edge. */}
         <div aria-hidden="true" className="h-[2px] w-full bg-gradient-to-r from-sky-500 via-[#F05A1A] to-emerald-500" />
-        <div className="mx-auto flex h-[54px] w-full max-w-[1560px] items-center gap-1.5 px-2 sm:gap-2.5 sm:px-4 lg:h-[62px] lg:px-8">
+        <div className="mx-auto flex h-[54px] w-full max-w-[1560px] items-center gap-1 px-2 min-[360px]:gap-1.5 sm:gap-2.5 sm:px-4 lg:h-[62px] lg:px-8">
           <button
             aria-label="Menu"
             aria-controls="employee-portal-mobile-sidebar"
@@ -1578,10 +1586,14 @@ export function EmployeePortalTopNav({
               which an input can spare. The label also dropped `whitespace-nowrap`: if a longer job
               title ever arrives it must WRAP (hence `leading-tight`, which keeps two lines inside the
               56px bar), never clip. */}
+          {/* Phones (2026-11-20, his reps' small Android phones on Large text): the "+ New" button is
+              desktop-only now (the phone bar's floating "+" is the same list), which hands this column
+              the 40px it was missing. While OFFLINE under 360px the warning replaces the role — both
+              at once were five lines in a 54px bar. */}
           <div className="flex min-w-0 flex-1 items-center md:flex-none">
             <div className="min-w-0">
               <EmployeePortalGreeting firstName={firstName} />
-              <p className="text-phx-sm font-bold leading-tight text-slate-500 sm:text-phx-xs">{data.employee.roleLabel}</p>
+              <p className="text-phx-sm font-bold leading-tight text-slate-500 max-[359px]:[[role=status]~&]:hidden sm:text-phx-xs">{data.employee.roleLabel}</p>
             </div>
           </div>
 

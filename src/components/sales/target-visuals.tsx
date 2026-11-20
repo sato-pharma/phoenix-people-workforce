@@ -476,7 +476,11 @@ export function CommandBand({
             {ring || aside ? (
               <div className="flex flex-wrap items-center gap-6 px-5 py-5">
                 {ring}
-                {aside ? <div className="min-w-0 flex-1">{aside}</div> : null}
+                {/* `basis-[8rem]` and NO `min-w-0`: the aside's nowrap figure is its own floor, so when
+                    ring + aside no longer fit side by side the aside WRAPS under the ring. With
+                    `min-w-0` it was squeezed instead, and "100.0%" was cut at the panel edge on a
+                    small Android phone on Large text (~280px CSS wide). */}
+                {aside ? <div className="flex-1 basis-[8rem]">{aside}</div> : null}
               </div>
             ) : null}
           </section>

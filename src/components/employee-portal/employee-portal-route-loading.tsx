@@ -52,11 +52,10 @@ export function EmployeePortalRouteLoading() {
         </section>
       ) : landing ? null : (
         // The same frame as EmployeePortalPageShell's command header: navy, square, one badge,
-        // a title and a line of description — as SHARES of the width, never fixed pixels.
+        // and a title, no description line (owner, 2026-11-20) — as SHARES of the width, never fixed pixels.
         <section className="rounded-sm border border-slate-800 bg-[#08111f] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
           <div className="h-5 w-full max-w-[8rem] animate-pulse bg-white/10" />
           <div className="mt-3 h-8 w-full max-w-[20rem] animate-pulse bg-white/15" />
-          <div className="mt-2 h-4 w-full max-w-[32rem] animate-pulse bg-white/10" />
         </section>
       )}
 
