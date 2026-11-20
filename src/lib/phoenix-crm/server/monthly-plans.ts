@@ -999,10 +999,10 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
     actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";
-    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
-    await assertApprovedPlanStands(viewer, headerRow);
     if (monthEndOf(monthStart) < today) throw conflictError("This month is over, so its plan can no longer be returned. Reload the page.");
     if (!note) throw validationError("Write a note for the rep on what to change.");
+    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
+    await assertApprovedPlanStands(viewer, headerRow);
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_monthly_plan_transition", {

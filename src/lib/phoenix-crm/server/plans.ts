@@ -1063,13 +1063,13 @@ export async function transitionPlan(
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
     actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";
-    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
-    await assertApprovedPlanStands(viewer, planRow);
     // A plan returned after its week could never be changed by the rep; the database refuses it too.
     if (editablePlanDays(String(planRow.week_start), today).length === 0) {
       throw conflictError("This week is over, so its plan can no longer be returned. Reload the page.");
     }
     if (!note) throw validationError("Write a note for the rep on what to change.");
+    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
+    await assertApprovedPlanStands(viewer, planRow);
     // One day alone: a working day of this week he can still change (the database refuses any other).
     if (day !== null) {
       if (!fieldWeekDays(String(planRow.week_start)).includes(day)) throw validationError("Choose a day of this week to return.");

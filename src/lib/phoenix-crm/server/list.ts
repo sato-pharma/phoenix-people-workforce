@@ -3686,10 +3686,10 @@ export async function sfeDropFromList(
   assertListCurator(viewer, seat, isTest);
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to drop.");
   const customerId = String(body.customerId).toLowerCase();
-  const drop = parseDropDraft(body);
-  if (!drop.ok) throw validationError(drop.error);
   // Where the Super Admin left this customer, only the Super Admin changes (owner, 2026-11-20).
   await assertListStandingIsNotSuperAdmins(viewer, customerId, isTest);
+  const drop = parseDropDraft(body);
+  if (!drop.ok) throw validationError(drop.error);
 
   const created = await callPhoenixCrm<Row>("phoenix_crm_create_request", {
     p: {
