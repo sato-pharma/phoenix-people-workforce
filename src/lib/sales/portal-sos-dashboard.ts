@@ -85,6 +85,15 @@ export function isPortalSosActionsRole(role: PhoenixRole): boolean {
 }
 
 /**
+ * Who may read the pharmacy action lists and download their sheet: every portal viewer above, plus
+ * the CEO and the Super Admin, who read them company-wide from the admin Field Sales Source of Sales
+ * page (owner, 2026-11-20). Scope still comes from the SESSION — this widens the door, never the rows.
+ */
+export function canReadPharmacyActions(role: PhoenixRole): boolean {
+  return isPortalSosActionsRole(role) || role === "CEO" || role === "Super Admin";
+}
+
+/**
  * Pure filter-visibility rule (no DB) — exported for unit testing.
  *   line:   hidden when bound to a single line; shown for multi-line (MM) or company.
  *   region: hidden ONLY when locked to exactly one region (DSM); shown otherwise.
