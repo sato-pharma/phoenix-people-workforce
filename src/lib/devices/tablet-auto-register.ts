@@ -37,7 +37,7 @@ import {
 } from "@/lib/devices/managed-tablets";
 import { REP_TABLET_POLICY_ID } from "@/lib/devices/tablet-policy";
 
-export const TABLET_ASSET_TAG_PREFIX = "PHX-TAB-";
+const TABLET_ASSET_TAG_PREFIX = "PHX-TAB-";
 
 const TAG_PATTERN = /^PHX-TAB-(\d+)$/i;
 

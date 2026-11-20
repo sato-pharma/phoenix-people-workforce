@@ -19,7 +19,7 @@ export const BANK_LETTER_PAGE = { href: "/hiring-pack/bank-account-letter" } as 
 export const BANK_LETTER_BANK_NAME_AR = "بنك أبو ظبي الأول مصر";
 
 /** The `employees.bank_name` code for First Abu Dhabi Bank. The other values on file are CIB and QNB. */
-export const FAB_BANK_CODE = "FAB";
+const FAB_BANK_CODE = "FAB";
 
 export const BANK_LETTER_HEADINGS = ["", "الاسم", "الرقم القومي", "رقم للتواصل", "العنوان", "الوظيفة", "الأجر"] as const;
 

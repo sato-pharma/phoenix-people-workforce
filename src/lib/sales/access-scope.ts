@@ -133,11 +133,6 @@ export async function restrictedProductNameSet(): Promise<Set<string>> {
   return names;
 }
 
-/** Test-only: reset the name cache so a test can control what the next read returns. */
-export function __resetRestrictedNameCacheForTests(): void {
-  restrictedNameCache = null;
-}
-
 // Employee `lines.name` values ("Anti Infective", "Pedia", "CNS", "Head Office") → Source of Sales
 // `official_line` values ("Anti Infective", "CNS", "Head Office", "Pedia") — all four now match
 // verbatim. Moved to ./official-lines.ts (a dependency-free module) so client components that

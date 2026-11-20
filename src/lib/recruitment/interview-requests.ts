@@ -91,7 +91,7 @@ const ITEM_COLUMNS =
 // ── Inputs ────────────────────────────────────────────────────────────────────────────────────────
 
 /** A CV as uploaded on a request — the same shape a booking's CV takes. */
-export type InterviewRequestCvUpload = { fileName: string; mimeType: string; bytes: Buffer; sizeBytes: number };
+type InterviewRequestCvUpload = { fileName: string; mimeType: string; bytes: Buffer; sizeBytes: number };
 
 /** One CV a requester attaches: a Recruitment candidate, or an outside person (with an optional CV). */
 export type InterviewRequestItemInput = {

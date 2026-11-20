@@ -28,7 +28,7 @@ const MIN_MS_BETWEEN_ATTEMPTS = 60 * 60 * 1000;
 /** The last attempt per business account, in this process. The intake job runs every 10 minutes. */
 const lastAttemptAt = new Map<string, number>();
 
-export type WhatsAppResubscribeOutcome = "resubscribed" | "failed" | "skipped";
+type WhatsAppResubscribeOutcome = "resubscribed" | "failed" | "skipped";
 
 export type WhatsAppResubscribeResult = {
   line: WhatsAppLineAccount;

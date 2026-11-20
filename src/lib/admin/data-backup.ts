@@ -16,7 +16,7 @@ type BackupTableConfig = {
   tiebreak?: string;
 };
 
-export type DataBackupDataset = {
+type DataBackupDataset = {
   module: string;
   name: string;
   rows: Record<string, unknown>[];

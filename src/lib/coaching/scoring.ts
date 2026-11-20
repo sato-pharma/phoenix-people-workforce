@@ -68,7 +68,7 @@ function normalizeScoreItem(value: unknown, key: CoachingScoreItemKey): Normaliz
   };
 }
 
-export function normalizeCoachingScores(input: CoachingScoreInput): Record<CoachingScoreItemKey, number> {
+function normalizeCoachingScores(input: CoachingScoreInput): Record<CoachingScoreItemKey, number> {
   const normalized = {} as Record<CoachingScoreItemKey, number>;
   const keys = Object.keys(input);
   const allowedKeys = new Set(coachingScoreItems.map((item) => item.key));

@@ -73,32 +73,6 @@ const LOGIN_SELECTORS = {
  */
 const TWO_STEP_CHALLENGE_PATH = "/tfavalidate";
 
-/**
- * 🔴 BEHAVIOUR MAPPED LIVE, PUPPETEER SELECTORS NOT YET WRITTEN OR PROVEN. The console was walked on
- * 2026-09-24 (Email Control Panel, ecp.turbify.com, 288 mailboxes). What is now KNOWN for certain:
- *
- *   - The account list has a "Search users..." box; typing an address filters to that mailbox's row.
- *   - Each row has "Add alias", "Reset password", "Edit" and a "More actions" menu. The menu holds
- *     "Reset password", "Edit", "Transfer account" and "Delete".
- *   - 🔴 "Reset password" HAS NO CONFIRMATION. One click resets the password immediately and opens a
- *     dialog headed "One-time password" showing the email account, the new one-time password
- *     (Show / Copy), a login link, and "Send invite" / "Print" / "Close modal". The appearance of
- *     that dialog with the matching email account IS the success signal; the robot then closes it
- *     without sending or printing (a leaver needs no invite).
- *   - 🔴 "Delete" — its confirmation behaviour is UNVERIFIED. It was NOT clicked, because reset
- *     proved this console executes destructive actions with no "are you sure", and a delete is
- *     permanent with no restore and no backup. Whether Delete opens a confirm dialog or deletes on
- *     the click must be observed on the FIRST supervised live deletion, never guessed.
- *
- * The `label:` fields are the confirmed on-screen text; `selector` stays `__UNCALIBRATED__` because
- * the production driver runs headless puppeteer, whose click needs a DOM/xpath selector that a
- * supervised live session must still capture and PROVE. The flag below stays false until then: a
- * delete flow that has never once been run is not something this file will arm over live mailboxes.
- */
-
-/** Reset is a single immediate click — there is no confirmation dialog to click through. */
-export const TURBIFY_RESET_HAS_NO_CONFIRMATION = true;
-
 /** Whether Delete opens a confirm dialog is unknown until the first supervised live deletion. */
 export const TURBIFY_DELETE_CONFIRMATION_BEHAVIOUR = "unverified" as const;
 
@@ -163,14 +137,7 @@ const RESET_FLOW_SELECTORS: Record<string, string> = {
  * `createTurbifyConsoleDriver` re-checks and throws if you do, so a half-calibrated flip fails
  * loudly at build time rather than clicking `__UNCALIBRATED__` over a live mailbox.
  */
-export const TURBIFY_RESET_CALIBRATED = true;
-export const TURBIFY_DELETE_CALIBRATED = false;
-
-/**
- * Back-compat alias: the driver is usable (can sign in and reset) once RESET is calibrated. Delete
- * is gated separately by `TURBIFY_DELETE_CALIBRATED` inside `deleteMailbox`.
- */
-export const TURBIFY_SELECTORS_CALIBRATED = TURBIFY_RESET_CALIBRATED;
+const TURBIFY_RESET_CALIBRATED = true;
 
 export class TurbifyConsoleNotCalibratedError extends Error {
   constructor() {
@@ -184,7 +151,7 @@ export class TurbifyConsoleNotCalibratedError extends Error {
   }
 }
 
-export class TurbifyDeleteNotCalibratedError extends Error {
+class TurbifyDeleteNotCalibratedError extends Error {
   constructor() {
     super(
       "The Turbify console driver has not been calibrated for DELETE: the delete-confirmation "
@@ -218,7 +185,7 @@ type ConsolePage = ChromiumPage & {
   url: () => string;
 };
 
-export type TurbifyCredentials = {
+type TurbifyCredentials = {
   username: string;
   password: string;
 };
@@ -229,7 +196,7 @@ export type TurbifyCredentials = {
  * Never falls back to a default and never logs the value. Returns null when unset so the caller can
  * refuse with a clear message rather than attempting an anonymous sign-in.
  */
-export function readTurbifyCredentials(
+function readTurbifyCredentials(
   env: { username?: string; password?: string } = {
     username: process.env.PHOENIX_TURBIFY_ADMIN_USER,
     password: process.env.PHOENIX_TURBIFY_ADMIN_PASSWORD,

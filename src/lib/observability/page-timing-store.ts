@@ -18,7 +18,7 @@ import type {
 } from "@/lib/observability/page-timing-intake";
 
 const MAX_SAMPLES_PER_KEY = 2_000;
-export const PAGE_TIMING_MAX_HOURS_HELD = 48;
+const PAGE_TIMING_MAX_HOURS_HELD = 48;
 
 type Bucket = { count: number; max: number; samples: number[] };
 type HourBuckets = Map<string, Bucket>;

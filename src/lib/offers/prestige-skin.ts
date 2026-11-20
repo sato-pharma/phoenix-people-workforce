@@ -42,12 +42,12 @@ export const PRESTIGE_NAVY = "#17304d";
 /** Sato's flat gold on paper: rules, numerals, corner marks. */
 export const PRESTIGE_GOLD = "#a07a3a";
 /** The same gold one step deeper, for small gold TYPE on paper, so it still reads at 7pt. */
-export const PRESTIGE_GOLD_TEXT = "#86662d";
+const PRESTIGE_GOLD_TEXT = "#86662d";
 /** Sato's flat gold on navy. */
 export const PRESTIGE_GOLD_ON_NAVY = "#c8a462";
 
 /** The display face. Georgia on a desk, Noto Serif in the production image, Times last. */
-export const PRESTIGE_SERIF_STACK = "Georgia,'Noto Serif','Times New Roman',serif";
+const PRESTIGE_SERIF_STACK = "Georgia,'Noto Serif','Times New Roman',serif";
 
 const N = PRESTIGE_NAVY;
 const G = PRESTIGE_GOLD;

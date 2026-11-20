@@ -22,7 +22,7 @@ export type BenefitLine = {
   memberShare: string | null;
 };
 
-export type BenefitSection = { key: string; title: BenefitText; lines: BenefitLine[] };
+type BenefitSection = { key: string; title: BenefitText; lines: BenefitLine[] };
 
 export type PlanBenefits = {
   category: MedicalInsuranceCategory;

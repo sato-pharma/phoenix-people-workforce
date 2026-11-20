@@ -42,7 +42,7 @@ function lower(value: string | null | undefined): string {
  * The grain is the ADDRESS, not the queue: a caller names mailboxes, and each one has to come back
  * with its own verdict even when nothing in the database matches it.
  */
-export async function loadAdoptionCandidates(
+async function loadAdoptionCandidates(
   named: readonly string[],
 ): Promise<AdoptionCandidate[]> {
   const wanted = [...new Set(named.map(lower).filter((value) => value.length > 0))];

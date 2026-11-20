@@ -272,7 +272,7 @@ export function unseenIdsOnBoards<T extends { id: string; managerNotified?: { se
 }
 
 /** One chip on the overview: a folder that holds CVs, and how many of them are still unopened. */
-export type ManagerFolderChip = {
+type ManagerFolderChip = {
   count: number;
   lineName: string | null;
   name: string;
@@ -357,8 +357,8 @@ export function unseenSendsByManager(input: {
 }
 
 /** The first and last Cairo clock hours at which a reminder may go out. Outside them it waits. */
-export const REMINDER_FIRST_HOUR_CAIRO = 8;
-export const REMINDER_LAST_HOUR_CAIRO = 21;
+const REMINDER_FIRST_HOUR_CAIRO = 8;
+const REMINDER_LAST_HOUR_CAIRO = 21;
 
 /**
  * How long a CV keeps reminding after it reaches a folder (owner, 2026-10-16: "stop the folder

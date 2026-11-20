@@ -30,7 +30,7 @@ export type TrackedForm = {
 
 export type RemarkTrend = "up" | "down" | "same" | "new";
 
-export type RemarkTrack = {
+type RemarkTrack = {
   key: CallRemarkKey;
   latest: CallRating | null;
   previous: CallRating | null;
@@ -78,7 +78,7 @@ function trendOf(latest: CallRating | null, previous: CallRating | null): Remark
 }
 
 /** One rep's history, newest first, already filtered to this rep and to signed forms. */
-export function trackRemark(history: readonly TrackedForm[], key: CallRemarkKey): RemarkTrack {
+function trackRemark(history: readonly TrackedForm[], key: CallRemarkKey): RemarkTrack {
   const rated = history.map((form) => form.ratings[key]).filter((rating): rating is CallRating => Boolean(rating));
   const latest = rated[0] ?? null;
   const previous = rated[1] ?? null;

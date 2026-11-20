@@ -116,7 +116,7 @@ export const candidateFolderKindLabels: Record<CandidateFolderKind, string> = {
 };
 
 /** What the folders inside each shelf are named for — the second line under a shelf heading. */
-export const candidateFolderKindDescriptions: Record<CandidateFolderKind, string> = {
+const candidateFolderKindDescriptions: Record<CandidateFolderKind, string> = {
   district_manager: "One folder per region.",
   medical_rep: "One folder per area.",
   other: "One folder per job title.",

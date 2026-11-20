@@ -143,7 +143,7 @@ export function campaignMixVerdictOf(campaignVisits: number, productiveVisits: n
  * fragment, not a month. Ragaa Mosaad's October held ONE campaign visit, so her page printed "Campaign rising, regular
  * falling (55% → 100%)" in amber while her real path was 55% in January to 6% in September (2026-10-27).
  */
-export const CAMPAIGN_TREND_MIN_MONTH_VISITS = 10;
+const CAMPAIGN_TREND_MIN_MONTH_VISITS = 10;
 
 export function campaignMixTrendOf(monthly: readonly MonthlyVisitPoint[]): CampaignMixTrend | null {
   const months = monthly.filter(
@@ -189,12 +189,12 @@ function describeCampaignTrend(trend: CampaignMixTrend | null): string {
   return ` Unplanned steady near ${to} (${span}).`;
 }
 
-export type LabeledCount = { label: string; count: number; pct: number };
-export type NamedCount = { name: string; count: number };
+type LabeledCount = { label: string; count: number; pct: number };
+type NamedCount = { name: string; count: number };
 
 /** Where a visited customer belongs: an AM doctor, a PM doctor, or a pharmacy. */
 export type CustomerLane = "am" | "pm" | "pharmacy";
-export const CUSTOMER_LANES: readonly CustomerLane[] = ["am", "pm", "pharmacy"];
+const CUSTOMER_LANES: readonly CustomerLane[] = ["am", "pm", "pharmacy"];
 
 /** Most-visited customers, one list per lane — a pharmacy is never a contact (owner rule). */
 export type TopCustomersByLane = Record<CustomerLane, { customers: number; top: NamedCount[] }> & {
@@ -540,7 +540,7 @@ export function countWorkingDays(from: string, to: string, holidays?: CallRateHo
 }
 
 export type DoubleReceivedKind = "double" | "chain" | "product_manager";
-export type DoublesReceivedByKind = { withManager: number; chain: number; withProductManager: number };
+type DoublesReceivedByKind = { withManager: number; chain: number; withProductManager: number };
 
 /**
  * Which kind of double visit a rep received. A Phoenix CRM row carries its own kind (`visit_kind`): with a

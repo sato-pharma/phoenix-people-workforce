@@ -11,8 +11,7 @@
 // price is that the root folder must be created BY US — a folder made by hand in the Drive UI is
 // invisible under this scope, and asking for it 404s in a way that reads like a wrong id.
 
-import { logError } from "@/lib/observability/log";
-import { driveMultipartUpload, getDriveAccessToken, isDriveConfigured } from "@/lib/recruitment/drive-storage";
+import { driveMultipartUpload, getDriveAccessToken } from "@/lib/recruitment/drive-storage";
 import { CABINET_ROOT_NAME } from "@/lib/recruitment/drive-cabinet-folders";
 import { sanitizeDriveSegment } from "@/lib/recruitment/drive-cv-folders";
 
@@ -248,24 +247,3 @@ export async function moveDriveFile(input: {
   return "ok";
 }
 
-/**
- * A one-shot health probe: can we authenticate, and is the root folder reachable?
- *
- * Returns words rather than throwing, because its only consumers are a screen and the backfill's
- * first line — both of which want to SAY what is wrong rather than fall over.
- */
-export async function checkDriveConnection(): Promise<{ ok: boolean; detail: string; rootFolderId?: string }> {
-  if (!isDriveConfigured()) {
-    return { detail: "Google Drive is not configured — no OAuth credentials and no service account key.", ok: false };
-  }
-  try {
-    const id = await ensureRootFolder();
-    return { detail: `Connected. Root folder id ${id}.`, ok: true, rootFolderId: id };
-  } catch (error) {
-    logError("Google Drive connection check failed", {
-      error,
-      labels: { event: "drive_connection_check_failed" },
-    });
-    return { detail: error instanceof Error ? error.message : "Google Drive connection failed.", ok: false };
-  }
-}

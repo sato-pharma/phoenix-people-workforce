@@ -23,7 +23,6 @@
  */
 
 import { fetchAllRows } from "@/lib/supabase/paginated";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
@@ -203,29 +202,3 @@ export type ExpenseClaimParityRow = {
   legacyApproved: number | null;
 };
 
-/**
- * Every claim where the two models disagree. Empty is the gate for phase 3.
- *
- * Read straight from the view so the comparison is one query rather than two full reads diffed in
- * Node — the diff has to be cheap enough to run on every check, or it will not be run.
- */
-export async function listExpenseClaimParityBreaks(): Promise<ExpenseClaimParityRow[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("v_expense_claims_parity")
-    .select("claim_ref,verdict,new_status,legacy_status,new_claimed,legacy_claimed,new_approved,legacy_approved")
-    .neq("verdict", "OK");
-
-  if (error) throw error;
-
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-    claimRef: toText(row.claim_ref),
-    legacyApproved: row.legacy_approved == null ? null : toNumber(row.legacy_approved),
-    legacyClaimed: row.legacy_claimed == null ? null : toNumber(row.legacy_claimed),
-    legacyStatus: row.legacy_status == null ? null : toText(row.legacy_status),
-    newApproved: row.new_approved == null ? null : toNumber(row.new_approved),
-    newClaimed: row.new_claimed == null ? null : toNumber(row.new_claimed),
-    newStatus: row.new_status == null ? null : toText(row.new_status),
-    verdict: toText(row.verdict),
-  }));
-}

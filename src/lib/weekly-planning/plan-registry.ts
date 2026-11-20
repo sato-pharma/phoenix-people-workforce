@@ -20,7 +20,7 @@ import {
  * manager_approve on final_approved by design, and the registry row records the table, not the
  * bypass. Kept out of plan-v1.ts on purpose: that file is pure and the screens import it.
  */
-export const employeePlanWorkflowRegistryModuleKey = "employee_plans";
+const employeePlanWorkflowRegistryModuleKey = "employee_plans";
 
 export async function assertEmployeePlanRegistryTransition(input: {
   status: EmployeePlanStatus;

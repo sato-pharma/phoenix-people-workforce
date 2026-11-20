@@ -8,15 +8,15 @@ import {
 import { tryParseAiJson } from "@/lib/ai/parse-ai-json";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 
-export type AiDraftMode = "composer" | "email_template";
+type AiDraftMode = "composer" | "email_template";
 
-export type AiDraftVariable = {
+type AiDraftVariable = {
   label: string;
   sampleValue: string;
   token: string;
 };
 
-export type AiDraftRecipientRole = { label: string; value: string };
+type AiDraftRecipientRole = { label: string; value: string };
 
 export type AiDraftRecipientRules = {
   bccRoles: string[];

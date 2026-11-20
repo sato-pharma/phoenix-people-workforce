@@ -79,7 +79,7 @@ export type OrgPlacement = {
 };
 
 /** Lowercased, trimmed HR id -> where that person sits. Absent means no seat in the organogram. */
-export type OrgPlacementIndex = Map<string, OrgPlacement>;
+type OrgPlacementIndex = Map<string, OrgPlacement>;
 
 /**
  * The HR-id form everything here matches on.
@@ -105,7 +105,7 @@ export const orgHrKey = (hrId: string | null | undefined): string | null => {
  * to the view would compile, deploy, and silently return `undefined` — which is how a whole board
  * once sorted on NaN. A miss here just means "not scored", which is the safe direction.
  */
-export function isScoredTier(tier: string | null | undefined): boolean {
+function isScoredTier(tier: string | null | undefined): boolean {
   return (tier ?? "").trim().toUpperCase() === "REP";
 }
 
@@ -125,15 +125,12 @@ const TIER_LABELS: ReadonlyArray<readonly [string, string]> = [
  * a view that grew, not a reason to break the page. `titleCase` is not attempted — "Cns" is exactly
  * the class of mangling the owner's human-readable-names rule exists to prevent.
  */
-export function orgTierLabel(tier: string | null | undefined): string {
+function orgTierLabel(tier: string | null | undefined): string {
   const raw = (tier ?? "").trim();
   if (!raw) return "";
   const found = TIER_LABELS.find(([code]) => code === raw.toUpperCase());
   return found ? found[1] : raw;
 }
-
-/** Every tier the label table knows, for the test that pins it against the live view. */
-export const KNOWN_ORG_TIERS: readonly string[] = TIER_LABELS.map(([code]) => code);
 
 const sortCells = (cells: OrgCell[]): OrgCell[] =>
   cells.sort((a, b) => a.lineName.localeCompare(b.lineName) || a.regionName.localeCompare(b.regionName));

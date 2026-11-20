@@ -38,7 +38,7 @@ export type HeadOfficeDayCell = {
   status: HeadOfficeDayStatus;
 };
 
-export type HeadOfficeEmployeeAttendance = {
+type HeadOfficeEmployeeAttendance = {
   departmentName: string | null;
   employeeName: string;
   hrId: string;

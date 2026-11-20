@@ -52,9 +52,9 @@ const CONFIDENTIAL_EXCLUDED =
   "Confidential products (LA003 / LA004 / SS001) are excluded from this report and its totals.";
 
 /** Display name per product / distributor code, read off the report's own rows — never a lookup. */
-export type CoverageCodeNames = { product: Map<string, string>; distributor: Map<string, string> };
+type CoverageCodeNames = { product: Map<string, string>; distributor: Map<string, string> };
 
-export function coverageCodeNames(rows: MarketingCoverageReport["rows"]): CoverageCodeNames {
+function coverageCodeNames(rows: MarketingCoverageReport["rows"]): CoverageCodeNames {
   const product = new Map<string, string>();
   const distributor = new Map<string, string>();
   for (const row of rows) {

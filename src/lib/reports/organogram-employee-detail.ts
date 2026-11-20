@@ -10,7 +10,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
  * sections. When `canViewSensitive` is false those sections are simply absent
  * from the payload — the sensitive values never leave the server.
  */
-export type OrganogramDetailItem = { label: string; value: string | null };
+type OrganogramDetailItem = { label: string; value: string | null };
 export type OrganogramDetailSection = { title: string; items: OrganogramDetailItem[] };
 
 export type OrganogramEmployeeDetail = {

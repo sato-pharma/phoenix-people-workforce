@@ -33,10 +33,10 @@ export const MR_NOTICE_CHANNELS = ["in_app", "push", "telegram"] as const;
 /** The area manager's notice goes every way there is (owner, 7 Nov 2026), email included. */
 export const MR_AREA_MANAGER_CHANNELS = ["in_app", "push", "telegram", "email"] as const;
 
-export const MR_PORTAL_INTERVIEWS_HREF = "/employee-portals/recruitment-candidates#mr-interviews";
-export const MR_HIRING_PAGE_HREF = "/recruitment/mr-hiring";
+const MR_PORTAL_INTERVIEWS_HREF = "/employee-portals/recruitment-candidates#mr-interviews";
+const MR_HIRING_PAGE_HREF = "/recruitment/mr-hiring";
 /** Talent Acquisition's own address for the same page (the `/hr` namespace serves it). */
-export const MR_HIRING_PAGE_HR_HREF = "/hr/recruitment/mr-hiring";
+const MR_HIRING_PAGE_HR_HREF = "/hr/recruitment/mr-hiring";
 
 /**
  * Where an interview-booked notice takes each person: the HR Manager and Talent Acquisition to the

@@ -64,7 +64,7 @@ import type { PhoenixCompanyJobTitle, PhoenixRole } from "@/lib/auth/permissions
  * too — a boundary is evidence of the same kind.
  */
 
-export type WorkbookScreen = {
+type WorkbookScreen = {
   /** An /hr address. Checked against the page files on disk and against the seat's navigation. */
   href: string;
   /** The label the reader will see in their own sidebar, so the workbook and the rail agree. */

@@ -24,8 +24,8 @@ import { resolveCandidateReplyTarget, replyWindow } from "@/lib/recruitment/inbo
 import { sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import { rejectionMessageText } from "@/lib/recruitment/recruitment-settings-db";
 
-export const REJECTION_MESSAGE_EVENT = "recruitment_rejection_message_send";
-export const WINDOW_CLOSED_REASON = "The 24-hour WhatsApp window has closed";
+const REJECTION_MESSAGE_EVENT = "recruitment_rejection_message_send";
+const WINDOW_CLOSED_REASON = "The 24-hour WhatsApp window has closed";
 
 /**
  * True when this number sent CVs that became somebody OTHER than this candidate — a forwarder's

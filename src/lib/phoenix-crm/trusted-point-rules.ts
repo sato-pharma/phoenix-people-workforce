@@ -44,7 +44,7 @@ export const TRUSTED_POINT_NO_PHOTO = "Trusted point — no photo";
  * What a screen draws where the photo of a place validated FROM ANOTHER LINE would be (owner,
  * 2026-11-12; docs/phoenix-crm-line-twins.md). The copy carries its source's point, never its photo.
  */
-export const LINE_TWIN_NO_PHOTO = "Validated on another line — no photo of its own";
+const LINE_TWIN_NO_PHOTO = "Validated on another line — no photo of its own";
 
 /** The words for a place that has no photo by design, or undefined when a missing photo is a lost file. */
 export function noPhotoTextFor(pointSource: unknown): string | undefined {
@@ -53,7 +53,7 @@ export function noPhotoTextFor(pointSource: unknown): string | undefined {
   return undefined;
 }
 
-export type TrustedPointSource = "phoenix" | "old_crm";
+type TrustedPointSource = "phoenix" | "old_crm";
 
 /** One reading of where a rep stood with this customer. */
 export type TrustedPointReading = {
@@ -66,7 +66,7 @@ export type TrustedPointReading = {
   repHrId: string | null;
 };
 
-export type TrustedPointFound = {
+type TrustedPointFound = {
   trusted: true;
   lat: number;
   lon: number;
@@ -86,7 +86,7 @@ export type TrustedPointFound = {
   lastDay: string;
 };
 
-export type TrustedPointMissing = {
+type TrustedPointMissing = {
   trusted: false;
   /** Plain English, for the Super Admin. */
   reason: string;
@@ -108,7 +108,7 @@ function medianPoint(readings: readonly GeoPoint[]): GeoPoint {
 }
 
 /** A reading the rule may use: inside Egypt, and a Phoenix reading no rougher than the visit's line. */
-export function usableTrustedReading(reading: TrustedPointReading): boolean {
+function usableTrustedReading(reading: TrustedPointReading): boolean {
   if (!isUsableFix(reading.lat, reading.lon)) return false;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(reading.day ?? ""))) return false;
   if (reading.source === "phoenix" && reading.accuracyMeters !== null && !(Number(reading.accuracyMeters) <= VISIT_MAX_ACCURACY_METERS)) return false;

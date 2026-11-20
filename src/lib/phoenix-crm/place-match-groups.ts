@@ -43,7 +43,7 @@
 import { sameName } from "@/lib/phoenix-crm/customer-match-groups";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 
-export type MatchSubjectKind = "place" | "venue";
+type MatchSubjectKind = "place" | "venue";
 export type MatchSignboard = "match" | "other_name" | "no_name" | "unjudged" | null;
 export type MatchPointSource = "photo" | "pin" | "shared_place" | null;
 
@@ -91,12 +91,12 @@ export type MatchSubject = {
 };
 
 /** Another line's record of the same customer, shown on the reading it was folded into. */
-export type SameCustomerRecord = { key: string; repName: string; territory: string; line: string | null };
+type SameCustomerRecord = { key: string; repName: string; territory: string; line: string | null };
 
 // ── One customer, one reading ──────────────────────────────────────────────────────────────────────
 
 /** Two stored points this close are the one point the three-lines rule moved a record onto. */
-export const ONE_CUSTOMER_SAME_POINT_METERS = 1;
+const ONE_CUSTOMER_SAME_POINT_METERS = 1;
 
 /** One validated place, as the one-customer fold reads it. */
 export type OneCustomerCandidate = {
@@ -249,28 +249,28 @@ export type MatchAnswerRow = { a: string; b: string; answer: MatchAnswer };
 // ── The pair rule ────────────────────────────────────────────────────────────────────────────────
 
 /** The accuracy assumed for a reading that reported none — the module's own median is about 17 m. */
-export const UNKNOWN_ACCURACY_METERS = 25;
+const UNKNOWN_ACCURACY_METERS = 25;
 /** Two readings closer than this are one door whatever their accuracy says. */
-export const SAME_PLACE_FLOOR_METERS = 30;
+const SAME_PLACE_FLOOR_METERS = 30;
 /** …and however weak they are, more than this apart is never "confidently the same". */
-export const SAME_PLACE_CEILING_METERS = 60;
+const SAME_PLACE_CEILING_METERS = 60;
 /** Beyond this the two are confidently different places even for the weakest pair. */
-export const DIFFERENT_PLACE_FLOOR_METERS = 100;
-export const DIFFERENT_PLACE_CEILING_METERS = 200;
+const DIFFERENT_PLACE_FLOOR_METERS = 100;
+const DIFFERENT_PLACE_CEILING_METERS = 200;
 /** No group the system builds on its own is wider than this — a campus, never a street. */
 export const SAME_GROUP_DIAMETER_METERS = 120;
 /** A member is called the most accurate only when it clearly beats the next one. */
-export const BEST_MARGIN = 0.8;
+const BEST_MARGIN = 0.8;
 /** The nearest OTHER rep must be at least this far for a member to be an outlier. */
-export const OUTLIER_FLOOR_METERS = 30;
+const OUTLIER_FLOOR_METERS = 30;
 /** …and at least this many times as far as the typical member's nearest other rep. */
-export const OUTLIER_RATIO = 2;
+const OUTLIER_RATIO = 2;
 /** One answer covers every pair that raised its question; the route takes at most this many per request, and the screen sends a bigger question in several. */
 export const MAX_ANSWER_PAIRS = 80;
 /** A phone that reported worse than this is weak, and the card says so. */
-export const WEAK_GPS_METERS = 50;
+const WEAK_GPS_METERS = 50;
 /** A pin this far from the rep's own photograph is a pin he moved. */
-export const MOVED_PIN_METERS = 50;
+const MOVED_PIN_METERS = 50;
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(Math.max(value, low), high);
@@ -795,7 +795,7 @@ export function buildPlaceMatchBoard(input: { subjects: ReadonlyArray<MatchSubje
 type QuestionSides = Pick<MatchQuestion, "left" | "right" | "leftMore" | "rightMore">;
 
 /** Every reading on each side of a question: the drawn ones, then the ones only counted. */
-export function questionSides(question: QuestionSides): { left: QuestionReading[]; right: QuestionReading[] } {
+function questionSides(question: QuestionSides): { left: QuestionReading[]; right: QuestionReading[] } {
   return { left: [...question.left, ...question.leftMore], right: [...question.right, ...question.rightMore] };
 }
 

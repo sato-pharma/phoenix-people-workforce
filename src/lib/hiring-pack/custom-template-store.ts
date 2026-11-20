@@ -321,25 +321,6 @@ export async function listCustomTemplates(
   return records.map((record) => templateFromRecord(record, pages.get(record.id) ?? []));
 }
 
-/** Every version of one template, newest version first — the archive for one document. */
-export async function listCustomTemplateVersions(templateKey: string): Promise<CustomTemplate[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(TEMPLATES_TABLE)
-    .select(TEMPLATE_COLUMNS)
-    .eq("key", templateKey)
-    .order("version", { ascending: false });
-
-  if (error) {
-    if (isCustomTemplateLayerMissing(error)) return [];
-    throw new Error(error.message);
-  }
-
-  const records = (data ?? []) as TemplateRecord[];
-  const pages = await pagesForTemplates(records.map((record) => record.id));
-  return records.map((record) => templateFromRecord(record, pages.get(record.id) ?? []));
-}
-
 /** The version of a template that prints today, or null if there is none. */
 export async function loadCurrentCustomTemplate(templateKey: string): Promise<CustomTemplate | null> {
   const supabase = getSupabaseAdmin();

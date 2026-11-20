@@ -54,12 +54,6 @@ export {
   type DoctorListScopeBasis,
 };
 
-export function assertDoctorListAccess(context: Pick<AccessContext, "role" | "scope">): void {
-  if (!canAccessDoctorList(context)) {
-    throw new Error(`Forbidden: ${context.role} cannot read doctor lists.`);
-  }
-}
-
 /**
  * Which reps' lists the viewer may see.
  *

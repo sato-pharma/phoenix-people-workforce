@@ -24,15 +24,8 @@ function cairoCalendarDayAsLocalDate(reference: Date): Date {
 /** Fixed probation length in days. */
 export const PROBATION_TOTAL_DAYS = 90;
 
-/**
- * Field-assessment window: all required DV-Days + feedback must complete within the first
- * 75 days so the CEO has time to decide before day 90.
- */
-export const PROBATION_ASSESSMENT_WINDOW_DAYS = 75;
-
 /** Milestone days (kept fixed by policy — emails change purpose, schedule does not). */
 export const PROBATION_MILESTONE_DAYS = [30, 60, 75] as const;
-export type ProbationMilestoneDay = (typeof PROBATION_MILESTONE_DAYS)[number];
 
 /** Probation start date defaults to the hire date unless an explicit start is provided. */
 export function probationStartDate(

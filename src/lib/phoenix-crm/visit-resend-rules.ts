@@ -56,7 +56,7 @@ export function heldRefusalSentence(message: string | null): string | null {
   return sentence && !SPEAKS_OF_THE_READING.test(sentence) ? sentence : null;
 }
 
-export type QueuedVisitStatus = "waiting" | "refused" | "too_late";
+type QueuedVisitStatus = "waiting" | "refused" | "too_late";
 
 /** How an entry ended, as the resend log files it. A CHECK on the table is the one list of these. */
 export type VisitResendOutcome = "landed_late" | "already_saved" | "refused" | "timed_out" | "removed" | "relogged";

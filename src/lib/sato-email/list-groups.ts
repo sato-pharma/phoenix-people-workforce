@@ -30,13 +30,13 @@ export type SatoListGroupItem = {
   listKey: string;
 };
 
-export type SatoLineRegionRow = {
+type SatoLineRegionRow = {
   districtManagers: SatoListGroupItem | null;
   medicalReps: SatoListGroupItem | null;
   region: string;
 };
 
-export type SatoLineGroup = {
+type SatoLineGroup = {
   districtManagers: SatoListGroupItem | null;
   everyone: SatoListGroupItem | null;
   line: string;

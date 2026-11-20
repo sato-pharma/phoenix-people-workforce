@@ -206,8 +206,3 @@ export const coachingScoreItems: CoachingScoreItemDefinition[] = [
   },
 ];
 
-export const coachingScoreItemKeys = coachingScoreItems.map((item) => item.key);
-
-export function getCoachingScoreItemDefinition(key: string) {
-  return coachingScoreItems.find((item) => item.key === key) ?? null;
-}

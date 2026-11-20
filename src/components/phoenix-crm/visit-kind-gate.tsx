@@ -19,7 +19,7 @@ import { bidiIsolate } from "@/emails/bidi";
 import { customerKindProblem, defaultCustomerType } from "@/lib/phoenix-crm/speciality-list";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 
-export const KIND_FIRST_SENTENCE = "Pick the type and the speciality first. It is asked once.";
+const KIND_FIRST_SENTENCE = "Pick the type and the speciality first. It is asked once.";
 
 export function VisitKindGate({
   back,

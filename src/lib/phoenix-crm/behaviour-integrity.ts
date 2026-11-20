@@ -111,7 +111,7 @@ export const PHOENIX_CRM_BEHAVIOUR_LABELS: Record<PhoenixCrmBehaviourFlag, strin
 export const BEHAVIOUR_MIN_VISITS = 12;
 
 /** A duration is only evidence in bulk: twelve measured visits, and seven in ten sharing one second. */
-export const IDENTICAL_DURATION_MIN_MEASURED = 12;
+const IDENTICAL_DURATION_MIN_MEASURED = 12;
 export const IDENTICAL_DURATION_SHARE = 0.7;
 
 /**
@@ -125,8 +125,8 @@ export const IDENTICAL_DURATION_SHARE = 0.7;
  * working steadily through his list in the evening holds them even to the second. Corroborating
  * only since 2026-10-02 (`PHOENIX_CRM_SAVE_TIME_BEHAVIOUR_FLAGS`); the bound is unchanged.
  */
-export const CADENCE_MIN_GAPS_A_DAY = 5;
-export const CADENCE_SPREAD_SECONDS = 60;
+const CADENCE_MIN_GAPS_A_DAY = 5;
+const CADENCE_SPREAD_SECONDS = 60;
 export const CADENCE_MIN_DAYS = 3;
 
 /**
@@ -152,8 +152,8 @@ export const BURST_WINDOW_SECONDS = 300;
  * sitting. It was already corroborating, and since 2026-10-02 it is also held back unless a strong
  * flag stands beside it.
  */
-export const SHORT_DAY_MIN_VISITS = 5;
-export const SHORT_DAY_SPAN_SECONDS = 45 * 60;
+const SHORT_DAY_MIN_VISITS = 5;
+const SHORT_DAY_SPAN_SECONDS = 45 * 60;
 export const SHORT_DAY_MIN_DAYS = 5;
 
 /** Covered on paper: four in five of his own list seen at least once in the month. */
@@ -177,7 +177,7 @@ export type BehaviourVisit = {
   objection: string | null;
 };
 
-export type BehaviourSales = {
+type BehaviourSales = {
   /**
    * Did the closing book ANY sales this month in the areas this territory captured in?
    *

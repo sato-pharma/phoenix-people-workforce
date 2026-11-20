@@ -10,7 +10,7 @@
 // `whatsAppApplicantSearchParam`), and the screening queue re-runs the same match on the server.
 
 /** Where the Region column's answer came from, in the owner's order of trust. */
-export type WhatsAppApplicantRegionSource = "whatsapp" | "cv" | "cv_unconfirmed";
+type WhatsAppApplicantRegionSource = "whatsapp" | "cv" | "cv_unconfirmed";
 
 export type WhatsAppApplicantAnswer = {
   /** Stable within a row: the built-in step's name, or `extra:<question key>`. */
@@ -58,7 +58,7 @@ export type WhatsAppApplicantRow = {
   stillOpen: boolean;
 };
 
-export type WhatsAppApplicantFilterOption = { value: string; label: string };
+type WhatsAppApplicantFilterOption = { value: string; label: string };
 
 export type WhatsAppApplicantFilter = {
   key: string;
@@ -107,7 +107,7 @@ export const ANSWERED_NOT_ALL = "not_all";
 export const TYPED_ANSWER_VALUE = "__typed";
 
 /** The page's own last segment, under /recruitment or /hr/recruitment. */
-export const WHATSAPP_APPLICANTS_SEGMENT = "/whatsapp-applicants";
+const WHATSAPP_APPLICANTS_SEGMENT = "/whatsapp-applicants";
 
 /**
  * The recruitment address the browser is really in, which a CV link must stay inside.

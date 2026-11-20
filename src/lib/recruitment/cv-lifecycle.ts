@@ -49,10 +49,10 @@ const VIEW = "ats_v_cv_lifecycle";
  */
 const PAGE_SIZE = 500;
 
-export type CvLifecycleChannel = "whatsapp" | "email" | "upload";
+type CvLifecycleChannel = "whatsapp" | "email" | "upload";
 
 /** How precise `reachedPhoenixAt` is. See the header — this is published, never inferred. */
-export type CvLifecycleTimingSource = "queued" | "processed" | "saved";
+type CvLifecycleTimingSource = "queued" | "processed" | "saved";
 
 export type CvLifecycleRow = {
   appliedForJobTitle: string | null;

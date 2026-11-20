@@ -6,7 +6,7 @@
 // Plain constants with no imports, so the page, the two services and the client card share one wording.
 
 /** The seat that is shown the server-down screen on the two pages instead of being redirected away. */
-export const FIELD_CONTROL_OUTAGE_ROLE = "SFE Manager";
+const FIELD_CONTROL_OUTAGE_ROLE = "SFE Manager";
 
 export const FIELD_CONTROL_OUTAGE_TITLE = "Server temporarily unavailable";
 

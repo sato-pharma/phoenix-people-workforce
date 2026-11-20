@@ -63,7 +63,7 @@ export function assertAreaConsolidationAccess(access: AccessContext) {
 }
 
 /** How a table's `area_id` should be read, and therefore whether a consolidation may rewrite it. */
-export type AreaTableRole = "current" | "historical";
+type AreaTableRole = "current" | "historical";
 
 export type AreaTableSpec = {
   /** Table name, as it appears in Postgres. */
@@ -161,14 +161,14 @@ const MOVABLE_TABLES = AREA_TABLES.filter((spec) => spec.role === "current");
 /** How many rows the preview names per table before it stops listing and just counts. */
 const PREVIEW_SAMPLE_LIMIT = 50;
 
-export type AreaRef = {
+type AreaRef = {
   id: number;
   code: string;
   name: string;
   isActive: boolean;
 };
 
-export type AreaConsolidationRow = {
+type AreaConsolidationRow = {
   primaryKey: string;
   label: string;
 };

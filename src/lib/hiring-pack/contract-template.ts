@@ -32,7 +32,7 @@
  * A LAYOUT IS NEVER RETIRED, only stopped being pointed at. `banded` stays because a contract was
  * signed against version 2 and has to reprint as the document that was signed.
  */
-export type ContractLayout = "prose" | "banded" | "document";
+type ContractLayout = "prose" | "banded" | "document";
 
 /**
  * Every token any version of the contract can carry.
@@ -94,7 +94,7 @@ export type ContractToken =
   | "TRAINING_BOND";
 
 /** One numbered article. `titleAr` is null on versions whose articles are numbered but untitled. */
-export type ContractArticle = {
+type ContractArticle = {
   /** The article label exactly as printed — "مادة (1)". */
   number: string;
   /** The article's own heading, where the version has them. v1 has none; v2 titles all nineteen. */
@@ -110,7 +110,7 @@ export type ContractArticle = {
  * version whose signature block is just headings over open space, which is what v1's is. Empty is
  * therefore meaningful and not a gap: it says this version asks for a signature and nothing else.
  */
-export type ContractSignatureColumn = {
+type ContractSignatureColumn = {
   headingAr: string;
   fieldsAr: readonly string[];
 };

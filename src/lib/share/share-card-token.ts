@@ -4,28 +4,6 @@ import { systemDeployment } from "@/config/system-settings";
 import { previousAuthSecret } from "@/lib/auth/previous-secret";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
-/**
- * A public, unguessable, EXPIRING link to one person's OWN keepsake — a milestone card or a spotlight
- * sheet — so LinkedIn and Facebook can scrape the actual picture into a post preview.
- *
- * WHY A TOKEN AND NOT A ROW. The card image itself carries only what the person is choosing to
- * publish about himself — his name, his photo, his own celebratory occasion. So the capability is a
- * stateless HMAC over the payload, exactly like the payroll-acknowledgement and session signers
- * (`PHOENIX_AUTH_SECRET`), no table and no migration. The token carries:
- *
- *   - the KIND (milestone | spotlight) and its parameters, so the link renders one specific card;
- *   - the SUBJECT hr id, so the render is for that person and no other — and because only the rep's
- *     own authed route mints it (from `access.hrId`), a token can only ever name the person who made
- *     it. The public routes NEVER read an hr id off the wire; the signed subject is the only one.
- *   - an EXPIRY, so a link stops resolving after a month whatever a platform cached at scrape time.
- *
- * With no signing secret nothing mints and nothing verifies — the link simply 404s, which is the
- * correct direction to fail, and moot in practice (the same secret signs the session, so without it
- * nobody is logged in to mint one either).
- */
-
-export type ShareCardKind = "milestone" | "spotlight" | "performance";
-
 export type ShareCardPayload =
   // `np` (no photo) carries a rep's deliberate monogram choice onto the PUBLIC link — a photo-less
   // card he built must not reappear with his photo once it is shareable. Optional, defaults false.
@@ -58,7 +36,7 @@ export function unpackShareFocus(payload: ShareCardPayload): { x: number; y: num
 }
 
 /** Thirty days. A LinkedIn/Facebook scrape happens once, at share time; this bounds a later click-through. */
-export const SHARE_CARD_TTL_SECONDS = 30 * 24 * 60 * 60;
+const SHARE_CARD_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 function signingSecret(): string {
   const secret = process.env.PHOENIX_AUTH_SECRET?.trim();

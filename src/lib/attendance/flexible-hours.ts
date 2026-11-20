@@ -49,7 +49,7 @@ export type FlexibleHoursInput = {
   shortBrackets: DeductionBracket[];
 };
 
-export type FlexibleHoursStatus = "Complete" | "Late" | "Short hours" | "Missing punch";
+type FlexibleHoursStatus = "Complete" | "Late" | "Short hours" | "Missing punch";
 
 export type FlexibleHoursResult = {
   status: FlexibleHoursStatus;

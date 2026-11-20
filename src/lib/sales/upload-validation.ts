@@ -48,7 +48,7 @@ export type ValidationReport = {
   findings: ValidationFinding[];
 };
 
-export type PriorPeriodTotals = { period: string; totalValue: number; totalQty: number };
+type PriorPeriodTotals = { period: string; totalValue: number; totalQty: number };
 
 // Result of running the distributor auto-detector against the uploaded file and comparing the top
 // match to the distributor the operator PICKED. Advisory only — the strict header gate validated the

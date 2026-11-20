@@ -66,11 +66,6 @@ export async function loadDirectOrderGeoNames(): Promise<DirectOrderGeoNameMaps>
   return maps;
 }
 
-/** Test seam: drop the in-process cache so a following call re-reads the master. */
-export function resetDirectOrderGeoNameCache(): void {
-  cache = null;
-}
-
 function pair(code: string | null | undefined, names: Map<string, string>): DirectOrderCodeName | null {
   const trimmed = (code ?? "").trim();
   if (!trimmed) return null;

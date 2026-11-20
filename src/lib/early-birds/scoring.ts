@@ -39,8 +39,8 @@ export const EARLY_BIRDS_WEIGHTS = {
 } as const;
 
 /** 08:00 scores 1.0, 12:00 scores 0.0. */
-export const EARLY_BIRDS_START_BEST_MINUTES = 8 * 60;
-export const EARLY_BIRDS_START_WORST_MINUTES = 12 * 60;
+const EARLY_BIRDS_START_BEST_MINUTES = 8 * 60;
+const EARLY_BIRDS_START_WORST_MINUTES = 12 * 60;
 
 /**
  * A clock earlier than this is not a start time — it is paperwork.
@@ -95,12 +95,12 @@ export function earlyBirdsStartScore(medianStartMinutes: number | null): number 
   return clamp01((EARLY_BIRDS_START_WORST_MINUTES - medianStartMinutes) / span);
 }
 
-export function earlyBirdsConsistencyScore(daysWithSubmission: number, expectedWeight: number): number {
+function earlyBirdsConsistencyScore(daysWithSubmission: number, expectedWeight: number): number {
   if (!(expectedWeight > 0)) return 0;
   return clamp01(daysWithSubmission / expectedWeight);
 }
 
-export function earlyBirdsVolumeScore(totalVisits: number, expectedDays: number): number {
+function earlyBirdsVolumeScore(totalVisits: number, expectedDays: number): number {
   if (!(expectedDays > 0)) return 0;
   return clamp01(totalVisits / (EARLY_BIRDS_VISITS_PER_DAY_TARGET * expectedDays));
 }

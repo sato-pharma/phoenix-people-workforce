@@ -24,7 +24,7 @@
  */
 
 /** Which of the pair this is, and therefore who keeps it. */
-export type ClearanceVariant = "employeeKeeps" | "companyKeeps";
+type ClearanceVariant = "employeeKeeps" | "companyKeeps";
 
 /**
  * The values Phoenix fills in.
@@ -82,14 +82,14 @@ export type ClearanceField = {
 };
 
 /** One department on the sign-off table, and what it is signing for. */
-export type ClearanceStationRow = {
+type ClearanceStationRow = {
   number: string;
   departmentAr: string;
   scopeAr: string;
 };
 
 /** One numbered undertaking on the company's copy. */
-export type ClearanceClause = {
+type ClearanceClause = {
   number: string;
   body: string;
 };

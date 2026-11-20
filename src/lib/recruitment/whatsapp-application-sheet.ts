@@ -47,7 +47,7 @@ import {
 } from "@/lib/recruitment/whatsapp-application-form";
 
 /** One question and what was answered. `note` sits under the answer in small type. */
-export type ApplicationSheetEntry = { question: string; answer: string; note: string | null };
+type ApplicationSheetEntry = { question: string; answer: string; note: string | null };
 
 export type ApplicationSheet = {
   name: string;

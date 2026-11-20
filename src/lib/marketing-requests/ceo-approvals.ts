@@ -25,8 +25,6 @@ import { EXECUTION_STEP_CODE } from "@/lib/marketing-requests/request-status-lab
 
 export const CEO_APPROVAL_STEP_CODE = "ceo_approval";
 
-export const MARKETING_CEO_APPROVALS_PORTAL_PATH = "/employee-portals/marketing-requests/ceo-approvals";
-export const MARKETING_CEO_APPROVALS_ADMIN_PATH = "/admin/marketing-requests/ceo-approvals";
 
 /** The owner asked for it on the Marketing Manager's account; the CEO and Super Admin read it too. */
 const ceoApprovalsReaderRoles = new Set<PhoenixRole>(["Marketing Manager", "CEO", "Super Admin"]);

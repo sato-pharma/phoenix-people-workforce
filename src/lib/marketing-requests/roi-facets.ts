@@ -51,7 +51,7 @@ const MULTISELECT_SPECS: MultiselectSpec[] = [
 ];
 
 /** Current selected values for a multi-select dimension (request type stored as numbers). */
-export function selectedRoiValues(filters: RoiFilterState, key: RoiFilterKey): string[] {
+function selectedRoiValues(filters: RoiFilterState, key: RoiFilterKey): string[] {
   if (key === "requestType") return filters.requestType.map(String);
   const value = (filters as Record<string, unknown>)[key];
   return Array.isArray(value) ? (value as string[]).map(String) : [];

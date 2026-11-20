@@ -29,7 +29,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // is how both the night and the list see a match before anything is written.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const MASTER_PREVIEW_RPC = "phx_preview_marketing_pharmacy_code_matches";
+const MASTER_PREVIEW_RPC = "phx_preview_marketing_pharmacy_code_matches";
 /** The note the capture flow writes on a code whose reference was not found and nobody touched since. */
 export const UNTOUCHED_NOTE = "Reference not found.";
 const PINNED_KINDS = new Set(["exact", "digit_normalized"]);

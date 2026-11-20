@@ -13,7 +13,7 @@ import type { CoveragePerson, RoleCoverageDeclaration } from "./coverage-roles";
  * tests/role-coverage-audit.test.ts refuses an entry with no applicable role, a left-out role
  * without a reason, or a role that is both.
  */
-export type RoleCoverageProbeContext = {
+type RoleCoverageProbeContext = {
   roster: readonly CoveragePerson[];
   access: AccessContext;
 };

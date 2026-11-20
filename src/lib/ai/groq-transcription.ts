@@ -282,7 +282,7 @@ function codeForStatus(status: number, body: string): GroqTranscriptionCode {
 }
 
 /** The largest audio this will send. The CRM's own cap is far below it; this is the backstop. */
-export const GROQ_TRANSCRIPTION_MAX_BYTES = 8 * 1024 * 1024;
+const GROQ_TRANSCRIPTION_MAX_BYTES = 8 * 1024 * 1024;
 
 export type GroqTranscriptionRequest = {
   audio: Uint8Array;

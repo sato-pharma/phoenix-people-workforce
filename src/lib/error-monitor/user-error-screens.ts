@@ -78,7 +78,7 @@ export async function countRecentUserErrorScreens(owner: ScreenOwner, sinceIso: 
 type RemovableBucket = { remove(paths: string[]): Promise<{ error: unknown }> };
 
 /** Why a picture was left with nothing pointing at it. */
-export type UnreferencedScreenshotReason = "upload_failed" | "insert_failed" | "row_write_failed" | "row_missing";
+type UnreferencedScreenshotReason = "upload_failed" | "insert_failed" | "row_write_failed" | "row_missing";
 
 /**
  * Take back out a picture nothing points at — and SAY so when it will not go.
@@ -97,7 +97,7 @@ export type UnreferencedScreenshotReason = "upload_failed" | "insert_failed" | "
  *
  * Never throws. Returns whether the file is known to be gone.
  */
-export async function removeUnreferencedScreenshot(
+async function removeUnreferencedScreenshot(
   bucket: RemovableBucket,
   input: { bucket: string; path: string; reason: UnreferencedScreenshotReason },
 ): Promise<boolean> {

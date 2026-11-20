@@ -82,11 +82,11 @@ function yesNo(value: boolean) {
   return value ? "Yes" : "No";
 }
 
-export function paymentModeKeptMessage(from: PayrollPaymentMode, to: string) {
+function paymentModeKeptMessage(from: PayrollPaymentMode, to: string) {
   return `Payment mode stays with the HR Manager — this row changes it from ${payrollPaymentModeLabel(from)} to ${to}.`;
 }
 
-export function payrollEligibleKeptMessage(from: boolean, to: boolean) {
+function payrollEligibleKeptMessage(from: boolean, to: boolean) {
   return `Payroll eligible stays with the HR Manager — this row changes it from ${yesNo(from)} to ${yesNo(to)}.`;
 }
 
@@ -95,7 +95,7 @@ function statusLabel(status: string) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function employmentStatusKeptMessage(from: string, to: string) {
+function employmentStatusKeptMessage(from: string, to: string) {
   return `Employment status stays with the HR Manager — this row changes it from ${statusLabel(from)} to ${statusLabel(to)}.`;
 }
 

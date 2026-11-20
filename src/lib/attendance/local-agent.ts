@@ -30,7 +30,7 @@ export function canManageLocalAttendanceAgent() {
   return process.platform === "win32" && !isProductionRuntime();
 }
 
-export function attendanceAgentBaseUrl() {
+function attendanceAgentBaseUrl() {
   return process.env.ATTENDANCE_AGENT_LOCAL_URL?.trim() || defaultAgentUrl;
 }
 

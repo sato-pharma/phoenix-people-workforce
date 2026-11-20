@@ -433,7 +433,7 @@ export async function applyExecutiveGeometry(zip: JSZip, sheetParts: Map<string,
  * and then CONFIRMED by rendering the result through Excel, which is a check the colours could not
  * have had.
  */
-export const EXECUTIVE_PALETTE = {
+const EXECUTIVE_PALETTE = {
   /** Deep navy. The title band, and the rules that separate the bands. */
   primaryNavy: "FF0A1F33",
   /** Table headers and the second-level bands. */

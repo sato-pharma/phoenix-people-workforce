@@ -92,7 +92,7 @@ export type UntriagedApplicant = {
   waitingSince: string;
 };
 
-export type TriageBacklogBand = { count: number; label: string };
+type TriageBacklogBand = { count: number; label: string };
 
 export type TriageBacklogSummary = {
   bands: TriageBacklogBand[];
@@ -231,7 +231,7 @@ const PAGE_SIZE = 500;
  * summary needs to know that somebody is unreachable, never how to reach them, and the notification
  * this feeds must not carry contact details it has no use for.
  */
-export async function loadUntriagedApplicants(): Promise<UntriagedApplicant[]> {
+async function loadUntriagedApplicants(): Promise<UntriagedApplicant[]> {
   const supabase = getSupabaseAdmin();
   const applicants: UntriagedApplicant[] = [];
 

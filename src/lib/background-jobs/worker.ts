@@ -12,7 +12,7 @@ import {
 } from "./service";
 
 export const DATA_BACKUP_EXPORT_JOB = "data_backup_export";
-export const BACKGROUND_JOB_TYPES = [DATA_BACKUP_EXPORT_JOB];
+const BACKGROUND_JOB_TYPES = [DATA_BACKUP_EXPORT_JOB];
 
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";

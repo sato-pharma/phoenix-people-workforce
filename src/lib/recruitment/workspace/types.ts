@@ -96,7 +96,7 @@ export type WorkspaceCounts = {
 };
 
 /** The AU places a tab can be split by, with the vacant seats the owner asked to see beside them. */
-export type WorkspaceArea = { code: string; name: string; vacantSeats: number };
+type WorkspaceArea = { code: string; name: string; vacantSeats: number };
 export type WorkspaceRegion = { code: string; name: string; vacantSeats: number; areas: WorkspaceArea[] };
 export type WorkspacePlaces = { regions: WorkspaceRegion[] };
 

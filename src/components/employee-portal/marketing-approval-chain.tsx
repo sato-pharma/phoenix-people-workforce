@@ -53,7 +53,7 @@ export function formatDateTime(value: string | null) {
   });
 }
 
-export const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
+const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
   approved: "border-emerald-200 bg-emerald-50 text-emerald-800",
   current: "border-orange-300 bg-orange-50 text-orange-900",
   pending: "border-slate-200 bg-slate-50 text-slate-500",
@@ -62,7 +62,7 @@ export const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
   skipped: "border-slate-200 bg-slate-50 text-slate-400",
 };
 
-export const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
+const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
   approved: "Approved",
   current: "Waiting",
   pending: "Not reached yet",

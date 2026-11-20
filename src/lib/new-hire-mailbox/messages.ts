@@ -18,7 +18,7 @@ export const NEW_HIRE_MAILBOX_EVENT_TYPE = "employee_added" as const;
 export const NEW_HIRE_MAILBOX_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "telegram"];
 
 /** The page every notice lands on. The same page serves both shells; /hr/ rewrites onto it. */
-export const NEW_HIRE_MAILBOX_PATH = "/new-hire-mailboxes" as const;
+const NEW_HIRE_MAILBOX_PATH = "/new-hire-mailboxes" as const;
 
 export function newHireMailboxHref(hrId?: string | null): string {
   const trimmed = String(hrId ?? "").trim();
@@ -29,7 +29,7 @@ export function newHireMailboxHref(hrId?: string | null): string {
 export const TURBIFY_CONTROL_PANEL_URL = "https://ecp.turbify.com/";
 
 /** The name the app password is given in Turbify, so it can be found and deleted later. */
-export const NEW_HIRE_APP_PASSWORD_NAME = "Phoenix email" as const;
+const NEW_HIRE_APP_PASSWORD_NAME = "Phoenix email" as const;
 
 export type NewHireMailboxSubject = {
   displayName: string;

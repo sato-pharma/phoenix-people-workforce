@@ -174,7 +174,7 @@ export function wishedVisitAskDay(value: unknown, cairoToday: string): string | 
   return day;
 }
 
-export type VisitAskDayRefusal = "bad_input" | "not_field_day" | "passed" | "too_far" | "holiday";
+type VisitAskDayRefusal = "bad_input" | "not_field_day" | "passed" | "too_far" | "holiday";
 
 export type VisitAskDayResult = { ok: true; day: string } | { ok: false; kind: VisitAskDayRefusal; error: string };
 
@@ -196,9 +196,9 @@ export function resolveVisitAskDay(input: { day: unknown; cairoToday: string; ho
 export type VisitAskProductManager = { hrId: string; role: string };
 
 /** Who answers the ask, and who is told about it. */
-export type VisitAskAddressees = { askedHrId: string; toldHrId: string | null };
+type VisitAskAddressees = { askedHrId: string; toldHrId: string | null };
 
-export type VisitAskAddresseeRefusal = "no_manager" | "no_senior" | "no_product_manager" | "not_line_product_manager";
+type VisitAskAddresseeRefusal = "no_manager" | "no_senior" | "no_product_manager" | "not_line_product_manager";
 
 export type VisitAskAddresseeResult = { ok: true; value: VisitAskAddressees } | { ok: false; kind: VisitAskAddresseeRefusal; error: string };
 

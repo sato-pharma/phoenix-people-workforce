@@ -59,7 +59,7 @@ export type RawPunchRpcReply = {
 /** The one database call this module makes, injected so a test needs no database. */
 export type RawPunchRpc = (functionName: string, args: Record<string, unknown>) => PromiseLike<RawPunchRpcReply>;
 
-export type RawPunchFailure = { index: number; message: string };
+type RawPunchFailure = { index: number; message: string };
 
 export type RawPunchOutcome = {
   inserted: number;

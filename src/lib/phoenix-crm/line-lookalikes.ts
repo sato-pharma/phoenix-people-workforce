@@ -228,7 +228,7 @@ const SPECIALITY_WORDS: ReadonlySet<string> = new Set(
 );
 
 /** A doctor's name words: folded, each compound one word, speciality words after the given name dropped. */
-export function doctorWords(name: string): string[] {
+function doctorWords(name: string): string[] {
   const words = twinNameWords(name)
     .map(looseWord)
     .filter((word) => word.length > 1 && !/^\d+$/.test(word));

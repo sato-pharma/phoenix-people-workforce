@@ -26,7 +26,7 @@ export function robotActionPath(action: RobotAction): string {
  * of it before the split too. It stays under Railway's own 15-minute cut on a public request, so the
  * person sees THIS sentence rather than a bare gateway error.
  */
-export const ROBOT_FORWARD_TIMEOUT_MS = 14 * 60_000;
+const ROBOT_FORWARD_TIMEOUT_MS = 14 * 60_000;
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 

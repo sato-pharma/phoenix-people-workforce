@@ -49,7 +49,7 @@ export type BusinessCardAssets = { bold: Uint8Array; regular: Uint8Array; templa
 let cachedAssets: BusinessCardAssets | null = null;
 
 /** Read from `assets/`, not `public/`: the design is never served over HTTP (next.config traces it). */
-export function loadBusinessCardAssets(): BusinessCardAssets {
+function loadBusinessCardAssets(): BusinessCardAssets {
   if (!cachedAssets) {
     cachedAssets = {
       bold: readFileSync(join(process.cwd(), "assets", "business-cards", "Montserrat-Bold.ttf")),
@@ -118,7 +118,7 @@ function assertPrintable(cards: BusinessCardFields[], fonts: Fonts) {
 }
 
 /** The size a line is set at: the design's own, or smaller when that would overrun the margin. */
-export function fittedSizePt(font: CardFont, text: string, slot: CardTextSlot): number {
+function fittedSizePt(font: CardFont, text: string, slot: CardTextSlot): number {
   const width = font.widthOfText(text, slot.sizePt, slot.trackingEm * slot.sizePt);
   const limit = mm(slot.maxWidthMm);
   return width > limit ? slot.sizePt * (limit / width) : slot.sizePt;

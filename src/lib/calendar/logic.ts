@@ -22,7 +22,7 @@ export const calendarEventCategories: readonly CalendarEventCategory[] = [
 export type CalendarAudienceScope = "company" | "line";
 
 /** Unified item rendered on the calendar grid (company events + aggregated sources). */
-export type CalendarItemSource = "event" | "holiday" | "leave" | "birthday" | "plan";
+type CalendarItemSource = "event" | "holiday" | "leave" | "birthday" | "plan";
 
 export type CalendarItem = {
   id: string;

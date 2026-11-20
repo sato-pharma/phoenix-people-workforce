@@ -48,31 +48,8 @@ export const div0 = (numerator: string, denominator: string) => `IFERROR(${numer
 
 // ── Hidden Data sheet planner ────────────────────────────────────────────────
 
-export type DataBlockDef = { headers: string[]; rows: (string | number)[][] };
+type DataBlockDef = { headers: string[]; rows: (string | number)[][] };
 export type DataBlock = DataBlockDef & { firstData: number; headerRow: number };
-
-// Plans the hidden Data sheet layout (and the formula ranges) WITHOUT writing it, so the report
-// sheets can be written first and the Data sheet added last — keeping a visible report sheet as
-// the active tab (Excel refuses to hide the active sheet, which would otherwise show Data).
-export function planBlocks(defs: DataBlockDef[]): {
-  blocks: DataBlock[];
-  rangeOf: (blockIndex: number, column: string) => string;
-} {
-  let cursor = 3; // after the intro row (1) + a blank row (2)
-  const blocks: DataBlock[] = defs.map((def) => {
-    const headerRow = cursor;
-    const firstData = headerRow + 1;
-    const span = Math.max(1, def.rows.length); // keep a valid range even when empty
-    cursor = firstData + span - 1 + 1 + 2; // last data row + gap
-    return { ...def, firstData, headerRow };
-  });
-  const lastOf = (block: DataBlock) => block.firstData + Math.max(1, block.rows.length) - 1;
-  const rangeOf = (blockIndex: number, column: string) => {
-    const block = blocks[blockIndex];
-    return `Data!$${column}$${block.firstData}:$${column}$${lastOf(block)}`;
-  };
-  return { blocks, rangeOf };
-}
 
 export function writeDataSheet(workbook: ExcelJS.Workbook, blocks: DataBlock[]) {
   const sheet = workbook.addWorksheet("Data");

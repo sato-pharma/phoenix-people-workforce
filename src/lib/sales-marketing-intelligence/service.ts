@@ -348,7 +348,7 @@ export function canAccessSalesMarketingIntelligence(access: Pick<AccessContext, 
   return access.scope === "system" || dashboardAccessRoles.has(access.role);
 }
 
-export function assertSalesMarketingIntelligenceAccess(access: AccessContext) {
+function assertSalesMarketingIntelligenceAccess(access: AccessContext) {
   if (!canAccessSalesMarketingIntelligence(access)) {
     throw forbiddenError(`Forbidden: ${access.role} cannot view Marketing ROI & Customer Intelligence.`);
   }

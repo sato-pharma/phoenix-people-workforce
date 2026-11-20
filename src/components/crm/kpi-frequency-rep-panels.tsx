@@ -324,7 +324,7 @@ export function KpiFrequencyFirstPanel({ phoenix, steps, total }: { phoenix: boo
 // ── The breakdown tables ─────────────────────────────────────────────────────────────────────
 
 /** A group row's links into the list below it, narrowed to that group — strings, never functions. */
-export type KpiFrequencyGroupLinks = { group?: string; short?: string };
+type KpiFrequencyGroupLinks = { group?: string; short?: string };
 
 export type KpiFrequencyGroupLine = KpiFrequencyGroup & {
   links?: KpiFrequencyGroupLinks;

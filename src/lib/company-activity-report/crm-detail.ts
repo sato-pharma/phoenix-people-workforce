@@ -81,7 +81,7 @@ async function fetchCrmDetailVisits(dateFromIso: string, dateToIso: string, want
  * A Phoenix CRM Interviews day reaches the old-CRM door as Admin Work (code -20) with its comment
  * beginning "Interviews" (migration 20261029195520) — so it names itself, never "Admin Work".
  */
-export function isPhoenixInterviewsDay(row: Pick<CrmDetailRow, "visit_type" | "comment">): boolean {
+function isPhoenixInterviewsDay(row: Pick<CrmDetailRow, "visit_type" | "comment">): boolean {
   return Number(row.visit_type) === ADMIN_WORK_TYPE && /^interviews\b/i.test((row.comment ?? "").trim());
 }
 

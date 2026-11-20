@@ -20,7 +20,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-export const SINGLE_VISIT_DAY_COLUMNS =
+const SINGLE_VISIT_DAY_COLUMNS =
   "id, manager_hr_id, manager_seat_id, week_start, visit_date, reason, status, approver_hr_id, second_approver_hr_id, first_decided_at, first_decided_by_hr_id, first_decided_role, first_decision_note, decided_at, decided_by_hr_id, decided_role, decision_note, version, is_test, created_at";
 
 export type SingleVisitDayAskRow = {
@@ -52,7 +52,7 @@ function dayOf(value: unknown): string | null {
   return text ? text.slice(0, 10) : null;
 }
 
-export function singleVisitDayAskRowOf(raw: unknown): SingleVisitDayAskRow | null {
+function singleVisitDayAskRowOf(raw: unknown): SingleVisitDayAskRow | null {
   const row = (raw && typeof raw === "object" ? raw : {}) as Row;
   const requestId = textOrNull(row.id);
   const managerHrId = personKey(textOrNull(row.manager_hr_id));

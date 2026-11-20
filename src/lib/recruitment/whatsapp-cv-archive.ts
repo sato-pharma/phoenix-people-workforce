@@ -37,7 +37,7 @@ export function countsOnWhatsAppApplicants(startedAt: string, joinedToCandidate:
 
 export type WhatsAppCvArchiveAnswer = { question: string; answer: string };
 
-export type WhatsAppCvArchiveFile = {
+type WhatsAppCvArchiveFile = {
   id: string;
   fileName: string;
   mimeType: string | null;
@@ -137,7 +137,7 @@ function sizeOf(value: number | string | null): number | null {
 }
 
 /** The folder's key: its path, joined by a character no folder name holds. */
-export function archiveFolderKey(path: readonly string[]): string {
+function archiveFolderKey(path: readonly string[]): string {
   return path.join("\u001f");
 }
 

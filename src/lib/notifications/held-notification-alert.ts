@@ -109,7 +109,7 @@ async function alreadyAlertedRecently(module: string | null, eventType: string |
   }
 }
 
-export function buildHeldNotificationMessage(input: HeldNotificationAlertInput): string {
+function buildHeldNotificationMessage(input: HeldNotificationAlertInput): string {
   const lines: string[] = [];
   lines.push("⏸️ An automated email was HELD and has NOT been sent.");
   lines.push("");

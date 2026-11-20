@@ -59,7 +59,7 @@ export type AiCallComponent =
  * in full, and they were read as dead extractions. A leg the next provider is about to be asked for is
  * reported as `failed_over`; only the leg nothing follows is a failure.
  */
-export type AiCallStatus = "success" | "error" | "failed_over";
+type AiCallStatus = "success" | "error" | "failed_over";
 
 /**
  * The ACCOUNT a call was billed to, which is what the out-of-credit alarm names and where its credit is added.

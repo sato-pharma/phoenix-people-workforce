@@ -69,7 +69,7 @@ function isTestSuite(): boolean {
 }
 
 /** The row for one message parsed out of a webhook delivery. Pure; exported for the test. */
-export function buildInboxInboundRow(record: InboxMessageRecord): Record<string, unknown> {
+function buildInboxInboundRow(record: InboxMessageRecord): Record<string, unknown> {
   const outbound = record.direction === "outbound";
   return {
     body: record.body,

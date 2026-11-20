@@ -27,7 +27,7 @@ import {
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** One "Label: value" line of one entry in a repeating block (one job, one qualification). */
-export type CandidateRecordLine = { label: string; text: string };
+type CandidateRecordLine = { label: string; text: string };
 
 export type CandidateRecordRow =
   | { key: string; label: string; kind: "text"; text: string }

@@ -268,8 +268,6 @@ export const CUSTOMER_TYPES = [
   "Pharmacy",
 ] as const;
 
-export type CustomerType = (typeof CUSTOMER_TYPES)[number];
-
 /** The two types that are a doctor's own practice — the ONLY ones that carry a medical speciality. */
 export const TYPES_WITH_SPECIALITY: readonly string[] = ["Clinic", "Polyclinic"];
 

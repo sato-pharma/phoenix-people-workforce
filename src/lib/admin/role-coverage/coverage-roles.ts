@@ -31,24 +31,6 @@ export const COVERAGE_ROLES = [
 
 export type CoverageRole = (typeof COVERAGE_ROLES)[number];
 
-/** The four field-force rungs: the rep and the three managers above him. */
-export const FIELD_FORCE_COVERAGE_ROLES: readonly CoverageRole[] = [
-  "Medical Rep",
-  "District Manager",
-  "Regional Manager",
-  "National Sales Manager",
-];
-
-/** The three managers above the rep — the rungs a "filter by manager" must be able to find. */
-export const FIELD_MANAGER_COVERAGE_ROLES: readonly CoverageRole[] = [
-  "District Manager",
-  "Regional Manager",
-  "National Sales Manager",
-];
-
-/** Everybody who works for the company, every rung. */
-export const ALL_COVERAGE_ROLES: readonly CoverageRole[] = COVERAGE_ROLES;
-
 export const COVERAGE_ROLE_LABELS: Record<CoverageRole, string> = {
   "Medical Rep": "Medical Representatives",
   "District Manager": "District Managers",

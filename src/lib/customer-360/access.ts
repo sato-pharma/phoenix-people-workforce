@@ -75,14 +75,6 @@ export function filterCustomerSubjectsForViewer(
   return [];
 }
 
-/** True when this viewer may open this particular customer. The detail page's own gate. */
-export function canViewCustomerSubject(
-  subject: CustomerSubjectSummary,
-  scope: CustomerVisibilityScope,
-): boolean {
-  return filterCustomerSubjectsForViewer([subject], scope).length === 1;
-}
-
 /** The geography a validated doctor or account is offered by: its validated place. */
 export type HubGeography = { areaCode: string | null; regionName: string | null; lines: readonly string[] };
 

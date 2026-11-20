@@ -38,7 +38,7 @@ import { normalizeLineKey } from "@/lib/sales/confidential-products";
 /** ARGB as ExcelJS wants it: alpha first, eight hex digits, upper case. */
 type Argb = string;
 
-export type RankingDressColours = {
+type RankingDressColours = {
   /** The deepest tone of the field — the Trust tab's colour. */
   base: Argb;
   /** A seat at or above its target. The bracket on every achievement cell, and the data bars. */

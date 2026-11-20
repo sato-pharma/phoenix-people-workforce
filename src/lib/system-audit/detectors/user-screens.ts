@@ -78,9 +78,9 @@ export type UserScreenRow = {
   is_test: boolean;
 };
 
-export type UserScreenCursor = { createdAt: string; id: string };
+type UserScreenCursor = { createdAt: string; id: string };
 
-export interface UserScreenSource {
+interface UserScreenSource {
   /** Rows ordered by `(created_at, id)`, strictly after `after`, before `before`, inside `window` when given. */
   readPage(request: { after: UserScreenCursor | null; before: string; limit: number; window: { fromIso: string; toIso: string | null } | null }): Promise<UserScreenRow[]>;
 }
@@ -111,7 +111,7 @@ export function userScreenSignature(row: Pick<UserScreenRow, "kind" | "api_path"
 }
 
 /** `SCREEN-1A2B3C4D` — column 7's short reference, from the signature's own hash. */
-export function userScreenErrorCode(signatureKey: string): string {
+function userScreenErrorCode(signatureKey: string): string {
   const hash = signatureKey.split(":").pop() ?? "";
   return `SCREEN-${hash.slice(0, 8).toUpperCase()}`;
 }
@@ -128,7 +128,7 @@ export function userScreenMessage(row: Pick<UserScreenRow, "kind" | "http_status
 }
 
 /** One readable line per signature. */
-export function userScreenIssueTitle(row: Pick<UserScreenRow, "kind" | "api_path" | "page_path" | "http_status" | "method" | "message">): string {
+function userScreenIssueTitle(row: Pick<UserScreenRow, "kind" | "api_path" | "page_path" | "http_status" | "method" | "message">): string {
   const where = userScreenWhere(row);
   const words = row.message?.trim() ? ` — ${row.message.trim().slice(0, 160)}` : "";
   const method = row.method ? `${row.method} ` : "";
@@ -299,7 +299,7 @@ function cursorAfter(row: Pick<UserScreenRow, "created_at" | "id">, after: UserS
   return row.id > after.id;
 }
 
-export function createDatabaseUserScreenSource(supabase: Client): UserScreenSource {
+function createDatabaseUserScreenSource(supabase: Client): UserScreenSource {
   return {
     async readPage({ after, before, limit, window }) {
       const read = async (strict: boolean) => {

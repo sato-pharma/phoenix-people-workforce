@@ -228,7 +228,7 @@ export type FieldWorkforceLoggingTiming = {
   lastLoggedTime: string | null;
 };
 
-export type FieldWorkforceNoActivityPattern = {
+type FieldWorkforceNoActivityPattern = {
   adjacentToFridayDates: string[];
   adjacentToPublicHolidayDates: string[];
   consecutiveSignalCount: number;
@@ -399,7 +399,7 @@ export type FieldWorkforcePreviewResult = {
   warnings: FieldWorkforceValidationIssue[];
 };
 
-export type FieldWorkforceArchiveImportStatus = "archived" | "superseded";
+type FieldWorkforceArchiveImportStatus = "archived" | "superseded";
 
 export type FieldWorkforceArchiveListItem = {
   employeeCount: number;
@@ -419,11 +419,6 @@ export type FieldWorkforceArchiveListItem = {
 export type FieldWorkforceArchiveDetail = {
   archive: FieldWorkforceArchiveListItem;
   preview: FieldWorkforcePreviewResult;
-};
-
-export type FieldWorkforceArchiveDuplicate = {
-  existing: FieldWorkforceArchiveListItem;
-  monthKey: string;
 };
 
 export type FieldWorkforceRecommendationType =
@@ -543,12 +538,6 @@ export type FieldWorkforceComparisonRow = {
   totalVisits: number;
   vacationDays: number;
   workedDays: number;
-};
-
-export type FieldWorkforceComparisonReport = {
-  archiveCount: number;
-  hierarchyAvailable: boolean;
-  rows: FieldWorkforceComparisonRow[];
 };
 
 export type FieldWorkforceRecommendationsReport = {

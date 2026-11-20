@@ -83,13 +83,6 @@ export function isDriveConfigured(): boolean {
   return Boolean(readUserOAuth() || readServiceAccount());
 }
 
-/** Which identity Drive calls are being made as — for the health screen and the backfill's log. */
-export function driveAuthMode(): "user_oauth" | "service_account" | "none" {
-  if (readUserOAuth()) return "user_oauth";
-  if (readServiceAccount()) return "service_account";
-  return "none";
-}
-
 // Pure — exported for unit testing the claim shape.
 export function buildDriveJwtClaim(clientEmail: string, nowSeconds: number) {
   return {
@@ -185,11 +178,6 @@ export async function getDriveAccessToken(): Promise<string> {
   const account = readServiceAccount();
   if (account) return getServiceAccountToken(account);
   throw new Error("Google Drive is not configured.");
-}
-
-/** Test seam: drop the cached token so a test can assert the identity switch above. */
-export function resetDriveTokenCache(): void {
-  cachedToken = null;
 }
 
 /**

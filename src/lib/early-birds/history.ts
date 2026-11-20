@@ -30,7 +30,7 @@ import { earlyBirdsPeriodFromKey, isEarlyBirdsPeriodKey } from "@/lib/early-bird
 import type { EarlyBirdsIneligibleReason } from "@/lib/early-birds/types";
 
 /** One closed fortnight of a rep's record, straight off the frozen snapshot. */
-export type EarlyBirdsRepHistoryEntry = {
+type EarlyBirdsRepHistoryEntry = {
   periodKey: string;
   /** Human label — never the raw key (owner rule: names, not codes). */
   periodLabel: string;

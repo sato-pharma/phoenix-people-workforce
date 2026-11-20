@@ -47,7 +47,7 @@ export type ListCheckBoardRow = {
   visitsSincePay: number | null;
 };
 
-export type ListCheckStateCard = {
+type ListCheckStateCard = {
   approvedCost: number;
   customers: number;
   label: string;

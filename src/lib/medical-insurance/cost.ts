@@ -59,7 +59,7 @@ function dayNumber(day: string): number {
 }
 
 /** Days from `start` to `end`, both counted. */
-export function inclusiveDays(start: string, end: string): number {
+function inclusiveDays(start: string, end: string): number {
   return dayNumber(end) - dayNumber(start) + 1;
 }
 
@@ -85,7 +85,7 @@ export function ageOn(birthDate: string | null | undefined, day: string): number
   return age < 0 ? null : age;
 }
 
-export function ageBandIndex(card: MedicalInsuranceRateCard, age: number): number {
+function ageBandIndex(card: MedicalInsuranceRateCard, age: number): number {
   return card.ageBands.findIndex((band) => age >= band.from && (band.to === null || age <= band.to));
 }
 
@@ -122,7 +122,7 @@ export function annualRate(card: MedicalInsuranceRateCard, person: PersonToPrice
   return { age, annual: rate, band, priced: true };
 }
 
-export type BandLine = { band: number; label: string; people: number; rate: number | null; premium: number };
+type BandLine = { band: number; label: string; people: number; rate: number | null; premium: number };
 
 export type PlanLine = { category: MedicalInsuranceCategory; people: number; premium: number; bands: BandLine[] };
 

@@ -14,7 +14,7 @@ export const TABLE_TOOL_ROLES: readonly ConnectorRole[] = ["Super Admin", "CEO"]
 
 /** One page of a read — one PostgREST page. A whole table is read page after page with `offset`; nothing is left out. */
 export const TABLE_READ_MAX_ROWS = POSTGREST_ROW_CEILING;
-export const TABLE_READ_DEFAULT_ROWS = 200;
+const TABLE_READ_DEFAULT_ROWS = 200;
 /** A whole-table export reads at most this many rows into one workbook. */
 export const TABLE_EXPORT_MAX_ROWS = 50_000;
 /**
@@ -22,14 +22,14 @@ export const TABLE_EXPORT_MAX_ROWS = 50_000;
  * 200 columns would otherwise ask it for 10 million cells. A narrow table keeps its 50,000 rows a file; wider ones give fewer
  * rows and the answer already says where the next file starts. Owner's choice, 18 Nov 2026.
  */
-export const TABLE_EXPORT_MAX_CELLS = 500_000;
+const TABLE_EXPORT_MAX_CELLS = 500_000;
 
 /** How many rows one export file may carry for this many columns (never below 1, never above TABLE_EXPORT_MAX_ROWS). */
 export function exportRowCap(columnCount: number): number {
   return Math.max(1, Math.min(TABLE_EXPORT_MAX_ROWS, Math.floor(TABLE_EXPORT_MAX_CELLS / Math.max(1, columnCount))));
 }
 
-export const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
+const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 
 /**
  * Tables that hold credentials, sessions, one-time codes, sign-in links or share/approval tokens.
@@ -121,7 +121,7 @@ export function redactSecretJsonKeys(value: unknown): unknown {
 }
 
 /** The columns of a table that may be read: well-formed names, none on the deny lists. */
-export function readableColumns(columns: readonly string[], table?: string): string[] {
+function readableColumns(columns: readonly string[], table?: string): string[] {
   return columns.filter((column) => TABLE_NAME_RE.test(column) && !isDeniedColumn(column) && !isDeniedTableColumn(table, column));
 }
 
@@ -134,11 +134,11 @@ export function readableTables(schema: ReadonlyMap<string, readonly string[]>): 
 }
 
 export const TABLE_FILTER_OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "ilike", "in", "is"] as const;
-export type TableFilterOp = (typeof TABLE_FILTER_OPS)[number];
+type TableFilterOp = (typeof TABLE_FILTER_OPS)[number];
 
-export type TableScalar = string | number | boolean | null;
+type TableScalar = string | number | boolean | null;
 
-export type TableFilterInput = { column: string; op: TableFilterOp; value?: unknown };
+type TableFilterInput = { column: string; op: TableFilterOp; value?: unknown };
 
 export type TableReadInput = {
   table: string;
@@ -171,7 +171,7 @@ export function orderTiebreakers(order: { column: string }, plan: Pick<TableRead
 }
 
 /** What a sign-in name that matches no account reads as. */
-export const NOT_AN_ACCOUNT_TEXT = "(not an account)";
+const NOT_AN_ACCOUNT_TEXT = "(not an account)";
 
 /** The two places sign-in text a person TYPED is stored: the attempts table and the audit rows of an auth_session. */
 export function holdsTypedSignInText(table: string): boolean {

@@ -25,7 +25,7 @@ export type VerificationStepInput = {
 // match       → detected the SAME distributor the operator picked
 // mismatch    → detected a DIFFERENT distributor (warn, but allow override)
 // unrecognized→ detection finished but couldn't identify one distributor (none / ambiguous tie)
-export type VerificationPanel = "idle" | "match" | "mismatch" | "unrecognized";
+type VerificationPanel = "idle" | "match" | "mismatch" | "unrecognized";
 
 export type VerificationStepView = {
   panel: VerificationPanel;

@@ -10,7 +10,7 @@ export type ProbationEvaluatorRole = "dm" | "tm" | "pm_gpm" | "nsm";
 export type ProbationAssessmentKind = "sfe" | "hr";
 
 /** Case lifecycle (distinct from the final human decision). */
-export type ProbationCaseStatus = "active" | "decided" | "cancelled";
+type ProbationCaseStatus = "active" | "decided" | "cancelled";
 
 /** Final human decision. `extend` is intentionally absent — removed by owner policy. */
 export type ProbationCaseDecision = "pass" | "terminate";
@@ -30,8 +30,8 @@ export type ProbationDvStatus =
 /** Structured evaluator recommendation outcomes. */
 export type ProbationRecommendation = "on_track" | "needs_improvement" | "serious_concern";
 
-export type ProbationFeedbackStatus = "submitted" | "edited";
-export type ProbationAssessmentStatus = "pending" | "submitted" | "unavailable";
+type ProbationFeedbackStatus = "submitted" | "edited";
+type ProbationAssessmentStatus = "pending" | "submitted" | "unavailable";
 export type ProbationDevelopmentActionStatus = "open" | "in_progress" | "done" | "cancelled";
 export type ProbationAmPm = "AM" | "PM";
 
@@ -62,38 +62,6 @@ export type ProbationCase = {
   updatedAt: string;
 };
 
-export type ProbationDvDay = {
-  id: string;
-  caseId: string | null;
-  employeeHrId: string;
-  evaluatorHrId: string | null;
-  evaluatorRole: ProbationEvaluatorRole | null;
-  dvDate: string;
-  ampm: ProbationAmPm | null;
-  areaName: string | null;
-  visitCount: number;
-  dvStatus: ProbationDvStatus;
-  validationReason: string | null;
-  crmSourceIds: number[];
-  syncedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ProbationDvVisit = {
-  id: string;
-  dvDayId: string;
-  crmVisitId: number | null;
-  contactName: string | null;
-  customerName: string | null;
-  comment: string | null;
-  visitType: number | null;
-  visitTypeDescription: string | null;
-  ampm: string | null;
-  visitDate: string | null;
-  createdAt: string;
-};
-
 /** Scorecard payload: { dimensionKey: score-on-configured-scale }. */
 export type ProbationScorecard = Record<string, number>;
 
@@ -116,19 +84,6 @@ export type ProbationFeedback = {
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
-};
-
-export type ProbationFeedbackVersion = {
-  id: string;
-  feedbackId: string;
-  versionNumber: number;
-  action: "submit" | "edit";
-  editedBy: string | null;
-  editReason: string | null;
-  snapshot: Record<string, unknown>;
-  scores: ProbationScorecard;
-  recommendation: ProbationRecommendation | null;
-  createdAt: string;
 };
 
 export type ProbationAssessment = {

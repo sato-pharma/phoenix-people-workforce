@@ -16,7 +16,7 @@ type SliceLike = { sales: number; target: number; ach: number | null };
 type DistrictLike = { dm: string; vacant: boolean; allProducts: SliceLike };
 type AreaLike = { vacant: boolean; hasTarget: boolean; allProducts: SliceLike };
 
-export type UndrawnDistrict = {
+type UndrawnDistrict = {
   name: string;
   sales: number;
   /** Why it has no card: no target in the window, or the "Hide vacant and resigned" switch is on. */

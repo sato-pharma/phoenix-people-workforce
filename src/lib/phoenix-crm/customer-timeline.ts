@@ -68,7 +68,7 @@ function text(value: string | null | undefined): string | null {
   return trimmed || null;
 }
 
-export function timelineEntry(visit: TimelineVisit): TimelineEntry {
+function timelineEntry(visit: TimelineVisit): TimelineEntry {
   const objection = isVisitObjection(visit.objection) ? visit.objection : null;
   const nextStep = isVisitNextStep(visit.nextStep) ? visit.nextStep : null;
   return {

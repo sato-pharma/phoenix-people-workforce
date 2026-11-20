@@ -21,11 +21,11 @@ import { FILE_TOOLS } from "./files";
 import { DOMAIN_TOOLS } from "./tools";
 import { ToolRefusal, type ConnectorRole, type ConnectorTool, type ToolAnswer } from "./types";
 
-export const CONNECTOR_TOOL_TIMEOUT_MS = 40_000;
+const CONNECTOR_TOOL_TIMEOUT_MS = 40_000;
 /** ChatGPT reads the whole text; past this the rows are cut and the answer says so. */
 export const CONNECTOR_MAX_TEXT_CHARS = 180_000;
 
-export const CONNECTOR_INSTRUCTIONS = [
+const CONNECTOR_INSTRUCTIONS = [
   "Phoenix is Sato Pharma's HR, payroll, attendance, sales and field CRM system.",
   "Every tool reads live Phoenix data as the signed-in person and sees exactly what their own Phoenix screens show.",
   "Find a person with phoenix_find_people first when you only have a name, then pass their HR number to the other tools.",
@@ -34,11 +34,11 @@ export const CONNECTOR_INSTRUCTIONS = [
   "When the person wants a sheet or a PDF, call phoenix_make_sheet or phoenix_make_pdf with the rows, and give them the download link it returns.",
 ].join(" ");
 
-export function allConnectorTools(): ConnectorTool[] {
+function allConnectorTools(): ConnectorTool[] {
   return [...DOMAIN_TOOLS, ...FILE_TOOLS] as ConnectorTool[];
 }
 
-export function toolsForRole(role: string, tools: ConnectorTool[] = allConnectorTools()): ConnectorTool[] {
+function toolsForRole(role: string, tools: ConnectorTool[] = allConnectorTools()): ConnectorTool[] {
   return tools.filter((tool) => !tool.roles || tool.roles.includes(role as ConnectorRole));
 }
 

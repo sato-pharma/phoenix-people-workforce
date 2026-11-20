@@ -120,7 +120,7 @@ export type VerifiedMarketingCaptureRow = {
 };
 
 /** Which lane a direct-order pharmacy was verified through. */
-export type VerifiedDirectOrderRoute = "field" | "invoice";
+type VerifiedDirectOrderRoute = "field" | "invoice";
 
 /**
  * A direct-order pharmacy verified through the field lane (live photo + GPS) or the invoice lane

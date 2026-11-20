@@ -26,7 +26,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { connectorOrigin } from "./oauth";
 import { defineTool, ToolRefusal, type ConnectorTool } from "./types";
 
-export const CONNECTOR_FILE_DAYS = 7;
+const CONNECTOR_FILE_DAYS = 7;
 const MAX_SHEET_ROWS = 50_000;
 const MAX_PDF_ROWS = 3_000;
 const MAX_COLUMNS = 60;
@@ -98,7 +98,7 @@ function linkAnswer(file: StoredConnectorFile, what: string) {
   };
 }
 
-export const makeSheetTool = defineTool({
+const makeSheetTool = defineTool({
   name: "phoenix_make_sheet",
   title: "Make an Excel sheet",
   description:
@@ -219,7 +219,7 @@ ${sections}
 </body></html>`;
 }
 
-export const makePdfTool = defineTool({
+const makePdfTool = defineTool({
   name: "phoenix_make_pdf",
   title: "Make a PDF",
   description:

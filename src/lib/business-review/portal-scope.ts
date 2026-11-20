@@ -317,7 +317,7 @@ export function resolveReviewPortalScopeFromOrg(
  * without ever reading `seats` (see SEAT_SCOPE_ROLES), so the seats it leaves out are seats nothing
  * would have looked at. Omitted = read them, as before.
  */
-export async function loadReviewOrgSnapshot(options?: {
+async function loadReviewOrgSnapshot(options?: {
   needsLineName?: string | null;
   needsSeats?: boolean;
 }): Promise<ReviewOrgSnapshot> {

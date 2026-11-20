@@ -13,10 +13,10 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import type { NativeVisitContactRule } from "@/lib/crm/native-visits/rules";
 
-export const VACATION_DAY_REASON_MAX = 1000;
+const VACATION_DAY_REASON_MAX = 1000;
 export const VACATION_DAY_NOTE_MAX = 500;
 /** How far ahead a rep may ask. A request also works for yesterday, the oldest day he can enter. */
-export const VACATION_DAY_REQUEST_AHEAD_DAYS = 60;
+const VACATION_DAY_REQUEST_AHEAD_DAYS = 60;
 
 export type VacationDayDecision = "pending" | "approved" | "rejected";
 export type VacationDayDeciderRole = "manager" | "hr";
@@ -91,7 +91,7 @@ export function parseVacationDayDeciderRole(raw: unknown): VacationDayDeciderRol
  * Who gives the HR approval. The owner, 2026-09-13: "only administrator" — the Super Admin alone, not
  * the HR seats, not even the one that approves leave.
  */
-export const VACATION_DAY_HR_DECIDER_ROLE = "Super Admin";
+const VACATION_DAY_HR_DECIDER_ROLE = "Super Admin";
 
 export function isVacationDayHrDecider(role: string | null | undefined): boolean {
   return role === VACATION_DAY_HR_DECIDER_ROLE;

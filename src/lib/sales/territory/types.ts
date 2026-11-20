@@ -2,7 +2,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 
 import type { TerritoryWindow } from "./window";
 
-export type TerritoryRootLevel = "area" | "region" | "nationwide";
+type TerritoryRootLevel = "area" | "region" | "nationwide";
 
 export type TerritoryDiagnosticCode =
   | "area_unresolved"
@@ -73,7 +73,7 @@ export type TerritorySkeleton = {
   window?: TerritoryWindow;
 };
 
-export type TerritoryProductBreakdown = {
+type TerritoryProductBreakdown = {
   productCode: string;
   productName: string;
   units: number;
@@ -103,7 +103,7 @@ export type TerritoryPharmacy = {
   months: TerritoryMonthPresence[];
 };
 
-export type TerritoryBrickPharmacies = {
+type TerritoryBrickPharmacies = {
   brickId: string;
   pharmacies: TerritoryPharmacy[];
 };

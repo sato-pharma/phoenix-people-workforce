@@ -108,7 +108,7 @@ function signingKey(): Buffer | null {
   return createHmac("sha256", secret).update(KEY_LABEL).digest();
 }
 
-export function ticketBytesHash(bytes: Buffer): string {
+function ticketBytesHash(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 

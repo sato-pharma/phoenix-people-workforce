@@ -37,7 +37,7 @@ import {
 } from "@/lib/system-audit/incidents-display";
 import type { SystemAuditExportBatch, SystemAuditPageRow } from "@/lib/system-audit/types";
 
-export const SYSTEM_AUDIT_TECHNICAL_HEADINGS = [
+const SYSTEM_AUDIT_TECHNICAL_HEADINGS = [
   "Signature",
   "Source",
   "Address (route)",
@@ -79,7 +79,7 @@ type ExportValue = string | number;
  * One row's values, in heading order, BEFORE neutralising. Counts that are real numbers stay
  * numbers (a spreadsheet can sum them); a system row's column 10 is "—", never 0.
  */
-export function systemAuditExportValues(row: SystemAuditPageRow): ExportValue[] {
+function systemAuditExportValues(row: SystemAuditPageRow): ExportValue[] {
   return [
     incidentHrId(row),
     incidentEmployeeName(row),
@@ -111,7 +111,7 @@ export function systemAuditCsvLine(row: SystemAuditPageRow): string {
 }
 
 /** The header line, BOM first so Excel reads Arabic names as UTF-8. */
-export function systemAuditCsvHeader(): string {
+function systemAuditCsvHeader(): string {
   return `${CSV_BOM}${csvLine(SYSTEM_AUDIT_EXPORT_HEADINGS)}\r\n`;
 }
 

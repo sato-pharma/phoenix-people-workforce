@@ -73,7 +73,7 @@ export function openRows(lines: readonly LinePlanGroup[]): ConcentrationPlanRow[
   return lines.filter((line) => line.remainingMonths > 0).flatMap((line) => line.rows);
 }
 
-export function mixItemsFor(rows: readonly ConcentrationPlanRow[]): MixItem[] {
+function mixItemsFor(rows: readonly ConcentrationPlanRow[]): MixItem[] {
   return rows.map((row) => ({
     key: row.productCode,
     price: row.price,
@@ -114,9 +114,9 @@ export function buildStretchMix(items: readonly MixItem[], gapValue: number | nu
  * "sato" and "pedia" are the two halves of the Pedia incentive; "plan" is everything in scope.
  * Only the halves are listed as checks under a scenario — the plan's own figures are already there.
  */
-export type PlanGoalKey = "sato" | "pedia" | "plan";
+type PlanGoalKey = "sato" | "pedia" | "plan";
 
-export type PlanGoal = {
+type PlanGoal = {
   key: PlanGoalKey;
   /** What a person reads: "Sato half · Guamusin and Ivyronc". Names, never codes. */
   label: string;
@@ -131,7 +131,7 @@ export type PlanGoal = {
  * target, then the Pedia line, then the whole plan. The Pedia line is its own goal only when the
  * plan holds another line too — alone, it IS the whole plan, and listing it twice says nothing.
  */
-export function planGoals(input: {
+function planGoals(input: {
   lines: readonly LinePlanGroup[];
   totals: { targetValue: number | null; gradedValue: number };
 }): PlanGoal[] {
@@ -229,7 +229,7 @@ export type GoalCheck = {
  * Read every goal against a set of units — the screen's typed forecast and each scenario alike.
  * Units of a line with no open month never count, exactly as `rowFigures` treats them.
  */
-export function checkGoals(
+function checkGoals(
   input: { lines: readonly LinePlanGroup[]; totals: { targetValue: number | null; gradedValue: number } },
   units: Record<string, number>,
   goalPct: number,
@@ -262,7 +262,7 @@ export function checkGoals(
 
 // ── The three scenarios ──────────────────────────────────────────────────────
 
-export type ScenarioKey = "pace" | "realistic" | "stretch";
+type ScenarioKey = "pace" | "realistic" | "stretch";
 
 export type PlanScenario = {
   key: ScenarioKey;
@@ -290,7 +290,7 @@ function mixGoalsFor(goals: readonly PlanGoal[], goalPct: number): MixGoal[] {
 }
 
 /** Every half in `checks` that falls short. A half with no target is never "short". */
-export function missedHalves(checks: readonly GoalCheck[]): GoalCheck[] {
+function missedHalves(checks: readonly GoalCheck[]): GoalCheck[] {
   return checks.filter((check) => check.reachesGoal === false);
 }
 
@@ -380,7 +380,7 @@ function pctText(value: number | null): string {
 }
 
 /** "Sato half · Guamusin and Ivyronc reaches only 54.8% of its own target, EGP 1,234 short". */
-export function halfShortText(check: GoalCheck, money: (value: number) => string): string {
+function halfShortText(check: GoalCheck, money: (value: number) => string): string {
   return `${check.label} reaches only ${pctText(check.achievement)} of its own target, ${money(check.shortOfGoal ?? 0)} short`;
 }
 

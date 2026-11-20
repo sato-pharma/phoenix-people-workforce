@@ -59,15 +59,15 @@ export type BrickUniverseEntry = { brickId: string; brickName: string; areaCode:
 /** How many closings before the latest the stopped / dropping / new rules look back over. */
 export const LOOKBACK_CLOSINGS = 3;
 /** Latest at or below this fraction of the look-back average is "dropping" (30%+ below). */
-export const DROPPING_RATIO = 0.7;
+const DROPPING_RATIO = 0.7;
 /** A product is "core" to the viewer's book when at least this share of active pharmacies buy it. */
-export const CORE_PRODUCT_BUYER_SHARE = 0.4;
+const CORE_PRODUCT_BUYER_SHARE = 0.4;
 /** Below this many active pharmacies a "core product" says nothing, so no cross-sell list is built. */
-export const CORE_PRODUCT_MIN_PHARMACIES = 5;
-export const CORE_PRODUCT_MAX = 8;
+const CORE_PRODUCT_MIN_PHARMACIES = 5;
+const CORE_PRODUCT_MAX = 8;
 /** Per list. Generous on purpose: the screen filters by area client-side, and a small cap would hide an area. */
 export const ACTION_LIST_LIMIT = 200;
-export const TOP_PHARMACY_LIMIT = 10;
+const TOP_PHARMACY_LIMIT = 10;
 
 export type PharmacyRowKind = "pharmacy" | "mainStores" | "wholesalerShare" | "noCode";
 
@@ -174,7 +174,7 @@ const money = (value: unknown): number => {
 };
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
-export function pharmacyKeyOf(row: Pick<PharmacyActionRow, "distributorCode" | "clientCode">): string {
+function pharmacyKeyOf(row: Pick<PharmacyActionRow, "distributorCode" | "clientCode">): string {
   return `${upper(row.distributorCode)}|${upper(row.clientCode)}`;
 }
 

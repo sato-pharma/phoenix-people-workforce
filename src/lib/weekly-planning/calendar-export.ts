@@ -32,7 +32,7 @@ function weekdayLabel(dateIso: string): string {
 
 // Detail sheet: HR ID and Date are identifiers, not quantities — forced to Excel text so a
 // value like "B-155" or a leading-zero date is never reinterpreted as a number/date on open.
-export const PLANNING_DETAIL_COLUMNS: ExportColumn[] = [
+const PLANNING_DETAIL_COLUMNS: ExportColumn[] = [
   { key: "employee", label: "Employee" },
   { key: "hrId", label: "HR ID", text: true },
   { key: "jobTitle", label: "Job Title" },
@@ -52,7 +52,7 @@ export const PLANNING_DETAIL_COLUMNS: ExportColumn[] = [
 
 // Summary sheet: the four counts are numeric so addPhoenixTableSheet right-aligns them and
 // writes a SUM() TOTAL row (total plan entries / conflicts across the company for the month).
-export const PLANNING_SUMMARY_COLUMNS: ExportColumn[] = [
+const PLANNING_SUMMARY_COLUMNS: ExportColumn[] = [
   { key: "employee", label: "Employee" },
   { key: "hrId", label: "HR ID", text: true },
   { key: "jobTitle", label: "Job Title" },

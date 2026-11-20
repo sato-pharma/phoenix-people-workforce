@@ -25,7 +25,7 @@ import type { IntegrityOverview } from "@/lib/system-audit/integrity-runs";
  * inside its own <Suspense> so a slow one never holds the tab bar.
  */
 
-export const SYSTEM_AUDIT_TABS = [
+const SYSTEM_AUDIT_TABS = [
   { key: "incidents", label: "Incidents" },
   { key: "integrity", label: "Integrity checks" },
   { key: "login-security", label: "Login security" },

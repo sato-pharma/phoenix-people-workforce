@@ -36,7 +36,7 @@ import type { FieldWorkforceEmployeeSummary } from "@/lib/field-workforce-compli
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { formatVacantSeatLabel, resolveSeatGrouping } from "@/lib/workforce/hierarchy-resolver";
 
-export type NsmTeamCalendarStatus = "ok" | "not_ready";
+type NsmTeamCalendarStatus = "ok" | "not_ready";
 
 /**
  * One manager followed by their team, recursively (manager first, then everyone who

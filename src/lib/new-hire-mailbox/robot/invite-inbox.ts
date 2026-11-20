@@ -37,7 +37,7 @@ export const INVITE_INBOX_ADDRESS = TURBIFY_INVITE_RECIPIENT;
 /** A label for the monitor row, so a human reading that list knows what the mailbox is for. */
 export const INVITE_INBOX_LABEL = "Invite inbox — new hire mailbox robot" as const;
 
-export type InviteInboxRefusal =
+type InviteInboxRefusal =
   | "not_the_invite_inbox"
   | "no_company_password"
   | "company_password_rejected_by_turbify"

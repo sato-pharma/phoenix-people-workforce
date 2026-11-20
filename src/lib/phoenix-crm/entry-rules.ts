@@ -20,7 +20,6 @@
 
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
-import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { parseDoctorFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { readLocationReaderAnswer } from "@/lib/phoenix-crm/location-reader-probe";
@@ -510,7 +509,7 @@ function metresSaid(accuracyMeters: number): string {
 }
 
 /** The widest reading that put a place outside its line, or null when neither number is to blame. */
-export function roughestPlaceReading(fix: CapturedFix): number | null {
+function roughestPlaceReading(fix: CapturedFix): number | null {
   // The PIN alone decides since 2026-10-11 (`placeReadingsPrecise`), so it is the only number to name.
   return fix.accuracyMeters !== null && fix.accuracyMeters > PLACE_MAX_ACCURACY_METERS ? fix.accuracyMeters : null;
 }
@@ -1158,20 +1157,20 @@ export function parseProductAvailability(raw: unknown): Record<string, ProductAv
 }
 
 /** The kind of visit he chose; "unplanned", from a caller one release behind, is out of plan. */
-export function parseVisitType(value: unknown): VisitDraft["visitType"] {
+function parseVisitType(value: unknown): VisitDraft["visitType"] {
   if (value === "out_of_list") return "out_of_list";
   if (value === "out_of_plan" || value === "unplanned") return "out_of_plan";
   return "planned";
 }
 
 /** One person on a visit besides the rep, as the form sent them. */
-export type DraftCompanion = { hrId: string; side: "manager" | "product" };
+type DraftCompanion = { hrId: string; side: "manager" | "product" };
 
 /** The most companions a draft may carry — the database's own cap (scope.ts `MOST_ON_A_VISIT`). */
 const DRAFT_COMPANIONS_MAX = 12;
 
 /** The companions the form sent, each person once; null when one cannot be read or there are too many. */
-export function parseDraftCompanions(raw: unknown): DraftCompanion[] | null {
+function parseDraftCompanions(raw: unknown): DraftCompanion[] | null {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return null;
   const out: DraftCompanion[] = [];
@@ -1312,10 +1311,3 @@ export function deviceClockSkewMinutes(deviceCapturedAt: string | null, serverNo
   return Math.round((device + (queuedSeconds ?? 0) * 1000 - serverNow.getTime()) / 60000);
 }
 
-export function isReportMonth(value: unknown): boolean {
-  return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
-}
-
-export function isReportDay(value: unknown): value is string {
-  return isIsoDay(value);
-}

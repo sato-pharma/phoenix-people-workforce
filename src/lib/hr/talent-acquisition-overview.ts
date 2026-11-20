@@ -58,7 +58,7 @@
  */
 
 import { canAccess, type AccessContext } from "@/lib/auth/permissions";
-import { HR_ROLE_BUNDLES, type HrBundleName } from "@/lib/auth/hr-functions";
+import { type HrBundleName } from "@/lib/auth/hr-functions";
 import { hrefOutsideSeatFence } from "@/lib/auth/seat-page-fences";
 import { buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
@@ -540,5 +540,3 @@ export async function getTalentAcquisitionOverview(
   };
 }
 
-/** Exported for the test: the seat's functions, so a new one cannot arrive here unnoticed. */
-export const TALENT_ACQUISITION_FUNCTIONS = HR_ROLE_BUNDLES[TALENT_ACQUISITION_SEAT];

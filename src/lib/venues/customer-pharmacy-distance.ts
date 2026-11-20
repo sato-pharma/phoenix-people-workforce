@@ -44,7 +44,7 @@ import { type CaptureFix, distanceBetweenFixesMeters } from "@/lib/evidence/capt
  */
 export const VENUE_LINK_MAX_METRES = 4000;
 
-export type VenueDistanceVerdict =
+type VenueDistanceVerdict =
   /** One side has no coordinates, so no comparison was made. NEVER read this as "close enough". */
   | "not_comparable"
   /** Within {@link VENUE_LINK_MAX_METRES}. */

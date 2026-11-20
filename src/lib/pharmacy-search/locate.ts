@@ -72,11 +72,6 @@ async function loadBrickPins(): Promise<BrickPin[]> {
   return pins;
 }
 
-/** Test seam — drops the brick-pin cache so a following call re-reads. */
-export function resetBrickPinCache(): void {
-  cachedPins = null;
-}
-
 export type BrickSnap = {
   /** Straight-line km from the point to the brick's centroid. Shown to the reader, always. */
   distanceKm: number;

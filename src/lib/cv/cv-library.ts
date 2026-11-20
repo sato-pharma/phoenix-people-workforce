@@ -197,7 +197,7 @@ export type DegreeGrade = "excellent" | "very_good" | "good" | "pass";
 
 export type GradeFilter = "" | DegreeGrade | "other" | "none";
 
-export const degreeGradeLabels: Record<DegreeGrade, string> = {
+const degreeGradeLabels: Record<DegreeGrade, string> = {
   excellent: "Excellent",
   good: "Good",
   pass: "Pass",

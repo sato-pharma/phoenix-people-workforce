@@ -34,7 +34,7 @@ export const UNSAVED_VOICE_NOTE_WARNING =
   "Your voice note is kept when you save the visit. Leave now and it is not kept.";
 
 /** The heading over that sentence: what it is about, never what he did. */
-export const UNSAVED_VOICE_NOTE_TITLE = "Your voice note";
+const UNSAVED_VOICE_NOTE_TITLE = "Your voice note";
 
 /**
  * 🔴 THE MICROPHONE IS STILL OPEN — the case the warning above could not see, because there is no
@@ -53,7 +53,7 @@ export const UNSAVED_VOICE_NOTE_TITLE = "Your voice note";
  * recording. Back still WARNS ONCE and then goes, exactly as it does for a stored note: a guard he
  * cannot get out of is the trap Golden Rule #1 forbids.
  */
-export const RECORDING_IN_FLIGHT_TITLE = "Your recording";
+const RECORDING_IN_FLIGHT_TITLE = "Your recording";
 
 export const RECORDING_IN_FLIGHT_WARNING =
   "Your recording is still running. Press Stop and it is kept with the visit. Leave now and it is not kept.";

@@ -27,7 +27,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export { buildWeekReleasedMessage };
 
-export const WEEKLY_ATTENDANCE_PORTAL_URL = "/employee-portals/attendance/digests";
+const WEEKLY_ATTENDANCE_PORTAL_URL = "/employee-portals/attendance/digests";
 
 /**
  * Whether the employee still works here, and whether they have an active login that has signed in

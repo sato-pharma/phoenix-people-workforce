@@ -43,7 +43,7 @@ export const builtInQuestionKeys = [
 
 export type BuiltInQuestionKey = (typeof builtInQuestionKeys)[number];
 
-export function isBuiltInQuestionKey(value: string): value is BuiltInQuestionKey {
+function isBuiltInQuestionKey(value: string): value is BuiltInQuestionKey {
   return (builtInQuestionKeys as readonly string[]).includes(value);
 }
 

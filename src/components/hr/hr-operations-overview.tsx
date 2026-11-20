@@ -79,7 +79,7 @@ const SCOREBOARD_ICONS: Readonly<Record<string, LucideIcon>> = {
 };
 
 /** The full calendars. Each is a row on her sidebar; `tests/hr-operations-overview.test.ts` holds that true. */
-export const HR_OPERATIONS_CALENDAR_DOORS: readonly {
+const HR_OPERATIONS_CALENDAR_DOORS: readonly {
   href: string;
   icon: LucideIcon;
   label: string;

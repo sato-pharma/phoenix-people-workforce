@@ -51,7 +51,7 @@ import { normalizeOwnerHrId } from "@/lib/browser-storage/owner-scoped";
 export const MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 /** How long the typed half of a draft is offered back. Carries no evidence claim, so it is generous. */
-export const MARKETING_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MARKETING_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Bumped whenever the persisted shape changes. A draft written by an older build is discarded
@@ -77,7 +77,7 @@ export type DraftCapture = {
   photoName: string;
 };
 
-export type DraftPharmacy = {
+type DraftPharmacy = {
   capture: DraftCapture;
   name: string;
 };
@@ -112,7 +112,7 @@ function isFilled(value: unknown): boolean {
 }
 
 /** A capture is "started" once any part of the evidence pair exists. */
-export function hasCaptureEvidence(capture: DraftCapture): boolean {
+function hasCaptureEvidence(capture: DraftCapture): boolean {
   return (
     capture.latitude !== null ||
     capture.longitude !== null ||

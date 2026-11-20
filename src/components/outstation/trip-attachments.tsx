@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 
 type Ticket = { contentType: string; name: string; url: string };
 /** A chained journey's stops and drives (owner rule, 2026-10-18 — chained-journey.ts). */
-export type ApproverJourneyStop = {
+type ApproverJourneyStop = {
   accuracyMeters: number | null;
   /** Set when a system administrator added the stop: no photo, his reason. */
   addedByAdmin?: { by: string; reason: string } | null;
@@ -40,7 +40,7 @@ export type ApproverJourneyStop = {
   ticketAmount: number;
   url: string | null;
 };
-export type ApproverJourney = {
+type ApproverJourney = {
   flagReasons: string[];
   fuelAmount: number | null;
   legs: JourneyRouteLeg[];

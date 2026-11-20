@@ -54,7 +54,7 @@ export function parseContentRange(value: string | null | undefined): Pick<Record
 }
 
 /** The relation a `/rest/v1/<name>?...` path reads, or null when the URL is not a PostgREST read. */
-export function describeRestUrl(url: string): { relation: string; kind: "table" | "rpc"; limited: boolean; path: string } | null {
+function describeRestUrl(url: string): { relation: string; kind: "table" | "rpc"; limited: boolean; path: string } | null {
   let parsed: URL;
   try {
     parsed = new URL(url);

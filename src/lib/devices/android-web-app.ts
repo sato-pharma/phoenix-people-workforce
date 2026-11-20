@@ -56,10 +56,10 @@ export const ANDROID_MANAGEMENT_SCOPE = "https://www.googleapis.com/auth/android
 export const CHROME_PACKAGE_NAME = "com.android.chrome";
 
 /** Google generates web-app package names in this shape. Used to recognise one, never to mint one. */
-export const WEB_APP_PACKAGE_PREFIX = "com.google.enterprise.webapp.";
+const WEB_APP_PACKAGE_PREFIX = "com.google.enterprise.webapp.";
 
 /** Google's stated ceiling for a web-app icon. */
-export const WEB_APP_ICON_MAX_BYTES = 1_048_576;
+const WEB_APP_ICON_MAX_BYTES = 1_048_576;
 
 /** Google's stated icon geometry — square, 512×512. */
 export const WEB_APP_ICON_EDGE_PX = 512;
@@ -69,9 +69,9 @@ export const WEB_APP_ICON_EDGE_PX = 512;
  * `STANDALONE` — URL bar hidden, Android status bar and navigation kept. Phoenix uses this.
  * `FULL_SCREEN` — everything hidden; the site must supply its own navigation.
  */
-export type WebAppDisplayMode = "MINIMAL_UI" | "STANDALONE" | "FULL_SCREEN";
+type WebAppDisplayMode = "MINIMAL_UI" | "STANDALONE" | "FULL_SCREEN";
 
-export type WebAppIcon = {
+type WebAppIcon = {
   /** 512×512 PNG or JPEG, base64url-encoded (base64 with `+`→`-`, `/`→`_`, padding stripped). */
   imageData: string;
 };
@@ -94,7 +94,7 @@ export type AndroidManagementConfig = {
 };
 
 /** How an application appears in a device policy's `applications[]`. */
-export type PolicyApplicationInstallType =
+type PolicyApplicationInstallType =
   | "FORCE_INSTALLED"
   | "PREINSTALLED"
   | "BLOCKED"

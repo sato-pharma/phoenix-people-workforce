@@ -86,7 +86,7 @@ export function splitTitleAndEmployer(raw: string): { readonly jobTitle: string 
   return looksLikeJobTitle(text) ? { employer: null, jobTitle: text } : { employer: text, jobTitle: null };
 }
 
-export function looksLikeJobTitle(value: string): boolean {
+function looksLikeJobTitle(value: string): boolean {
   return JOB_TITLE_KEYWORDS.some((keyword) => containsPhrase(value, keyword));
 }
 

@@ -49,10 +49,10 @@ export type PlannedActivity = {
 };
 
 /** An activity as a day of the week view carries it. */
-export type DraftDayActivity = { activityType: PhoenixCrmDayActivity; halfDay: boolean; note: string | null };
+type DraftDayActivity = { activityType: PhoenixCrmDayActivity; halfDay: boolean; note: string | null };
 
 /** A saved placement as the week view carries it — the part of PlanItemView a draft needs. */
-export type DraftDayItem = {
+type DraftDayItem = {
   customerId: string;
   placeId: string | null;
   listType: PhoenixCrmDoctorListType;
@@ -113,11 +113,11 @@ export function weekScope(seatId: string, test: boolean, weekStart: string): str
   return [seatId, test ? "test" : "live", weekStart].join("|");
 }
 
-export function weekBasis(plan: DraftWeek["plan"]): string {
+function weekBasis(plan: DraftWeek["plan"]): string {
   return `${plan?.planId ?? "none"}|${plan?.version ?? 0}`;
 }
 
-export function asExceptionType(value: string | null | undefined): PlanExceptionType | null {
+function asExceptionType(value: string | null | undefined): PlanExceptionType | null {
   return PLAN_EXCEPTION_TYPES.find((type) => type.key === value)?.key ?? null;
 }
 
@@ -348,7 +348,7 @@ export function setPlannedActivity(
 }
 
 /** Day order, then the kinds in the order the rep ticks them from (day-activities.ts). */
-export function sortPlannedActivities<T extends Pick<PlannedActivity, "planDate" | "activityType">>(activities: T[]): T[] {
+function sortPlannedActivities<T extends Pick<PlannedActivity, "planDate" | "activityType">>(activities: T[]): T[] {
   return activities.sort(
     (left, right) => left.planDate.localeCompare(right.planDate) || dayActivityRank(left.activityType) - dayActivityRank(right.activityType),
   );
@@ -401,10 +401,6 @@ export function customerOnDay(customer: PlannerCustomer, date: string, ramadan: 
   if (preferred) return read(preferred);
   const fits = customer.places.map(read);
   return fits.find((fit) => fit.receives) ?? fits[0];
-}
-
-export function receivesOnDay(customer: PlannerCustomer, day: Pick<DraftDay, "date" | "ramadan">): boolean {
-  return customerOnDay(customer, day.date, day.ramadan)?.receives ?? false;
 }
 
 /** One drafted placement, read against today's list. */

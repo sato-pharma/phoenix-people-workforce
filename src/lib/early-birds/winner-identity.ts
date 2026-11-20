@@ -22,7 +22,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { HR_ID_LOOKUP_CHUNK, type EmployeeNameLookupClient } from "@/lib/employees/names-by-hr-id";
 import { loadReferenceAreas } from "@/lib/reference/reference-lists";
 
-export type WinnerIdentity = { name: string | null; areaName: string | null };
+type WinnerIdentity = { name: string | null; areaName: string | null };
 
 /** The winner fields this module reads and may complete — structural so the pure half needs no row type. */
 export type WinnerIdentityFields = { employeeHrId: string; employeeName: string; areaName: string | null };
@@ -107,7 +107,7 @@ export async function loadWinnerIdentities(
  *
  * Generic over the record so the caller keeps every other field untouched.
  */
-export function withLiveWinnerIdentity<T extends WinnerIdentityFields>(
+function withLiveWinnerIdentity<T extends WinnerIdentityFields>(
   winners: readonly T[],
   identities: WinnerIdentityIndex,
 ): T[] {

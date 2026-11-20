@@ -150,7 +150,7 @@ export type IdentityProfileRow = IdentityCandidate & {
   missing: boolean;
 };
 
-export type IdentityProfileEvent = {
+type IdentityProfileEvent = {
   at: string;
   event: string;
   actor: string;

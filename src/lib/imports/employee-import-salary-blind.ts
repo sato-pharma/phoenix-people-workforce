@@ -65,7 +65,7 @@ export const NEW_EMPLOYEE_NOT_ALLOWED_CODE = "new_employee_not_allowed";
  * so a second "Base Salary" column would be ignored by the write — and must still not slip past
  * this check, because the point of it is that no figure travels with her file at all.
  */
-export function filledMoneyColumnHeaders(rows: RawEmployeeImportRow[]): string[] {
+function filledMoneyColumnHeaders(rows: RawEmployeeImportRow[]): string[] {
   const lookup = createEmployeeColumnLookup();
   const headers: string[] = [];
   const seen = new Set<string>();

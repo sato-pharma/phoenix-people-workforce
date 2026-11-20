@@ -30,13 +30,6 @@ function onesignalTimeoutMs() {
   return Number.isFinite(value) && value > 0 ? value : 8000;
 }
 
-export function onesignalEnvironmentStatus(): OneSignalEnvironmentStatus {
-  return {
-    onesignalAppId: Boolean(onesignalAppId()),
-    onesignalRestApiKey: Boolean(onesignalRestApiKey()),
-  };
-}
-
 // OneSignal's `url` field needs a fully-qualified URL — every caller here passes an
 // app-relative path (same as email/Telegram do), so this makes it absolute the same way
 // dashboardUrl() does in src/lib/notifications/email.ts. Without this, OneSignal falls back

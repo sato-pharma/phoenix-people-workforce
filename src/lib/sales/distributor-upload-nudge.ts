@@ -219,7 +219,7 @@ export function overdueDistributorMessage(period: string, overdue: readonly Dist
  * file is in. Codes are compared upper-cased: they are stored mixed-case in this schema, and an
  * exact-case comparison silently under-returns rather than erroring.
  */
-export async function loadDistributorUploadRows(period: string): Promise<DistributorUploadRow[]> {
+async function loadDistributorUploadRows(period: string): Promise<DistributorUploadRow[]> {
   const supabase = getSupabaseAdmin();
   const prior = priorPeriodOf(period);
   const [distRes, batchRes] = await Promise.all([

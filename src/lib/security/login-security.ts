@@ -15,12 +15,12 @@ import { ilikeAnyFilter, quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The audit_logs entity types that ARE sign-in and account activity. */
-export const LOGIN_SECURITY_ACTIVITY_ENTITY_TYPES = ["auth_session", "user"] as const;
-export const LOGIN_SECURITY_ACTIVITY_PAGE_SIZE = 25;
+const LOGIN_SECURITY_ACTIVITY_ENTITY_TYPES = ["auth_session", "user"] as const;
+const LOGIN_SECURITY_ACTIVITY_PAGE_SIZE = 25;
 /** The security lens window, in days. */
-export const LOGIN_SECURITY_WINDOW_DAYS = 7;
+const LOGIN_SECURITY_WINDOW_DAYS = 7;
 
-export type LoginSecurityActivityRow = {
+type LoginSecurityActivityRow = {
   id: string;
   createdAt: string | null;
   /** "Sign-in" for auth_session rows, "Account" for user rows. */
@@ -30,7 +30,7 @@ export type LoginSecurityActivityRow = {
   actorName: string | null;
 };
 
-export type LoginSecurityActivityPage = {
+type LoginSecurityActivityPage = {
   rows: LoginSecurityActivityRow[];
   total: number;
   page: number;

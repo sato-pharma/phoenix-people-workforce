@@ -70,7 +70,7 @@ export class TabletPolicyNotSavedError extends Error {
   }
 }
 
-export type RepTabletApp = {
+type RepTabletApp = {
   packageName: string;
   /** Google Play's name for it — the package name only when Play could not be asked. */
   title: string;

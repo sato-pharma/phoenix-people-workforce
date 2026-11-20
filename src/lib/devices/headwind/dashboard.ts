@@ -48,7 +48,7 @@ export type FleetSummary = {
  * 🔴 "not_reported" IS ITS OWN ANSWER, NEVER "current". A tablet whose app list names no launcher has
  * told us nothing; counting it current hid exactly the tablets that had stopped reporting.
  */
-export type LauncherStanding = "current" | "behind" | "not_reported";
+type LauncherStanding = "current" | "behind" | "not_reported";
 
 /**
  * How far one tablet's PROVISIONING has got — the one-time setup that makes it reachable on its own.

@@ -71,11 +71,6 @@ export function daysInPeriod(period: string): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-/** ISO date for a day inside a period: ("2026-04", 5) → "2026-04-05". */
-export function periodDayIso(period: string, day: number): string {
-  return `${period}-${String(day).padStart(2, "0")}`;
-}
-
 /** What the Channels by Rep tab sends to ask for every month. Here so the tab and its server agree. */
 export const CHANNELS_BY_REP_WHOLE_HISTORY = "all";
 

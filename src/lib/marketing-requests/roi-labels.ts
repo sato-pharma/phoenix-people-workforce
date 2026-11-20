@@ -11,8 +11,7 @@ import type {
   MarketingRoiResultStatus,
 } from "@/lib/marketing-requests/roi-report-types";
 
-export const ROI_FORECAST_LABEL = "Forecast";
-export const ROI_ACTUAL_LABEL = "Actual";
+const ROI_FORECAST_LABEL = "Forecast";
 export const ROI_FORECAST_COVERAGE_LABEL = "Forecast coverage";
 export const ROI_ACTUAL_COVERAGE_LABEL = "Actual coverage";
 export const ROI_DATA_PENDING_LABEL = "Data pending";

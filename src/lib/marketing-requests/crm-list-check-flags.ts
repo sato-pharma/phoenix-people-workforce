@@ -74,7 +74,7 @@ export type ListCheckTwoPhotos = {
 };
 
 /** A signed link to one doctor's place photo, or null. Shared by the approval window and the board. */
-export async function signDoctorPlacePhoto(supabase: SupabaseClient, path: string | null | undefined): Promise<string | null> {
+async function signDoctorPlacePhoto(supabase: SupabaseClient, path: string | null | undefined): Promise<string | null> {
   if (!path) return null;
   const { data, error } = await supabase.storage.from(PHOENIX_CRM_PHOTO_BUCKET).createSignedUrl(path, DOCTOR_PHOTO_URL_SECONDS);
   return error ? null : (data?.signedUrl ?? null);
@@ -97,7 +97,7 @@ export function nearestDoctorPhotoPath(rows: readonly DoctorPlaceRow[], point: {
 }
 
 /** The doctor's place nearest the customer's point, among those that kept a photo. */
-export async function loadDoctorPlacePhotoPath(
+async function loadDoctorPlacePhotoPath(
   supabase: SupabaseClient,
   crmCustomerId: string,
   point: { lat: unknown; lon: unknown },

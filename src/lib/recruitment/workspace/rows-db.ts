@@ -76,7 +76,7 @@ import {
 
 /** One page's default and ceiling — the ceiling is `ats_workspace_page`'s own. */
 export const WORKSPACE_PAGE_DEFAULT = 50;
-export const WORKSPACE_PAGE_MAX = 200;
+const WORKSPACE_PAGE_MAX = 200;
 /** The export's default ceiling. A tab holds a few hundred people; this is every realistic export. */
 export const WORKSPACE_EXPORT_DEFAULT_MAX = 5000;
 
@@ -172,7 +172,7 @@ function searchesEverywhere(filters: WorkspaceFilters): boolean {
 }
 
 /** The `p` for these filters and this viewer, with the CV-text matches and the folder subtree resolved. */
-export async function resolveWorkspaceParams(filters: WorkspaceFilters, viewer: WorkspaceViewer): Promise<WorkspaceDbParams> {
+async function resolveWorkspaceParams(filters: WorkspaceFilters, viewer: WorkspaceViewer): Promise<WorkspaceDbParams> {
   const [searchIds, folderIdsExpanded] = await Promise.all([
     filters.search ? workspaceCvSearchIds(viewer, filters.search) : Promise.resolve([] as string[]),
     expandFolderIds(filters.folderIds, filters.tab === FOLDERS_TAB),

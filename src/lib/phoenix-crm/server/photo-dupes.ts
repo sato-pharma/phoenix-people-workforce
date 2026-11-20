@@ -60,7 +60,7 @@ export const PHOTO_SWEEP_LIMIT = 400;
  * read into a table scan that grows for the life of the system. The exact-match half is not bounded
  * this way: a sha256 lookup is one indexed read whatever the table holds.
  */
-export const PHOTO_COMPARE_DAYS = 180;
+const PHOTO_COMPARE_DAYS = 180;
 
 /**
  * A ceiling on the in-memory corpus, so one night can never pull an unbounded table into RAM.

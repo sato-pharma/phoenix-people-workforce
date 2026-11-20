@@ -30,16 +30,12 @@ import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const EMPLOYEE_PHOTOS_BUCKET = "employee-photos";
-export const MAX_EMPLOYEE_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_EMPLOYEE_PHOTO_BYTES = 5 * 1024 * 1024;
 
 const ALLOWED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PHOTO_MAP_TTL_MS = 30_000;
 
-export function isEmployeePhotoStorageConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-}
-
-export function isAllowedPhotoContentType(contentType: string | null | undefined): boolean {
+function isAllowedPhotoContentType(contentType: string | null | undefined): boolean {
   return Boolean(contentType && ALLOWED_CONTENT_TYPES.has(contentType.toLowerCase()));
 }
 
@@ -63,7 +59,7 @@ let photoMapCache: { value: Map<string, PhotoMapEntry>; expiresAt: number } | nu
 // query instead of each issuing their own.
 let inFlightPhotoMap: Promise<Map<string, PhotoMapEntry>> | null = null;
 
-export function invalidateEmployeePhotoMap(): void {
+function invalidateEmployeePhotoMap(): void {
   photoMapCache = null;
 }
 

@@ -28,7 +28,7 @@ export type OfferApprovalTrail = {
   sentAt: string | null;
 };
 
-export const offerResponses = ["accepted", "declined", "expired"] as const;
+const offerResponses = ["accepted", "declined", "expired"] as const;
 export type OfferResponse = (typeof offerResponses)[number];
 
 function isBlank(value: string | null | undefined): boolean {
@@ -50,10 +50,6 @@ export function missingOfferTerms(terms: OfferTerms): string[] {
   }
   if (isBlank(terms.startDate)) missing.push("start date");
   return missing;
-}
-
-export function isOfferReadyToSubmit(terms: OfferTerms): boolean {
-  return missingOfferTerms(terms).length === 0;
 }
 
 /**

@@ -15,16 +15,16 @@
 
 export const MM_TO_PT = 72 / 25.4;
 
-export type CardInk = readonly [cyan: number, magenta: number, yellow: number, black: number];
+type CardInk = readonly [cyan: number, magenta: number, yellow: number, black: number];
 
 /** The design's own DeviceCMYK values, verbatim. */
-export const CARD_INKS = {
+const CARD_INKS = {
   blue: [0.972838938, 0.295292586, 0.01371786, 0.068909741],
   dark: [0.93328756, 0.742366671, 0.577325105, 0.86042571],
   grey: [0.773311972, 0.557930886, 0.490821689, 0.332509338],
 } as const satisfies Record<string, CardInk>;
 
-export type CardFace = "bold" | "regular";
+type CardFace = "bold" | "regular";
 
 export type CardTextSlot = {
   baselineMm: number;
@@ -39,7 +39,7 @@ export type CardTextSlot = {
 };
 
 /** The trimmed card: 255 × 141.75 pt, which is 89.96 × 50.01 mm. */
-export const CARD_WIDTH_MM = (255 * 25.4) / 72;
+const CARD_WIDTH_MM = (255 * 25.4) / 72;
 const TEXT_LEFT_MM = 4.937;
 const HEADING_MAX_WIDTH_MM = CARD_WIDTH_MM - 2 * TEXT_LEFT_MM;
 
@@ -79,9 +79,8 @@ const CONTACT_LEFT_MM = 8.626;
 
 /** The four contact rows, top to bottom, in the design's order. */
 export const CARD_CONTACT_ROWS = ["mobile", "email", "website", "address"] as const;
-export type CardContactRow = (typeof CARD_CONTACT_ROWS)[number];
 
-export const CARD_CONTACT_BASELINES_MM = [34.018, 37.767, 41.518, 45.267] as const;
+const CARD_CONTACT_BASELINES_MM = [34.018, 37.767, 41.518, 45.267] as const;
 
 export function contactSlot(row: number): CardTextSlot {
   return {

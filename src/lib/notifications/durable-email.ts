@@ -91,7 +91,7 @@ export type DurableEmailDeps = {
   sendDirect: (message: DurableEmailMessage) => Promise<SendPhoenixEmailResult>;
 };
 
-export const QUEUED_FOR_RETRY_PREFIX = "Queued for retry:";
+const QUEUED_FOR_RETRY_PREFIX = "Queued for retry:";
 
 function originEnvironment(): string {
   return process.env.APP_ENV || process.env.NODE_ENV || "development";
@@ -245,7 +245,7 @@ export type ExhaustedDurableEmail = {
 };
 
 /** A durable direct email that used every attempt and will not be tried again until someone says so. */
-export function isExhaustedDurableEmailRow(row: Pick<NotificationOutboxRow, "attempts" | "max_attempts" | "payload" | "status">): boolean {
+function isExhaustedDurableEmailRow(row: Pick<NotificationOutboxRow, "attempts" | "max_attempts" | "payload" | "status">): boolean {
   return row.status === "failed" && row.attempts >= row.max_attempts && isDirectEmailPayload(row.payload);
 }
 

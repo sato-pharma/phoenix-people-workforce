@@ -109,7 +109,7 @@ export function mayDownloadPortalNsmDsmExport(role: PhoenixRole): boolean {
 }
 
 /** Which filters the client should render for this viewer. */
-export type PortalWeeklyFilterVisibility = {
+type PortalWeeklyFilterVisibility = {
   /** Always true. */
   month: boolean;
   /** Always true. */
@@ -130,7 +130,7 @@ export type PortalWeeklyFilterVisibility = {
  * Line shown for Marketing Manager (multi-line role) and for full-tier company
  * viewers (CEO / Super Admin on the admin Field Sales pages).
  */
-export function computePortalWeeklyVisibility(
+function computePortalWeeklyVisibility(
   role: PhoenixRole,
   allowedRegionCodes: Set<string> | null,
   companyWide = false,
@@ -308,7 +308,7 @@ function shiftCycleMonthBack(cycleMonth: string): string | null {
   return `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
 }
 
-export type PortalWeeklyMover = {
+type PortalWeeklyMover = {
   code: string;
   label: string;
   value: number;
