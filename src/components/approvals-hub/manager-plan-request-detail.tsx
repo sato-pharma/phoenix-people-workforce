@@ -1,10 +1,17 @@
 import Link from "next/link";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 
-import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { ManagerPlanDecisionActions } from "@/components/approvals-hub/manager-plan-decision-actions";
 import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import { ManagerWeekGlancePanel } from "@/components/phoenix-crm/manager-week-glance";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingPanel,
+  LandingRailLine,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import {
   MANAGER_GLANCE_KIND_EDGE,
   MANAGER_HUB_EMPTY_HALF_WORDS,
@@ -29,30 +36,48 @@ import type {
  * a customer off his own list, and his ask for another day of single visits.
  */
 
+// The kit's language (landing-kit.tsx): a step's state is a 4px rail and coloured small capitals —
+// navy for the step waiting now, the tone scale's 700s for the rest. Orange stays the title tick.
 const STEP_TONE: Record<ManagerHubStepState, { dot: string; text: string; label: string }> = {
   done: { dot: "bg-emerald-500", text: "text-emerald-700", label: "Done" },
-  current: { dot: "bg-orange-500", text: "text-orange-700", label: "Waiting" },
+  current: { dot: "bg-[#08111f]", text: "text-[#08111f]", label: "Waiting" },
   waiting: { dot: "bg-slate-300", text: "text-slate-500", label: "Later" },
   returned: { dot: "bg-amber-500", text: "text-amber-700", label: "Returned" },
   refused: { dot: "bg-rose-500", text: "text-rose-700", label: "Refused" },
   closed: { dot: "bg-slate-400", text: "text-slate-600", label: "Closed before it was decided" },
 };
 
-const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
+/** The white sheet a stand-alone line sits on: the kit's hairline and the soft depth token. */
+const SHEET = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
 
 function Back({ href }: { href: string }) {
   return (
-    <Link href={href} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-      <ArrowLeft className="h-4 w-4" /> Back to list
+    <Link
+      href={href}
+      className={`inline-flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] underline-offset-4 transition-colors hover:underline motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`}
+    >
+      <ArrowLeft aria-hidden="true" className="h-4 w-4" /> Back to list
     </Link>
+  );
+}
+
+/** The page's own head: the name in navy, its standing in small capitals beside it. */
+function PageHead({ title, status, dir }: { title: string; status: string; dir?: "auto" }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-3">
+      <h2 className={`min-w-0 break-words text-lg font-black ${LANDING_INK}`} dir={dir}>
+        {title}
+      </h2>
+      <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600">{status}</span>
+    </div>
   );
 }
 
 function Fact({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2">
-      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="break-words text-sm font-semibold text-slate-900">{value || "—"}</dd>
+    <div className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0">
+      <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+      <dd className={`break-words text-sm font-semibold ${LANDING_INK}`} dir="auto">{value || "—"}</dd>
     </div>
   );
 }
@@ -60,20 +85,17 @@ function Fact({ label, value }: { label: string; value: string | null | undefine
 function Tracker({ title, steps }: { title: string; steps: ManagerHubStep[] }) {
   if (steps.length === 0) return null;
   return (
-    <section className={adminPanelClassName}>
-      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-        <h3 className={headerText}>{title}</h3>
-      </header>
-      <ol className="space-y-3 px-4 py-4">
+    <LandingPanel title={title}>
+      <ol className="divide-y divide-slate-200">
         {steps.map((step) => {
           const tone = STEP_TONE[step.state];
           return (
-            <li key={step.label} className="flex gap-3">
-              <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 ${tone.dot}`} aria-hidden />
+            <li key={step.label} className="flex min-w-0 gap-3 px-3 py-2.5 sm:px-4">
+              <span className={`w-1 shrink-0 self-stretch ${tone.dot}`} aria-hidden />
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-900">{step.label}</p>
-                <p className="break-words text-xs text-slate-600">{step.who}</p>
-                <p className={`text-phx-2xs font-black uppercase tracking-wide ${tone.text}`}>
+                <p className={`break-words text-sm font-bold ${LANDING_INK}`}>{step.label}</p>
+                <p className="break-words text-xs text-slate-600" dir="auto">{step.who}</p>
+                <p className={`text-phx-xs font-black uppercase tracking-[0.1em] ${tone.text}`}>
                   {tone.label}
                   {step.at ? ` · ${step.at}` : ""}
                 </p>
@@ -82,7 +104,7 @@ function Tracker({ title, steps }: { title: string; steps: ManagerHubStep[] }) {
           );
         })}
       </ol>
-    </section>
+    </LandingPanel>
   );
 }
 
@@ -98,8 +120,8 @@ function RideAlong({ slot }: { slot: HubSlot }) {
   const title = slot.seniorTitle;
   return (
     <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-      <span className="border border-sky-300 bg-sky-50 px-1.5 py-px text-phx-2xs font-black uppercase tracking-wide text-sky-800">{slot.kindLabel}</span>
-      <span className="break-words text-sm font-bold text-slate-900">{who}</span>
+      <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-sky-700">{slot.kindLabel}</span>
+      <span className={`break-words text-sm font-bold ${LANDING_INK}`} dir="auto">{who}</span>
       {title ? <span className="break-words text-xs font-semibold text-slate-500">{title}</span> : null}
     </span>
   );
@@ -108,22 +130,19 @@ function RideAlong({ slot }: { slot: HubSlot }) {
 function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
   const days = detail.board.days.filter((day) => day.halves.length > 0 || day.holiday);
   return (
-    <section className={`${adminPanelClassName} lg:col-span-2`}>
-      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-        <h3 className={headerText}>The week, half-day by half-day</h3>
-      </header>
-      <div className="space-y-3 px-4 py-4">
+    <LandingPanel className="lg:col-span-2" title="The week, half-day by half-day">
+      <div className="space-y-3 px-3 py-3 sm:px-4">
         {days.length === 0 ? <p className="text-sm text-slate-500">This week has no working days.</p> : null}
         {days.map((day) => (
           <div key={day.date} className="border border-slate-200">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-1.5">
-              <span className="text-phx-xs font-black uppercase tracking-wide text-slate-700">{day.dateText}</span>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 px-3 py-1.5">
+              <span className={`text-phx-xs font-black uppercase tracking-[0.1em] ${LANDING_INK}`}>{day.dateText}</span>
               {day.holiday ? <span className="text-phx-xs font-bold text-slate-500">{day.holiday}</span> : null}
               {detail.returnedDayText && detail.board.plan?.returnedDay === day.date ? (
-                <span className="text-phx-xs font-black uppercase tracking-wide text-amber-700">Returned</span>
+                <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-amber-700">Returned</span>
               ) : null}
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-200">
               {/* Every half the day holds, an empty one included: the approver reads what was left empty too, where the
                   list of saved halves alone hid it (premium pass, 2026-11-09). A planned half wears its kind's edge,
                   as on the week at a glance. */}
@@ -133,7 +152,7 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                   return (
                     <div key={half} className="px-3 py-2">
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{half}</span>
+                        <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{half}</span>
                         <span className="break-words text-sm font-semibold text-slate-500">{MANAGER_HUB_EMPTY_HALF_WORDS}</span>
                       </div>
                     </div>
@@ -142,11 +161,11 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                 return (
                 <div key={slot.half} className={`border-l-4 ${slot.kind ? MANAGER_GLANCE_KIND_EDGE[slot.kind] : "border-l-transparent"} px-3 py-2`}>
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{slot.half}</span>
+                    <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{slot.half}</span>
                     {slot.kind === "with_senior" ? (
                       <RideAlong slot={slot} />
                     ) : (
-                      <span className="break-words text-sm font-bold text-slate-900">{slot.summary ?? "Nothing planned"}</span>
+                      <span className={`break-words text-sm font-bold ${LANDING_INK}`}>{slot.summary ?? "Nothing planned"}</span>
                     )}
                   </div>
                   {slot.kind === "with_senior" && slot.tickedAreas.length > 0 ? (
@@ -154,7 +173,7 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                       {slot.tickedAreas.map((area) => (
                         <li
                           key={area.seatId}
-                          className={`max-w-full border px-2 py-0.5 text-xs ${area.vacant ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-700"}`}
+                          className={`max-w-full border px-2 py-0.5 text-xs ${area.vacant ? "border-amber-500 text-amber-800" : "border-slate-200 text-slate-700"}`}
                         >
                           <span className="break-words font-semibold" dir="auto">
                             {area.name}
@@ -177,7 +196,7 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                       {slot.customers.map((customer) => (
                         <li
                           key={customer.customerId ?? customer.managerCustomerId ?? customer.name}
-                          className={`max-w-full border px-2 py-0.5 text-xs ${customer.flag ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-700"}`}
+                          className={`max-w-full border px-2 py-0.5 text-xs ${customer.flag ? "border-amber-500 text-amber-800" : "border-slate-200 text-slate-700"}`}
                         >
                           <span className="break-words font-semibold" dir="auto">
                             {customer.name}
@@ -196,7 +215,7 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
           </div>
         ))}
       </div>
-    </section>
+    </LandingPanel>
   );
 }
 
@@ -205,59 +224,49 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
   return (
     <div className="space-y-4">
       <Back href={backHref} />
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
-        <div className="min-w-0">
-          <h2 className="break-words text-lg font-black text-slate-900">{detail.managerName}</h2>
-          <p className="text-sm text-slate-600">
-            {detail.managerTitle} weekly plan · {detail.weekText}
-          </p>
-        </div>
-        <span className="border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">{detail.statusLabel}</span>
-      </div>
+      {/* The head is the name and its standing alone (owner, 2026-11-20: no sentence under any header);
+          the week and the planner's title are the Plan details panel's own rows. */}
+      <PageHead status={detail.statusLabel} title={detail.managerName} dir="auto" />
 
       {detail.isTest ? (
-        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">A test persona&apos;s week — nothing here is real.</p>
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-slate-400">A test persona&apos;s week — nothing here is real.</LandingRailLine>
+        </div>
       ) : null}
 
       {detail.isOwner ? (
-        <a href={plannerHref} className="inline-flex items-center gap-1.5 bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600">
-          <ExternalLink className="h-4 w-4" /> Open my plan in Phoenix CRM
+        <a href={plannerHref} className={landingActionClassName("solid")}>
+          <ExternalLink aria-hidden="true" className="h-4 w-4" /> Open my plan in Phoenix CRM
         </a>
       ) : null}
 
       {/* The same week at a glance as on the planner's own board — the same figures, read from the same module — so the
           approver sees the week whole before reading it half by half. Text only: nothing here opens a half. */}
-      <div className={adminPanelClassName}>
+      <div className={SHEET}>
         <ManagerWeekGlancePanel canOpen={false} exportHref={managerHubWeekExportHref(detail.planId)} view={detail.board} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">
-          <section className={adminPanelClassName}>
-            <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-              <h3 className={headerText}>Plan details</h3>
-            </header>
-            <dl className="px-4 py-2">
+          <LandingPanel title="Plan details">
+            <dl className="px-3 py-1 sm:px-4">
               <Fact label={detail.managerTitle} value={detail.managerName} />
               <Fact label="Week" value={detail.weekText} />
               <Fact label="Sent" value={detail.sentAt ? `${detail.sentAt}${detail.sentLate ? " · after the Thursday deadline" : ""}` : "Not sent"} />
               {detail.returnedDayText ? <Fact label="Day returned" value={detail.returnedDayText} /> : null}
               {detail.decisionNote ? <Fact label="Note" value={detail.decisionNote} /> : null}
             </dl>
-          </section>
+          </LandingPanel>
 
           {ask ? (
-            <section className={adminPanelClassName}>
-              <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-                <h3 className={headerText}>The ask to edit the week</h3>
-              </header>
-              <dl className="px-4 py-2">
+            <LandingPanel title="The ask to edit the week">
+              <dl className="px-3 py-1 sm:px-4">
                 <Fact label="Why" value={ask.reason} />
                 <Fact label="Asked" value={ask.askedAt} />
                 <Fact label="Stands" value={ask.statusLabel} />
                 {ask.decisionNote ? <Fact label="Note" value={ask.decisionNote} /> : null}
               </dl>
-            </section>
+            </LandingPanel>
           ) : null}
 
           {ask ? <Tracker title="Ask to edit tracker" steps={ask.steps} /> : null}
@@ -279,10 +288,12 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
           ) : detail.endedUndecidedOnText ? (
             // A sent week whose Thursday passed undecided: the database refuses every step on it, so the page says
             // why there is no button instead of leaving its approver to look for one (owner, 2026-11-08).
-            <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
-              This week ended on {detail.endedUndecidedOnText} before it was approved. A week that has ended can no longer be approved
-              or returned.
-            </p>
+            <div className={SHEET}>
+              <LandingRailLine rail="bg-slate-400">
+                This week ended on {detail.endedUndecidedOnText} before it was approved. A week that has ended can no longer be approved
+                or returned.
+              </LandingRailLine>
+            </div>
           ) : null}
 
           {/* The week's conversation, open at any status once it has been sent (owner, 2026-11-01). The same
@@ -301,21 +312,10 @@ function RemovalDetail({ detail, backHref }: { detail: ManagerHubRemovalDetail; 
   return (
     <div className="space-y-4">
       <Back href={backHref} />
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
-        <div className="min-w-0">
-          <h2 className="break-words text-lg font-black text-slate-900" dir="auto">
-            {detail.customerName}
-          </h2>
-          <p className="text-sm text-slate-600">{detail.managerName} asks to take this customer off Manager&apos;s own list</p>
-        </div>
-        <span className="border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">{detail.statusLabel}</span>
-      </div>
+      <PageHead status={detail.statusLabel} title={detail.customerName} dir="auto" />
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className={adminPanelClassName}>
-          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-            <h3 className={headerText}>The customer</h3>
-          </header>
-          <dl className="px-4 py-2">
+        <LandingPanel title="The customer">
+          <dl className="px-3 py-1 sm:px-4">
             <Fact label={detail.managerTitle} value={detail.managerName} />
             <Fact label="Speciality" value={detail.speciality} />
             <Fact label="Grade · potential" value={grades} />
@@ -323,7 +323,7 @@ function RemovalDetail({ detail, backHref }: { detail: ManagerHubRemovalDetail; 
             <Fact label="Why it is asked" value={detail.reason} />
             {detail.decisionNote ? <Fact label="Note" value={detail.decisionNote} /> : null}
           </dl>
-        </section>
+        </LandingPanel>
         <div className="space-y-4">
           <Tracker title="Approval tracker" steps={detail.steps} />
           {detail.decideAs ? (
@@ -343,19 +343,10 @@ function SingleVisitDayDetail({ detail, backHref }: { detail: ManagerHubSingleVi
   return (
     <div className="space-y-4">
       <Back href={backHref} />
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
-        <div className="min-w-0">
-          <h2 className="break-words text-lg font-black text-slate-900">{detail.visitDateText}</h2>
-          <p className="text-sm text-slate-600">{detail.managerName} asks for this day as another day of single visits</p>
-        </div>
-        <span className="border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">{detail.statusLabel}</span>
-      </div>
+      <PageHead status={detail.statusLabel} title={detail.visitDateText} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className={adminPanelClassName}>
-          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-            <h3 className={headerText}>The ask</h3>
-          </header>
-          <dl className="px-4 py-2">
+        <LandingPanel title="The ask">
+          <dl className="px-3 py-1 sm:px-4">
             <Fact label={detail.managerTitle} value={detail.managerName} />
             <Fact label="Day" value={detail.visitDateText} />
             <Fact label="Week" value={detail.weekText} />
@@ -363,7 +354,7 @@ function SingleVisitDayDetail({ detail, backHref }: { detail: ManagerHubSingleVi
             <Fact label="Why it is asked" value={detail.reason} />
             {detail.decisionNote ? <Fact label="Note" value={detail.decisionNote} /> : null}
           </dl>
-        </section>
+        </LandingPanel>
         <div className="space-y-4">
           <Tracker title="Approval tracker" steps={detail.steps} />
           {detail.decideAs ? (
@@ -386,7 +377,9 @@ export function ManagerPlanRequestDetail({ detail, backHref, plannerHref }: { de
   return (
     <div className="space-y-4">
       <Back href={backHref} />
-      <p className={`${adminSoftPanelClassName} px-4 py-6 text-sm text-slate-600`}>This plan could not be found, or you do not have access to it.</p>
+      <div className={SHEET}>
+        <LandingRailLine rail="bg-amber-500">This plan could not be found, or you do not have access to it.</LandingRailLine>
+      </div>
     </div>
   );
 }

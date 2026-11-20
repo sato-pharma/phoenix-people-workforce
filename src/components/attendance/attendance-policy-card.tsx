@@ -1,5 +1,7 @@
-import { Clock, Fingerprint, Info } from "lucide-react";
+import { Clock, Info } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_INK, LandingTitle } from "@/components/employee-portal/landing-kit";
 import type { AttendancePolicyExplainer } from "@/lib/attendance/policy-explainer";
 
 /**
@@ -15,18 +17,18 @@ import type { AttendancePolicyExplainer } from "@/lib/attendance/policy-explaine
  * truncated.
  */
 
-const CARD = "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+const CARD = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
 
 const COLUMNS = ["Clock in", "Clock out", "Worked", "Late", "Short", "Deduction"] as const;
 
 function DeductionText({ note, value }: { note: string; value: string }) {
   if (value === "None") {
-    return <span className="font-bold text-emerald-600">None</span>;
+    return <span className="font-bold text-emerald-700">None</span>;
   }
   return (
-    <span className="font-bold text-slate-900">
+    <span className={`break-words font-bold ${LANDING_INK}`}>
       {value}
-      {note ? <span className="block font-semibold text-slate-400">({note})</span> : null}
+      {note ? <span className="block font-semibold text-slate-500">({note})</span> : null}
     </span>
   );
 }
@@ -35,12 +37,12 @@ function BracketScale({ items, label }: { items: AttendancePolicyExplainer["late
   if (items.length === 0) return null;
   return (
     <div className="min-w-0">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <ul className="mt-1.5 space-y-1">
+      <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+      <ul className="mt-1.5 divide-y divide-slate-200 border-y border-slate-200">
         {items.map((item) => (
-          <li className="flex flex-wrap items-baseline gap-x-2 text-xs" key={`${label}-${item.range}`}>
-            <span className="font-mono font-semibold text-slate-600">{item.range}</span>
-            <span className="font-bold text-slate-900">{item.deduction}</span>
+          <li className="flex flex-wrap items-baseline justify-between gap-x-3 py-1.5 text-phx-sm" key={`${label}-${item.range}`}>
+            <span className="font-semibold tabular-nums text-slate-600">{item.range}</span>
+            <span className={`font-bold tabular-nums ${LANDING_INK}`}>{item.deduction}</span>
           </li>
         ))}
       </ul>
@@ -50,27 +52,20 @@ function BracketScale({ items, label }: { items: AttendancePolicyExplainer["late
 
 export function AttendancePolicyCard({ explainer }: { explainer: AttendancePolicyExplainer }) {
   return (
-    <section className={`overflow-hidden ${CARD}`}>
+    <section className={CARD}>
       {/* Header — the policy this person is actually on. */}
-      <div className="border-b border-slate-200 bg-slate-50/70 p-4 sm:p-5">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
-            <Fingerprint className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">
-              How your attendance is judged
-            </p>
-            <h2 className="mt-0.5 text-base font-black tracking-tight text-slate-900">{explainer.title}</h2>
-            <p className="mt-0.5 text-xs font-semibold text-slate-500">{explainer.policyName}</p>
-          </div>
-        </div>
+      <header className="border-b border-slate-200 px-3 py-2.5 sm:px-4">
+        <LandingTitle>How your attendance is judged</LandingTitle>
+      </header>
+      <div className="border-b border-slate-200 px-3 py-3 sm:px-4">
+        <h3 className={`break-words text-phx-base font-black ${LANDING_INK}`}>{explainer.title}</h3>
+        <p className="mt-0.5 break-words text-phx-sm font-semibold text-slate-500">{explainer.policyName}</p>
 
-        {/* The headline facts, as chips. */}
+        {/* The headline facts, as hairline tags. */}
         <div className="mt-3 flex flex-wrap gap-1.5">
           {explainer.facts.map((fact) => (
             <span
-              className="inline-flex items-center bg-white px-2.5 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200"
+              className={`inline-flex items-center border border-slate-200 px-2.5 py-1 text-phx-sm font-bold ${LANDING_INK}`}
               key={fact}
             >
               {fact}
@@ -80,39 +75,39 @@ export function AttendancePolicyCard({ explainer }: { explainer: AttendancePolic
       </div>
 
       {/* The rules the table below demonstrates. */}
-      <ul className="space-y-1.5 border-b border-slate-200 p-4 sm:p-5">
+      <ul className="space-y-1.5 border-b border-slate-200 px-3 py-3 sm:px-4">
         {explainer.rules.map((rule) => (
-          <li className="flex gap-2 text-xs font-semibold leading-relaxed text-slate-600" key={rule}>
-            <span className="mt-1.5 h-1 w-1 shrink-0 bg-orange-500" aria-hidden="true" />
-            <span className="min-w-0">{rule}</span>
+          <li className="flex gap-2 text-phx-sm font-semibold leading-relaxed text-slate-600" key={rule}>
+            <span className="mt-1.5 h-1 w-1 shrink-0 bg-[#08111f]" aria-hidden="true" />
+            <span className="min-w-0 break-words">{rule}</span>
           </li>
         ))}
       </ul>
 
-      {/* Mobile: one card per example. Desktop tables never render here — the six
+      {/* Mobile: one row per example. Desktop tables never render here — the six
           columns would force a horizontal scroll at 375px. */}
-      <div className="space-y-2 p-4 md:hidden">
+      <div className="divide-y divide-slate-200 md:hidden">
         {explainer.rows.map((row, index) => (
-          <div className="border border-slate-200 bg-white p-3" key={`m-${index}-${row.clockIn}-${row.clockOut}`}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-slate-800">
-                <Clock className="h-3 w-3 shrink-0 text-slate-400" />
+          <div className="px-3 py-3" key={`m-${index}-${row.clockIn}-${row.clockOut}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={`inline-flex items-center gap-1.5 text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>
+                <Clock aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-400" />
                 {row.clockIn} — {row.clockOut}
               </span>
-              <span className="bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold text-slate-700">{row.worked}</span>
+              <span className="text-phx-sm font-bold tabular-nums text-slate-700">{row.worked}</span>
             </div>
-            <dl className="mt-2.5 grid grid-cols-3 gap-2 text-center">
-              <div className="min-w-0">
-                <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Late</dt>
-                <dd className="mt-0.5 text-xs font-semibold text-slate-700">{row.late}</dd>
+            <dl className="mt-2.5 grid grid-cols-3 divide-x divide-slate-200 border-y border-slate-200">
+              <div className="min-w-0 px-2 py-1.5">
+                <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Late</dt>
+                <dd className="mt-0.5 break-words text-phx-sm font-semibold text-slate-700">{row.late}</dd>
               </div>
-              <div className="min-w-0">
-                <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Short</dt>
-                <dd className="mt-0.5 text-xs font-semibold text-slate-700">{row.short}</dd>
+              <div className="min-w-0 px-2 py-1.5">
+                <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Short</dt>
+                <dd className="mt-0.5 break-words text-phx-sm font-semibold text-slate-700">{row.short}</dd>
               </div>
-              <div className="min-w-0">
-                <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Deduction</dt>
-                <dd className="mt-0.5 text-xs">
+              <div className="min-w-0 px-2 py-1.5">
+                <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Deduction</dt>
+                <dd className="mt-0.5 text-phx-sm">
                   <DeductionText note={row.deductionNote} value={row.deduction} />
                 </dd>
               </div>
@@ -122,8 +117,8 @@ export function AttendancePolicyCard({ explainer }: { explainer: AttendancePolic
       </div>
 
       {/* Desktop: the full six-column table, fixed so it can never scroll sideways. */}
-      <div className="hidden p-4 sm:p-5 md:block">
-        <table className="w-full table-fixed text-sm">
+      <div className="hidden px-3 py-3 sm:px-4 md:block">
+        <table className="w-full table-fixed text-phx-md">
           <colgroup>
             <col className="w-[13%]" />
             <col className="w-[13%]" />
@@ -136,7 +131,7 @@ export function AttendancePolicyCard({ explainer }: { explainer: AttendancePolic
             <tr className="border-b border-slate-200">
               {COLUMNS.map((column) => (
                 <th
-                  className="px-3 py-2.5 text-left text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500"
+                  className="px-3 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500"
                   key={column}
                   scope="col"
                 >
@@ -145,18 +140,18 @@ export function AttendancePolicyCard({ explainer }: { explainer: AttendancePolic
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-200">
             {explainer.rows.map((row, index) => (
               <tr
-                className={`align-top ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+                className="align-top"
                 key={`d-${index}-${row.clockIn}-${row.clockOut}`}
               >
-                <td className="break-words px-3 py-2.5 font-mono text-xs font-bold text-slate-800">{row.clockIn}</td>
-                <td className="break-words px-3 py-2.5 font-mono text-xs font-bold text-slate-800">{row.clockOut}</td>
-                <td className="break-words px-3 py-2.5 font-mono text-xs font-bold text-slate-700">{row.worked}</td>
-                <td className="break-words px-3 py-2.5 text-xs font-semibold text-slate-600">{row.late}</td>
-                <td className="break-words px-3 py-2.5 text-xs font-semibold text-slate-600">{row.short}</td>
-                <td className="break-words px-3 py-2.5 text-xs">
+                <td className={`break-words px-3 py-2.5 text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>{row.clockIn}</td>
+                <td className={`break-words px-3 py-2.5 text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>{row.clockOut}</td>
+                <td className="break-words px-3 py-2.5 text-phx-sm font-bold tabular-nums text-slate-700">{row.worked}</td>
+                <td className="break-words px-3 py-2.5 text-phx-sm font-semibold text-slate-600">{row.late}</td>
+                <td className="break-words px-3 py-2.5 text-phx-sm font-semibold text-slate-600">{row.short}</td>
+                <td className="break-words px-3 py-2.5 text-phx-sm">
                   <DeductionText note={row.deductionNote} value={row.deduction} />
                 </td>
               </tr>
@@ -166,7 +161,7 @@ export function AttendancePolicyCard({ explainer }: { explainer: AttendancePolic
       </div>
 
       {/* The deduction scale actually stored against this policy. */}
-      <div className="border-t border-slate-200 bg-slate-50/70 p-4 sm:p-5">
+      <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <BracketScale items={explainer.lateBrackets} label="Late arrival" />
           <BracketScale

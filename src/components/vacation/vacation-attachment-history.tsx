@@ -4,7 +4,9 @@ import { useRef, useState } from "react";
 import { FileText, Loader2, Paperclip } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
 import { cairoDateTime12h } from "@/lib/format/cairo-datetime";
+import { cn } from "@/lib/utils";
 import type { VacationRequestAttachment } from "@/lib/vacation/types";
 
 /*
@@ -126,22 +128,25 @@ export function VacationAttachmentHistory({
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       {attachments.length > 0 ? (
         <ul className="space-y-1">
           {visibleAttachments.map((attachment) => (
             <li key={attachment.id}>
               <a
-                className="flex flex-col gap-0.5 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1.5 transition hover:border-sky-300 hover:bg-sky-100"
+                className={cn(
+                  "flex flex-col gap-0.5 border-l-2 border-sky-400 py-1 pl-2 pr-1 transition-colors hover:bg-slate-50 motion-reduce:transition-none",
+                  LANDING_FOCUS,
+                )}
                 href={`/api/vacations/requests/${encodeURIComponent(requestId)}/attachments/file/${encodeURIComponent(attachment.id)}`}
                 rel="noreferrer"
                 target="_blank"
               >
-                <span className="flex min-w-0 items-start gap-1.5 text-phx-2xs font-bold leading-4 text-sky-700">
-                  <FileText className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span className="break-words">{fileLabel(attachment)}</span>
+                <span className="flex min-w-0 items-start gap-1.5 text-phx-xs font-bold leading-4 text-sky-800">
+                  <FileText aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span className="break-words" dir="auto">{fileLabel(attachment)}</span>
                 </span>
-                <span className="pl-[18px] text-phx-2xs font-semibold text-slate-500">
+                <span className="pl-[18px] text-phx-xs font-semibold tabular-nums text-slate-500">
                   {formatUploadedAt(attachment.uploadedAt)}
                   {sizeLabel(attachment.sizeBytes) ? ` · ${sizeLabel(attachment.sizeBytes)}` : ""}
                 </span>
@@ -151,7 +156,11 @@ export function VacationAttachmentHistory({
           {attachments.length > COLLAPSED_ATTACHMENT_COUNT ? (
             <li>
               <button
-                className="w-full rounded-sm border border-sky-200 bg-white px-2 py-1 text-left text-phx-2xs font-bold text-sky-700 transition hover:bg-sky-50"
+                aria-expanded={expanded}
+                className={cn(
+                  "w-full py-1 pl-2.5 text-left text-phx-xs font-bold text-sky-800 transition-colors hover:text-[#08111f] hover:underline motion-reduce:transition-none",
+                  LANDING_FOCUS,
+                )}
                 onClick={() => setExpanded((open) => !open)}
                 type="button"
               >
@@ -161,11 +170,11 @@ export function VacationAttachmentHistory({
           ) : null}
         </ul>
       ) : (
-        <p className="text-phx-2xs font-semibold text-slate-500">No documents uploaded yet.</p>
+        <p className="text-phx-xs font-semibold text-slate-500">No documents uploaded yet.</p>
       )}
 
       {canUpload ? (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <input
             accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
             className="sr-only"
@@ -180,23 +189,34 @@ export function VacationAttachmentHistory({
             }}
           />
           <button
-            className="inline-flex items-center gap-1.5 rounded-sm border border-sky-600 bg-sky-600 px-2.5 py-1.5 text-phx-2xs font-bold text-white transition hover:bg-sky-700 disabled:opacity-50"
+            className={cn(
+              "inline-flex items-center gap-1.5 border border-sky-600 bg-sky-600 px-2.5 py-1.5 text-phx-xs font-bold text-white transition-colors hover:bg-sky-700 disabled:opacity-50 motion-reduce:transition-none",
+              LANDING_FOCUS,
+            )}
             disabled={busy}
             onClick={() => inputRef.current?.click()}
             type="button"
           >
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Paperclip className="h-3 w-3" />}
+            {busy ? (
+              <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Paperclip aria-hidden="true" className="h-3 w-3" />
+            )}
             {busy ? "Uploading..." : "Add documents"}
           </button>
-          <p className="text-phx-2xs font-medium leading-4 text-slate-500">
+          <p className="text-phx-xs font-medium leading-4 text-slate-500">
             New files are added to the ones above — nothing already uploaded is replaced or removed.
           </p>
           {addedCount > 0 && !busy ? (
-            <p className="text-phx-2xs font-bold text-emerald-700">
+            <p className="border-l-2 border-emerald-500 pl-2 text-phx-xs font-bold text-emerald-700" role="status">
               {addedCount} document{addedCount === 1 ? "" : "s"} added.
             </p>
           ) : null}
-          {error ? <p className="text-phx-2xs font-bold text-rose-700">{error}</p> : null}
+          {error ? (
+            <p className="border-l-2 border-rose-500 pl-2 text-phx-xs font-bold text-rose-700" role="alert">
+              {error}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

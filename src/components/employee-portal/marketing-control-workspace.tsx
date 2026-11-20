@@ -1,18 +1,27 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { LockKeyhole, RefreshCcw, Save, Settings2, SlidersHorizontal, Workflow } from "lucide-react";
+import { RefreshCcw, Save } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingMeta,
+  LandingRailLine,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import {
   PortalDesktopTable,
   PortalEmptyState,
   PortalRecordCard,
 } from "@/components/employee-portal/portal-primitives";
+import { phxButtonPrimaryClassName, phxLabelClassName, phxLabelTextClassName } from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { cn } from "@/lib/utils";
 import type {
   MarketingControlSetting,
   MarketingControlWorkspace,
@@ -21,7 +30,7 @@ import type {
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 function emptyWorkspace(): MarketingControlWorkspace {
@@ -42,9 +51,7 @@ function Field({
 }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-2 block text-phx-xs font-black uppercase tracking-[0.15em] text-slate-500">
-        {label}
-      </span>
+      <span className={phxLabelClassName}>{label}</span>
       {children}
     </label>
   );
@@ -70,6 +77,7 @@ function SelectField({
   );
 }
 
+/** On/off switch: square, navy when on, slate when off — never an orange fill. */
 function Toggle({
   checked,
   onChange,
@@ -83,20 +91,46 @@ function Toggle({
     <button
       aria-label={label}
       aria-pressed={checked}
-      className={`relative h-7 w-12 rounded border transition ${
-        checked ? "border-orange-500 bg-orange-500" : "border-slate-300 bg-slate-200"
-      }`}
+      className={cn(
+        "relative h-7 w-12 shrink-0 border transition-colors motion-reduce:transition-none",
+        LANDING_FOCUS,
+        checked ? "border-[#08111f] bg-[#08111f]" : "border-slate-300 bg-slate-200",
+      )}
       onClick={() => onChange(!checked)}
       type="button"
     >
       <span
-        className={`absolute top-1 h-5 w-5 rounded bg-white shadow transition ${
+        aria-hidden="true"
+        className={`absolute top-1 h-5 w-5 bg-white transition-[left] motion-reduce:transition-none ${
           checked ? "left-6" : "left-1"
         }`}
       />
     </button>
   );
 }
+
+/** The form kit's primary Save, sized for a table cell or a phone row. */
+const SAVE_BUTTON_CLASS = cn(phxButtonPrimaryClassName, "justify-center px-3 motion-reduce:transition-none", LANDING_FOCUS);
+
+/** A state in small coloured capitals — the kit's replacement for a filled pill. */
+function ActiveState({ active }: { active: boolean }) {
+  return (
+    <span
+      className={cn(
+        "whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em]",
+        active ? "text-emerald-700" : "text-slate-500",
+      )}
+    >
+      {active ? "Active" : "Inactive"}
+    </span>
+  );
+}
+
+/** White small-capital column heads, as on every portal table. */
+const TABLE_HEAD_CELL = "px-3 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+
+/** A table row: hairline, top-aligned, slate on hover. */
+const TABLE_ROW = "align-top transition-colors hover:bg-slate-50 motion-reduce:transition-none";
 
 function settingNumber(setting: MarketingControlSetting | undefined, key: string, fallback: number) {
   const value = setting?.value?.[key];
@@ -113,39 +147,43 @@ function settingUpdatedLabel(setting: MarketingControlSetting | undefined) {
   if (!setting) return "Not configured";
   const updated = new Date(setting.updatedAt);
   if (Number.isNaN(updated.getTime())) return "Not configured";
-  return updated.toLocaleString("en-US", {
+  // Cairo time on a 24-hour clock, built by the stable formatter so the server and the browser
+  // write the same bytes (the browser-locale call it replaced used the reader's own zone and a 12-hour clock).
+  return formatStableEnGb(updated, {
     day: "2-digit",
     hour: "2-digit",
+    hour12: false,
     minute: "2-digit",
     month: "short",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
     year: "numeric",
   });
 }
 
+/**
+ * A section's header: the kit's orange tick and navy small-capital title, with the section's
+ * small-capital meta on the right. No icon square and nothing under the title.
+ */
 function SectionHeader({
   badge,
-  icon,
   title,
 }: {
   badge?: string;
-  icon: ReactNode;
   title: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded bg-orange-50 text-orange-700">
-          {icon}
-        </div>
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Marketing Control</p>
-          <h2 className="text-xl font-black tracking-tight text-slate-950">{title}</h2>
-        </div>
-      </div>
-      {badge ? <Badge variant="neutral">{badge}</Badge> : null}
-    </div>
+    <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+      <LandingTitle>{title}</LandingTitle>
+      <LandingMeta items={["Marketing Control", badge]} />
+    </header>
   );
 }
+
+/** The small-capital label over a headline count. */
+const FIGURE_LABEL = "break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+
+/** A headline count: navy, tabular, 22px. */
+const FIGURE_VALUE = `mt-1 break-words text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums ${LANDING_INK}`;
 
 type SaveState = {
   key: string;
@@ -243,53 +281,48 @@ export function MarketingControlWorkspace() {
   const saving = Boolean(saveState);
 
   return (
-    <div className="space-y-6">
-      <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-        <div className="grid gap-3 md:grid-cols-4">
-          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 ${adminSoftDepthClassName}`}>
-            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Request Types</p>
-            <p className="mt-1 text-2xl font-black text-slate-950">{workspace.requestTypes.length}</p>
-          </div>
-          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 ${adminSoftDepthClassName}`}>
-            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Workflow Steps</p>
-            <p className="mt-1 text-2xl font-black text-slate-950">{workspace.workflowSteps.length}</p>
-          </div>
-          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 ${adminSoftDepthClassName}`}>
-            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Validation Settings</p>
-            <p className="mt-1 text-2xl font-black text-slate-950">
-              {workspace.canManageValidationRules ? groupedSettings.validation.length : "Admin"}
-            </p>
-          </div>
-          <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-            onClick={() => void loadWorkspace()}
-            type="button"
-          >
-            {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-4 w-4" />}
-            Refresh
-          </button>
+    <div className="@container space-y-6">
+      {/* ------ The three counts and Refresh — white tiles on the page, never tiles on a card ------ */}
+      <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-4">
+        <div className={`min-w-0 border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
+          <p className={FIGURE_LABEL}>Request Types</p>
+          <p className={FIGURE_VALUE}>{workspace.requestTypes.length}</p>
         </div>
-      </Card>
+        <div className={`min-w-0 border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
+          <p className={FIGURE_LABEL}>Workflow Steps</p>
+          <p className={FIGURE_VALUE}>{workspace.workflowSteps.length}</p>
+        </div>
+        <div className={`min-w-0 border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
+          <p className={FIGURE_LABEL}>Validation Settings</p>
+          <p className={FIGURE_VALUE}>
+            {workspace.canManageValidationRules ? groupedSettings.validation.length : "Admin"}
+          </p>
+        </div>
+        <button
+          className={landingActionClassName("outline", "h-full min-h-[78px] bg-white sm:min-h-[78px]")}
+          onClick={() => void loadWorkspace()}
+          type="button"
+        >
+          {isLoading ? <LoadingSpinner className="h-4 w-4 text-current" /> : <RefreshCcw aria-hidden="true" className="h-4 w-4" />}
+          Refresh
+        </button>
+      </div>
 
       {message ? (
-        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          {message}
+        <div className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="status">
+          <LandingRailLine rail="bg-amber-400">{message}</LandingRailLine>
         </div>
       ) : null}
 
-      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
-        <SectionHeader
-          badge={`${workspace.requestTypes.length} types`}
-          icon={<SlidersHorizontal className="h-5 w-5" />}
-          title="Request Types"
-        />
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <SectionHeader badge={`${workspace.requestTypes.length} types`} title="Request Types" />
         {workspace.requestTypes.length === 0 ? (
           <PortalEmptyState
             message="No request type has been configured yet. Add one to start accepting marketing requests."
             title="No request types"
           />
         ) : null}
-        <div className="divide-y divide-slate-100 md:hidden">
+        <div className="divide-y divide-slate-200 md:hidden">
           {workspace.requestTypes.map((type) => {
             const draft = requestTypeDrafts[type.id] ?? type;
             return (
@@ -297,7 +330,7 @@ export function MarketingControlWorkspace() {
                 accent={draft.active ? "emerald" : "slate"}
                 key={`${type.id}-mobile`}
                 meta={<span className="font-mono">{type.code}</span>}
-                status={<Badge variant={draft.active ? "success" : "neutral"}>{draft.active ? "Active" : "Inactive"}</Badge>}
+                status={<ActiveState active={draft.active} />}
                 title={draft.name}
               >
                 <div className="grid gap-3">
@@ -330,8 +363,8 @@ export function MarketingControlWorkspace() {
                       value={draft.sortOrder}
                     />
                   </Field>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                    <label className={`inline-flex items-center gap-2 ${phxLabelTextClassName}`}>
                       Other description
                       <Toggle
                         checked={draft.requiresDescription}
@@ -342,7 +375,7 @@ export function MarketingControlWorkspace() {
                         }))}
                       />
                     </label>
-                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                    <label className={`inline-flex items-center gap-2 ${phxLabelTextClassName}`}>
                       Active
                       <Toggle
                         checked={draft.active}
@@ -354,8 +387,8 @@ export function MarketingControlWorkspace() {
                       />
                     </label>
                   </div>
-                  <Button
-                    className="w-full gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                  <button
+                    className={cn(SAVE_BUTTON_CLASS, "w-full")}
                     disabled={saving}
                     onClick={() => void patchControl({
                       entity: "request_type",
@@ -368,10 +401,11 @@ export function MarketingControlWorkspace() {
                         sortOrder: draft.sortOrder,
                       },
                     }, "Request type saved.")}
+                    type="button"
                   >
-                    <Save className="h-4 w-4" />
+                    <Save aria-hidden="true" className="h-4 w-4" />
                     Save
-                  </Button>
+                  </button>
                 </div>
               </PortalRecordCard>
             );
@@ -390,24 +424,24 @@ export function MarketingControlWorkspace() {
             </colgroup>
           }
         >
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Sort</th>
-                <th className="px-4 py-3">Other Description</th>
-                <th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3">Save</th>
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className={TABLE_HEAD_CELL} scope="col">Code</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Name</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Description</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Sort</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Other Description</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Active</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Save</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-200 bg-white">
               {workspace.requestTypes.map((type) => {
                 const draft = requestTypeDrafts[type.id] ?? type;
                 return (
-                  <tr key={type.id}>
-                    <td className="px-4 py-3 font-mono text-xs font-black text-slate-600">{type.code}</td>
-                    <td className="px-4 py-3">
+                  <tr className={TABLE_ROW} key={type.id}>
+                    <td className="min-w-0 break-words px-3 py-3 font-mono text-phx-xs font-bold text-slate-600">{type.code}</td>
+                    <td className="px-3 py-3">
                       <Input
                         onChange={(event) => setRequestTypeDrafts((current) => ({
                           ...current,
@@ -416,7 +450,7 @@ export function MarketingControlWorkspace() {
                         value={draft.name}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Input
                         onChange={(event) => setRequestTypeDrafts((current) => ({
                           ...current,
@@ -425,9 +459,9 @@ export function MarketingControlWorkspace() {
                         value={draft.description ?? ""}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Input
-                        className="w-20"
+                        className="min-w-0"
                         min={0}
                         onChange={(event) => setRequestTypeDrafts((current) => ({
                           ...current,
@@ -437,7 +471,7 @@ export function MarketingControlWorkspace() {
                         value={draft.sortOrder}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Toggle
                         checked={draft.requiresDescription}
                         label={`Require description for ${type.name}`}
@@ -447,7 +481,7 @@ export function MarketingControlWorkspace() {
                         }))}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Toggle
                         checked={draft.active}
                         label={`Active status for ${type.name}`}
@@ -457,9 +491,9 @@ export function MarketingControlWorkspace() {
                         }))}
                       />
                     </td>
-                    <td className="px-4 py-3">
-                      <Button
-                        className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                    <td className="px-3 py-3">
+                      <button
+                        className={SAVE_BUTTON_CLASS}
                         disabled={saving}
                         onClick={() => void patchControl({
                           entity: "request_type",
@@ -472,31 +506,28 @@ export function MarketingControlWorkspace() {
                             sortOrder: draft.sortOrder,
                           },
                         }, "Request type saved.")}
+                        type="button"
                       >
-                        <Save className="h-4 w-4" />
+                        <Save aria-hidden="true" className="h-4 w-4" />
                         Save
-                      </Button>
+                      </button>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
         </PortalDesktopTable>
-      </Card>
+      </section>
 
-      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
-        <SectionHeader
-          badge={`${workspace.workflowSteps.length} steps`}
-          icon={<Workflow className="h-5 w-5" />}
-          title="Approval Workflow"
-        />
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <SectionHeader badge={`${workspace.workflowSteps.length} steps`} title="Approval Workflow" />
         {workspace.workflowSteps.length === 0 ? (
           <PortalEmptyState
             message="No approval step has been configured yet, so a submitted request has nobody to go to."
             title="No workflow steps"
           />
         ) : null}
-        <div className="divide-y divide-slate-100 md:hidden">
+        <div className="divide-y divide-slate-200 md:hidden">
           {workspace.workflowSteps.map((step) => {
             const draft = workflowDrafts[step.id] ?? step;
             return (
@@ -504,7 +535,7 @@ export function MarketingControlWorkspace() {
                 accent={draft.active ? "orange" : "slate"}
                 key={`${step.id}-mobile`}
                 meta={`Sequence ${draft.sequence}`}
-                status={<Badge variant={draft.active ? "success" : "neutral"}>{draft.active ? "Active" : "Inactive"}</Badge>}
+                status={<ActiveState active={draft.active} />}
                 title={draft.stepName}
               >
                 <div className="grid gap-3">
@@ -567,8 +598,8 @@ export function MarketingControlWorkspace() {
                       value={draft.assignedRole}
                     />
                   </Field>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                    <label className={`inline-flex items-center gap-2 ${phxLabelTextClassName}`}>
                       Required
                       <Toggle
                         checked={draft.required}
@@ -579,7 +610,7 @@ export function MarketingControlWorkspace() {
                         }))}
                       />
                     </label>
-                    <label className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                    <label className={`inline-flex items-center gap-2 ${phxLabelTextClassName}`}>
                       Active
                       <Toggle
                         checked={draft.active}
@@ -591,8 +622,8 @@ export function MarketingControlWorkspace() {
                       />
                     </label>
                   </div>
-                  <Button
-                    className="w-full gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                  <button
+                    className={cn(SAVE_BUTTON_CLASS, "w-full")}
                     disabled={saving}
                     onClick={() => void patchControl({
                       entity: "workflow_step",
@@ -607,10 +638,11 @@ export function MarketingControlWorkspace() {
                         stepName: draft.stepName,
                       },
                     }, "Workflow step saved.")}
+                    type="button"
                   >
-                    <Save className="h-4 w-4" />
+                    <Save aria-hidden="true" className="h-4 w-4" />
                     Save
-                  </Button>
+                  </button>
                 </div>
               </PortalRecordCard>
             );
@@ -630,26 +662,26 @@ export function MarketingControlWorkspace() {
             </colgroup>
           }
         >
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Seq</th>
-                <th className="px-4 py-3">Step</th>
-                <th className="px-4 py-3">Scope</th>
-                <th className="px-4 py-3">Assigned Role</th>
-                <th className="px-4 py-3">SLA Days</th>
-                <th className="px-4 py-3">Required</th>
-                <th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3">Save</th>
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className={TABLE_HEAD_CELL} scope="col">Seq</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Step</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Scope</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Assigned Role</th>
+                <th className={TABLE_HEAD_CELL} scope="col">SLA Days</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Required</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Active</th>
+                <th className={TABLE_HEAD_CELL} scope="col">Save</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-200 bg-white">
               {workspace.workflowSteps.map((step) => {
                 const draft = workflowDrafts[step.id] ?? step;
                 return (
-                  <tr key={step.id}>
-                    <td className="px-4 py-3">
+                  <tr className={TABLE_ROW} key={step.id}>
+                    <td className="px-3 py-3">
                       <Input
-                        className="w-20"
+                        className="min-w-0"
                         min={1}
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -659,7 +691,7 @@ export function MarketingControlWorkspace() {
                         value={draft.sequence}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Input
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -668,7 +700,7 @@ export function MarketingControlWorkspace() {
                         value={draft.stepName}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <SelectField
                         onChange={(value) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -682,7 +714,7 @@ export function MarketingControlWorkspace() {
                         <option value="final">Final</option>
                       </SelectField>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Input
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -691,9 +723,9 @@ export function MarketingControlWorkspace() {
                         value={draft.assignedRole}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Input
-                        className="w-24"
+                        className="min-w-0"
                         min={0}
                         onChange={(event) => setWorkflowDrafts((current) => ({
                           ...current,
@@ -706,7 +738,7 @@ export function MarketingControlWorkspace() {
                         value={draft.defaultSlaDays ?? ""}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Toggle
                         checked={draft.required}
                         label={`Required for ${step.stepName}`}
@@ -716,7 +748,7 @@ export function MarketingControlWorkspace() {
                         }))}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <Toggle
                         checked={draft.active}
                         label={`Active status for ${step.stepName}`}
@@ -726,9 +758,9 @@ export function MarketingControlWorkspace() {
                         }))}
                       />
                     </td>
-                    <td className="px-4 py-3">
-                      <Button
-                        className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                    <td className="px-3 py-3">
+                      <button
+                        className={SAVE_BUTTON_CLASS}
                         disabled={saving}
                         onClick={() => void patchControl({
                           entity: "workflow_step",
@@ -743,25 +775,24 @@ export function MarketingControlWorkspace() {
                             stepName: draft.stepName,
                           },
                         }, "Workflow step saved.")}
+                        type="button"
                       >
-                        <Save className="h-4 w-4" />
+                        <Save aria-hidden="true" className="h-4 w-4" />
                         Save
-                      </Button>
+                      </button>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
         </PortalDesktopTable>
-      </Card>
+      </section>
 
-      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
-        <SectionHeader
-          icon={<Settings2 className="h-5 w-5" />}
-          title="ROI And Finance Rules"
-        />
-        <div className="grid gap-4 p-5 lg:grid-cols-2">
-          <div className={`rounded border border-slate-200 bg-slate-50 p-4 ${adminPanelDepthClassName}`}>
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <SectionHeader title="ROI And Finance Rules" />
+        {/* Two rules side by side on a hairline — never two tinted boxes inside the panel. */}
+        <div className="grid divide-y divide-slate-200 @3xl:grid-cols-2 @3xl:divide-x @3xl:divide-y-0">
+          <div className="min-w-0 px-3 py-4 sm:px-4">
             <Field label="ROI multiplier">
               <Input
                 className="text-base"
@@ -771,24 +802,25 @@ export function MarketingControlWorkspace() {
                 value={roiMultiplier}
               />
             </Field>
-            <p className="mt-3 text-xs font-semibold text-slate-500">
+            <p className="mt-3 break-words text-phx-xs font-semibold tabular-nums text-slate-500">
               Updated: {settingUpdatedLabel(groupedSettings.roi.find((setting) => setting.key === "roi_multiplier"))}
             </p>
-            <Button
-              className="mt-4 gap-2 rounded bg-orange-600 font-black hover:bg-orange-700"
+            <button
+              className={cn(SAVE_BUTTON_CLASS, "mt-4")}
               disabled={saving}
               onClick={() => void patchControl({
                 entity: "setting",
                 settingKey: "roi_multiplier",
                 value: { multiplier: Number(roiMultiplier || 0) },
               }, "ROI rule saved.")}
+              type="button"
             >
-              <Save className="h-4 w-4" />
+              <Save aria-hidden="true" className="h-4 w-4" />
               Save ROI
-            </Button>
+            </button>
           </div>
 
-          <div className={`rounded border border-slate-200 bg-slate-50 p-4 ${adminPanelDepthClassName}`}>
+          <div className="min-w-0 px-3 py-4 sm:px-4">
             <Field label="Invoice deadline days">
               <Input
                 className="text-base"
@@ -798,38 +830,41 @@ export function MarketingControlWorkspace() {
                 value={financeInvoiceDays}
               />
             </Field>
-            <p className="mt-3 text-xs font-semibold text-slate-500">
+            <p className="mt-3 break-words text-phx-xs font-semibold tabular-nums text-slate-500">
               Updated: {settingUpdatedLabel(groupedSettings.finance.find((setting) => setting.key === "finance_invoice_deadline_days"))}
             </p>
-            <Button
-              className="mt-4 gap-2 rounded bg-orange-600 font-black hover:bg-orange-700"
+            <button
+              className={cn(SAVE_BUTTON_CLASS, "mt-4")}
               disabled={saving}
               onClick={() => void patchControl({
                 entity: "setting",
                 settingKey: "finance_invoice_deadline_days",
                 value: { days: Number(financeInvoiceDays || 0) },
               }, "Finance rule saved.")}
+              type="button"
             >
-              <Save className="h-4 w-4" />
+              <Save aria-hidden="true" className="h-4 w-4" />
               Save Finance
-            </Button>
+            </button>
           </div>
         </div>
-      </Card>
+      </section>
 
-      <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.07)]">
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <SectionHeader
           badge={workspace.canManageValidationRules ? `${groupedSettings.validation.length} rules` : "Admin only"}
-          icon={<LockKeyhole className="h-5 w-5" />}
           title="Validation Settings"
         />
         {workspace.canManageValidationRules ? (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-200">
             {groupedSettings.validation.map((setting) => (
-              <div className="grid gap-4 px-5 py-4 md:grid-cols-[1fr_auto_auto]" key={setting.key}>
-                <div>
-                  <p className="font-black text-slate-950">{setting.label}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">Updated: {settingUpdatedLabel(setting)}</p>
+              <div
+                className="grid items-center gap-3 px-3 py-3 sm:px-4 @2xl:grid-cols-[minmax(0,1fr)_auto_auto] @2xl:gap-4"
+                key={setting.key}
+              >
+                <div className="min-w-0">
+                  <p className={`break-words text-phx-sm font-bold ${LANDING_INK}`}>{setting.label}</p>
+                  <p className="mt-1 break-words text-phx-xs font-semibold tabular-nums text-slate-500">Updated: {settingUpdatedLabel(setting)}</p>
                 </div>
                 <Toggle
                   checked={validationDrafts[setting.key] ?? settingBoolean(setting, "required", true)}
@@ -839,29 +874,26 @@ export function MarketingControlWorkspace() {
                     [setting.key]: checked,
                   }))}
                 />
-                <Button
-                  className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+                <button
+                  className={SAVE_BUTTON_CLASS}
                   disabled={saving}
                   onClick={() => void patchControl({
                     entity: "setting",
                     settingKey: setting.key,
                     value: { required: validationDrafts[setting.key] ?? settingBoolean(setting, "required", true) },
                   }, "Validation setting saved.")}
+                  type="button"
                 >
-                  <Save className="h-4 w-4" />
+                  <Save aria-hidden="true" className="h-4 w-4" />
                   Save
-                </Button>
+                </button>
               </div>
             ))}
           </div>
         ) : (
-          <div className="px-5 py-6">
-            <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600 ${adminSoftDepthClassName}`}>
-              Validation settings are available to Super Admin only.
-            </div>
-          </div>
+          <LandingRailLine rail="bg-slate-300">Validation settings are available to Super Admin only.</LandingRailLine>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

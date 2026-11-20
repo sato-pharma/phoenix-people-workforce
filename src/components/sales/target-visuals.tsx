@@ -361,7 +361,7 @@ export function SectionCard({
             {/* No `whitespace-nowrap`: this sits in a `min-w-0` box, so nowrap could only ever
                 clip a long title instead of wrapping it. */}
             <h2 className="text-phx-md font-black tracking-tight text-slate-900">{title}</h2>
-            {subtitle ? <p className="text-phx-xs text-slate-500">{subtitle}</p> : null}
+            {subtitle ? <p className="phx-header-note text-phx-xs text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
         {actions ? <div className="max-w-full">{actions}</div> : null}
@@ -386,7 +386,7 @@ function PortalSectionCard({ title, subtitle, icon: Icon, children, actions, cla
           </span>
           <div className="min-w-0">
             <h2 className="break-words text-lg font-black leading-tight tracking-tight text-slate-950 sm:text-xl">{title}</h2>
-            {subtitle ? <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
+            {subtitle ? <p className="phx-header-note mt-1 break-words text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
         {actions ? <div className="max-w-full">{actions}</div> : null}
@@ -442,7 +442,7 @@ export function CommandBand({
   if (surface === "portal") {
     return (
       <div className="space-y-4">
-        {subtitle ? <p className="text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
+        {subtitle ? <p className="phx-header-note text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
         {stats ? (
           // Flex-wrap, never a fixed grid, and crucially NO `min-w-0`: a headline money value carries
           // `whitespace-nowrap`, so its own min-content is the card's floor — the card can never be
@@ -476,7 +476,11 @@ export function CommandBand({
             {ring || aside ? (
               <div className="flex flex-wrap items-center gap-6 px-5 py-5">
                 {ring}
-                {aside ? <div className="min-w-0 flex-1">{aside}</div> : null}
+                {/* `basis-[8rem]` and NO `min-w-0`: the aside's nowrap figure is its own floor, so when
+                    ring + aside no longer fit side by side the aside WRAPS under the ring. With
+                    `min-w-0` it was squeezed instead, and "100.0%" was cut at the panel edge on a
+                    small Android phone on Large text (~280px CSS wide). */}
+                {aside ? <div className="flex-1 basis-[8rem]">{aside}</div> : null}
               </div>
             ) : null}
           </section>
@@ -500,7 +504,7 @@ export function CommandBand({
         <div className="min-w-0">
           <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">{kicker}</p>
           <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">{title}</h1>
-          <p className="mt-1.5 text-sm text-slate-500">{subtitle}</p>
+          <p className="phx-header-note mt-1.5 text-sm text-slate-500">{subtitle}</p>
           {stats ? <div className="mt-5 flex flex-wrap items-end gap-x-10 gap-y-4">{stats}</div> : null}
         </div>
         {ring || aside ? (

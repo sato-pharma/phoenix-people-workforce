@@ -25,8 +25,6 @@ import {
   PendingActions,
   PortalIdentityBand,
   RankingPanel,
-  SectionHead,
-  SectionMeta,
   egpCompact,
   type ActionStripItem,
   type DashboardLink,
@@ -38,9 +36,16 @@ import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
-import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { LineSalesPacingSection } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitCard, AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import { MyMapSnapshotCard } from "@/components/employee-portal/dashboards/my-map-snapshot-card";
+import {
+  LandingEmpty,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingNavyBoardLoading,
+  LandingPanelLoading,
+} from "@/components/employee-portal/landing-kit";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -52,7 +57,6 @@ import {
 import type { AccessContext } from "@/lib/auth/permissions";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { districtTeamReportLinks, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Team Performance" },
@@ -102,13 +106,17 @@ const ACTIONS: readonly ActionStripItem[] = [
 /**
  * The district's four money tiles. Drawn from the role extras, so on the landing page it fills under
  * its own Suspense once the team read lands (2026-10-23, performance roadmap phase 2).
+ *
+ * The landing's ONE night-navy board (owner, 2026-11-20 redesign): the headline figures of a
+ * District Manager's page, as the month tiles are a rep's. Every other card below is a white panel.
  */
 function DistrictPerformanceCard({ dsmTeam }: { dsmTeam: PortalHomeSnapshot["dsmTeam"] }) {
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
   const pctNum = pct ?? 0;
 
   // Which closing month these figures cover. Published closings only, so on 3 September the
-  // newest is July's — see SectionMeta for why every one of these headers now says so.
+  // newest is July's — see SectionMeta for why every one of these headers now says so; the board's
+  // LandingMeta carries it here.
   //
   // 🔒 A null label means NOTHING is published in this district's scope, so the three money tiles
   // are WITHHELD rather than printed as zero (owner, 2026-08-13 — "a blank keycard is the correct
@@ -128,29 +136,24 @@ function DistrictPerformanceCard({ dsmTeam }: { dsmTeam: PortalHomeSnapshot["dsm
   ];
 
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead
-        title="District Performance"
-        right={
-          <SectionMeta
-            items={[
-              windowLabel,
-              dsmTeam ? `${dsmTeam.memberCount} ${dsmTeam.memberCount === 1 ? "rep" : "reps"}` : null,
-            ]}
-          />
-        }
-      />
+    <LandingNavyBoard
+      label="District Performance"
+      right={
+        <LandingMeta
+          items={[windowLabel, dsmTeam ? `${dsmTeam.memberCount} ${dsmTeam.memberCount === 1 ? "rep" : "reps"}` : null]}
+          onNavy
+        />
+      }
+    >
       {dsmTeam ? (
         <>
-          <KeycardGrid cards={cards} />
-          {!published && (
-            <p className="bg-white px-5 pb-4 text-phx-sm text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
-          )}
+          <KeycardGrid cards={cards} onNavy />
+          {!published && <LandingEmpty onNavy>{NO_PUBLISHED_CLOSING_NOTE}</LandingEmpty>}
         </>
       ) : (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">No team sales data synced for the current period yet.</p>
+        <LandingEmpty onNavy>No team sales data synced for the current period yet.</LandingEmpty>
       )}
-    </div>
+    </LandingNavyBoard>
   );
 }
 
@@ -173,7 +176,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <AwaitCard value={snapshot.cvFolders}>{(summary) => <ManagerCvFoldersRow summary={summary} />}</AwaitCard>
       </Suspense>
 
-      <Suspense fallback={<MmSectionSkeleton title="District Performance" />}>
+      <Suspense fallback={<LandingNavyBoardLoading label="District Performance" />}>
         <AwaitRoleExtras extras={extras}>{({ dsmTeam }) => <DistrictPerformanceCard dsmTeam={dsmTeam} />}</AwaitRoleExtras>
       </Suspense>
 
@@ -182,12 +185,12 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       <DashboardsGrid items={teamReportTiles(cairoTodayIso())} title="My Team's Reports" />
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="My map" />}>
+        <Suspense fallback={<LandingPanelLoading title="My map" />}>
           <MyMapSnapshotCard access={access} />
         </Suspense>
       ) : null}
 
-      <Suspense fallback={<MmSectionSkeleton title="My Reps" />}>
+      <Suspense fallback={<LandingPanelLoading title="My Reps" />}>
         <AwaitRoleExtras extras={extras}>
           {({ dsmTeam }) => (
             <RankingPanel
@@ -212,7 +215,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <AwaitCard value={earlyBirdStars}>{(stars) => <EarlyBirdOfTheFortnightCard stars={stars} />}</AwaitCard>
       </Suspense>
 
-      <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
+      <Suspense fallback={<LandingPanelLoading title="CRM First Visit" />}>
         <AwaitRoleExtras extras={extras}>
           {({ dsmTeam }) => (
             <CrmFirstVisitBoard
@@ -228,7 +231,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       <ActionStrip items={ACTIONS} />
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="District Sales Pacing" />}>
+        <Suspense fallback={<LandingPanelLoading title="District Sales Pacing" />}>
           {/* The trend is scoped to the district's areas, so it is never called the line's. */}
           <LineSalesPacingSection access={access} title="District Sales Pacing" />
         </Suspense>

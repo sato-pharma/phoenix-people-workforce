@@ -120,11 +120,17 @@ export function runEmployeePortalPremiumDepthTests() {
       flat.push(`${name}: ${value.slice(0, 90)}…`);
     }
   }
+  //    The floor only proves the walk still SEES the portal; it is not a quota. 326 were counted when
+  //    the depth pass ran. The 2026-11-20 redesign (owner: "EVERY SINGLE COMPONENT TO BE PREMIUM
+  //    POLISHED") moved boxes nested inside boxes into one landing-kit panel each, by design, and
+  //    the count fell to about 266. A broken walk or pattern reads near zero, so 200 still catches
+  //    it. Never add boxes back to meet this floor; lower it, with the reason, when a pass removes more.
   assert.ok(
-    grounded >= 300,
+    grounded >= 200,
     `${DIR}: only ${grounded} four-sided grounds were found, so this assertion is no longer ` +
-      `measuring the portal — 326 were counted when the pass ran. The walk or the ground ` +
-      `pattern is wrong, which would make assertion 1 pass by seeing nothing.`,
+      `measuring the portal — 326 were counted when the depth pass ran, about 266 after the ` +
+      `2026-11-20 redesign. The walk or the ground pattern is wrong, which would make assertion 1 ` +
+      `pass by seeing nothing.`,
   );
   assert.deepEqual(
     flat,

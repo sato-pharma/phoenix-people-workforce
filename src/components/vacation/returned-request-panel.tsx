@@ -10,6 +10,8 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
+import { cn } from "@/lib/utils";
 import { VACATION_DAY_PARTS } from "@/lib/vacation/types";
 import type { VacationDayPart, VacationRequestRecord } from "@/lib/vacation/types";
 
@@ -45,14 +47,17 @@ export function ReturnedRequestPanel({
   const isOther = row.vacationType === "other";
   const comment = row.managerDecisionComment?.trim();
   const fieldId = `returned-${row.id}`;
+  // The two buttons keep the form's own skin, plus the keyboard ring and no motion when asked.
+  const accentButton = cn(phxButtonAccentClassName, LANDING_FOCUS, "motion-reduce:transition-none");
+  const ghostButton = cn(phxButtonGhostClassName, LANDING_FOCUS, "motion-reduce:transition-none");
 
   return (
-    <div className="mt-2.5 space-y-2 border border-amber-200 bg-amber-50 p-2.5">
-      <p className="text-phx-xs font-bold text-amber-900">
+    <div className="mt-2.5 space-y-2 border-l-2 border-amber-400 py-0.5 pl-3">
+      <p className="break-words text-phx-xs font-bold text-amber-800" dir="auto">
         Sent back for editing{comment ? ` — "${comment}"` : ". No comment was left; see the timeline for who returned it."}
       </p>
       {editing ? (
-        <div className="space-y-3 border-t border-amber-200 pt-3">
+        <div className="space-y-3 border-t border-slate-200 pt-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={phxLabelClassName} htmlFor={`${fieldId}-start`}>From</label>
@@ -111,12 +116,12 @@ export function ReturnedRequestPanel({
               value={employeeNote}
             />
           </div>
-          <p className="text-phx-xs font-medium text-amber-900">
+          <p className="text-phx-xs font-semibold text-amber-800">
             Changing the dates starts the approval again from the first approver.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
-              className={phxButtonAccentClassName}
+              className={accentButton}
               disabled={busy || !startDate || !endDate}
               onClick={() =>
                 onResubmit(row, {
@@ -131,7 +136,7 @@ export function ReturnedRequestPanel({
             >
               Save changes and resubmit
             </button>
-            <button className={phxButtonGhostClassName} disabled={busy} onClick={() => setEditing(false)} type="button">
+            <button className={ghostButton} disabled={busy} onClick={() => setEditing(false)} type="button">
               Cancel
             </button>
           </div>
@@ -139,7 +144,7 @@ export function ReturnedRequestPanel({
       ) : (
         <div className="flex flex-wrap gap-2">
           <button
-            className={phxButtonAccentClassName}
+            className={accentButton}
             disabled={busy}
             onClick={() => setEditing(true)}
             type="button"
@@ -147,7 +152,7 @@ export function ReturnedRequestPanel({
             Edit and resubmit
           </button>
           <button
-            className={phxButtonGhostClassName}
+            className={ghostButton}
             disabled={busy}
             onClick={() => onResubmit(row, null)}
             type="button"

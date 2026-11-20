@@ -161,5 +161,7 @@ export const pageHeaderKickerClassName =
   "inline-flex w-fit items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.28em] text-orange-600";
 export const pageHeaderTitleClassName =
   "max-w-4xl text-[1.2rem] font-black leading-[1.15] tracking-[-0.035em] text-slate-900 sm:text-[1.4rem]";
+// `phx-header-note` marks the sentence under a header: inside the employee portal it is hidden
+// (app/globals.css, owner 2026-11-20: "DELETE ANY TEXT UNDER ANY HEADER"); the admin shell keeps it.
 export const pageHeaderDescriptionClassName =
-  "max-w-3xl text-[13px] leading-5 text-slate-500";
+  "phx-header-note max-w-3xl text-[13px] leading-5 text-slate-500";

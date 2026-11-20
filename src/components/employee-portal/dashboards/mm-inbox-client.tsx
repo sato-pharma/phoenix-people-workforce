@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle, Clock, RefreshCw, X } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 import type { MarketingApproverInboxRow } from "@/lib/marketing-requests/service";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  APPROVAL_ACTION_LABEL,
+  ApprovalConfirmButtons,
+  approvalActionClassName,
+} from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS, LandingEmpty, LandingMeta, LandingPanel } from "@/components/employee-portal/landing-kit";
 
 function egp(n: number) {
   return stableCurrencyFormatter("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
@@ -19,17 +25,16 @@ function ageInDays(iso: string | null, now: number): number | null {
   return Math.max(0, Math.floor((now - t) / 86_400_000));
 }
 
-function AgeBadge({ days }: { days: number | null }) {
-  if (days == null)
-    return <span className="shrink-0 text-phx-xs font-medium text-slate-400 whitespace-nowrap">no date</span>;
-  const tone =
-    days >= 7 ? "bg-rose-100 text-rose-700" : days >= 3 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
-  return (
-    <span className={`inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-phx-xs font-semibold whitespace-nowrap ${tone}`}>
-      <Clock className="h-3 w-3" />
-      {days}d
-    </span>
-  );
+/**
+ * How long a request has waited, said twice: as the 2px rail down the row's left edge and as the
+ * small words under its cost. A week or more is rose, three days amber, anything younger slate —
+ * flat colour on a rail and on words, never a tinted chip.
+ */
+function ageTone(days: number | null): { rail: string; text: string } {
+  if (days == null) return { rail: "bg-slate-200", text: "text-slate-400" };
+  if (days >= 7) return { rail: "bg-rose-500", text: "text-rose-700" };
+  if (days >= 3) return { rail: "bg-amber-400", text: "text-amber-700" };
+  return { rail: "bg-slate-200", text: "text-slate-500" };
 }
 
 type InlineAction = { id: string; kind: "return" | "reject" } | null;
@@ -40,6 +45,11 @@ type RowOutcome = { id: string; ok: boolean; message: string } | null;
  * and inline return/reject (reason required). Optimistically removes a row on success.
  * Error and forbidden responses are surfaced inline; the guarded server endpoint
  * (assertMarketingStepAssignedToActor) is never bypassed.
+ *
+ * Its look is the landing kit's white panel, and its decision buttons wear the one approvals
+ * interface (`approval-action-kit.tsx`, REC-032) — the same Approve, Return and Reject an approver
+ * meets on every other decision screen. Only the look is shared: which buttons a step offers
+ * (`allowReturn`, `allowReject`) and where the decision posts stay this inbox's own.
  */
 export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]; now: number }) {
   const [visible, setVisible] = useState<string[]>(() => rows.map((r) => r.id));
@@ -101,63 +111,63 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
   }
 
   return (
-    <div className="overflow-hidden border border-slate-200">
-      <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Needs Your Decision</h2>
-        {visibleRows.length > 0 && oldestAge > 0 ? (
-          <span className="text-phx-sm font-semibold uppercase tracking-wider text-orange-400 whitespace-nowrap">
-            oldest {oldestAge}d waiting
-          </span>
-        ) : (
-          <div className="h-1.5 w-12 bg-orange-500" />
-        )}
-      </div>
-
+    <LandingPanel
+      right={visibleRows.length > 0 && oldestAge > 0 ? <LandingMeta items={[`oldest ${oldestAge}d waiting`]} /> : null}
+      title="Needs Your Decision"
+    >
       {sortedRows.length > 0 ? (
-        <div className="divide-y divide-slate-100 bg-white">
+        <ul>
           {sortedRows.map((row) => {
             const age = ageInDays(row.submittedAt, now);
+            const tone = ageTone(age);
             const isBusy = submitting === row.id;
             const rowOutcome = outcome?.id === row.id ? outcome : null;
             const expandedKind = inline?.id === row.id ? inline.kind : null;
+            const reasonId = `mm-inbox-reason-${row.id}`;
 
             return (
-              <div key={row.id}>
-                {/* Summary row */}
-                <div className={`flex items-center gap-3 px-5 py-3 ${isBusy ? "opacity-60" : ""}`}>
+              <li key={row.id} aria-busy={isBusy} className={`relative border-b border-slate-200 last:border-b-0 ${isBusy ? "opacity-60" : ""}`}>
+                <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-0.5 ${tone.rail}`} />
+
+                {/* Summary — who and what on the left, wrapping; the cost and its wait on the right */}
+                <div className="flex min-w-0 items-start gap-3 px-3 pt-3 sm:px-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900 whitespace-nowrap">
+                    <p className="break-words text-phx-md font-bold leading-snug text-[#08111f]">
                       {row.requestCode} · {row.requesterName}
                     </p>
-                    <p className="text-phx-xs text-slate-500 whitespace-nowrap">
+                    <p className="mt-0.5 break-words text-phx-xs leading-snug text-slate-500">
                       {row.requestType} — {row.currentStepName}
                     </p>
                   </div>
-                  <AgeBadge days={age} />
-                  <span className="shrink-0 text-sm font-bold text-slate-700 whitespace-nowrap">{egp(row.estimatedCost)}</span>
+                  <div className="min-w-0 max-w-[45%] text-right">
+                    <p className="break-words text-phx-md font-bold tabular-nums text-[#08111f]">{egp(row.estimatedCost)}</p>
+                    <p className={`mt-0.5 text-phx-xs font-bold tabular-nums ${tone.text}`}>{age == null ? "no date" : `${age}d waiting`}</p>
+                  </div>
                 </div>
 
                 {/* Error notice */}
                 {rowOutcome && !rowOutcome.ok ? (
-                  <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-5 py-2 text-phx-sm text-amber-800">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                    <span className="flex-1">{rowOutcome.message}</span>
+                  <div className="mx-3 mt-3 flex items-start gap-2 border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-phx-sm text-amber-900 sm:mx-4" role="alert">
+                    <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    <span className="min-w-0 flex-1 break-words">{rowOutcome.message}</span>
                     <button
-                      className="text-phx-xs text-slate-400 hover:text-slate-600 whitespace-nowrap"
+                      className={`shrink-0 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500 hover:text-[#08111f] ${LANDING_FOCUS}`}
                       onClick={() => setOutcome(null)}
+                      type="button"
                     >
-                      dismiss
+                      Dismiss
                     </button>
                   </div>
                 ) : null}
 
                 {/* Inline reason input (return / reject) */}
                 {expandedKind ? (
-                  <div className="space-y-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
-                    <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <div className="mx-3 mt-3 space-y-2 border-t border-slate-200 pt-3 sm:mx-4">
+                    <label className="block text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500" htmlFor={reasonId}>
                       {expandedKind === "return" ? row.decisionLabels.return : row.decisionLabels.reject} — reason required
-                    </p>
+                    </label>
                     <textarea
+                      id={reasonId}
                       rows={2}
                       placeholder="Enter reason…"
                       value={reason}
@@ -165,80 +175,65 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                       autoFocus
                       className={phxTextareaClassName}
                     />
-                    <div className="flex items-center gap-2">
-                      <button
-                        disabled={isBusy || !reason.trim()}
-                        onClick={() => decide(row.id, expandedKind, reason.trim())}
-                        className={`px-4 py-1.5 text-phx-sm font-semibold uppercase tracking-wider text-white transition-colors
-                          ${expandedKind === "reject"
-                            ? "bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300"
-                            : "bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300"
-                          }`}
-                      >
-                        {isBusy ? "Sending…" : `Confirm ${expandedKind}`}
-                      </button>
-                      <button
-                        onClick={() => { setInline(null); setReason(""); }}
-                        className="px-3 py-1.5 text-phx-sm font-medium text-slate-500 hover:text-slate-700"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                    <ApprovalConfirmButtons
+                      busy={isBusy}
+                      confirmLabel={`Confirm ${expandedKind}`}
+                      disabled={!reason.trim()}
+                      onCancel={() => {
+                        setInline(null);
+                        setReason("");
+                      }}
+                      onConfirm={() => decide(row.id, expandedKind, reason.trim())}
+                    />
                   </div>
                 ) : null}
 
-                {/* Action bar */}
-                <div className="flex items-center gap-2 border-t border-slate-100 bg-white px-5 py-2">
+                {/* Action bar — the one approvals interface's buttons, wrapping on a phone */}
+                <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
                   <button
                     disabled={isBusy}
                     onClick={() => decide(row.id, "approve")}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-wider text-white bg-slate-800 hover:bg-orange-600 disabled:bg-slate-300 transition-colors"
+                    className={approvalActionClassName("approve", "regular", `grow sm:grow-0 ${LANDING_FOCUS}`)}
+                    type="button"
                   >
-                    <CheckCircle className="h-3 w-3" />
-                    {isBusy && !expandedKind ? "…" : row.decisionLabels.approve}
+                    {isBusy && !expandedKind ? APPROVAL_ACTION_LABEL.working : row.decisionLabels.approve}
                   </button>
                   {row.allowReturn ? (
                     <button
+                      aria-expanded={expandedKind === "return"}
                       disabled={isBusy}
                       onClick={() => toggleInline(row.id, "return")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-wider transition-colors
-                        ${expandedKind === "return"
-                          ? "bg-amber-600 text-white"
-                          : "bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
-                        }`}
+                      className={approvalActionClassName("return", "regular", `grow aria-expanded:bg-amber-50 sm:grow-0 ${LANDING_FOCUS}`)}
+                      type="button"
                     >
-                      <RefreshCw className="h-3 w-3" />
                       {row.decisionLabels.return}
                     </button>
                   ) : null}
                   {row.allowReject ? (
                     <button
+                      aria-expanded={expandedKind === "reject"}
                       disabled={isBusy}
                       onClick={() => toggleInline(row.id, "reject")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-wider transition-colors
-                        ${expandedKind === "reject"
-                          ? "bg-rose-600 text-white"
-                          : "bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
-                        }`}
+                      className={approvalActionClassName("reject", "regular", `grow aria-expanded:bg-rose-50 sm:grow-0 ${LANDING_FOCUS}`)}
+                      type="button"
                     >
-                      <X className="h-3 w-3" />
                       {row.decisionLabels.reject}
                     </button>
                   ) : null}
                   <Link
                     href={`/employee-portals/marketing-requests/decision/${row.id}`}
-                    className="ml-auto flex items-center gap-1 text-phx-xs text-slate-400 hover:text-orange-500 transition-colors whitespace-nowrap"
+                    className={approvalActionClassName("neutral", "regular", `grow sm:ml-auto sm:grow-0 ${LANDING_FOCUS}`)}
                   >
-                    Full view <ArrowRight className="h-3 w-3" />
+                    Full view
                   </Link>
                 </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       ) : (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">No pending marketing approvals. You&apos;re all caught up.</p>
+        <LandingEmpty>No pending marketing approvals. You&apos;re all caught up.</LandingEmpty>
       )}
-    </div>
+    </LandingPanel>
   );
 }

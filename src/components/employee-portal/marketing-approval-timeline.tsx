@@ -9,42 +9,31 @@ import type {
   MarketingRequestTimelineStep,
 } from "@/lib/marketing-requests/service";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
-/* --------- Status pill styling ------------------------------------------------------------------------------------------------------------------ */
+/* --------- Step state: the rail's colour, never a filled pill ------------------------------------------------------------------------------------ */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function pillClasses(status: MarketingRequestTimelineStep["status"]): string {
+/**
+ * One clean vertical rail (the landing kit): emerald approved, amber waiting, rose rejected, slate
+ * not reached. A returned step is back with its requester, so it waits in amber too. Whole literals,
+ * so Tailwind ships every one.
+ */
+function railClass(status: MarketingRequestTimelineStep["status"]): string {
   switch (status) {
     case "approved":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+      return "border-l-emerald-500";
     case "current":
-      return "border-orange-200 bg-orange-50 text-orange-700";
+      return "border-l-amber-400";
     case "rejected":
-      return "border-rose-200 bg-rose-50 text-rose-700";
+      return "border-l-rose-500";
     case "returned":
-      return "border-amber-200 bg-amber-50 text-amber-800";
+      return "border-l-amber-500";
     case "skipped":
-      return "border-slate-200 bg-slate-50 text-slate-400";
+      return "border-l-slate-200";
     default:
-      return "border-slate-200 bg-slate-50 text-slate-500";
-  }
-}
-
-function dotClasses(status: MarketingRequestTimelineStep["status"]): string {
-  switch (status) {
-    case "approved":
-      return "bg-emerald-500";
-    case "current":
-      return "bg-orange-500";
-    case "rejected":
-      return "bg-rose-500";
-    case "returned":
-      return "bg-amber-500";
-    case "skipped":
-      return "bg-slate-300";
-    default:
-      return "bg-slate-300";
+      return "border-l-slate-300";
   }
 }
 
@@ -79,7 +68,7 @@ export function MarketingProgressStrip({
 }) {
   if (!progress) {
     return (
-      <p className="text-phx-xs font-medium text-slate-400">
+      <p className="text-phx-xs font-medium text-slate-500">
         Progress not available.
       </p>
     );
@@ -93,7 +82,7 @@ export function MarketingProgressStrip({
 
   return (
     <div className="space-y-1">
-      <p className="text-phx-xs font-bold text-slate-600">
+      <p className="break-words text-phx-xs font-bold text-slate-600">
         {inFlight ? (
           <>
             Step {progress.sequence}/{progress.totalGatingSteps} · Currently with:{" "}
@@ -108,13 +97,16 @@ export function MarketingProgressStrip({
         )}
       </p>
       {progress.returnReason ? (
-        <p className="rounded-sm border border-amber-200 bg-amber-50 px-2 py-1 text-phx-sm font-medium text-amber-800">
-          Returned: {progress.returnReason}
-        </p>
+        <div className="flex min-w-0 gap-2">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+          <p className="min-w-0 break-words text-phx-sm font-medium text-amber-800" dir="auto">
+            Returned: {progress.returnReason}
+          </p>
+        </div>
       ) : null}
       {requestId ? (
         <a
-          className="inline-block text-phx-sm font-bold text-orange-700 underline underline-offset-2 hover:text-orange-800"
+          className={`inline-block text-phx-sm font-bold text-[#08111f] underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
           href={`/marketing-requests/${requestId}`}
         >
           Open the full record
@@ -144,7 +136,7 @@ function terminalSentence(status: MarketingRequestStatus): string {
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Vertical approval timeline ----------------------------------------------------------------------------------------------------------- */
-/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 export function MarketingApprovalTimeline({
   requestCode,
@@ -159,69 +151,52 @@ export function MarketingApprovalTimeline({
 }) {
   if (steps.length === 0) {
     return (
-      <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-xs font-medium text-slate-400">
+      <p className="break-words py-3 text-phx-sm font-medium text-slate-500">
         No approval steps recorded yet.
       </p>
     );
   }
 
   return (
-    <ol className="space-y-1.5">
+    <ol className="space-y-2">
       {steps.map((step) => {
         const muted = step.isCc || step.status === "skipped";
         return (
           <li
-            className={`rounded-sm border p-2.5 ${
-              muted
-                ? "border-slate-100 bg-slate-50/60"
-                : "border-slate-200 bg-white"
-            }`}
+            className={`min-w-0 border-l-[3px] py-1 pl-3 ${muted ? "border-l-slate-200" : railClass(step.status)}`}
             key={`${step.sequence}-${step.stepName}`}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex min-w-0 items-start gap-2">
-                <span
-                  className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-sm ${dotClasses(
-                    step.status,
-                  )}`}
-                />
-                <div className="min-w-0">
-                  <p
-                    className={`text-phx-sm font-bold ${
-                      muted ? "text-slate-500" : "text-slate-950"
-                    }`}
-                  >
-                    {step.stepName}
-                    {step.isCc ? (
-                      <span className="ml-1.5 rounded-sm bg-slate-200/70 px-1 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
-                        CC
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="mt-0.5 text-phx-sm font-medium text-slate-400">
-                    {step.assignedRole}
-                    {step.assignedName ? ` · ${step.assignedName}` : ""}
-                  </p>
-                </div>
-              </div>
-              <span
-                className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-[0.06em] ${pillClasses(
-                  step.status,
-                )}`}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <p
+                className={`min-w-0 break-words text-phx-sm font-bold ${
+                  muted ? "text-slate-500" : "text-[#08111f]"
+                }`}
               >
+                {step.stepName}
+                {step.isCc ? (
+                  <span className="ml-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+                    CC
+                  </span>
+                ) : null}
+              </p>
+              <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                 {statusLabel(step.status)}
               </span>
             </div>
+            <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500" dir="auto">
+              {step.assignedRole}
+              {step.assignedName ? ` · ${step.assignedName}` : ""}
+            </p>
 
             {step.decisionAt || step.decisionByName || step.decisionNote ? (
-              <div className="mt-1.5 border-t border-slate-100 pt-1.5 text-phx-sm font-medium text-slate-500">
+              <div className="mt-1 text-phx-xs font-medium text-slate-500">
                 {step.decisionByName ? (
-                  <span className="font-bold text-slate-600">
+                  <span className="font-semibold text-slate-700" dir="auto">
                     {step.decisionByName}
                   </span>
                 ) : null}
                 {step.decisionAt ? (
-                  <span className="text-slate-400">
+                  <span className="tabular-nums text-slate-500">
                     {step.decisionByName ? " · " : ""}
                     {step.decisionAt}
                   </span>
@@ -231,8 +206,9 @@ export function MarketingApprovalTimeline({
                     className={`mt-0.5 break-words ${
                       isMarketingAdminOverrideNote({ requestCode, stepName: step.stepName })
                         ? MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES
-                        : "text-slate-500"
+                        : "text-slate-600"
                     }`}
+                    dir="auto"
                   >
                     {step.decisionNote}
                   </p>

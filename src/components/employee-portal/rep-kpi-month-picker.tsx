@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * The month picker over a Medical Rep's landing keycards.
@@ -59,13 +58,19 @@ export function RepKpiMonthPicker({
   if (options.length === 0) return null;
 
   return (
-    <label className={`flex flex-wrap items-center gap-2 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
-      <span className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">KPI month</span>
+    // The header row of the rep's night-navy month board (owner, 2026-11-20: the landing redesign
+    // that followed his "A: night navy" top bar) — so no frame of its own: the board is the frame.
+    <label className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
+      <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-white/70">KPI month</span>
       <select
         // `text-base` and `font-semibold` are this screen's own, kept through `cn()` so
         // tailwind-merge drops the token's `text-sm`: a native select under 16px makes iOS
-        // zoom the whole page on focus, which the fits-the-screen rule forbids.
-        className={cn(phxSelectClassName, "ml-auto min-w-0 text-base font-semibold sm:w-56")}
+        // zoom the whole page on focus, which the fits-the-screen rule forbids. The colours are
+        // the board's, and `color-scheme: dark` makes the browser draw its arrow and list light-on-dark.
+        className={cn(
+          phxSelectClassName,
+          "ml-auto min-w-0 border-white/20 bg-[#0d1828] text-base font-semibold text-white [color-scheme:dark] hover:border-white/40 sm:w-56",
+        )}
         disabled={pending}
         onChange={(event) =>
           startTransition(() =>

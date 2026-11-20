@@ -5,6 +5,7 @@
 // the buttons, and every earlier rejection is shown as a chain rather than as a mystery.
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
+import { LANDING_INK, LandingPanel } from "@/components/employee-portal/landing-kit";
 import { PersonPhoto } from "@/components/people/person-photo";
 import { formatHireDate, formatPoints, formatStartClock } from "@/components/early-birds/early-birds-format";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
@@ -43,50 +44,51 @@ export default async function EarlyBirdApprovalsPage() {
   return shell(
     <div className="space-y-4">
       {pending.map((candidate) => (
-        <div key={candidate.snapshotId} className="overflow-hidden border border-slate-200 bg-white">
-          <div className="flex items-center justify-between bg-slate-900 px-4 py-2.5 sm:px-5">
-            <h2 className="whitespace-nowrap text-phx-sm font-bold uppercase tracking-widest text-slate-300">
-              {candidate.periodLabel}
-            </h2>
-            <span className="whitespace-nowrap text-phx-sm font-bold uppercase tracking-widest text-amber-300">
+        // One kit panel per fortnight: the period as its title, the candidate's rank in small capitals
+        // on the right — never a dark band.
+        <LandingPanel
+          key={candidate.snapshotId}
+          title={candidate.periodLabel}
+          right={
+            <span className={`text-phx-xs font-bold uppercase tracking-[0.1em] tabular-nums ${LANDING_INK}`}>
               Rank {candidate.candidateRank}
             </span>
-          </div>
-
-          <div className="flex items-center gap-4 px-4 py-4 sm:px-5">
+          }
+        >
+          <div className="flex items-center gap-4 px-3 py-4 sm:px-4">
             <PersonPhoto
               name={candidate.employeeName}
               size="md"
               src={resolveEmployeePhotoSrc(candidate.employeeHrId, photoMap)}
             />
             <div className="min-w-0">
-              <p className="text-lg font-black text-slate-900" dir="auto">
+              <p className={`break-words text-lg font-black ${LANDING_INK}`} dir="auto">
                 {candidate.employeeName}
               </p>
-              <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400" dir="auto">
+              <p className="break-words text-phx-xs font-semibold uppercase tracking-[0.1em] text-slate-500" dir="auto">
                 {candidate.areaName ?? "—"} · joined {formatHireDate(candidate.hireDate)}
               </p>
-              <p className="mt-1 text-xs font-semibold text-emerald-700">
+              <p className="mt-1 break-words text-xs font-semibold text-emerald-700">
                 {earlyBirdsReasonSummary(candidate)}
               </p>
             </div>
-            <span className="ml-auto shrink-0 whitespace-nowrap text-xl font-black tabular-nums text-slate-900">
+            <span className={`ml-auto shrink-0 whitespace-nowrap text-xl font-black tabular-nums ${LANDING_INK}`}>
               {formatPoints(candidate.totalScore)}
-              <span className="ml-1 text-phx-sm font-bold uppercase text-slate-400">pts</span>
+              <span className="ml-1 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">pts</span>
             </span>
           </div>
 
           {candidate.rejectedSoFar.length > 0 && (
             // Without this a third recommendation arrives with no explanation of why the first two
             // are gone.
-            <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
-              <p className="mb-1.5 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">
+            <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
+              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                 Already rejected this fortnight
               </p>
-              <div className="space-y-1">
+              <div className="space-y-1 border-l-4 border-rose-500 pl-3">
                 {candidate.rejectedSoFar.map((entry) => (
-                  <p key={entry.name} className="text-phx-xs text-slate-600" dir="auto">
-                    <span className="font-bold text-slate-800">{entry.name}</span>
+                  <p key={entry.name} className="break-words text-phx-xs text-slate-600" dir="auto">
+                    <span className={`font-bold ${LANDING_INK}`}>{entry.name}</span>
                     {entry.reason ? ` — ${entry.reason}` : ""}
                   </p>
                 ))}
@@ -95,15 +97,15 @@ export default async function EarlyBirdApprovalsPage() {
           )}
 
           {candidate.runnersUp.length > 0 && (
-            <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
-              <p className="mb-1.5 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">
+            <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
+              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                 Who you would be choosing over
               </p>
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-slate-200">
                 {candidate.runnersUp.map((runner) => (
                   <div key={runner.rank} className="flex items-center gap-3 py-1.5">
-                    <span className="w-5 text-phx-xs font-black text-slate-300">{runner.rank}</span>
-                    <span className="min-w-0 text-xs font-bold text-slate-900" dir="auto">
+                    <span className="w-5 shrink-0 text-phx-xs font-black tabular-nums text-slate-500">{runner.rank}</span>
+                    <span className={`min-w-0 break-words text-xs font-bold ${LANDING_INK}`} dir="auto">
                       {runner.name}
                     </span>
                     <span className="ml-auto shrink-0 whitespace-nowrap text-xs tabular-nums text-slate-500">
@@ -115,7 +117,7 @@ export default async function EarlyBirdApprovalsPage() {
             </div>
           )}
 
-          <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
+          <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
             <DecisionActions
               actions={{ approve: true, reject: true }}
               backHref="/employee-portals/approvals-hub"
@@ -124,7 +126,7 @@ export default async function EarlyBirdApprovalsPage() {
               extraPayload={{ candidateId: candidate.candidateId }}
             />
           </div>
-        </div>
+        </LandingPanel>
       ))}
     </div>,
   );

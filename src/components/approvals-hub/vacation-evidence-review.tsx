@@ -4,11 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { VacationEvidenceReview, VacationEvidenceReviewStatus, VacationEvidenceType } from "@/lib/vacation/types";
+import { LANDING_INK } from "@/components/employee-portal/landing-kit";
+import { FormError } from "@/components/ui/form-kit";
 import {
   phxButtonApproveClassName,
   phxButtonDangerClassName,
+  phxButtonGhostClassName,
+  phxLabelTextClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+
+/** The three answers: full width, one under another, on a phone; on the right from `sm`. */
+const ACTION_ROW = "flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end [&>button]:justify-center";
 
 type Props = {
   evidenceType: VacationEvidenceType;
@@ -62,8 +69,8 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
 
   return (
     <div className="mt-2 space-y-2">
-      <p className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">
-        Evidence review — <span className="text-slate-700">{STATUS_LABEL[status]}</span>
+      <p className={phxLabelTextClassName}>
+        Evidence review — <span className={LANDING_INK}>{STATUS_LABEL[status]}</span>
       </p>
       <textarea
         className={phxTextareaClassName}
@@ -72,8 +79,8 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
         rows={2}
         value={note}
       />
-      {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-      <div className="flex flex-wrap gap-2">
+      <FormError>{error}</FormError>
+      <div className={ACTION_ROW}>
         <button
           className={phxButtonApproveClassName}
           disabled={busy}
@@ -83,7 +90,7 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
           Accept
         </button>
         <button
-          className="bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-60"
+          className={phxButtonGhostClassName}
           disabled={busy}
           onClick={() => submit("needs_follow_up")}
           type="button"

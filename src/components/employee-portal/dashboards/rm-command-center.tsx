@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   BookUser,
   CalendarDays,
   CalendarX2,
@@ -34,8 +33,6 @@ import {
   PortalContextBar,
   PortalIdentityBand,
   RankingPanel,
-  SectionHead,
-  SectionMeta,
   egpCompact,
   type ActionStripItem,
   type DashboardLink,
@@ -47,9 +44,19 @@ import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
-import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { LineSalesPacingSection } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitCard, AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import { MyMapSnapshotCard } from "@/components/employee-portal/dashboards/my-map-snapshot-card";
+import {
+  LandingBar,
+  LandingEmpty,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingNavyBoardLoading,
+  LandingPanel,
+  LandingPanelLoading,
+  LandingRailLine,
+} from "@/components/employee-portal/landing-kit";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -74,6 +81,10 @@ import {
 } from "@/lib/employee-portal/rsm-home-summary";
 
 /* ── Region performance keycards ───────────────────────────────────── */
+
+// The landing's ONE night-navy board (owner, 2026-11-20 redesign): the region's headline figures, as
+// the month tiles are a rep's, with the two lines that qualify them — the incentive caveat and the
+// reconciliation — on the board's own foot. Every other card on this page is a white panel.
 
 function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegional"] }) {
   // Never rounded UP across a line (rsm-home-summary.ts): 89.6% reads 89%, beside a gap to 90%.
@@ -129,49 +140,50 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
   ];
 
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead
-        title="Region Performance"
-        right={
-          <SectionMeta
-            items={[
-              rmRegional?.windowLabel,
-              rmRegional ? `${rmRegional.dsmCount} ${rmRegional.dsmCount === 1 ? "district" : "districts"}` : null,
-            ]}
-          />
-        }
-      />
+    <LandingNavyBoard
+      label="Region Performance"
+      right={
+        <LandingMeta
+          items={[
+            rmRegional?.windowLabel,
+            rmRegional ? `${rmRegional.dsmCount} ${rmRegional.dsmCount === 1 ? "district" : "districts"}` : null,
+          ]}
+          onNavy
+        />
+      }
+    >
       {rmRegional ? (
         <>
-          <KeycardGrid cards={cards} />
-          {!published && (
-            <p className="bg-white px-5 pb-4 text-phx-sm text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
-          )}
+          <KeycardGrid cards={cards} onNavy />
+          {!published && <LandingEmpty onNavy>{NO_PUBLISHED_CLOSING_NOTE}</LandingEmpty>}
           {/* The Gap to 90% tile is the only incentive figure on this page, so its caveat sits here,
-              under it. It used to float further down the page, above boards that show no incentive. */}
+              under it. It used to float further down the page, above boards that show no incentive.
+              An amber rule beside the words, the reconciliation note's own shape, never a filled box. */}
           {published && target > 0 ? (
-            <p className="mx-4 mb-4 mt-3 flex items-start gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-xs font-semibold text-amber-700">
-              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 break-words">{INCENTIVE_NOT_CONFIRMED_NOTE}</span>
+            <p className="mx-1 mt-3 min-w-0 break-words border-l-2 border-amber-400 py-1 pl-3 text-phx-xs font-semibold leading-relaxed text-amber-300">
+              {INCENTIVE_NOT_CONFIRMED_NOTE}
             </p>
           ) : null}
           {/* Region Sales counts vacant-district reps + in-region direct orders no DSM row below carries */}
           <PerformanceReconciliationNote
-            className="mx-4 mb-4"
+            className="mx-1 mb-1 mt-3"
+            onNavy
             totalLabel="Region Sales"
             unattributedSales={rmRegional.unattributedSales}
           />
         </>
       ) : (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">{REGION_FIGURES_UNAVAILABLE}</p>
+        <LandingEmpty onNavy>{REGION_FIGURES_UNAVAILABLE}</LandingEmpty>
       )}
-    </div>
+    </LandingNavyBoard>
   );
 }
 
 /* ── Districts needing attention ───────────────────────────────────── */
 
-const ATTENTION_INK = { met: "text-emerald-600", near: "text-amber-600", behind: "text-orange-600", far: "text-rose-600" } as const;
+// The landing's tone scale on white (landingTone): the 700s for words, the bar fills beneath them.
+const ATTENTION_INK = { met: "text-emerald-700", near: "text-amber-700", behind: "text-orange-700", far: "text-rose-700" } as const;
+const ATTENTION_FILL = { met: "bg-emerald-500", near: "bg-amber-400", behind: "bg-orange-500", far: "bg-rose-500" } as const;
 
 /**
  * Districts below the 90% incentive line, worst first. The list, the order and every word come from
@@ -185,38 +197,39 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
   if (attention.state === "hidden") return null;
 
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead title="Districts Needing Attention" right={<SectionMeta items={[rmRegional.windowLabel, "below 90%"]} />} />
+    <LandingPanel right={<LandingMeta items={[rmRegional.windowLabel, "below 90%"]} />} title="Districts Needing Attention">
       {attention.state === "all-clear" ? (
-        <div className="flex items-center gap-2 bg-white px-4 py-5 sm:px-5">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <p className="text-sm font-medium text-emerald-700">{attention.text}</p>
-        </div>
+        <LandingRailLine rail="bg-emerald-500">
+          <span className="font-semibold text-emerald-800">{attention.text}</span>
+        </LandingRailLine>
       ) : (
-        <div className="space-y-px bg-slate-200">
+        <ul>
           {attention.behind.map((d) => (
-            <div key={d.key} className="flex items-center justify-between gap-3 bg-white px-4 py-3 sm:px-5">
-              <div className="min-w-0">
-                <p className="break-words text-sm font-semibold text-slate-800">{d.name}</p>
-                <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{d.salesText}</p>
+            <li key={d.key} className="flex min-w-0 items-center gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0 sm:px-4">
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-phx-md font-bold leading-snug text-[#08111f]">{d.name}</p>
+                <p className="mt-0.5 break-words text-phx-xs tabular-nums text-slate-500">{d.salesText}</p>
+                {/* The same percentage as a bar against target, so the worst district reads at a glance. */}
+                <div className="mt-2">
+                  <LandingBar fill={ATTENTION_FILL[d.band]} pct={d.percent} />
+                </div>
               </div>
-              <div className="shrink-0 text-right">
-                <p className={`text-lg font-black tabular-nums ${ATTENTION_INK[d.band]}`}>{d.percent}%</p>
-                <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold uppercase tracking-wide text-slate-400">
-                  {d.gapText}
-                </p>
+              {/* Wraps inside its 45% rather than holding one line: "EGP 123.4K to 90%" is wider than
+                  a 280px phone can give it beside a four-part district name. */}
+              <div className="max-w-[45%] shrink-0 text-right">
+                <p className={`text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums ${ATTENTION_INK[d.band]}`}>{d.percent}%</p>
+                <p className="mt-1 break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-500">{d.gapText}</p>
               </div>
-            </div>
+            </li>
           ))}
           {attention.unmeasuredText ? (
-            <div className="flex items-start gap-2 bg-white px-4 py-3 sm:px-5">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              <p className="break-words text-sm text-slate-500">{attention.unmeasuredText}</p>
-            </div>
+            <li>
+              <LandingRailLine rail="bg-amber-400">{attention.unmeasuredText}</LandingRailLine>
+            </li>
           ) : null}
-        </div>
+        </ul>
       )}
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -301,7 +314,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         <AwaitCard value={snapshot.cvFolders}>{(summary) => <ManagerCvFoldersRow summary={summary} />}</AwaitCard>
       </Suspense>
 
-      <Suspense fallback={<MmSectionSkeleton title="Region Performance" />}>
+      <Suspense fallback={<LandingNavyBoardLoading label="Region Performance" />}>
         <AwaitRoleExtras extras={extras}>{({ rmRegional }) => <RegionKeycards rmRegional={rmRegional} />}</AwaitRoleExtras>
       </Suspense>
 
@@ -311,12 +324,12 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
       <DashboardsGrid items={teamReportTiles(cairoTodayIso())} title="My Team's Reports" />
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="My map" />}>
+        <Suspense fallback={<LandingPanelLoading title="My map" />}>
           <MyMapSnapshotCard access={access} />
         </Suspense>
       ) : null}
 
-      <Suspense fallback={<MmSectionSkeleton title="My Districts" />}>
+      <Suspense fallback={<LandingPanelLoading title="My Districts" />}>
         <AwaitRoleExtras extras={extras}>
           {({ rmRegional }) => (
             <>
@@ -360,7 +373,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         <AwaitCard value={earlyBirdStars}>{(stars) => <EarlyBirdOfTheFortnightCard stars={stars} />}</AwaitCard>
       </Suspense>
 
-      <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
+      <Suspense fallback={<LandingPanelLoading title="CRM First Visit" />}>
         <AwaitRoleExtras extras={extras}>
           {({ rmRegional }) => (
             <CrmFirstVisitBoard
@@ -372,7 +385,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
       </Suspense>
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="Region Sales Pacing" />}>
+        <Suspense fallback={<LandingPanelLoading title="Region Sales Pacing" />}>
           {/* Scoped to the region's areas (loadPortalClosingTrend), so it is never called the line's. */}
           <LineSalesPacingSection access={access} title="Region Sales Pacing" />
         </Suspense>

@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  AlertCircle,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -28,8 +27,22 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
-import { Badge } from "@/components/ui/badge";
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingCta,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingNavyBoardLoading,
+  LandingPanel,
+  LandingRailLine,
+  LandingTick,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PaginationControls } from "@/components/ui/pagination-controls";
@@ -57,8 +70,11 @@ import { overlapWarningsLabel, showsDailySlaRunCard, vacationDaysLabel } from "@
 import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  phxButtonAccentClassName,
   phxButtonApproveDenseClassName,
   phxButtonDangerDenseClassName,
+  phxButtonGhostClassName,
+  phxButtonPrimaryClassName,
   phxLabelTextClassName,
   phxSelectClassName,
   phxTextareaClassName,
@@ -213,6 +229,47 @@ function eligibilityStatusLabel(status: VacationEmployeeEligibilityRow["eligibil
   return "Missing hire date";
 }
 
+type StateTone = "success" | "danger" | "warning" | "neutral";
+
+/**
+ * A state — a request's stage, its payment, an eligibility, a review flag — is coloured small
+ * capitals on a 2px rail, never a filled pill (the portal's landing language). The tone still comes
+ * from the *BadgeVariant functions above, so every state keeps the colour it always had; `fill` is
+ * the same colour for a record row's left rail.
+ */
+const STATE_TONES: Record<StateTone, { fill: string; rail: string; text: string }> = {
+  danger: { fill: "bg-rose-500", rail: "border-rose-500", text: "text-rose-700" },
+  neutral: { fill: "bg-slate-300", rail: "border-slate-300", text: "text-slate-600" },
+  success: { fill: "bg-emerald-500", rail: "border-emerald-500", text: "text-emerald-700" },
+  warning: { fill: "bg-amber-500", rail: "border-amber-500", text: "text-amber-700" },
+};
+
+function StateText({ children, tone }: { children: React.ReactNode; tone: StateTone }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em]",
+        STATE_TONES[tone].rail,
+        STATE_TONES[tone].text,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** The small capitals that name a figure inside a record row. */
+const ROW_LABEL = "text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500";
+
+/** An error the page could not act on: a white sheet with a rose rail, read out at once. */
+function ReportAlert({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="alert">
+      <LandingRailLine rail="bg-rose-500">{children}</LandingRailLine>
+    </div>
+  );
+}
+
 function vacationAttachmentUrl(row: VacationRequestRecord, kind: "compensatory" | "sick") {
   return `/api/vacations/requests/${encodeURIComponent(row.id)}/attachments/${kind}`;
 }
@@ -245,7 +302,7 @@ function VacationAttachmentLinks({
     <div className="mt-1.5 flex flex-wrap gap-1">
       {attachments.map((attachment) => (
         <a
-          className="inline-flex items-center gap-1 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1 text-phx-2xs font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+          className={`inline-flex min-h-8 items-center gap-1 text-phx-xs font-bold uppercase tracking-[0.08em] text-sky-700 underline decoration-sky-300 underline-offset-2 transition hover:decoration-sky-700 motion-reduce:transition-none ${LANDING_FOCUS}`}
           href={attachment.href}
           key={attachment.href}
           rel="noreferrer"
@@ -431,19 +488,29 @@ function SortableHeader<K extends string>({
   sortKey: K;
   onSort: (key: K) => void;
 }) {
+  // The header cell stays a plain cell; the sort is a real button inside it, so a keyboard reaches it
+  // and the focus ring has something to sit on.
   return (
     <th
-      className={cn("cursor-pointer select-none border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100", cls)}
-      onClick={() => onSort(sortKey)}
+      aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
+      className={cn("border-b border-slate-200 px-3 py-2.5", cls)}
     >
-      <span className="inline-flex items-center gap-1">
+      <button
+        className={`inline-flex select-none items-center gap-1 text-left uppercase tracking-[0.1em] transition hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
+        onClick={() => onSort(sortKey)}
+        type="button"
+      >
         {children}
         {active ? (
-          direction === "asc" ? <ArrowUp className="h-3 w-3 text-orange-500" /> : <ArrowDown className="h-3 w-3 text-orange-500" />
+          direction === "asc" ? (
+            <ArrowUp aria-hidden="true" className="h-3 w-3 shrink-0 text-[#08111f]" />
+          ) : (
+            <ArrowDown aria-hidden="true" className="h-3 w-3 shrink-0 text-[#08111f]" />
+          )
         ) : (
-          <ArrowUpDown className="h-3 w-3 text-slate-300" />
+          <ArrowUpDown aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-300" />
         )}
-      </span>
+      </button>
     </th>
   );
 }
@@ -461,22 +528,20 @@ const selectClass  = phxSelectClassName;
 const labelClass = phxLabelTextClassName;
 
 /* ═══════════════════════════════════════════════════════════════════ */
-/* ─── Skeleton Loaders ─────────────────────────────────────────────── */
-/* ═══════════════════════════════════════════════════════════════════ */
-
-function MetricCardSkeleton() {
-  return (
-    <div className="animate-pulse rounded-sm border border-slate-200 bg-white p-4">
-      <div className="h-2.5 w-16 rounded-sm bg-slate-200" />
-      <div className="mt-3 h-7 w-12 rounded-sm bg-slate-200" />
-      <div className="mt-2 h-2 w-32 rounded-sm bg-slate-100" />
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Metric Card ──────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * One headline count, as a tile on the view's navy board (its loading shape is the board's own
+ * LandingNavyBoardLoading). The tone is the tile's 2px rail; the figure stays white.
+ */
+const METRIC_RAIL: Record<"blue" | "emerald" | "orange" | "rose" | "violet", string> = {
+  blue: "bg-sky-400",
+  emerald: "bg-emerald-400",
+  orange: "bg-amber-400",
+  rose: "bg-rose-400",
+  violet: "bg-violet-400",
+};
 
 function MetricCard({
   description,
@@ -489,50 +554,16 @@ function MetricCard({
   tone: "blue" | "emerald" | "orange" | "rose" | "violet";
   value: number | string;
 }) {
-  const toneMap = {
-    blue: {
-      bg: "bg-sky-50",
-      border: "border-sky-100",
-      label: "text-sky-600",
-      value: "text-sky-900",
-    },
-    emerald: {
-      bg: "bg-emerald-50",
-      border: "border-emerald-100",
-      label: "text-emerald-600",
-      value: "text-emerald-900",
-    },
-    orange: {
-      bg: "bg-orange-50",
-      border: "border-orange-100",
-      label: "text-orange-600",
-      value: "text-orange-900",
-    },
-    rose: {
-      bg: "bg-rose-50",
-      border: "border-rose-100",
-      label: "text-rose-600",
-      value: "text-rose-900",
-    },
-    violet: {
-      bg: "bg-violet-50",
-      border: "border-violet-100",
-      label: "text-violet-600",
-      value: "text-violet-900",
-    },
-  };
-
-  const t = toneMap[tone];
-
   return (
-    <div className={cn("rounded-sm border p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]", t.border, t.bg)}>
-      <p className={cn("text-phx-2xs font-bold uppercase tracking-[0.12em]", t.label)}>
-        {label}
-      </p>
-      <p className={cn("mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em]", t.value)}>
-        {value}
-      </p>
-      <p className="mt-2 text-phx-xs font-medium leading-4 text-slate-500">{description}</p>
+    <div className={`relative flex min-w-0 flex-col border border-white/[0.08] p-3 pl-3.5 ${LANDING_NAVY_TILE}`}>
+      <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-0.5", METRIC_RAIL[tone])} />
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/65">{label}</p>
+      <div className="mt-1.5">
+        <LandingFigure onNavy size="md">
+          {value}
+        </LandingFigure>
+      </div>
+      <p className="mt-2 break-words text-phx-xs leading-snug text-white/55">{description}</p>
     </div>
   );
 }
@@ -559,49 +590,33 @@ function StatusDistributionBar({
   const rejectedPct = (rejected / total) * 100;
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between">
-        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Request status distribution</p>
-        <p className="text-phx-xs font-bold text-slate-400">{total} total</p>
-      </div>
-      <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
+    <LandingPanel bodyClassName="px-3 py-3 sm:px-4" right={<LandingMeta items={[`${total} total`]} />} title="Request status distribution">
+      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
         {approvedPct > 0 ? (
-          <div
-            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
-            style={{ width: `${approvedPct}%` }}
-            title={`Approved: ${approved}`}
-          />
+          <div className="h-full bg-emerald-500" style={{ width: `${approvedPct}%` }} title={`Approved: ${approved}`} />
         ) : null}
         {pendingPct > 0 ? (
-          <div
-            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
-            style={{ width: `${pendingPct}%` }}
-            title={`Pending: ${pending}`}
-          />
+          <div className="h-full bg-amber-400" style={{ width: `${pendingPct}%` }} title={`Pending: ${pending}`} />
         ) : null}
         {rejectedPct > 0 ? (
-          <div
-            className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
-            style={{ width: `${rejectedPct}%` }}
-            title={`Rejected: ${rejected}`}
-          />
+          <div className="h-full bg-rose-500" style={{ width: `${rejectedPct}%` }} title={`Rejected: ${rejected}`} />
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-emerald-500" />
           <span className="text-emerald-700">Approved {approved}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-amber-400" />
           <span className="text-amber-700">Pending {pending}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-rose-500" />
           <span className="text-rose-700">Rejected {rejected}</span>
         </span>
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -627,49 +642,33 @@ function EligibilityDistributionBar({
   const missingPct = (missingHireDate / total) * 100;
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between">
-        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Eligibility distribution</p>
-        <p className="text-phx-xs font-bold text-slate-400">{total} employees</p>
-      </div>
-      <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
+    <LandingPanel bodyClassName="px-3 py-3 sm:px-4" right={<LandingMeta items={[`${total} employees`]} />} title="Eligibility distribution">
+      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
         {eligiblePct > 0 ? (
-          <div
-            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
-            style={{ width: `${eligiblePct}%` }}
-            title={`Eligible: ${eligible}`}
-          />
+          <div className="h-full bg-emerald-500" style={{ width: `${eligiblePct}%` }} title={`Eligible: ${eligible}`} />
         ) : null}
         {sixMonthPct > 0 ? (
-          <div
-            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
-            style={{ width: `${sixMonthPct}%` }}
-            title={`First 6 months: ${firstSixMonths}`}
-          />
+          <div className="h-full bg-amber-400" style={{ width: `${sixMonthPct}%` }} title={`First 6 months: ${firstSixMonths}`} />
         ) : null}
         {missingPct > 0 ? (
-          <div
-            className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
-            style={{ width: `${missingPct}%` }}
-            title={`Missing hire date: ${missingHireDate}`}
-          />
+          <div className="h-full bg-rose-500" style={{ width: `${missingPct}%` }} title={`Missing hire date: ${missingHireDate}`} />
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-emerald-500" />
           <span className="text-emerald-700">Eligible {eligible}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-amber-400" />
           <span className="text-amber-700">First 6 months {firstSixMonths}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-rose-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-rose-500" />
           <span className="text-rose-700">Missing data {missingHireDate}</span>
         </span>
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -690,34 +689,22 @@ function PaidUnpaidBar({
   const paidPct = (paidDays / total) * 100;
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between">
-        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Paid vs Unpaid days</p>
-        <p className="text-phx-xs font-bold text-slate-400">{formatDays(total)} total</p>
+    <LandingPanel bodyClassName="px-3 py-3 sm:px-4" right={<LandingMeta items={[`${formatDays(total)} total`]} />} title="Paid vs Unpaid days">
+      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
+        <div className="h-full bg-emerald-500" style={{ width: `${paidPct}%` }} title={`Paid: ${formatDays(paidDays)}`} />
+        <div className="h-full bg-amber-400" style={{ width: `${100 - paidPct}%` }} title={`Unpaid: ${formatDays(unpaidDays)}`} />
       </div>
-      <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
-        <div
-          className="h-full bg-gradient-to-r from-emerald-600 to-emerald-300 transition-all duration-500"
-          style={{ width: `${paidPct}%` }}
-          title={`Paid: ${formatDays(paidDays)}`}
-        />
-        <div
-          className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
-          style={{ width: `${100 - paidPct}%` }}
-          title={`Unpaid: ${formatDays(unpaidDays)}`}
-        />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-emerald-500" />
           <span className="text-emerald-700">Paid {vacationDaysLabel(paidDays)}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-amber-400" />
           <span className="text-amber-700">Unpaid {vacationDaysLabel(unpaidDays)}</span>
         </span>
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -773,41 +760,44 @@ function FilterPanel({
   }, [open]);
 
   return (
-    <div ref={panelRef} className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+    <div ref={panelRef} className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <button
-        className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-slate-50"
+        className={`flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50 motion-reduce:transition-none sm:px-4 ${LANDING_FOCUS}`}
         onClick={() => setOpen((c) => !c)}
         type="button"
         aria-expanded={open}
       >
-        <div className="flex items-center gap-2">
-          <Filter className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-phx-md font-bold text-slate-800">Filters</span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <LandingTick />
+          <span className={`text-phx-xs font-black uppercase tracking-[0.12em] ${LANDING_INK}`}>Filters</span>
           {filterCount > 0 ? (
-            <Badge className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-phx-2xs font-bold text-orange-700">
+            <span className="text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-amber-700">
               {filterCount} active
-            </Badge>
+            </span>
           ) : null}
-        </div>
-        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform duration-200", open ? "rotate-180" : "")} />
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform duration-200 motion-reduce:transition-none", open ? "rotate-180" : "")}
+        />
       </button>
       {open ? (
-        <div className="border-t border-slate-100 px-4 py-3">
+        <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
           <div className="grid gap-3 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             {children}
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
-            <Button
-              className="h-9 gap-2 rounded-sm bg-orange-500 px-4 text-phx-sm font-bold text-white hover:bg-orange-600"
+            <button
+              className={cn(phxButtonPrimaryClassName, "gap-2", LANDING_FOCUS)}
               onClick={() => {
                 onApply();
                 setOpen(false);
               }}
               type="button"
             >
-              <Filter className="h-3 w-3" />
+              <Filter aria-hidden="true" className="h-3 w-3" />
               Apply Filters
-            </Button>
+            </button>
           </div>
         </div>
       ) : null}
@@ -824,72 +814,68 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
     ? Math.min((row.annualUsedDays / row.annualEntitlementDays) * 100, 100)
     : 0;
   const remainPct = 100 - usedPct;
-  const barColor =
-    remainPct >= 60
-      ? "from-emerald-600 to-emerald-300"
-      : remainPct >= 30
-        ? "from-amber-500 to-amber-300"
-        : "from-rose-600 to-rose-300";
+  const barColor = remainPct >= 60 ? "bg-emerald-500" : remainPct >= 30 ? "bg-amber-400" : "bg-rose-500";
+  const eligibilityTone = eligibilityBadgeVariant(row.eligibilityStatus);
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-phx-md font-bold text-slate-900">{row.displayName}</p>
-          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
+    <div className="flex min-w-0 gap-3 border-b border-slate-200 px-3 py-3 sm:px-4">
+      <span aria-hidden="true" className={cn("w-1 shrink-0 self-stretch", STATE_TONES[eligibilityTone].fill)} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+          <div className="min-w-0 flex-1">
+            <p className={`break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{row.displayName}</p>
+            <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
+              {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
+            </p>
+          </div>
+          <StateText tone={eligibilityTone}>{eligibilityStatusLabel(row.eligibilityStatus)}</StateText>
+        </div>
+
+        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 min-[360px]:grid-cols-3">
+          <div className="min-w-0">
+            <p className={ROW_LABEL}>Hire date</p>
+            <p className={`mt-0.5 break-words text-phx-sm font-semibold tabular-nums ${LANDING_INK}`}>{formatDate(row.hireDate)}</p>
+          </div>
+          <div className="min-w-0">
+            <p className={ROW_LABEL}>Since hire</p>
+            <p className={`mt-0.5 break-words text-phx-sm font-semibold tabular-nums ${LANDING_INK}`}>{row.daysSinceHire == null ? "-" : vacationDaysLabel(row.daysSinceHire)}</p>
+          </div>
+          <div className="min-w-0">
+            <p className={ROW_LABEL}>6-mo date</p>
+            <p className={`mt-0.5 break-words text-phx-sm font-semibold tabular-nums ${LANDING_INK}`}>{formatDate(row.sixMonthAnniversary)}</p>
+          </div>
+        </div>
+
+        {/* Balance bar */}
+        <div className="mt-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
+            <span>Used {formatDays(row.annualUsedDays)}</span>
+            <span>of {formatDays(row.annualEntitlementDays)}</span>
+          </div>
+          <div className="mt-1 h-1 w-full overflow-hidden bg-slate-100">
+            <div className={cn("h-full", barColor)} style={{ width: `${usedPct}%` }} />
+          </div>
+          <p className={`mt-1 text-phx-sm font-extrabold tabular-nums ${LANDING_INK}`}>{vacationDaysLabel(row.annualBalanceDays)} remaining</p>
+        </div>
+
+        {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
+          <p className="mt-1.5 text-phx-xs font-bold tabular-nums text-amber-700">{vacationDaysLabel(row.daysUntilEligibility ?? 0)} until eligible</p>
+        ) : null}
+
+        {row.managerName ? (
+          <p className="mt-1.5 break-words text-phx-xs font-medium text-slate-500">
+            Manager: <span dir="auto">{row.managerName}</span>
           </p>
-        </div>
-        <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
-          {eligibilityStatusLabel(row.eligibilityStatus)}
-        </Badge>
+        ) : null}
+
+        {row.reviewFlags.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            {row.reviewFlags.map((flag) => (
+              <StateText key={flag} tone="warning">{flag}</StateText>
+            ))}
+          </div>
+        ) : null}
       </div>
-
-      <div className="mt-2.5 grid grid-cols-3 gap-2">
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Hire date</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
-        </div>
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Since hire</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{row.daysSinceHire == null ? "-" : vacationDaysLabel(row.daysSinceHire)}</p>
-        </div>
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">6-mo date</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.sixMonthAnniversary)}</p>
-        </div>
-      </div>
-
-      {/* Balance bar */}
-      <div className="mt-2.5">
-        <div className="flex items-center justify-between text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
-          <span>Used {formatDays(row.annualUsedDays)}</span>
-          <span>of {formatDays(row.annualEntitlementDays)}</span>
-        </div>
-        <div className="mt-1 h-2 w-full overflow-hidden rounded-sm bg-slate-100">
-          <div
-            className={cn("h-full bg-gradient-to-r transition-all duration-500", barColor)}
-            style={{ width: `${usedPct}%` }}
-          />
-        </div>
-        <p className="mt-1 text-phx-sm font-extrabold text-slate-900">{vacationDaysLabel(row.annualBalanceDays)} remaining</p>
-      </div>
-
-      {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-        <p className="mt-1.5 text-phx-xs font-bold text-amber-700">{vacationDaysLabel(row.daysUntilEligibility ?? 0)} until eligible</p>
-      ) : null}
-
-      {row.managerName ? (
-        <p className="mt-1.5 text-phx-xs font-medium text-slate-500">Manager: {row.managerName}</p>
-      ) : null}
-
-      {row.reviewFlags.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {row.reviewFlags.map((flag) => (
-            <Badge key={flag} variant="warning">{flag}</Badge>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -900,9 +886,9 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
 
 function SelfLeaveFact({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="min-w-0 bg-white px-3 py-2.5">
-      <dt className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
-      <dd className={cn("mt-0.5 break-words text-phx-md font-bold text-slate-900", tone)}>{value}</dd>
+    <div className="min-w-0 bg-white px-3 py-2.5 sm:px-4">
+      <dt className={ROW_LABEL}>{label}</dt>
+      <dd className={cn("mt-0.5 break-words text-phx-md font-bold tabular-nums", tone ?? LANDING_INK)} dir="auto">{value}</dd>
     </div>
   );
 }
@@ -921,20 +907,17 @@ function LeaveBalanceDeductionsPanel({
 }) {
   if (!data.failed && data.rows.length === 0) return null;
   return (
-    <section className="mt-2 min-w-0 rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-5">
-      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-        {isSelfView ? "Taken from your annual leave" : "Deductions taken from annual leave"}
-      </p>
+    <LandingPanel className="mt-2" title={isSelfView ? "Taken from your annual leave" : "Deductions taken from annual leave"}>
       {data.failed ? (
-        <p className="mt-2 text-phx-sm font-semibold text-amber-700">
+        <LandingRailLine rail="bg-amber-400">
           The deductions taken from annual leave could not be read right now. Reload the page to try again.
-        </p>
+        </LandingRailLine>
       ) : (
-        <ul className="mt-3 divide-y divide-slate-100">
+        <ul className="divide-y divide-slate-200">
           {data.rows.map((row) => (
-            <li className="py-3 first:pt-0 last:pb-0" key={`${row.employeeHrId}-${row.workDate}-${row.chargedAt}`}>
-              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-phx-sm font-bold text-slate-900">
-                {isSelfView ? null : <span>{row.employeeName}</span>}
+            <li className="px-3 py-3 sm:px-4" key={`${row.employeeHrId}-${row.workDate}-${row.chargedAt}`}>
+              <p className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-phx-sm font-bold ${LANDING_INK}`}>
+                {isSelfView ? null : <span dir="auto">{row.employeeName}</span>}
                 {/*
                   Said beside the NAME, because that is what it is about. Not in the self view: a
                   leaver cannot sign in anyway, and "you have left the company" is not something to
@@ -947,16 +930,16 @@ function LeaveBalanceDeductionsPanel({
                   </span>
                 ) : null}
                 <span className="tabular-nums text-slate-600">{formatDate(row.workDate)}</span>
-                <span className="text-sky-800">
+                <span className="tabular-nums text-sky-800">
                   {vacationDaysLabel(row.days)} from annual leave
                 </span>
               </p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-phx-sm leading-5 text-slate-700">{row.comment}</p>
+              <p dir="auto" className="mt-1 whitespace-pre-wrap break-words text-phx-sm leading-5 text-slate-700">{row.comment}</p>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </LandingPanel>
   );
 }
 
@@ -979,12 +962,13 @@ function SelfLeaveBalancePanel({
 }) {
   if (!row) {
     return (
-      <div className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-        <CalendarDays className="mx-auto h-6 w-6 text-slate-300" />
-        <p className="mt-3 text-phx-md font-bold text-slate-900">Your leave balance is not available yet</p>
-        <p className="mx-auto mt-1 max-w-md text-phx-sm font-medium leading-5 text-slate-500">
-          HR needs your employee record complete before it can be calculated. Ask them through Request Support.
-        </p>
+      <div className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <LandingRailLine rail="bg-slate-300">
+          <span className={`block font-bold ${LANDING_INK}`}>Your leave balance is not available yet</span>
+          <span className="mt-0.5 block">
+            HR needs your employee record complete before it can be calculated. Ask them through Request Support.
+          </span>
+        </LandingRailLine>
       </div>
     );
   }
@@ -992,83 +976,73 @@ function SelfLeaveBalancePanel({
   const hasEntitlement = row.annualEntitlementDays > 0;
   const usedPct = hasEntitlement ? Math.min((row.annualUsedDays / row.annualEntitlementDays) * 100, 100) : 0;
   const remainPct = 100 - usedPct;
+  // On the navy board: the figure takes the tone scale's light step, the bar its fill.
   const tone = !hasEntitlement
-    ? { bar: "from-slate-400 to-slate-300", rail: "bg-slate-300", text: "text-slate-700" }
+    ? { bar: "bg-white/40", figure: "text-white" }
     : remainPct >= 60
-      ? { bar: "from-emerald-600 to-emerald-300", rail: "bg-emerald-500", text: "text-emerald-700" }
+      ? { bar: "bg-emerald-400", figure: "text-emerald-300" }
       : remainPct >= 30
-        ? { bar: "from-amber-500 to-amber-300", rail: "bg-amber-500", text: "text-amber-700" }
-        : { bar: "from-rose-600 to-rose-300", rail: "bg-rose-500", text: "text-rose-700" };
+        ? { bar: "bg-amber-400", figure: "text-amber-300" }
+        : { bar: "bg-rose-400", figure: "text-rose-300" };
   const daysUntilEligible = row.eligibilityStatus === "first_six_months" ? (row.daysUntilEligibility ?? 0) : 0;
+  const eligibilityTone = eligibilityBadgeVariant(row.eligibilityStatus);
 
   return (
     <div className="grid gap-2 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-      <section className="min-w-0 rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-        <div aria-hidden="true" className={cn("h-0.5 w-full", tone.rail)} />
-        <div className="p-4 sm:p-5">
-          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Annual leave left</p>
-          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className={cn("text-phx-3xl font-extrabold leading-none tracking-[-0.04em] tabular-nums", tone.text)}>
+      <div className="flex min-w-0 flex-col gap-2">
+        <LandingNavyBoard label="Annual leave left">
+          <div className="px-1 pb-1">
+            <LandingFigure onNavy tone={tone.figure} unit={row.annualBalanceDays === 1 ? "day" : "days"}>
               {formatDays(row.annualBalanceDays)}
-            </span>
-            <span className="text-phx-md font-bold text-slate-500">
-              {row.annualBalanceDays === 1 ? "day" : "days"}
-            </span>
-          </p>
-          <div className="mt-4">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
-              <span>Used {formatDays(row.annualUsedDays)}</span>
-              <span>of {formatDays(row.annualEntitlementDays)} this leave year</span>
-            </div>
-            <div className="mt-1 h-2 w-full overflow-hidden rounded-sm bg-slate-100">
-              <div className={cn("h-full bg-gradient-to-r transition-all duration-500", tone.bar)} style={{ width: `${usedPct}%` }} />
+            </LandingFigure>
+            <div className="mt-4">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-white/55">
+                <span>Used {formatDays(row.annualUsedDays)}</span>
+                <span>of {formatDays(row.annualEntitlementDays)} this leave year</span>
+              </div>
+              <div className="mt-1 h-1 w-full overflow-hidden bg-white/10">
+                <div className={cn("h-full", tone.bar)} style={{ width: `${usedPct}%` }} />
+              </div>
             </div>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <Link
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm bg-orange-500 px-4 text-phx-sm font-bold text-white transition hover:bg-orange-600"
-              href={requestHref}
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-              Request vacation
-            </Link>
-            <Link
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 text-phx-sm font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
-              href={requestsHref}
-            >
-              My requests
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
+        </LandingNavyBoard>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <LandingCta href={requestHref} variant="solid">
+            <CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />
+            Request vacation
+          </LandingCta>
+          <LandingCta href={requestsHref}>
+            My requests
+            <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+          </LandingCta>
         </div>
-      </section>
+      </div>
 
-      <section className="min-w-0 rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Eligibility</p>
-          <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
-            {eligibilityStatusLabel(row.eligibilityStatus)}
-          </Badge>
-        </div>
+      <LandingPanel
+        right={<StateText tone={eligibilityTone}>{eligibilityStatusLabel(row.eligibilityStatus)}</StateText>}
+        title="Eligibility"
+      >
         {daysUntilEligible > 0 ? (
-          <p className="mt-2 text-phx-md font-bold leading-5 text-amber-700">
-            {daysUntilEligible} {daysUntilEligible === 1 ? "day" : "days"} until you can take paid annual leave
-          </p>
+          <LandingRailLine rail="bg-amber-400">
+            <span className="font-bold tabular-nums text-amber-700">
+              {daysUntilEligible} {daysUntilEligible === 1 ? "day" : "days"} until you can take paid annual leave
+            </span>
+          </LandingRailLine>
         ) : null}
-        <dl className="mt-3 grid grid-cols-2 gap-px border border-slate-100 bg-slate-100">
+        <dl className={cn("grid grid-cols-2 gap-px bg-slate-200", daysUntilEligible > 0 ? "border-t border-slate-200" : null)}>
           <SelfLeaveFact label="Hire date" value={formatDate(row.hireDate)} />
           <SelfLeaveFact label="Six months on" value={formatDate(row.sixMonthAnniversary)} />
           <SelfLeaveFact label="Days since hire" value={row.daysSinceHire != null ? String(row.daysSinceHire) : "-"} />
           <SelfLeaveFact label="Manager" value={row.managerName ?? "Not assigned"} />
         </dl>
         {row.reviewFlags.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 border-t border-slate-200 px-3 py-2.5 sm:px-4">
             {row.reviewFlags.map((flag) => (
-              <Badge key={flag} variant="warning">{flag}</Badge>
+              <StateText key={flag} tone="warning">{flag}</StateText>
             ))}
           </div>
         ) : null}
-      </section>
+      </LandingPanel>
     </div>
   );
 }
@@ -1105,71 +1079,81 @@ function RequestCard({
   row: VacationRequestRecord;
 }) {
   const dateRange = row.startDate === row.endDate ? formatDate(row.startDate) : `${formatDate(row.startDate)} to ${formatDate(row.endDate)}`;
+  const statusTone = statusBadgeVariant(row.status);
+  // The timeline / documents opener: quiet navy text, a real button with the focus ring.
+  const timelineButtonClass = `inline-flex min-h-8 items-center gap-1 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-600 transition hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`;
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-2">
+    <div
+      className={cn(
+        "flex min-w-0 gap-3 border-b border-slate-200 px-3 py-3 sm:px-4",
+        selfView ? "lg:odd:border-r" : null,
+      )}
+    >
+      <span aria-hidden="true" className={cn("w-1 shrink-0 self-stretch", STATE_TONES[statusTone].fill)} />
+      <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
         <div className="min-w-0 flex-1">
           {selfView ? (
             <>
-              <p className="text-phx-md font-bold text-slate-900">{dateRange}</p>
-              <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+              <p className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{dateRange}</p>
+              <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
                 {vacationTypeLabel(row.vacationType)} · {vacationDayPartLabel(row.dayPart)} · {row.requestCode}
               </p>
             </>
           ) : (
             <>
-              <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
-              <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+              <p className={`break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{row.employeeName}</p>
+              <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
                 {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
               </p>
-              <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.requestCode}</p>
+              <p className="mt-0.5 break-words text-phx-xs font-medium tabular-nums text-slate-400">{row.requestCode}</p>
             </>
           )}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <Badge variant={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</Badge>
-          <Badge variant={paymentBadgeVariant(row.paymentStatus)}>{paymentStatusLabel(row.paymentStatus)}</Badge>
+        <div className="flex min-w-0 max-w-full flex-col items-start gap-1 sm:items-end">
+          <StateText tone={statusTone}>{dynamicStatusLabel(row)}</StateText>
+          <StateText tone={paymentBadgeVariant(row.paymentStatus)}>{paymentStatusLabel(row.paymentStatus)}</StateText>
         </div>
       </div>
 
       {selfView ? (
-        <div className="mt-2.5 grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
-            <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">
+        <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
+          <div className="min-w-0">
+            <p className={ROW_LABEL}>Duration</p>
+            <p className={`mt-0.5 text-phx-sm font-extrabold tabular-nums ${LANDING_INK}`}>
               {formatDays(row.durationDays)} {row.durationDays === 1 ? "day" : "days"}
             </p>
           </div>
-          <div>
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
-            <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">
+          <div className="min-w-0">
+            <p className={ROW_LABEL}>Balance</p>
+            <p className="mt-0.5 text-phx-sm font-semibold tabular-nums text-slate-600">
               {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
-              <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+              <span className={`font-bold ${LANDING_INK}`}>{formatDays(row.balanceAfterDays)}</span>
             </p>
           </div>
         </div>
       ) : (
         <>
-          <div className="mt-2.5 grid grid-cols-2 gap-2">
-            <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Type</p>
-              <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{vacationTypeLabel(row.vacationType)}</p>
+          <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2">
+            <div className="min-w-0">
+              <p className={ROW_LABEL}>Type</p>
+              <p className={`mt-0.5 break-words text-phx-sm font-semibold ${LANDING_INK}`}>{vacationTypeLabel(row.vacationType)}</p>
               <p className="text-phx-xs font-medium text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
             </div>
-            <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
-              <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{vacationDaysLabel(row.durationDays)}</p>
+            <div className="min-w-0">
+              <p className={ROW_LABEL}>Duration</p>
+              <p className={`mt-0.5 text-phx-sm font-extrabold tabular-nums ${LANDING_INK}`}>{vacationDaysLabel(row.durationDays)}</p>
             </div>
           </div>
 
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
-              <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+            <div className="min-w-0">
+              <p className={ROW_LABEL}>From</p>
+              <p className={`mt-0.5 text-phx-sm font-semibold tabular-nums ${LANDING_INK}`}>{formatDate(row.startDate)}</p>
             </div>
-            <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
-              <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
+            <div className="min-w-0">
+              <p className={ROW_LABEL}>To</p>
+              <p className={`mt-0.5 text-phx-sm font-semibold tabular-nums ${LANDING_INK}`}>{formatDate(row.endDate)}</p>
             </div>
           </div>
         </>
@@ -1177,54 +1161,58 @@ function RequestCard({
 
       {selfView ? null : (
         <div className="mt-2">
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">
+          <p className={ROW_LABEL}>Balance</p>
+          <p className="mt-0.5 text-phx-sm font-semibold tabular-nums text-slate-600">
             {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
-            <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+            <span className={`font-bold ${LANDING_INK}`}>{formatDays(row.balanceAfterDays)}</span>
           </p>
         </div>
       )}
 
       {row.paymentStatus === "partial" ? (
-        <p className="mt-1.5 text-phx-xs font-bold text-amber-700">
+        <p className="mt-1.5 text-phx-xs font-bold tabular-nums text-amber-700">
           {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
         </p>
       ) : null}
       {row.unpaidReason ? <p className="mt-1 text-phx-xs font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
 
       {row.vacationType === "compensatory" ? (
-        <div className="mt-2 rounded-sm border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-orange-900">
-          <p>{row.compensatoryEventName ?? "Compensatory event"}</p>
-          <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+        <div className="mt-2 border-l-2 border-slate-300 pl-2 text-phx-xs font-semibold leading-4 text-slate-700">
+          <p className="break-words" dir="auto">{row.compensatoryEventName ?? "Compensatory event"}</p>
+          <p className="break-words text-slate-500">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
           <RowEvidence canReviewAttachments={canReviewAttachments} row={row} />
         </div>
       ) : null}
       {row.vacationType === "sick" ? <RowEvidence canReviewAttachments={canReviewAttachments} row={row} /> : null}
       {row.vacationType === "other" && row.notes ? (
-        <p className="mt-2 rounded-sm border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-amber-900">
+        <p className="mt-2 break-words border-l-2 border-amber-400 pl-2 text-phx-xs font-semibold leading-4 text-slate-700" dir="auto">
           {row.notes}
         </p>
       ) : null}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-phx-xs font-medium text-slate-500">
-        <span>Submitted {formatDateTime(row.createdAt)}</span>
-        {row.managerName ? <span>Manager: {row.managerName}</span> : null}
+        <span className="tabular-nums">Submitted {formatDateTime(row.createdAt)}</span>
+        {row.managerName ? (
+          <span className="break-words">
+            Manager: <span dir="auto">{row.managerName}</span>
+          </span>
+        ) : null}
       </div>
       {(row.slaStatus.isOverdue || row.overlapWarnings.length > 0) ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {row.slaStatus.isOverdue ? <Badge variant="danger">SLA overdue</Badge> : null}
-          {row.overlapWarnings.length > 0 ? <Badge variant="warning">{overlapWarningsLabel(row.overlapWarnings.length)}</Badge> : null}
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+          {row.slaStatus.isOverdue ? <StateText tone="danger">SLA overdue</StateText> : null}
+          {row.overlapWarnings.length > 0 ? <StateText tone="warning">{overlapWarningsLabel(row.overlapWarnings.length)}</StateText> : null}
         </div>
       ) : null}
       {!canAdminManage ? (
         <button
-          className="mt-2 flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
+          className={cn("mt-2", timelineButtonClass)}
           onClick={() => onReview(row)}
           type="button"
         >
           {/* For a sick or compensatory request the drawer also holds the dated documents and the
               button that adds more to them, so the label has to say so or the employee never finds it. */}
-          <FileText className="h-3 w-3" />{" "}
+          <FileText aria-hidden="true" className="h-3 w-3" />{" "}
           {row.vacationType === "sick" || row.vacationType === "compensatory" ? "Documents & timeline" : "Timeline"}
         </button>
       ) : null}
@@ -1237,32 +1225,33 @@ function RequestCard({
       {/* Decision info or action buttons */}
       {row.canDecide ? (
         <Link
-          className="mt-2.5 flex items-center justify-center gap-1.5 rounded-sm border border-orange-300 bg-white px-3 py-1.5 text-phx-xs font-bold text-orange-700 transition hover:bg-orange-50"
+          className={landingActionClassName("outline", "mt-2.5 w-full")}
           href={`${approvalsBase}/${encodeURIComponent(row.id)}`}
         >
-          <ArrowRight className="h-3 w-3" /> Decide in Leave Approvals
+          <ArrowRight aria-hidden="true" className="h-3 w-3" /> Decide in Leave Approvals
         </Link>
       ) : (
         <div className="mt-2 text-phx-xs text-slate-500">
-          {row.hrDecisionAt ? <p>HR: {formatDateTime(row.hrDecisionAt)}</p> : null}
-          {row.managerDecisionAt ? <p>Manager: {formatDateTime(row.managerDecisionAt)}</p> : null}
-          {row.managerDecisionComment ? <p className="text-slate-600">{row.managerDecisionComment}</p> : null}
-          {row.hrDecisionComment ? <p className="text-slate-600">{row.hrDecisionComment}</p> : null}
+          {row.hrDecisionAt ? <p className="tabular-nums">HR: {formatDateTime(row.hrDecisionAt)}</p> : null}
+          {row.managerDecisionAt ? <p className="tabular-nums">Manager: {formatDateTime(row.managerDecisionAt)}</p> : null}
+          {row.managerDecisionComment ? <p className="break-words text-slate-600" dir="auto">{row.managerDecisionComment}</p> : null}
+          {row.hrDecisionComment ? <p className="break-words text-slate-600" dir="auto">{row.hrDecisionComment}</p> : null}
         </div>
       )}
 
       {canAdminManage ? (
-        <div className="mt-2 flex gap-2 border-t border-slate-100 pt-2">
+        <div className="mt-2 flex gap-2 border-t border-slate-200 pt-2">
           <button
-            className="flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
+            className={timelineButtonClass}
             onClick={() => onReview(row)}
             type="button"
           >
-            <FileText className="h-3 w-3" />{" "}
+            <FileText aria-hidden="true" className="h-3 w-3" />{" "}
             {row.vacationType === "sick" || row.vacationType === "compensatory" ? "Documents & timeline" : "Timeline"}
           </button>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
@@ -1596,9 +1585,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
           .vacation-report-premium .print\\:hidden { display: none !important; }
           .vacation-report-premium table { font-size: 10px; }
           .vacation-report-premium td, .vacation-report-premium th { padding: 4px 6px; }
-          nav, header, footer, aside { display: none !important; }
+          nav, header:not(section > header), footer, aside { display: none !important; }
         }
       `}</style>
+      {/* The page chrome's header is hidden in print; a panel's own title row (a LandingPanel's
+          <header>, directly inside its <section>) prints, or a printed table loses its name. */}
       <div className="space-y-3" dir="auto">
         {showHero ? (
           <AdminPageHero
@@ -1610,30 +1601,16 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
         ) : null}
 
         {/* ── Error Banners ──────────────────────────────────────── */}
-        {initialError ? (
-          <AdminCallout tone="danger">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{initialError}</span>
-          </AdminCallout>
-        ) : null}
-        {actionError ? (
-          <AdminCallout tone="danger">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{actionError}</span>
-          </AdminCallout>
-        ) : null}
-        {adminError ? (
-          <AdminCallout tone="danger">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{adminError}</span>
-          </AdminCallout>
-        ) : null}
+        {initialError ? <ReportAlert>{initialError}</ReportAlert> : null}
+        {actionError ? <ReportAlert>{actionError}</ReportAlert> : null}
+        {adminError ? <ReportAlert>{adminError}</ReportAlert> : null}
 
         {/* Two equal columns on a phone, never a sideways-scrolling strip: `overflow-x-auto` over
             nowrap tabs is the pattern the fits-the-screen rule names. A label that outgrows its half
-            wraps inside the tab. From `sm` the strip is the content-width row it always was. */}
+            wraps inside the tab. From `sm` the strip is the content-width row it always was. The
+            active tab is a navy underline, the count beside it plain tabular figures. */}
         <div
-          className="grid w-full grid-cols-2 gap-0.5 rounded-sm border border-slate-200 bg-slate-50 p-0.5 sm:flex"
+          className="grid w-full grid-cols-2 border-b border-slate-200 sm:flex sm:gap-6"
           role="tablist"
           aria-label="Vacation report tabs"
         >
@@ -1643,8 +1620,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <button
                 aria-selected={active}
                 className={cn(
-                  "flex min-h-9 items-center justify-center gap-2 rounded-sm px-3 py-1 text-center text-phx-md font-bold leading-tight transition sm:shrink-0 sm:whitespace-nowrap",
-                  active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
+                  "-mb-px flex min-h-10 items-center justify-center gap-2 border-b-2 px-3 py-1 text-center text-phx-xs font-bold uppercase leading-tight tracking-[0.1em] transition motion-reduce:transition-none sm:min-h-9 sm:shrink-0 sm:justify-start sm:whitespace-nowrap sm:px-0",
+                  LANDING_FOCUS,
+                  active ? "border-[#08111f] text-[#08111f]" : "border-transparent text-slate-500 hover:text-[#08111f]",
                 )}
                 key={tab.value}
                 role="tab"
@@ -1653,10 +1631,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               >
                 {tab.label}
                 {tab.count !== null ? (
-                  <span className={cn(
-                    "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-phx-2xs font-bold",
-                    active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600",
-                  )}>
+                  <span className={cn("tabular-nums", active ? "text-[#08111f]" : "text-slate-400")}>
                     {tab.count}
                   </span>
                 ) : null}
@@ -1769,7 +1744,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <div className="flex flex-wrap gap-1.5">
                   {DATE_PRESETS.map((preset) => (
                     <button
-                      className="rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                      className={landingActionClassName("outline")}
                       key={preset.value}
                       onClick={() => applyDatePreset(preset.value)}
                       type="button"
@@ -1802,44 +1777,46 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
         {showEntitlementsTab && !isSelfView ? (
           <div className="space-y-3">
-            {/* Metric cards */}
+            {/* Metric cards — the view's ONE navy board */}
             {!initialData ? (
-              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-                {[0, 1, 2, 3, 4].map((i) => <MetricCardSkeleton key={i} />)}
-              </div>
+              <LandingNavyBoardLoading label="Leave Entitlements" />
             ) : (
-              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-                <MetricCard
-                  description="Active employees in your visible review scope."
-                  label="Active employees"
-                  tone="blue"
-                  value={employeeEligibilitySummary?.activeEmployees ?? 0}
-                />
-                <MetricCard
-                  description="Completed 6 months, can use paid annual leave."
-                  label="Eligible now"
-                  tone="emerald"
-                  value={employeeEligibilitySummary?.eligibleNow ?? 0}
-                />
-                <MetricCard
-                  description="Still inside the first 6 months of service."
-                  label="First 6 months"
-                  tone="orange"
-                  value={employeeEligibilitySummary?.inFirstSixMonths ?? 0}
-                />
-                <MetricCard
-                  description="Need HR data correction before eligibility."
-                  label="Missing hire date"
-                  tone="rose"
-                  value={employeeEligibilitySummary?.missingHireDate ?? 0}
-                />
-                <MetricCard
-                  description="Eligible employees with no paid balance left."
-                  label="Zero balance"
-                  tone="violet"
-                  value={employeeEligibilitySummary?.zeroBalance ?? 0}
-                />
-              </div>
+              <LandingNavyBoard label="Leave Entitlements">
+                <div className="@container">
+                  <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5">
+                    <MetricCard
+                      description="Active employees in your visible review scope."
+                      label="Active employees"
+                      tone="blue"
+                      value={employeeEligibilitySummary?.activeEmployees ?? 0}
+                    />
+                    <MetricCard
+                      description="Completed 6 months, can use paid annual leave."
+                      label="Eligible now"
+                      tone="emerald"
+                      value={employeeEligibilitySummary?.eligibleNow ?? 0}
+                    />
+                    <MetricCard
+                      description="Still inside the first 6 months of service."
+                      label="First 6 months"
+                      tone="orange"
+                      value={employeeEligibilitySummary?.inFirstSixMonths ?? 0}
+                    />
+                    <MetricCard
+                      description="Need HR data correction before eligibility."
+                      label="Missing hire date"
+                      tone="rose"
+                      value={employeeEligibilitySummary?.missingHireDate ?? 0}
+                    />
+                    <MetricCard
+                      description="Eligible employees with no paid balance left."
+                      label="Zero balance"
+                      tone="violet"
+                      value={employeeEligibilitySummary?.zeroBalance ?? 0}
+                    />
+                  </div>
+                </div>
+              </LandingNavyBoard>
             )}
 
             {/* Eligibility distribution bar */}
@@ -1852,43 +1829,31 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               />
             ) : null}
 
-            {/* Table header */}
-            <div className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-emerald-600">
-                      {canAdminManage ? "All entitlements" : "Visible scope review"}
-                    </p>
-                    <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee leave entitlements</h3>
-                    <p className="mt-0.5 text-phx-sm font-medium leading-5 text-slate-500">
-                      Tracks visible employees against the 6-month rule and current annual leave balance.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      {employeeEligibility.length} records
-                    </Badge>
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
-                      onClick={() => exportEntitlementsCSV(sortedEntitlements)}
-                      title="Export to CSV"
-                      type="button"
-                    >
-                      <Download className="h-3 w-3" /> CSV
-                    </button>
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
-                      onClick={() => window.print()}
-                      title="Print report"
-                      type="button"
-                    >
-                      <Printer className="h-3 w-3" /> Print
-                    </button>
-                  </div>
-                </div>
-              </div>
-
+            {/* The register */}
+            <LandingPanel
+              right={
+                <>
+                  <LandingMeta items={[canAdminManage ? "All entitlements" : "Visible scope review", `${employeeEligibility.length} records`]} />
+                  <button
+                    className={landingActionClassName("outline", "print:hidden")}
+                    onClick={() => exportEntitlementsCSV(sortedEntitlements)}
+                    title="Export to CSV"
+                    type="button"
+                  >
+                    <Download aria-hidden="true" className="h-3 w-3" /> CSV
+                  </button>
+                  <button
+                    className={landingActionClassName("outline", "print:hidden")}
+                    onClick={() => window.print()}
+                    title="Print report"
+                    type="button"
+                  >
+                    <Printer aria-hidden="true" className="h-3 w-3" /> Print
+                  </button>
+                </>
+              }
+              title="Employee leave entitlements"
+            >
               {/* Desktop table (xl+). table-fixed + colgroup so every column shares the
                   available width and the table never scrolls sideways — cards carry every
                   narrower viewport below. Columns are MERGED, not shrunk, and raw HR IDs are
@@ -1903,62 +1868,62 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     <col className="w-[14%]" />
                     <col className="w-[12%]" />
                   </colgroup>
-                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <tr>
                       <SortableHeader active={entitlementSort === "fullName"} direction={entitlementSortDir} sortKey="fullName" onSort={toggleEntitlementSort}>Employee</SortableHeader>
                       <SortableHeader active={entitlementSort === "daysSinceHire"} direction={entitlementSortDir} sortKey="daysSinceHire" onSort={toggleEntitlementSort}>Hire &amp; tenure</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Eligibility</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Eligibility</th>
                       <SortableHeader active={entitlementSort === "annualBalanceDays"} direction={entitlementSortDir} sortKey="annualBalanceDays" onSort={toggleEntitlementSort}>Balance</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
-                      <th className="border-b border-slate-100 px-3 py-2.5">Review</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Review</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {paginatedEntitlements.map((row) => (
-                      <tr key={row.hrId} className="bg-white align-top transition hover:bg-emerald-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-bold text-slate-900">{row.displayName}</p>
+                      <tr key={row.hrId} className="bg-white align-top transition hover:bg-slate-50 motion-reduce:transition-none">
+                        <td className="px-3 py-2.5">
+                          <p className={`break-words font-bold ${LANDING_INK}`} dir="auto">{row.displayName}</p>
                           <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "—"}</p>
                           <p className="text-phx-xs text-slate-400">{employmentStatusLabel(row.employmentStatus) || "—"}</p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
-                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{row.daysSinceHire == null ? "—" : vacationDaysLabel(row.daysSinceHire)} since hire</p>
-                          <p className="text-phx-xs text-slate-400">6-mo: {formatDate(row.sixMonthAnniversary)}</p>
+                        <td className="px-3 py-2.5">
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatDate(row.hireDate)}</p>
+                          <p className="mt-0.5 text-phx-xs font-medium tabular-nums text-slate-500">{row.daysSinceHire == null ? "—" : vacationDaysLabel(row.daysSinceHire)} since hire</p>
+                          <p className="text-phx-xs tabular-nums text-slate-400">6-mo: {formatDate(row.sixMonthAnniversary)}</p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
+                        <td className="px-3 py-2.5">
+                          <StateText tone={eligibilityBadgeVariant(row.eligibilityStatus)}>
                             {eligibilityStatusLabel(row.eligibilityStatus)}
-                          </Badge>
+                          </StateText>
                           {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-                            <p className="mt-1 text-phx-xs font-bold text-amber-700">{vacationDaysLabel(row.daysUntilEligibility ?? 0)} left</p>
+                            <p className="mt-1 text-phx-xs font-bold tabular-nums text-amber-700">{vacationDaysLabel(row.daysUntilEligibility ?? 0)} left</p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-bold text-slate-900">{formatDays(row.annualBalanceDays)} left</p>
-                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                        <td className="px-3 py-2.5">
+                          <p className={`font-bold tabular-nums ${LANDING_INK}`}>{formatDays(row.annualBalanceDays)} left</p>
+                          <p className="mt-0.5 text-phx-xs font-medium tabular-nums text-slate-500">
                             {formatDays(row.annualEntitlementDays)} total / {formatDays(row.annualUsedDays)} used
                           </p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "—"}</p>
+                        <td className="px-3 py-2.5">
+                          <p className="break-words font-semibold text-slate-700" dir="auto">{row.managerName ?? "—"}</p>
                         </td>
                         <td className="px-3 py-2.5">
                           {row.reviewFlags.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap gap-x-3 gap-y-1">
                               {row.reviewFlags.map((flag) => (
-                                <Badge key={flag} variant="warning">{flag}</Badge>
+                                <StateText key={flag} tone="warning">{flag}</StateText>
                               ))}
                             </div>
                           ) : (
-                            <span className="text-phx-xs font-bold text-emerald-600">No issue</span>
+                            <span className="text-phx-xs font-bold text-emerald-700">No issue</span>
                           )}
                         </td>
                       </tr>
                     ))}
                     {paginatedEntitlements.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={6}>
+                        <td className="px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={6}>
                           No active employees matched the current filters.
                         </td>
                       </tr>
@@ -1968,10 +1933,10 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <PaginationControls page={entitlementPage} pageSize={PAGE_SIZE} total={sortedEntitlements.length} onPageChange={setEntitlementPage} />
               </div>
 
-              {/* Card view (< xl) */}
-              <div className="block xl:hidden space-y-2 p-3">
+              {/* Card view (< xl) — one ruled row per person, the eligibility on its left rail */}
+              <div className="block xl:hidden">
                 {paginatedEntitlements.length === 0 ? (
-                  <p className="py-6 text-center text-phx-md font-medium text-slate-500">
+                  <p className="px-3 py-6 text-center text-phx-md font-medium text-slate-500">
                     No active employees matched the current filters.
                   </p>
                 ) : (
@@ -1981,7 +1946,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 )}
                 <PaginationControls page={entitlementPage} pageSize={PAGE_SIZE} total={sortedEntitlements.length} onPageChange={setEntitlementPage} />
               </div>
-            </div>
+            </LandingPanel>
           </div>
         ) : null}
 
@@ -1991,100 +1956,117 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
         {showRequestsTab ? (
           <div className="space-y-3">
-            {/* Metric cards */}
+            {/* Metric cards — the view's ONE navy board */}
             {!initialData ? (
-              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-                {[0, 1, 2, 3, 4].map((i) => <MetricCardSkeleton key={i} />)}
-              </div>
+              <LandingNavyBoardLoading label={isSelfView ? "My Requests" : "All Requests"} />
             ) : isSelfView ? (
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                <MetricCard
-                  description="Waiting on your manager or HR."
-                  label="Pending"
-                  tone="orange"
-                  value={summary?.pending ?? 0}
-                />
-                <MetricCard
-                  description="Approved by HR."
-                  label="Approved"
-                  tone="emerald"
-                  value={summary?.approved ?? 0}
-                />
-                <MetricCard
-                  description="Rejected by your manager or HR."
-                  label="Rejected"
-                  tone="rose"
-                  value={summary?.rejected ?? 0}
-                />
-                <MetricCard
-                  description={`${formatDays(summary?.paidDays ?? 0)} paid · ${formatDays(summary?.unpaidDays ?? 0)} unpaid`}
-                  label="Days requested"
-                  tone="violet"
-                  value={formatDays((summary?.paidDays ?? 0) + (summary?.unpaidDays ?? 0))}
-                />
-              </div>
+              <LandingNavyBoard label="My Requests">
+                <div className="@container">
+                  <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2 @3xl:grid-cols-4">
+                    <MetricCard
+                      description="Waiting on your manager or HR."
+                      label="Pending"
+                      tone="orange"
+                      value={summary?.pending ?? 0}
+                    />
+                    <MetricCard
+                      description="Approved by HR."
+                      label="Approved"
+                      tone="emerald"
+                      value={summary?.approved ?? 0}
+                    />
+                    <MetricCard
+                      description="Rejected by your manager or HR."
+                      label="Rejected"
+                      tone="rose"
+                      value={summary?.rejected ?? 0}
+                    />
+                    <MetricCard
+                      description={`${formatDays(summary?.paidDays ?? 0)} paid · ${formatDays(summary?.unpaidDays ?? 0)} unpaid`}
+                      label="Days requested"
+                      tone="violet"
+                      value={formatDays((summary?.paidDays ?? 0) + (summary?.unpaidDays ?? 0))}
+                    />
+                  </div>
+                </div>
+              </LandingNavyBoard>
             ) : (
-              <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-                <MetricCard
-                  description="Visible requests after applied filters."
-                  label="Total"
-                  tone="blue"
-                  value={summary?.total ?? 0}
-                />
-                <MetricCard
-                  description="Awaiting manager or HR decision."
-                  label="Pending"
-                  tone="orange"
-                  value={summary?.pending ?? 0}
-                />
-                <MetricCard
-                  description="Approved by HR final review."
-                  label="Approved"
-                  tone="emerald"
-                  value={summary?.approved ?? 0}
-                />
-                <MetricCard
-                  description="Rejected by HR final review."
-                  label="Rejected"
-                  tone="rose"
-                  value={summary?.rejected ?? 0}
-                />
-                <MetricCard
-                  description={`${formatDays(summary?.paidDays ?? 0)} paid / ${formatDays(summary?.unpaidDays ?? 0)} unpaid days.`}
-                  label="Days"
-                  tone="violet"
-                  value={`${formatDays((summary?.paidDays ?? 0) + (summary?.unpaidDays ?? 0))}`}
-                />
-              </div>
+              <LandingNavyBoard label="All Requests">
+                <div className="@container">
+                  <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5">
+                    <MetricCard
+                      description="Visible requests after applied filters."
+                      label="Total"
+                      tone="blue"
+                      value={summary?.total ?? 0}
+                    />
+                    <MetricCard
+                      description="Awaiting manager or HR decision."
+                      label="Pending"
+                      tone="orange"
+                      value={summary?.pending ?? 0}
+                    />
+                    <MetricCard
+                      description="Approved by HR final review."
+                      label="Approved"
+                      tone="emerald"
+                      value={summary?.approved ?? 0}
+                    />
+                    <MetricCard
+                      description="Rejected by HR final review."
+                      label="Rejected"
+                      tone="rose"
+                      value={summary?.rejected ?? 0}
+                    />
+                    <MetricCard
+                      description={`${formatDays(summary?.paidDays ?? 0)} paid / ${formatDays(summary?.unpaidDays ?? 0)} unpaid days.`}
+                      label="Days"
+                      tone="violet"
+                      value={`${formatDays((summary?.paidDays ?? 0) + (summary?.unpaidDays ?? 0))}`}
+                    />
+                  </div>
+                </div>
+              </LandingNavyBoard>
             )}
 
             {/* HR's operating view (queue by stage, SLA breaches, evidence backlog, the daily SLA
-                run). None of it is about the viewer's own requests, so an own-leave viewer skips it. */}
+                run). None of it is about the viewer's own requests, so an own-leave viewer skips it.
+                One white sheet, the tiles on hairlines, counted off the sheet's own width. */}
             {dashboard && !isSelfView ? (
-              <div className={cn("grid gap-2", showsDailySlaRunCard({ canAdminManage, isSelfView }) ? "md:grid-cols-4" : "md:grid-cols-3")}>
-                <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Pending by stage</p>
-                  <p className="mt-1 text-xl font-black text-slate-900">{dashboard.pendingByStage.total}</p>
-                  <p className="text-phx-xs font-semibold text-slate-500">Manager {dashboard.pendingByStage.manager} / HR {dashboard.pendingByStage.hr}</p>
-                </div>
-                <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Overdue SLA</p>
-                  <p className="mt-1 text-xl font-black text-rose-700">{dashboard.overdueBySla.total}</p>
-                  <p className="text-phx-xs font-semibold text-slate-500">Manager {dashboard.overdueBySla.manager} / HR {dashboard.overdueBySla.hr}</p>
-                </div>
-                <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
-                  <p className="mt-1 text-xl font-black text-slate-900">{dashboard.evidence.pending + dashboard.evidence.needsFollowUp + dashboard.evidence.rejected}</p>
-                  <p className="text-phx-xs font-semibold text-slate-500">Pending {dashboard.evidence.pending} / rejected {dashboard.evidence.rejected}</p>
-                </div>
-                {/* The background job's last run is an HR operations fact — Super Admin and HR only. */}
-                {showsDailySlaRunCard({ canAdminManage, isSelfView }) ? (
-                  <div className="rounded-sm border border-slate-200 bg-white p-3">
-                    <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Daily SLA run</p>
-                    <p className="mt-1 text-xl font-black text-slate-900">{dashboard.dailyEscalationRunStatus.status}</p>
-                    <p className="text-phx-xs font-semibold text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ? formatDate(dashboard.dailyEscalationRunStatus.runDate) : "No run recorded"}</p>
+              <div className={`@container min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+                <div className={cn("grid grid-cols-1 gap-px bg-slate-200", showsDailySlaRunCard({ canAdminManage, isSelfView }) ? "@md:grid-cols-2 @3xl:grid-cols-4" : "@md:grid-cols-3")}>
+                  <div className="min-w-0 bg-white p-3 sm:px-4">
+                    <p className={ROW_LABEL}>Pending by stage</p>
+                    <div className="mt-1.5">
+                      <LandingFigure size="md">{dashboard.pendingByStage.total}</LandingFigure>
+                    </div>
+                    <p className="mt-1 text-phx-xs font-semibold tabular-nums text-slate-500">Manager {dashboard.pendingByStage.manager} / HR {dashboard.pendingByStage.hr}</p>
                   </div>
-                ) : null}
+                  <div className="min-w-0 bg-white p-3 sm:px-4">
+                    <p className={ROW_LABEL}>Overdue SLA</p>
+                    <div className="mt-1.5">
+                      <LandingFigure size="md" tone="text-rose-700">{dashboard.overdueBySla.total}</LandingFigure>
+                    </div>
+                    <p className="mt-1 text-phx-xs font-semibold tabular-nums text-slate-500">Manager {dashboard.overdueBySla.manager} / HR {dashboard.overdueBySla.hr}</p>
+                  </div>
+                  <div className="min-w-0 bg-white p-3 sm:px-4">
+                    <p className={ROW_LABEL}>Evidence review</p>
+                    <div className="mt-1.5">
+                      <LandingFigure size="md">{dashboard.evidence.pending + dashboard.evidence.needsFollowUp + dashboard.evidence.rejected}</LandingFigure>
+                    </div>
+                    <p className="mt-1 text-phx-xs font-semibold tabular-nums text-slate-500">Pending {dashboard.evidence.pending} / rejected {dashboard.evidence.rejected}</p>
+                  </div>
+                  {/* The background job's last run is an HR operations fact — Super Admin and HR only. */}
+                  {showsDailySlaRunCard({ canAdminManage, isSelfView }) ? (
+                    <div className="min-w-0 bg-white p-3 sm:px-4">
+                      <p className={ROW_LABEL}>Daily SLA run</p>
+                      <div className="mt-1.5">
+                        <LandingFigure size="md">{dashboard.dailyEscalationRunStatus.status}</LandingFigure>
+                      </div>
+                      <p className="mt-1 text-phx-xs font-semibold tabular-nums text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ? formatDate(dashboard.dailyEscalationRunStatus.runDate) : "No run recorded"}</p>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
@@ -2106,24 +2088,20 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
             {/* Admin controls */}
             {canAdminManage ? (
-              <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Admin controls</p>
-                    <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee master requests</h3>
-                  </div>
-                  <Button
-                    className="gap-2 rounded-sm bg-orange-500 px-4 py-2 text-phx-sm font-bold text-white hover:bg-orange-600"
-                    onClick={startAdminAdd}
-                    type="button"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Vacation
-                  </Button>
-                </div>
-
+              <LandingPanel
+                right={
+                  <>
+                    <LandingMeta items={["Admin controls"]} />
+                    <button className={landingActionClassName("solid")} onClick={startAdminAdd} type="button">
+                      <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                      Add Vacation
+                    </button>
+                  </>
+                }
+                title="Employee master requests"
+              >
                 {adminMode ? (
-                  <div className="mt-4 grid gap-3 rounded-sm border border-orange-100 bg-orange-50/40 p-3 xs:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 bg-slate-50 px-3 py-3 xs:grid-cols-2 sm:px-4 xl:grid-cols-4">
                     <label className="space-y-1.5 xs:col-span-2">
                       <span className={labelClass}>Employee</span>
                       <SearchableSelect className={selectClass} value={adminForm.employeeHrId} onChange={(event) => updateAdminForm("employeeHrId", event.target.value)}>
@@ -2162,71 +2140,62 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       <Input value={adminForm.notes} onChange={(event) => updateAdminForm("notes", event.target.value)} />
                     </label>
                     <div className="flex items-end gap-2 xs:col-span-2">
-                      <Button
-                        className="h-9 flex-1 rounded-sm bg-orange-500 text-phx-sm font-bold text-white hover:bg-orange-600"
+                      <button
+                        className={cn(phxButtonAccentClassName, "flex-1 justify-center", LANDING_FOCUS)}
                         disabled={Boolean(actingId)}
                         onClick={submitAdminForm}
                         type="button"
                       >
                         Create Vacation
-                      </Button>
-                      <Button
-                        className="h-9 rounded-sm border border-slate-200 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+                      </button>
+                      <button
+                        className={cn(phxButtonGhostClassName, "justify-center", LANDING_FOCUS)}
                         disabled={Boolean(actingId)}
                         onClick={() => setAdminMode(null)}
                         type="button"
                       >
                         Cancel
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 ) : null}
-              </div>
+              </LandingPanel>
             ) : null}
 
             {/* Requests table */}
-            <div className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">
-                      {canAdminManage ? "All requests" : "Request history"}
-                    </p>
-                    <h3 className="mt-1 text-base font-extrabold text-slate-900">{isSelfView ? "My vacation requests" : "Vacation requests"}</h3>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                      {rows.length} requests
-                    </Badge>
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
-                      onClick={() => exportRequestsCSV(sortedRequests)}
-                      title="Export to CSV"
-                      type="button"
+            <LandingPanel
+              right={
+                <>
+                  <LandingMeta items={[canAdminManage ? "All requests" : "Request history", `${rows.length} requests`]} />
+                  <button
+                    className={landingActionClassName("outline", "print:hidden")}
+                    onClick={() => exportRequestsCSV(sortedRequests)}
+                    title="Export to CSV"
+                    type="button"
+                  >
+                    <Download aria-hidden="true" className="h-3 w-3" /> CSV
+                  </button>
+                  {canExport ? (
+                    <a
+                      className={landingActionClassName("outline", "print:hidden")}
+                      href={auditExportHref}
+                      title="Audit-grade XLSX export"
                     >
-                      <Download className="h-3 w-3" /> CSV
-                    </button>
-                    {canExport ? (
-                      <a
-                        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-phx-2xs font-bold text-orange-700 transition hover:bg-orange-100 print:hidden"
-                        href={auditExportHref}
-                        title="Audit-grade XLSX export"
-                      >
-                        <Download className="h-3 w-3" /> Audit XLSX
-                      </a>
-                    ) : null}
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
-                      onClick={() => window.print()}
-                      title="Print report"
-                      type="button"
-                    >
-                      <Printer className="h-3 w-3" /> Print
-                    </button>
-                  </div>
-                </div>
-              </div>
-
+                      <Download aria-hidden="true" className="h-3 w-3" /> Audit XLSX
+                    </a>
+                  ) : null}
+                  <button
+                    className={landingActionClassName("outline", "print:hidden")}
+                    onClick={() => window.print()}
+                    title="Print report"
+                    type="button"
+                  >
+                    <Printer aria-hidden="true" className="h-3 w-3" /> Print
+                  </button>
+                </>
+              }
+              title={isSelfView ? "My vacation requests" : "Vacation requests"}
+            >
               {/* Desktop table (xl+). An own-leave viewer never gets it: its Employee and Manager
                   columns name the same two people on every row — the cards below serve every width.
                   For everyone else: table-fixed + colgroup so the 12 source fields fit as merged
@@ -2246,101 +2215,105 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     <col className="w-[9%]" />
                     <col className="w-[14%]" />
                   </colgroup>
-                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <tr>
                       <SortableHeader active={requestSort === "employeeName"} direction={requestSortDir} sortKey="employeeName" onSort={toggleRequestSort}>Employee</SortableHeader>
                       <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Submitted</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Type</th>
                       <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>Dates</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Balance &amp; pay</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Balance &amp; pay</th>
                       <SortableHeader active={requestSort === "status"} direction={requestSortDir} sortKey="status" onSort={toggleRequestSort}>Status</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
-                      <th className="border-b border-slate-100 px-3 py-2.5">{canAdminManage ? "Decision / Admin" : "Decision"}</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">{canAdminManage ? "Decision / Admin" : "Decision"}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {paginatedRequests.map((row) => (
-                      <tr key={row.id} className="bg-white align-top transition hover:bg-orange-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-bold text-slate-900">{row.employeeName}</p>
+                      <tr key={row.id} className="bg-white align-top transition hover:bg-slate-50 motion-reduce:transition-none">
+                        <td className="px-3 py-2.5">
+                          <p className={`break-words font-bold ${LANDING_INK}`} dir="auto">{row.employeeName}</p>
                           <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "—"}</p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words text-phx-xs font-semibold text-slate-700">{formatDateTime(row.createdAt)}</p>
-                          <p className="mt-0.5 break-words text-phx-2xs font-medium text-slate-400" title={row.id}>{row.requestCode}</p>
+                        <td className="px-3 py-2.5">
+                          <p className="break-words text-phx-xs font-semibold tabular-nums text-slate-700">{formatDateTime(row.createdAt)}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-medium tabular-nums text-slate-400" title={row.id}>{row.requestCode}</p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-semibold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
+                        <td className="px-3 py-2.5">
+                          <p className={`break-words font-semibold ${LANDING_INK}`}>{vacationTypeLabel(row.vacationType)}</p>
                           <p className="text-phx-xs text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
                           {row.vacationType === "compensatory" ? (
-                            <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-orange-900">
-                              <p className="break-words">{row.compensatoryEventName ?? "Event"}</p>
-                              <p className="break-words text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+                            <div className="mt-1.5 border-l-2 border-slate-300 pl-2 text-phx-xs font-semibold leading-4 text-slate-700">
+                              <p className="break-words" dir="auto">{row.compensatoryEventName ?? "Event"}</p>
+                              <p className="break-words text-slate-500">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
                               <RowEvidence canReviewAttachments={canReviewAttachments} row={row} />
                             </div>
                           ) : null}
                           {row.vacationType === "sick" ? <RowEvidence canReviewAttachments={canReviewAttachments} row={row} /> : null}
                           {row.vacationType === "other" && row.notes ? (
-                            <p className="mt-1.5 break-words rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-amber-900">{row.notes}</p>
+                            <p className="mt-1.5 break-words border-l-2 border-amber-400 pl-2 text-phx-xs font-semibold leading-4 text-slate-700" dir="auto">{row.notes}</p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-semibold text-slate-700">{formatDate(row.startDate)}</p>
-                          <p className="text-phx-xs text-slate-400">to {formatDate(row.endDate)}</p>
-                          <p className="mt-0.5 text-phx-sm font-bold text-slate-900">{vacationDaysLabel(row.durationDays)}</p>
+                        <td className="px-3 py-2.5">
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatDate(row.startDate)}</p>
+                          <p className="text-phx-xs tabular-nums text-slate-400">to {formatDate(row.endDate)}</p>
+                          <p className={`mt-0.5 text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>{vacationDaysLabel(row.durationDays)}</p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words text-slate-700">
+                        <td className="px-3 py-2.5">
+                          <p className="break-words tabular-nums text-slate-600">
                             <span className="font-semibold">{formatDays(row.balanceBeforeDays)}</span>
                             <span className="mx-1 text-slate-400">&rarr;</span>
-                            <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+                            <span className={`font-bold ${LANDING_INK}`}>{formatDays(row.balanceAfterDays)}</span>
                           </p>
                           <div className="mt-1">
-                            <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
+                            <StateText tone={paymentBadgeVariant(row.paymentStatus)}>
                               {paymentStatusLabel(row.paymentStatus)}
-                            </Badge>
+                            </StateText>
                           </div>
                           {row.paymentStatus === "partial" ? (
-                            <p className="mt-1 text-phx-2xs font-bold text-amber-700">
+                            <p className="mt-1 text-phx-xs font-bold tabular-nums text-amber-700">
                               {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
                             </p>
                           ) : null}
-                          {row.unpaidReason ? <p className="mt-1 text-phx-2xs font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
+                          {row.unpaidReason ? <p className="mt-1 text-phx-xs font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <Badge variant={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</Badge>
+                        <td className="px-3 py-2.5">
+                          <StateText tone={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</StateText>
                           {row.slaStatus.isOverdue ? (
-                            <p className="mt-1 text-phx-2xs font-bold text-rose-700">SLA overdue</p>
+                            <p className="mt-1 text-phx-xs font-bold text-rose-700">SLA overdue</p>
                           ) : null}
                           {row.overlapWarnings.length > 0 ? (
-                            <p className="mt-1 text-phx-2xs font-bold text-amber-700">{overlapWarningsLabel(row.overlapWarnings.length)}</p>
+                            <p className="mt-1 text-phx-xs font-bold text-amber-700">{overlapWarningsLabel(row.overlapWarnings.length)}</p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "—"}</p>
-                          {row.managerOfManagerName ? <p className="mt-0.5 break-words text-phx-2xs text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
+                        <td className="px-3 py-2.5">
+                          <p className="break-words font-semibold text-slate-700" dir="auto">{row.managerName ?? "—"}</p>
+                          {row.managerOfManagerName ? (
+                            <p className="mt-0.5 break-words text-phx-xs text-slate-400">
+                              MoM: <span dir="auto">{row.managerOfManagerName}</span>
+                            </p>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2.5">
                           <button
-                            className="mb-2 flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50"
+                            className={landingActionClassName("outline", "mb-2")}
                             onClick={() => openRequestReview(row)}
                             type="button"
                           >
-                            <FileText className="h-3 w-3" /> Timeline
-                            {row.timelineEventCount > 0 ? <span className="text-slate-400">({row.timelineEventCount})</span> : null}
+                            <FileText aria-hidden="true" className="h-3 w-3" /> Timeline
+                            {row.timelineEventCount > 0 ? <span className="tabular-nums">({row.timelineEventCount})</span> : null}
                           </button>
                           {row.canDecide ? (
                             <Link
-                              className="flex items-center gap-1 rounded-sm border border-orange-300 bg-white px-2 py-1 text-phx-2xs font-bold text-orange-700 transition hover:bg-orange-50"
+                              className={landingActionClassName("solid")}
                               href={`${approvalsBase}/${encodeURIComponent(row.id)}`}
                             >
-                              <ArrowRight className="h-3 w-3" /> Decide in Leave Approvals
+                              <ArrowRight aria-hidden="true" className="h-3 w-3" /> Decide in Leave Approvals
                             </Link>
                           ) : (
                             <div className="text-phx-xs">
-                              <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "—"}</p>
-                              {row.managerDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.managerDecisionComment}</p> : null}
-                              {row.hrDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.hrDecisionComment}</p> : null}
+                              <p className="font-medium tabular-nums text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "—"}</p>
+                              {row.managerDecisionComment ? <p className="mt-0.5 break-words leading-4 text-slate-500" dir="auto">{row.managerDecisionComment}</p> : null}
+                              {row.hrDecisionComment ? <p className="mt-0.5 break-words leading-4 text-slate-500" dir="auto">{row.hrDecisionComment}</p> : null}
                             </div>
                           )}
                         </td>
@@ -2348,7 +2321,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     ))}
                     {paginatedRequests.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={8}>
+                        <td className="px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={8}>
                           No vacation requests found.
                         </td>
                       </tr>
@@ -2359,11 +2332,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               </div>
               )}
 
-              {/* Card view (< xl) — and every width for an own-leave viewer, two cards a row from
-                  `lg` so a laptop is not one long column. */}
-              <div className={isSelfView ? "grid gap-2 p-3 lg:grid-cols-2" : "block xl:hidden space-y-2 p-3"}>
+              {/* Card view (< xl) — and every width for an own-leave viewer, two rows side by side
+                  from `lg` so a laptop is not one long column. Each card is a ruled row whose left
+                  rail is the request's state. */}
+              <div className={isSelfView ? "grid lg:grid-cols-2" : "block xl:hidden"}>
                 {paginatedRequests.length === 0 ? (
-                  <p className="py-6 text-center text-phx-md font-medium text-slate-500 lg:col-span-2">
+                  <p className="px-3 py-6 text-center text-phx-md font-medium text-slate-500 lg:col-span-2">
                     {isSelfView ? "You have no vacation requests yet." : "No vacation requests found."}
                   </p>
                 ) : (
@@ -2386,31 +2360,41 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
                 </div>
               </div>
-            </div>
+            </LandingPanel>
           </div>
         ) : null}
       </div>
 
       {selectedRequest ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 p-3 print:hidden" role="dialog" aria-modal="true">
-          <div className="flex h-full w-full max-w-xl flex-col overflow-hidden rounded-sm bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 p-3 print:hidden" role="dialog" aria-modal="true" aria-label="Request review">
+          <div className={`flex h-full w-full max-w-xl flex-col overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
-              <div>
-                <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Request review</p>
-                <h3 className="mt-1 font-mono text-lg font-black text-slate-900">{selectedRequest.requestCode}</h3>
-                <p className="text-phx-sm font-semibold text-slate-500">{selectedRequest.employeeName} / {dynamicStatusLabel(selectedRequest)}</p>
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  <LandingTick />
+                  Request review
+                </p>
+                <h3 className={`mt-1 break-words font-mono text-lg font-black ${LANDING_INK}`}>{selectedRequest.requestCode}</h3>
+                <p className="break-words text-phx-sm font-semibold text-slate-500">
+                  <span dir="auto">{selectedRequest.employeeName}</span> / {dynamicStatusLabel(selectedRequest)}
+                </p>
               </div>
-              <button className="rounded-sm p-2 text-slate-500 hover:bg-slate-100" onClick={() => setSelectedRequest(null)} type="button">
-                <XCircle className="h-4 w-4" />
+              <button
+                aria-label="Close request review"
+                className={`inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center text-slate-500 transition hover:bg-slate-100 hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
+                onClick={() => setSelectedRequest(null)}
+                type="button"
+              >
+                <XCircle aria-hidden="true" className="h-4 w-4" />
               </button>
             </div>
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               {selectedRequest.overlapWarnings.length > 0 ? (
-                <div className="rounded-sm border border-amber-200 bg-amber-50 p-3">
+                <div className="border-l-2 border-amber-400 py-1 pl-3">
                   <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-amber-700">Overlap intelligence</p>
                   <div className="mt-2 space-y-1.5">
                     {selectedRequest.overlapWarnings.map((warning) => (
-                      <p className="text-phx-sm font-semibold text-amber-900" key={`${warning.code}-${warning.relatedRequestIds.join("-")}`}>{warning.message}</p>
+                      <p className="break-words text-phx-sm font-semibold text-slate-700" key={`${warning.code}-${warning.relatedRequestIds.join("-")}`}>{warning.message}</p>
                     ))}
                   </div>
                 </div>
@@ -2424,7 +2408,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   is HR/Super Admin only. */}
               {(selectedRequest.vacationType === "sick" || selectedRequest.vacationType === "compensatory") &&
               (canReviewAttachments || isOwnSelectedRequest) ? (
-                <div className="rounded-sm border border-slate-200 p-3">
+                <div className="border border-slate-200 p-3">
                   <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                     Documents{selectedRequest.attachments.length > 0 ? ` (${selectedRequest.attachments.length})` : ""}
                   </p>
@@ -2440,7 +2424,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               ) : null}
 
               {(selectedRequest.vacationType === "sick" || selectedRequest.vacationType === "compensatory") && canReviewAttachments ? (
-                <div className="rounded-sm border border-slate-200 p-3">
+                <div className="border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
@@ -2459,25 +2443,25 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button className={cn(phxButtonApproveDenseClassName, "h-8 text-phx-xs font-bold")} disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("accepted")} type="button">Accept</Button>
-                    <Button className="h-8 rounded-sm bg-amber-500 text-phx-xs font-bold text-white hover:bg-amber-600" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("needs_follow_up")} type="button">Needs follow-up</Button>
+                    <Button className="h-8 bg-amber-500 text-phx-xs font-bold text-white hover:bg-amber-600" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("needs_follow_up")} type="button">Needs follow-up</Button>
                     <Button className={cn(phxButtonDangerDenseClassName, "h-8 text-phx-xs font-bold")} disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("rejected")} type="button">Reject</Button>
                   </div>
                 </div>
               ) : null}
 
-              <div className="rounded-sm border border-slate-200 p-3">
+              <div className="border border-slate-200 p-3">
                 <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Approval timeline</p>
                 {timelineLoading ? (
-                  <p className="mt-3 text-sm font-semibold text-slate-500">Loading timeline...</p>
+                  <p className="mt-3 text-phx-sm font-semibold text-slate-500">Loading timeline...</p>
                 ) : (
                   <div className="mt-3 space-y-3">
                     {timeline.map((event) => (
-                      <div className="border-l-2 border-orange-200 pl-3" key={event.id}>
-                        <p className="text-phx-sm font-black text-slate-900">{event.message}</p>
-                        <p className="mt-0.5 text-phx-xs font-semibold text-slate-500">{formatDateTime(event.createdAt)} · {timelineEventLabel(event.eventType)}</p>
+                      <div className="border-l-2 border-slate-300 pl-3" key={event.id}>
+                        <p className={`break-words text-phx-sm font-black ${LANDING_INK}`}>{event.message}</p>
+                        <p className="mt-0.5 text-phx-xs font-semibold tabular-nums text-slate-500">{formatDateTime(event.createdAt)} · {timelineEventLabel(event.eventType)}</p>
                       </div>
                     ))}
-                    {timeline.length === 0 ? <p className="text-sm font-semibold text-slate-500">No timeline events recorded yet.</p> : null}
+                    {timeline.length === 0 ? <p className="text-phx-sm font-semibold text-slate-500">No timeline events recorded yet.</p> : null}
                   </div>
                 )}
               </div>

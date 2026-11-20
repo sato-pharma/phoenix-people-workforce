@@ -1,18 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LandingTitle, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { postJson } from "@/components/recruitment/recruitment-fetch";
-import { phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { MrAreaNotice } from "@/lib/recruitment/mr-hiring/area-notices";
 
 // The list inside the portal home's banner (mr-area-notice-banner.tsx). "Got it" dismisses one
 // notice for this manager only; the line leaves at once and comes back only if the dismissal failed.
 //
-// Square-edged, full-size text, wrapping on a phone rather than cut short — the same mark as the
-// "who opened this CV" notice (candidate-opened-notice.tsx), in amber so it reads as news.
+// THE LOOK (owner, 2026-11-20 landing redesign): the landing kit's white panel. The tick title counts
+// the candidates; each row gives the name in navy, what happened under it, then when, with the kit's
+// navy buttons beside it. Square-edged, full-size text, wrapping on a phone rather than cut short.
+// It was an amber block so it read as news; on the redesigned landing it is the first panel on the
+// page, above the identity card, and orange is only the tick.
 
 const INTERVIEWS_HREF = "/employee-portals/recruitment-candidates#mr-interviews";
 
@@ -38,34 +41,42 @@ export function MrAreaNoticeList({ notices }: { notices: MrAreaNotice[] }) {
   }
 
   return (
-    <section className="mb-3 border-l-4 border-amber-500 bg-amber-50 px-3 py-3" data-mr-area-notice role="status">
-      <p className="flex items-center gap-2 text-base font-bold text-amber-950">
-        <UserPlus aria-hidden className="h-5 w-5 shrink-0 text-amber-700" />
-        {shown.length === 1 ? "A new Medical Rep candidate for your area" : `${shown.length} new Medical Rep candidates for your areas`}
-      </p>
-      <ul className="mt-2 space-y-2">
+    <section className={`mb-3 min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`} data-mr-area-notice role="status">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+        <LandingTitle>
+          {shown.length === 1 ? "A new Medical Rep candidate for your area" : `${shown.length} new Medical Rep candidates for your areas`}
+        </LandingTitle>
+      </header>
+      <ul>
         {shown.map((notice) => (
-          <li className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200 pt-2" key={notice.id}>
-            <p className="min-w-0 text-sm text-amber-950">
-              <span className="font-bold" dir="auto">
+          <li
+            className="flex flex-col gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4"
+            key={notice.id}
+          >
+            <div className="min-w-0">
+              <p className="break-words text-phx-md font-bold leading-snug text-[#08111f]" dir="auto">
                 {notice.candidateName}
-              </span>{" "}
-              passed HR&apos;s 1st interview for <span className="font-semibold">{notice.areaName}</span>, {notice.lineLabel} line
-              {notice.seat === "nsm" ? " — an area with no DSM on your line" : ""}.
-              <span className="block text-amber-900">{cairoDateTime(notice.createdAt)} · HR books the DSM interview next.</span>
-            </p>
-            <span className="flex shrink-0 flex-wrap gap-2">
-              <a className={phxButtonGhostClassName} href={INTERVIEWS_HREF}>
+              </p>
+              <p className="mt-0.5 break-words text-phx-sm leading-snug text-slate-600">
+                Passed HR&apos;s 1st interview for <span className="font-semibold text-[#08111f]">{notice.areaName}</span>, {notice.lineLabel} line
+                {notice.seat === "nsm" ? " — an area with no DSM on your line" : ""}.
+              </p>
+              <p className="mt-1 break-words text-phx-xs font-semibold tabular-nums text-slate-500">
+                {cairoDateTime(notice.createdAt)} · HR books the DSM interview next.
+              </p>
+            </div>
+            <span className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
+              <a className={landingActionClassName("solid")} href={INTERVIEWS_HREF}>
                 Open my Medical Rep interviews
               </a>
-              <button className={phxButtonGhostClassName} onClick={() => void dismiss(notice.id)} type="button">
+              <button className={landingActionClassName("outline")} onClick={() => void dismiss(notice.id)} type="button">
                 Got it
               </button>
             </span>
           </li>
         ))}
       </ul>
-      {error ? <p className="mt-2 text-sm font-bold text-rose-700">{error}</p> : null}
+      {error ? <p className="break-words border-t border-slate-200 px-3 py-2.5 text-phx-sm font-bold text-rose-700 sm:px-4">{error}</p> : null}
     </section>
   );
 }

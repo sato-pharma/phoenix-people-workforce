@@ -42,17 +42,17 @@ export function Pulse({ className }: { className?: string }) {
   );
 }
 
-// The same frame as EmployeePortalPageShell's command header (navy #08111f, slate-800 rule, its
-// padding), so the page does not change colour and size the moment it arrives. It used to be a
-// black-to-brown gradient no portal page has. The bars are SHARES of the width under a max-w cap,
-// never fixed pixels, so the placeholder can never push a 360px screen sideways.
+// The same frame as EmployeePortalPageShell's title band (since 2026-11-20 the landing kit's light
+// band: a small-capital section line, the navy title, a hairline under both, no fill), so the page
+// does not change colour or height the moment it arrives. It was the navy command block until that
+// redesign, and a black-to-brown gradient before that. The bars are SHARES of the width under a
+// max-w cap, never fixed pixels, so the placeholder can never push a 360px screen sideways.
 export function HeroSkeleton({ badgeWidth = "max-w-[9rem]" }: { badgeWidth?: string }) {
   return (
-    <section className="relative box-border w-full overflow-hidden rounded-sm border border-slate-800 bg-[#08111f] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
-      <Pulse className={`h-5 w-full ${badgeWidth} !bg-white/10`} />
-      <Pulse className="mt-3 h-8 w-full max-w-[18rem] !bg-white/15" />
-      <Pulse className="mt-2 h-4 w-full max-w-[20rem] !bg-white/10" />
-    </section>
+    <div aria-hidden className="min-w-0 border-b border-slate-200 pb-3 pt-0.5">
+      <Pulse className={`h-3 w-full ${badgeWidth}`} />
+      <Pulse className="mt-2.5 h-7 w-full max-w-[18rem]" />
+    </div>
   );
 }
 

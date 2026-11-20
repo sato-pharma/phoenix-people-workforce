@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { AttendanceOverview } from "@/components/employee-portal/attendance-overview";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { LandingRailLine } from "@/components/employee-portal/landing-kit";
 import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -52,9 +54,9 @@ export default async function EmployeeAttendancePage() {
       description="Your attendance records for the last 30 days. Dispute any record you believe is incorrect."
     >
       {initialError && (
-        <p className="border border-rose-200 bg-rose-50 px-4 py-3 text-phx-md font-semibold text-rose-800">
-          {initialError}
-        </p>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="alert">
+          <LandingRailLine rail="bg-rose-600">{initialError}</LandingRailLine>
+        </div>
       )}
       <AttendanceOverview hrId={hrId} initialData={initialData} />
     </EmployeePortalPageShell>

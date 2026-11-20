@@ -24,8 +24,8 @@ import { readdirSync, readFileSync } from "node:fs";
  * columns (trip ID, employee, route) below their longest words there. Merge into a column instead.
  *
  * The map card's decorative blurred circle (`absolute -right-16 -top-20`) was suspected too. It
- * is not a cause: hiding it moved main.scrollWidth by 0px, because its own parent and the card
- * both clip. Section 6 keeps that clipping in place.
+ * was not a cause: hiding it moved main.scrollWidth by 0px, because its own parent and the card
+ * both clipped. The 2026-11-20 redesign removed it; section 8 keeps it from coming back.
  */
 
 const DASHBOARD = "src/components/employee-portal/personal-expense-workload-dashboard.tsx";
@@ -167,17 +167,15 @@ export function runExpenseDashboardTripsTableFitsTheScreenTests() {
     `${DASHBOARD}: the opened trip panel must be a TableRowDetail opened by a row carrying rowDetailToggleProps, with no "N/A" filler.`,
   );
 
-  // 8. The map card's blurred circle stays clipped by its own parent, so it can never widen main.
+  // 8. The map card draws nothing positioned past its own edge. Its decorative blurred circle sat
+  //    64px past the header's right edge and only that header's clip kept it from widening main; the
+  //    2026-11-20 redesign (the landing kit's white panel, no glow) removed it, so a glow coming back
+  //    is refused outright rather than trusted to a clip.
   const heatmap = readFileSync(HEATMAP, "utf8");
-  const circle = heatmap.indexOf("pointer-events-none absolute -right-16 -top-20");
-  assert.ok(circle >= 0, `${HEATMAP}: could not find the decorative blurred circle.`);
-  const openers = [...heatmap.slice(0, circle).matchAll(/<div\s+className="([^"]*)"/g)];
-  const parentClasses = openers.at(-1)?.[1].split(/\s+/) ?? [];
   assert.ok(
-    parentClasses.includes("relative") && parentClasses.includes("overflow-hidden"),
-    `${HEATMAP}: the blurred circle's parent is "${parentClasses.join(" ")}" — it must stay ` +
-      `"relative overflow-hidden". It sits 64px past its parent's right edge by design; only that ` +
-      `clip keeps it from widening the page.`,
+    !heatmap.includes("-right-16 -top-20") && !/\bblur-3xl\b/.test(heatmap),
+    `${HEATMAP}: the decorative blurred circle is back. The map card wears the landing kit's flat ` +
+      `white panel; a glow positioned past its edge can widen the page on a phone.`,
   );
 
   // Nothing on an Expenses or outstation screen is drawn below 11px ("raise the expenses and outstation screens'

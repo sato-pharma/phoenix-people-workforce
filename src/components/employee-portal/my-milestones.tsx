@@ -446,7 +446,9 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                             <span className="text-phx-xs font-bold uppercase leading-none">{badge.month}</span>
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1.5">
+                            {/* flex-wrap: on a small phone on Large text the NEXT badge spilled 9px over
+                                the card's own right border; it now drops under the label instead. */}
+                            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                               <Icon className={`size-3.5 shrink-0 ${accent.ink}`} aria-hidden />
                               <span className="break-words text-sm font-black text-slate-900">{entry.label}</span>
                               {isNext ? (

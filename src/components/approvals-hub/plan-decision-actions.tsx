@@ -11,7 +11,12 @@ import {
 } from "@/components/approvals-hub/approval-action-kit";
 import type { PlanReturnableActivity } from "@/lib/approvals-hub/service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { LANDING_FOCUS, LANDING_INK } from "@/components/employee-portal/landing-kit";
+import { FormError } from "@/components/ui/form-kit";
+import { phxLabelClassName, phxLabelTextClassName, phxRequiredMarkClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
+
+/** The decision row: full width under the panel on a phone, to the right from `sm`. */
+const ACTION_ROW = "flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end";
 
 export type PlanDecisionActionsProps = {
   planId: string;
@@ -204,16 +209,16 @@ export function PlanDecisionActions({
       <ApprovalResponsePanel
         title="Return plan — flag what to fix"
         aside={
-          <span className="inline-flex items-center gap-1 bg-phx-warn px-2 py-0.5 text-phx-2xs font-black text-white">
-            <Flag className="h-3 w-3" /> {flaggedCount} flagged
+          <span className="inline-flex items-center gap-1 text-phx-xs font-black uppercase tracking-[0.1em] tabular-nums text-amber-300">
+            <Flag aria-hidden="true" className="h-3 w-3" /> {flaggedCount} flagged
           </span>
         }
       >
 
         <div className="space-y-4 px-4 py-4">
           <div>
-            <label className="mb-1 block text-phx-xs font-black uppercase tracking-wide text-slate-500">
-              Overall reason <span className="text-orange-600">*</span>
+            <label className={phxLabelClassName}>
+              Overall reason <span className={phxRequiredMarkClassName}>*</span>
             </label>
             <textarea
               value={reason}
@@ -226,42 +231,42 @@ export function PlanDecisionActions({
           </div>
 
           <div>
-            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-wide text-slate-500">
-              <MessageSquarePlus className="h-3.5 w-3.5" /> Per-activity notes (optional)
+            <p className={`mb-2 flex items-center gap-1.5 ${phxLabelTextClassName}`}>
+              <MessageSquarePlus aria-hidden="true" className="h-3.5 w-3.5" /> Per-activity notes (optional)
             </p>
-            <p className="mb-2 text-xs text-slate-500">Flag any specific day the employee should change — each note shows next to that activity.</p>
 
             {activitiesByDay.length === 0 ? (
-              <p className="border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-400">
+              <p className="border border-slate-200 px-3 py-4 text-phx-sm text-slate-500">
                 This plan has no activities to annotate.
               </p>
             ) : (
               <div className="space-y-3">
                 {activitiesByDay.map(([date, acts]) => (
                   <div key={date} className="border border-slate-200">
-                    <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-phx-xs font-black uppercase tracking-wide text-slate-600">
+                    <div className={`border-b border-slate-200 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.1em] ${LANDING_INK}`}>
                       {dayLabel(date)}
                     </div>
-                    <div className="divide-y divide-slate-100">
+                    <div className="divide-y divide-slate-200">
                       {acts.map((a) => {
                         const flagged = openNotes.has(a.id);
                         return (
-                          <div key={a.id} className={flagged ? "border-l-2 border-orange-500 bg-orange-50/40" : "border-l-2 border-transparent"}>
+                          <div key={a.id} className={flagged ? "border-l-2 border-amber-500" : "border-l-2 border-transparent"}>
                             <button
                               type="button"
+                              aria-pressed={flagged}
                               onClick={() => toggleNote(a.id)}
-                              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-slate-50"
+                              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
                             >
                               <span className="min-w-0">
-                                <span className="block break-words text-sm font-bold text-slate-800">{a.label}</span>
-                                {a.timeLabel ? <span className="text-phx-xs text-slate-500">{a.timeLabel}</span> : null}
+                                <span className={`block break-words text-sm font-bold ${LANDING_INK}`}>{a.label}</span>
+                                {a.timeLabel ? <span className="text-phx-xs tabular-nums text-slate-500">{a.timeLabel}</span> : null}
                               </span>
                               <span
-                                className={`inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-phx-2xs font-bold ${
-                                  flagged ? "bg-orange-500 text-white" : "border border-slate-300 text-slate-500"
+                                className={`inline-flex shrink-0 items-center gap-1 border px-2 py-0.5 text-phx-xs font-bold uppercase tracking-[0.08em] ${
+                                  flagged ? "border-amber-600 text-amber-700" : "border-slate-300 text-slate-500"
                                 }`}
                               >
-                                <Flag className="h-3 w-3" /> {flagged ? "Flagged" : "Flag"}
+                                <Flag aria-hidden="true" className="h-3 w-3" /> {flagged ? "Flagged" : "Flag"}
                               </span>
                             </button>
                             {flagged ? (
@@ -285,16 +290,16 @@ export function PlanDecisionActions({
             )}
           </div>
 
-          {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
+          <FormError>{error}</FormError>
 
-          <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          <div className={`border-t border-slate-200 pt-3 ${ACTION_ROW}`}>
             <button
               type="button"
               onClick={submitReturn}
               disabled={busy}
               className={approvalActionClassName("confirm")}
             >
-              <CornerUpLeft className="h-4 w-4" />
+              <CornerUpLeft aria-hidden="true" className="h-4 w-4" />
               {busy ? "Returning…" : `Return${flaggedCount ? ` with ${flaggedCount} note${flaggedCount === 1 ? "" : "s"}` : ""}`}
             </button>
             <button
@@ -318,11 +323,11 @@ export function PlanDecisionActions({
     return (
       <ApprovalResponsePanel>
         <div className="space-y-3 px-4 py-4">
-          <p className="text-sm font-bold text-slate-900">
+          <p className={`break-words text-sm font-bold ${LANDING_INK}`}>
             {needsReason ? `${SIMPLE_LABEL[action]} — provide a reason` : `Confirm: ${SIMPLE_LABEL[action]}?`}
           </p>
           {action === "request_details" ? (
-            <p className="text-xs text-slate-500">The employee will be asked to add per-doctor details for their Single Visit (Field) days before this plan can be approved.</p>
+            <p className="break-words text-xs text-slate-600">The employee will be asked to add per-doctor details for their Single Visit (Field) days before this plan can be approved.</p>
           ) : null}
           {needsReason ? (
             <textarea
@@ -334,13 +339,16 @@ export function PlanDecisionActions({
               className={phxTextareaClassName}
             />
           ) : null}
-          {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-          <ApprovalConfirmButtons
-            busy={busy}
-            confirmLabel={`Confirm ${SIMPLE_LABEL[action]}`}
-            onConfirm={() => submitSimple(action)}
-            onCancel={toMenu}
-          />
+          <FormError>{error}</FormError>
+          {/* On a phone the two share the row edge to edge; from `sm` they sit on the right. */}
+          <div className="sm:flex sm:justify-end">
+            <ApprovalConfirmButtons
+              busy={busy}
+              confirmLabel={`Confirm ${SIMPLE_LABEL[action]}`}
+              onConfirm={() => submitSimple(action)}
+              onCancel={toMenu}
+            />
+          </div>
         </div>
       </ApprovalResponsePanel>
     );
@@ -349,14 +357,14 @@ export function PlanDecisionActions({
   // ── Action menu ──────────────────────────────────────────────────────────────
   return (
     <ApprovalResponsePanel>
-      <div className="flex flex-wrap gap-2 px-4 py-4">
+      <div className={`px-4 py-4 ${ACTION_ROW}`}>
         {isEditRequestDecision ? (
           <>
             <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve_edit" }); }} className={approvalActionClassName("approve")}>
-              <CheckCircle2 className="h-4 w-4" /> Allow edits
+              <CheckCircle2 aria-hidden="true" className="h-4 w-4" /> Allow edits
             </button>
             <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject_edit" }); }} className={approvalActionClassName("reject")}>
-              <XCircle className="h-4 w-4" /> Keep locked
+              <XCircle aria-hidden="true" className="h-4 w-4" /> Keep locked
             </button>
           </>
         ) : null}
@@ -364,30 +372,34 @@ export function PlanDecisionActions({
         {hasStandard ? (
           <>
             <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve" }); }} className={approvalActionClassName("approve")}>
-              <CheckCircle2 className="h-4 w-4" /> Approve
+              <CheckCircle2 aria-hidden="true" className="h-4 w-4" /> Approve
             </button>
             <button type="button" onClick={() => { reset(); setMode({ kind: "return" }); }} className={approvalActionClassName("return")}>
-              <CornerUpLeft className="h-4 w-4" /> Return with notes
+              <CornerUpLeft aria-hidden="true" className="h-4 w-4" /> Return with notes
             </button>
             <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject" }); }} className={approvalActionClassName("reject")}>
-              <XCircle className="h-4 w-4" /> Reject
+              <XCircle aria-hidden="true" className="h-4 w-4" /> Reject
             </button>
           </>
         ) : null}
 
         {canRequestVisitDetails ? (
           <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "request_details" }); }} className={approvalActionClassName("neutral")}>
-            <ListChecks className="h-4 w-4" /> Request visit details
+            <ListChecks aria-hidden="true" className="h-4 w-4" /> Request visit details
           </button>
         ) : null}
 
         {canAcknowledge ? (
           <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "acknowledge" }); }} className={approvalActionClassName("acknowledge")}>
-            <CheckCircle2 className="h-4 w-4" /> Acknowledge (HR)
+            <CheckCircle2 aria-hidden="true" className="h-4 w-4" /> Acknowledge (HR)
           </button>
         ) : null}
       </div>
-      {error ? <p className="px-4 pb-3 text-sm font-semibold text-rose-600">{error}</p> : null}
+      {error ? (
+        <div className="px-4 pb-3">
+          <FormError>{error}</FormError>
+        </div>
+      ) : null}
     </ApprovalResponsePanel>
   );
 }

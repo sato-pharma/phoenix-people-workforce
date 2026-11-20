@@ -244,7 +244,7 @@ export function NotificationSettingsPanel() {
             <Bell className="h-4 w-4 text-orange-600" />
             <h2 className="text-base font-bold text-slate-950">Notification Settings</h2>
           </div>
-          <p className="mt-1 text-sm text-slate-600">Email, in-app, and Telegram delivery preferences.</p>
+          <p className="phx-header-note mt-1 text-sm text-slate-600">Email, in-app, and Telegram delivery preferences.</p>
         </div>
         <span className="inline-flex items-center gap-2 self-start rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
           <Smartphone className="h-3.5 w-3.5" />

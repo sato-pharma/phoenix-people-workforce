@@ -1,21 +1,24 @@
 "use client";
 
 import { CalendarDays, ChevronDown, ChevronUp, Lock } from "lucide-react";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import {
   formatDate,
   formatDayName,
   PlanDecisionTimeline,
+  planStatusWordClassName,
+  statusInk,
   statusLabels,
-  statusTone,
+  statusRail,
 } from "@/components/employee-portal/plans-workspace";
 import {
-  adminChipDepthClassName,
-  adminRecessedDepthClassName,
-  adminSoftDepthClassName,
-} from "@/components/admin/admin-design-tokens";
+  LANDING_INK,
+  LANDING_ROW_LINK,
+  LandingCta,
+  LandingEmpty,
+} from "@/components/employee-portal/landing-kit";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
 import { planNounLabel, planPeriodShortLabel } from "@/lib/weekly-planning/plan-labels";
@@ -62,29 +65,29 @@ function PlanItems({ plan }: { plan: EmployeePlan }) {
     (left, right) => left.activityDate.localeCompare(right.activityDate) || left.sortOrder - right.sortOrder,
   );
   if (items.length === 0) {
-    return <p className="px-4 pb-4 text-sm font-semibold text-slate-500">This plan holds no days.</p>;
+    return <LandingEmpty>This plan holds no days.</LandingEmpty>;
   }
   return (
-    <ul className="px-4 pb-2">
+    <ul className="divide-y divide-slate-200 px-3 sm:px-4">
       {items.map((item) => {
         const place = itemPlace(item);
         const times = itemTimes(item);
         return (
-          <li className="grid gap-1 border-t border-slate-100 py-2.5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3" key={item.id}>
-            <p className="text-xs font-black text-slate-700">
+          <li className="grid gap-1 py-2.5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3" key={item.id}>
+            <p className={`text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>
               {formatDayName(item.activityDate)} {formatDate(item.activityDate)}
               {times ? <span className="block font-semibold text-slate-500">{times}</span> : null}
             </p>
-            <div className="min-w-0 break-words">
-              <p className="text-sm font-black text-slate-900">{itemTitle(item)}</p>
-              {place ? <p className="text-xs font-semibold text-slate-600">{place}</p> : null}
+            <div className="min-w-0 break-words" dir="auto">
+              <p className={`text-phx-md font-bold ${LANDING_INK}`}>{itemTitle(item)}</p>
+              {place ? <p className="text-phx-sm font-semibold text-slate-600">{place}</p> : null}
               {item.doubleVisitMedicalRepName ? (
-                <p className="text-xs font-semibold text-slate-600">With {item.doubleVisitMedicalRepName}</p>
+                <p className="text-phx-sm font-semibold text-slate-600">With {item.doubleVisitMedicalRepName}</p>
               ) : null}
-              {item.objective ? <p className="text-xs font-semibold text-slate-500">{item.objective}</p> : null}
-              {item.notes ? <p className="text-xs text-slate-500">{item.notes}</p> : null}
+              {item.objective ? <p className="text-phx-sm font-semibold text-slate-500">{item.objective}</p> : null}
+              {item.notes ? <p className="text-phx-sm text-slate-500">{item.notes}</p> : null}
               {item.returnNotes.map((note) => (
-                <p className="mt-1 border-l-2 border-amber-300 pl-2 text-xs font-semibold text-amber-800" key={note.id}>
+                <p className="mt-1 border-l-[3px] border-amber-500 pl-2 text-phx-sm font-semibold text-amber-800" key={note.id}>
                   Returned: {note.note}
                 </p>
               ))}
@@ -101,30 +104,33 @@ function PlanCard({ onToggle, open, plan }: { onToggle: () => void; open: boolea
     <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <button
         aria-expanded={open}
-        className="flex w-full min-w-0 items-start justify-between gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-orange-50/40"
+        className={`flex w-full min-w-0 items-stretch gap-3 py-3 pl-0 pr-3 text-left sm:pr-4 ${LANDING_ROW_LINK}`}
         onClick={onToggle}
         type="button"
       >
-        <span className="min-w-0">
-          <span className="block text-sm font-black text-slate-900">
-            {planNounLabel(plan.planKind)} · {planPeriodShortLabel(plan)}
+        <span aria-hidden="true" className={`w-1 shrink-0 ${statusRail(plan.status)}`} />
+        <span className="flex min-w-0 flex-1 items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className={`block break-words text-phx-md font-bold ${LANDING_INK}`}>
+              {planNounLabel(plan.planKind)} · {planPeriodShortLabel(plan)}
+            </span>
+            <span className="mt-0.5 block break-words text-phx-sm font-semibold tabular-nums text-slate-500">
+              {formatDate(plan.periodStartDate)} to {formatDate(plan.periodEndDate)} · {plan.items.length}{" "}
+              {plan.items.length === 1 ? "day" : "days"}
+            </span>
           </span>
-          <span className="mt-0.5 block text-xs font-semibold text-slate-500">
-            {formatDate(plan.periodStartDate)} to {formatDate(plan.periodEndDate)} · {plan.items.length}{" "}
-            {plan.items.length === 1 ? "day" : "days"}
+          <span className="flex shrink-0 items-center gap-2">
+            <span className={`${planStatusWordClassName} ${statusInk(plan.status)}`}>
+              {statusLabels[plan.status]}
+            </span>
+            {open ? <ChevronUp aria-hidden="true" className="h-4 w-4 text-slate-500" /> : <ChevronDown aria-hidden="true" className="h-4 w-4 text-slate-500" />}
           </span>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          <span className={`border px-2 py-1 text-phx-xs font-black ${statusTone(plan.status)}`}>
-            {statusLabels[plan.status]}
-          </span>
-          {open ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
         </span>
       </button>
       {open ? (
         <div className="border-t border-slate-200">
           <PlanItems plan={plan} />
-          <div className="px-4 pb-4">
+          <div className="border-t border-slate-200 px-3 pb-4 pt-3 sm:px-4">
             <PlanDecisionTimeline decisions={plan.decisions} />
           </div>
         </div>
@@ -152,28 +158,23 @@ export function PlansHistory({ openPlanId, plans }: { openPlanId?: string | null
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className={`flex min-w-0 items-start gap-3 border border-slate-200 bg-slate-50 p-4 ${adminRecessedDepthClassName}`}>
+      <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white py-3 pr-3 sm:pr-4 ${adminSoftDepthClassName}`}>
+        <span aria-hidden="true" className="w-1 shrink-0 bg-[#08111f]" />
         <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <div className="min-w-0">
-          <p className="text-sm font-black text-slate-900">Read only</p>
-          <p className="mt-1 text-sm font-semibold text-slate-600">
+          <p className={`text-phx-xs font-black uppercase tracking-[0.12em] ${LANDING_INK}`}>Read only</p>
+          <p className="mt-1 break-words text-phx-md font-semibold text-slate-600">
             Your week is planned in Phoenix CRM now. These are the plans you filed on this form before. Nothing can be
             added or changed here.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link
-              className="inline-flex h-10 items-center border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 hover:border-orange-300 hover:bg-orange-100"
-              href={`${PHOENIX_CRM_PORTAL_BASE}?tab=plan`}
-            >
+            <LandingCta href={`${PHOENIX_CRM_PORTAL_BASE}?tab=plan`} variant="solid">
               Plan your week in Phoenix CRM
-            </Link>
-            <Link
-              className={`inline-flex h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:border-orange-300 hover:bg-orange-50 ${adminChipDepthClassName}`}
-              href="/employee-portals/plans/calendar"
-            >
-              <CalendarDays className="h-4 w-4" />
+            </LandingCta>
+            <LandingCta href="/employee-portals/plans/calendar">
+              <CalendarDays aria-hidden="true" className="h-4 w-4" />
               Calendar
-            </Link>
+            </LandingCta>
           </div>
         </div>
       </div>
@@ -186,10 +187,10 @@ export function PlansHistory({ openPlanId, plans }: { openPlanId?: string | null
           options={KIND_OPTIONS}
           value={kind}
         />
-        <p className="text-sm font-black text-slate-700">
+        <p className={`text-phx-sm font-bold uppercase tracking-[0.08em] tabular-nums ${LANDING_INK}`}>
           {shown.length} {shown.length === 1 ? "plan" : "plans"}
           {replaced.length > 0 ? (
-            <span className="block text-xs font-semibold text-slate-500">
+            <span className="block break-words text-phx-xs font-semibold normal-case tracking-normal text-slate-500">
               {replaced.length} unsent {replaced.length === 1 ? "draft" : "drafts"} replaced by a later plan not shown
             </span>
           ) : null}
@@ -197,9 +198,9 @@ export function PlansHistory({ openPlanId, plans }: { openPlanId?: string | null
       </div>
 
       {shown.length === 0 ? (
-        <p className={`border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-500 ${adminSoftDepthClassName}`}>
-          {plans.length === 0 ? "You did not file any plan on this form." : "No plan of this type."}
-        </p>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <LandingEmpty>{plans.length === 0 ? "You did not file any plan on this form." : "No plan of this type."}</LandingEmpty>
+        </div>
       ) : (
         <div className="space-y-2">
           {shown.map((plan) => (

@@ -1,14 +1,19 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlarmClock, CalendarDays, CheckCircle2, Clock, Download, RefreshCw, Users, UserX } from "lucide-react";
+import { Clock, Download, RefreshCw } from "lucide-react";
 
+import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import {
-  PortalEmptyState,
-  PortalMetricCard,
-  PortalSection,
-} from "@/components/employee-portal/portal-primitives";
-import { Badge } from "@/components/ui/badge";
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingRailLine,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import {
   isNoRecordDay,
   mergeNoRecordDays,
@@ -20,7 +25,8 @@ import { addDaysToDateOnly } from "@/lib/date-only";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
+import { phxLabelClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -115,16 +121,37 @@ function displayDate(key: string) {
   return utcDate(key.slice(0, 10));
 }
 
-// ─── Status badge ─────────────────────────────────────────────────────────────
+// ─── Status word ──────────────────────────────────────────────────────────────
+//
+// The landing kit's status rule: a day's status is a coloured word, never a filled pill.
+
+function statusInk(status: string) {
+  if (status === "Complete") return "text-emerald-700";
+  if (status === "Exception") return "text-slate-600";
+  if (status === "Late" || status === "Early leave" || status === "Short day") return "text-amber-700";
+  if (status === NO_RECORD_STATUS) return "text-slate-500";
+  return "text-rose-700";
+}
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === "Complete")    return <Badge variant="success">Complete</Badge>;
-  if (status === "Exception")   return <Badge variant="neutral">Exception</Badge>;
-  if (status === "Late")        return <Badge variant="warning">Late</Badge>;
-  if (status === "Early leave") return <Badge variant="warning">Early leave</Badge>;
-  if (status === "Short day")   return <Badge variant="warning">Short day</Badge>;
-  if (status === NO_RECORD_STATUS) return <Badge variant="neutral">{NO_RECORD_STATUS}</Badge>;
-  return <Badge variant="danger">{status}</Badge>;
+  return (
+    <span className={`break-words text-phx-xs font-bold uppercase tracking-[0.08em] ${statusInk(status)}`}>{status}</span>
+  );
+}
+
+/** One figure on the page's navy board: a colour swatch beside the label, the count white and tabular. */
+function FingerprintFigure({ label, swatch, value }: { label: string; swatch?: string; value: number }) {
+  return (
+    <div className={`min-w-0 px-3 py-2.5 ${LANDING_NAVY_TILE}`}>
+      <p className="flex items-center gap-1.5">
+        {swatch ? <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 ${swatch}`} /> : null}
+        <span className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/60">{label}</span>
+      </p>
+      <div className="mt-1.5">
+        <LandingFigure onNavy>{value}</LandingFigure>
+      </div>
+    </div>
+  );
 }
 
 function lateMinutesOf(value: string | null | undefined) {
@@ -134,8 +161,7 @@ function lateMinutesOf(value: string | null | undefined) {
 
 // ─── Shared chrome ────────────────────────────────────────────────────────────
 
-const CARD = `border border-slate-200 bg-white ${adminPanelDepthClassName}`;
-const FIELD = "px-3";
+const CARD = `border border-slate-200 bg-white ${adminSoftDepthClassName}`;
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -228,23 +254,15 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
       {/* ── Whose report (managers only) ─────────────────────────────────── */}
       {hasReports && (
-        <div className={`${CARD} p-4`}>
+        <LandingPanel bodyClassName="p-3 sm:p-4" title="Whose report">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
-                <Users className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-400">Whose report</p>
-                <p className="break-words text-phx-md font-semibold text-slate-800">
-                  {selectedTarget?.isSelf
-                    ? "Your own attendance"
-                    : `${selectedTarget?.label}${selectedTarget?.sublabel ? ` · ${selectedTarget.sublabel}` : ""}`}
-                </p>
-              </div>
-            </div>
+            <p className={`min-w-0 break-words text-phx-md font-semibold ${LANDING_INK}`} dir="auto">
+              {selectedTarget?.isSelf
+                ? "Your own attendance"
+                : `${selectedTarget?.label}${selectedTarget?.sublabel ? ` · ${selectedTarget.sublabel}` : ""}`}
+            </p>
             <SearchableSelect
-              className={`${FIELD} w-full sm:w-72`}
+              className="w-full sm:w-72"
               onChange={(e) => handleTargetChange(e.target.value)}
               value={selectedHrId}
             >
@@ -255,7 +273,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               ))}
             </SearchableSelect>
           </div>
-        </div>
+        </LandingPanel>
       )}
 
       {/* ── Range + export ───────────────────────────────────────────────── */}
@@ -273,14 +291,11 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                   type="button"
                   disabled={isPending}
                   className={[
-                    "inline-flex min-h-10 items-center justify-center gap-1.5 px-3 text-phx-sm font-bold uppercase leading-tight tracking-wide transition-colors duration-150 sm:px-4",
-                    active
-                      ? "bg-orange-500 text-white"
-                      : `border border-slate-300 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`,
+                    landingActionClassName(active ? "solid" : "outline", "min-h-10 leading-tight sm:min-h-10 sm:px-4"),
                     isPending && !active ? "cursor-not-allowed opacity-50" : "",
                   ].join(" ")}
                 >
-                  {isPending && active ? <RefreshCw className="h-3 w-3 shrink-0 animate-spin" /> : null}
+                  {isPending && active ? <RefreshCw aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin motion-reduce:animate-none" /> : null}
                   {label}
                 </button>
               );
@@ -288,21 +303,21 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
           </div>
 
           <a
-            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 border border-slate-900 bg-slate-900 px-4 text-phx-sm font-bold uppercase tracking-wide text-white transition-colors hover:border-orange-600 hover:bg-orange-600"
+            className={landingActionClassName("outline", "min-h-10 px-4 sm:min-h-10")}
             href={exportHref}
             data-no-print
           >
-            <Download className="h-3.5 w-3.5 shrink-0" />
+            <Download aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             Download Excel
           </a>
         </div>
 
         {activeFilter === "custom" && (
-          <div className="mt-3 border-t border-slate-100 pt-3">
-            <label className="block max-w-xs space-y-1.5">
-              <span className="block text-phx-sm font-black uppercase tracking-[0.18em] text-slate-400">Month</span>
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <label className="block max-w-xs">
+              <span className={phxLabelClassName}>Month</span>
               <SearchableSelect
-                className={`${FIELD} w-full`}
+                className="w-full"
                 onChange={(e) => handleCustomMonth(e.target.value)}
                 value={customMonth}
               >
@@ -315,32 +330,29 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
         )}
 
         {fetchError && (
-          <p className="mt-3 border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
-            {fetchError}
-          </p>
+          <div className="-mx-3 -mb-3 mt-3 border-t border-slate-200 sm:-mx-4 sm:-mb-4">
+            <LandingRailLine rail="bg-rose-600">{fetchError}</LandingRailLine>
+          </div>
         )}
       </div>
 
       {/* ── Results (dims while a new range loads) ───────────────────────── */}
       <div
         aria-busy={isPending}
-        className={`space-y-4 transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}
+        className={`space-y-4 transition-opacity duration-200 motion-reduce:transition-none ${isPending ? "opacity-60" : "opacity-100"}`}
       >
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <PortalMetricCard accent="slate" icon={CalendarDays} label="Days recorded" value={summary.totalRows} />
-          <PortalMetricCard accent="emerald" icon={CheckCircle2} label="Complete" value={summary.completeDays} />
-          <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateOrEarlyDays ?? summary.lateDays} />
-          <PortalMetricCard accent="rose" icon={UserX} label="Short / absent" value={summary.shortDays + summary.absentDays} />
-        </div>
+        <LandingNavyBoard label="Key figures">
+          <div className="grid grid-cols-2 gap-px lg:grid-cols-4">
+            <FingerprintFigure label="Days recorded" value={summary.totalRows} />
+            <FingerprintFigure label="Complete" swatch="bg-emerald-400" value={summary.completeDays} />
+            <FingerprintFigure swatch="bg-amber-400" label="Late / early" value={summary.lateOrEarlyDays ?? summary.lateDays} />
+            <FingerprintFigure label="Short / absent" swatch="bg-rose-400" value={summary.shortDays + summary.absentDays} />
+          </div>
+        </LandingNavyBoard>
 
-        <PortalSection
-          actions={
-            <span className="bg-slate-900 px-2.5 py-1 text-phx-xs font-bold uppercase tracking-wide text-slate-100 tabular-nums">
-              {rows.length} {rows.length === 1 ? "day" : "days"}
-            </span>
-          }
-          eyebrow="Fingerprint log"
-          title={rangeLabel}
+        <LandingPanel
+          right={<LandingMeta items={[rangeLabel, `${rows.length} ${rows.length === 1 ? "day" : "days"}`]} />}
+          title="Fingerprint log"
         >
           {rows.length === 0 ? (
             <PortalEmptyState
@@ -350,11 +362,11 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
           ) : (
             <>
               {/* Phone: one card per day. */}
-              <div className="divide-y divide-slate-100 md:hidden">
+              <div className="divide-y divide-slate-200 md:hidden">
                 {rows.map((row) => {
                   if (isNoRecordDay(row)) {
                     return (
-                      <div className="px-4 py-3" key={row.rawDate}>
+                      <div className="px-3 py-3 sm:px-4" key={row.rawDate}>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-phx-md font-bold tabular-nums text-slate-500">{displayDate(row.rawDate)}</span>
                           <StatusBadge status={NO_RECORD_STATUS} />
@@ -364,23 +376,23 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                   }
                   const lateMin = lateMinutesOf(row.lateMinutes);
                   return (
-                    <div className="px-4 py-3" key={row.rawDate}>
+                    <div className="px-3 py-3 sm:px-4" key={row.rawDate}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-phx-md font-bold tabular-nums text-slate-900">{displayDate(row.rawDate)}</span>
+                        <span className={`text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{displayDate(row.rawDate)}</span>
                         <StatusBadge status={row.status} />
                       </div>
-                      <dl className="mt-2.5 grid grid-cols-3 gap-2">
-                        <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
-                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.firstPunch || "—"}</dd>
+                      <dl className="mt-2.5 grid grid-cols-3 divide-x divide-slate-200 border-y border-slate-200">
+                        <div className="min-w-0 px-2 py-1.5">
+                          <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">In</dt>
+                          <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{row.firstPunch || "—"}</dd>
                         </div>
-                        <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
-                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.lastPunch || "—"}</dd>
+                        <div className="min-w-0 px-2 py-1.5">
+                          <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Out</dt>
+                          <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{row.lastPunch || "—"}</dd>
                         </div>
-                        <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
-                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{workedHoursLabel(row.timeLong) || "—"}</dd>
+                        <div className="min-w-0 px-2 py-1.5">
+                          <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Hours</dt>
+                          <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{workedHoursLabel(row.timeLong) || "—"}</dd>
                         </div>
                       </dl>
                       {lateMin > 0 && (
@@ -402,7 +414,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                     <col className="w-[16%]" />
                     <col className="w-[24%]" />
                   </colgroup>
-                  <thead>
+                  <thead className="border-b border-slate-200 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <tr>
                       <th className="px-3 py-2.5">Date</th>
                       <th className="px-3 py-2.5">In · Out</th>
@@ -411,7 +423,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                       <th className="px-3 py-2.5">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {rows.map((row) => {
                       if (isNoRecordDay(row)) {
                         return (
@@ -426,12 +438,12 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                       }
                       const lateMin = lateMinutesOf(row.lateMinutes);
                       return (
-                        <tr className="bg-white transition hover:bg-orange-50/30" key={row.rawDate}>
-                          <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{displayDate(row.rawDate)}</td>
+                        <tr className="bg-white transition-colors hover:bg-slate-50 motion-reduce:transition-none" key={row.rawDate}>
+                          <td className={`px-3 py-2.5 font-bold tabular-nums ${LANDING_INK}`}>{displayDate(row.rawDate)}</td>
                           <td className="px-3 py-2.5 tabular-nums text-slate-700">
                             {row.firstPunch || row.lastPunch ? (
                               <span className="flex flex-wrap items-center gap-x-1">
-                                <Clock className="h-3 w-3 shrink-0 text-slate-400" />
+                                <Clock aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-400" />
                                 {row.firstPunch || "—"}
                                 <span className="text-slate-400">·</span>
                                 {row.lastPunch || "—"}
@@ -457,7 +469,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
               </div>
             </>
           )}
-        </PortalSection>
+        </LandingPanel>
       </div>
     </div>
   );

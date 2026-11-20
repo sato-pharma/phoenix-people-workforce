@@ -3,13 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Merge, RefreshCcw } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FormField } from "@/components/ui/form-kit";
+import { phxButtonPrimaryClassName } from "@/components/ui/form-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingMeta,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import {
   PortalDesktopTable,
   PortalEmptyState,
-  PortalMetricCard,
   PortalPagination,
   PortalRecordCard,
   PortalRecordFields,
@@ -32,7 +37,8 @@ import { linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
-import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { cn } from "@/lib/utils";
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const PAGE_SIZE = 25;
 
@@ -48,20 +54,29 @@ function emptyWorkspace(): MarketingCustomerDatabaseWorkspace {
   };
 }
 
-function statusVariant(status: MarketingValidationStatus): "success" | "warning" | "danger" | "neutral" {
-  if (linkStatusIsSelectable(status)) return "success";
-  if (status === "rejected") return "danger";
-  if (status === "pending") return "warning";
-  return "neutral";
+/** A state in small coloured capitals — the landing kit's replacement for a filled pill. */
+const STATE_TEXT_CLASS = "text-phx-xs font-bold uppercase tracking-[0.08em]";
+
+/** The link's status in its own colour: green once usable in requests, rose rejected, amber pending. */
+function statusTone(status: MarketingValidationStatus): string {
+  if (linkStatusIsSelectable(status)) return "text-emerald-700";
+  if (status === "rejected") return "text-rose-700";
+  if (status === "pending") return "text-amber-700";
+  return "text-slate-500";
+}
+
+function StatusMark({ status }: { status: MarketingValidationStatus }) {
+  return <span className={cn("break-words", STATE_TEXT_CLASS, statusTone(status))}>{humanizeCode(status)}</span>;
 }
 
 function TextCell({ value }: { value: string | null | undefined }) {
-  return <span className="text-slate-700">{value || "—"}</span>;
+  return <span className="break-words text-slate-700" dir="auto">{value || "—"}</span>;
 }
 
+/** A code in plain monospace slate — never a tinted chip. */
 function CodeCell({ value }: { value: number | string | null | undefined }) {
   return (
-    <span className="bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
+    <span className="break-all font-mono text-phx-xs font-bold tabular-nums text-slate-600">
       {value || "-"}
     </span>
   );
@@ -78,7 +93,7 @@ function PhotoCell({ value }: { value: string | null }) {
   if (value.startsWith("http://") || value.startsWith("https://")) {
     return (
       <a
-        className="font-bold text-orange-700 underline decoration-orange-300 underline-offset-4"
+        className={`font-bold ${LANDING_INK} underline decoration-slate-300 underline-offset-4 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
         href={value}
         rel="noreferrer"
         target="_blank"
@@ -108,7 +123,7 @@ function VendorCodeCell({
   value: number | string | null | undefined;
 }) {
   if (!value && !venueCanAttributeSales(row.venueType)) {
-    return <span className="text-xs font-bold text-slate-500">No distributor account</span>;
+    return <span className="text-phx-xs font-bold text-slate-500">No distributor account</span>;
   }
   return <CodeCell value={value} />;
 }
@@ -125,12 +140,12 @@ function VendorCodeCell({
 function LicenseVerdictCell({ value }: { value: boolean | null }) {
   const label = pharmacyLicenseVerdictLabel(value);
   if (value === true) {
-    return <span className="text-xs font-black text-emerald-700">{label}</span>;
+    return <span className={`${STATE_TEXT_CLASS} text-emerald-700`}>{label}</span>;
   }
   if (value === false) {
-    return <span className="text-xs font-black text-rose-700">{label}</span>;
+    return <span className={`${STATE_TEXT_CLASS} text-rose-700`}>{label}</span>;
   }
-  return <span className="text-xs font-bold text-slate-400">{label}</span>;
+  return <span className={`${STATE_TEXT_CLASS} text-slate-500`}>{label}</span>;
 }
 
 function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
@@ -140,16 +155,16 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
     <PortalRecordCard
       accent={row.validationStatus === "rejected" ? "rose" : row.validationStatus === "pending" ? "amber" : "emerald"}
       meta={
-        <span className="inline-flex flex-wrap gap-1.5">
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
           <CodeCell value={row.customerCode} />
           <span className="capitalize">{row.customerType}</span>
-          {/* Only worth a chip when it changes how the row reads — a pharmacy's vendor columns already say it. */}
+          {/* Only worth a mark when it changes how the row reads — a pharmacy's vendor columns already say it. */}
           {venueCanAttributeSales(row.venueType) ? null : (
-            <span className="font-black text-orange-700">{venueTypeLabel(row.venueType)}</span>
+            <span className={`${STATE_TEXT_CLASS} text-amber-700`}>{venueTypeLabel(row.venueType)}</span>
           )}
         </span>
       }
-      status={<Badge variant={statusVariant(row.validationStatus)}>{humanizeCode(row.validationStatus)}</Badge>}
+      status={<StatusMark status={row.validationStatus} />}
       title={row.customerName || row.pharmacyName || "Customer row"}
     >
       {/* In the card BODY, not the `status` slot. Measured both at 375px: the status slot does NOT
@@ -187,7 +202,7 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
         ]}
       />
       {row.customerAddress || row.pharmacyAddress ? (
-        <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+        <p className="mt-2 break-words text-phx-sm font-medium leading-5 text-slate-600" dir="auto">
           {row.customerAddress || row.pharmacyAddress}
         </p>
       ) : null}
@@ -196,14 +211,20 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           has nothing else to identify it, so it is said in words too - and only while it is still
           waiting: the marker stays in the notes for good, the banner follows the status. */}
       {row.licenseOnly ? (
-        <p className="mt-2 border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-black leading-5 text-amber-900">
-          Licence only — no distributor code. Not usable in requests yet.
-        </p>
+        <div className="mt-2 flex min-w-0 gap-2.5">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+          <p className="min-w-0 break-words text-phx-xs font-bold leading-5 text-amber-800">
+            Licence only — no distributor code. Not usable in requests yet.
+          </p>
+        </div>
       ) : null}
       {row.licenseReleased ? (
-        <p className={`mt-2 border border-slate-300 bg-slate-50 px-2.5 py-2 text-xs font-black leading-5 text-slate-800 ${adminSoftDepthClassName}`}>
-          Released on its licence — usable in requests, with no sales channel until a distributor code is added.
-        </p>
+        <div className="mt-2 flex min-w-0 gap-2.5">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-[#08111f]" />
+          <p className="min-w-0 break-words text-phx-xs font-bold leading-5 text-slate-700">
+            Released on its licence — usable in requests, with no sales channel until a distributor code is added.
+          </p>
+        </div>
       ) : null}
       <PharmacyLicenseEvidence
         contentType={row.licenseContentType}
@@ -212,6 +233,18 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
         url={row.licenseUrl}
       />
     </PortalRecordCard>
+  );
+}
+
+/** One count of the register: a small-capital label over a navy tabular figure, on hairlines. */
+function DatabaseFigure({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-0 border-b border-r border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+      <p className={`mt-1 break-words text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums ${LANDING_INK}`}>
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -336,116 +369,108 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
 
   return (
     <PortalSection
-      actions={<Badge variant="neutral">{venues.length} venues</Badge>}
-      description="Fold a duplicate shop into the row that survives. Every customer link, request target, distributor code and transfer moves across, the duplicate is deactivated, and the merge is written to the audit log."
+      actions={<LandingMeta items={[`${venues.length} venues`]} />}
       eyebrow="Customer Database"
       title="Merge duplicate venues"
     >
-      <div className="grid gap-4 p-4 sm:p-5">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="grid gap-1.5">
-            <label
-              className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500"
-              htmlFor="venue-merge-survivor"
-            >
-              Venue that survives
-            </label>
-            <SearchableSelect
-              className="w-full px-3"
-              disabled={isLoadingVenues || isMerging}
-              id="venue-merge-survivor"
-              onChange={(event) => setSurvivorId(event.target.value)}
-              value={survivorId}
-            >
-              <option value="">Search by name or code</option>
-              {mergeable.map((venue) => (
-                <option key={venue.id} value={venue.id}>{venueOptionLabel(venue)}</option>
-              ))}
-            </SearchableSelect>
-          </div>
-
-          <div className="grid gap-1.5">
-            <label
-              className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500"
-              htmlFor="venue-merge-loser"
-            >
-              Duplicate to retire
-            </label>
-            <SearchableSelect
-              className="w-full px-3"
-              disabled={isLoadingVenues || isMerging}
-              id="venue-merge-loser"
-              onChange={(event) => setLoserId(event.target.value)}
-              value={loserId}
-            >
-              <option value="">Search by name or code</option>
-              {mergeable
-                .filter((venue) => venue.id !== survivorId)
-                .map((venue) => (
+      <div className="@container">
+        <div className="grid gap-4 px-3 py-4 sm:px-4">
+          <div className="grid gap-4 @2xl:grid-cols-2">
+            <FormField htmlFor="venue-merge-survivor" label="Venue that survives">
+              <SearchableSelect
+                className="w-full px-3"
+                disabled={isLoadingVenues || isMerging}
+                id="venue-merge-survivor"
+                onChange={(event) => setSurvivorId(event.target.value)}
+                value={survivorId}
+              >
+                <option value="">Search by name or code</option>
+                {mergeable.map((venue) => (
                   <option key={venue.id} value={venue.id}>{venueOptionLabel(venue)}</option>
                 ))}
-            </SearchableSelect>
+              </SearchableSelect>
+            </FormField>
+
+            <FormField htmlFor="venue-merge-loser" label="Duplicate to retire">
+              <SearchableSelect
+                className="w-full px-3"
+                disabled={isLoadingVenues || isMerging}
+                id="venue-merge-loser"
+                onChange={(event) => setLoserId(event.target.value)}
+                value={loserId}
+              >
+                <option value="">Search by name or code</option>
+                {mergeable
+                  .filter((venue) => venue.id !== survivorId)
+                  .map((venue) => (
+                    <option key={venue.id} value={venue.id}>{venueOptionLabel(venue)}</option>
+                  ))}
+              </SearchableSelect>
+            </FormField>
           </div>
-        </div>
 
-        <div className="grid gap-1.5">
-          <label
-            className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500"
-            htmlFor="venue-merge-reason"
-          >
-            Why these two are one shop
-          </label>
-          <Input
-            disabled={isMerging}
-            id="venue-merge-reason"
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="Same shop registered twice under two codes"
-            value={reason}
-          />
-        </div>
+          <FormField htmlFor="venue-merge-reason" label="Why these two are one shop">
+            <Input
+              disabled={isMerging}
+              id="venue-merge-reason"
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Same shop registered twice under two codes"
+              value={reason}
+            />
+          </FormField>
 
-        {survivor && loser ? (
-          <div className={`rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700 ${adminSoftDepthClassName}`}>
-            <span className="font-black text-slate-950">{loser.displayName}</span>
-            <span className="font-mono text-xs font-black text-slate-600"> ({loser.pharmacyCode})</span>
-            {" is retired into "}
-            <span className="font-black text-slate-950">{survivor.displayName}</span>
-            <span className="font-mono text-xs font-black text-slate-600"> ({survivor.pharmacyCode})</span>
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
-            {error}
-          </div>
-        ) : null}
-
-        {outcome ? (
-          <div className="rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
-            {`Merged. Moved ${outcome.customerLinksMoved} customer link(s), ${outcome.requestTargetsMoved} request target(s), `}
-            {`${outcome.codesMoved} distributor code(s) and ${outcome.transfersMoved} transfer(s); `}
-            {`${outcome.alreadyOnSurvivor} were already on the survivor.`}
-            {outcome.duplicateCodesRetired > 0
-              ? ` Switched off ${outcome.duplicateCodesRetired} duplicate distributor code(s) the survivor already had, and moved ${outcome.repointed} link(s) and target(s) onto the survivor's copy.`
-              : null}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
-            disabled={!canMerge}
-            onClick={() => void submitMerge()}
-            type="button"
-          >
-            {isMerging ? <LoadingSpinner /> : <Merge className="h-4 w-4" />}
-            Merge venues
-          </Button>
-          {isLoadingVenues ? (
-            <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-500">
-              <LoadingSpinner /> Loading venues...
-            </span>
+          {/* What the merge will do, read as one sentence on a navy rail — a hairline tile, never a
+              tinted box. */}
+          {survivor && loser ? (
+            <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminChipDepthClassName}`}>
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-[#08111f]" />
+              <p className="min-w-0 break-words text-phx-sm font-medium leading-6 text-slate-600">
+                <span className={`font-bold ${LANDING_INK}`} dir="auto">{loser.displayName}</span>
+                <span className="font-mono text-phx-xs font-bold text-slate-500"> ({loser.pharmacyCode})</span>
+                {" is retired into "}
+                <span className={`font-bold ${LANDING_INK}`} dir="auto">{survivor.displayName}</span>
+                <span className="font-mono text-phx-xs font-bold text-slate-500"> ({survivor.pharmacyCode})</span>
+              </p>
+            </div>
           ) : null}
+
+          {error ? (
+            <div className="flex min-w-0 gap-3" role="alert">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+              <p className="min-w-0 break-words text-phx-sm font-semibold text-rose-800">{error}</p>
+            </div>
+          ) : null}
+
+          {outcome ? (
+            <div className="flex min-w-0 gap-3" role="status">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-emerald-500" />
+              <p className="min-w-0 break-words text-phx-sm font-semibold leading-6 text-emerald-800">
+              {`Merged. Moved ${outcome.customerLinksMoved} customer link(s), ${outcome.requestTargetsMoved} request target(s), `}
+              {`${outcome.codesMoved} distributor code(s) and ${outcome.transfersMoved} transfer(s); `}
+              {`${outcome.alreadyOnSurvivor} were already on the survivor.`}
+              {outcome.duplicateCodesRetired > 0
+                ? ` Switched off ${outcome.duplicateCodesRetired} duplicate distributor code(s) the survivor already had, and moved ${outcome.repointed} link(s) and target(s) onto the survivor's copy.`
+                : null}
+              </p>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              className={cn(phxButtonPrimaryClassName, "motion-reduce:transition-none", LANDING_FOCUS)}
+              disabled={!canMerge}
+              onClick={() => void submitMerge()}
+              type="button"
+            >
+              {isMerging ? <LoadingSpinner className="h-4 w-4 text-current" /> : <Merge aria-hidden="true" className="h-4 w-4" />}
+              Merge venues
+            </button>
+            {isLoadingVenues ? (
+              <span className="inline-flex items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                <LoadingSpinner className="h-3.5 w-3.5 text-slate-400" /> Loading venues...
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
     </PortalSection>
@@ -502,27 +527,37 @@ export function MarketingCustomerDatabase() {
     : `${(safePage - 1) * PAGE_SIZE + 1}-${Math.min(safePage * PAGE_SIZE, workspace.rows.length)} of ${workspace.rows.length} rows`;
 
   return (
-    <div className="space-y-6">
-      <PortalSection className="p-4 sm:p-5">
-        <div className="grid gap-3 md:grid-cols-5">
-          <PortalMetricCard label="Rows" value={workspace.summary.rows} />
-          <PortalMetricCard accent="sky" label="Customers" value={workspace.summary.customers} />
-          <PortalMetricCard accent="emerald" label="Pharmacies" value={workspace.summary.pharmacies} />
-          <PortalMetricCard accent="slate" label="Vendors" value={workspace.summary.vendors} />
-          <button
-            className="flex min-h-[78px] items-center justify-center gap-2 rounded border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-            onClick={() => void loadWorkspace()}
-            type="button"
-          >
-            {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-4 w-4" />}
-            Refresh
-          </button>
+    <div className="space-y-4">
+      {/* The register's four counts on hairlines inside one white sheet, Refresh in the last cell —
+          never four shadowed tiles on a panel. The same component serves the admin shell, so no
+          navy board here. */}
+      <section className={`@container min-w-0 overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <div className="-mb-px -mr-px grid grid-cols-2 @2xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
+          <DatabaseFigure label="Rows" value={workspace.summary.rows} />
+          <DatabaseFigure label="Customers" value={workspace.summary.customers} />
+          <DatabaseFigure label="Pharmacies" value={workspace.summary.pharmacies} />
+          <DatabaseFigure label="Vendors" value={workspace.summary.vendors} />
+          <div className="col-span-2 flex items-center justify-end border-b border-r border-slate-200 px-3 py-2.5 @2xl:col-span-1 sm:px-4">
+            <button
+              className={landingActionClassName("outline", "bg-white")}
+              onClick={() => void loadWorkspace()}
+              type="button"
+            >
+              {isLoading ? (
+                <LoadingSpinner className="h-3.5 w-3.5 text-current" />
+              ) : (
+                <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              )}
+              Refresh
+            </button>
+          </div>
         </div>
-      </PortalSection>
+      </section>
 
       {message ? (
-        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          {message}
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`} role="alert">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+          <p className="min-w-0 break-words text-phx-sm font-semibold text-slate-700">{message}</p>
         </div>
       ) : null}
 
@@ -530,7 +565,7 @@ export function MarketingCustomerDatabase() {
       <MarketingCustomerMergePanel onMerged={() => void loadWorkspace()} />
 
       <PortalSection
-        actions={<Badge variant="neutral">{workspace.rows.length} rows</Badge>}
+        actions={<LandingMeta items={[`${workspace.rows.length} rows`]} />}
         eyebrow="Customer Database"
         title="Customer, venue, and vendor rows"
       >
@@ -543,8 +578,8 @@ export function MarketingCustomerDatabase() {
                 title="No customer database rows yet"
               />
             ) : (
-              <div className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
-                <span className="inline-flex items-center gap-2"><LoadingSpinner /> Loading customer database...</span>
+              <div aria-busy="true" className="px-3 py-4 text-phx-sm font-medium text-slate-500 sm:px-4">
+                <span className="inline-flex items-center gap-2"><LoadingSpinner className="h-3.5 w-3.5 text-slate-400" /> Loading customer database...</span>
               </div>
             )
           }
@@ -567,8 +602,8 @@ export function MarketingCustomerDatabase() {
                 </colgroup>
               }
             >
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
-              <tr>
+            <thead className="text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
+              <tr className="border-b border-slate-200">
                 <th className="px-3 py-3">Customer</th>
                 <th className="px-3 py-3">Customer Area &amp; Phone</th>
                 <th className="px-3 py-3">Customer Address &amp; Photo</th>
@@ -579,12 +614,12 @@ export function MarketingCustomerDatabase() {
                 <th className="px-3 py-3">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-200 bg-white text-phx-sm">
               {pagedRows.map((row: MarketingCustomerDatabaseRow) => (
-                <tr className="align-top" key={row.rowId}>
+                <tr className="align-top transition-colors hover:bg-slate-50 motion-reduce:transition-none" key={row.rowId}>
                   <td className="min-w-0 break-words px-3 py-3">
-                    <span className="block font-black text-slate-950">{row.customerName}</span>
-                    <span className="mt-1 block text-xs font-bold capitalize text-slate-700">{row.customerType}</span>
+                    <span className={`block font-bold ${LANDING_INK}`} dir="auto">{row.customerName}</span>
+                    <span className="mt-1 block text-phx-xs font-semibold capitalize text-slate-600">{row.customerType}</span>
                     <span className="mt-1 block"><CodeCell value={row.customerCode} /></span>
                   </td>
                   <td className="min-w-0 break-words px-3 py-3">
@@ -595,14 +630,14 @@ export function MarketingCustomerDatabase() {
                     <span className="block"><TextCell value={row.customerAddress} /></span>
                     <span className="mt-1 block"><PhotoCell value={row.customerValidationPhoto} /></span>
                   </td>
-                  <td className="min-w-0 break-words px-3 py-3 font-black text-slate-950">
-                    {row.pharmacyName}
-                    <span className="mt-1 block text-xs font-bold text-slate-700">{venueTypeLabel(row.venueType)}</span>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className={`block font-bold ${LANDING_INK}`} dir="auto">{row.pharmacyName}</span>
+                    <span className="mt-1 block text-phx-xs font-semibold text-slate-600">{venueTypeLabel(row.venueType)}</span>
                     {row.licenseOnly ? (
-                      <span className="mt-1 block text-xs font-black text-amber-800">Licence only — not usable yet</span>
+                      <span className={`mt-1 block ${STATE_TEXT_CLASS} text-amber-700`}>Licence only — not usable yet</span>
                     ) : null}
                     {row.licenseReleased ? (
-                      <span className="mt-1 block text-xs font-black text-slate-700">Released on licence — no sales channel</span>
+                      <span className={`mt-1 block ${STATE_TEXT_CLASS} text-slate-600`}>Released on licence — no sales channel</span>
                     ) : null}
                     {/* A thumbnail in a narrow column — tap it to open the full-screen zoom. */}
                     <PharmacyLicenseEvidence
@@ -618,12 +653,12 @@ export function MarketingCustomerDatabase() {
                   </td>
                   <td className="min-w-0 break-words px-3 py-3"><LicenseVerdictCell value={row.licenseNameMatchesSign} /></td>
                   <td className="min-w-0 break-words px-3 py-3">
-                    <span className="block font-bold text-slate-800">{vendorNameLabel(row)}</span>
+                    <span className={`block font-bold ${LANDING_INK}`} dir="auto">{vendorNameLabel(row)}</span>
                     <span className="mt-1 block"><VendorCodeCell row={row} value={row.vendorPharmacyCode} /></span>
                   </td>
                   <td className="min-w-0 break-words px-3 py-3">
-                    <span className="inline-flex flex-col items-start gap-1">
-                      <Badge variant={statusVariant(row.validationStatus)}>{humanizeCode(row.validationStatus)}</Badge>
+                    <span className="inline-flex flex-col items-start gap-1.5">
+                      <StatusMark status={row.validationStatus} />
                       <LinkFieldEvidenceBadge link={row} />
                     </span>
                   </td>
@@ -635,7 +670,7 @@ export function MarketingCustomerDatabase() {
         />
         <PortalPagination label={pageLabel}>
           <button
-            className={`rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+            className={landingActionClassName("outline", "disabled:opacity-40")}
             disabled={safePage <= 1}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             type="button"
@@ -643,7 +678,7 @@ export function MarketingCustomerDatabase() {
             Previous
           </button>
           <button
-            className={`rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+            className={landingActionClassName("outline", "disabled:opacity-40")}
             disabled={safePage >= totalPages}
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             type="button"

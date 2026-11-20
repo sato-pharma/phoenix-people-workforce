@@ -4,13 +4,16 @@ import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
-import { Button } from "@/components/ui/button";
+import { LandingPanel } from "@/components/employee-portal/landing-kit";
 import { FormActions, FormError, FormField } from "@/components/ui/form-kit";
-import { phxButtonDangerDenseClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonDangerClassName,
+  phxButtonGhostClassName,
+  phxButtonPrimaryClassName,
+  phxSelectClassName,
+} from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { cn } from "@/lib/utils";
 import type { VacationRequestRecord } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vacation/types";
 
@@ -24,6 +27,9 @@ import { VACATION_DAY_PARTS, VACATION_STATUSES, VACATION_TYPES } from "@/lib/vac
  * The employee is fixed (the request belongs to them): the form sends it back unchanged, which is
  * what the PATCH route expects.
  */
+
+/** The buttons: full width, one under another, on a phone; on the right from `sm`. */
+const ACTION_ROW = "flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end [&>button]:justify-center";
 
 type FormState = {
   dayPart: string;
@@ -107,119 +113,88 @@ export function VacationAdminControls({ backHref, row }: { backHref: string; row
   const typeOptions = VACATION_TYPES;
 
   return (
-    <section className={adminPanelClassName}>
-      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Admin controls</h3>
-      </header>
-      <div className="space-y-3 px-4 py-3">
-        <p className="text-phx-xs font-semibold text-slate-600">
-          Change or remove this request. Every change is written to the request&apos;s timeline and the admin audit log.
-        </p>
+    <LandingPanel title="Admin controls" bodyClassName="space-y-3 px-3 py-3 sm:px-4">
+      {mode === "idle" ? (
+        <div className={ACTION_ROW}>
+          <button className={phxButtonGhostClassName} onClick={startEdit} type="button">
+            <Pencil aria-hidden="true" className="h-3.5 w-3.5" /> Edit request
+          </button>
+          <button
+            className={phxButtonDangerClassName}
+            onClick={() => {
+              setError(null);
+              setMode("confirm-delete");
+            }}
+            type="button"
+          >
+            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" /> Delete request
+          </button>
+        </div>
+      ) : null}
 
-        {mode === "idle" ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              className="gap-1.5 rounded-sm border border-slate-300 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-              onClick={startEdit}
-              type="button"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit request
-            </Button>
-            <Button
-              className={cn(phxButtonDangerDenseClassName, "gap-1.5 text-phx-sm font-bold")}
-              onClick={() => {
-                setError(null);
-                setMode("confirm-delete");
-              }}
-              type="button"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete request
-            </Button>
+      {mode === "edit" ? (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Type">
+              <SearchableSelect className={phxSelectClassName} value={form.vacationType} onChange={(event) => update("vacationType", event.target.value)}>
+                {typeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </SearchableSelect>
+            </FormField>
+            <FormField label="Status">
+              <SearchableSelect className={phxSelectClassName} value={form.status} onChange={(event) => update("status", event.target.value)}>
+                {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </SearchableSelect>
+            </FormField>
+            <FormField label="Day part">
+              <SearchableSelect className={phxSelectClassName} value={form.dayPart} onChange={(event) => update("dayPart", event.target.value)}>
+                {VACATION_DAY_PARTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </SearchableSelect>
+            </FormField>
+            <div className="hidden sm:block" />
+            <FormField label="From">
+              <Input type="date" value={form.startDate} onChange={(event) => update("startDate", event.target.value)} />
+            </FormField>
+            <FormField label="To">
+              <Input type="date" value={form.endDate} onChange={(event) => update("endDate", event.target.value)} />
+            </FormField>
+            <FormField className="sm:col-span-2" label="Admin note">
+              <Input value={form.notes} onChange={(event) => update("notes", event.target.value)} />
+            </FormField>
           </div>
-        ) : null}
-
-        {mode === "edit" ? (
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Type">
-                <SearchableSelect className={phxSelectClassName} value={form.vacationType} onChange={(event) => update("vacationType", event.target.value)}>
-                  {typeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </SearchableSelect>
-              </FormField>
-              <FormField label="Status">
-                <SearchableSelect className={phxSelectClassName} value={form.status} onChange={(event) => update("status", event.target.value)}>
-                  {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </SearchableSelect>
-              </FormField>
-              <FormField label="Day part">
-                <SearchableSelect className={phxSelectClassName} value={form.dayPart} onChange={(event) => update("dayPart", event.target.value)}>
-                  {VACATION_DAY_PARTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </SearchableSelect>
-              </FormField>
-              <div className="hidden sm:block" />
-              <FormField label="From">
-                <Input type="date" value={form.startDate} onChange={(event) => update("startDate", event.target.value)} />
-              </FormField>
-              <FormField label="To">
-                <Input type="date" value={form.endDate} onChange={(event) => update("endDate", event.target.value)} />
-              </FormField>
-              <FormField className="sm:col-span-2" label="Admin note">
-                <Input value={form.notes} onChange={(event) => update("notes", event.target.value)} />
-              </FormField>
-            </div>
-            <FormActions
-              left={
-                <Button
-                  className="rounded-sm border border-slate-300 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-                  disabled={busy}
-                  onClick={() => setMode("idle")}
-                  type="button"
-                >
-                  Cancel
-                </Button>
-              }
-              right={
-                <Button
-                  className="rounded-sm bg-orange-500 text-phx-sm font-bold text-white hover:bg-orange-600"
-                  disabled={busy}
-                  onClick={() => void save()}
-                  type="button"
-                >
-                  {busy ? "Saving..." : "Save changes"}
-                </Button>
-              }
-            />
-          </div>
-        ) : null}
-
-        {mode === "confirm-delete" ? (
-          <div className="space-y-3 border border-rose-200 bg-rose-50 px-3 py-3 shadow-[0_1px_2px_rgba(127,29,29,0.06),0_12px_28px_rgba(127,29,29,0.08)]">
-            <p className="text-phx-sm font-bold text-rose-900">
-              Delete {row.requestCode} for {row.employeeName}? This removes the request. The admin audit log keeps the deleted record context.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                className={cn(phxButtonDangerDenseClassName, "text-phx-sm font-bold")}
-                disabled={busy}
-                onClick={() => void remove()}
-                type="button"
-              >
-                {busy ? "Deleting..." : "Yes, delete this request"}
-              </Button>
-              <Button
-                className="rounded-sm border border-slate-300 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-                disabled={busy}
-                onClick={() => setMode("idle")}
-                type="button"
-              >
+          <FormActions
+            left={
+              <button className={phxButtonGhostClassName} disabled={busy} onClick={() => setMode("idle")} type="button">
                 Cancel
-              </Button>
-            </div>
-          </div>
-        ) : null}
+              </button>
+            }
+            right={
+              <button className={phxButtonPrimaryClassName} disabled={busy} onClick={() => void save()} type="button">
+                {busy ? "Saving..." : "Save changes"}
+              </button>
+            }
+          />
+        </div>
+      ) : null}
 
-        <FormError>{error}</FormError>
-      </div>
-    </section>
+      {mode === "confirm-delete" ? (
+        // The confirmation is a rose rail and its words, never a filled box: the colour says it, the
+        // two buttons under it decide it.
+        <div className="space-y-3 border-l-4 border-rose-500 py-1 pl-3">
+          <p className="break-words text-phx-sm font-bold text-rose-800">
+            Delete {row.requestCode} for {row.employeeName}? This removes the request. The admin audit log keeps the deleted record context.
+          </p>
+          <div className={ACTION_ROW}>
+            <button className={phxButtonDangerClassName} disabled={busy} onClick={() => void remove()} type="button">
+              {busy ? "Deleting..." : "Yes, delete this request"}
+            </button>
+            <button className={phxButtonGhostClassName} disabled={busy} onClick={() => setMode("idle")} type="button">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <FormError>{error}</FormError>
+    </LandingPanel>
   );
 }

@@ -1,18 +1,27 @@
 "use client";
 
 import { Fragment, useState, useTransition } from "react";
-import { AlarmClock, CheckCircle2, Clock, MessageSquare, RefreshCw, ShieldCheck, UserX } from "lucide-react";
+import { Clock, MessageSquare, RefreshCw, ShieldCheck } from "lucide-react";
 
+import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import {
-  PortalEmptyState,
-  PortalMetricCard,
-  PortalSection,
-} from "@/components/employee-portal/portal-primitives";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { cn } from "@/lib/utils";
+import {
+  phxButtonAccentClassName,
+  phxButtonGhostClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 
 type Props = {
   hrId: string;
@@ -27,15 +36,40 @@ type DisputeState = {
   error: string | null;
 };
 
+// The landing kit's status rule: a day's status is a coloured word, never a filled pill.
+function statusInk(status: string) {
+  if (status === "Complete") return "text-emerald-700";
+  if (status === "Exception") return "text-slate-600";
+  if (status === "Late" || status === "Early leave" || status === "Short day") return "text-amber-700";
+  return "text-rose-700";
+}
+
 function statusBadge(status: string) {
-  if (status === "Complete") return <Badge variant="success">Complete</Badge>;
-  if (status === "Exception") return <Badge variant="neutral">Exception</Badge>;
-  if (status === "Late" || status === "Early leave") return <Badge variant="warning">{status}</Badge>;
-  if (status === "Short day") return <Badge variant="warning">Short day</Badge>;
-  return <Badge variant="danger">{status}</Badge>;
+  return (
+    <span className={`break-words text-phx-xs font-bold uppercase tracking-[0.08em] ${statusInk(status)}`}>{status}</span>
+  );
+}
+
+/** One figure on the page's navy board: a colour swatch beside the label, the count white and tabular. */
+function AttendanceFigure({ label, note, swatch, value }: { label: string; note?: string; swatch: string; value: number }) {
+  return (
+    <div className={`min-w-0 px-3 py-2.5 ${LANDING_NAVY_TILE}`}>
+      <p className="flex items-center gap-1.5">
+        <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 ${swatch}`} />
+        <span className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/60">{label}</span>
+      </p>
+      <div className="mt-1.5">
+        <LandingFigure onNavy>{value}</LandingFigure>
+      </div>
+      {note ? <p className="mt-1 break-words text-phx-xs font-semibold text-white/45">{note}</p> : null}
+    </div>
+  );
 }
 
 const disputeTextareaClass  = phxTextareaClassName;
+// The form kit's terminal commit and its ghost, with the landing focus ring and a full-height tap target.
+const sendDisputeClass = cn(phxButtonAccentClassName, "min-h-10 justify-center motion-reduce:transition-none", LANDING_FOCUS);
+const cancelDisputeClass = cn(phxButtonGhostClassName, "min-h-10 justify-center motion-reduce:transition-none", LANDING_FOCUS);
 
 export function AttendanceOverview({ hrId, initialData }: Props) {
   const [data, setData] = useState<EmployeeAttendanceData>(initialData);
@@ -124,25 +158,27 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
             Last 30 days &middot; {rows.length} day{rows.length !== 1 ? "s" : ""} recorded
           </p>
           {pendingDisputes > 0 && (
-            <p className="mt-0.5 text-phx-sm font-bold text-orange-700">
+            <p className="mt-0.5 text-phx-sm font-bold text-sky-700">
               {pendingDisputes} dispute{pendingDisputes !== 1 ? "s" : ""} waiting for HR review
             </p>
           )}
         </div>
-        <Button className="min-h-10 gap-1.5" disabled={isPending} onClick={refresh} size="sm" variant="outline">
-          <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
+        <button className={landingActionClassName("outline")} disabled={isPending} onClick={refresh} type="button">
+          <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${isPending ? "animate-spin motion-reduce:animate-none" : ""}`} />
           Refresh
-        </Button>
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <PortalMetricCard accent="emerald" icon={CheckCircle2} label="Complete" value={summary.completeDays} />
-        <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateOrEarlyDays ?? summary.lateDays} />
-        <PortalMetricCard accent="rose" icon={UserX} label="Short / absent" value={summary.absentDays + summary.shortDays} />
-        <PortalMetricCard accent="sky" icon={ShieldCheck} label="Exceptions" note="Approved by HR" value={summary.exceptionDays} />
-      </div>
+      <LandingNavyBoard label="Key figures">
+        <div className="grid grid-cols-2 gap-px lg:grid-cols-4">
+          <AttendanceFigure label="Complete" swatch="bg-emerald-400" value={summary.completeDays} />
+          <AttendanceFigure swatch="bg-amber-400" label="Late / early" value={summary.lateOrEarlyDays ?? summary.lateDays} />
+          <AttendanceFigure label="Short / absent" swatch="bg-rose-400" value={summary.absentDays + summary.shortDays} />
+          <AttendanceFigure label="Exceptions" note="Approved by HR" swatch="bg-sky-400" value={summary.exceptionDays} />
+        </div>
+      </LandingNavyBoard>
 
-      <PortalSection eyebrow="Daily record" title="Punches by day">
+      <LandingPanel right={<LandingMeta items={["Daily record"]} />} title="Punches by day">
         {rows.length === 0 ? (
           <PortalEmptyState
             message="Nothing was recorded for you in the last 30 days."
@@ -151,28 +187,28 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
         ) : (
           <>
             {/* Phone: one card per day. */}
-            <div className="divide-y divide-slate-100 md:hidden">
+            <div className="divide-y divide-slate-200 md:hidden">
               {rows.map((row) => {
                 const dispute = disputes[row.rawDate];
                 const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
                 return (
-                  <div className="px-4 py-3" key={row.rawDate}>
+                  <div className="px-3 py-3 sm:px-4" key={row.rawDate}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-phx-md font-bold tabular-nums text-slate-900">{row.date}</span>
+                      <span className={`text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{row.date}</span>
                       {statusBadge(row.status)}
                     </div>
-                    <dl className="mt-2.5 grid grid-cols-3 gap-2">
-                      <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
-                        <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.firstPunch || "—"}</dd>
+                    <dl className="mt-2.5 grid grid-cols-3 divide-x divide-slate-200 border-y border-slate-200">
+                      <div className="min-w-0 px-2 py-1.5">
+                        <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">In</dt>
+                        <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{row.firstPunch || "—"}</dd>
                       </div>
-                      <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
-                        <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.lastPunch || "—"}</dd>
+                      <div className="min-w-0 px-2 py-1.5">
+                        <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Out</dt>
+                        <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{row.lastPunch || "—"}</dd>
                       </div>
-                      <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
-                        <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.timeLong || "—"}</dd>
+                      <div className="min-w-0 px-2 py-1.5">
+                        <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Hours</dt>
+                        <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{row.timeLong || "—"}</dd>
                       </div>
                     </dl>
                     {row.deductionConfirmed && (
@@ -181,48 +217,48 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                       </p>
                     )}
                     {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
-                      <Button
-                        className="mt-2 min-h-10 w-full gap-1.5"
+                      <button
+                        className={landingActionClassName("outline", "mt-2 w-full")}
                         onClick={() => openDispute(row.rawDate, row.date)}
-                        size="sm"
-                        variant="outline"
+                        type="button"
                       >
-                        <MessageSquare className="h-3.5 w-3.5" />
+                        <MessageSquare aria-hidden="true" className="h-3.5 w-3.5" />
                         Dispute this day
-                      </Button>
+                      </button>
                     )}
                     {dispute?.submitted && (
-                      <span className="mt-2 flex items-center gap-1 text-phx-sm font-bold text-orange-700">
-                        <ShieldCheck className="h-3.5 w-3.5" />
+                      <span className="mt-2 flex items-center gap-1 text-phx-sm font-bold text-sky-700">
+                        <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" />
                         Waiting for HR review
                       </span>
                     )}
                     {dispute && !dispute.submitted && (
                       <div className="mt-2">
                         <textarea
+                          aria-label="Dispute reason"
                           className={disputeTextareaClass}
+                          dir="auto"
                           onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
                           placeholder={disputePlaceholder}
                           rows={3}
                           value={dispute.reason}
                         />
                         <div className="mt-2 grid grid-cols-2 gap-2">
-                          <Button
-                            className="min-h-10 bg-orange-600 text-white hover:bg-orange-700"
+                          <button
+                            className={sendDisputeClass}
                             disabled={dispute.submitting}
                             onClick={() => submitDispute(row.rawDate, hrId)}
-                            size="sm"
+                            type="button"
                           >
                             {dispute.submitting ? "Sending…" : "Send dispute"}
-                          </Button>
-                          <Button
-                            className="min-h-10"
+                          </button>
+                          <button
+                            className={cancelDisputeClass}
                             onClick={() => cancelDispute(row.rawDate)}
-                            size="sm"
-                            variant="outline"
+                            type="button"
                           >
                             Cancel
-                          </Button>
+                          </button>
                         </div>
                         {dispute.error && <p className="mt-1 text-phx-sm font-semibold text-rose-700">{dispute.error}</p>}
                       </div>
@@ -244,7 +280,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                   {showDeductionCol ? <col className="w-[12%]" /> : null}
                   <col className={showDeductionCol ? "w-[18%]" : "w-[30%]"} />
                 </colgroup>
-                <thead>
+                <thead className="border-b border-slate-200 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                   <tr>
                     <th className="px-3 py-2.5">Date</th>
                     <th className="px-3 py-2.5">In · Out</th>
@@ -256,21 +292,21 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-200">
                   {rows.map((row) => {
                     const dispute = disputes[row.rawDate];
                     const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
                     return (
                       <Fragment key={row.rawDate}>
                         <tr
-                          className="bg-white transition hover:bg-orange-50/30"
+                          className="bg-white transition-colors hover:bg-slate-50 motion-reduce:transition-none"
                           {...rowDetailToggleProps(`dispute-${row.rawDate}`, Boolean(dispute && !dispute.submitted))}
                         >
-                          <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{row.date}</td>
+                          <td className={`px-3 py-2.5 font-bold tabular-nums ${LANDING_INK}`}>{row.date}</td>
                           <td className="px-3 py-2.5 tabular-nums text-slate-700">
                             {row.firstPunch ? (
                               <span className="flex flex-wrap items-center gap-x-1">
-                                <Clock className="h-3 w-3 shrink-0 text-slate-400" />
+                                <Clock aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-400" />
                                 {row.firstPunch}
                                 <span className="text-slate-400">·</span>
                                 {row.lastPunch || "—"}
@@ -294,19 +330,18 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                           )}
                           <td className="px-3 py-2.5">
                             {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
-                              <Button
-                                className="h-8 gap-1"
+                              <button
+                                className={landingActionClassName("outline", "gap-1 px-2.5")}
                                 onClick={() => openDispute(row.rawDate, row.date)}
-                                size="sm"
-                                variant="outline"
+                                type="button"
                               >
-                                <MessageSquare className="h-3 w-3" />
+                                <MessageSquare aria-hidden="true" className="h-3 w-3" />
                                 Dispute
-                              </Button>
+                              </button>
                             )}
                             {dispute?.submitted && (
-                              <span className="flex items-center gap-1 text-phx-sm font-bold text-orange-700">
-                                <ShieldCheck className="h-3 w-3 shrink-0" />
+                              <span className="flex items-center gap-1 text-phx-sm font-bold text-sky-700">
+                                <ShieldCheck aria-hidden="true" className="h-3 w-3 shrink-0" />
                                 Waiting for HR
                               </span>
                             )}
@@ -316,29 +351,30 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                           <TableRowDetail className="py-3" colSpan={colSpanTotal} id={`dispute-${row.rawDate}`}>
                               <div className="flex flex-col gap-2 lg:flex-row lg:items-start">
                                 <textarea
+                                  aria-label="Dispute reason"
                                   className={`${disputeTextareaClass} lg:flex-1`}
+                                  dir="auto"
                                   onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
                                   placeholder={disputePlaceholder}
                                   rows={2}
                                   value={dispute.reason}
                                 />
                                 <div className="flex gap-2 lg:flex-col">
-                                  <Button
-                                    className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
+                                  <button
+                                    className={cn(sendDisputeClass, "flex-1")}
                                     disabled={dispute.submitting}
                                     onClick={() => submitDispute(row.rawDate, hrId)}
-                                    size="sm"
+                                    type="button"
                                   >
                                     {dispute.submitting ? "Sending…" : "Send dispute"}
-                                  </Button>
-                                  <Button
-                                    className="flex-1"
+                                  </button>
+                                  <button
+                                    className={cn(cancelDisputeClass, "flex-1")}
                                     onClick={() => cancelDispute(row.rawDate)}
-                                    size="sm"
-                                    variant="outline"
+                                    type="button"
                                   >
                                     Cancel
-                                  </Button>
+                                  </button>
                                 </div>
                               </div>
                               {dispute.error && <p className="mt-1 text-phx-sm font-semibold text-rose-700">{dispute.error}</p>}
@@ -352,7 +388,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
             </div>
           </>
         )}
-      </PortalSection>
+      </LandingPanel>
     </div>
   );
 }

@@ -4,7 +4,16 @@ import { useMemo, useState } from "react";
 
 import type { DeductionMethod, MyDigest, MyDigestLine } from "@/lib/attendance/digest-service.ts";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingEmpty,
+  LandingMeta,
+  LandingPanel,
+  LandingRailLine,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 
 // House rules this component is built to, not decorated with:
 //   • Square edges everywhere — owner rule 2026-09-04. No rounded-* classes.
@@ -83,6 +92,12 @@ function outcomeText(line: MyDigestLine): string {
 
 type Draft = { lineId: number; method: DeductionMethod; step: "ask_dispute" | "write_reason"; reason: string };
 
+/** "Change my choice" and "Back": a quiet underlined step back, still a 40px target on a phone. */
+const STEP_BACK_CLASS = `inline-flex min-h-10 items-center border border-transparent px-3 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500 underline underline-offset-2 transition-colors hover:text-[#08111f] disabled:opacity-50 motion-reduce:transition-none sm:min-h-8 ${LANDING_FOCUS}`;
+
+/** The question box under a day once a method is chosen. */
+const STEP_BOX_CLASS = `mt-3 border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`;
+
 export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }: Props) {
   const [digests, setDigests] = useState<MyDigest[]>(initialDigests);
   const [error, setError] = useState<string | null>(initialError);
@@ -128,46 +143,60 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
   }
 
   return (
-    <div className="flex w-full flex-col gap-6">
+    <div className="flex w-full flex-col gap-4">
       {error ? (
-        <p className="border-l-2 border-red-600 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</p>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="alert">
+          <LandingRailLine rail="bg-rose-600">{error}</LandingRailLine>
+        </div>
       ) : null}
 
       {open.length === 0 && settled.length === 0 ? (
-        <p className={`border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600 ${adminSoftDepthClassName}`}>
-          Nothing to answer. You are notified here, by email and on Telegram when a week needs your answer.
-        </p>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <LandingEmpty>
+            Nothing to answer. You are notified here, by email and on Telegram when a week needs your answer.
+          </LandingEmpty>
+        </div>
       ) : null}
 
       {open.map((digest) => {
         const pendingCount = digest.lines.filter((line) => line.action === "pending").length;
         return (
-          <section key={digest.id} className={`border border-slate-300 bg-white ${adminSoftDepthClassName}`}>
-            <header className="border-b border-slate-200 px-4 py-3">
-              <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-700">
-                {formatDay(digest.weekStart, false)} to {formatDay(digest.weekEnd, false)}
-              </h2>
-              <p className="mt-1 text-xs font-semibold text-slate-500">
-                {pendingCount} {pendingCount === 1 ? "day" : "days"} to answer
-                {showAmounts ? ` · estimated ${money(digest.totalDeductionValue, digest.currency)}` : ""}
-              </p>
-              {showAmounts && digest.hasUnpricedDay ? (
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  One or more days cannot be priced yet, so there is no week total. The days themselves still count.
-                </p>
-              ) : null}
-              {digest.answerDueOn && pendingCount > 0 ? (
-                digest.overdue ? (
-                  <p className="mt-2 border-l-2 border-amber-600 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-                    The deadline has passed. Days you did not answer are deducted from salary.
-                  </p>
-                ) : (
-                  <p className="mt-2 border-l-2 border-slate-700 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800">
-                    Answer by the end of {formatDay(digest.answerDueOn)}. Any day not answered by then is deducted from salary.
-                  </p>
-                )
-              ) : null}
-            </header>
+          <LandingPanel
+            key={digest.id}
+            right={
+              <LandingMeta
+                items={[
+                  `${pendingCount} ${pendingCount === 1 ? "day" : "days"} to answer`,
+                  showAmounts ? `estimated ${money(digest.totalDeductionValue, digest.currency)}` : null,
+                ]}
+              />
+            }
+            title={`${formatDay(digest.weekStart, false)} to ${formatDay(digest.weekEnd, false)}`}
+          >
+            {(showAmounts && digest.hasUnpricedDay) || (digest.answerDueOn && pendingCount > 0) ? (
+              <div className="divide-y divide-slate-200 border-b border-slate-200">
+                {showAmounts && digest.hasUnpricedDay ? (
+                  <LandingRailLine rail="bg-slate-400">
+                    One or more days cannot be priced yet, so there is no week total. The days themselves still count.
+                  </LandingRailLine>
+                ) : null}
+                {digest.answerDueOn && pendingCount > 0 ? (
+                  digest.overdue ? (
+                    <LandingRailLine rail="bg-amber-600">
+                      <span className="font-bold text-amber-800">
+                        The deadline has passed. Days you did not answer are deducted from salary.
+                      </span>
+                    </LandingRailLine>
+                  ) : (
+                    <LandingRailLine rail="bg-[#08111f]">
+                      <span className={`font-bold ${LANDING_INK}`}>
+                        Answer by the end of {formatDay(digest.answerDueOn)}. Any day not answered by then is deducted from salary.
+                      </span>
+                    </LandingRailLine>
+                  )
+                ) : null}
+              </div>
+            ) : null}
 
             <ul className="divide-y divide-slate-200">
               {digest.lines.map((line) => {
@@ -178,40 +207,40 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                 const lineDraft = draft?.lineId === line.id ? draft : null;
                 const canAnswer = line.action === "pending" && !digest.overdue;
                 return (
-                  <li key={line.id} className="px-4 py-4">
-                    <p className="text-sm font-bold text-slate-800">{formatDay(line.workDate)}</p>
-                    <p className="mt-1 text-sm text-slate-600">
+                  <li key={line.id} className="px-3 py-4 sm:px-4">
+                    <p className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{formatDay(line.workDate)}</p>
+                    <p className="mt-1 break-words text-phx-md text-slate-600" dir="auto">
                       {STATUS_LABEL[line.status] ?? line.status}
                       {line.reason ? ` — ${line.reason}` : ""}
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-slate-700">
+                    <p className="mt-1 break-words text-phx-md font-semibold tabular-nums text-slate-700">
                       Deduction: {daysText(line.deductionDays)}
                       {showAmounts ? ` · ${line.deductionValue === null ? money(null) : `estimated ${money(line.deductionValue)}`}` : ""}
                     </p>
                     {contradicting ? (
-                      <p className="mt-1 text-xs font-semibold text-emerald-700">On record for this day: {contradicting}</p>
+                      <p className="mt-1 break-words text-phx-sm font-semibold text-emerald-700">On record for this day: {contradicting}</p>
                     ) : null}
 
                     {line.action !== "pending" ? (
-                      <p className="mt-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">{outcomeText(line)}</p>
+                      <p className="mt-3 break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600">{outcomeText(line)}</p>
                     ) : null}
                     {line.reviewNotes && (line.action === "dispute_upheld" || line.action === "dispute_rejected") ? (
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700" dir="auto">
+                      <p className="mt-1 whitespace-pre-wrap break-words text-phx-md text-slate-700" dir="auto">
                         Reviewer&apos;s note: {line.reviewNotes}
                       </p>
                     ) : null}
                     {line.action === "pending" && digest.overdue ? (
-                      <p className="mt-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      <p className="mt-3 break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-amber-700">
                         Not answered in time, so it will be deducted from salary
                       </p>
                     ) : null}
 
                     {canAnswer && !lineDraft ? (
                       <div className="mt-3">
-                        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-600">How should this day be deducted?</p>
+                        <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600">How should this day be deducted?</p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <button
-                            className="border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+                            className={landingActionClassName("solid")}
                             disabled={busy}
                             onClick={() => setDraft({ lineId: line.id, method: "salary", step: "ask_dispute", reason: "" })}
                             type="button"
@@ -219,7 +248,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                             From my salary
                           </button>
                           <button
-                            className="border border-slate-800 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-800 disabled:border-slate-300 disabled:text-slate-400"
+                            className={landingActionClassName("outline", "disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent")}
                             disabled={busy || !line.balance?.covers}
                             onClick={() => setDraft({ lineId: line.id, method: "annual_balance", step: "ask_dispute", reason: "" })}
                             type="button"
@@ -228,7 +257,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                           </button>
                         </div>
                         {line.balance ? (
-                          <p className="mt-2 text-xs text-slate-600">
+                          <p className="mt-2 break-words text-phx-sm text-slate-600">
                             {line.balance.availableDays !== null
                               ? `Annual balance available: ${daysText(line.balance.availableDays)}. `
                               : ""}
@@ -241,13 +270,13 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                     ) : null}
 
                     {canAnswer && lineDraft?.step === "ask_dispute" ? (
-                      <div className={`mt-3 border border-slate-300 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
-                        <p className="text-sm font-semibold text-slate-800">
+                      <div className={STEP_BOX_CLASS}>
+                        <p className={`break-words text-phx-md font-semibold ${LANDING_INK}`}>
                           You chose {methodText(lineDraft.method)}. Do you want to dispute this day?
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <button
-                            className="border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+                            className={landingActionClassName("solid")}
                             disabled={busy}
                             onClick={() => submit(digest.id, { lineId: line.id, method: lineDraft.method, dispute: false })}
                             type="button"
@@ -255,7 +284,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                             No, save my answer
                           </button>
                           <button
-                            className={`border border-slate-400 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 disabled:opacity-50 disabled:shadow-none ${adminControlDepthClassName}`}
+                            className={landingActionClassName("outline", "bg-white")}
                             disabled={busy}
                             onClick={() => setDraft({ ...lineDraft, step: "write_reason" })}
                             type="button"
@@ -263,7 +292,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                             Yes, dispute it
                           </button>
                           <button
-                            className="border border-transparent px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 underline disabled:opacity-50"
+                            className={STEP_BACK_CLASS}
                             disabled={busy}
                             onClick={() => setDraft(null)}
                             type="button"
@@ -275,8 +304,8 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                     ) : null}
 
                     {canAnswer && lineDraft?.step === "write_reason" ? (
-                      <div className={`mt-3 border border-slate-300 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
-                        <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-600" htmlFor={`reason-${line.id}`}>
+                      <div className={STEP_BOX_CLASS}>
+                        <label className="block text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600" htmlFor={`reason-${line.id}`}>
                           What actually happened?
                         </label>
                         <textarea
@@ -287,12 +316,12 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                           rows={3}
                           value={lineDraft.reason}
                         />
-                        <p className="mt-1 text-xs text-slate-600">
+                        <p className="mt-1 break-words text-phx-sm text-slate-600">
                           If the dispute is not accepted, the day is taken from {methodText(lineDraft.method)}.
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <button
-                            className="border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+                            className={landingActionClassName("solid")}
                             disabled={busy}
                             onClick={() =>
                               submit(digest.id, { lineId: line.id, method: lineDraft.method, dispute: true, reason: lineDraft.reason })
@@ -302,7 +331,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                             Send dispute
                           </button>
                           <button
-                            className="border border-transparent px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 underline disabled:opacity-50"
+                            className={STEP_BACK_CLASS}
                             disabled={busy}
                             onClick={() => setDraft({ ...lineDraft, step: "ask_dispute" })}
                             type="button"
@@ -316,24 +345,21 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
                 );
               })}
             </ul>
-          </section>
+          </LandingPanel>
         );
       })}
 
       {settled.length ? (
-        <section className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-          <header className="border-b border-slate-200 px-4 py-3">
-            <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Earlier weeks</h2>
-          </header>
+        <LandingPanel title="Earlier weeks">
           <ul className="divide-y divide-slate-200">
             {settled.map((digest) => (
-              <li key={digest.id} className="px-4 py-3">
-                <p className="text-sm font-semibold text-slate-700">
+              <li key={digest.id} className="px-3 py-3 sm:px-4">
+                <p className={`break-words text-phx-md font-semibold ${LANDING_INK}`}>
                   {formatDay(digest.weekStart, false)} to {formatDay(digest.weekEnd, false)}
                 </p>
                 <ul className="mt-1 flex flex-col gap-1">
                   {digest.lines.map((line) => (
-                    <li key={line.id} className="text-xs text-slate-600">
+                    <li key={line.id} className="break-words text-phx-sm text-slate-600">
                       {formatDay(line.workDate)} · {daysText(line.deductionDays)} · {outcomeText(line)}
                     </li>
                   ))}
@@ -341,7 +367,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
               </li>
             ))}
           </ul>
-        </section>
+        </LandingPanel>
       ) : null}
     </div>
   );

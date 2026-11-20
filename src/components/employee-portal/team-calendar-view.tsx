@@ -4,7 +4,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
   FieldWorkforceDayCell,
@@ -25,8 +24,16 @@ import {
 } from "@/lib/employee-portal/team-calendar-weeks";
 import { complianceLabel } from "@/lib/field-workforce-compliance/compliance-label";
 import { cn } from "@/lib/utils";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingEmpty,
+  LandingMeta,
+  LandingPanel,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 
 const ALL_FILTER = "All";
 
@@ -80,39 +87,42 @@ function statusLabel(cell: FieldWorkforceDayCell) {
   return cell.status;
 }
 
-/** Same status palette as the admin Field Workforce Compliance timeline. A "VISITS" day
- * additionally shades by visitPeriod: AM-only and PM-only get their own distinct colors to
- * flag a half-day visit pattern; a mixed/untagged day keeps the default emerald. An "N" day
- * with a same-day fingerprint punch (mainly Head Office staff who don't generate CRM visits)
- * shades teal instead of the alarming rose — punched in, not no activity. */
+/** Same status palette as the admin Field Workforce Compliance timeline, worn as the landing
+ * kit's status rule: a 3px rail at the square's left and the figure in the same colour, on a white
+ * hairline square — never a tinted fill. A "VISITS" day additionally takes its colour from
+ * visitPeriod: AM-only and PM-only get their own distinct colors to flag a half-day visit pattern;
+ * a mixed/untagged day keeps the default emerald. An "N" day with a same-day fingerprint punch
+ * (mainly Head Office staff who don't generate CRM visits) reads teal instead of the alarming
+ * rose — punched in, not no activity. A public holiday is an amber hairline inside the square. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
+  const holiday = cell.isPublicHoliday ? "ring-1 ring-inset ring-amber-400" : "";
   // A day whose only work is the manager's own Phoenix CRM visits is a worked day, never the alarming "No activity".
   if (isManagerOwnVisitsOnlyDay(cell)) {
-    return cn("border-emerald-300 bg-emerald-50 text-emerald-800", cell.isPublicHoliday ? "ring-2 ring-amber-300 ring-offset-1" : "");
+    return cn("border-l-emerald-500 text-emerald-700", holiday);
   }
   const visitsClass = isPortalRideAlongCoachingDay(cell)
     ? // Ride-along / coaching ("DV") day — distinct fuchsia so it never reads as a rep's own visits.
-      "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 hover:bg-fuchsia-100"
+      "border-l-fuchsia-500 text-fuchsia-700"
     : cell.visitPeriod === "AM"
-      ? "border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+      ? "border-l-cyan-500 text-cyan-700"
       : cell.visitPeriod === "PM"
-        ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
-        : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
+        ? "border-l-indigo-500 text-indigo-700"
+        : "border-l-emerald-500 text-emerald-700";
   const nClass = cell.attendanceCrossCheck === "punch_no_visits"
-    ? "border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100"
-    : "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100";
+    ? "border-l-teal-500 text-teal-700"
+    : "border-l-rose-500 text-rose-700";
   const base = {
-    AV: "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100",
-    BLANK: "border-slate-200 bg-white text-slate-400 hover:bg-slate-50",
-    CP: "border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100",
-    F: "border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200",
+    AV: "border-l-sky-500 text-sky-700",
+    BLANK: "border-l-slate-200 text-slate-400",
+    CP: "border-l-violet-500 text-violet-700",
+    F: "border-l-slate-300 bg-slate-50 text-slate-500",
     N: nClass,
-    UNKNOWN: "border-red-400 bg-red-50 text-red-800 hover:bg-red-100",
+    UNKNOWN: "border-l-red-600 text-red-700",
     VISITS: visitsClass,
   }[cell.status];
   return cn(
     base,
-    cell.isPublicHoliday ? "ring-2 ring-amber-300 ring-offset-1" : "",
+    holiday,
     cell.isPreHire ? "opacity-45 grayscale" : "",
   );
 }
@@ -138,32 +148,35 @@ function SplitFigures({ split }: { split: { am: number; pm: number; pharmacies: 
   );
 }
 
+/** The legend's swatch is a day square in miniature — the same rail, ink and hairline as the board. */
+const LEGEND_SQUARE = "border border-slate-200 border-l-[3px] bg-white";
+
 function LegendChip({ children, className, label }: { children: string; className: string; label: string }) {
   return (
-    <div className="inline-flex items-center gap-2 border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center border px-1.5 text-phx-xs font-black", className)}>
+    <div className="inline-flex min-w-0 items-center gap-2 text-xs font-semibold text-slate-700">
+      <span className={cn("inline-flex h-7 min-w-7 shrink-0 items-center justify-center px-1.5 text-phx-xs font-black tabular-nums", className)}>
         {children}
       </span>
-      {label}
+      <span className="min-w-0 break-words">{label}</span>
     </div>
   );
 }
 
 function TimelineLegend() {
   return (
-    <div className="flex flex-wrap gap-2">
-      <LegendChip className="border-rose-300 bg-rose-50 text-rose-800" label="No activity">N</LegendChip>
-      <LegendChip className="border-sky-300 bg-sky-50 text-sky-800" label="Vacation">AV</LegendChip>
-      <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign / meeting (click to open)">CP</LegendChip>
-      <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day (click to open)">5</LegendChip>
-      <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only (click to open)">5</LegendChip>
-      <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only (click to open)">5</LegendChip>
-      <LegendChip className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800" label="Double-visit / coaching day — manager rode along, figures are the visits joined (click to open)">DV</LegendChip>
-      <LegendChip className="border-slate-300 bg-white text-slate-800" label="A day's figures stack AM, then PM, then Pharmacies — never added">2·9</LegendChip>
+    <div className="flex flex-wrap gap-x-4 gap-y-2">
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-rose-500 text-rose-700")} label="No activity">N</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-sky-500 text-sky-700")} label="Vacation">AV</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-violet-500 text-violet-700")} label="Campaign / meeting (click to open)">CP</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-emerald-500 text-emerald-700")} label="Visits, full/mixed day (click to open)">5</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-cyan-500 text-cyan-700")} label="Visits, AM only (click to open)">5</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-indigo-500 text-indigo-700")} label="Visits, PM only (click to open)">5</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-fuchsia-500 text-fuchsia-700")} label="Double-visit / coaching day — manager rode along, figures are the visits joined (click to open)">DV</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-slate-300 text-slate-800")} label="A day's figures stack AM, then PM, then Pharmacies — never added">2·9</LegendChip>
       <LegendChip className={PHARMACY_FIGURE_INK} label="Pharmacies, counted apart">5</LegendChip>
-      <LegendChip className="border-teal-300 bg-teal-50 text-teal-800" label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
-      <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
-      <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-teal-500 text-teal-700")} label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-slate-300 bg-slate-50 text-slate-500")} label="Friday">F</LegendChip>
+      <LegendChip className={cn(LEGEND_SQUARE, "border-l-slate-200 text-amber-700 ring-1 ring-inset ring-amber-400")} label="Holiday">H</LegendChip>
     </div>
   );
 }
@@ -179,7 +192,7 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
       ? `Double-visit / coaching day — rode along on the team's visits (no own primary visits logged).${splitLine}`
       : `${cell.explanation}${splitLine}`;
   const baseClass = cn(
-    "relative flex min-h-10 w-full items-center justify-center border text-xs font-black",
+    "relative flex min-h-10 w-full items-center justify-center border border-slate-200 border-l-[3px] bg-white text-xs font-black tabular-nums",
     split ? "py-0.5" : "",
     statusCellClass(cell),
   );
@@ -187,7 +200,7 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
     <>
       {split ? <SplitFigures split={split} /> : statusLabel(cell)}
       {cell.isPublicHoliday ? (
-        <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
+        <span aria-hidden="true" className="absolute right-0 top-0 h-2 w-2 bg-amber-400" />
       ) : null}
     </>
   );
@@ -198,7 +211,7 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
     return (
       <Link
         aria-label={`${cell.employeeName} ${cell.dateIso}: ${explanation} (open visits)`}
-        className={cn(baseClass, "transition hover:ring-2 hover:ring-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-300")}
+        className={cn(baseClass, "transition-colors hover:bg-slate-100 motion-reduce:transition-none", LANDING_FOCUS)}
         href={`/employee-portals/team-calendar/visits/${encodeURIComponent(cell.hrId)}/${cell.dateIso}`}
         title={`${explanation} — open the day's visits`}
       >
@@ -218,10 +231,13 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
 function RepMonthRow({
   employee,
   isFirst,
+  todayIso,
   week,
 }: {
   employee: FieldWorkforceEmployeeSummary;
   isFirst: boolean;
+  /** Today in Cairo, from the server — its day header wears the navy 2px top rule. */
+  todayIso: string | null;
   week: TeamCalendarWeek | null;
 }) {
   // 🔴 THE COLUMNS DIVIDE THE WIDTH; THEY NEVER SET A FLOOR.
@@ -265,14 +281,14 @@ function RepMonthRow({
   const hasMonthSplit = employee.timeline.some((cell) => cell.ownVisitSplit || cell.managerOwnSplit);
   const coachingDays = employee.timeline.filter((cell) => !cell.ignored && isPortalRideAlongCoachingDay(cell)).length;
   return (
-    <div className={cn("bg-white px-4 py-3", isFirst ? "" : "border-t border-slate-100")}>
+    <div className={cn("bg-white px-3 py-3 sm:px-4", isFirst ? "" : "border-t border-slate-200")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
+          <p className={cn("break-words text-sm font-black", LANDING_INK)} dir="auto">{employee.employeeName}</p>
           {/* Names, never codes: the HR id stays out of the subtitle; the search still matches it. */}
-          {hierarchy ? <p className="mt-1 text-xs font-bold text-slate-500">{hierarchy}</p> : null}
+          {hierarchy ? <p className="mt-1 break-words text-xs font-bold text-slate-500">{hierarchy}</p> : null}
         </div>
-        <div className="flex items-center gap-3 text-phx-xs font-bold">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-xs font-bold tabular-nums">
           {hasMonthSplit ? (
             <span className="text-emerald-700">
               AM {monthSplit.am} · PM {monthSplit.pm} · <span className="text-violet-700">Pharmacies {monthSplit.pharmacies}</span>
@@ -296,14 +312,15 @@ function RepMonthRow({
           {weekCells.map((cell, index) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-phx-xs font-black uppercase tracking-tight text-slate-500",
-                cell.isFriday ? "bg-slate-100" : "",
-                cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
+                "relative py-1 text-center text-phx-xs font-black uppercase tracking-tight text-slate-500",
+                cell.isFriday ? "bg-slate-50" : "",
+                cell.isPublicHoliday ? "text-amber-700" : "",
               )}
               key={`${cell.dateIso}-week-header`}
               style={index === 0 && week ? { gridColumnStart: week.startColumn } : undefined}
             >
-              <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
+              {cell.dateIso === todayIso ? <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-[#08111f]" /> : null}
+              <span className={cn("block text-phx-xs leading-tight tabular-nums", cell.isPublicHoliday ? "text-amber-700" : LANDING_INK)}>{cell.dayNumber}</span>
               <span>{weekday(cell.dateIso)}</span>
             </div>
           ))}
@@ -326,13 +343,14 @@ function RepMonthRow({
           {employee.timeline.map((cell) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-phx-xs font-black uppercase tracking-tight text-slate-500",
-                cell.isFriday ? "bg-slate-100" : "",
-                cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
+                "relative py-1 text-center text-phx-xs font-black uppercase tracking-tight text-slate-500",
+                cell.isFriday ? "bg-slate-50" : "",
+                cell.isPublicHoliday ? "text-amber-700" : "",
               )}
               key={`${cell.dateIso}-header`}
             >
-              <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
+              {cell.dateIso === todayIso ? <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-[#08111f]" /> : null}
+              <span className={cn("block text-phx-xs leading-tight tabular-nums", cell.isPublicHoliday ? "text-amber-700" : LANDING_INK)}>{cell.dayNumber}</span>
               {/* 🔴 MEASURED, not guessed. With `minmax(0, 1fr)` the day CELLS fit at any width —
                   measured clean down to 560px — but the header row does not, because a three-letter
                   weekday cannot shrink: it overflowed by 8px at 560, 3px at 700, 1px at 760 and only
@@ -359,7 +377,7 @@ function RepMonthRow({
 
 /**
  * One DSM (or vacant-seat placeholder) and his whole team as ONE visually separate block: a
- * single black border wraps the manager row + every rep's row, with no border between them
+ * single navy frame wraps the manager row + every rep's row, with only hairlines between them
  * inside — the block itself, not each person, is the bordered unit.
  */
 function managerBlockLabel(group: TeamCalendarGroup): string {
@@ -370,19 +388,25 @@ function managerBlockLabel(group: TeamCalendarGroup): string {
   return group.managerName ?? "Other";
 }
 
-function ManagerBlock({ group, week }: { group: TeamCalendarGroup; week: TeamCalendarWeek | null }) {
+function ManagerBlock({
+  group,
+  todayIso,
+  week,
+}: {
+  group: TeamCalendarGroup;
+  todayIso: string | null;
+  week: TeamCalendarWeek | null;
+}) {
   return (
-    <div className="overflow-hidden rounded-xl border-2 border-black">
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-black px-4 py-2.5">
-        <span className="text-xs font-black uppercase tracking-wide text-white">
-          {managerBlockLabel(group)}
-        </span>
-        <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">{group.members.length} shown</span>
-      </div>
+    <LandingPanel
+      className="overflow-hidden border-[#08111f]"
+      right={<LandingMeta items={[`${group.members.length} shown`]} />}
+      title={managerBlockLabel(group)}
+    >
       {group.members.map((employee, index) => (
-        <RepMonthRow employee={employee} isFirst={index === 0} key={employee.hrId} week={week} />
+        <RepMonthRow employee={employee} isFirst={index === 0} key={employee.hrId} todayIso={todayIso} week={week} />
       ))}
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -405,30 +429,30 @@ function WeekStepper({
   if (weeks.length === 0) return null;
   const current = weeks[weekIndex];
   return (
-    <div className={`flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden ${adminSoftDepthClassName}`}>
+    <div className={`flex items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2 lg:hidden ${adminSoftDepthClassName}`}>
       <button
         aria-label="Previous week"
-        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+        className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
         disabled={weekIndex === 0}
         onClick={() => onChange(weekIndex - 1)}
         type="button"
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft aria-hidden="true" className="h-4 w-4" />
       </button>
       <div className="min-w-0 text-center">
-        <p className="text-sm font-black text-slate-950">{current?.label}</p>
-        <p className="mt-0.5 text-phx-xs font-bold text-slate-500">
+        <p className={`break-words text-sm font-black tabular-nums ${LANDING_INK}`}>{current?.label}</p>
+        <p className="mt-0.5 break-words text-phx-xs font-bold text-slate-500">
           Week {weekIndex + 1} of {weeks.length} · the whole month shows on a bigger screen
         </p>
       </div>
       <button
         aria-label="Next week"
-        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+        className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
         disabled={weekIndex >= weeks.length - 1}
         onClick={() => onChange(weekIndex + 1)}
         type="button"
       >
-        <ChevronRight className="h-4 w-4" />
+        <ChevronRight aria-hidden="true" className="h-4 w-4" />
       </button>
     </div>
   );
@@ -504,37 +528,37 @@ export function TeamCalendarView({
 
   return (
     <div className="space-y-4">
-      <Card className={`rounded-xl border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-black text-slate-950">Team Calendar — {heading}</p>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              {lineName ? `${lineName} line` : "Your line"} · grouped by manager, each manager followed by
-              their team. Click a green numeric day to open that day&apos;s visits.
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Link
-              aria-label="Previous month"
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 ${adminControlDepthClassName}`}
-              href={monthHref(previous.month, previous.year)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Link>
-            <span className={`min-w-[112px] rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-center text-xs font-black text-slate-700 ${adminSoftDepthClassName}`}>
-              {heading}
-            </span>
-            <Link
-              aria-label="Next month"
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 ${adminControlDepthClassName}`}
-              href={monthHref(next.month, next.year)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <LandingPanel
+        bodyClassName="p-3 sm:p-4"
+        right={
+          <>
+            <LandingMeta items={[lineName ? `${lineName} line` : "Your line"]} />
+            <div className="flex items-center gap-1.5">
+              <Link
+                aria-label="Previous month"
+                className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
+                href={monthHref(previous.month, previous.year)}
+              >
+                <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+              </Link>
+              <span className={`min-w-[112px] px-2 text-center text-xs font-black tabular-nums ${LANDING_INK}`}>
+                {heading}
+              </span>
+              <Link
+                aria-label="Next month"
+                className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
+                href={monthHref(next.month, next.year)}
+              >
+                <ChevronRight aria-hidden="true" className="h-4 w-4" />
+              </Link>
+            </div>
+          </>
+        }
+        title={<>Team Calendar — {heading}</>}
+      >
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <input
+            aria-label="Search rep name"
             className={`${phxFieldClassName} xl:col-span-1`}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search rep name"
@@ -542,7 +566,7 @@ export function TeamCalendarView({
           />
           {teamOptions.length > 0 ? (
             <SearchableSelect
-              className="px-3"
+              className={phxSelectClassName}
               value={teamFilter}
               onChange={(event) => setTeamFilter(event.target.value)}
             >
@@ -552,7 +576,7 @@ export function TeamCalendarView({
           ) : null}
           {regionOptions.length > 0 ? (
             <SearchableSelect
-              className="px-3"
+              className={phxSelectClassName}
               value={regionFilter}
               onChange={(event) => setRegionFilter(event.target.value)}
             >
@@ -562,7 +586,7 @@ export function TeamCalendarView({
           ) : null}
           {areaOptions.length > 0 ? (
             <SearchableSelect
-              className="px-3"
+              className={phxSelectClassName}
               value={areaFilter}
               onChange={(event) => setAreaFilter(event.target.value)}
             >
@@ -571,22 +595,22 @@ export function TeamCalendarView({
             </SearchableSelect>
           ) : null}
         </div>
-      </Card>
+      </LandingPanel>
 
       <TimelineLegend />
-      <p className="text-xs font-bold text-slate-500">Showing {shownCount} of {employeeCount} people</p>
+      <p className="text-xs font-bold tabular-nums text-slate-500">Showing {shownCount} of {employeeCount} people</p>
 
       <WeekStepper onChange={setWeekIndex} weekIndex={safeWeekIndex} weeks={weeks} />
 
       {visibleGroups.length === 0 ? (
-        <Card className={`rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 ${adminPanelDepthClassName}`}>
-          No one matches the current filter for {heading}.
-        </Card>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <LandingEmpty>No one matches the current filter for {heading}.</LandingEmpty>
+        </div>
       ) : (
         <div>
           {visibleGroups.map((group, groupIndex) => (
             <div key={group.managerHrId ?? `unassigned-${groupIndex}`}>
-              <ManagerBlock group={group} week={currentWeek} />
+              <ManagerBlock group={group} todayIso={todayIso} week={currentWeek} />
               {/* Straight line between one DSM's block and the next — not after the last one. */}
               {groupIndex < visibleGroups.length - 1 ? <div className="my-5 h-px bg-slate-400" /> : null}
             </div>

@@ -2,20 +2,47 @@
 
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CircleDashed } from "lucide-react";
 
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LandingTick } from "@/components/employee-portal/landing-kit";
 
-export const portalPanelClassName =
-  "rounded border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
+/**
+ * THE PORTAL'S PAGE PARTS, on the landing kit's language (owner, 2026-11-20: every portal page
+ * redesigned and polished, "EVERY SINGLE COMPONENT"). Forty-seven portal pages are built from these,
+ * so they carry the kit's five rules to every page at once: navy ink and slate labels, the orange
+ * tick as the only orange, white sheets on a hairline with the platform's soft depth, square, nothing
+ * cut, and no sentence under a header. The exports, props and behaviour are unchanged; only the
+ * look moved. `landing-kit.tsx` explains each rule.
+ */
 
-export const portalSubtlePanelClassName =
-  "rounded border border-slate-200/80 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.05)]";
+/** A page-level white sheet: the hairline and the platform's soft depth. */
+export const portalPanelClassName = `border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
+/** A tile that stands inside a page or a panel: the same sheet with a contact shadow only. */
+export const portalSubtlePanelClassName = `border border-slate-200 bg-white ${adminChipDepthClassName}`;
 
 export const portalInputClassName  = phxFieldClassName;
+
+/** The night navy every title and figure is set in — the landing kit's ink. */
+const PORTAL_INK = "text-[#08111f]";
+
+/** The small slate capitals every label wears. */
+const PORTAL_LABEL = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+
+/**
+ * One accent scale for rails, shared by the metric tile and the record card. Orange is the house
+ * accent, but on a rail beside a figure it reads as an alarm, so "orange" draws the navy rail.
+ */
+const PORTAL_RAIL = {
+  amber: "bg-amber-400",
+  emerald: "bg-emerald-500",
+  orange: "bg-[#08111f]",
+  rose: "bg-rose-500",
+  sky: "bg-sky-500",
+  slate: "bg-slate-300",
+} as const;
 
 export function PortalSection({
   actions,
@@ -32,34 +59,35 @@ export function PortalSection({
   eyebrow?: string;
   title?: ReactNode;
 }) {
+  // The header is the landing panel's: the tick and the title in navy capitals, the eyebrow (when a
+  // page names the area above the title) in slate capitals over it, and the actions on the right.
+  // It WRAPS, so a long title drops its actions to a second line on a 280px phone.
+  const heading = title ?? eyebrow;
   return (
-    <Card className={cn(portalPanelClassName, "overflow-hidden p-0", className)}>
+    <section className={cn(`min-w-0 overflow-hidden ${portalPanelClassName}`, className)}>
       {title || eyebrow || description || actions ? (
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
-          <div className="min-w-0">
-            {eyebrow ? (
-              <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">
-                {eyebrow}
-              </p>
-            ) : null}
-            {title ? (
-              <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-xl">
-                {title}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+          <div className="min-w-0 flex-1">
+            {title && eyebrow ? <p className={cn("mb-1 break-words", PORTAL_LABEL)}>{eyebrow}</p> : null}
+            {heading ? (
+              <h2 className={cn("flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em]", PORTAL_INK)}>
+                <LandingTick />
+                <span className="min-w-0">{heading}</span>
               </h2>
             ) : null}
             {description ? (
-              <div className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+              <div className="phx-header-note mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
                 {description}
               </div>
             ) : null}
           </div>
           {/* No `shrink-0`: it pins the box at its full content width, which makes the inner
               flex-wrap inert and lets a row of actions push past a narrow card. */}
-          {actions ? <div className="flex flex-wrap gap-2 sm:justify-end">{actions}</div> : null}
+          {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div> : null}
         </div>
       ) : null}
       {children}
-    </Card>
+    </section>
   );
 }
 
@@ -72,18 +100,23 @@ export function PortalFilterBar({
   countLabel?: ReactNode;
   title?: string;
 }) {
+  // A white sheet whose header is the tick and "FILTERS" in slate capitals — a label, not a page
+  // heading, so it stays out of the document outline — with the count on the right.
   return (
-    <PortalSection className="shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
-      <div className="p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded border border-orange-100 bg-orange-50 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.14em] text-orange-700">
-            {title}
+    <section className={cn("min-w-0", portalPanelClassName)}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2 sm:px-4">
+        <p className={cn("flex min-w-0 items-center gap-2 break-words", PORTAL_LABEL)}>
+          <LandingTick />
+          <span className="min-w-0">{title}</span>
+        </p>
+        {countLabel ? (
+          <span className="ml-auto min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
+            {countLabel}
           </span>
-          {countLabel ? <span className="text-xs font-bold text-slate-500">{countLabel}</span> : null}
-        </div>
-        {children}
+        ) : null}
       </div>
-    </PortalSection>
+      <div className="p-3 sm:p-4">{children}</div>
+    </section>
   );
 }
 
@@ -100,31 +133,21 @@ export function PortalMetricCard({
   note?: ReactNode;
   value: ReactNode;
 }) {
-  const accents = {
-    amber: "border-l-amber-500 text-amber-600 bg-amber-50",
-    emerald: "border-l-emerald-500 text-emerald-600 bg-emerald-50",
-    orange: "border-l-orange-500 text-orange-600 bg-orange-50",
-    rose: "border-l-rose-500 text-rose-600 bg-rose-50",
-    sky: "border-l-sky-500 text-sky-600 bg-sky-50",
-    slate: "border-l-slate-500 text-slate-600 bg-slate-50",
-  }[accent];
-
+  // A white tile: a 4px rail in the accent down the left, the label in slate capitals with its icon
+  // drawn in a quiet stroke beside it (never a tinted square), and the figure in navy.
   return (
-    <div className={cn(portalSubtlePanelClassName, "border-l-[3px] px-3.5 py-3", accents.split(" ")[0])}>
-      <div className="flex min-w-0 items-center gap-2">
-        {Icon ? (
-          <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded border border-current/10", accents)}>
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-        ) : null}
-        {/* Wraps, never clips (fits-the-screen rule): two cards to a 375px row leave a label
-            about 110px, and "SHORT / ABSENT" in tracked capitals needs more than that. */}
-        <p className="min-w-0 break-words text-phx-sm font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
-          {label}
-        </p>
+    <div className={cn("flex min-w-0 overflow-hidden", portalSubtlePanelClassName)}>
+      <span aria-hidden="true" className={cn("w-1 shrink-0", PORTAL_RAIL[accent])} />
+      <div className="min-w-0 flex-1 px-3 py-3">
+        <div className="flex min-w-0 items-start gap-1.5">
+          {Icon ? <Icon aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0 text-slate-400" /> : null}
+          {/* Wraps, never clips (fits-the-screen rule): two cards to a 375px row leave a label
+              about 110px, and "SHORT / ABSENT" in tracked capitals needs more than that. */}
+          <p className={cn("min-w-0 break-words leading-tight", PORTAL_LABEL)}>{label}</p>
+        </div>
+        <p className={cn("mt-2 break-words text-[26px] font-bold leading-none tracking-[-0.02em] tabular-nums", PORTAL_INK)}>{value}</p>
+        {note ? <p className="mt-1.5 break-words text-phx-sm font-medium leading-snug text-slate-500">{note}</p> : null}
       </div>
-      <p className="mt-2 break-words text-2xl font-black leading-none tabular-nums text-slate-950">{value}</p>
-      {note ? <p className="mt-1 break-words text-xs font-semibold text-slate-500">{note}</p> : null}
     </div>
   );
 }
@@ -141,7 +164,7 @@ export function PortalSegmentedTabs({
   return (
     <div
       className={cn(
-        `flex w-full flex-wrap gap-1 rounded border border-slate-200 bg-slate-50 p-1 ${adminSoftDepthClassName}`,
+        `flex w-full min-w-0 flex-wrap gap-1 border border-slate-200 bg-slate-50 p-1 ${adminChipDepthClassName}`,
         className,
       )}
     >
@@ -163,16 +186,18 @@ export function PortalEmptyState({
   message: ReactNode;
   title: ReactNode;
 }) {
+  // One calm statement on a slate rail, read left to right like every other line on the page —
+  // never a tinted icon square floating in the middle of an empty box.
   return (
-    <div className="px-4 py-10 text-center sm:px-6">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded border border-orange-100 bg-orange-50 text-orange-600">
-        <CircleDashed className="h-5 w-5" />
+    <div className="px-3 py-5 sm:px-4">
+      <div className="flex min-w-0 gap-3">
+        <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-slate-300" />
+        <div className="min-w-0">
+          <p className={cn("break-words text-sm font-bold", PORTAL_INK)}>{title}</p>
+          <div className="mt-1 max-w-xl break-words text-phx-sm leading-snug text-slate-500">{message}</div>
+          {action ? <div className="mt-3 flex flex-wrap gap-2">{action}</div> : null}
+        </div>
       </div>
-      <p className="mt-4 text-base font-black text-slate-950">{title}</p>
-      <div className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">
-        {message}
-      </div>
-      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
 }
@@ -195,16 +220,16 @@ export function PortalRecordCard({
   title: ReactNode;
 }) {
   const accentClass = {
-    amber: "border-l-amber-500",
+    amber: "border-l-amber-400",
     emerald: "border-l-emerald-500",
-    orange: "border-l-orange-500",
+    orange: "border-l-[#08111f]",
     rose: "border-l-rose-500",
     sky: "border-l-sky-500",
-    slate: "border-l-slate-400",
+    slate: "border-l-slate-300",
   }[accent];
 
   return (
-    <article className={cn("border-l-[3px] bg-white px-4 py-3.5", accentClass, className)}>
+    <article className={cn("min-w-0 border-l-4 bg-white px-3 py-3 sm:px-4", accentClass, className)}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           {/* Nowrap from `md` up, where a card sits in a wide grid and a name always fits. BELOW
@@ -215,8 +240,8 @@ export function PortalRecordCard({
               exists to remove. 37 of 108 CRM reps are over that length. Wrapping is the only
               option that keeps the whole name readable; the owner chose it over an ellipsis on
               2026-08-21, for mobile cards only. Desktop tables still never wrap. */}
-          <h3 className="break-words text-sm font-black text-slate-950 md:whitespace-nowrap">{title}</h3>
-          {meta ? <div className="mt-1 text-xs font-semibold text-slate-500">{meta}</div> : null}
+          <h3 className="break-words text-sm font-bold text-[#08111f] md:whitespace-nowrap">{title}</h3>
+          {meta ? <div className="mt-1 break-words text-phx-sm font-medium text-slate-500">{meta}</div> : null}
         </div>
         {status ? <div className="shrink-0">{status}</div> : null}
       </div>
@@ -231,14 +256,14 @@ export function PortalRecordFields({
 }: {
   fields: Array<{ label: ReactNode; value: ReactNode }>;
 }) {
+  // A hairline grid of facts — two to a row, the label in slate capitals over the value in navy —
+  // instead of a stack of grey boxes.
   return (
-    <dl className="grid grid-cols-2 gap-2">
+    <dl className="grid min-w-0 grid-cols-2 border-l border-t border-slate-200">
       {fields.map((field, index) => (
-        <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-2" key={index}>
-          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
-            {field.label}
-          </dt>
-          <dd className="mt-0.5 min-w-0 break-words text-xs font-bold text-slate-800">
+        <div className="min-w-0 border-b border-r border-slate-200 px-2.5 py-2" key={index}>
+          <dt className={cn("break-words", PORTAL_LABEL)}>{field.label}</dt>
+          <dd className={cn("mt-0.5 min-w-0 break-words text-phx-sm font-bold tabular-nums", PORTAL_INK)}>
             {field.value}
           </dd>
         </div>
@@ -313,7 +338,7 @@ export function PortalDesktopTable({
       style={maxHeight ? { maxHeight } : undefined}
     >
       <table
-        className={cn("w-full table-fixed border-collapse text-left text-sm", className)}
+        className={cn("w-full table-fixed border-collapse text-left text-sm tabular-nums text-[#08111f]", className)}
         data-portal-desktop-table
       >
         {cols}
@@ -354,7 +379,7 @@ export function PortalStackingCell({
 }) {
   return (
     <td className={cn("block px-4 py-1.5 md:table-cell md:py-3", className)} colSpan={colSpan}>
-      <span className="mb-0.5 block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-400 md:hidden">
+      <span className={cn("mb-0.5 block md:hidden", PORTAL_LABEL)}>
         {label}
       </span>
       {children}
@@ -391,7 +416,7 @@ export function PortalResponsiveDataList<T>({
 
   return (
     <>
-      <div className={cn("divide-y divide-slate-100", cardHideClassName)}>
+      <div className={cn("divide-y divide-slate-200", cardHideClassName)}>
         {items.map((item, index) => (
           <div key={getKey(item, index)}>{renderCard(item, index)}</div>
         ))}
@@ -409,8 +434,8 @@ export function PortalPagination({
   label: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-t border-slate-100 px-4 py-3 text-xs font-bold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-      <span>{label}</span>
+    <div className="flex flex-col gap-2 border-t border-slate-200 px-3 py-2.5 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+      <span className="min-w-0 break-words">{label}</span>
       {children ? <div className="flex flex-wrap gap-2">{children}</div> : null}
     </div>
   );

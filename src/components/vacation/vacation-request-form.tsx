@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -8,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  AlertCircle,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -20,8 +20,19 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
-import { Badge } from "@/components/ui/badge";
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingRailLine,
+  LandingTick,
+} from "@/components/employee-portal/landing-kit";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -383,8 +394,8 @@ function stepMonth(month: number, year: number, delta: number) {
 
 function HolidayTableSkeleton() {
   return (
-    <div className="animate-pulse border border-slate-200 bg-white">
-      <div className="flex gap-4 border-b border-slate-100 bg-slate-50 px-3 py-2.5">
+    <div className="animate-pulse border border-slate-200 bg-white motion-reduce:animate-none">
+      <div className="flex gap-4 border-b border-slate-200 bg-white px-3 py-2.5">
         {[80, 56, 56, 44].map((w, i) => (
           <div key={i} className="h-2.5 bg-slate-200" style={{ width: `${w}px` }} />
         ))}
@@ -419,29 +430,30 @@ function BalanceUsageBar({
   const pendingPct = Math.min((pendingPaidDays / balance.entitlementDays) * 100, 100 - usedPct);
   const remainPct = 100 - usedPct - pendingPct;
 
+  // It sits on the navy balance board: flat fills on a faint white track, no gradient.
   const barColor =
     remainPct >= 60
-      ? "from-emerald-600 to-emerald-300"
+      ? "bg-emerald-400"
       : remainPct >= 30
-        ? "from-amber-500 to-amber-300"
-        : "from-rose-600 to-rose-300";
+        ? "bg-amber-400"
+        : "bg-rose-400";
 
   return (
-    <div className="mt-3 space-y-1">
-      <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
+    <div className="mt-3 space-y-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-xs font-bold uppercase tabular-nums tracking-[0.08em] text-white/55">
         <span>
           Used {formatDays(balance.usedPaidDays)}
           {pendingPaidDays > 0 ? <> + {formatDays(pendingPaidDays)} awaiting approval</> : null}
         </span>
         <span>of {formatDays(balance.entitlementDays)}</span>
       </div>
-      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
+      <div className="flex h-1.5 w-full overflow-hidden bg-white/10">
         <div
-          className={cn("h-full bg-gradient-to-r transition-all duration-500", barColor)}
+          className={cn("h-full", barColor)}
           style={{ width: `${usedPct}%` }}
         />
         <div
-          className="h-full bg-amber-300 transition-all duration-500"
+          className="h-full bg-amber-200"
           style={{ width: `${pendingPct}%` }}
         />
       </div>
@@ -477,39 +489,31 @@ function VacationBalanceCard({
         ? "Approved paid vacations, less the days already requested and awaiting approval."
         : "Available based on current approved paid vacations.";
 
+  // The request page's ONE navy board: the balance is the figure the employee came to read.
   return (
-    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
-            {headlineLabel}
+    <LandingNavyBoard label={headlineLabel}>
+      <div className={`relative flex min-w-0 flex-col border border-white/[0.08] p-3 pl-3.5 ${LANDING_NAVY_TILE}`}>
+        <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-white/25" />
+        <LandingFigure onNavy size="lg">{headlineValue}</LandingFigure>
+
+        <p className="mt-2 break-words text-phx-sm font-medium leading-5 text-white/65">{description}</p>
+
+        <BalanceUsageBar balance={balance} pendingPaidDays={pendingPaidDays} />
+
+        {pendingPaidDays > 0 ? (
+          <p className="mt-2.5 break-words border-l-2 border-amber-400 pl-2 text-phx-sm font-semibold leading-5 text-amber-200">
+            {formatDays(pendingPaidDays)} already requested and waiting for a decision. Held from this
+            balance now; it is charged for real when the request is approved.
           </p>
-          <p className="mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em] text-slate-900">
-            {headlineValue}
+        ) : null}
+
+        {isFirstSixMonthsLock && balance ? (
+          <p className="mt-2 break-words border-l-2 border-amber-400 pl-2 text-phx-sm font-semibold leading-5 text-amber-200">
+            Available now: {formatDays(availableDays)}. Not available for use yet.
           </p>
-        </div>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-orange-50 text-orange-500">
-          <CalendarDays className="h-4 w-4" />
-        </div>
+        ) : null}
       </div>
-
-      <p className="mt-2 text-phx-sm font-medium leading-5 text-slate-500">{description}</p>
-
-      <BalanceUsageBar balance={balance} pendingPaidDays={pendingPaidDays} />
-
-      {pendingPaidDays > 0 ? (
-        <p className="mt-2 text-phx-sm font-semibold leading-5 text-amber-700">
-          {formatDays(pendingPaidDays)} already requested and waiting for a decision. Held from this
-          balance now; it is charged for real when the request is approved.
-        </p>
-      ) : null}
-
-      {isFirstSixMonthsLock && balance ? (
-        <p className="mt-2 text-phx-sm font-semibold leading-5 text-amber-700">
-          Available now: {formatDays(availableDays)}. Not available for use yet.
-        </p>
-      ) : null}
-    </div>
+    </LandingNavyBoard>
   );
 }
 
@@ -526,13 +530,41 @@ function VacationSummaryPerson({
   name: string;
 }) {
   return (
-    <div className="border border-slate-100 bg-slate-50/50 px-3 py-3">
-      <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
+    <div className="min-w-0 bg-white px-3 py-2.5">
+      <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
         {label}
       </p>
-      <p className="mt-1 break-words text-phx-md font-semibold leading-5 text-slate-900">
+      <p className={`mt-1 break-words text-phx-md font-semibold leading-5 ${LANDING_INK}`} dir="auto">
         {name}
       </p>
+    </div>
+  );
+}
+
+/** The two evidence pickers (medical documents, event photo): one dashed zone, the keyboard ring on
+ * the hidden input shows on the zone around it. */
+const uploadZoneClassName = cn(
+  "flex cursor-pointer flex-col items-center justify-center border-2 border-dashed border-sky-200 bg-sky-50/50 px-4 py-4 text-center transition hover:border-sky-300 hover:bg-sky-50 motion-reduce:transition-none",
+  "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#F05A1A]",
+);
+const uploadButtonClassName = "bg-sky-600 px-3 py-1.5 text-phx-md font-bold text-white";
+
+/**
+ * A condition stated inside a panel body that already has its padding: the tone on a thin rail at
+ * the left, the words in slate. `LandingRailLine` carries its own padding, so it serves the
+ * stand-alone sheets and this serves the lines inside a padded body.
+ */
+function RailNote({
+  children,
+  rail,
+}: {
+  children: ReactNode;
+  rail: string;
+}) {
+  return (
+    <div className="flex min-w-0 gap-2.5 py-1">
+      <span aria-hidden="true" className={cn("w-1 shrink-0 self-stretch", rail)} />
+      <p className="min-w-0 break-words text-phx-sm font-semibold leading-snug text-slate-700">{children}</p>
     </div>
   );
 }
@@ -727,7 +759,8 @@ function VacationDatePicker({
         <div
           ref={dropdownRef}
           className={cn(
-            "absolute z-30 mt-1 w-full min-w-[300px] border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+            "absolute z-30 mt-1 w-full min-w-[300px] border border-slate-200 bg-white p-3",
+            adminSoftDepthClassName,
             picker === "end" ? "right-0" : "left-0",
           )}
         >
@@ -762,7 +795,7 @@ function VacationDatePicker({
             </SearchableSelect>
           </div>
 
-          <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
+          <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-phx-xs font-bold uppercase tracking-[0.04em] text-slate-500">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <span className={day === "Fri" ? "text-rose-500" : ""} key={day}>{day}</span>
             ))}
@@ -911,70 +944,51 @@ const applicationPolicyItems = [
 /* ═══════════════════════════════════════════════════════════════════ */
 
 function VacationPolicyPanel() {
+  // Each example keeps its tone, now on a thin rail at its left instead of a tinted box.
   const toneClasses = {
     green: {
-      card: "border-emerald-100 bg-emerald-50/60",
-      label: "text-emerald-600",
-      text: "text-emerald-900",
+      label: "text-emerald-700",
+      rail: "border-emerald-500",
     },
     red: {
-      card: "border-rose-100 bg-rose-50/70",
-      label: "text-rose-600",
-      text: "text-rose-900",
+      label: "text-rose-700",
+      rail: "border-rose-500",
     },
     yellow: {
-      card: "border-amber-100 bg-amber-50/70",
-      label: "text-amber-600",
-      text: "text-amber-900",
+      label: "text-amber-700",
+      rail: "border-amber-400",
     },
   } as const;
 
   return (
-    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Application Policy</p>
-            <h3 className="mt-1 text-base font-extrabold tracking-[-0.02em] text-slate-900">How vacation requests are classified and reviewed</h3>
-            <p className="mt-1.5 text-phx-md font-medium leading-5 text-slate-600">
-              These rules explain what the system calculates automatically and what remains subject to manager and HR review.
-            </p>
-          </div>
-          <Badge className="w-fit border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-orange-700">
-            Policy Guide
-          </Badge>
-        </div>
-
-        <div className="grid gap-2">
-          {applicationPolicyItems.map((item, index) => (
-            <div
-              className="border border-slate-200 bg-white px-3 py-3"
-              key={item.title}
-            >
-              <div className="flex items-start gap-2.5">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center bg-orange-50 text-phx-xs font-bold text-orange-700">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-phx-md font-bold text-slate-900">{item.title}</h4>
-                  <p className="mt-1 text-phx-sm font-medium leading-5 text-slate-700">{item.rule}</p>
-                  <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
-                    <div className="border border-slate-100 bg-slate-50 px-2.5 py-2">
-                      <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">Situation</p>
-                      <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-600">{item.situation}</p>
-                    </div>
-                    <div className={cn("border px-2.5 py-2", toneClasses[item.tone].card)}>
-                      <p className={cn("text-phx-2xs font-bold uppercase tracking-[0.10em]", toneClasses[item.tone].label)}>Example</p>
-                      <p className={cn("mt-0.5 text-phx-xs font-medium leading-4", toneClasses[item.tone].text)}>{item.example}</p>
-                    </div>
-                  </div>
+    <LandingPanel
+      right={<LandingMeta items={["Application Policy", "Policy Guide"]} />}
+      title="How vacation requests are classified and reviewed"
+    >
+      <ol className="divide-y divide-slate-200">
+        {applicationPolicyItems.map((item, index) => (
+          <li className="flex min-w-0 items-start gap-3 px-3 py-3.5 sm:px-4" key={item.title}>
+            <span className={`w-6 shrink-0 text-phx-md font-black tabular-nums leading-5 ${LANDING_INK}`}>
+              {index + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className={`break-words text-phx-md font-bold leading-5 ${LANDING_INK}`}>{item.title}</h3>
+              <p className="mt-1 break-words text-phx-sm font-medium leading-5 text-slate-700">{item.rule}</p>
+              <div className="mt-2.5 grid gap-x-4 gap-y-2.5 lg:grid-cols-2">
+                <div className="min-w-0 border-l-2 border-slate-300 pl-2.5">
+                  <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Situation</p>
+                  <p className="mt-0.5 break-words text-phx-xs font-medium leading-4 text-slate-600">{item.situation}</p>
+                </div>
+                <div className={cn("min-w-0 border-l-2 pl-2.5", toneClasses[item.tone].rail)}>
+                  <p className={cn("text-phx-xs font-bold uppercase tracking-[0.08em]", toneClasses[item.tone].label)}>Example</p>
+                  <p className="mt-0.5 break-words text-phx-xs font-medium leading-4 text-slate-700">{item.example}</p>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
+          </li>
+        ))}
+      </ol>
+    </LandingPanel>
   );
 }
 
@@ -1039,30 +1053,35 @@ function NationalEgyptianVacationPanel() {
     setYear(next.year);
   }
 
-  return (
-    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Google Calendar Connection</p>
-          <h3 className="mt-1 text-base font-extrabold tracking-normal text-slate-900">National Egyptian holiday</h3>
-          <p className="mt-1.5 text-phx-md font-medium leading-5 text-slate-600">
-            Connected to Google Calendar. Government holiday decisions can be moved or shifted. Follow the official HR announcement before taking any national holiday.
-          </p>
-        </div>
-        <Badge className="w-fit border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-emerald-700">
-          Google Calendar
-        </Badge>
-      </div>
+  // The month-step buttons: a navy hover, the keyboard ring, no motion for those who asked for none.
+  const stepButtonClass = cn(
+    "flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-[#08111f] motion-reduce:transition-none",
+    LANDING_FOCUS,
+  );
 
+  return (
+    <LandingPanel
+      bodyClassName="px-3 py-3 sm:px-4"
+      right={
+        <>
+          <LandingMeta items={["Google Calendar Connection"]} />
+          <span className="border-l-2 border-emerald-500 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em] text-emerald-700">
+            Google Calendar
+          </span>
+        </>
+      }
+      title="National Egyptian holiday"
+    >
       {/* ── Smart period filter ─────────────────────────────────────── */}
-      <div className="mt-4 flex flex-wrap items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5">
         <button
-          className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"
+          aria-label="Previous month"
+          className={stepButtonClass}
           onClick={goPrev}
           title="Previous month"
           type="button"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
         </button>
 
         <SearchableSelect
@@ -1090,37 +1109,34 @@ function NationalEgyptianVacationPanel() {
         </SearchableSelect>
 
         <button
-          className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:bg-orange-50 hover:text-orange-600"
+          aria-label="Next month"
+          className={stepButtonClass}
           onClick={goNext}
           title="Next month"
           type="button"
         >
-          <ChevronRight className="h-3.5 w-3.5" />
+          <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {/* ── Content ────────────────────────────────────────────────── */}
-      <div className="mt-3">
+      <div className="mt-3 space-y-2">
         {error ? (
-          <AdminCallout tone="danger">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </AdminCallout>
+          <div role="alert">
+            <RailNote rail="bg-rose-500">{error}</RailNote>
+          </div>
         ) : null}
 
         {data?.message ? (
-          <AdminCallout tone={data.connected ? "warning" : "danger"}>
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{data.message}</span>
-          </AdminCallout>
+          <RailNote rail={data.connected ? "bg-amber-400" : "bg-rose-500"}>{data.message}</RailNote>
         ) : null}
 
         {loading ? (
           <HolidayTableSkeleton />
         ) : data && !data.connected ? null : data?.holidays.length ? (
           <>
-            {/* Desktop table (xs+) */}
-            <div className="hidden md:block overflow-hidden border border-slate-200 bg-white">
+            {/* Desktop table (md+) */}
+            <div className="hidden border border-slate-200 bg-white md:block">
               <table className="w-full table-fixed border-collapse text-left text-phx-sm">
                 <colgroup>
                   <col className="w-[40%]" />
@@ -1128,33 +1144,31 @@ function NationalEgyptianVacationPanel() {
                   <col className="w-[20%]" />
                   <col className="w-[20%]" />
                 </colgroup>
-                <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
+                <thead className="bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                   <tr>
-                    <th className="border-b border-r border-slate-100 px-3 py-2">Holiday</th>
-                    <th className="border-b border-r border-slate-100 px-3 py-2">Start</th>
-                    <th className="border-b border-r border-slate-100 px-3 py-2">End</th>
-                    <th className="border-b border-slate-100 px-3 py-2">Duration</th>
+                    <th className="border-b border-slate-200 px-3 py-2.5">Holiday</th>
+                    <th className="border-b border-slate-200 px-3 py-2.5">Start</th>
+                    <th className="border-b border-slate-200 px-3 py-2.5">End</th>
+                    <th className="border-b border-slate-200 px-3 py-2.5">Duration</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-slate-200 bg-white">
                   {data.holidays.map((holiday) => (
-                    <tr className="align-top transition hover:bg-orange-50/30" key={holiday.id}>
-                      <td className="border-r border-slate-100 px-3 py-2">
-                        <p className="font-bold text-slate-900">{holiday.name}</p>
+                    <tr className="align-top transition hover:bg-slate-50 motion-reduce:transition-none" key={holiday.id}>
+                      <td className="px-3 py-2.5">
+                        <p className={`break-words font-bold ${LANDING_INK}`} dir="auto">{holiday.name}</p>
                         {holiday.description ? (
-                          <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
                         ) : null}
                       </td>
-                      <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-700">
+                      <td className="px-3 py-2.5 font-medium tabular-nums text-slate-700">
                         {formatHolidayDate(holiday.startDate)}
                       </td>
-                      <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-700">
+                      <td className="px-3 py-2.5 font-medium tabular-nums text-slate-700">
                         {formatHolidayDate(holiday.endDate ?? holiday.startDate)}
                       </td>
-                      <td className="px-3 py-2">
-                        <Badge className="w-fit border border-emerald-200 bg-emerald-50 text-emerald-700">
-                          {formatDays(holiday.durationDays)}
-                        </Badge>
+                      <td className={`px-3 py-2.5 font-bold tabular-nums ${LANDING_INK}`}>
+                        {formatDays(holiday.durationDays)}
                       </td>
                     </tr>
                   ))}
@@ -1162,28 +1176,28 @@ function NationalEgyptianVacationPanel() {
               </table>
             </div>
 
-            {/* Mobile card view (< xs) */}
-            <div className="block md:hidden space-y-2">
+            {/* Card view (< md) — one ruled row per holiday */}
+            <div className="block divide-y divide-slate-200 border border-slate-200 bg-white md:hidden">
               {data.holidays.map((holiday) => (
-                <div key={holiday.id} className="border border-slate-200 bg-white p-3">
-                  <p className="text-phx-md font-bold text-slate-900">{holiday.name}</p>
+                <div key={holiday.id} className="px-3 py-3">
+                  <p className={`break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{holiday.name}</p>
                   {holiday.description ? (
-                    <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
+                    <p className="mt-0.5 break-words text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
                   ) : null}
                   <div className="mt-2 grid grid-cols-3 gap-2">
-                    <div>
-                      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Start</p>
-                      <p className="mt-0.5 text-phx-sm font-medium text-slate-700">{formatHolidayDate(holiday.startDate)}</p>
+                    <div className="min-w-0">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Start</p>
+                      <p className="mt-0.5 break-words text-phx-sm font-medium tabular-nums text-slate-700">{formatHolidayDate(holiday.startDate)}</p>
                     </div>
-                    <div>
-                      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">End</p>
-                      <p className="mt-0.5 text-phx-sm font-medium text-slate-700">{formatHolidayDate(holiday.endDate ?? holiday.startDate)}</p>
+                    <div className="min-w-0">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">End</p>
+                      <p className="mt-0.5 break-words text-phx-sm font-medium tabular-nums text-slate-700">{formatHolidayDate(holiday.endDate ?? holiday.startDate)}</p>
                     </div>
-                    <div>
-                      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
-                      <Badge className="mt-0.5 w-fit border border-emerald-200 bg-emerald-50 text-emerald-700">
+                    <div className="min-w-0">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Duration</p>
+                      <p className={`mt-0.5 text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>
                         {formatDays(holiday.durationDays)}
-                      </Badge>
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1191,12 +1205,12 @@ function NationalEgyptianVacationPanel() {
             </div>
           </>
         ) : (
-          <div className="border border-slate-200 bg-white px-3 py-4 text-phx-md font-medium text-slate-600">
+          <p className="break-words py-1 text-phx-md font-medium text-slate-600">
             No official Egyptian national vacations found for {monthLabel(month, year)} in Google Calendar.
-          </div>
+          </p>
         )}
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -1587,37 +1601,47 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
         ) : null}
 
         {error ? (
-          <AdminCallout tone="danger">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </AdminCallout>
+          <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="alert">
+            <LandingRailLine rail="bg-rose-500">{error}</LandingRailLine>
+          </div>
         ) : null}
 
         {/* ── Offline banner (#2) ────────────────────────────────── */}
         {!isOnline ? (
-          <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-md font-bold text-amber-800">
-            <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
-            <span>
-              You are offline. Annual, emergency, and other requests are saved in this browser and sent automatically when you reconnect. Evidence requests require online upload.
-              {queueLength > 0 ? ` (${queueLength} queued)` : ""}
-            </span>
+          <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+            <div className="flex min-w-0 gap-3 px-3 py-3 sm:px-4">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+              <p className="flex min-w-0 items-start gap-2 break-words text-phx-md font-bold leading-snug text-amber-800">
+                <WifiOff aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <span className="min-w-0">
+                  You are offline. Annual, emergency, and other requests are saved in this browser and sent automatically when you reconnect. Evidence requests require online upload.
+                  {queueLength > 0 ? ` (${queueLength} queued)` : ""}
+                </span>
+              </p>
+            </div>
           </div>
         ) : null}
 
         {/* ── Optimistic success animation (#3) ──────────────────── */}
         {submitSuccess ? (
-          <div className="flex items-center gap-2.5 border border-emerald-200 bg-emerald-50 px-4 py-3 text-phx-md font-bold text-emerald-800 animate-in fade-in duration-300">
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-            <span>{isOnline ? "Request submitted successfully. Redirecting..." : "Request queued in this browser. It will retry when you are back online."}</span>
+          <div className={`border border-slate-200 bg-white animate-in fade-in duration-300 motion-reduce:animate-none ${adminSoftDepthClassName}`}>
+            <div className="flex min-w-0 gap-3 px-3 py-3 sm:px-4">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-emerald-500" />
+              <p className="flex min-w-0 items-start gap-2 break-words text-phx-md font-bold leading-snug text-emerald-800">
+                <CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <span className="min-w-0">{isOnline ? "Request submitted successfully. Redirecting..." : "Request queued in this browser. It will retry when you are back online."}</span>
+              </p>
+            </div>
           </div>
         ) : null}
 
         {/* ── Tab Bar ────────────────────────────────────────────── */}
         {/* Three equal columns on a phone. The three labels need ~380px on one line and a phone's
             content column is ~351px, so the old `overflow-x-auto` strip scrolled sideways — the
-            pattern the fits-the-screen rule names. Each label now wraps inside its own third. */}
+            pattern the fits-the-screen rule names. Each label now wraps inside its own third. The
+            active tab is a navy underline. */}
         <div
-          className="grid w-full grid-cols-3 gap-0.5 border border-slate-200 bg-slate-50 p-0.5 sm:flex"
+          className="grid w-full grid-cols-3 border-b border-slate-200 sm:flex sm:gap-6"
           role="tablist"
           aria-label="Vacation request page tabs"
         >
@@ -1627,8 +1651,9 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <button
                 aria-selected={active}
                 className={cn(
-                  "min-h-9 px-2 py-1 text-center text-phx-md font-bold leading-tight transition sm:shrink-0 sm:whitespace-nowrap sm:px-3",
-                  active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
+                  "-mb-px flex min-h-10 items-center justify-center border-b-2 px-2 py-1 text-center text-phx-xs font-bold uppercase leading-tight tracking-[0.1em] transition motion-reduce:transition-none sm:min-h-9 sm:shrink-0 sm:justify-start sm:whitespace-nowrap sm:px-0",
+                  LANDING_FOCUS,
+                  active ? "border-[#08111f] text-[#08111f]" : "border-transparent text-slate-500 hover:text-[#08111f]",
                 )}
                 key={tab.value}
                 role="tab"
@@ -1652,12 +1677,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
             <div className="grid gap-2 xl:grid-cols-[280px_1fr]">
               <VacationBalanceCard balance={balance} pendingPaidDays={pendingPaidDays} />
 
-              <div className="border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+              {/* Who decides, as hairline cells; the pay status is coloured small text on a thin rail. */}
+              <div className={`min-w-0 self-start border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
                 <div
                   className={
                     initialData?.thirdManager
-                      ? "grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:items-center"
-                      : "grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-center"
+                      ? "grid gap-px bg-slate-200 md:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+                      : "grid gap-px bg-slate-200 md:grid-cols-[1fr_1fr_1fr_auto]"
                   }
                 >
                   <VacationSummaryPerson
@@ -1679,22 +1705,26 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                   {initialData?.thirdManager ? (
                     <VacationSummaryPerson label="Third approver" name={initialData.thirdManager.displayName} />
                   ) : null}
-                  <Badge
-                    className="w-fit px-3 py-1.5 text-phx-2xs font-bold tracking-[0.12em] md:justify-self-end"
-                    variant={balance?.paymentStatus === "paid" ? "success" : "warning"}
-                  >
-                    {balance?.paymentStatus === "paid"
-                      ? "Paid eligible"
-                      : balance?.paymentStatus === "partial"
-                        ? `${formatDays(balance.paidDurationDays)} paid / ${formatDays(balance.unpaidDurationDays)} unpaid`
-                        : "Unpaid if requested today"}
-                  </Badge>
+                  <div className="flex min-w-0 items-center bg-white px-3 py-2.5">
+                    <span
+                      className={cn(
+                        "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tabular-nums tracking-[0.06em]",
+                        balance?.paymentStatus === "paid" ? "border-emerald-500 text-emerald-700" : "border-amber-400 text-amber-700",
+                      )}
+                    >
+                      {balance?.paymentStatus === "paid"
+                        ? "Paid eligible"
+                        : balance?.paymentStatus === "partial"
+                          ? `${formatDays(balance.paidDurationDays)} paid / ${formatDays(balance.unpaidDurationDays)} unpaid`
+                          : "Unpaid if requested today"}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* ── Main form card ──────────────────────────────────── */}
-            <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+            <div className={`min-w-0 border border-slate-200 bg-white p-3 sm:p-4 ${adminSoftDepthClassName}`}>
               <div className="grid gap-3 sm:grid-cols-2">
                 {/* Vacation type selector */}
                 <div className="space-y-1.5 sm:col-span-2">
@@ -1764,26 +1794,27 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 />
 
                 {/* Duration preview */}
-                <div className="border border-orange-100 bg-orange-50/60 px-3 py-3 sm:col-span-2">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-700">Calculated duration</p>
-                      <p className="mt-1 text-xl font-extrabold text-slate-900">
+                {/* Read-only: the figure the system works out, navy on a quiet well, never orange. */}
+                <div className="border border-slate-200 bg-slate-50 px-3 py-3 sm:col-span-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Calculated duration</p>
+                      <p className={`mt-1 break-words text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums ${LANDING_INK}`}>
                         {durationPreview.error ? "Invalid" : durationDisplay(durationPreview.days)}
                       </p>
-                      <p className="mt-0.5 text-phx-xs font-medium text-orange-800">
+                      <p className="mt-1.5 text-phx-xs font-medium text-slate-500">
                         Duration updates automatically based on selected dates and day part.
                       </p>
                     </div>
                     {!durationPreview.error ? (
-                      <Badge className="w-fit border border-orange-200 bg-white text-orange-700">
+                      <span className="text-phx-xs font-bold uppercase tabular-nums tracking-[0.08em] text-slate-600">
                         {formatDays(durationPreview.days)}
-                      </Badge>
+                      </span>
                     ) : null}
                   </div>
                   {durationPreview.error ? <p className="mt-2 text-phx-sm font-semibold text-rose-700">{durationPreview.error}</p> : null}
                   {policyWarnings.length > 0 ? (
-                    <div className="mt-2 border border-amber-200 bg-amber-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-amber-800">
+                    <div className="mt-2.5 border-l-2 border-amber-400 pl-2.5 text-phx-xs font-bold leading-4 text-amber-800">
                       {policyWarnings.map((warning) => (
                         <p key={warning}>{warning}</p>
                       ))}
@@ -1796,7 +1827,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 {isSick ? (
                   <div className="space-y-1.5 sm:col-span-2">
                     <span className={phxLabelTextClassName}>Medical documents</span>
-                    <label className="flex cursor-pointer flex-col items-center justify-center border-2 border-dashed border-sky-200 bg-sky-50/50 px-4 py-4 text-center transition hover:border-sky-300 hover:bg-sky-50">
+                    <label className={uploadZoneClassName}>
                       <input
                         accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
                         className="sr-only"
@@ -1809,7 +1840,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           event.target.value = "";
                         }}
                       />
-                      <span className="bg-sky-600 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
+                      <span className={uploadButtonClassName}>
                         {sickDocuments.length > 0 ? "Add more documents" : "Browse medical documents"}
                       </span>
                       <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
@@ -1831,7 +1862,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                             </span>
                             <button
                               aria-label={`Remove ${file.name}`}
-                              className="shrink-0 border border-slate-200 p-1 text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+                              className={cn(
+                                "shrink-0 border border-slate-200 p-1 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 motion-reduce:transition-none",
+                                LANDING_FOCUS,
+                              )}
                               onClick={() => removeSickDocument(index)}
                               type="button"
                             >
@@ -1868,13 +1902,11 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
                 {/* Compensatory evidence */}
                 {isCompensatory ? (
-                  <div className="space-y-3 border border-orange-100 bg-orange-50/40 p-3 sm:col-span-2">
-                    <div>
-                      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-700">Compensatory Day evidence</p>
-                      <p className="mt-0.5 text-phx-xs font-medium leading-4 text-orange-800">
-                        Required because this day is granted instead of work done during a weekly-off event. Does not deduct from vacation balance and expires 14 days after the event date.
-                      </p>
-                    </div>
+                  <div className="space-y-3 border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+                    <p className={`flex min-w-0 items-center gap-2 break-words text-phx-xs font-black uppercase tracking-[0.12em] ${LANDING_INK}`}>
+                      <LandingTick />
+                      <span className="min-w-0">Compensatory Day evidence</span>
+                    </p>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-1.5">
                         <span className={phxLabelTextClassName}>Event name</span>
@@ -1894,7 +1926,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           onChange={(event) => setCompensatoryEventDate(event.target.value)}
                         />
                         {compensatoryExpiryDate ? (
-                          <p className="text-phx-xs font-medium text-orange-800">
+                          <p className="text-phx-xs font-medium tabular-nums text-slate-600">
                             Available until {formatHolidayDate(compensatoryExpiryDate)}.
                           </p>
                         ) : null}
@@ -1929,7 +1961,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         <label className={phxLabelTextClassName} htmlFor="compensatory-photo">
                           Event photo
                         </label>
-                        <label className="flex cursor-pointer flex-col items-center justify-center border-2 border-dashed border-orange-200 bg-white/60 px-4 py-4 text-center transition hover:border-orange-300 hover:bg-white" htmlFor="compensatory-photo">
+                        <label className={uploadZoneClassName} htmlFor="compensatory-photo">
                           <input
                             accept="image/jpeg,image/png,image/webp"
                             className="sr-only"
@@ -1938,7 +1970,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                             type="file"
                             onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Event photo", setCompensatoryPhoto)}
                           />
-                          <span className="bg-orange-500 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
+                          <span className={uploadButtonClassName}>
                             Browse event photo
                           </span>
                           <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
@@ -1951,7 +1983,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       </div>
                     </div>
                     {compensatoryDateError ? (
-                      <div className="border border-rose-200 bg-rose-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-rose-800">
+                      <div className="border-l-2 border-rose-500 pl-2.5 text-phx-xs font-bold leading-4 text-rose-800" role="alert">
                         {compensatoryDateError}
                       </div>
                     ) : null}
@@ -1974,7 +2006,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               </div>
 
               {/* Submit area */}
-              <div className="mt-4 flex flex-col gap-2 border border-slate-100 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-end">
+              <div className="mt-4 flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:items-center sm:justify-end">
                 <button
                   className={cn(
                     phxButtonAccentClassName,

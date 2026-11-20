@@ -1189,7 +1189,7 @@ function IncentivePayoutCurveChart({
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
         </div>
-        <span className="text-phx-sm font-medium text-slate-400">{subtitle ?? "Achievement vs Payout %"}</span>
+        <span className="phx-header-note text-phx-sm font-medium text-slate-400">{subtitle ?? "Achievement vs Payout %"}</span>
       </div>
       <div className="p-5">
         <ChartErrorBoundary>
@@ -1337,23 +1337,24 @@ function IncentiveSchemeDescriptionCard() {
       </div>
 
       {/* Tiered bands */}
-      <div className="space-y-1">
+      {/* Same fit as PediaIncentivePolicyCard: three columns from 17rem, the rate on its own line under it. */}
+      <div className="@container space-y-1">
         {/* Header */}
-        <div className="grid grid-cols-[1fr_80px_1fr] gap-2 px-3 pb-1">
+        <div className="grid grid-cols-[1fr_auto] gap-2 px-3 pb-1 @[17rem]:grid-cols-[1fr_96px_1fr]">
           <p className="text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400">Achievement</p>
           <p className="text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
-          <p className="text-right text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400">Rate</p>
+          <p className="hidden text-right text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400 @[17rem]:block">Rate</p>
         </div>
         {tiers.map((tier) => (
           <div
             key={tier.range}
-            className={`grid grid-cols-[1fr_80px_1fr] items-center gap-2 rounded border border-slate-100 border-l-[3px] px-3 py-2 ${tier.accent}`}
+            className={`grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-0.5 rounded border border-slate-100 border-l-[3px] px-3 py-2 @[17rem]:grid-cols-[1fr_96px_1fr] @[17rem]:gap-y-2 ${tier.accent}`}
           >
             <p className="text-phx-sm font-bold text-slate-700">{tier.range}</p>
-            <span className={`inline-flex w-fit rounded border px-2 py-0.5 text-phx-sm font-bold ${tier.badge}`}>
+            <span className={`inline-flex w-fit whitespace-nowrap rounded border px-2 py-0.5 text-phx-sm font-bold ${tier.badge}`}>
               {tier.payout}
             </span>
-            <p className="text-right text-phx-xs font-medium text-slate-500">{tier.rate}</p>
+            <p className="col-span-2 text-phx-xs font-medium text-slate-500 @[17rem]:col-span-1 @[17rem]:text-right">{tier.rate}</p>
           </div>
         ))}
       </div>
@@ -1752,22 +1753,25 @@ function PediaIncentivePolicyCard() {
         </p>
       </div>
 
-      <div className="space-y-1">
-        <div className="grid grid-cols-[1fr_80px_1fr] gap-2 px-3 pb-1">
+      {/* Three columns from 17rem; under it (a small Android phone on Large text, ~280px CSS wide)
+          the rate drops to its own line under the range and payout. Three fixed columns there made
+          the card 294px wide in a 256px column, and its right edge ran off the screen. */}
+      <div className="@container space-y-1">
+        <div className="grid grid-cols-[1fr_auto] gap-2 px-3 pb-1 @[17rem]:grid-cols-[1fr_96px_1fr]">
           <p className="text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400">Achievement</p>
           <p className="text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
-          <p className="text-right text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400">Rate</p>
+          <p className="hidden text-right text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-400 @[17rem]:block">Rate</p>
         </div>
         {tiers.map((tier) => (
           <div
-            className={`grid grid-cols-[1fr_80px_1fr] items-center gap-2 rounded border border-slate-100 border-l-[3px] px-3 py-2 ${tier.accent}`}
+            className={`grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-0.5 rounded border border-slate-100 border-l-[3px] px-3 py-2 @[17rem]:grid-cols-[1fr_96px_1fr] @[17rem]:gap-y-2 ${tier.accent}`}
             key={tier.range}
           >
             <p className="text-phx-sm font-bold text-slate-700">{tier.range}</p>
-            <span className={`inline-flex w-fit rounded border px-2 py-0.5 text-phx-sm font-bold ${tier.badge}`}>
+            <span className={`inline-flex w-fit whitespace-nowrap rounded border px-2 py-0.5 text-phx-sm font-bold ${tier.badge}`}>
               {tier.payout}
             </span>
-            <p className="text-right text-phx-xs font-medium text-slate-500">{tier.rate}</p>
+            <p className="col-span-2 text-phx-xs font-medium text-slate-500 @[17rem]:col-span-1 @[17rem]:text-right">{tier.rate}</p>
           </div>
         ))}
       </div>
@@ -2880,7 +2884,6 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Expense Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">Track workload, trips, and expense efficiency across AMs & PMs</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className={`flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>

@@ -19,7 +19,9 @@ import { stripComments } from "./support/comment-strip.ts";
 // Not scanned: src/lib (builds data, exports and emails with their own rules), tests, mobile.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASELINE = { hrIdFallback: 21, naFiller: 24, noHrId: 4, underscoreReplace: 28 };
+// 2026-11-20, the employee portal redesign: hrIdFallback 21 -> 19, naFiller 24 -> 3, noHrId 4 -> 0,
+// underscoreReplace 28 -> 24.
+const BASELINE = { hrIdFallback: 19, naFiller: 3, noHrId: 0, underscoreReplace: 24 };
 
 const ROOTS = ["app", "src/components"];
 

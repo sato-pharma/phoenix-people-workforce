@@ -10,6 +10,8 @@ import {
   approvalActionToneClassName,
   type ApprovalTone,
 } from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS, LANDING_INK } from "@/components/employee-portal/landing-kit";
+import { FormError } from "@/components/ui/form-kit";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -218,7 +220,8 @@ export function DecisionActions({
     <ApprovalResponsePanel panelRef={panelRef}>
       <div className="px-4 py-4">
         {pending === null ? (
-          <div className="flex flex-wrap gap-2">
+          // Full width, one under another, on a phone; on the right, side by side, from `sm`.
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
             {available.map(([action]) => (
               <button
                 key={action}
@@ -226,7 +229,7 @@ export function DecisionActions({
                 onClick={() => start(action)}
                 // The regular size is h-11, the 44px accessibility floor. This is the screen where
                 // money moves, reached after eight sections of evidence, often on a phone.
-                className={approvalActionClassName(tone[action], "regular", "flex-1 md:flex-none")}
+                className={approvalActionClassName(tone[action], "regular", "w-full sm:w-auto")}
               >
                 {labelFor(action)}
               </button>
@@ -234,21 +237,21 @@ export function DecisionActions({
             {shownDisabled.map(([action, reason]) => (
               // Present, obviously off, and saying why. `title` is not enough — this is read on a
               // phone, where there is no hover.
-              <div key={`off-${action}`} className="w-full md:w-auto">
+              <div key={`off-${action}`} className="w-full sm:w-auto sm:max-w-72">
                 <button
                   type="button"
                   disabled
-                  className={approvalActionClassName("neutral", "regular", "w-full md:w-auto")}
+                  className={approvalActionClassName("neutral", "regular", "w-full sm:w-auto")}
                 >
                   {labelFor(action)}
                 </button>
-                <p className="mt-1 text-phx-xs font-semibold text-slate-500">{reason}</p>
+                <p className="mt-1 break-words text-phx-xs font-semibold text-slate-500">{reason}</p>
               </div>
             ))}
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm font-bold text-slate-900">
+            <p className={`break-words text-sm font-bold ${LANDING_INK}`}>
               {REASON_REQUIRED[pending]
                 ? `${labelFor(pending)} — provide a reason`
                 : IS_OVERRIDE[pending] || pending === "returnPlain"
@@ -259,7 +262,7 @@ export function DecisionActions({
                   : `Confirm: ${labelFor(pending)} this request?`}
             </p>
             {IS_OVERRIDE[pending] && overrideNotice ? (
-              <p className="border border-slate-900 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
+              <p className={`break-words border-l-4 border-[#08111f] py-1 pl-3 text-sm font-semibold ${LANDING_INK}`}>
                 {overrideNotice}
               </p>
             ) : null}
@@ -279,19 +282,22 @@ export function DecisionActions({
                 className={cn(phxTextareaClassName, "text-base md:text-sm")}
               />
             ) : null}
-            {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-            <ApprovalConfirmButtons
-              busy={busy}
-              confirmLabel={`Confirm ${LABEL[pending].split(" ")[0]}`}
-              onConfirm={confirm}
-              onCancel={() => {
-                setPending(null);
-                setError(null);
-              }}
-            />
+            <FormError>{error}</FormError>
+            {/* On a phone the two share the row edge to edge; from `sm` they sit on the right. */}
+            <div className="sm:flex sm:justify-end">
+              <ApprovalConfirmButtons
+                busy={busy}
+                confirmLabel={`Confirm ${LABEL[pending].split(" ")[0]}`}
+                onConfirm={confirm}
+                onCancel={() => {
+                  setPending(null);
+                  setError(null);
+                }}
+              />
+            </div>
           </div>
         )}
-        {error && pending === null ? <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p> : null}
+        {error && pending === null ? <FormError className="mt-3">{error}</FormError> : null}
       </div>
     </ApprovalResponsePanel>
 
@@ -308,7 +314,7 @@ export function DecisionActions({
             // flex-wrap, not a squashed single row: "Approve as System Administrator" beside two
             // more labels cannot fit 375px on one line, and the golden rule says WRAP rather than
             // shrink the type or let it scroll sideways. basis-[48%] puts them two per row.
-            className="fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.1)] backdrop-blur md:hidden"
+            className="fixed inset-x-0 z-30 flex flex-wrap gap-2 border-t border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.1)] md:hidden"
             style={{ bottom: "env(safe-area-inset-bottom)" }}
           >
             {available.map(([action]) => (
@@ -322,7 +328,7 @@ export function DecisionActions({
                 // one this was measured against. A min-width cannot conflict: two buttons fit a
                 // 375px row, three cannot, so they wrap. It also keeps `h-12 flex-1` contiguous,
                 // which tests/direct-orders-approval-window-mobile.test.ts pins as the thumb size.
-                className={`inline-flex items-center justify-center h-12 flex-1 min-w-[9rem] px-2 text-center text-sm font-bold transition-colors ${approvalActionToneClassName[tone[action]]}`}
+                className={`inline-flex items-center justify-center h-12 flex-1 min-w-[9rem] px-2 text-center text-sm font-bold transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${approvalActionToneClassName[tone[action]]}`}
               >
                 {labelFor(action)}
               </button>

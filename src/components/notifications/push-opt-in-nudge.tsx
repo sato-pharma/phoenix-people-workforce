@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BellRing, X } from "lucide-react";
 
+import { LandingPanel, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { readHomeNotificationSettings } from "@/components/notifications/home-notification-settings";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { onesignalAppId, pushUnsupportedMessage, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
@@ -13,6 +14,11 @@ import { onesignalAppId, pushUnsupportedMessage, requestOneSignalPermission } fr
 import { shouldShowPushOptInNudge } from "@/lib/notifications/push-opt-in-nudge-rules";
 
 type NudgeStatus = "checking" | "hidden" | "visible" | "working" | "granted";
+
+/**
+ * The landing kit's button shape (LandingCta) for an action that is a button, not a link — the kit
+ * draws its call to action as a <Link>. Same frame, same type, 40px on a phone.
+ */
 
 /**
  * A quiet, dismissible card offering to turn push on, for the people who have never found the
@@ -35,6 +41,10 @@ type NudgeStatus = "checking" | "hidden" | "visible" | "working" | "granted";
  * Uses requestOneSignalPermission() (PushSubscription.optIn()), the exact call the settings panel
  * makes — never Notifications.requestPermission() directly. See onesignal-client.ts for why
  * swapping that back silently breaks push_subscriptions.
+ *
+ * THE LOOK (owner, 2026-11-20 landing redesign): the landing kit's white panel, worn the same way as
+ * the Telegram card under it — the tick title says where this device stands, one body line says what
+ * push gives them, the kit's navy buttons act, and dismiss sits in the header's right slot.
  */
 export function PushOptInNudge() {
   const hydrated = useHydrated();
@@ -108,51 +118,47 @@ export function PushOptInNudge() {
   if (!supported || status === "checking" || status === "hidden") return null;
 
   return (
-    <div className="flex flex-col gap-3 border border-orange-200 bg-orange-50 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-      <div className="flex min-w-0 items-start gap-3">
-        <BellRing aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-900">
-            {status === "granted" ? "Push notifications are on for this device." : "Turn on push notifications for this device?"}
-          </p>
-          <p className="mt-0.5 text-xs font-medium text-slate-600">
-            {status === "granted"
-              ? "You will get alerts here even when Phoenix isn't open. Manage this anytime in Profile → Notification Settings."
-              : "Get alerted for approvals, reminders and updates even when Phoenix isn't open in your browser."}
-          </p>
-          {error ? <p className="mt-1 text-xs font-semibold text-rose-700">{error}</p> : null}
-        </div>
-      </div>
-      {status === "granted" ? (
-        <button
-          className="shrink-0 self-start border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 sm:self-center"
-          onClick={dismiss}
-          type="button"
-        >
-          Got it
-        </button>
-      ) : (
-        <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
-          <button
-            className="inline-flex items-center gap-1.5 border border-orange-600 bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-            disabled={status === "working"}
-            onClick={enable}
-            type="button"
-          >
-            <BellRing className="h-3.5 w-3.5" />
-            {status === "working" ? "Enabling…" : "Turn on"}
-          </button>
+    <LandingPanel
+      right={
+        status === "granted" ? null : (
+          // 40px on a phone, where a thumb has to hit it; pulled into the header's padding so the
+          // header stays the height of every other panel's on the landing.
           <button
             aria-label="Dismiss"
-            className="inline-flex items-center justify-center border border-slate-300 bg-white p-3 text-slate-500 hover:text-slate-700 disabled:opacity-60 md:p-2.5"
+            className="-my-1.5 inline-flex h-10 w-10 shrink-0 items-center justify-center border border-slate-300 text-slate-500 transition hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-60 sm:h-8 sm:w-8"
             disabled={status === "working"}
             onClick={dismiss}
             type="button"
           >
-            <X className="h-3.5 w-3.5" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
+        )
+      }
+      title={status === "granted" ? "Push notifications are on for this device" : "Turn on push notifications for this device?"}
+    >
+      <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4">
+        <div aria-live="polite" className="min-w-0">
+          <p className="break-words text-phx-sm leading-snug text-slate-600">
+            {status === "granted"
+              ? "You will get alerts here even when Phoenix isn't open. Manage this anytime in Profile → Notification Settings."
+              : "Get alerted for approvals, reminders and updates even when Phoenix isn't open in your browser."}
+          </p>
+          {error ? <p className="mt-1.5 break-words text-phx-sm font-semibold text-rose-700">{error}</p> : null}
         </div>
-      )}
-    </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+          {status === "granted" ? (
+            <button className={landingActionClassName("outline")} onClick={dismiss} type="button">
+              Got it
+            </button>
+          ) : (
+            // No ellipsis on the working label, the same as the Telegram card's "Checking".
+            <button className={landingActionClassName("solid")} disabled={status === "working"} onClick={enable} type="button">
+              <BellRing aria-hidden="true" className="h-3.5 w-3.5" />
+              {status === "working" ? "Enabling" : "Turn on"}
+            </button>
+          )}
+        </div>
+      </div>
+    </LandingPanel>
   );
 }

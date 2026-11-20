@@ -267,15 +267,16 @@ export function runPortalIdentityBandAndSalesWindowTests() {
     // WHITE ON WHITE. CoverageRing's percentage was fill="white" on ScopeFocusPanel's bg-white
     // body, so the one number the panel exists to show was invisible on every screen it had ever
     // rendered on. Nothing failed — it simply was not there. Same shape as the white Sato wordmark
-    // on white paper.
-    const ring = dv.slice(dv.indexOf("function CoverageRing"), dv.indexOf("function ScopeFocusPanel"));
+    // on white paper. The ring became CoverageFigure — the landing's figure and bar — in the
+    // 2026-11-20 redesign; the same check now covers the figure.
+    const ring = dv.slice(dv.indexOf("function CoverageFigure"), dv.indexOf("function ScopeFocusPanel"));
     assert.ok(
       ring.length > 0,
-      "CoverageRing has moved or been renamed — the white-on-white check no longer covers it.",
+      "CoverageFigure has moved or been renamed — the white-on-white check no longer covers it.",
     );
     assert.ok(
-      !/fill="white"/.test(ring),
-      'CoverageRing draws in fill="white" again. Its card body is bg-white, so white text there is ' +
+      !/fill="white"|\btext-white\b|onNavy/.test(ring),
+      'CoverageFigure draws in white again (fill="white", text-white or onNavy). Its card body is bg-white, so white text there is ' +
         "not low-contrast — it is absent.",
     );
   }

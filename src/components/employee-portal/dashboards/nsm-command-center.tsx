@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Building2,
   CalendarClock,
   CalendarDays,
@@ -28,8 +27,6 @@ import {
   PendingActions,
   PortalIdentityBand,
   RankingPanel,
-  SectionHead,
-  SectionMeta,
   egpCompact,
   type ActionStripItem,
   type DashboardLink,
@@ -40,9 +37,16 @@ import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
-import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { LineSalesPacingSection } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { AwaitCard, AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import { MyMapSnapshotCard } from "@/components/employee-portal/dashboards/my-map-snapshot-card";
+import {
+  LandingEmpty,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingNavyBoardLoading,
+  LandingPanelLoading,
+} from "@/components/employee-portal/landing-kit";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
   NO_PUBLISHED_CLOSING_NOTE,
@@ -56,6 +60,9 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ── National performance keycards ─────────────────────────────────── */
+
+// The landing's ONE night-navy board (owner, 2026-11-20 redesign): the line's headline figures, as
+// the month tiles are a rep's. Every other card on this page is a white panel.
 
 function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["nsmNational"] }) {
   const pct = nsmNational ? Math.max(0, Math.round(nsmNational.achievementPercent)) : null;
@@ -103,29 +110,27 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
   ];
 
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead
-        title="National Performance"
-        right={
-          <SectionMeta
-            items={[
-              nsmNational?.windowLabel,
-              nsmNational ? `${nsmNational.dsmCount} ${nsmNational.dsmCount === 1 ? "district" : "districts"}` : null,
-            ]}
-          />
-        }
-      />
+    <LandingNavyBoard
+      label="National Performance"
+      right={
+        <LandingMeta
+          items={[
+            nsmNational?.windowLabel,
+            nsmNational ? `${nsmNational.dsmCount} ${nsmNational.dsmCount === 1 ? "district" : "districts"}` : null,
+          ]}
+          onNavy
+        />
+      }
+    >
       {nsmNational ? (
         <>
-          <KeycardGrid cards={cards} />
-          {!published && (
-            <p className="bg-white px-5 pb-4 text-phx-sm text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
-          )}
+          <KeycardGrid cards={cards} onNavy />
+          {!published && <LandingEmpty onNavy>{NO_PUBLISHED_CLOSING_NOTE}</LandingEmpty>}
         </>
       ) : (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">No line sales data synced for the current period yet.</p>
+        <LandingEmpty onNavy>No line sales data synced for the current period yet.</LandingEmpty>
       )}
-    </div>
+    </LandingNavyBoard>
   );
 }
 
@@ -153,6 +158,22 @@ const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Expense" },
 ];
 
+/* ── Incentive caveat ──────────────────────────────────────────────── */
+
+/**
+ * The one line that says the incentive figures below are not yet HR's. A white strip with an amber
+ * rail — the rail of the rep's Needs you rows — rather than a filled amber box, so a caution reads as
+ * a caution without becoming the loudest thing on the page.
+ */
+function IncentiveCaveat({ children }: { children: React.ReactNode }) {
+  return (
+    <p className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+      <span className="min-w-0 break-words text-phx-sm font-semibold leading-snug text-amber-800">{children}</span>
+    </p>
+  );
+}
+
 /* ── NSM command center ────────────────────────────────────────────── */
 
 export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
@@ -174,24 +195,21 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <AwaitCard value={snapshot.cvFolders}>{(summary) => <ManagerCvFoldersRow summary={summary} />}</AwaitCard>
       </Suspense>
 
-      <Suspense fallback={<MmSectionSkeleton title="National Performance" />}>
+      <Suspense fallback={<LandingNavyBoardLoading label="National Performance" />}>
         <AwaitRoleExtras extras={extras}>{({ nsmNational }) => <NationalKeycards nsmNational={nsmNational} />}</AwaitRoleExtras>
       </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="My map" />}>
+        <Suspense fallback={<LandingPanelLoading title="My map" />}>
           <MyMapSnapshotCard access={access} />
         </Suspense>
       ) : null}
 
-      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-xs font-semibold text-amber-700">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-        Incentives shown below are not yet confirmed by HR.
-      </div>
+      <IncentiveCaveat>Incentives shown below are not yet confirmed by HR.</IncentiveCaveat>
 
-      <Suspense fallback={<MmSectionSkeleton title="Top Medical Reps" />}>
+      <Suspense fallback={<LandingPanelLoading title="Top Medical Reps" />}>
         <AwaitRoleExtras extras={extras}>
           {({ nsmNational, nsmBoard }) => (
             <>
@@ -233,7 +251,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <AwaitCard value={earlyBirdStars}>{(stars) => <EarlyBirdOfTheFortnightCard stars={stars} />}</AwaitCard>
       </Suspense>
 
-      <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
+      <Suspense fallback={<LandingPanelLoading title="CRM First Visit" />}>
         <AwaitRoleExtras extras={extras}>
           {({ nsmBoard }) => <CrmFirstVisitBoard crm={nsmBoard?.crm ?? null} />}
         </AwaitRoleExtras>
@@ -242,7 +260,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       <ActionStrip items={ACTIONS} />
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
+        <Suspense fallback={<LandingPanelLoading title="Line Sales Pacing" />}>
           <LineSalesPacingSection access={access} />
         </Suspense>
       ) : null}

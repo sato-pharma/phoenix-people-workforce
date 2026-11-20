@@ -221,8 +221,11 @@ import { stripComments } from "./support/comment-strip.ts";
  * 212 -> 205 on 2026-10-19: the Recruitment premium sweep. Contact Review's phone-card scrollers
  * and the final-selection comparison table in the pipeline's Actions column became wrapping cards
  * and a fixed-layout table; the rest of the drop is cells that now wrap instead of holding one line.
+ *
+ * 205 -> 71 on 2026-11-20: the employee portal redesign onto the landing kit. Tab bars wrap, phone
+ * cards replace scrolling tables, and desktop tables are fixed-layout with a colgroup.
  */
-const BASELINE = 205;
+const BASELINE = 71;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

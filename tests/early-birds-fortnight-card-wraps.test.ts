@@ -51,9 +51,11 @@ export function runEarlyBirdsFortnightCardWrapsTests() {
   const applied = (utility: string) =>
     [...classes].some((token) => token === utility || token.endsWith(`:${utility}`));
 
+  // RE-POINTED 2026-11-20: the landing redesign made this card a white panel whose header is ruled
+  // off by a hairline (`border-b`), not a dark `bg-slate-900` bar. The sentinel follows the header.
   assert.ok(
-    applied("bg-slate-900"),
-    `${CARD}: no className carries "bg-slate-900" — the header bar this test reads is gone, so every ` +
+    applied("border-b"),
+    `${CARD}: no className carries "border-b" — the header this test reads is gone, so every ` +
       `assertion below would pass vacuously. Re-point the test at the card's real markup.`,
   );
 
@@ -76,10 +78,10 @@ export function runEarlyBirdsFortnightCardWrapsTests() {
   }
 
   // 3. The header must be allowed to break between the title and the "View board" link.
-  const header = code.match(/<div className="(flex flex-wrap[^"]*bg-slate-900[^"]*)"/);
+  const header = code.match(/<header className="(flex flex-wrap[^"]*border-b[^"]*)"/);
   assert.ok(
     header,
-    `${CARD}: the dark header row is no longer "flex flex-wrap … bg-slate-900". Without flex-wrap the ` +
+    `${CARD}: the header row is no longer "<header> flex flex-wrap … border-b". Without flex-wrap the ` +
       `title and the "View board" link are locked onto one row, which is what overflowed by 36px.`,
   );
 

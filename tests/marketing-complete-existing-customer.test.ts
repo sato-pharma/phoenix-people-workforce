@@ -497,9 +497,12 @@ export function runMarketingCompleteExistingCustomerTests() {
     "the workspace's Save must read that one gate, never a second boolean that could drift from it",
   );
   // The owner's standing UI rule: never truncate with an ellipsis, never let text wrap.
+  // Since 2026-11-20 the phone button's classes come from the landing kit
+  // (`landingActionClassName("solid", "… whitespace-nowrap")`), so the class list no longer ends in
+  // a closing quote on its own line; the pin reads the className LINE instead, same intent.
   assert.match(
     workspace,
-    /whitespace-nowrap[^"]*"\s*\n\s*onClick=\{\(\) => startCompletingCustomer/,
+    /whitespace-nowrap[^\n]*\n\s*onClick=\{\(\) => startCompletingCustomer/,
     "the action label must not wrap",
   );
 }
