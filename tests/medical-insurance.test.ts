@@ -10,9 +10,12 @@ import {
   additionCharge,
   annualRate,
   deletionRefund,
+  instalmentNumber,
   lastQuarterStart,
+  openingInstalment,
   openingStatement,
   parseRateCard,
+  pricingAge,
   withPlanRates,
   type MedicalInsuranceCategory,
   type MedicalInsuranceRateCard,
@@ -45,9 +48,9 @@ import {
 import { stripComments } from "./support/comment-strip.ts";
 
 const POLICY = { endsOn: "2027-11-14", startsOn: "2026-11-15" };
-const MIGRATION = "supabase/migrations/20261119150524_medical_insurance_policy_50048950.sql";
+const MIGRATION = "supabase/migrations/20261120134229_medical_insurance_rates_before_tax.sql";
 
-/** The rate card exactly as the issued policy's migration sets it, so the test pins what production prices with. */
+/** The rate card exactly as the latest migration sets it, so the test pins what production prices with. */
 function seededRateCard(): MedicalInsuranceRateCard {
   const sql = readFileSync(MIGRATION, "utf8");
   const start = sql.indexOf("'{\n    \"currency\"");
@@ -92,51 +95,80 @@ function actionsFor(employees: EmployeeFacts[], members: MemberFacts[], exceptio
   return buildMedicalInsuranceActions({ asOf, employees, exceptions, members, policy: POLICY }).actions;
 }
 
+/** The schedule's printed "Premium per age band group" for policy 50048950, bands 0 to 79. It already carries the 1.55% tax. */
+const PRINTED_RATES: Record<MedicalInsuranceCategory, number[]> = {
+  A: [7569.75, 8419.61, 10018.72, 12328.77, 14994.33, 17589.83, 21726.51, 24234.84, 31342.82, 39339.3, 46980.38, 54088.44, 62084.83],
+  B: [3494.61, 4052.66, 4776.65, 5822.34, 7028.99, 8203.97, 10076.66, 11212.13, 14429.8, 18049.73, 21508.79, 24726.62, 28346.52],
+  C: [3161.55, 3695.59, 4347.59, 5289.29, 6375.95, 7434.08, 9120.54, 10143.1, 13040.79, 16300.75, 19415.82, 22313.66, 25573.58],
+};
+
 /**
- * The issued policy 50048950 (22 November 2026 to 26 November 2027): the card holds the schedule's "Premium per
- * age band group" exactly as printed, per person for the term, every band from 0 to 79; its fees reproduce the
- * schedule's own bill (139 people, net 927,635.54, tax 14,378.35, cards 4,170, issue fee 90, total 946,273.89);
- * and a band's premium is the rate times its people to the piastre, never rounded to the pound as the offer was.
+ * The issued policy 50048950 against Libano-Suisse's own first invoice (INV6021-2026-1) and Initial Breakdown,
+ * 20 November 2026. The card holds each printed rate BEFORE tax, so adding the 1.55% gives back every printed
+ * figure (the breakdown bills each person the printed rate, and its 139 add up to the schedule's net plus tax).
+ * The breakdown's 139, plan by priced age, reproduce the schedule (net 927,635.54, tax 14,378.35) and the
+ * invoice's first quarter (235,503.75 + 4,260 = 239,763.75) within a pound. A band's premium is the rate times
+ * its people, to the piastre.
  */
-function testTheIssuedPolicyIsReproducedToThePiastre() {
-  assert.deepEqual(CARD.plans.A.rates, [7569.75, 8419.61, 10018.72, 12328.77, 14994.33, 17589.83, 21726.51, 24234.84, 31342.82, 39339.3, 46980.38, 54088.44, 62084.83, null]);
-  assert.deepEqual(CARD.plans.B.rates, [3494.61, 4052.66, 4776.65, 5822.34, 7028.99, 8203.97, 10076.66, 11212.13, 14429.8, 18049.73, 21508.79, 24726.62, 28346.52, null]);
-  assert.deepEqual(CARD.plans.C.rates, [3161.55, 3695.59, 4347.59, 5289.29, 6375.95, 7434.08, 9120.54, 10143.1, 13040.79, 16300.75, 19415.82, 22313.66, 25573.58, null]);
-  assert.deepEqual(CARD.ageBands.at(-1), { from: 80, to: null }, "80 and over is the one band the policy does not quote");
-
-  // The schedule's own bill, in piastres, through the card's fees.
-  const schedulePremium = 92_763_554;
-  const scheduleTax = Math.round((schedulePremium * CARD.taxBasisPoints) / 10_000);
-  assert.equal(scheduleTax, 1_437_835, "1.55% of 927,635.54 is 14,378.35");
-  assert.equal(139 * CARD.cardFeePerMember, 4_170, "EGP 30 a member for 139 people");
-  assert.equal(schedulePremium + scheduleTax + 139 * CARD.cardFeePerMember * 100 + CARD.issueFee * 100, 94_627_389, "the schedule's total, 946,273.89");
-
-  // One person in every band of every plan, and a second in Plan A's first band.
-  const people: PersonToPrice[] = [];
+function testTheIssuedPolicyIsReproducedFromTheInsurersOwnBill() {
   for (const category of ["A", "B", "C"] as const) {
-    CARD.ageBands.forEach((band, index) => {
-      // One year into the band on the policy's first day.
-      const birthDate = `${2026 - (band.from + 1)}-01-01`;
-      const count = category === "A" && index === 0 ? 2 : 1;
-      for (let person = 0; person < count; person += 1) people.push({ birthDate, category, coverageStart: POLICY.startsOn });
+    PRINTED_RATES[category].forEach((printed, index) => {
+      const rate = CARD.plans[category].rates[index] as number;
+      const withTax = Math.round((Math.round(rate * 100) * (10_000 + CARD.taxBasisPoints)) / 10_000);
+      assert.equal(withTax, Math.round(printed * 100), `plan ${category}, band ${index}: the stored rate plus 1.55% is the printed ${printed}`);
     });
+    assert.equal(CARD.plans[category].rates.at(-1), null, `plan ${category}: 80 and over is unquoted`);
+  }
+  assert.equal(CARD.plans.A.rates[8], 30_864.42, "A 55 to 59 is 30,864.42 before tax, printed 31,342.82");
+  assert.equal(CARD.premiumInstalments, 4, "the policy is paid quarterly");
+
+  // The Initial Breakdown's 139 people as [plan, priced age, how many]; the priced age is 2026 less the year of birth.
+  const breakdown: Array<[MedicalInsuranceCategory, number, number]> = [
+    ["A", 0, 2], ["A", 25, 1], ["A", 30, 1], ["A", 35, 1], ["A", 40, 1], ["A", 45, 2], ["A", 50, 2], ["A", 55, 4], ["A", 60, 1],
+    ["B", 0, 1], ["B", 30, 11], ["B", 35, 7], ["B", 40, 5], ["B", 50, 2], ["B", 55, 1],
+    ["C", 0, 3], ["C", 18, 35], ["C", 25, 43], ["C", 30, 10], ["C", 35, 5], ["C", 50, 1],
+  ];
+  const issued = { endsOn: "2027-11-26", startsOn: "2026-11-22" };
+  const people: PersonToPrice[] = [];
+  for (const [category, age, count] of breakdown) {
+    for (let person = 0; person < count; person += 1) people.push({ birthDate: `${2026 - age}-06-01`, category, coverageStart: issued.startsOn });
   }
 
   const statement = openingStatement(CARD, people);
-  assert.equal(statement.people, 43);
-  assert.equal(statement.unpriced, 3, "the three over 80 are counted, not priced");
-  assert.equal(statement.plans[0].bands[0].premium, 15_139.5, "two at 7,569.75 is 15,139.50, not 15,140");
-  assert.deepEqual(statement.plans.map((plan) => [plan.category, plan.people, plan.premium]), [["A", 14, 358_287.88], ["B", 13, 161_729.47], ["C", 13, 146_212.29]]);
-  assert.equal(statement.premium, 666_229.64);
-  assert.equal(statement.tax, 10_326.56, "1.55% tax and supervision");
-  assert.equal(statement.cards, 1_290, "EGP 30 a member for the card, the unpriced included");
+  assert.equal(statement.people, 139);
+  assert.equal(statement.unpriced, 0);
+  assert.deepEqual(statement.plans.map((plan) => [plan.category, plan.people]), [["A", 15], ["B", 27], ["C", 97]]);
+  assert.equal(statement.plans[0].bands[0].premium, 14_908.42, "two at 7,454.21 is 14,908.42, never rounded to the pound");
+  assert.equal(statement.premium, 927_635.51);
+  assert.ok(Math.abs(statement.premium - 927_635.54) < 1, "within a pound of the schedule's net premium");
+  assert.equal(statement.tax, 14_378.35, "the schedule's tax, to the piastre");
+  assert.equal(statement.cards, 4_170, "EGP 30 a member for 139 people");
   assert.equal(statement.issueFee, 90, "the issue fee, once");
-  assert.equal(statement.total, 677_936.2);
+
+  const first = openingInstalment(statement, 4, 1);
+  assert.equal(first, 239_763.47, "a quarter of premium and tax, then every card and the issue fee");
+  assert.ok(Math.abs(first - 239_763.75) < 1, "within a pound of invoice INV6021-2026-1");
+  assert.equal(openingInstalment(statement, 4, 2), 235_503.47, "a later quarter carries no card and no issue fee");
+  assert.equal(openingInstalment(statement, 1, 1), statement.total, "one instalment is the whole opening bill");
+  assert.equal(instalmentNumber(issued, 4, "2026-11-22"), 1);
+  assert.equal(instalmentNumber(issued, 4, "2027-02-21"), 1, "the first quarter runs to 21 February");
+  assert.equal(instalmentNumber(issued, 4, "2027-02-22"), 2);
+  assert.equal(instalmentNumber(issued, 4, "2027-08-22"), 4);
+  assert.equal(instalmentNumber(issued, 4, null), 1, "a bill with no first day is the first");
+  assert.equal(instalmentNumber(issued, 1, "2027-08-22"), 1, "one bill a year is always the first");
+
+  // The insurer's age: the year cover starts less the year of birth, never the age on the day.
+  assert.equal(pricingAge("1996-12-03", issued.startsOn), 30, "29 on the day, priced at 30 as the breakdown did");
+  const turning = annualRate(CARD, { birthDate: "1996-12-03", category: "A", coverageStart: issued.startsOn });
+  assert.equal(turning.priced && turning.annual, CARD.plans.A.rates[3], "priced in A 30 to 34");
+  assert.equal(pricingAge("2001-12-26", issued.startsOn), 25, "24 on the day, priced at 25");
+  assert.equal(pricingAge("2027-01-01", issued.startsOn), null, "born after the year cover starts");
 
   const old = annualRate(CARD, { birthDate: "1940-01-01", category: "C", coverageStart: POLICY.startsOn });
   assert.equal(old.priced, false, "a band the policy does not quote (80 and over) is never priced at zero");
   assert.equal(annualRate(CARD, { birthDate: null, category: "A", coverageStart: POLICY.startsOn }).priced, false, "no birth date, no price");
   assert.throws(() => parseRateCard({ ...CARD, taxBasisPoints: undefined }), /missing a figure/);
+  assert.throws(() => parseRateCard({ ...CARD, premiumInstalments: 0 }), /missing a figure/, "instalments are a whole number from 1 to 12");
   assert.equal(withPlanRates(CARD, "C", CARD.plans.C.rates.map((rate, index) => (index === 6 ? 8000 : rate))).plans.C.rates[6], 8000, "a quoted band can be filled in");
 }
 
@@ -443,9 +475,21 @@ function testEachBillIsComparedWithThePlan() {
     rateCard: CARD,
   });
 
-  const opening = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: POLICY.endsOn, kind: "opening", totalDue: year.opening.total + 10 }, year);
-  assert.equal(opening.expected, year.opening.total, "an opening bill is held against the opening statement");
+  // The policy is paid quarterly, so an opening bill is held against its quarter of the opening statement.
+  assert.equal(year.premiumInstalments, 4);
+  const firstQuarter = openingInstalment(year.opening, 4, 1);
+  const opening = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: "2027-02-14", kind: "opening", totalDue: firstQuarter + 10 }, year);
+  assert.equal(opening.expected, firstQuarter, "the first quarterly bill is a quarter of premium and tax, with every card and the issue fee");
+  assert.ok(firstQuarter < year.opening.total, "never the whole year");
+  assert.deepEqual(opening.instalment, { number: 1, of: 4 });
   assert.equal(opening.difference, 10);
+  const secondQuarter = compareInvoiceToPlan({ coversFrom: "2027-02-15", coversTo: "2027-05-14", kind: "opening", totalDue: 0 }, year);
+  assert.deepEqual(secondQuarter.instalment, { number: 2, of: 4 });
+  assert.equal(secondQuarter.expected, openingInstalment(year.opening, 4, 2), "a later quarter carries no card and no issue fee");
+  const yearly = buildPolicyYearCost({ actions: [], birthDates: new Map(), members, policy: POLICY, rateCard: { ...CARD, premiumInstalments: undefined } });
+  const oneBill = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: POLICY.endsOn, kind: "opening", totalDue: yearly.opening.total }, yearly);
+  assert.equal(oneBill.expected, yearly.opening.total, "a policy paid once a year is held against the whole opening statement");
+  assert.equal(oneBill.instalment, null);
 
   const additions = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: "2027-03-31", kind: "additions", totalDue: 0 }, year);
   assert.deepEqual(additions.lines.map((line) => [line.name, line.planned]), [["Joiner", false], ["March Joiner", true]], "a day-one joiner belongs on the opening bill, not an endorsement");
@@ -701,7 +745,7 @@ function testNothingHereSendsOrPays() {
 }
 
 export async function runMedicalInsuranceTests() {
-  testTheIssuedPolicyIsReproducedToThePiastre();
+  testTheIssuedPolicyIsReproducedFromTheInsurersOwnBill();
   testAJoinerIsChargedByTheDayAndTheLastQuarterAtAQuarter();
   testALeaverIsRefundedByTheDay();
   testEveryoneBelongsFromDayOneAndTheRecordDecidesTheEnd();
