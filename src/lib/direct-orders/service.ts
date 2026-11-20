@@ -232,6 +232,13 @@ import {
 } from "@/lib/direct-orders/types";
 import { assertDirectOrderWorkflowTransition, directOrderDecisionAction } from "@/lib/direct-orders/workflow";
 import { sendDirectOrderApprovedEmail } from "@/lib/direct-orders/approved-email";
+import {
+  approvedStepActors,
+  assertOrderCarriedBySuperAdminStands,
+  assertPharmacyRulingStands,
+  isDirectOrderSuperAdmin,
+} from "@/lib/direct-orders/super-admin-decision";
+import { assertSuperAdminDecisionStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 
 const NOTIFY_CHANNELS: SystemNotificationChannel[] = ["in_app", "email", "telegram"];
 const CHAIN_DEPTH_CAP = 6;
@@ -1816,7 +1823,10 @@ async function markDirectOrderPharmacyVerified(
       verified_by_hr_id: hrIdForStorage(access.hrId),
       verified_at: new Date().toISOString(),
     })
-    .eq("id", input.pharmacyId);
+    .eq("id", input.pharmacyId)
+    // A pharmacy already confirmed keeps who confirmed it: the SFE rung of a later order never
+    // writes its name over the Super Admin's (owner, 2026-11-20).
+    .neq("verification_status", "verified");
   if (error) throw error;
 
   await writeRequiredAuditLog({
@@ -3600,6 +3610,10 @@ export async function updateDirectOrderPharmacyDetails(
     .eq("id", input.pharmacyId)
     .maybeSingle();
   if (!before) badRequest("Venue not found.");
+  // 🔴 Who and where a pharmacy is, once the Super Admin ruled on it, is changed by him alone (owner, 2026-11-20).
+  if (input.pharmacyName !== undefined || input.brickId !== undefined || input.areaCode !== undefined || input.regionCode !== undefined) {
+    await assertPharmacyRulingStands(access, input.pharmacyId);
+  }
 
   // Patch semantics, not replace: the UI sends only the fields it edited, and an absent key must
   // never blank a column. `null` is a real value here (clear the doctor) and is distinguished from
@@ -3667,6 +3681,8 @@ export async function replaceDirectOrderPharmacyCodes(
     .eq("id", input.pharmacyId)
     .maybeSingle();
   if (!pharmacy) badRequest("Venue not found.");
+  // 🔴 The codes of a pharmacy the Super Admin ruled on are changed by him alone (owner, 2026-11-20).
+  await assertPharmacyRulingStands(access, input.pharmacyId);
 
   const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
   const { data: previous } = await supabase
@@ -4977,6 +4993,11 @@ export async function decideDirectOrder(
 
   const evaluation = evaluateStepAction({ steps, actorOrder: activeStep.order, decision: input.decision });
   if (!evaluation.allowed) badRequest(evaluation.reason ?? "This action is not allowed right now.");
+  // 🔴 A rung the Super Admin approved is not rejected or returned later by a manager (owner, 2026-11-20:
+  // "if I manual validate this to the manager doing, he cannot override my decision"). The CEO keeps his say.
+  if (input.decision !== "approve" && access.role !== "CEO") {
+    await assertSuperAdminDecisionStands(isSuperAdmin, approvedStepActors(steps));
+  }
 
   // Backstop: nothing reaches `approved` against a pharmacy nobody confirmed.
   //
@@ -5336,6 +5357,8 @@ export async function reverseDirectOrder(
   const original = found.request;
   if (original.status !== "approved") badRequest("Only an approved direct order can be reversed.");
   if (original.reversedByRequestId) badRequest("This direct order already has a reversal in progress.");
+  // 🔴 An order the Super Admin approved at any rung is reversed by nobody below him (owner, 2026-11-20).
+  await assertSuperAdminDecisionStands(isDirectOrderSuperAdmin(access), approvedStepActors(await loadSteps(original.id)));
 
   // Reverse was the one declared registry action with no gate, so its role list was whatever
   // `direct_orders:create` happens to grant — which includes Medical Rep and Financial Advisor,
@@ -8785,6 +8808,32 @@ export async function confirmDirectOrderCleanup(
     codesRepaired: 0,
     requestsReleased: 0,
   };
+
+  // 🔴 Nothing the Super Admin ruled on is merged away or cancelled as a duplicate below him (owner,
+  // 2026-11-20). Asked of the whole plan BEFORE any write, so a refusal leaves nothing half applied.
+  if (!isDirectOrderSuperAdmin(access)) {
+    for (const merge of input.merges ?? []) {
+      for (const mergedId of merge.mergedIds ?? []) {
+        if (mergedId && mergedId !== merge.survivorId) await assertPharmacyRulingStands(access, mergedId);
+      }
+    }
+    for (const group of input.duplicates ?? []) {
+      for (const duplicateId of group.duplicateIds ?? []) {
+        if (!duplicateId || duplicateId === group.keeperId) continue;
+        const { data: dup, error: dupError } = await supabase
+          .from("direct_order_requests")
+          .select("pharmacy_id")
+          .eq("id", duplicateId)
+          .maybeSingle();
+        if (dupError) throw dupError;
+        if (!dup) continue;
+        await assertOrderCarriedBySuperAdminStands(access, {
+          steps: await loadSteps(duplicateId),
+          pharmacyId: (dup as { pharmacy_id?: string | null }).pharmacy_id ?? null,
+        });
+      }
+    }
+  }
 
   // ── 1. Merge pharmacies ────────────────────────────────────────────────────────────────
   for (const merge of input.merges ?? []) {

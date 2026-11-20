@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assertPharmacyRulingStands } from "@/lib/direct-orders/super-admin-decision";
 import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -1657,6 +1658,9 @@ export async function decideDirectOrderPharmacyValidation(
 
   const pharmacyId = String((row as { pharmacy_id: string }).pharmacy_id);
   const notes = input.notes?.trim() || null;
+  // 🔴 A pharmacy the Super Admin refused, confirmed or ruled stays held is not approved below him
+  // (owner, 2026-11-20). Rejecting agrees with him and stays open to the SFE Manager.
+  if (input.decision !== "reject") await assertPharmacyRulingStands(access, pharmacyId);
   const now = new Date().toISOString();
 
   // A verdict about a licence that is not on file is not a verdict about anything — the DB refuses
