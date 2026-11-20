@@ -4621,6 +4621,46 @@ $$;
 ALTER FUNCTION public.claim_next_inbound_intake(p_limit integer) OWNER TO postgres;
 
 --
+-- Name: connector_film_mask_names(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.connector_film_mask_names() RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select coalesce(jsonb_agg(distinct n), '[]'::jsonb)
+  from (
+    select btrim(v) as n
+    from (
+      select full_name as v from public.employees
+      union all select name_ar from public.employees
+      union all select full_name from public.ats_candidates
+      union all select candidate_name from public.offers
+      union all select full_name from public.medical_insurance_members
+      union all select name from public.crm_contacts
+      union all select name_ar from public.crm_contacts
+      union all select contact_name from public.ireports360_contacts
+      union all select contact_name_ar from public.ireports360_contacts
+      union all select name from public.phoenix_crm_customers
+      union all select primary_pharmacy_name from public.phoenix_crm_customers
+      union all select pharmacy_name from public.direct_order_pharmacies
+      union all select doctor_name from public.direct_order_pharmacies
+      union all select customer_name from public.source_of_sales_customer_map
+    ) raw
+    where v is not null
+  ) names
+  where length(n) >= 5 and n ~ '\s';
+$$;
+
+ALTER FUNCTION public.connector_film_mask_names() OWNER TO postgres;
+
+--
+-- Name: FUNCTION connector_film_mask_names(); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.connector_film_mask_names() IS 'Every distinct person, doctor, customer and pharmacy name (two words or more) the ChatGPT connector''s film masking swaps for a made-up one. Service role only.';
+
+--
 -- Name: create_lifecycle_notification_event(text, text, date, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -20808,6 +20848,175 @@ end;
 $_$;
 
 ALTER FUNCTION public.phoenix_crm_validate_customer(p jsonb) OWNER TO postgres;
+
+--
+-- Name: phoenix_crm_validate_with_admin_photo(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_validate_with_admin_photo(p jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_id uuid := nullif(trim(coalesce(p ->> 'validation_id', '')), '')::uuid;
+  v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
+  v_loc jsonb := p -> 'location';
+  v_watch public.phoenix_crm_admin_photo_validations%rowtype;
+  v_customer public.phoenix_crm_customers%rowtype;
+  v_place_id uuid;
+  v_event text;
+  v_was text;
+begin
+  if v_id is null or v_actor is null or jsonb_typeof(v_loc) is distinct from 'object' then
+    raise exception 'phoenix_crm:bad_input';
+  end if;
+
+  select w.* into v_watch from public.phoenix_crm_admin_photo_validations w where w.id = v_id;
+  if not found then
+    raise exception 'phoenix_crm:admin_photo_not_found';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('phoenix_crm:seat:' || v_watch.seat_id));
+
+  select w.* into v_watch from public.phoenix_crm_admin_photo_validations w where w.id = v_id for update;
+  if v_watch.status = 'watching' then
+    raise exception 'phoenix_crm:admin_photo_no_reading';
+  end if;
+  if v_watch.status <> 'captured' then
+    raise exception 'phoenix_crm:admin_photo_closed';
+  end if;
+
+  select c.* into v_customer
+  from public.phoenix_crm_customers c
+  where c.id = v_watch.customer_id
+    and c.seat_id = v_watch.seat_id
+    and c.is_test = v_watch.is_test
+  for update;
+  if not found then
+    raise exception 'phoenix_crm:customer_not_found';
+  end if;
+  if v_customer.status = 'dropped' then
+    raise exception 'phoenix_crm:archived';
+  end if;
+  if v_customer.status not in ('pending', 'active') then
+    raise exception 'phoenix_crm:not_on_list';
+  end if;
+  if v_customer.list_type not in ('AM', 'PM') then
+    raise exception 'phoenix_crm:bad_input';
+  end if;
+  if exists (
+    select 1 from public.phoenix_crm_places pl
+    where pl.customer_id = v_customer.id and pl.status = 'active'
+  ) then
+    raise exception 'phoenix_crm:already_has_place';
+  end if;
+  if exists (
+    select 1 from public.phoenix_crm_validation_reviews r
+    where r.customer_id = v_customer.id and r.status = 'pending'
+      and exists (select 1 from public.phoenix_crm_places pl where pl.id = r.place_id and pl.status = 'active')
+  ) then
+    raise exception 'phoenix_crm:location_in_review';
+  end if;
+
+  insert into public.phoenix_crm_places (
+    customer_id, seat_id, lat, lon, accuracy_meters, timings, photo_path, captured_at, created_by_hr_id, is_test,
+    point_source, pin_lat, pin_lon, pin_accuracy_meters, admin_photo_by_hr_id,
+    address, zone, brick_lookup, brick_id, brick_name, brick_distance_km,
+    area_code, area_name, region_code, region_name
+  )
+  values (
+    v_customer.id,
+    v_watch.seat_id,
+    v_watch.rep_lat,
+    v_watch.rep_lon,
+    v_watch.rep_accuracy_meters,
+    '[]'::jsonb,
+    v_watch.photo_path,
+    v_watch.rep_captured_at,
+    v_watch.rep_hr_id,
+    v_watch.is_test,
+    'pin',
+    v_watch.rep_lat,
+    v_watch.rep_lon,
+    v_watch.rep_accuracy_meters,
+    v_actor,
+    left(nullif(v_loc ->> 'address', ''), 200),
+    left(nullif(v_loc ->> 'zone', ''), 80),
+    coalesce(nullif(v_loc ->> 'brick_lookup', ''), 'could_not_look'),
+    nullif(v_loc ->> 'brick_id', ''),
+    nullif(v_loc ->> 'brick_name', ''),
+    nullif(v_loc ->> 'brick_distance_km', '')::numeric,
+    nullif(v_loc ->> 'area_code', ''),
+    nullif(v_loc ->> 'area_name', ''),
+    nullif(v_loc ->> 'region_code', ''),
+    nullif(v_loc ->> 'region_name', '')
+  )
+  returning id into v_place_id;
+
+  v_was := v_customer.status;
+  if v_customer.status = 'pending' then
+    update public.phoenix_crm_customers c
+    set status = 'active',
+        validated_at = now(),
+        validated_by_hr_id = v_actor,
+        reopened_at = null,
+        status_changed_at = now(),
+        updated_at = now()
+    where c.id = v_customer.id;
+
+    with withdrawn as (
+      update public.phoenix_crm_list_requests q
+      set status = 'withdrawn',
+          stage = null,
+          decided_at = now(),
+          decided_by_hr_id = v_actor,
+          decision_note = 'Validated instead of dropped'
+      where q.seat_id = v_watch.seat_id
+        and q.is_test = v_watch.is_test
+        and q.kind = 'drop'
+        and q.status = 'pending'
+        and (
+          q.customer_id = v_customer.id
+          or (q.customer_id is null and v_customer.reference_contact_crm_id is not null and q.reference_contact_crm_id = v_customer.reference_contact_crm_id)
+        )
+      returning q.id
+    )
+    insert into public.phoenix_crm_list_events (seat_id, customer_id, request_id, event_type, actor_hr_id, details, is_test)
+    select v_watch.seat_id, v_customer.id, w.id, 'request_withdrawn', v_actor, jsonb_build_object('why', 'validated'), v_watch.is_test
+    from withdrawn w;
+
+    v_event := 'customer_validated';
+  else
+    v_event := 'place_added';
+  end if;
+
+  update public.phoenix_crm_admin_photo_validations w
+  set status = 'validated', place_id = v_place_id, closed_at = now()
+  where w.id = v_watch.id;
+
+  insert into public.phoenix_crm_list_events (seat_id, customer_id, place_id, event_type, actor_hr_id, details, is_test)
+  values (
+    v_watch.seat_id, v_customer.id, v_place_id, v_event, v_actor,
+    jsonb_build_object(
+      'mode', 'admin_photo',
+      'admin_photo_validation_id', v_watch.id,
+      'rep_hr_id', v_watch.rep_hr_id,
+      'rep_accuracy_meters', v_watch.rep_accuracy_meters,
+      'was', v_was
+    ),
+    v_watch.is_test
+  );
+
+  return jsonb_build_object(
+    'place_id', v_place_id,
+    'customer_id', v_customer.id,
+    'status', 'active',
+    'event', v_event
+  );
+end;
+$$;
+
+ALTER FUNCTION public.phoenix_crm_validate_with_admin_photo(p jsonb) OWNER TO postgres;
 
 --
 -- Name: phoenix_crm_validated_place_facts(uuid[], uuid[]); Type: FUNCTION; Schema: public; Owner: postgres
@@ -55432,6 +55641,39 @@ ALTER TABLE public.connector_files OWNER TO postgres;
 COMMENT ON TABLE public.connector_files IS 'Excel and PDF files Phoenix built for a person through the ChatGPT connector, stored in the job-exports bucket. Downloadable only by the same signed-in person until expires_at. Server only: RLS on, no policy.';
 
 --
+-- Name: connector_film_jobs; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.connector_film_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    login_id text NOT NULL,
+    hr_id text,
+    role text NOT NULL,
+    session_version integer NOT NULL,
+    title text NOT NULL,
+    script jsonb NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    progress jsonb DEFAULT '{}'::jsonb NOT NULL,
+    file_id uuid,
+    duration_seconds numeric,
+    voice_used boolean,
+    error text,
+    claimed_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    CONSTRAINT connector_film_jobs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'rendering'::text, 'done'::text, 'failed'::text])))
+);
+
+ALTER TABLE public.connector_film_jobs OWNER TO postgres;
+
+--
+-- Name: TABLE connector_film_jobs; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.connector_film_jobs IS 'Films the owner or the CEO asked ChatGPT to make of Phoenix (phoenix_make_film). Rendered by the worker service into an MP4 with masked data, a voice-over and captions; the file is linked through connector_files. Server only: RLS on, no policy.';
+
+--
 -- Name: connector_oauth_clients; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -65858,6 +66100,43 @@ ALTER TABLE public.phoenix_crm_admin_deletions OWNER TO postgres;
 COMMENT ON TABLE public.phoenix_crm_admin_deletions IS 'A plan, visit or day record the Super Admin deleted as if it never happened (owner, 2026-10-23), with the row and everything that hung off it as they stood. Production has no point-in-time recovery, so a deletion keeps its own copy.';
 
 --
+-- Name: phoenix_crm_admin_photo_validations; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_admin_photo_validations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_id uuid NOT NULL,
+    seat_id text NOT NULL,
+    is_test boolean DEFAULT false NOT NULL,
+    photo_path text NOT NULL,
+    status text DEFAULT 'watching'::text NOT NULL,
+    armed_by_hr_id text NOT NULL,
+    armed_at timestamp with time zone DEFAULT now() NOT NULL,
+    watch_until timestamp with time zone NOT NULL,
+    rep_hr_id text,
+    rep_lat double precision,
+    rep_lon double precision,
+    rep_accuracy_meters numeric,
+    rep_captured_at timestamp with time zone,
+    place_id uuid,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_admin_photo_validations_captured CHECK (((status <> ALL (ARRAY['captured'::text, 'validated'::text])) OR (rep_lat IS NOT NULL))),
+    CONSTRAINT phoenix_crm_admin_photo_validations_closed CHECK (((status = ANY (ARRAY['validated'::text, 'cancelled'::text])) = (closed_at IS NOT NULL))),
+    CONSTRAINT phoenix_crm_admin_photo_validations_reading CHECK ((((rep_captured_at IS NULL) = (rep_lat IS NULL)) AND ((rep_lat IS NULL) = (rep_lon IS NULL)) AND ((rep_lat IS NULL) = (rep_hr_id IS NULL)))),
+    CONSTRAINT phoenix_crm_admin_photo_validations_status CHECK ((status = ANY (ARRAY['watching'::text, 'captured'::text, 'validated'::text, 'cancelled'::text]))),
+    CONSTRAINT phoenix_crm_admin_photo_validations_validated CHECK (((status = 'validated'::text) = (place_id IS NOT NULL)))
+);
+
+ALTER TABLE public.phoenix_crm_admin_photo_validations OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_admin_photo_validations; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_admin_photo_validations IS 'The Super Admin validates a customer for a rep with a photo he uploads; the location is the rep''s own live reading taken while the watch is on (owner, 2026-11-20).';
+
+--
 -- Name: phoenix_crm_behaviour_integrity; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -67282,6 +67561,7 @@ CREATE TABLE public.phoenix_crm_places (
     schedule_check jsonb,
     session text,
     trusted_basis jsonb,
+    admin_photo_by_hr_id text,
     CONSTRAINT phoenix_crm_places_accuracy CHECK (((accuracy_meters IS NULL) OR (accuracy_meters >= (0)::numeric))),
     CONSTRAINT phoenix_crm_places_address CHECK (((address IS NULL) OR (char_length(address) <= 200))),
     CONSTRAINT phoenix_crm_places_brick_lookup CHECK ((brick_lookup = ANY (ARRAY['matched'::text, 'none_nearby'::text, 'could_not_look'::text]))),
@@ -67296,7 +67576,7 @@ CREATE TABLE public.phoenix_crm_places (
     CONSTRAINT phoenix_crm_places_session CHECK (((session IS NULL) OR (session = ANY (ARRAY['AM'::text, 'PM'::text])))),
     CONSTRAINT phoenix_crm_places_shared_place CHECK (((point_source <> 'shared_place'::text) OR (shared_place_id IS NOT NULL))),
     CONSTRAINT phoenix_crm_places_status CHECK ((status = ANY (ARRAY['active'::text, 'retired'::text]))),
-    CONSTRAINT phoenix_crm_places_timings CHECK (((jsonb_typeof(timings) = 'array'::text) AND (jsonb_array_length(timings) <= 60) AND ((jsonb_array_length(timings) >= 1) OR (trusted_basis IS NOT NULL)))),
+    CONSTRAINT phoenix_crm_places_timings CHECK (((jsonb_typeof(timings) = 'array'::text) AND (jsonb_array_length(timings) <= 60) AND ((jsonb_array_length(timings) >= 1) OR (trusted_basis IS NOT NULL) OR (admin_photo_by_hr_id IS NOT NULL)))),
     CONSTRAINT phoenix_crm_places_trusted_basis CHECK ((((point_source <> ALL (ARRAY['trusted'::text, 'line_twin'::text])) OR (trusted_basis IS NOT NULL)) AND ((trusted_basis IS NULL) OR (jsonb_typeof(trusted_basis) = 'object'::text)))),
     CONSTRAINT phoenix_crm_places_zone CHECK (((zone IS NULL) OR (char_length(zone) <= 80)))
 )
@@ -67369,6 +67649,12 @@ COMMENT ON COLUMN public.phoenix_crm_places.brick_lookup IS 'Whether a brick was
 --
 
 COMMENT ON COLUMN public.phoenix_crm_places.session IS 'AM or PM for a place seated in a polyclinic or centre (owner, 2026-10-10); null for a clinic of his own, which follows the customer''s list.';
+
+--
+-- Name: COLUMN phoenix_crm_places.admin_photo_by_hr_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_places.admin_photo_by_hr_id IS 'Who uploaded the photo of a place the Super Admin validated for a rep (phoenix_crm_admin_photo_validations); null on every other place.';
 
 --
 -- Name: phoenix_crm_plan_activities; Type: TABLE; Schema: public; Owner: postgres
@@ -74721,6 +75007,13 @@ ALTER TABLE ONLY public.connector_files
     ADD CONSTRAINT connector_files_pkey PRIMARY KEY (id);
 
 --
+-- Name: connector_film_jobs connector_film_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_film_jobs
+    ADD CONSTRAINT connector_film_jobs_pkey PRIMARY KEY (id);
+
+--
 -- Name: connector_oauth_clients connector_oauth_clients_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -77056,6 +77349,13 @@ ALTER TABLE ONLY public.pharmacy_search_discoveries
 
 ALTER TABLE ONLY public.phoenix_crm_admin_deletions
     ADD CONSTRAINT phoenix_crm_admin_deletions_pkey PRIMARY KEY (id);
+
+--
+-- Name: phoenix_crm_admin_photo_validations phoenix_crm_admin_photo_validations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_admin_photo_validations
+    ADD CONSTRAINT phoenix_crm_admin_photo_validations_pkey PRIMARY KEY (id);
 
 --
 -- Name: phoenix_crm_behaviour_integrity phoenix_crm_behaviour_integrity_person; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -80657,6 +80957,18 @@ CREATE INDEX company_email_aliases_list_key_idx ON public.company_email_aliases 
 --
 
 CREATE INDEX connector_files_login_idx ON public.connector_files USING btree (login_id, created_at DESC);
+
+--
+-- Name: connector_film_jobs_login_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_film_jobs_login_idx ON public.connector_film_jobs USING btree (login_id, created_at DESC);
+
+--
+-- Name: connector_film_jobs_queue_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX connector_film_jobs_queue_idx ON public.connector_film_jobs USING btree (status, created_at);
 
 --
 -- Name: connector_oauth_codes_client_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -84623,6 +84935,18 @@ CREATE INDEX phoenix_crm_admin_deletions_subject_idx ON public.phoenix_crm_admin
 --
 
 CREATE INDEX phoenix_crm_admin_deletions_when_idx ON public.phoenix_crm_admin_deletions USING btree (deleted_at DESC);
+
+--
+-- Name: phoenix_crm_admin_photo_validations_open_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX phoenix_crm_admin_photo_validations_open_idx ON public.phoenix_crm_admin_photo_validations USING btree (customer_id) WHERE (status = ANY (ARRAY['watching'::text, 'captured'::text]));
+
+--
+-- Name: phoenix_crm_admin_photo_validations_seat_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_admin_photo_validations_seat_idx ON public.phoenix_crm_admin_photo_validations USING btree (seat_id, is_test) WHERE (status = ANY (ARRAY['watching'::text, 'captured'::text]));
 
 --
 -- Name: phoenix_crm_behaviour_integrity_board_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -89223,6 +89547,20 @@ ALTER TABLE ONLY public.connector_files
     ADD CONSTRAINT connector_files_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_users(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 --
+-- Name: connector_film_jobs connector_film_jobs_file_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_film_jobs
+    ADD CONSTRAINT connector_film_jobs_file_id_fkey FOREIGN KEY (file_id) REFERENCES public.connector_files(id) ON DELETE SET NULL;
+
+--
+-- Name: connector_film_jobs connector_film_jobs_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.connector_film_jobs
+    ADD CONSTRAINT connector_film_jobs_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_users(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
 -- Name: connector_oauth_codes connector_oauth_codes_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -91139,6 +91477,20 @@ ALTER TABLE ONLY public.payroll_recurring_adjustments
 
 ALTER TABLE ONLY public.payroll_resignation_candidates
     ADD CONSTRAINT payroll_resignation_candidates_phx_employee_fkey FOREIGN KEY (hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+--
+-- Name: phoenix_crm_admin_photo_validations phoenix_crm_admin_photo_validations_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_admin_photo_validations
+    ADD CONSTRAINT phoenix_crm_admin_photo_validations_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.phoenix_crm_customers(id);
+
+--
+-- Name: phoenix_crm_admin_photo_validations phoenix_crm_admin_photo_validations_place_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_admin_photo_validations
+    ADD CONSTRAINT phoenix_crm_admin_photo_validations_place_id_fkey FOREIGN KEY (place_id) REFERENCES public.phoenix_crm_places(id);
 
 --
 -- Name: phoenix_crm_customer_moves phoenix_crm_customer_moves_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -93568,6 +93920,12 @@ ALTER TABLE public.company_email_aliases ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.connector_files ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: connector_film_jobs; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.connector_film_jobs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: connector_oauth_clients; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -96082,6 +96440,18 @@ ALTER TABLE public.phoenix_crm_admin_deletions ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY phoenix_crm_admin_deletions_service_role ON public.phoenix_crm_admin_deletions TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: phoenix_crm_admin_photo_validations; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_admin_photo_validations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_admin_photo_validations phoenix_crm_admin_photo_validations_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_admin_photo_validations_service_role ON public.phoenix_crm_admin_photo_validations TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: phoenix_crm_behaviour_integrity; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -99565,6 +99935,13 @@ REVOKE ALL ON FUNCTION public.claim_next_inbound_intake(p_limit integer) FROM PU
 GRANT ALL ON FUNCTION public.claim_next_inbound_intake(p_limit integer) TO service_role;
 
 --
+-- Name: FUNCTION connector_film_mask_names(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.connector_film_mask_names() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.connector_film_mask_names() TO service_role;
+
+--
 -- Name: FUNCTION create_lifecycle_notification_event(p_category text, p_employee_hr_id text, p_scheduled_for date, p_subject text, p_metadata jsonb); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -101021,6 +101398,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_update_place(p jsonb) TO service_role;
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_validate_customer(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_validate_customer(p jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_validate_with_admin_photo(p jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_validate_with_admin_photo(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_validate_with_admin_photo(p jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_validated_place_facts(p_place_ids uuid[], p_customer_ids uuid[]); Type: ACL; Schema: public; Owner: postgres
@@ -104992,6 +105376,12 @@ GRANT ALL ON TABLE public.company_email_aliases TO service_role;
 GRANT ALL ON TABLE public.connector_files TO service_role;
 
 --
+-- Name: TABLE connector_film_jobs; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.connector_film_jobs TO service_role;
+
+--
 -- Name: TABLE connector_oauth_clients; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -106892,6 +107282,12 @@ GRANT ALL ON TABLE public.pharmacy_search_discoveries TO service_role;
 --
 
 GRANT ALL ON TABLE public.phoenix_crm_admin_deletions TO service_role;
+
+--
+-- Name: TABLE phoenix_crm_admin_photo_validations; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_admin_photo_validations TO service_role;
 
 --
 -- Name: TABLE phoenix_crm_behaviour_integrity; Type: ACL; Schema: public; Owner: postgres
