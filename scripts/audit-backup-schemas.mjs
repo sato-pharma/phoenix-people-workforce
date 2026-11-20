@@ -145,6 +145,33 @@ export function readDecisions(file = DECISIONS_FILE) {
   return out;
 }
 
+/**
+ * THE OWNER'S STANDING DECISION (20 Nov 2026): every snapshot with no entry of its own is decided
+ * "export, then drop" — his words that night, "the same decision, automatically", for every copy made
+ * after it. It is the `standing` object in `scripts/backup-schema-decisions.json`, and it is a
+ * FALLBACK only: an entry of its own (a keep above all) always wins, and it never reaches past the
+ * rules `classify` applies first — an exempt schema stays PROTECTED, a schema something live depends
+ * on stays PINNED, and an undated one stays UNDATED. The returned decision carries `standing: true`
+ * so every reading says which rule decided it.
+ *
+ * @returns {(SnapshotDecision & { standing: true }) | null}
+ */
+export function readStandingDecision(file = DECISIONS_FILE) {
+  const raw = JSON.parse(readFileSync(file, "utf8"));
+  const entry = raw.standing;
+  if (entry === undefined || entry === null) return null;
+  if (!["drop", "export-then-drop"].includes(entry?.decision)) {
+    throw new Error(`${file}: standing has decision ${JSON.stringify(entry?.decision)}; use drop or export-then-drop`);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.decidedOn ?? "") || !entry.decidedBy || !entry.why) {
+    throw new Error(`${file}: standing needs decidedOn (YYYY-MM-DD), decidedBy and why`);
+  }
+  if (entry.dated !== undefined || entry.until !== undefined) {
+    throw new Error(`${file}: standing cannot carry dated or until — those belong to one snapshot's own entry`);
+  }
+  return { ...entry, standing: true };
+}
+
 /** Where `scripts/export-backup-schema.mjs` writes, and where the drop step looks for its manifest. */
 export const EXPORT_ROOT = process.env.PHOENIX_SNAPSHOT_EXPORT_DIR
   ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "snapshot-exports");
@@ -227,7 +254,7 @@ export function daysBetween(fromIso, toIso) {
  */
 export function classify(entry, options) {
   const { schema, tables = [], blockers = [] } = entry;
-  const { today, retentionDays = RETENTION_DAYS, decisions = {} } = options;
+  const { today, retentionDays = RETENTION_DAYS, decisions = {}, standing = null } = options;
 
   const exempt = EXEMPT_SCHEMAS[schema];
   if (exempt?.kind === "live") {
@@ -242,7 +269,7 @@ export function classify(entry, options) {
     return { verdict: VERDICT.PROTECTED, reason: exempt.why, date: null, ageDays: null };
   }
 
-  const decided = decisions[schema];
+  const decided = decisions[schema] ?? standing ?? undefined;
   const named = snapshotDateOf(schema, tables);
   // The recorded day is a fallback for a name with no date anywhere — never an override.
   const date = named ?? decided?.dated ?? null;
@@ -276,7 +303,7 @@ export function tableKey(schema, table) {
 function verdictByDecision({ date, today, retentionDays, decided, recordNote = "" }) {
   const ageDays = daysBetween(date, today);
   const decidedNote = decided
-    ? ` · owner decided ${decided.decision} on ${decided.decidedOn}${decided.until ? ` (until ${decided.until})` : ""}${recordNote}`
+    ? ` · owner decided ${decided.decision} on ${decided.decidedOn}${decided.standing ? " (standing rule)" : ""}${decided.until ? ` (until ${decided.until})` : ""}${recordNote}`
     : "";
   if (ageDays < retentionDays) {
     return { verdict: VERDICT.YOUNG, reason: `${retentionDays - ageDays} days left${decidedNote}`, date, ageDays, decision: decided ?? null };
@@ -395,7 +422,7 @@ export function isSnapshotTableName(name) {
  */
 export function classifyTable(entry, options) {
   const { schema, table, blockers = [] } = entry;
-  const { today, retentionDays = RETENTION_DAYS, decisions = {} } = options;
+  const { today, retentionDays = RETENTION_DAYS, decisions = {}, standing = null } = options;
 
   if (blockers.length > 0) {
     return { verdict: VERDICT.PINNED, reason: blockers.join("; "), date: null, ageDays: null };
@@ -416,7 +443,7 @@ export function classifyTable(entry, options) {
     };
   }
 
-  return verdictByDecision({ date, today, retentionDays, decided: decisions[tableKey(schema, table)] });
+  return verdictByDecision({ date, today, retentionDays, decided: decisions[tableKey(schema, table)] ?? standing ?? undefined });
 }
 
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
@@ -655,13 +682,14 @@ async function main() {
 
   try {
     const decisions = readDecisions();
+    const standing = readStandingDecision();
     const catalogue = await readCatalogue(sql);
     const rows = catalogue
-      .map((entry) => ({ ...entry, ...classify(entry, { today, retentionDays, decisions }) }))
+      .map((entry) => ({ ...entry, ...classify(entry, { today, retentionDays, decisions, standing }) }))
       .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
     const tableRows = (await readSnapshotTables(sql))
-      .map((entry) => ({ ...entry, ...classifyTable(entry, { today, retentionDays, decisions }) }))
+      .map((entry) => ({ ...entry, ...classifyTable(entry, { today, retentionDays, decisions, standing }) }))
       .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
     const expired = rows.filter((r) => r.verdict === VERDICT.EXPIRED);

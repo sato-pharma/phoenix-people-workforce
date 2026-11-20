@@ -28,7 +28,8 @@ schema, never a pattern:
 
 | His decision | Verdict past 90 days | What the script prints |
 | --- | --- | --- |
-| none recorded | `UNDECIDED` | no drop statement; "NEEDS THE OWNER" — put it to him |
+| none recorded, and no standing decision | `UNDECIDED` | no drop statement; "NEEDS THE OWNER" — put it to him |
+| none recorded, under the standing decision (since 20 Nov 2026) | as that decision says, marked `(standing rule)` | as for `export-then-drop` below |
 | `keep` (no `until`) | `PROTECTED` | nothing, for good |
 | `keep` with `until` | `PROTECTED` until that date, then `UNDECIDED` again | a keep that runs out goes back to him, never straight to a drop |
 | `drop` | `EXPIRED` | the drop statement |
@@ -38,6 +39,16 @@ Every entry carries `decidedOn`, `decidedBy`, `why` and the review sheet that pu
 (`sheet`); `readDecisions()` refuses an entry without them. A decision never beats a live
 dependency (a foreign key into the schema still makes it `PINNED`), and never drops a schema
 before its 90 days (a decision on a young schema only adds a note).
+
+**The standing decision, 20 Nov 2026.** Asked about the 15 snapshots then undecided and every copy
+made after them, the owner chose "export, then drop at 90 days" for all of them, and "the same
+decision, automatically" for every new copy, so no snapshot is put to him one at a time again. It is
+the `standing` object in the decisions file, read by `readStandingDecision()`, and it is a fallback
+only: a snapshot's own entry (a `keep` above all) always wins, and it never reaches past an exempt
+schema, a live dependency or a missing date. `export-backup-schema.mjs` accepts it too, except for
+an exempt schema. Pinned by `tests/backup-schema-retention.test.ts`, each case with its negative
+control. One monthly task (1st of the month, 10:00 Cairo) exports and drops whatever has passed
+90 days by a dated migration and opens its pull request; the merge stays his word.
 
 **How he is asked.** A review sheet per month lists the schemas that reach 90 days in it, grouped by
 what they hold, with a recommendation each — the first was "Snapshot review — November 2026" (nine
@@ -478,9 +489,10 @@ The exports are now the only copy: production has no point-in-time recovery, and
 reach back seven days.
 
 Still kept: the six standing exceptions above (`recovery`, `private`, `analytics`, `_au_rollback`,
-`internal`, and `delta3_defer_backup_20260829` by the owner's word), and the snapshots with no decision
-yet. The next of those to reach 90 days are `phoenix_crm_backup_20261101` and the table
-`au.bak_20261101_pedia_sharkia_line_area_map`, on 30 Jan 2027.
+`internal`, and `delta3_defer_backup_20260829` by the owner's word), and the 15 younger snapshots. Those 15 were decided the same night under the standing decision
+and exported straight away (102 files, 544,663 rows, every checksum matching); each is dropped by
+the monthly task once it passes 90 days, the first two (`phoenix_crm_backup_20261101` and the table
+`au.bak_20261101_pedia_sharkia_line_area_map`) on 1 Feb 2027.
 
 The emitted statement is
 `drop table if exists <schema>.<table>;` with **no `cascade`**: a snapshot schema is dropped whole,
