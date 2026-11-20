@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 13760 | `d0ad0bd0eb5ec37c` |
+| `CLAUDE.md` | 14136 | `9e8d1b3b3496f18d` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -14,6 +14,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/effort-advisor.mjs` | 5509 | `1c6149ac5f7b6e07` |
 | `hooks/hook-dispatch-worker.mjs` | 1362 | `6524ba3dcd6cb8c6` |
 | `hooks/hook-dispatch.mjs` | 19624 | `ebb6d5829dfda238` |
+| `hooks/lib-speak-launch.mjs` | 1088 | `017e622cf6ce2da0` |
 | `hooks/memory-guard.mjs` | 25589 | `17623bfedd6aa98f` |
 | `hooks/merge-checks-guard.mjs` | 21011 | `5b772ca6e3235ee4` |
 | `hooks/needs-you-refresh.mjs` | 5091 | `0b998d5b05d63dc4` |
@@ -31,7 +32,8 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/session-census.mjs` | 13231 | `255cc0191545ab46` |
 | `hooks/session-start-dispatch.mjs` | 13235 | `13f1f75576642dde` |
 | `hooks/spawn-probe.mjs` | 2523 | `8201ad53322df322` |
-| `hooks/speak-arabic-reply.mjs` | 1195 | `b8a3195313797372` |
+| `hooks/speak-arabic-reply.mjs` | 1004 | `6109f9c0a86891ea` |
+| `hooks/speak-on-request.mjs` | 3539 | `07e2f80bc1deaa39` |
 | `hooks/statusline.mjs` | 12556 | `9f4e1c651a78acb3` |
 | `hooks/suggestion-context.mjs` | 9285 | `184d0a26d6e240ce` |
 | `hooks/supabase-prompt-allow.mjs` | 4533 | `30324934431e1924` |
@@ -126,7 +128,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-test.ps1` | 10390 | `68bfca328740e19d` |
 | `scripts/spare-tunnel.ps1` | 2618 | `c0c4f69081da25ae` |
 | `scripts/spare.ps1` | 2341 | `87027b073fc6b6c2` |
-| `scripts/speak-arabic-reply.py` | 8351 | `e78662242152815a` |
+| `scripts/speak-arabic-reply.py` | 10796 | `eb6660dc0539b589` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
 | `scripts/tests/archive/run-all.mjs` | 4108 | `5ae84e5c757c2d1c` |
 | `scripts/tests/archive/test-busy-lock.mjs` | 7494 | `6cdb2fcde5618427` |
@@ -149,4 +151,4 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/xlsx-snapshot-watch.ps1` | 14496 | `5ad89fa2d06b8a4b` |
 | `scripts/xlsx-snapshot.cmd` | 3542 | `e5634c4dda32d8a9` |
 | `scripts/xlsx-tripwire.ps1` | 25606 | `2e060f5e3887bc24` |
-| `settings.json` | 19940 | `6294fd1eb2b98693` |
+| `settings.json` | 20155 | `2f7e7eb02fc11cb0` |

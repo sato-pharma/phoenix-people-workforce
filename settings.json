@@ -262,6 +262,14 @@
               "C:/Users/satoh/.claude/hooks/cloud-first-router.mjs"
             ],
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/speak-on-request.mjs"
+            ],
+            "timeout": 5
           }
         ]
       }

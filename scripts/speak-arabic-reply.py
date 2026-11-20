@@ -5,8 +5,11 @@
 # unless the session armed it. The owner, 20 Nov 2026: "مش عايزك اوتوماتيك تتكلم" — speak only when he asks.
 # The app's own read-aloud button uses Anthropic's online voice, which cannot be changed and is not Egyptian.
 #
-#   Speak this turn's reply:  the session creates  ~/.claude/speak/next-<session id>  (the transcript file's
-#                             name without .jsonl) before its turn ends; the script reads it once and deletes it.
+#   Speak this turn's reply:  ~/.claude/speak/next-<session id>  (the transcript file's name without .jsonl)
+#                             exists when the turn ends; the script reads it once and deletes it.
+#   Speak the reply he has:   speak-arabic-reply.py --previous <transcript>  (no flag; reads it at once)
+#   Both are started for him by ~/.claude/hooks/speak-on-request.mjs (UserPromptSubmit) in EVERY session when
+#   his message asks to hear it ("اقراها", "بصوتك", "read it aloud"...).
 #   Turn it off entirely:     create the file  ~/.claude/speak/off
 #   Log:                      ~/.claude/speak/speak.log
 #
@@ -29,7 +32,9 @@ OFF = HOME / "off"
 LOG = HOME / "speak.log"
 PID = HOME / "player.pid"
 VOICE = "ar-EG-SalmaNeural"  # fallback only
-GEMINI_MODEL = "gemini-2.5-flash-preview-tts"
+# Tried in order: each model has its own free allowance (10 a day on the free key, 20 Nov 2026), so a refused
+# one (429) hands over to the next, and Salma speaks only when all four are spent.
+GEMINI_MODELS = ("gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts", "gemini-3.8-flash-lite-tts")
 GEMINI_VOICE = "Charon"
 GEMINI_STYLE = (
     "اقرأ الكلام ده باللهجة المصرية العامية، بصوت طبيعي ودافي زي واحد قاهري بيتكلم مع صاحبه، "
@@ -47,8 +52,17 @@ def log(message: str) -> None:
         handle.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
 
 
-def last_reply(transcript: Path) -> str:
-    """The assistant text after the last user or tool-result entry: the reply the owner reads."""
+def is_prompt(entry: dict) -> bool:
+    """A message he typed, not a tool result (tool results are stored as user entries too)."""
+    content = (entry.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return True
+    return isinstance(content, list) and not any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
+def last_reply(transcript: Path, before_prompt: bool = False) -> str:
+    """The assistant text after the last user or tool-result entry: the reply the owner reads.
+    before_prompt: he just typed a new message, so step over it and read the reply he already has."""
     lines = transcript.read_text(encoding="utf-8", errors="replace").splitlines()
     parts: list[str] = []
     for raw in reversed(lines):
@@ -58,6 +72,8 @@ def last_reply(transcript: Path) -> str:
             continue
         kind = entry.get("type")
         if kind == "user":
+            if before_prompt and not parts:
+                continue  # his new message, or a turn still working: step back to the last text he saw
             break
         if kind != "assistant":
             continue
@@ -119,6 +135,7 @@ def gemini_key() -> str:
 
 def synthesize_gemini(text: str, target: Path, style: str) -> None:
     import base64
+    import urllib.error
     import urllib.request
     import wave
 
@@ -132,19 +149,35 @@ def synthesize_gemini(text: str, target: Path, style: str) -> None:
             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": GEMINI_VOICE}}},
         },
     }
-    request = urllib.request.Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", "x-goog-api-key": key},
-    )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        answer = json.load(response)
-    pcm = base64.b64decode(answer["candidates"][0]["content"]["parts"][0]["inlineData"]["data"])
-    with wave.open(str(target), "wb") as audio:
-        audio.setnchannels(1)
-        audio.setsampwidth(2)
-        audio.setframerate(24000)
-        audio.writeframes(pcm)
+    refused = []
+    for model in GEMINI_MODELS:
+        request = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json", "x-goog-api-key": key},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                answer = json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code in (429, 404, 503):
+                refused.append(f"{model} {error.code}")
+                continue
+            raise
+        part = answer["candidates"][0]["content"]["parts"][0]["inlineData"]
+        data = base64.b64decode(part["data"])
+        if "wav" in part.get("mimeType", ""):
+            target.write_bytes(data)  # already a WAV file
+        else:
+            with wave.open(str(target), "wb") as audio:  # raw 16-bit PCM, 24 kHz mono
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(24000)
+                audio.writeframes(data)
+        if refused:
+            log(f"NOTE {model} spoke after: {', '.join(refused)}")
+        return
+    raise RuntimeError("every Gemini voice model refused: " + ", ".join(refused))
 
 
 async def synthesize_salma(text: str, target: Path, voice: str) -> None:
@@ -175,15 +208,22 @@ def play(audio: Path) -> None:
 def main() -> None:
     if len(sys.argv) < 2:
         return
-    transcript = Path(sys.argv[1])
-    armed = HOME / f"next-{transcript.stem}"
-    if not armed.exists():
-        return  # he did not ask for this reply to be spoken
-    armed.unlink(missing_ok=True)  # one request, one spoken reply
+    previous = sys.argv[1] == "--previous"
+    if previous:
+        if len(sys.argv) < 3:
+            return
+        transcript = Path(sys.argv[2])
+    else:
+        transcript = Path(sys.argv[1])
+        armed = HOME / f"next-{transcript.stem}"
+        if not armed.exists():
+            return  # he did not ask for this reply to be spoken
+        armed.unlink(missing_ok=True)  # one request, one spoken reply
     if OFF.exists():
         return
-    time.sleep(1.5)  # let the transcript finish writing the last reply
-    reply = last_reply(transcript)
+    log(f"START {'previous reply' if previous else 'this reply'} of {transcript.name}")
+    time.sleep(1.5)  # let the transcript finish writing
+    reply = last_reply(transcript, before_prompt=previous)
     text = for_speech(reply)
     if not text:
         return
