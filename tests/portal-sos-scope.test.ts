@@ -10,6 +10,7 @@ import {
   isPortalSosActionsRole,
   isPortalSosRole,
 } from "../src/lib/sales/portal-sos-dashboard.ts";
+import { sourceOfSalesPageItems } from "../src/config/system-navigation.ts";
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
@@ -45,14 +46,22 @@ export function runPortalSosScopeTests() {
   }
   assert.equal(PORTAL_SOS_ACTION_ROLES.length, 7, "exactly seven roles get the pharmacy action lists");
 
-  // The CEO and the Super Admin read the same lists company-wide from the admin Field Sales page
-  // (owner, 2026-11-20, for the sheet download) — never the SFE Manager or anyone else.
-  for (const role of [...PORTAL_SOS_ACTION_ROLES, "CEO", "Super Admin"] as const) {
+  // The CEO, the Super Admin and the SFE Manager read the same lists company-wide from the admin
+  // Field Sales page (owner, 2026-11-20: the sheet download, then "Add SFE Manager") — nobody else.
+  for (const role of [...PORTAL_SOS_ACTION_ROLES, "CEO", "Super Admin", "SFE Manager"] as const) {
     assert.equal(canReadPharmacyActions(role), true, `${role} may read the pharmacy action lists`);
   }
-  for (const role of ["SFE Manager", "Employee", "Manager", "Finance Manager"] as const) {
+  for (const role of ["Employee", "Manager", "Finance Manager", "HR Operations"] as const) {
     assert.equal(canReadPharmacyActions(role), false, `${role} must NOT read the pharmacy action lists`);
   }
+
+  // The SFE Manager opens the admin Field Sales page for the lists ONLY — the company dashboard there
+  // stays the CEO's and the Super Admin's — and finds it from a Source of Sales hub card.
+  const adminPage = readSource("../app/(admin)/admin/field-sales/source-of-sales/page.tsx");
+  assert.ok(adminPage.includes('const listsOnly = access.role === "SFE Manager";'), "the SFE Manager gets in, for the lists");
+  assert.ok(adminPage.includes("{listsOnly ? null : ("), "the company dashboard is not rendered for the SFE Manager");
+  const hubCard = sourceOfSalesPageItems.find((item) => item.href === "/admin/field-sales/source-of-sales");
+  assert.ok(hubCard && "roles" in hubCard && hubCard.roles?.includes("SFE Manager"), "the SFE Manager has a hub card to the lists");
 
   // The rep is admitted to the ACTION LISTS only. The page must still gate the distributor dashboard on
   // isPortalSosRole (region-level scope would show a rep his sibling areas), and the lists must narrow
