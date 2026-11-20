@@ -212,7 +212,7 @@
     "playwright": "1.65.0",
     "supabase": "^2.120.0",
     "tailwindcss": "^4",
-    "typescript": "^5",
+    "typescript": "^6",
     "typescript-native": "npm:typescript@7.0.2"
   }
 }
