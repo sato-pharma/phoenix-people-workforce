@@ -109,7 +109,8 @@ export function runPortalRouteSkeletonTests() {
   // ── And none of them still draws the retired hero ──────────────────────────
   // Nine loading files opened with a black-to-brown gradient (`#070707 → #111827 → #2C1605`) that
   // no portal page has ever rendered: the page changed COLOUR the moment the real content
-  // arrived. HeroSkeleton is the real command header's own navy, so the header now stays put.
+  // arrived. HeroSkeleton draws the shell's own title band (the light band since 2026-11-20), so
+  // the header now stays put.
   const staleHeroes: string[] = [];
   const heroStack = ["app/employee-portals"];
   while (heroStack.length > 0) {
