@@ -220,7 +220,10 @@ export function runPrivateCalendarDayTileTests(): void {
     assert.doesNotMatch(page, /rounded-(?:sm|md|lg|xl|full)\b/, "square edges");
     assert.doesNotMatch(page, /\bshadow-(?:sm|md|lg|xl)\b/, "depth comes from the house ladder, never a bare Tailwind shadow");
     assert.match(page, /const panelClass = `overflow-hidden border border-slate-200 bg-white \$\{adminPanelDepthClassName\}`;/, "a panel wears the house panel depth");
-    assert.match(page, /\[adminPanelHeaderClassName, "px-5 py-5"\]/, "the dark band is the house token, not a hand-rolled slate-950 with a rule of its own");
+    // The landing redesign (owner, 2026-11-20: one landing kit, orange only as the tick and the board line) took the dark
+    // gradient band off the header: the month sits on white and the page's figures stand on its ONE navy board.
+    assert.doesNotMatch(page, /adminPanelHeaderClassName/, "the header is white — no dark gradient band");
+    assert.match(page, /<LandingNavyBoard\s+label="Key figures"/, "the key figures stand on the page's one navy board");
 
     const tileSource = stripComments(readFileSync("src/lib/private-calendar/day-tile.ts", "utf8"));
     assert.doesNotMatch(tileSource, /chipLines/, "the tile never reads the text lines");

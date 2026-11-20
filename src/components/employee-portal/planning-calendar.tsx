@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Download,
   Search,
-  Sparkles,
   TriangleAlert,
   Users,
 } from "lucide-react";
@@ -28,7 +27,21 @@ import {
   type PlanningCalendarWorkspace,
 } from "@/lib/weekly-planning/calendar";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxFieldClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { cn } from "@/lib/utils";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LANDING_ROW_LINK,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -41,6 +54,17 @@ const planStatusLabels: Record<string, string> = {
   manager_approved: "Manager approved",
   submitted: "Submitted",
 };
+
+// A plan status as coloured text — the landing kit's status rule (no filled pill). Every status this
+// calendar shows is submitted or further along: sky while a manager or the CEO still holds it, green once
+// it is final.
+function planStatusInk(status: string) {
+  if (status === "final_approved" || status === "hr_acknowledged") return "text-emerald-700";
+  return "text-sky-700";
+}
+
+/** The status word's shape — small tracked capitals that wrap inside a narrow column. */
+const statusWordClassName = "break-words text-phx-xs font-bold uppercase tracking-[0.08em]";
 
 function todayIso() {
   return currentCairoDateOnlyIso();
@@ -115,7 +139,7 @@ const employeeHues: EmployeeHue[] = [
   { border: "border-l-blue-500", chip: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
   { border: "border-l-pink-500", chip: "bg-pink-100 text-pink-700", dot: "bg-pink-500" },
   { border: "border-l-violet-500", chip: "bg-violet-100 text-violet-700", dot: "bg-violet-500" },
-  { border: "border-l-orange-500", chip: "bg-orange-100 text-orange-700", dot: "bg-orange-500" },
+  { border: "border-l-teal-500", chip: "bg-teal-100 text-teal-700", dot: "bg-teal-500" },
   { border: "border-l-indigo-500", chip: "bg-indigo-100 text-indigo-700", dot: "bg-indigo-500" },
   { border: "border-l-fuchsia-500", chip: "bg-fuchsia-100 text-fuchsia-700", dot: "bg-fuchsia-500" },
   { border: "border-l-sky-500", chip: "bg-sky-100 text-sky-700", dot: "bg-sky-500" },
@@ -165,9 +189,25 @@ function PlanningMetric({
   value: number;
 }) {
   return (
-    <div className={`rounded-sm border p-4 ${tone === "info" ? "border-sky-100 bg-sky-50/60" : "border-slate-200 bg-slate-50/60"}`}>
-      <p className="text-3xl font-black text-slate-950">{value}</p>
-      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+    // A tile on the navy board: one step lighter than the board; chain visits read sky once there are any.
+    <div className={`min-w-0 px-3 py-2.5 ${LANDING_NAVY_TILE}`}>
+      <LandingFigure onNavy tone={tone === "info" ? "text-sky-300" : undefined}>
+        {value}
+      </LandingFigure>
+      <p className="mt-1 break-words text-phx-xs font-bold uppercase tracking-[0.12em] text-white/60">{label}</p>
+    </div>
+  );
+}
+
+/** A condition line — capped, not ready, could not load — with its tone on a 4px rail, never a tinted box. */
+function PlanningNotice({ children, tone }: { children: ReactNode; tone: "amber" | "red" }) {
+  const rail = tone === "red" ? "bg-rose-600" : "bg-amber-500";
+  const ink = tone === "red" ? "text-rose-700" : "text-amber-700";
+  return (
+    <div className={`flex min-w-0 items-start gap-3 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${rail}`} />
+      <TriangleAlert aria-hidden="true" className={`mt-0.5 h-4 w-4 shrink-0 ${ink}`} />
+      <div className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-slate-700">{children}</div>
     </div>
   );
 }
@@ -402,63 +442,55 @@ export function PlanningCalendar({
   }
 
   const cappedResultsBanner = workspace.hasMoreHeaders || workspace.hasMoreItems ? (
-    <div className="flex items-center gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
-      <TriangleAlert className="h-4 w-4 shrink-0" />
-      <span>
-        Planning calendar results are capped at {workspace.headerLimit} headers and {workspace.itemLimit} plan rows. Loaded {workspace.loadedHeaderCount} headers and {workspace.loadedItemCount} rows; narrow the month before using this view for a full audit.
-      </span>
-    </div>
+    <PlanningNotice tone="amber">
+      Planning calendar results are capped at {workspace.headerLimit} headers and {workspace.itemLimit} plan rows. Loaded {workspace.loadedHeaderCount} headers and {workspace.loadedItemCount} rows; narrow the month before using this view for a full audit.
+    </PlanningNotice>
   ) : null;
 
   return (
     <div className="space-y-5">
       {!workspace.schemaReady ? (
-        <div className="flex items-center gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 shadow-sm">
-          <TriangleAlert className="h-4 w-4 shrink-0" />
-          Planning calendar data is not ready. National vacations are still shown.
-        </div>
+        <PlanningNotice tone="amber">Planning calendar data is not ready. National vacations are still shown.</PlanningNotice>
       ) : null}
       {cappedResultsBanner}
 
-      {/* ── Header + Metrics ── */}
-      <section className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
-        <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-6 py-5">
+      {/* ── Header — the month on white. The dark gradient band it replaces was the page's hero; the
+          figures now stand on the page's one navy board, below. ── */}
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <div className="px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Shared Planning Calendar
-                </span>
+              <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <LandingTitle>Shared Planning Calendar</LandingTitle>
                 {summary.conflictCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-400/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-sky-100 ring-1 ring-sky-300/30">
-                    <Users className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-sky-700">
+                    <Users aria-hidden="true" className="h-3.5 w-3.5" />
                     {summary.conflictCount} chain {summary.conflictCount === 1 ? "visit" : "visits"}
                   </span>
                 ) : null}
               </div>
-              <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-300">
-                Submitted plan activity, national vacations, and chain visits
-              </p>
+              <h2 className={`break-words text-2xl font-bold leading-none tracking-[-0.02em] sm:text-3xl ${LANDING_INK}`}>{monthLabel(year, month)}</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {canExport ? (
                 <a
-                  className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-sm bg-white/10 px-3.5 text-xs font-black uppercase tracking-[0.1em] text-white/80 ring-1 ring-white/20 transition hover:bg-white/20"
+                  className={landingActionClassName("outline")}
                   href={`/api/weekly-plans/calendar/export?year=${year}&month=${month}`}
                   title="Download the detailed plans per user for this month as a styled Excel workbook"
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download aria-hidden="true" className="h-3.5 w-3.5" />
                   Export XLSX
                 </a>
               ) : null}
-              <div className="inline-flex rounded-sm border border-white/20 bg-white/10 p-0.5">
+              <div className="inline-flex border border-[#08111f]">
                 {(["month", "week", "list"] as const).map((mode) => (
                   <button
-                    className={`h-9 rounded-sm px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors ${
-                      viewMode === mode ? "bg-slate-900 text-white" : "text-white/70 hover:bg-white/15"
-                    }`}
+                    aria-pressed={viewMode === mode}
+                    className={[
+                      "min-h-10 px-3.5 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:min-h-8",
+                      LANDING_FOCUS,
+                      viewMode === mode ? "bg-[#08111f] text-white" : "bg-white text-[#08111f] hover:bg-slate-50",
+                    ].join(" ")}
                     key={mode}
                     onClick={() => setViewMode(mode)}
                     type="button"
@@ -467,63 +499,59 @@ export function PlanningCalendar({
                   </button>
                 ))}
               </div>
-              <button
-                aria-label="Previous month"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40"
-                disabled={isPending}
-                onClick={() => shiftMonth(-1)}
-                type="button"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                className="h-9 rounded-sm bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50"
-                disabled={isPending}
-                onClick={goToday}
-                type="button"
-              >
-                Today
-              </button>
-              <button
-                aria-label="Next month"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-sm bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40"
-                disabled={isPending}
-                onClick={() => shiftMonth(1)}
-                type="button"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <div className="inline-flex items-center gap-2">
+                <button
+                  aria-label="Previous month"
+                  className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
+                  disabled={isPending}
+                  onClick={() => shiftMonth(-1)}
+                  type="button"
+                >
+                  <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+                </button>
+                <button
+                  className={landingActionClassName("solid")}
+                  disabled={isPending}
+                  onClick={goToday}
+                  type="button"
+                >
+                  Today
+                </button>
+                <button
+                  aria-label="Next month"
+                  className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
+                  disabled={isPending}
+                  onClick={() => shiftMonth(1)}
+                  type="button"
+                >
+                  <ChevronRight aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+      <LandingNavyBoard label="Key figures" right={<LandingMeta items={[monthLabel(year, month)]} onNavy />}>
+        <div className="grid grid-cols-2 gap-px xl:grid-cols-4">
           <PlanningMetric label="Plan entries" value={summary.planCount} />
           <PlanningMetric label="Planning owners" value={summary.submittedOwnerCount} />
           <PlanningMetric label="Chain visits" tone={summary.conflictCount > 0 ? "info" : "neutral"} value={summary.conflictCount} />
           <PlanningMetric label="National vacations" value={summary.holidayCount} />
         </div>
-      </section>
+      </LandingNavyBoard>
 
-      {message ? (
-        <div className="flex items-center gap-3 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 shadow-sm">
-          <TriangleAlert className="h-4 w-4 shrink-0" />
-          {message}
-        </div>
-      ) : null}
+      {message ? <PlanningNotice tone="red">{message}</PlanningNotice> : null}
 
       {/* ── Filters ── */}
-      <section className="overflow-hidden rounded-sm bg-white shadow-md ring-1 ring-slate-200/60">
-        <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
-        </div>
-        <div className="grid gap-4 p-5 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,220px)_minmax(160px,220px)_auto_auto] lg:items-end">
+      <LandingPanel title="Filter & Search">
+        <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,220px)_minmax(160px,220px)_auto_auto] lg:items-end">
           <label className="block">
-            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+            <span className={phxLabelClassName}>Search</span>
             <span className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                className="h-10 w-full border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
+                className={cn(phxFieldClassName, "pl-9")}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Employee, area, rep"
                 value={query}
@@ -531,9 +559,9 @@ export function PlanningCalendar({
             </span>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
+            <span className={phxLabelClassName}>Activity</span>
             <SearchableSelect
-              className="w-full px-3 ring-1 ring-transparent"
+              className={phxSelectClassName}
               onChange={(event) => setActivityFilter(event.target.value)}
               value={activityFilter}
             >
@@ -546,9 +574,9 @@ export function PlanningCalendar({
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
+            <span className={phxLabelClassName}>Region</span>
             <SearchableSelect
-              className="w-full px-3 ring-1 ring-transparent"
+              className={phxSelectClassName}
               onChange={(event) => setRegionFilter(event.target.value)}
               value={regionFilter}
             >
@@ -561,48 +589,43 @@ export function PlanningCalendar({
             </SearchableSelect>
           </label>
           <button
-            className={`inline-flex h-10 items-center gap-2 rounded-sm px-3 text-sm font-black ring-1 transition ${
-              conflictsOnly
-                ? "bg-sky-50 text-sky-700 ring-sky-200 hover:bg-sky-100"
-                : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200"
-            }`}
+            aria-pressed={conflictsOnly}
+            className={landingActionClassName(conflictsOnly ? "solid" : "outline", "min-h-10 sm:min-h-10")}
             onClick={() => setConflictsOnly((value) => !value)}
             type="button"
           >
-            <Users className="h-4 w-4" />
+            <Users aria-hidden="true" className="h-4 w-4" />
             Chain visits
           </button>
           <button
-            className="h-10 rounded-sm bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200"
+            className={landingActionClassName("outline", "min-h-10 sm:min-h-10")}
             onClick={resetFilters}
             type="button"
           >
             Reset
           </button>
         </div>
-      </section>
+      </LandingPanel>
 
       {conflicts.length > 0 ? (
-        <section className="overflow-hidden rounded-sm border-l-4 border-l-sky-500 bg-white shadow-md ring-1 ring-slate-200/60">
-          <div className="border-b border-slate-100 px-5 py-3">
-            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-sky-700">
-              {conflicts.length} Chain Visit{conflicts.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <div className="divide-y divide-slate-100">
+        <LandingPanel title={<>{conflicts.length} Chain Visit{conflicts.length === 1 ? "" : "s"}</>}>
+          <div className="divide-y divide-slate-200">
             {conflicts.slice(0, 8).map((conflict) => (
               <button
-                className="flex w-full flex-col gap-1 px-5 py-3 text-left transition hover:bg-orange-50/40"
+                className={`flex w-full min-w-0 gap-3 px-3 py-3 text-left sm:px-4 ${LANDING_ROW_LINK}`}
                 key={conflict.id}
                 onClick={() => setSelectedDate(conflict.date)}
                 type="button"
               >
-                <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-wide text-sky-700">{dayLabel(conflict.date)}</span>
-                <span className="text-sm font-semibold text-slate-800">{conflict.warning}</span>
+                <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-sky-500" />
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="break-words text-phx-xs font-bold uppercase tracking-[0.08em] text-sky-700">{dayLabel(conflict.date)}</span>
+                  <span className={`break-words text-sm font-semibold ${LANDING_INK}`}>{conflict.warning}</span>
+                </span>
               </button>
             ))}
           </div>
-        </section>
+        </LandingPanel>
       ) : null}
 
       <section className="space-y-5">
@@ -610,9 +633,9 @@ export function PlanningCalendar({
           <PlanningCalendarAgenda agendaDays={agendaDays} onSelectDate={setSelectedDate} />
         ) : viewMode === "week" ? (
           <div className="space-y-3">
-            <div className={`flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-200 bg-slate-50 px-4 py-2.5 ${adminSoftDepthClassName}`}>
-              <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Week of</span>
-              <span className="whitespace-nowrap text-sm font-black text-slate-900">{weekRangeLabel}</span>
+            <div className={`flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+              <LandingTitle>Week of</LandingTitle>
+              <span className={`break-words text-sm font-bold tabular-nums ${LANDING_INK}`}>{weekRangeLabel}</span>
             </div>
             {weekDays.map(({ date, dayItems }) => (
               <AgendaDayBlock
@@ -626,22 +649,23 @@ export function PlanningCalendar({
           </div>
         ) : (
         <>
-        <div className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
+        <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           {/* FRIDAY is the only narrow column. Friday is off for everyone
               (isFieldWorkforceFriday, unconditional), but SATURDAY is a full working day
               for the Medical Rep / District Manager population this calendar plans for —
               their weekend is Friday-only (isFieldWorkforceFridayOnlyTitle), and the week
               runs Sat-Wed full days. Saturday therefore carries real plan chips and must
               get an equal 1fr share like Sun-Thu; only Friday shrinks. Keep this template
-              identical on the header row and the day grid below or the columns misalign. */}
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] border-b-2 border-orange-500 bg-slate-900">
+              identical on the header row and the day grid below or the columns misalign.
+              Below md Friday narrows to 32px so the grid fits a 280px phone. */}
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_32px_minmax(0,1fr)] border-b border-slate-200 bg-white md:grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)]">
             {weekdays.map((weekday) => (
-              <div className="px-2 py-2.5 text-center text-phx-sm font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
+              <div className={`px-0.5 py-2.5 text-center text-phx-xs font-bold uppercase tracking-[0.06em] md:px-2 md:tracking-[0.12em] ${LANDING_INK}`} key={weekday}>
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] divide-x divide-y divide-slate-100">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_32px_minmax(0,1fr)] divide-x divide-y divide-slate-200 md:grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)]">
             {weeks.flat().map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
@@ -660,33 +684,48 @@ export function PlanningCalendar({
               const isToday = date === today;
               return (
                 <button
-                  className={`min-h-[86px] bg-white p-2 text-left align-top transition-colors sm:min-h-[150px] ${
-                    day.inMonth ? "text-slate-900 hover:bg-orange-50/50" : "bg-slate-50/40 text-slate-300 hover:bg-orange-50/20"
-                  } ${isSelected ? "ring-2 ring-inset ring-orange-400" : ""}`}
+                  aria-pressed={isSelected}
+                  className={`relative flex min-h-[60px] flex-col items-stretch justify-start p-1 text-left align-top transition-colors motion-reduce:transition-none md:min-h-[150px] md:p-2 ${LANDING_FOCUS} ${
+                    day.inMonth ? "bg-white text-slate-900 hover:bg-slate-50" : "bg-slate-50/60 text-slate-300 hover:bg-slate-100"
+                  } ${isSelected ? "ring-2 ring-inset ring-[#08111f]" : ""}`}
                   disabled={!date}
                   key={date ?? `empty-${index}`}
                   onClick={() => date && setSelectedDate(date)}
                   type="button"
                 >
+                  {/* Today: a 2px navy rule along the top of the cell — the day number stays unfilled. */}
+                  {isToday ? <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-[#08111f]" /> : null}
                   <span className="flex items-center justify-between gap-1">
                     <span
-                      className={`flex h-6 w-6 items-center justify-center text-xs font-black ${
-                        isToday ? "rounded-full bg-orange-500 text-white" : "text-slate-700"
+                      className={`flex h-6 min-w-6 items-center justify-center text-xs tabular-nums ${isToday ? "font-black" : "font-bold"} ${
+                        day.inMonth ? LANDING_INK : ""
                       }`}
                     >
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     {dayConflicts.length > 0 ? (
-                      <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-phx-sm font-black text-sky-700">
+                      <span className="text-phx-xs font-bold tabular-nums text-sky-700">
                         {dayConflicts.length}
                       </span>
                     ) : null}
                   </span>
 
-                  <span className="mt-1.5 block space-y-1">
+                  {/* PHONE: a day column is ~40px wide, too narrow for a name. Below md the cell is a compact
+                      square — a green mark for a national vacation and the count of people planned — and the
+                      day reads in full in the Selected day details under the grid. */}
+                  {dayHolidays.length > 0 || dayPlans.length > 0 ? (
+                    <span className="mt-1 flex flex-wrap items-center gap-1 md:hidden">
+                      {dayHolidays.length > 0 ? <span aria-hidden="true" className="h-1.5 w-3 bg-emerald-500" /> : null}
+                      {dayPlans.length > 0 ? (
+                        <span className={`text-phx-xs font-bold tabular-nums ${LANDING_INK}`}>{dayRegions.reduce((total, region) => total + planningTilePeople(region.items).length, 0)}</span>
+                      ) : null}
+                    </span>
+                  ) : null}
+
+                  <span className="mt-1.5 hidden space-y-1 md:block">
                     {dayHolidays.map((holiday) => (
                       <span
-                        className="block whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-phx-sm font-normal text-emerald-700"
+                        className="block break-words border-l-2 border-l-emerald-500 pl-1.5 text-phx-sm font-normal leading-tight text-emerald-700 [overflow-wrap:anywhere]"
                         key={holiday.id}
                       >
                         {holiday.title}
@@ -694,7 +733,7 @@ export function PlanningCalendar({
                     ))}
                     {dayRegions.map((region) => (
                       <span className="block" key={region.key || "no-region"}>
-                        <span className="block bg-slate-900 px-1.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-slate-300">{region.label}</span>
+                        <span className={`block break-words border-b border-slate-200 pb-0.5 text-phx-xs font-bold uppercase tracking-[0.08em] [overflow-wrap:anywhere] ${LANDING_INK}`}>{region.label}</span>
                         <span className="mt-0.5 block space-y-1">
                           {/* Each person once per region; their AM and PM read "AM · PM" (planningTilePeople). */}
                           {planningTilePeople(region.items).map(({ items: personItems, key, slots }) => {
@@ -702,7 +741,7 @@ export function PlanningCalendar({
                             const hue = employeeHueFor(dayHues, item.employeeHrId);
                             return (
                               <span
-                                className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-phx-sm font-normal leading-tight ${planChipTone(item, hue)}`}
+                                className={`block break-words px-1.5 py-0.5 text-phx-sm font-normal leading-tight [overflow-wrap:anywhere] ${planChipTone(item, hue)}`}
                                 key={key}
                                 title={personItems.map((personItem) => personItem.title).join("\n")}
                               >
@@ -721,18 +760,13 @@ export function PlanningCalendar({
           </div>
         </div>
 
-        <section className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-            <div>
-              <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Selected day</p>
-              <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
-            </div>
-            <span className="rounded-full bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
-              {selectedDetailRows.length} visible row{selectedDetailRows.length === 1 ? "" : "s"}
-            </span>
-          </div>
+        <LandingPanel
+          right={<LandingMeta items={[`${selectedDetailRows.length} visible row${selectedDetailRows.length === 1 ? "" : "s"}`]} />}
+          title="Selected day"
+        >
+          <h3 className={`break-words border-b border-slate-200 px-3 py-2.5 text-lg font-bold sm:px-4 ${LANDING_INK}`}>{dayLabel(selectedDate)}</h3>
           <PlanningCalendarDetailsTable hues={selectedDayHues} rows={selectedDetailRows} />
-        </section>
+        </LandingPanel>
         </>
         )}
       </section>
@@ -749,7 +783,7 @@ function PlanningCalendarAgenda({
 }) {
   if (agendaDays.length === 0) {
     return (
-      <div className="overflow-hidden rounded-sm bg-white shadow-sm ring-1 ring-slate-200/60">
+      <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <PortalEmptyState title="No planned activities" message="There are no planned activities for this month." />
       </div>
     );
@@ -764,8 +798,8 @@ function PlanningCalendarAgenda({
 }
 
 // Shared day-block markup used by both the List (agenda) view and the Week view:
-// a slate-900 day header bar plus readable item rows (colored dot, title, meta
-// chips, status). When `showEmpty` is set, days with no items still render with a
+// a white day header (the whole row selects the day) plus readable item rows
+// (the person's colour, title, meta, status as a coloured word). When `showEmpty` is set, days with no items still render with a
 // subtle "No activities" line so the week stays complete.
 function AgendaDayBlock({
   date,
@@ -780,30 +814,33 @@ function AgendaDayBlock({
 }) {
   const dayHues = assignDailyEmployeeHues(dayItems.filter(isPlanItem));
   return (
-    <div className="overflow-hidden rounded-sm bg-white shadow-sm ring-1 ring-slate-200/60">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <button
-        className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
+        className={`flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-0.5 border-b border-slate-200 px-3 py-2.5 text-left sm:px-4 ${LANDING_ROW_LINK}`}
         onClick={() => onSelectDate(date)}
         type="button"
       >
-        <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
-        <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">
+        <span className={`flex min-w-0 items-center gap-2 break-words text-sm font-bold ${LANDING_INK}`}>
+          <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
+          {dayLabel(date)}
+        </span>
+        <span className="text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
           {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
         </span>
       </button>
       {dayItems.length === 0 ? (
         showEmpty ? (
-          <p className="px-4 py-3 text-xs font-bold text-slate-400">No activities</p>
+          <p className="px-3 py-3 text-xs font-bold text-slate-500 sm:px-4">No activities</p>
         ) : null
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-slate-200">
           {dayItems.map((item) => {
             if (!isPlanItem(item)) {
               return (
-                <div className="flex items-center gap-2 px-4 py-3" key={item.id}>
-                  <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
-                  <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide text-phx-ok">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-3 sm:px-4" key={item.id}>
+                  <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 bg-emerald-500" />
+                  <span className={`min-w-0 break-words text-sm font-bold ${LANDING_INK}`}>{item.title}</span>
+                  <span className={`ml-auto text-emerald-700 ${statusWordClassName}`}>
                     National vacation
                   </span>
                 </div>
@@ -813,30 +850,32 @@ function AgendaDayBlock({
               (value) => value && value !== "-",
             ) as string[];
             return (
-              <div className="px-4 py-3" key={item.id}>
-                <div className="flex items-center gap-2">
+              <div className="px-3 py-3 sm:px-4" key={item.id}>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span
-                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${employeeHueFor(dayHues, item.employeeHrId).dot}`}
+                    aria-hidden="true"
+                    className={`inline-block h-2.5 w-2.5 shrink-0 ${employeeHueFor(dayHues, item.employeeHrId).dot}`}
                   />
-                  <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide text-phx-ink-soft">
+                  <span className={`min-w-0 break-words text-sm font-bold ${LANDING_INK}`}>{item.title}</span>
+                  <span className={`ml-auto ${statusWordClassName} ${planStatusInk(item.status)}`}>
                     {planStatusLabels[item.status] ?? item.status}
                   </span>
                 </div>
                 {meta.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
+                  <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 pl-[18px] text-phx-xs font-semibold text-slate-600">
                     {meta.map((value, index) => (
                       <span
-                        className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
+                        className="flex min-w-0 items-center gap-2 break-words"
                         key={`${item.id}-meta-${index}`}
                       >
+                        {index > 0 ? <span aria-hidden="true" className="text-slate-300">·</span> : null}
                         {value}
                       </span>
                     ))}
                   </div>
                 ) : null}
                 {item.conflictWarning ? (
-                  <p className="mt-1.5 pl-[18px] text-xs font-bold text-sky-700">{item.conflictWarning}</p>
+                  <p className="mt-1.5 break-words pl-[18px] text-xs font-bold text-sky-700">{item.conflictWarning}</p>
                 ) : null}
               </div>
             );
@@ -848,15 +887,16 @@ function AgendaDayBlock({
 }
 
 function detailToneClass(tone: PlanningCalendarDetailRow["tone"]) {
-  if (tone === "conflict") return "bg-sky-50/60 text-sky-900";
-  if (tone === "holiday") return "bg-emerald-50/60 text-emerald-900";
+  if (tone === "conflict") return "bg-white text-sky-900";
+  if (tone === "holiday") return "bg-white text-emerald-900";
   return "bg-white text-slate-800";
 }
 
+// The row's status as a coloured word — never a bordered pill.
 function statusToneClass(tone: PlanningCalendarDetailRow["tone"]) {
-  if (tone === "conflict") return "border-sky-200 bg-sky-100 text-sky-800";
-  if (tone === "holiday") return "border-emerald-200 bg-emerald-100 text-emerald-800";
-  return "border-slate-200 bg-slate-100 text-slate-700";
+  if (tone === "conflict") return "text-sky-700";
+  if (tone === "holiday") return "text-emerald-700";
+  return "text-slate-700";
 }
 
 function detailAccent(tone: PlanningCalendarDetailRow["tone"]) {
@@ -910,39 +950,39 @@ function PlanningCalendarDetailsTable({
 }) {
   const sections = detailRowSections(rows);
   return (
-    <div className="p-4">
+    <div>
       {rows.length === 0 ? (
         <PortalEmptyState
           message="Submitted planning activity, national vacation, and chain visits for the selected day will appear here."
           title="No detail rows for this day"
         />
       ) : (
-        <div className={`border border-slate-200 bg-white lg:hidden ${adminSoftDepthClassName}`}>
+        <div className="lg:hidden">
           {sections.map((section) => (
             <div key={`${section.key}-mobile`}>
               <p
-                className={`flex items-center justify-between gap-2 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.14em] ${
-                  section.tone === "holiday" ? "bg-emerald-50 text-emerald-800" : "bg-slate-900 text-white"
+                className={`flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] sm:px-4 ${
+                  section.tone === "holiday" ? "text-emerald-700" : LANDING_INK
                 }`}
               >
-                <span>{section.label}</span>
-                <span className={section.tone === "holiday" ? "text-emerald-700" : "text-slate-300"}>{section.count}</span>
+                <span className="min-w-0 break-words">{section.label}</span>
+                <span className="tabular-nums text-slate-500">{section.count}</span>
               </p>
               {section.areas.map((area) => (
                 <div key={`${section.key}-${area.key}-mobile`}>
                   {area.label ? (
-                    <p className="border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-600">
+                    <p className="break-words border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-600 sm:px-4">
                       {area.label}
                     </p>
                   ) : null}
-                  <div className="divide-y divide-slate-100">
+                  <div className="divide-y divide-slate-200 border-b border-slate-200">
                     {area.rows.map((row) => (
                       <PortalRecordCard
                         accent={detailAccent(row.tone)}
                         key={`${row.id}-mobile`}
                         meta={row.employee}
                         status={
-                          <span className={`inline-flex border px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                          <span className={`${statusWordClassName} ${statusToneClass(row.tone)}`}>
                             {row.status}
                           </span>
                         }
@@ -955,12 +995,12 @@ function PlanningCalendarDetailsTable({
                           ]}
                         />
                         {row.conflictWarning !== "-" ? (
-                          <p className="mt-2 border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs font-semibold leading-5 text-sky-800">
+                          <p className="mt-2 break-words border-l-2 border-l-sky-500 pl-2.5 text-xs font-semibold leading-5 text-sky-800">
                             {row.conflictWarning}
                           </p>
                         ) : null}
                         {row.notes !== "-" ? (
-                          <p className="mt-2 border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+                          <p className="mt-2 break-words border-l-2 border-l-slate-300 pl-2.5 text-xs font-semibold leading-5 text-slate-600" dir="auto">
                             {row.notes}
                           </p>
                         ) : null}
@@ -973,7 +1013,7 @@ function PlanningCalendarDetailsTable({
           ))}
         </div>
       )}
-      <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <div>
         <PortalDesktopTable
           breakpoint="lg"
           className="text-xs"
@@ -989,10 +1029,10 @@ function PlanningCalendarDetailsTable({
           }
         >
           <thead>
-            <tr className="border-b-2 border-orange-500 bg-slate-950">
+            <tr className="border-b border-slate-200 bg-white">
               {["Employee", "Activity", "Medical Rep", "Time", "Plan Status", "Chain Visit"].map((column) => (
                 <th
-                  className="border-r border-slate-800 px-3 py-3 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
+                  className={`border-r border-slate-200 px-3 py-3 text-phx-xs font-bold uppercase tracking-[0.12em] last:border-r-0 ${LANDING_INK}`}
                   key={column}
                 >
                   {column}
@@ -1000,20 +1040,20 @@ function PlanningCalendarDetailsTable({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {sections.flatMap((section) => [
               <tr
-                className={section.tone === "holiday" ? "bg-emerald-50" : "bg-slate-900"}
+                className="bg-white"
                 key={`${section.key}-header`}
               >
                 <td
-                  className={`px-3 py-2 text-phx-xs font-black uppercase tracking-[0.14em] ${
-                    section.tone === "holiday" ? "text-emerald-800" : "text-white"
+                  className={`border-l-2 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] ${
+                    section.tone === "holiday" ? "border-l-emerald-500 text-emerald-700" : `border-l-[#08111f] ${LANDING_INK}`
                   }`}
                   colSpan={6}
                 >
                   {section.label}
-                  <span className={`ml-2 font-bold ${section.tone === "holiday" ? "text-emerald-700" : "text-slate-300"}`}>
+                  <span className="ml-2 font-bold tabular-nums text-slate-500">
                     {section.count} row{section.count === 1 ? "" : "s"}
                   </span>
                 </td>
@@ -1021,26 +1061,26 @@ function PlanningCalendarDetailsTable({
               ...section.areas.flatMap((area) => [
                 ...(area.label
                   ? [
-                      <tr className="bg-slate-100" key={`${section.key}-${area.key}-header`}>
-                        <td className="px-3 py-1.5 pl-6 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-600" colSpan={6}>
+                      <tr className="bg-slate-50" key={`${section.key}-${area.key}-header`}>
+                        <td className="px-3 py-1.5 pl-6 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-600" colSpan={6}>
                           {area.label}
                         </td>
                       </tr>,
                     ]
                   : []),
                 ...area.rows.map((row) => (
-                <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className={`inline-block h-2 w-2 shrink-0 ${employeeHueFor(hues, row.employeeHrId).dot}`} />
+                <tr className={`transition-colors hover:bg-slate-50 motion-reduce:transition-none ${detailToneClass(row.tone)}`} key={row.id}>
+                  <td className={`break-words border-r border-slate-200 px-3 py-2.5 font-bold ${LANDING_INK}`}>
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 ${employeeHueFor(hues, row.employeeHrId).dot}`} />
                       {row.employee}
                     </span>
                   </td>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{cellText(row.medicalRep)}</td>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
-                  <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={`inline-block max-w-full break-words border px-2 py-0.5 text-phx-sm font-black uppercase leading-snug tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                  <td className="break-words border-r border-slate-200 px-3 py-2.5 font-semibold">{row.activity}</td>
+                  <td className="break-words border-r border-slate-200 px-3 py-2.5 font-semibold text-slate-600">{cellText(row.medicalRep)}</td>
+                  <td className="break-words border-r border-slate-200 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
+                  <td className="border-r border-slate-200 px-3 py-2.5">
+                    <span className={`inline-block max-w-full leading-snug ${statusWordClassName} ${statusToneClass(row.tone)}`}>
                       {row.status}
                     </span>
                   </td>

@@ -11,7 +11,14 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { Card } from "@/components/ui/card";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingEmpty,
+  LandingRailLine,
+  LandingTick,
+} from "@/components/employee-portal/landing-kit";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 
 /**
@@ -34,16 +41,13 @@ function visitTypeLabel(visit: Visit): string {
   return resolveVisitTypeLabel(visit.visitType, visit.visitTypeDescription, visit.comment);
 }
 
+// The landing kit's status rule: the kind is a coloured word, never a filled pill.
 function VisitKindBadge({ kind }: { kind: Visit["kind"] }) {
   return (
     <span
-      className={
-        kind === "campaign"
-          ? "inline-flex rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-700"
-          : kind === "regular"
-            ? "inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700"
-            : "inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-bold text-slate-600"
-      }
+      className={`inline-flex text-phx-xs font-bold uppercase tracking-[0.08em] ${
+        kind === "campaign" ? "text-violet-700" : kind === "regular" ? "text-emerald-700" : "text-slate-600"
+      }`}
     >
       {kind === "campaign" ? "Campaign" : kind === "regular" ? "Regular" : "Other"}
     </span>
@@ -134,39 +138,48 @@ export function FieldWorkforceVisitsView({
   const punches = data?.punches ?? null;
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <div>
+    <div className="space-y-4 p-4 sm:p-6">
+      <div className="min-w-0">
         <Link
-          className="inline-flex items-center gap-1 text-sm font-bold text-orange-700 hover:underline"
+          className={`inline-flex min-h-10 items-center gap-1 text-phx-sm font-bold uppercase tracking-[0.08em] ${LANDING_INK} hover:underline sm:min-h-8 ${LANDING_FOCUS}`}
           href={backHref}
         >
-          <ChevronLeft className="h-4 w-4" /> {backLabel}
+          <ChevronLeft aria-hidden="true" className="h-4 w-4" /> {backLabel}
         </Link>
-        <h1 className="mt-2 text-2xl font-black text-slate-950">Visits — {repName}</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">{hrId} &middot; {date}</p>
+        <h1 className={`mt-2 flex min-w-0 items-center gap-2 break-words text-2xl font-black leading-tight ${LANDING_INK}`} dir="auto">
+          <LandingTick />
+          <span className="min-w-0">Visits — {repName}</span>
+        </h1>
+        <p className="mt-1 break-words text-phx-sm font-semibold tabular-nums text-slate-500">{hrId} &middot; {date}</p>
       </div>
 
       {!loading && !error && punches ? (
-        <Card className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-900">
-          Fingerprint punch: {punches.firstPunchTime ?? "—"}
-          {punches.lastPunchTime && punches.lastPunchTime !== punches.firstPunchTime ? `–${punches.lastPunchTime}` : ""}
-          {" "}({punches.visiblePunchCount} punch{punches.visiblePunchCount === 1 ? "" : "es"})
-        </Card>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <LandingRailLine rail="bg-teal-600">
+            <span className={`font-semibold tabular-nums ${LANDING_INK}`}>
+              Fingerprint punch: {punches.firstPunchTime ?? "—"}
+              {punches.lastPunchTime && punches.lastPunchTime !== punches.firstPunchTime ? `–${punches.lastPunchTime}` : ""}
+              {" "}({punches.visiblePunchCount} punch{punches.visiblePunchCount === 1 ? "" : "es"})
+            </span>
+          </LandingRailLine>
+        </div>
       ) : null}
 
-      <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         {loading ? (
-          <div className="flex items-center gap-2 p-6 text-sm font-semibold text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading this day&apos;s visits from Phoenix CRM&hellip;
+          <div aria-busy="true" className="flex items-center gap-2 px-3 py-4 text-phx-sm font-semibold text-slate-500 sm:px-4">
+            <Loader2 aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" /> Loading this day&apos;s visits from Phoenix CRM&hellip;
           </div>
         ) : error ? (
-          <div className="p-6 text-sm font-semibold text-rose-700">{error}</div>
+          <LandingRailLine rail="bg-rose-600">
+            <span className="font-semibold text-rose-700">{error}</span>
+          </LandingRailLine>
         ) : visits.length === 0 ? (
-          <div className="p-6 text-sm font-semibold text-slate-500">
+          <LandingEmpty>
             {punches
               ? `No CRM visit records for this rep on ${date} — a fingerprint punch was recorded (see above).`
               : `No visit records for this rep on ${date}.`}
-          </div>
+          </LandingEmpty>
         ) : (
           <PortalResponsiveDataList
             empty={null}
@@ -201,7 +214,7 @@ export function FieldWorkforceVisitsView({
                 }
               >
                 <thead>
-                  <tr className="bg-slate-950 text-left text-xs font-black uppercase tracking-wide text-white">
+                  <tr className="border-b border-slate-200 bg-white text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-4 py-3">#</th>
                     <th className="px-4 py-3">Contact</th>
                     {/* No Customer / Facility column - customerName is empty on every visit (see master.ts). */}
@@ -213,19 +226,19 @@ export function FieldWorkforceVisitsView({
                 </thead>
                 <tbody>
                   {visits.map((visit, index) => (
-                    <tr className="border-t border-orange-100 align-top text-slate-700" key={visit.id}>
-                      <td className="px-4 py-3 font-bold text-slate-900">{index + 1}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{visit.contactName || "—"}</td>
+                    <tr className="border-t border-slate-200 align-top text-slate-700" key={visit.id}>
+                      <td className={`px-4 py-3 font-bold tabular-nums ${LANDING_INK}`}>{index + 1}</td>
+                      <td className={`break-words px-4 py-3 font-semibold ${LANDING_INK}`} dir="auto">{visit.contactName || "—"}</td>
                       <td className="px-4 py-3">
                         <VisitKindBadge kind={visit.kind} />
-                        <div className="mt-0.5 text-phx-2xs text-slate-400">
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500">
                           {visitTypeLabel(visit)}
                           {visit.callType != null ? ` · ct:${visit.callType}` : ""}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">{visitTypeLabel(visit)}</td>
+                      <td className="break-words px-4 py-3 text-phx-md text-slate-700">{visitTypeLabel(visit)}</td>
                       <td className="px-4 py-3">{visit.ampm || "—"}</td>
-                      <td className="px-4 py-3 text-slate-600">{visit.comment || "—"}</td>
+                      <td className="break-words px-4 py-3 text-slate-600" dir="auto">{visit.comment || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -233,11 +246,11 @@ export function FieldWorkforceVisitsView({
             )}
           />
         )}
-      </Card>
+      </section>
 
       {!loading && !error ? <FieldWorkforceRouteMap checkins={checkins} route={route} /> : null}
 
-      <p className="text-xs font-semibold text-slate-400">
+      <p className="break-words text-phx-xs font-semibold text-slate-500">
         {visits.length} visit(s) &middot; {checkins.length} GPS check-in(s) &middot; read live from Phoenix CRM (the iReports360 archive before the team&apos;s start) &middot; read-only.
       </p>
     </div>
