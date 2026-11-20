@@ -93,6 +93,13 @@ export type PharmacyActionItem = {
   closingsBought: number;
   /** Share of the viewer's pharmacy value in the latest closing. Set on the top list only. */
   share: number | null;
+  /**
+   * EGP in each loaded closing, NEWEST FIRST — a month with no purchase is a 0. Set only when the
+   * caller asks for it (the sheet download); the screen never carries it.
+   */
+  history?: { period: string; value: number }[];
+  /** Every product this pharmacy bought across the loaded closings, by name. Sheet download only. */
+  productsBought?: string[];
 };
 
 export type CrossSellItem = PharmacyActionItem & {
@@ -261,7 +268,14 @@ export function buildPharmacyActions(input: {
    * bare code (D12, GZ1, UE2) in the area picker and on its list row; the master's name stands in.
    */
   areaNames?: ReadonlyMap<string, string>;
+  /**
+   * The sheet download asks for every pharmacy (no list cap) and each one's month-by-month history.
+   * Omitted, the result is exactly what the screen has always read.
+   */
+  listLimit?: number;
+  includeHistory?: boolean;
 }): PharmacyActionsResult {
+  const listLimit = input.listLimit ?? ACTION_LIST_LIMIT;
   const masterAreaName = (areaCode: string): string => text(input.areaNames?.get(upper(areaCode)));
   // A name is real only when it is not the code written again; an empty or code-only name falls back
   // to the master, and to the code itself only when the master has nothing either.
@@ -372,6 +386,16 @@ export function buildPharmacyActions(input: {
       lastBoughtPeriod: boughtIn[0] ?? null,
       closingsBought: boughtIn.length,
       share: null,
+      ...(input.includeHistory
+        ? {
+            history: windowPeriods.map((period) => ({ period, value: round2(aggregate.valueByPeriod.get(period) ?? 0) })),
+            productsBought: [
+              ...new Set(windowPeriods.flatMap((period) => [...(aggregate.productsByPeriod.get(period) ?? [])])),
+            ]
+              .map((code) => productNames.get(code) ?? code)
+              .sort((left, right) => left.localeCompare(right)),
+          }
+        : {}),
     };
   };
 
@@ -500,15 +524,15 @@ export function buildPharmacyActions(input: {
         wholesalerShares: round2(other?.wholesalerShares ?? 0),
         noCustomerCode: round2(other?.noCustomerCode ?? 0),
       },
-      stopped: areaStopped.slice(0, ACTION_LIST_LIMIT),
-      dropping: areaDropping.slice(0, ACTION_LIST_LIMIT),
-      newPharmacies: areaNew.slice(0, ACTION_LIST_LIMIT),
+      stopped: areaStopped.slice(0, listLimit),
+      dropping: areaDropping.slice(0, listLimit),
+      newPharmacies: areaNew.slice(0, listLimit),
       top: areaActive
         .map((item) => ({ ...item, share: pharmacyValue > EPSILON ? item.latestValue / pharmacyValue : null }))
         .sort((left, right) => right.latestValue - left.latestValue)
         .slice(0, TOP_PHARMACY_LIMIT),
-      crossSell: areaCrossSell.slice(0, ACTION_LIST_LIMIT),
-      untappedBricks: areaUntappedBricks.slice(0, ACTION_LIST_LIMIT),
+      crossSell: areaCrossSell.slice(0, listLimit),
+      untappedBricks: areaUntappedBricks.slice(0, listLimit),
     };
   }
 
@@ -537,12 +561,12 @@ export function buildPharmacyActions(input: {
       noCustomerCode: round2(latestTotals.noCustomerCode),
     },
     coreProducts,
-    stopped: stopped.slice(0, ACTION_LIST_LIMIT),
-    dropping: dropping.slice(0, ACTION_LIST_LIMIT),
-    newPharmacies: newPharmacies.slice(0, ACTION_LIST_LIMIT),
+    stopped: stopped.slice(0, listLimit),
+    dropping: dropping.slice(0, listLimit),
+    newPharmacies: newPharmacies.slice(0, listLimit),
     top,
-    crossSell: crossSell.slice(0, ACTION_LIST_LIMIT),
-    untappedBricks: untappedBricks.slice(0, ACTION_LIST_LIMIT),
+    crossSell: crossSell.slice(0, listLimit),
+    untappedBricks: untappedBricks.slice(0, listLimit),
     areas: [...areas].map(([code, name]) => ({ code, name })).sort((left, right) => left.name.localeCompare(right.name)),
     byArea,
   };

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { PortalSosDashboard } from "@/components/sales/portal/portal-sos-dashboard";
+import { PortalSosPharmacyActions } from "@/components/sales/portal/portal-sos-pharmacy-actions";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import {
   assertPermission,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  canReadPharmacyActions,
   getPortalSosDashboard,
   toPortalSosScopeView,
   type PortalSosComparison,
@@ -136,6 +138,11 @@ export default async function CompanySourceOfSalesPage({
           </p>
         </div>
       </div>
+
+      {/* The pharmacy action lists and their sheet download (owner, 2026-11-20): who stopped, dropped
+          or started buying, company-wide, read from the published closings. Same panel the field
+          managers see; the feed resolves the CEO / Super Admin to company scope from the session. */}
+      {canReadPharmacyActions(access.role) ? <PortalSosPharmacyActions subtitle="" /> : null}
 
       <Suspense
         fallback={

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { isPortalSosActionsRole } from "@/lib/sales/portal-sos-dashboard";
+import { canReadPharmacyActions } from "@/lib/sales/portal-sos-dashboard";
 import { loadPortalMonthPace } from "@/lib/sales/sos-month-pace-loader";
 import { loadPortalPharmacyActions } from "@/lib/sales/sos-pharmacy-actions-loader";
 
@@ -34,12 +34,13 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "read");
-    if (!isPortalSosActionsRole(access.role)) {
+    if (!canReadPharmacyActions(access.role)) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
     const requestedLine = searchParams.get("line")?.trim() || null;
+    const endPeriod = searchParams.get("period")?.trim() || null;
 
     // STARTED BESIDE THE CLOSING READS (2026-10-01, "slow to transfer between page and page"). For a
     // Medical Rep the loader knows the strip's line and areas before it reads a single closing row, and
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     const data = await loadPortalPharmacyActions({
       access,
       requestedLine,
+      endPeriod,
       onPaceInputsKnown: (inputs) => {
         early.push({ key: paceInputsKey(inputs), pace: loadPortalMonthPace({ access, ...inputs }).catch(() => null) });
       },

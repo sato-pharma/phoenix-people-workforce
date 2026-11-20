@@ -46,6 +46,8 @@ export type PortalPharmacyActionsPayload = {
   areaCodes: string[] | null;
   /** The viewer's product bound (Product / Group Product Manager). null = the whole line. */
   productCodes: string[] | null;
+  /** Every published closing of the chosen line, newest first — the months the sheet download offers. */
+  publishedPeriods: string[];
 };
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -79,6 +81,16 @@ export async function loadPortalPharmacyActions(input: {
    * The route still compares these with the payload before it uses the result.
    */
   onPaceInputsKnown?: (inputs: PortalPaceInputs) => void;
+  /**
+   * The month the lists are read AS OF — "stopped" means bought before it and not in it. Must be a
+   * published closing of the line; anything else falls back to the newest one, as before.
+   */
+  endPeriod?: string | null;
+  /**
+   * The sheet download: every pharmacy (no list cap) with its month-by-month history. Never cached —
+   * it is a one-off read and several times the size of the screen's payload.
+   */
+  forExport?: boolean;
 }): Promise<PortalPharmacyActionsPayload> {
   const { access } = input;
   // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a rep's territory is
@@ -110,6 +122,7 @@ export async function loadPortalPharmacyActions(input: {
     message,
     areaCodes,
     productCodes,
+    publishedPeriods: choice.line ? publishedByLine.get(choice.line) ?? [] : [],
   });
 
   if (choice.refused) return base("That line is outside your scope.");
@@ -134,11 +147,15 @@ export async function loadPortalPharmacyActions(input: {
     areaCodes = territory.sosAreaCodes.map((code) => code.toUpperCase());
   }
 
-  const periods = (publishedByLine.get(choice.line) ?? []).slice(0, LOOKBACK_CLOSINGS + 1);
+  const publishedPeriods = publishedByLine.get(choice.line) ?? [];
+  const endPeriod = input.endPeriod && publishedPeriods.includes(input.endPeriod) ? input.endPeriod : null;
+  const periods = publishedPeriods
+    .filter((period) => !endPeriod || period <= endPeriod)
+    .slice(0, LOOKBACK_CLOSINGS + 1);
   if (periods.length === 0) return base(`No ${choice.line} closing has been published yet.`, areaCodes);
 
   const cacheKey = `${viewerKey(access)}|${choice.line}|${periods.join(",")}`;
-  const cached = cache.get(cacheKey);
+  const cached = input.forExport ? undefined : cache.get(cacheKey);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.payload;
 
   const line = choice.line;
@@ -214,8 +231,13 @@ export async function loadPortalPharmacyActions(input: {
     const name = String(area.areaName ?? "").trim();
     if (code && name && name.toUpperCase() !== code) areaNames.set(code, name);
   }
-  const actions = buildPharmacyActions({ periods: periodRows, brickUniverse, areaNames });
-  return remember(cacheKey, {
+  const actions = buildPharmacyActions({
+    periods: periodRows,
+    brickUniverse,
+    areaNames,
+    ...(input.forExport ? { listLimit: Number.POSITIVE_INFINITY, includeHistory: true } : {}),
+  });
+  const payload: PortalPharmacyActionsPayload = {
     line,
     availableLines: choice.availableLines,
     actions,
@@ -225,5 +247,7 @@ export async function loadPortalPharmacyActions(input: {
     // strip would otherwise measure his region's weekly sales against the whole line's target.
     areaCodes: [...coveredAreas].sort(),
     productCodes,
-  });
+    publishedPeriods,
+  };
+  return input.forExport ? payload : remember(cacheKey, payload);
 }

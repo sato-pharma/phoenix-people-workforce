@@ -9,6 +9,12 @@ import {
   type PharmacyActionRow,
 } from "../src/lib/sales/sos-pharmacy-actions.ts";
 import { buildMonthPace } from "../src/lib/sales/sos-month-pace.ts";
+import {
+  pharmacyActionSheetRows,
+  pharmacyActionsFileName,
+  seatLineKey,
+  truncatedPercent,
+} from "../src/lib/sales/sos-pharmacy-actions-workbook.ts";
 
 // The portal Source of Sales pharmacy action lists. Every rule here is the owner's own pick
 // (2026-09-14): STOPPED = bought in any of the 3 closings before the latest and nothing in the
@@ -45,6 +51,59 @@ function periods(byPeriod: Record<string, PharmacyActionRow[]>): PeriodRows[] {
 }
 
 export function runSosPharmacyActionsTests() {
+  // ── THE SHEET DOWNLOAD (owner, 2026-11-20): uncapped, each pharmacy's month-by-month history ──
+  // "Did not buy in October, bought in September" is a filter on the sheet's month columns, so the
+  // history must carry a 0 for a month with no purchase, newest first, and the cap must not apply.
+  {
+    const many = Array.from({ length: 205 }, (_, index) => row({ clientCode: `S${index}`, salesValue: 10 + index }));
+    const byPeriod = {
+      [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
+      [P1]: [...many, row({ clientCode: "KEEP", salesValue: 300 }), row({ clientCode: "SEPT", salesValue: 30, productCode: "P9", productName: "Zeta" }), row({ clientCode: "SEPT", salesValue: 5, productCode: "P2", productName: "Alpha" })],
+      [P2]: [row({ clientCode: "JUNE", salesValue: 20 })],
+      [P3]: [],
+    };
+    const screen = buildPharmacyActions({ periods: periods(byPeriod) });
+    assert.equal(screen.stopped.length, 200, "the screen keeps its cap");
+    assert.equal(screen.stopped[0].history, undefined, "the screen never carries the history");
+
+    const sheet = buildPharmacyActions({ periods: periods(byPeriod), listLimit: Number.POSITIVE_INFINITY, includeHistory: true });
+    assert.equal(sheet.stopped.length, 207, "the sheet lists every stopped pharmacy (205 + SEPT + JUNE)");
+    assert.equal(sheet.counts.stopped, screen.counts.stopped, "the same rule decides both");
+    const sept = sheet.stopped.find((item) => item.key === "IBN|SEPT");
+    assert.deepEqual(sept?.history, [
+      { period: LATEST, value: 0 },
+      { period: P1, value: 35 },
+      { period: P2, value: 0 },
+      { period: P3, value: 0 },
+    ]);
+    assert.deepEqual(sept?.productsBought, ["Alpha", "Zeta"], "products by name, sorted");
+    const keep = sheet.dropping.find((item) => item.key === "IBN|KEEP");
+    assert.ok(keep, "a pharmacy that kept buying less is dropping, not stopped");
+
+    const rows = pharmacyActionSheetRows({
+      items: [sept!, ...sheet.stopped.filter((item) => item.key === "IBN|JUNE")],
+      periods: [LATEST, P1, P2, P3],
+      peopleByArea: new Map([["CA1", { repName: "Mona Adel", managerName: "Hany Saad" }]]),
+      distributorNameOf: (code) => (code === "IBN" ? "Ibn Sina" : "Unnamed distributor"),
+    });
+    assert.equal(rows[0].distributor, "Ibn Sina", "the distributor by name, never its code");
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].rep, "Mona Adel");
+    assert.equal(rows[0].manager, "Hany Saad");
+    assert.equal(rows[0][`m_${P1}`], 35, "the September column holds its value");
+    assert.equal(rows[0][`m_${LATEST}`], 0, "the month it stopped reads 0, never blank");
+    assert.equal(rows[0].lastBought, "Jul 2026");
+    assert.equal(rows[0].products, "Alpha · Zeta");
+    assert.ok(!Object.values(rows[0]).includes("CA1"), "geography by name, never by code");
+    const vacant = pharmacyActionSheetRows({ items: [sept!], periods: [LATEST], peopleByArea: new Map() });
+    assert.equal(vacant[0].rep, "Vacant", "an area with no rep says so");
+
+    assert.equal(truncatedPercent(-0.2996), -29.9, "cut toward zero, never rounded across a line");
+    assert.equal(truncatedPercent(null), null);
+    assert.equal(seatLineKey("Anti Infective"), seatLineKey("anti_infective"), "the closing line meets the seat model's line code");
+    assert.equal(pharmacyActionsFileName("Anti Infective", "2026-10"), "anti-infective-pharmacies-stopped-dropping-new-2026-10.xlsx");
+  }
+
   // ── PER AREA: every tile's count and money come from one area-scoped set ─────
   // A rep with two areas picked one and saw that area's COUNTS beside every area's EGP, and a
   // "Buying pharmacies" figure that never narrowed (2026-09-25). byArea is computed from the

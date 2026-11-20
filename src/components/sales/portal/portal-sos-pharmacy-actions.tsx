@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Ban, Gauge, Store, TrendingDown, UserPlus } from "lucide-react";
+import { Ban, Download, Gauge, Store, TrendingDown, UserPlus } from "lucide-react";
 
 import {
   BandChoice,
@@ -425,6 +425,8 @@ function LoadingState({ subtitle }: { subtitle: string }) {
 
 export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
   const [line, setLine] = useState<string | null>(null);
+  // The closing the lists are read AS OF. null = the newest published one, as the page always opened.
+  const [period, setPeriod] = useState<string | null>(null);
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [area, setArea] = useState("");
@@ -433,7 +435,10 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const query = line ? `?line=${encodeURIComponent(line)}` : "";
+    const params = new URLSearchParams();
+    if (line) params.set("line", line);
+    if (period) params.set("period", period);
+    const query = params.toString() ? `?${params.toString()}` : "";
     fetch(`/api/employee-portals/source-of-sales/actions${query}`, { cache: "no-store", signal: controller.signal })
       .then(async (result) => (await result.json()) as ApiResponse)
       .then((next) => {
@@ -446,7 +451,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
         setLoading(false);
       });
     return () => controller.abort();
-  }, [line]);
+  }, [line, period]);
 
   const data = response?.data;
   const actions = data?.actions ?? null;
@@ -471,14 +476,23 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
     setLoading(true);
     setArea("");
     setShown(PAGE_SIZE);
+    setPeriod(null);
     setLine(next);
+  };
+  const selectPeriod = (next: string) => {
+    setLoading(true);
+    setShown(PAGE_SIZE);
+    setPeriod(next);
   };
 
   if (loading) return <LoadingState subtitle={subtitle} />;
 
   // The selectors sit on the band's bottom rail, like the period/line chips on the sibling pages.
+  // Months the lists can be read as of: every published closing that has one before it to compare with.
+  const monthOptions = (data?.publishedPeriods ?? []).slice(0, -1);
+  const shownPeriod = actions?.latestPeriod ?? "";
   const bandFooter =
-    (data?.availableLines.length ?? 0) > 1 || areaOptions.length > 1 ? (
+    (data?.availableLines.length ?? 0) > 1 || areaOptions.length > 1 || monthOptions.length > 1 ? (
       <>
         {data && data.availableLines.length > 1 ? (
           <BandChoice
@@ -492,7 +506,29 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
             selected={data.line ?? ""}
           />
         ) : null}
-        {data && data.availableLines.length > 1 && areaOptions.length > 1 ? (
+        {data && data.availableLines.length > 1 && (monthOptions.length > 1 || areaOptions.length > 1) ? (
+          <span aria-hidden className="mx-2 hidden h-4 w-px bg-slate-200 sm:inline-block" />
+        ) : null}
+        {monthOptions.length > 1 ? (
+          <label className="flex min-w-0 max-w-full items-center gap-2">
+            <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.18em] text-slate-500">Month</span>
+            <select
+              aria-label="Month"
+              className={SELECT_CLASS}
+              onChange={(event) => {
+                if (event.target.value !== shownPeriod) selectPeriod(event.target.value);
+              }}
+              value={shownPeriod}
+            >
+              {monthOptions.map((option) => (
+                <option key={option} value={option}>
+                  {formatPeriod(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {monthOptions.length > 1 && areaOptions.length > 1 ? (
           <span aria-hidden className="mx-2 hidden h-4 w-px bg-slate-200 sm:inline-block" />
         ) : null}
         {areaOptions.length > 1 ? (
@@ -645,7 +681,25 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
     <div className="space-y-6">
       <CommandBand surface="portal" footer={bandFooter} kicker={BAND_KICKER} stats={bandStats} subtitle={subtitle} title={BAND_TITLE} />
 
-      <SectionCard icon={Store} title="Where my sales come from">
+      <SectionCard
+        actions={
+          actions ? (
+            <a
+              className="inline-flex min-h-10 items-center gap-1.5 border border-orange-300 bg-white px-3 py-1 text-xs font-bold text-orange-700 transition-colors hover:border-orange-500 hover:bg-orange-50 md:min-h-0"
+              href={`/api/employee-portals/source-of-sales/actions/export?${new URLSearchParams({
+                ...(data.line ? { line: data.line } : {}),
+                ...(actions.latestPeriod ? { period: actions.latestPeriod } : {}),
+                ...(area ? { area } : {}),
+              }).toString()}`}
+            >
+              <Download className="h-3 w-3" />
+              Download sheet
+            </a>
+          ) : undefined
+        }
+        icon={Store}
+        title="Where my sales come from"
+      >
         <div className="p-4">
           {!actions ? (
             <p className="text-sm font-semibold text-slate-600">{data.message ?? "No published closing to read yet."}</p>
