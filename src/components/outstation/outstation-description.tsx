@@ -1,5 +1,6 @@
 import { Camera, MapPin } from "lucide-react";
 
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
 import { parseOutstationDescription } from "@/lib/outstation/description-format";
 
 /**
@@ -49,7 +50,7 @@ export function OutstationDescription({
 
       {parts.allowanceNotices.map((notice, index) => (
         <p
-          className="break-words border-l-2 border-amber-400 bg-amber-50 px-2.5 py-1.5 leading-snug text-amber-900"
+          className="break-words border-l-2 border-amber-400 py-0.5 pl-2.5 leading-snug text-amber-800"
           key={`allowance-${index}`}
         >
           {notice}
@@ -64,14 +65,14 @@ export function OutstationDescription({
         ].filter((item): item is { label: string; value: string } => item !== null);
 
         return (
-          <div className="border border-slate-200 bg-white px-3 py-2" key={`evidence-${index}`}>
-            <p className="flex flex-wrap items-center gap-x-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
-              <Camera aria-hidden className="h-3.5 w-3.5 text-orange-500" />
+          <div className="border-l-2 border-slate-300 py-1 pl-3" key={`evidence-${index}`}>
+            <p className="flex flex-wrap items-center gap-x-1.5 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+              <Camera aria-hidden className="h-3.5 w-3.5 text-slate-400" />
               <span>{stamp.title}</span>
               {stamp.sourceLabel && <span className="font-medium normal-case tracking-normal">· {stamp.sourceLabel}</span>}
             </p>
             {stamp.capturedAtLabel && (
-              <p className="mt-1 font-semibold text-slate-800">{stamp.capturedAtLabel}</p>
+              <p className="mt-1 font-semibold tabular-nums text-[#08111f]">{stamp.capturedAtLabel}</p>
             )}
             {stamp.place && (
               <p className="mt-0.5 break-words leading-snug text-slate-600" dir="auto">
@@ -82,14 +83,14 @@ export function OutstationDescription({
               <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-phx-xs text-slate-500">
                 {territory.map((item) => (
                   <span key={item.label}>
-                    {item.label} <span className="font-semibold text-slate-700" dir="auto">{item.value}</span>
+                    {item.label} <span className="font-semibold text-[#08111f]" dir="auto">{item.value}</span>
                   </span>
                 ))}
               </p>
             )}
             {stamp.mapUrl && (
               <a
-                className="mt-1.5 inline-flex items-center gap-1 text-phx-xs font-semibold text-orange-600 hover:text-orange-700 hover:underline"
+                className={`mt-1.5 inline-flex items-center gap-1 text-phx-xs font-bold text-sky-800 transition-colors hover:text-[#08111f] hover:underline motion-reduce:transition-none ${LANDING_FOCUS}`}
                 href={stamp.mapUrl}
                 rel="noopener noreferrer"
                 target="_blank"

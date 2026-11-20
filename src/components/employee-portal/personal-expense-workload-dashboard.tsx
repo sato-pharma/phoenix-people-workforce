@@ -23,7 +23,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  MapPin,
   PlusCircle,
   Printer,
   RefreshCw,
@@ -37,13 +36,25 @@ import {
   type ExpenseBubbleInput,
 } from "@/components/outstation/expense-heatmap-layer";
 import { OutstationDescription } from "@/components/outstation/outstation-description";
-import { Card } from "@/components/ui/card";
 import {
   PortalDesktopTable,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LANDING_ROW_LINK,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingRailLine,
+  LandingTick,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { resolveRegionCentroid } from "@/lib/outstation/region-centroids";
@@ -54,9 +65,9 @@ import { ExtraTicketRowEditor } from "@/components/outstation/extra-ticket-manag
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { formatOutstationDescriptionInline } from "@/lib/outstation/description-format";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { phxFieldClassName, phxLabelTextClassName } from "@/components/ui/form-tokens";
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName, adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -158,12 +169,20 @@ type PeriodPreset = "7d" | "30d" | "90d" | "ytd" | "thismonth" | "lastmonth" | "
 /*  Design tokens                                                     */
 /* ------------------------------------------------------------------ */
 
-const cardShadow = adminPanelDepthClassName;
-
 const inputClass  = phxFieldClassName;
 
+/** A read-only label: the landing kit's small capitals, slate. */
 const labelClass =
-  "text-phx-sm font-bold uppercase tracking-wider text-slate-500";
+  "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+
+/** A filter field's label: the one form design's own label type (form-tokens). */
+const fieldLabelClass = phxLabelTextClassName;
+
+/** A white sheet nested in the page, with the soft depth token — the kit's panel ground. */
+const sheetClass = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
+/** One tile on the white sheets' hairline grids: white, with the label over a navy figure. */
+const sheetTileClass = "min-w-0 bg-white px-3 py-3 sm:px-4";
 
 /* ------------------------------------------------------------------ */
 /*  Color insight palette — degrading scale for chart bars            */
@@ -260,20 +279,30 @@ function extraTicketEligibleId(trip: ExpenseRow, viewerHrId: string | null | und
   return parseOutstationRequestId(trip.tripId);
 }
 
-/* Flat, square premium status pill (replaces the gradient/ring/shadow Badge). */
-const STATUS_PILL_STYLES: Record<string, string> = {
-  "Confirmed by HR": "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  "System Approval": "bg-orange-50 text-orange-700 ring-orange-200",
-  Pending: "bg-amber-50 text-amber-700 ring-amber-200",
-  Declined: "bg-rose-50 text-rose-700 ring-rose-200",
-  Other: "bg-slate-100 text-slate-600 ring-slate-200",
+/* A trip's state: coloured small capitals on a 2px rail of the same tone — never a filled pill
+   (landing kit: status is a thin rail or coloured small text). */
+const STATUS_PILL_STYLES: Record<string, { rail: string; text: string }> = {
+  "Confirmed by HR": { rail: "border-emerald-500", text: "text-emerald-700" },
+  "System Approval": { rail: "border-orange-500", text: "text-orange-700" },
+  Pending: { rail: "border-amber-400", text: "text-amber-700" },
+  Declined: { rail: "border-rose-500", text: "text-rose-700" },
+  Other: { rail: "border-slate-300", text: "text-slate-600" },
+};
+
+/** The same tones as a solid rail, for the left edge of a phone card. */
+const STATUS_RAIL_FILL: Record<string, string> = {
+  "Confirmed by HR": "bg-emerald-500",
+  "System Approval": "bg-orange-500",
+  Pending: "bg-amber-400",
+  Declined: "bg-rose-500",
+  Other: "bg-slate-300",
 };
 
 function StatusPill({ category }: { category: string }) {
   const styles = STATUS_PILL_STYLES[category] ?? STATUS_PILL_STYLES.Other;
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wider ring-1 ${styles}`}
+      className={`inline-flex items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.08em] ${styles.rail} ${styles.text}`}
     >
       {category}
     </span>
@@ -394,10 +423,10 @@ function chartTooltipStyle() {
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-1 px-6 py-12 text-center">
-      <p className="text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
+      <p className={`break-words text-phx-xs font-bold uppercase tracking-[0.1em] ${LANDING_INK}`}>
         {title}
       </p>
-      <p className="text-sm text-slate-500">{message}</p>
+      <p className="break-words text-phx-sm leading-snug text-slate-500">{message}</p>
     </div>
   );
 }
@@ -485,10 +514,10 @@ function SmartPeriodFilter({
     return (
       <button
         aria-pressed={active}
-        className={`flex-1 whitespace-nowrap  px-2.5 py-1.5 text-phx-sm font-semibold transition sm:flex-initial ${
+        className={`min-h-10 flex-1 px-2.5 py-1.5 text-phx-xs font-bold uppercase tracking-[0.08em] transition motion-reduce:transition-none sm:min-h-8 sm:flex-initial ${LANDING_FOCUS} ${
           active
-            ? "bg-orange-500 text-white shadow-sm"
-            : "text-slate-600 hover:bg-slate-100"
+            ? "bg-[#08111f] text-white"
+            : "text-slate-600 hover:bg-slate-100 hover:text-[#08111f]"
         }`}
         key={key}
         onClick={() => applyPreset(key)}
@@ -504,7 +533,7 @@ function SmartPeriodFilter({
       <div>
         <p className={labelClass}>Period</p>
         <div
-          className={`mt-1.5 flex w-full flex-wrap items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 sm:inline-flex sm:w-auto ${adminSoftDepthClassName}`}
+          className={`mt-1.5 flex w-full flex-wrap items-center gap-0.5 border border-slate-200 bg-white p-0.5 sm:inline-flex sm:w-auto ${adminChipDepthClassName}`}
           role="group"
         >
           {segmentBtn("7d", "7 days")}
@@ -518,11 +547,11 @@ function SmartPeriodFilter({
       </div>
       {preset === "custom" && (
         <div
-          className="grid gap-3 border border-orange-100 bg-orange-50/30 p-3 sm:grid-cols-2"
+          className="grid gap-3 border-t border-slate-200 pt-3 sm:grid-cols-2"
           ref={customRef}
         >
           <label className="min-w-0">
-            <span className={labelClass}>From</span>
+            <span className={fieldLabelClass}>From</span>
             <input
               aria-label="Custom date from"
               className={`${inputClass} mt-1.5`}
@@ -532,7 +561,7 @@ function SmartPeriodFilter({
             />
           </label>
           <label className="min-w-0">
-            <span className={labelClass}>To</span>
+            <span className={fieldLabelClass}>To</span>
             <input
               aria-label="Custom date to"
               className={`${inputClass} mt-1.5`}
@@ -548,17 +577,15 @@ function SmartPeriodFilter({
 }
 
 /* ------------------------------------------------------------------ */
-/*  KPI Stat Card — thin, gridline-friendly                           */
+/*  KPI tile — one figure on the page's one night-navy board          */
 /* ------------------------------------------------------------------ */
 
 function StatCard({
-  accent,
   delta,
   helper,
   label,
   value,
 }: {
-  accent: string;
   delta?: number | null;
   helper?: string;
   label: string;
@@ -567,82 +594,72 @@ function StatCard({
   const showDelta = delta !== undefined && delta !== null;
   const isPositive = showDelta && (delta as number) >= 0;
   return (
-    <div className={`border-l-2 ${accent} px-4 py-4`}>
-      <p className={labelClass}>{label}</p>
-      <p className="mt-1 text-xl font-bold text-slate-800">{value}</p>
+    <div className={`relative flex min-w-0 flex-col border border-white/[0.08] p-3 pl-3.5 ${LANDING_NAVY_TILE}`}>
+      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-white/15" />
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/65">{label}</p>
+      <div className="mt-2.5">
+        <LandingFigure onNavy size="md">{value}</LandingFigure>
+      </div>
       {helper && (
-        <p className="mt-1 text-phx-xs leading-snug text-slate-500">{helper}</p>
+        <p className="mt-2 break-words text-phx-xs leading-snug text-white/55">{helper}</p>
       )}
       {showDelta && (
-        <span
-          className={`mt-1.5 inline-block  px-1.5 py-0.5 text-phx-sm font-bold ${
-            isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+        <p
+          className={`mt-1 text-phx-xs font-bold tabular-nums ${
+            isPositive ? "text-emerald-300" : "text-rose-300"
           }`}
         >
           {isPositive ? "+" : ""}
           {(delta as number).toFixed(1)}%
-        </span>
+        </p>
       )}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Admin Key Card — flat, no decorative icon                         */
+/*  Admin Key Card — a white tile on a hairline grid                  */
 /* ------------------------------------------------------------------ */
 
 function AdminKeyCard({
-  accent,
   helper,
   label,
   value,
 }: {
-  accent: string;
   helper: string;
   label: string;
   value: string;
 }) {
   return (
-    <div className={`border-l-2 ${accent} px-4 py-4`}>
-      <p className={labelClass}>{label}</p>
-      <p className="mt-1 text-xl font-bold text-slate-800">{value}</p>
-      <p className="mt-1 text-phx-xs leading-snug text-slate-500">{helper}</p>
+    <div className={sheetTileClass}>
+      <p className={`break-words ${labelClass}`}>{label}</p>
+      <div className="mt-2">
+        <LandingFigure size="md">{value}</LandingFigure>
+      </div>
+      <p className="mt-1.5 break-words text-phx-xs leading-snug text-slate-500">{helper}</p>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Chart Card wrapper                                                */
+/*  Chart Card wrapper — a landing panel: the title alone in its head */
 /* ------------------------------------------------------------------ */
 
 function ChartCard({
   action,
   children,
-  description,
   title,
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
-  description?: string;
   title: string;
 }) {
   return (
-    <Card
-      className={`overflow-hidden border border-slate-200 p-4 sm:p-5 ${cardShadow}`}
-    >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-phx-md font-semibold text-slate-800">{title}</h3>
-          {description && (
-            <p className="mt-0.5 text-phx-xs text-slate-500">{description}</p>
-          )}
-        </div>
-        {action}
-      </div>
+    <LandingPanel bodyClassName="p-3 sm:p-4" right={action} title={title}>
       <WorkspaceErrorBoundary fallbackTitle="Chart unavailable">
         {children}
       </WorkspaceErrorBoundary>
-    </Card>
+    </LandingPanel>
   );
 }
 
@@ -650,10 +667,12 @@ function ChartCard({
 /*  Print styles                                                      */
 /* ------------------------------------------------------------------ */
 
+/* The page chrome's <header> stays off paper; a panel's own header (section > header, the landing
+   kit's title row) is that panel's title and prints with it. */
 const printStyles = `
 @media print {
   body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  nav, header, footer, button, [data-no-print] { display: none !important; }
+  nav, header:not(section > header), footer, button, [data-no-print] { display: none !important; }
   .print\\:break-inside-avoid { break-inside: avoid; }
   .print\\:shadow-none { box-shadow: none !important; }
   * { border-color: #e2e8f0 !important; }
@@ -673,20 +692,17 @@ const printStyles = `
 function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
   const total = trips.reduce((sum, trip) => sum + trip.total, 0);
   return (
-    <Card className={`overflow-hidden border border-amber-200 p-0 ${cardShadow}`}>
-      <div className="border-b border-amber-200 bg-amber-50/70 px-4 py-3">
-        <h3 className="text-sm font-bold text-amber-900">Unresolved trips</h3>
-        <p className="mt-0.5 max-w-2xl text-phx-sm text-amber-800">
-          These trips have no destination recorded, so they are kept out of every KPI, chart,
-          and the map until a destination is added at the source. No location is ever guessed.
-        </p>
-        <p className="mt-1 text-phx-sm font-semibold text-amber-900">
+    <LandingPanel
+      right={
+        <span className="text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-amber-700">
           {trips.length} trip{trips.length === 1 ? "" : "s"} · {formatMoney(total)} pending resolution
-        </p>
-      </div>
+        </span>
+      }
+      title="Unresolved trips"
+    >
       <PortalResponsiveDataList
         empty={
-          <p className="px-4 py-8 text-center text-sm text-slate-500">
+          <p className="break-words px-4 py-8 text-center text-phx-sm text-slate-500">
             Nothing to resolve — every visible trip has a recorded destination.
           </p>
         }
@@ -724,36 +740,36 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
               </colgroup>
             }
           >
-            <thead className="border-b border-slate-200 bg-slate-50 text-phx-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 text-phx-xs uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th className="px-3 py-2 font-semibold">Trip</th>
-                <th className="px-3 py-2 font-semibold">Date</th>
-                <th className="px-3 py-2 font-semibold">Employee</th>
-                <th className="px-3 py-2 font-semibold">Type</th>
-                <th className="px-3 py-2 font-semibold">Origin (home)</th>
-                <th className="px-3 py-2 font-semibold">Transport</th>
-                <th className="px-3 py-2 text-right font-semibold">Amount</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
+                <th className="px-3 py-2.5 font-bold">Trip</th>
+                <th className="px-3 py-2.5 font-bold">Date</th>
+                <th className="px-3 py-2.5 font-bold">Employee</th>
+                <th className="px-3 py-2.5 font-bold">Type</th>
+                <th className="px-3 py-2.5 font-bold">Origin (home)</th>
+                <th className="px-3 py-2.5 font-bold">Transport</th>
+                <th className="px-3 py-2.5 text-right font-bold">Amount</th>
+                <th className="px-3 py-2.5 font-bold">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-200">
               {trips.map((trip) => (
-                <tr className="hover:bg-slate-50" key={`${trip.tripId}-${trip.date}-unresolved`}>
-                  <td className="break-words px-3 py-2 font-mono text-phx-xs font-bold text-slate-600">{trip.tripId || "—"}</td>
-                  <td className="break-words px-3 py-2 text-slate-700">{formatDate(trip.date)}</td>
-                  <td className="px-3 py-2 text-slate-800">{trip.ownerName || "Employee"}</td>
-                  <td className="px-3 py-2 text-slate-700">{trip.requestType || "—"}</td>
-                  <td className="px-3 py-2 text-slate-500">{trip.fromCity || trip.from || "—"}</td>
-                  <td className="px-3 py-2 text-slate-700">{trip.transportationType || "—"}</td>
-                  <td className="break-words px-3 py-2 text-right font-semibold text-slate-900">{formatMoney(trip.total)}</td>
-                  <td className="px-3 py-2"><StatusPill category={mapStatusCategory(trip.status)} /></td>
+                <tr className="align-top transition-colors hover:bg-slate-50 motion-reduce:transition-none" key={`${trip.tripId}-${trip.date}-unresolved`}>
+                  <td className="break-words px-3 py-2.5 font-mono text-phx-xs font-bold text-slate-600">{trip.tripId || "—"}</td>
+                  <td className="break-words px-3 py-2.5 text-phx-sm tabular-nums text-slate-700">{formatDate(trip.date)}</td>
+                  <td className={`break-words px-3 py-2.5 text-phx-sm font-semibold ${LANDING_INK}`} dir="auto">{trip.ownerName || "Employee"}</td>
+                  <td className="break-words px-3 py-2.5 text-phx-sm text-slate-700">{trip.requestType || "—"}</td>
+                  <td className="break-words px-3 py-2.5 text-phx-sm text-slate-500" dir="auto">{trip.fromCity || trip.from || "—"}</td>
+                  <td className="break-words px-3 py-2.5 text-phx-sm text-slate-700">{trip.transportationType || "—"}</td>
+                  <td className={`break-words px-3 py-2.5 text-right text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.total)}</td>
+                  <td className="px-3 py-2.5"><StatusPill category={mapStatusCategory(trip.status)} /></td>
                 </tr>
               ))}
             </tbody>
           </PortalDesktopTable>
         )}
       />
-    </Card>
+    </LandingPanel>
   );
 }
 
@@ -1288,7 +1304,9 @@ export function PersonalExpenseWorkloadDashboard({
 
   const header = (field: SortField, title: string) => (
     <button
-      className="inline-flex items-center gap-1 text-left text-phx-sm font-bold uppercase tracking-wider text-slate-200 transition hover:text-orange-400"
+      className={`inline-flex items-center gap-1 text-left text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none hover:text-[#08111f] ${LANDING_FOCUS} ${
+        searchSortField === field ? "text-[#08111f]" : "text-slate-500"
+      }`}
       onClick={() => onSort(field)}
       type="button"
     >
@@ -1376,9 +1394,9 @@ export function PersonalExpenseWorkloadDashboard({
 
   if (!rows.length) {
     return (
-      <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
+      <section className={sheetClass}>
         <EmptyState title="No expense records" message="No visible expense records are available for your expense scope yet." />
-      </Card>
+      </section>
     );
   }
 
@@ -1388,41 +1406,38 @@ export function PersonalExpenseWorkloadDashboard({
       <style dangerouslySetInnerHTML={{ __html: printStyles }} />
 
       {showHero && (
-        <section className="relative overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] p-5 sm:p-6 lg:p-8">
-          <p className="text-phx-xs font-semibold uppercase tracking-wider text-orange-300">
+        <header className="border-b border-slate-200 pb-3">
+          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
             EXPENSES
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Expense Dashboard</h1>
-        </section>
+          <h1 className={`mt-1.5 flex items-center gap-2 break-words text-2xl font-black tracking-[-0.01em] ${LANDING_INK}`}>
+            <LandingTick className="w-4" />
+            Expense Dashboard
+          </h1>
+        </header>
       )}
 
-      {/* ---- Submit CTA ---- */}
+      {/* ---- Submit CTA ---- one row that is the link: the title, then the navy action. */}
       <Link
-        className={`group flex items-center justify-between gap-4 rounded border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-white p-4 transition-all hover:border-orange-300 hover:shadow-md print:hidden ${cardShadow}`}
+        className={`group flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3 sm:px-4 print:hidden ${sheetClass} ${LANDING_ROW_LINK}`}
         href={submitExpenseHref}
       >
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-orange-100 text-orange-600">
-            <PlusCircle className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="whitespace-nowrap text-sm font-bold text-slate-900">Submit a new outstation expense</p>
-            <p className="mt-0.5 text-phx-sm text-slate-600">
-              Start the guided trip submission. Captures location, distance, and allowance automatically.
-            </p>
-          </div>
-        </div>
-        <span className="hidden flex-none items-center gap-2 rounded-full bg-phx-warn px-4 py-2 text-phx-sm font-semibold text-white shadow-sm transition-colors group-hover:bg-phx-warn sm:inline-flex">
+        <span className={`flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em] ${LANDING_INK}`}>
+          <LandingTick />
+          <span className="min-w-0">Submit a new outstation expense</span>
+        </span>
+        <span className={landingActionClassName("solid", "ml-auto")}>
+          <PlusCircle aria-hidden="true" className="h-3.5 w-3.5" />
           Start submission
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
         </span>
       </Link>
 
       {/* ---- Tabs: Overview vs Unresolved ---- */}
-      <div className="flex items-center gap-1 border-b border-slate-200 print:hidden" role="tablist">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 print:hidden" role="tablist">
         <button
           aria-selected={activeView === "overview"}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold transition ${activeView === "overview" ? "border-orange-500 text-orange-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+          className={`-mb-px min-h-10 border-b-2 px-3 py-2 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:min-h-8 ${LANDING_FOCUS} ${activeView === "overview" ? "border-[#08111f] text-[#08111f]" : "border-transparent text-slate-500 hover:text-[#08111f]"}`}
           onClick={() => setActiveView("overview")}
           role="tab"
           type="button"
@@ -1431,14 +1446,14 @@ export function PersonalExpenseWorkloadDashboard({
         </button>
         <button
           aria-selected={activeView === "unresolved"}
-          className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition ${activeView === "unresolved" ? "border-orange-500 text-orange-600" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+          className={`-mb-px flex min-h-10 items-center gap-1.5 border-b-2 px-3 py-2 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:min-h-8 ${LANDING_FOCUS} ${activeView === "unresolved" ? "border-[#08111f] text-[#08111f]" : "border-transparent text-slate-500 hover:text-[#08111f]"}`}
           onClick={() => setActiveView("unresolved")}
           role="tab"
           type="button"
         >
           Unresolved
           {unresolvedTrips.length > 0 && (
-            <span className="rounded-full bg-phx-warn-bg px-1.5 py-0.5 text-phx-xs font-bold text-phx-warn">
+            <span className="tabular-nums text-amber-700">
               {unresolvedTrips.length}
             </span>
           )}
@@ -1449,128 +1464,121 @@ export function PersonalExpenseWorkloadDashboard({
         <UnresolvedTripsPanel trips={unresolvedTrips} />
       ) : (
       <>
-      {/* ---- KPI Stat Cards ---- */}
-      <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
-        <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 sm:grid-cols-3 xl:grid-cols-5">
-          <StatCard
-            accent="border-l-emerald-400"
-            helper={approvedSpend > 0 ? `${formatMoney(approvedSpend)} confirmed by HR` : "Sum of visible Total for this period"}
-            label="Visible Expenses"
-            value={formatMoney(totalExpenses)}
-          />
-          <StatCard
-            accent="border-l-sky-400"
-            helper={pendingCount > 0 ? `${pendingCount} pending - ${scopeEmployeeLabel}` : scopeEmployeeLabel}
-            label="Visible Trips"
-            value={totalTrips.toLocaleString("en-US")}
-          />
-          <StatCard
-            accent="border-l-orange-400"
-            helper="Visible expenses / visible trips"
-            label="Avg Cost per Trip"
-            value={formatMoney(averageCostPerTrip)}
-          />
-          <StatCard
-            accent="border-l-amber-400"
-            helper="Sum of KM travelled"
-            label="Total KM"
-            value={formatKm(totalKm)}
-          />
-          <StatCard
-            accent="border-l-slate-400"
-            delta={tripsDeltaPercent ?? undefined}
-            helper={`${tripsThisMonth} this month vs ${tripsLastMonth} last month`}
-            label="Month over Month"
-            value={tripsThisMonth.toLocaleString("en-US")}
-          />
+      {/* ---- KPI Stat Cards ---- the page's headline figures, on its ONE night-navy board. */}
+      <LandingNavyBoard className="print:break-inside-avoid" label="Expenses">
+        <div className="@container">
+          <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5">
+            <StatCard
+              helper={approvedSpend > 0 ? `${formatMoney(approvedSpend)} confirmed by HR` : "Sum of visible Total for this period"}
+              label="Visible Expenses"
+              value={formatMoney(totalExpenses)}
+            />
+            <StatCard
+              helper={pendingCount > 0 ? `${pendingCount} pending - ${scopeEmployeeLabel}` : scopeEmployeeLabel}
+              label="Visible Trips"
+              value={totalTrips.toLocaleString("en-US")}
+            />
+            <StatCard
+              helper="Visible expenses / visible trips"
+              label="Avg Cost per Trip"
+              value={formatMoney(averageCostPerTrip)}
+            />
+            <StatCard
+              helper="Sum of KM travelled"
+              label="Total KM"
+              value={formatKm(totalKm)}
+            />
+            <StatCard
+              delta={tripsDeltaPercent ?? undefined}
+              helper={`${tripsThisMonth} this month vs ${tripsLastMonth} last month`}
+              label="Month over Month"
+              value={tripsThisMonth.toLocaleString("en-US")}
+            />
+          </div>
         </div>
-      </Card>
+      </LandingNavyBoard>
 
       {/* ---- Admin Key Cards (NSM/DSM scope) ---- */}
       {adminKeyCards && (
-        <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
-          <div className="grid grid-cols-1 divide-x divide-y divide-slate-200 sm:grid-cols-3">
+        <section className={`${sheetClass} @container print:break-inside-avoid`}>
+          <div className="grid grid-cols-1 gap-px bg-slate-200 @xl:grid-cols-3">
             <AdminKeyCard
-              accent="border-l-orange-400"
               helper={adminKeyCards.payrollBatchLabel || "Latest batch"}
               label="Payroll Eligible"
               value={adminKeyCards.payrollEligibleCount.toLocaleString("en-US")}
             />
             <AdminKeyCard
-              accent="border-l-sky-400"
               helper={`vs ${formatMoney(adminKeyCards.totalSalesTarget)} target`}
               label="Total Sales"
               value={formatMoney(adminKeyCards.totalSalesValue)}
             />
             <AdminKeyCard
-              accent="border-l-amber-400"
               helper={`${adminKeyCards.expenseClaimsEntries.toLocaleString("en-US")} entries`}
               label="Expense Claims"
               value={formatMoney(adminKeyCards.expenseClaimsAmount)}
             />
           </div>
-        </Card>
+        </section>
       )}
 
       {/* ---- Insights Strip (NEW) ---- */}
       {(insights.top || insights.outlier || insights.costPerKm > 0) && (
-        <Card className={`overflow-hidden border border-slate-200 p-0 print:break-inside-avoid ${cardShadow}`}>
-          <div className="grid grid-cols-1 divide-x divide-y divide-slate-200 sm:grid-cols-3">
-            <div className="px-4 py-3">
+        <section className={`${sheetClass} @container print:break-inside-avoid`}>
+          <div className="grid grid-cols-1 gap-px bg-slate-200 @xl:grid-cols-3">
+            <div className={sheetTileClass}>
               <p className={labelClass}>Top destination</p>
-              <p className="mt-1 whitespace-nowrap text-sm font-bold text-slate-800">
+              <p className={`mt-1.5 break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">
                 {insights.top?.city ?? "—"}
               </p>
-              <p className="mt-0.5 text-phx-xs text-slate-500">
+              <p className="mt-0.5 break-words text-phx-xs tabular-nums text-slate-500">
                 {insights.top
                   ? `${insights.top.trips} trips · ${formatMoney(insights.top.total)}`
                   : "No data"}
               </p>
             </div>
-            <div className="px-4 py-3">
+            <div className={sheetTileClass}>
               <p className={labelClass}>Cost outlier</p>
-              <p className="mt-1 break-words text-sm font-bold text-slate-800">
+              <p className={`mt-1.5 break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">
                 {insights.outlier
                   ? `${insights.outlier.ownerName || "Employee"} → ${insights.outlier.toCity || "Unknown"}`
                   : "—"}
               </p>
-              <p className="mt-0.5 text-phx-xs text-rose-600">
+              <p className={`mt-0.5 break-words text-phx-xs font-bold tabular-nums ${insights.outlier ? "text-rose-700" : "text-slate-500"}`}>
                 {insights.outlier
                   ? `${formatMoney(insights.outlier.total)} · ${formatDate(insights.outlier.date)}`
                   : "No outliers detected"}
               </p>
             </div>
-            <div className="px-4 py-3">
+            <div className={sheetTileClass}>
               <p className={labelClass}>Cost efficiency</p>
-              <p className="mt-1 text-sm font-bold text-slate-800">
+              <p className={`mt-1.5 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
                 {insights.costPerKm > 0 ? `${formatMoney(insights.costPerKm)}/km` : "—"}
               </p>
-              <p className="mt-0.5 text-phx-xs text-slate-500">
+              <p className="mt-0.5 break-words text-phx-xs text-slate-500">
                 Average spend per kilometer
               </p>
             </div>
           </div>
-        </Card>
+        </section>
       )}
 
       {/* Filters Card */}
-      <Card className={`overflow-hidden border border-slate-200 p-4 sm:p-5 print:hidden ${cardShadow}`}>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-slate-700">
-            <span className="h-4 w-1 bg-orange-500" />
-            Filters
-          </span>
+      <LandingPanel
+        bodyClassName="p-3 sm:p-4"
+        className="print:hidden"
+        right={
           <button
             aria-label="Reset all expense filters"
-            className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-phx-sm font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+            className={landingActionClassName("outline")}
             onClick={resetFilters}
             type="button"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
             Reset{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
           </button>
-        </div>
-
+        }
+        title="Filters"
+      >
         <SmartPeriodFilter
           dateFrom={dateFrom}
           dateTo={dateTo}
@@ -1581,7 +1589,7 @@ export function PersonalExpenseWorkloadDashboard({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <label className="min-w-0">
-            <span className={labelClass}>Status</span>
+            <span className={fieldLabelClass}>Status</span>
             <SearchableSelect
               aria-label="Filter by status"
               className={`${inputClass} mt-1.5`}
@@ -1596,7 +1604,7 @@ export function PersonalExpenseWorkloadDashboard({
             </SearchableSelect>
           </label>
           <label className="min-w-0">
-            <span className={labelClass}>Request type</span>
+            <span className={fieldLabelClass}>Request type</span>
             <SearchableSelect
               aria-label="Filter by request type"
               className={`${inputClass} mt-1.5`}
@@ -1611,7 +1619,7 @@ export function PersonalExpenseWorkloadDashboard({
             </SearchableSelect>
           </label>
           <label className="min-w-0">
-            <span className={labelClass}>Transportation</span>
+            <span className={fieldLabelClass}>Transportation</span>
             <SearchableSelect
               aria-label="Filter by transportation type"
               className={`${inputClass} mt-1.5`}
@@ -1626,7 +1634,7 @@ export function PersonalExpenseWorkloadDashboard({
             </SearchableSelect>
           </label>
           <label className="min-w-0">
-            <span className={labelClass}>Destination</span>
+            <span className={fieldLabelClass}>Destination</span>
             <SearchableSelect
               aria-label="Filter by destination city"
               className={`${inputClass} mt-1.5`}
@@ -1641,14 +1649,11 @@ export function PersonalExpenseWorkloadDashboard({
             </SearchableSelect>
           </label>
         </div>
-      </Card>
+      </LandingPanel>
 
       {/* ---- Charts Row 1: Monthly trend + Category ---- */}
       <section className="grid gap-4 print:break-inside-avoid xl:grid-cols-2">
-        <ChartCard
-          description="Expense flow with trip volume overlay"
-          title="Monthly Expense Trend"
-        >
+        <ChartCard title="Monthly Expense Trend">
           <div className="h-64">
             {monthlyTrend.length === 0 ? (
               <EmptyState title="No trend data" message="No monthly data available for selected filters." />
@@ -1700,10 +1705,7 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
         </ChartCard>
 
-        <ChartCard
-          description="Travel cost, meeting amount, allowance and other — adds up to Visible Expenses"
-          title="Expense Breakdown by Category"
-        >
+        <ChartCard title="Expense Breakdown by Category">
           <div className="h-64">
             {categoryBreakdown.total <= 0 ? (
               <EmptyState title="No category data" message="No expense category amounts available." />
@@ -1733,7 +1735,7 @@ export function PersonalExpenseWorkloadDashboard({
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
                     <p className={labelClass}>Total</p>
-                    <p className="text-sm font-bold text-slate-900">
+                    <p className={`text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
                       {formatMoney(categoryBreakdown.total)}
                     </p>
                   </div>
@@ -1743,14 +1745,14 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-phx-xs">
             {categoryBreakdown.data.map((entry) => (
-              <span className="inline-flex items-center gap-1.5 text-slate-600" key={entry.name}>
-                <span className="h-2 w-2" style={{ backgroundColor: entry.color }} />
-                {entry.name}: <strong className="text-slate-800">{formatMoney(entry.value)}</strong>
+              <span className="inline-flex items-center gap-1.5 break-words text-slate-600" key={entry.name}>
+                <span aria-hidden="true" className="h-2 w-2 shrink-0" style={{ backgroundColor: entry.color }} />
+                {entry.name}: <strong className={`tabular-nums ${LANDING_INK}`}>{formatMoney(entry.value)}</strong>
               </span>
             ))}
           </div>
           {categoryBreakdown.overItemised > 0 && (
-            <p className="mt-2 text-phx-xs text-slate-500">
+            <p className="mt-2 break-words text-phx-xs text-slate-500">
               The category amounts come to {formatMoney(categoryBreakdown.overItemised)} more than Visible Expenses
               ({formatMoney(totalExpenses)}) — some claims carry a Total lower than their parts.
             </p>
@@ -1760,25 +1762,22 @@ export function PersonalExpenseWorkloadDashboard({
 
       {/* ---- Charts Row 2: Status + Transportation ---- */}
       <section className="grid gap-4 print:break-inside-avoid xl:grid-cols-2">
-        <ChartCard
-          description="Approval pipeline at a glance"
-          title="Trip Status Distribution"
-        >
+        <ChartCard title="Trip Status Distribution">
           {statusDistribution.length === 0 ? (
             <EmptyState title="No trips" message="No trip status records available." />
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {statusDistribution.map((status) => {
                 const total = statusDistribution.reduce((s, x) => s + x.value, 0);
                 const pct = total > 0 ? Math.round((status.value / total) * 100) : 0;
                 return (
                   <div key={status.name}>
-                    <div className="flex items-center justify-between text-phx-sm">
-                      <span className="inline-flex items-center gap-2 font-medium text-slate-700">
-                        <span className="h-2 w-2" style={{ backgroundColor: status.color }} />
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="inline-flex min-w-0 items-center gap-2 break-words text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                        <span aria-hidden="true" className="h-2 w-2 shrink-0" style={{ backgroundColor: status.color }} />
                         {status.name}
                       </span>
-                      <span className="font-bold text-slate-800">
+                      <span className={`shrink-0 text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>
                         {status.value} · {pct}%
                       </span>
                     </div>
@@ -1787,7 +1786,7 @@ export function PersonalExpenseWorkloadDashboard({
                       aria-valuemax={100}
                       aria-valuemin={0}
                       aria-valuenow={pct}
-                      className="mt-1 h-1.5 overflow-hidden bg-slate-100"
+                      className="mt-1.5 h-1 overflow-hidden bg-slate-100"
                       role="progressbar"
                     >
                       <div className="h-full" style={{ width: `${pct}%`, backgroundColor: status.color }} />
@@ -1802,17 +1801,12 @@ export function PersonalExpenseWorkloadDashboard({
         <ChartCard
           action={
             <button
-              className={`border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600 ${adminControlDepthClassName}`}
+              className={landingActionClassName("outline")}
               onClick={() => setShowCostByTransportation((prev) => !prev)}
               type="button"
             >
               {showCostByTransportation ? "Show trip count" : "Show total cost"}
             </button>
-          }
-          description={
-            showCostByTransportation
-              ? "Total cost per transportation type"
-              : "Trip count by transportation type"
           }
           title="Trips by Transportation"
         >
@@ -1864,10 +1858,7 @@ export function PersonalExpenseWorkloadDashboard({
 
       {/* ---- Charts Row 3: Destinations + Workload ---- */}
       <section className="grid gap-4 print:break-inside-avoid xl:grid-cols-2">
-        <ChartCard
-          description="Top 8 destinations by spend"
-          title="Trips by Destination City"
-        >
+        <ChartCard title="Trips by Destination City">
           <div className="h-64">
             {destinationSummary.length === 0 ? (
               <EmptyState title="No destination data" message="No destination records available." />
@@ -1909,7 +1900,7 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
         </ChartCard>
 
-        <ChartCard description="AM · PM · Pharmacies visit balance and totals" title="Workload Summary">
+        <ChartCard title="Workload Summary">
           {!hasWorkloadData ? (
             <EmptyState
               title="No workload data"
@@ -1917,44 +1908,46 @@ export function PersonalExpenseWorkloadDashboard({
             />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 divide-x divide-slate-200 border-y border-slate-200 sm:grid-cols-5">
-                <div className="px-3 py-3">
-                  <p className={labelClass}>AM visits</p>
-                  <p className="mt-1 text-base font-bold text-slate-800">
-                    {Math.round(totalAmWorkload).toLocaleString("en-US")}
-                  </p>
-                </div>
-                <div className="px-3 py-3">
-                  <p className={labelClass}>PM visits</p>
-                  <p className="mt-1 text-base font-bold text-slate-800">
-                    {Math.round(totalPmWorkload).toLocaleString("en-US")}
-                  </p>
-                </div>
-                <div className="px-3 py-3">
-                  <p className={labelClass}>Pharmacies</p>
-                  {pharmacyCounted ? (
-                    <p className="mt-1 text-base font-bold text-slate-800">
-                      {Math.round(totalPharmacyWorkload).toLocaleString("en-US")}
+              <div className="@container">
+                <div className="grid grid-cols-2 gap-px border-y border-slate-200 bg-slate-200 @md:grid-cols-5">
+                  <div className="min-w-0 bg-white px-3 py-3">
+                    <p className={labelClass}>AM visits</p>
+                    <p className={`mt-1 text-base font-bold tabular-nums ${LANDING_INK}`}>
+                      {Math.round(totalAmWorkload).toLocaleString("en-US")}
                     </p>
-                  ) : (
-                    <p className="mt-1 text-sm font-semibold text-slate-500">Not counted separately</p>
-                  )}
-                </div>
-                <div className="px-3 py-3">
-                  <p className={labelClass}>Total visits</p>
-                  <p className="mt-1 text-base font-bold text-slate-800">
-                    {totalTripWorkload.toLocaleString("en-US")}
-                  </p>
-                </div>
-                <div className="px-3 py-3">
-                  <p className={labelClass}>Avg / trip</p>
-                  <p className="mt-1 text-base font-bold text-slate-800">
-                    {averageWorkloadPerTrip.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </p>
+                  </div>
+                  <div className="min-w-0 bg-white px-3 py-3">
+                    <p className={labelClass}>PM visits</p>
+                    <p className={`mt-1 text-base font-bold tabular-nums ${LANDING_INK}`}>
+                      {Math.round(totalPmWorkload).toLocaleString("en-US")}
+                    </p>
+                  </div>
+                  <div className="min-w-0 bg-white px-3 py-3">
+                    <p className={labelClass}>Pharmacies</p>
+                    {pharmacyCounted ? (
+                      <p className={`mt-1 text-base font-bold tabular-nums ${LANDING_INK}`}>
+                        {Math.round(totalPharmacyWorkload).toLocaleString("en-US")}
+                      </p>
+                    ) : (
+                      <p className="mt-1 break-words text-phx-sm font-semibold text-slate-500">Not counted separately</p>
+                    )}
+                  </div>
+                  <div className="min-w-0 bg-white px-3 py-3">
+                    <p className={labelClass}>Total visits</p>
+                    <p className={`mt-1 text-base font-bold tabular-nums ${LANDING_INK}`}>
+                      {totalTripWorkload.toLocaleString("en-US")}
+                    </p>
+                  </div>
+                  <div className="min-w-0 bg-white px-3 py-3">
+                    <p className={labelClass}>Avg / trip</p>
+                    <p className={`mt-1 text-base font-bold tabular-nums ${LANDING_INK}`}>
+                      {averageWorkloadPerTrip.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                    </p>
+                  </div>
                 </div>
               </div>
               {pharmacyUncountedTrips > 0 && (
-                <p className="text-xs leading-relaxed text-slate-500">
+                <p className="text-phx-xs leading-relaxed text-slate-500">
                   {pharmacyUncountedTrips.toLocaleString("en-US")} earlier{" "}
                   {pharmacyUncountedTrips === 1 ? "trip carries its" : "trips carry their"} pharmacy visits inside AM
                   and PM — Pharmacies has been counted separately since 21 Sep 2026.
@@ -2015,15 +2008,10 @@ export function PersonalExpenseWorkloadDashboard({
       {/* ---- Personal Dot Map: Where I've travelled ---- */}
       {personalMapPoints.length > 0 ? (
         <section className="space-y-3 print:hidden">
-          <div className="flex items-center gap-2">
-            <span className="h-7 w-1 bg-orange-500" />
-            <div>
-              <h2 className="text-base font-bold text-slate-900 sm:text-lg">Where I&apos;ve travelled</h2>
-              <p className="text-phx-sm text-slate-500">
-                Each dot is a destination — colour shows your spend. Toggle All / Approved / Pending.
-              </p>
-            </div>
-          </div>
+          <h2 className={`flex items-center gap-2 text-phx-sm font-bold uppercase tracking-[0.1em] ${LANDING_INK}`}>
+            <LandingTick />
+            Where I&apos;ve travelled
+          </h2>
           <ExpenseHeatmapLayer
             browserKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? ""}
             height={420}
@@ -2035,61 +2023,54 @@ export function PersonalExpenseWorkloadDashboard({
           />
         </section>
       ) : personalMapUnmappedCount > 0 ? (
-        <section className="flex items-start gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-phx-sm text-slate-600 print:hidden">
-          <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-          <div>
-            <p className="font-semibold text-slate-700">No destinations to map yet</p>
-            <p className="mt-0.5">
+        <section className={`${sheetClass} print:hidden`}>
+          <LandingRailLine rail="bg-slate-300">
+            <span className={`block font-bold ${LANDING_INK}`}>No destinations to map yet</span>
+            <span className="mt-0.5 block text-slate-500">
               Once your trips carry recognised destinations they&apos;ll appear here as dots on a map.
-            </p>
-          </div>
+            </span>
+          </LandingRailLine>
         </section>
       ) : null}
 
       {pendingCount > 0 && (
-        <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 print:hidden">
-          <div className="mt-0.5 h-2 w-2 flex-none bg-amber-400" />
-          <div>
-            <p className="text-phx-sm font-bold text-amber-800">
+        <div className={`${sheetClass} print:hidden`}>
+          <LandingRailLine rail="bg-amber-400">
+            <span className="block font-bold text-amber-800">
               {pendingCount} trip{pendingCount > 1 ? "s" : ""} pending HR approval
               {lastDecisionLabel ? (
-                <span className="ml-2 font-medium text-amber-700">
+                <span className="ml-2 font-medium tabular-nums text-amber-700">
                   · last decision {lastDecisionLabel}
                 </span>
               ) : null}
-            </p>
-            <p className="mt-0.5 text-phx-xs text-amber-700">
+            </span>
+            <span className="mt-0.5 block text-phx-xs text-slate-500">
               These trips are in the approval queue and have not yet been confirmed for payroll inclusion.
-            </p>
-          </div>
+            </span>
+          </LandingRailLine>
         </div>
       )}
 
       {/* ---- Trip Ledger ---- */}
-      <section className="space-y-3 print:break-inside-avoid">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-center gap-2">
-            <span className="h-7 w-1 bg-orange-500" />
-            <div>
-              <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
-                Trip ledger
-              </span>
-              <h2 className="text-sm font-bold text-slate-800">Detailed Trip Table</h2>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <LandingPanel
+        className="print:break-inside-avoid"
+        right={<LandingMeta items={["Trip ledger"]} />}
+        title="Detailed Trip Table"
+      >
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-4">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             {/* Density toggle */}
             <div
               aria-label="Table density"
-              className="inline-flex items-center gap-0.5 border border-slate-300 bg-slate-50 p-0.5 print:hidden"
+              className={`inline-flex items-center gap-0.5 border border-slate-200 bg-white p-0.5 ${adminChipDepthClassName}`}
               role="group"
             >
               <button
                 aria-pressed={density === "comfortable"}
-                className={` px-2 py-1 text-phx-xs font-semibold transition ${
+                className={`min-h-10 px-2.5 text-phx-xs font-bold uppercase tracking-[0.08em] transition motion-reduce:transition-none sm:min-h-8 ${LANDING_FOCUS} ${
                   density === "comfortable"
-                    ? "bg-white text-slate-800 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
+                    ? "bg-[#08111f] text-white"
+                    : "text-slate-500 hover:text-[#08111f]"
                 }`}
                 onClick={() => setDensity("comfortable")}
                 type="button"
@@ -2098,10 +2079,10 @@ export function PersonalExpenseWorkloadDashboard({
               </button>
               <button
                 aria-pressed={density === "compact"}
-                className={` px-2 py-1 text-phx-xs font-semibold transition ${
+                className={`min-h-10 px-2.5 text-phx-xs font-bold uppercase tracking-[0.08em] transition motion-reduce:transition-none sm:min-h-8 ${LANDING_FOCUS} ${
                   density === "compact"
-                    ? "bg-white text-slate-800 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
+                    ? "bg-[#08111f] text-white"
+                    : "text-slate-500 hover:text-[#08111f]"
                 }`}
                 onClick={() => setDensity("compact")}
                 type="button"
@@ -2112,40 +2093,38 @@ export function PersonalExpenseWorkloadDashboard({
             {/* Excel export */}
             <button
               aria-label="Export my expenses to Excel"
-              className="inline-flex h-9 items-center gap-1.5 border border-slate-900 bg-slate-900 px-3 text-phx-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-40 print:hidden"
+              className={landingActionClassName("solid")}
               disabled={sortedTrips.length === 0 || isExporting}
               onClick={() => {
                 void exportExcel();
               }}
               type="button"
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download aria-hidden="true" className="h-3.5 w-3.5" />
               {isExporting ? "Preparing…" : "Export Excel"}
             </button>
             <button
               aria-label="Print expense report"
-              className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-phx-sm font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600 print:hidden"
+              className={landingActionClassName("outline")}
               onClick={() => window.print()}
               type="button"
             >
-              <Printer className="h-3.5 w-3.5" />
+              <Printer aria-hidden="true" className="h-3.5 w-3.5" />
               Print
             </button>
-            <label className="relative w-full sm:w-64">
-              <span className="sr-only">Search trips</span>
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                aria-label="Search trips"
-                className={`${inputClass} pl-9`}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search trips..."
-                value={searchTerm}
-              />
-            </label>
           </div>
+          <label className="relative w-full sm:ml-auto sm:w-64">
+            <span className="sr-only">Search trips</span>
+            <Search aria-hidden="true" className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              aria-label="Search trips"
+              className={`${inputClass} pl-9`}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search trips..."
+              value={searchTerm}
+            />
+          </label>
         </div>
-
-        <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
           {/* Desktop / wide tablet table. Fits the screen with no horizontal scroll (AGENTS.md §4):
               table-fixed over a colgroup, and twelve columns merged into seven — Type under the trip
               ID, From over To, KM under Total, Transport and extra tickets under Status. The
@@ -2162,7 +2141,7 @@ export function PersonalExpenseWorkloadDashboard({
                 <col className="w-[17%]" />
                 <col className="w-10" />
               </colgroup>
-              <thead className="bg-slate-900">
+              <thead className="border-b border-slate-200 bg-white">
                 <tr>
                   <th className={cellPaddingClass}>
                     <div className="flex flex-col items-center gap-1">
@@ -2196,7 +2175,7 @@ export function PersonalExpenseWorkloadDashboard({
               <tbody className="divide-y divide-slate-200 bg-white">
                 {pagedTrips.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={7}>
+                    <td className="px-3 py-8 text-center text-phx-sm text-slate-500" colSpan={7}>
                       No trips match your filters.
                     </td>
                   </tr>
@@ -2208,7 +2187,7 @@ export function PersonalExpenseWorkloadDashboard({
                     return (
                       <Fragment key={tripKey}>
                         <tr
-                          className="cursor-pointer transition hover:bg-orange-50/40"
+                          className={`cursor-pointer transition hover:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
                           onClick={() => setExpandedTripKey((prev) => prev === tripKey ? null : tripKey)}
                           {...rowDetailToggleProps(`trip-detail-${tripKey}`, isExpanded)}
                         >
@@ -2220,24 +2199,24 @@ export function PersonalExpenseWorkloadDashboard({
                               {trip.requestType || "—"}
                             </span>
                           </td>
-                          <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            <span className="block break-words">{trip.ownerName || "Employee"}</span>
+                          <td className={`align-top text-phx-sm font-semibold ${LANDING_INK} ${cellPaddingClass}`}>
+                            <span className="block break-words" dir="auto">{trip.ownerName || "Employee"}</span>
                           </td>
                           <td className={`align-top break-words text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {formatDate(trip.date)}
                           </td>
-                          <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            <span className="block break-words">{trip.fromCity || "—"}</span>
-                            <span className="block break-words">
+                          <td className={`align-top text-phx-sm font-semibold ${LANDING_INK} ${cellPaddingClass}`}>
+                            <span className="block break-words" dir="auto">{trip.fromCity || "—"}</span>
+                            <span className="block break-words" dir="auto">
                               <span className="font-normal text-slate-400">→ </span>
                               {trip.toCity || "—"}
                             </span>
                           </td>
                           <td className={`align-top text-right ${cellPaddingClass}`}>
-                            <span className="block break-words text-phx-sm font-bold text-slate-900">
+                            <span className={`block break-words text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>
                               {formatMoney(trip.total)}
                             </span>
-                            <span className="mt-0.5 block break-words text-phx-sm text-slate-700">
+                            <span className="mt-0.5 block break-words text-phx-sm tabular-nums text-slate-600">
                               {formatKm(trip.km)}
                             </span>
                           </td>
@@ -2256,20 +2235,21 @@ export function PersonalExpenseWorkloadDashboard({
                           </td>
                           <td className={`align-top ${cellPaddingClass}`}>
                             <ChevronDown
-                              className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
+                              aria-hidden="true"
+                              className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 motion-reduce:transition-none ${isExpanded ? "rotate-180" : ""}`}
                             />
                           </td>
                         </tr>
                         {isExpanded && (
                           <TableRowDetail className="p-0" colSpan={7} id={`trip-detail-${tripKey}`}>
-                              <div className="border-l-4 border-orange-400 px-4 py-4">
+                              <div className="border-l-2 border-[#08111f] bg-slate-50 px-4 py-4">
                                 <div className="grid gap-4 text-phx-sm sm:grid-cols-2 lg:grid-cols-4">
                                   <div>
                                     <p className={labelClass}>Full Route</p>
-                                    {trip.from ? <p className="mt-1 break-words font-semibold leading-snug text-slate-800">{trip.from}</p> : null}
-                                    {trip.to ? <p className="break-words leading-snug text-slate-500">→ {trip.to}</p> : null}
+                                    {trip.from ? <p className={`mt-1 break-words font-semibold leading-snug ${LANDING_INK}`} dir="auto">{trip.from}</p> : null}
+                                    {trip.to ? <p className="break-words leading-snug text-slate-500" dir="auto">→ {trip.to}</p> : null}
                                     {trip.toDate && trip.date !== trip.toDate && (
-                                      <p className="mt-1 text-slate-400">
+                                      <p className="mt-1 text-slate-500">
                                         Until {formatDate(trip.toDate)}
                                       </p>
                                     )}
@@ -2279,19 +2259,19 @@ export function PersonalExpenseWorkloadDashboard({
                                     <div className="mt-1 space-y-0.5">
                                       <div className="flex justify-between">
                                         <span className="text-slate-500">Travel</span>
-                                        <span className="font-semibold text-slate-800">{formatMoney(trip.travelCost)}</span>
+                                        <span className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.travelCost)}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-slate-500">Meeting</span>
-                                        <span className="font-semibold text-slate-800">{formatMoney(trip.meetingAmount)}</span>
+                                        <span className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.meetingAmount)}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-slate-500">Allowance</span>
-                                        <span className="font-semibold text-slate-800">{formatMoney(trip.allowance)}</span>
+                                        <span className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.allowance)}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-slate-500">Other</span>
-                                        <span className="font-semibold text-slate-800">{formatMoney(trip.other)}</span>
+                                        <span className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.other)}</span>
                                       </div>
                                     </div>
                                     {trip.total > 0 && (
@@ -2317,7 +2297,7 @@ export function PersonalExpenseWorkloadDashboard({
                                     {trip.hrNotes && trip.hrNotes !== trip.description && (
                                       <>
                                         <p className={`${labelClass} mt-3`}>HR Notes</p>
-                                        <p className="mt-1 leading-relaxed text-slate-700">{trip.hrNotes}</p>
+                                        <p className="mt-1 break-words leading-relaxed text-slate-700" dir="auto">{trip.hrNotes}</p>
                                       </>
                                     )}
                                   </div>
@@ -2327,16 +2307,16 @@ export function PersonalExpenseWorkloadDashboard({
                                       <p className={labelClass}>Workload</p>
                                       <div className="mt-1 flex flex-wrap gap-5">
                                         <div>
-                                          <p className="text-slate-500">AM visits</p>
-                                          <p className="text-base font-bold text-emerald-700">{trip.amWorkload}</p>
+                                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">AM visits</p>
+                                          <p className="text-base font-bold tabular-nums text-emerald-700">{trip.amWorkload}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500">PM visits</p>
-                                          <p className="text-base font-bold text-orange-600">{trip.pmWorkload}</p>
+                                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">PM visits</p>
+                                          <p className="text-base font-bold tabular-nums text-orange-600">{trip.pmWorkload}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500">Pharmacies</p>
-                                          <p className="text-base font-bold text-sky-700">
+                                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Pharmacies</p>
+                                          <p className="text-base font-bold tabular-nums text-sky-700">
                                             {trip.pharmacyWorkload === null ? "Not counted separately" : trip.pharmacyWorkload}
                                           </p>
                                         </div>
@@ -2351,13 +2331,13 @@ export function PersonalExpenseWorkloadDashboard({
                                   return (
                                     <div className="mt-4 border-t border-slate-200 pt-4">
                                       <button
-                                        className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                                        className={landingActionClassName("outline")}
                                         onClick={() =>
                                           setExpandedTicketTripId((prev) => (prev === trip.tripId ? null : trip.tripId))
                                         }
                                         type="button"
                                       >
-                                        <PlusCircle className="h-3.5 w-3.5" />
+                                        <PlusCircle aria-hidden="true" className="h-3.5 w-3.5" />
                                         {isTicketOpen ? "Close" : "Add tickets"}
                                       </button>
                                       {isTicketOpen && (
@@ -2382,19 +2362,19 @@ export function PersonalExpenseWorkloadDashboard({
                   })
                 )}
               </tbody>
-              <tfoot className="border-t-2 border-slate-900">
+              <tfoot className="border-t border-slate-300">
                 <tr className="bg-slate-50">
                   <td
-                    className={`${cellPaddingClass} text-phx-sm font-bold uppercase tracking-wider text-slate-500`}
+                    className={`${cellPaddingClass} text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500`}
                     colSpan={4}
                   >
                     {pagedTrips.length > 0 ? `Page total · ${pagedTrips.length} trips` : "No records"}
                   </td>
                   <td className={`${cellPaddingClass} text-right`}>
-                    <span className="block break-words text-phx-sm font-bold text-orange-600">
+                    <span className={`block break-words text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>
                       {formatMoney(pagedTrips.reduce((s, t) => s + t.total, 0))}
                     </span>
-                    <span className="mt-0.5 block break-words text-phx-sm font-semibold text-slate-700">
+                    <span className="mt-0.5 block break-words text-phx-sm font-semibold tabular-nums text-slate-600">
                       {formatKm(pagedTrips.reduce((s, t) => s + t.km, 0))}
                     </span>
                   </td>
@@ -2405,30 +2385,30 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
 
           {/* Mobile / narrow tablet stacked cards (< md ~ < 768px) */}
-          <div className="space-y-2 p-3 md:hidden">
+          <div className="divide-y divide-slate-200 md:hidden">
             {pagedTrips.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-slate-500">
+              <p className="px-3 py-6 text-center text-phx-sm text-slate-500">
                 No trips match your filters.
               </p>
             ) : (
               pagedTrips.map((trip) => {
                 const category = mapStatusCategory(trip.status);
                 return (
-                  <div
-                    className={`relative overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}
-                    key={`${trip.tripId}-${trip.date}-mobile`}
-                  >
-                    <div className="absolute inset-y-0 left-0 w-[3px] bg-orange-400" />
-                    <div className="px-3 py-3 pl-4">
+                  <div className="flex min-w-0 gap-3 px-3 py-3" key={`${trip.tripId}-${trip.date}-mobile`}>
+                    <span
+                      aria-hidden="true"
+                      className={`w-1 shrink-0 self-stretch ${STATUS_RAIL_FILL[category] ?? STATUS_RAIL_FILL.Other}`}
+                    />
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="break-words font-mono text-phx-xs font-bold text-slate-600">
+                          <p className="break-words font-mono text-phx-xs font-bold text-slate-500">
                             {trip.tripId || "—"}
                           </p>
-                          <p className="mt-0.5 break-words text-phx-sm font-bold text-slate-800">
+                          <p className={`mt-0.5 break-words text-phx-sm font-bold ${LANDING_INK}`} dir="auto">
                             {trip.ownerName || "Employee"}
                           </p>
-                          <p className="mt-0.5 text-phx-xs text-slate-500">
+                          <p className="mt-0.5 text-phx-xs tabular-nums text-slate-500">
                             {formatDate(trip.date)}
                             {trip.toDate ? ` → ${formatDate(trip.toDate)}` : ""}
                           </p>
@@ -2436,56 +2416,62 @@ export function PersonalExpenseWorkloadDashboard({
                         <StatusPill category={category} />
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-phx-xs text-slate-600">
-                        <span className="bg-slate-100 px-1.5 py-0.5 font-semibold">
+                        <span className={`break-words font-semibold ${LANDING_INK}`} dir="auto">
                           {trip.fromCity || "?"} → {trip.toCity || "?"}
                         </span>
                         {trip.requestType && (
-                          <span className="bg-slate-100 px-1.5 py-0.5">
-                            {trip.requestType}
-                          </span>
+                          <>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="break-words">
+                              {trip.requestType}
+                            </span>
+                          </>
                         )}
                         {trip.transportationType && (
-                          <span className="bg-slate-100 px-1.5 py-0.5">
-                            {trip.transportationType}
-                          </span>
+                          <>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="break-words">
+                              {trip.transportationType}
+                            </span>
+                          </>
                         )}
                       </div>
-                      <div className="mt-2 grid grid-cols-3 gap-2 border-t border-slate-200 pt-2 text-phx-xs">
+                      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-200 pt-2 text-phx-xs min-[360px]:grid-cols-3">
                         <div>
-                          <p className="text-slate-500">Total</p>
-                          <p className="font-bold text-slate-900">{formatMoney(trip.total)}</p>
+                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Total</p>
+                          <p className={`font-bold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.total)}</p>
                         </div>
                         <div>
-                          <p className="text-slate-500">KM</p>
-                          <p className="font-semibold text-slate-800">{formatKm(trip.km)}</p>
+                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">KM</p>
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatKm(trip.km)}</p>
                         </div>
                         <div>
-                          <p className="text-slate-500">Travel</p>
-                          <p className="font-semibold text-slate-800">
+                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Travel</p>
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>
                             {formatMoney(trip.travelCost)}
                           </p>
                         </div>
                         <div>
-                          <p className="text-slate-500">Meeting</p>
-                          <p className="font-semibold text-slate-800">
+                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Meeting</p>
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>
                             {formatMoney(trip.meetingAmount)}
                           </p>
                         </div>
                         <div>
-                          <p className="text-slate-500">Allowance</p>
-                          <p className="font-semibold text-slate-800">
+                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Allowance</p>
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>
                             {formatMoney(trip.allowance)}
                           </p>
                         </div>
                         {trip.other > 0 && (
                           <div>
-                            <p className="text-slate-500">Other</p>
-                            <p className="font-semibold text-slate-800">{formatMoney(trip.other)}</p>
+                            <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Other</p>
+                            <p className={`font-semibold tabular-nums ${LANDING_INK}`}>{formatMoney(trip.other)}</p>
                           </div>
                         )}
                         <div>
-                          <p className="text-slate-500">Extra tickets</p>
-                          <p className="font-semibold text-slate-800">
+                          <p className="font-bold uppercase tracking-[0.08em] text-slate-500">Extra tickets</p>
+                          <p className={`font-semibold tabular-nums ${LANDING_INK}`}>
                             {(() => {
                               const requestId = parseOutstationRequestId(trip.tripId);
                               const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
@@ -2501,13 +2487,13 @@ export function PersonalExpenseWorkloadDashboard({
                         return (
                           <div className="mt-3 border-t border-slate-200 pt-3">
                             <button
-                              className="inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                              className={landingActionClassName("outline")}
                               onClick={() =>
                                 setExpandedTicketTripId((prev) => (prev === trip.tripId ? null : trip.tripId))
                               }
                               type="button"
                             >
-                              <PlusCircle className="h-3.5 w-3.5" />
+                              <PlusCircle aria-hidden="true" className="h-3.5 w-3.5" />
                               {isTicketOpen ? "Close" : "Add tickets"}
                             </button>
                             {isTicketOpen && (
@@ -2532,8 +2518,8 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
 
           {/* Pagination footer */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2">
-            <p className="text-phx-xs font-semibold text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-3 py-2 sm:px-4">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
               {sortedTrips.length === 0 ? "No records" : `Showing ${pageSummary}`}
             </p>
             <div className="flex items-center gap-3">
@@ -2558,30 +2544,29 @@ export function PersonalExpenseWorkloadDashboard({
               <div className="flex items-center gap-2">
                 <button
                   aria-label="Previous page"
-                  className={`border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+                  className={`inline-flex min-h-10 min-w-10 items-center justify-center border border-slate-200 bg-white text-slate-600 transition hover:border-[#08111f] hover:text-[#08111f] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-8 sm:min-w-8 ${LANDING_FOCUS} ${adminControlDepthClassName}`}
                   disabled={safePage <= 1}
                   onClick={() => setPage((value) => Math.max(1, value - 1))}
                   type="button"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
                 </button>
-                <span className="text-phx-xs font-bold text-slate-700">
+                <span className={`text-phx-xs font-bold tabular-nums ${LANDING_INK}`}>
                   {safePage} / {totalPages}
                 </span>
                 <button
                   aria-label="Next page"
-                  className={`border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:border-orange-200 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+                  className={`inline-flex min-h-10 min-w-10 items-center justify-center border border-slate-200 bg-white text-slate-600 transition hover:border-[#08111f] hover:text-[#08111f] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-8 sm:min-w-8 ${LANDING_FOCUS} ${adminControlDepthClassName}`}
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                   type="button"
                 >
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
           </div>
-        </Card>
-      </section>
+      </LandingPanel>
       </>
       )}
     </div>
