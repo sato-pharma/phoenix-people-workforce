@@ -2929,6 +2929,17 @@ export const financeLeaveManagementExcuseItems: readonly AdminToolsPageItem[] = 
 // section (see adminNavigationSectionSeeds above, now collapsed to one link).
 export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
   {
+    // The pharmacy lists and their sheet, company-wide (owner, 2026-11-20). The page admits the CEO,
+    // the Super Admin and the SFE Manager (the SFE Manager sees the lists only); the CEO also reaches
+    // it from his command center.
+    href: "/admin/field-sales/source-of-sales",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Pharmacies to Visit",
+    description: "Pharmacies that stopped, dropped or started buying, with the sheet to download.",
+    permissions: [{ resource: "sales" }],
+    roles: ["CEO", "SFE Manager", "Super Admin"],
+  },
+  {
     href: "/sales",
     icon: ChartNoAxesColumnIncreasing,
     label: "Source of Sales Dash",
