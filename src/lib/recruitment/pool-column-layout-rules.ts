@@ -11,7 +11,7 @@ export type PoolColumnLayouts = Readonly<Record<string, readonly string[]>>;
 /** "all" plus one per role family is well under this; the cap only stops a runaway document. */
 export const POOL_LAYOUT_MAX_VIEWS = 40;
 /** Five built-in columns plus every admin question a view can carry, with room to spare. */
-export const POOL_LAYOUT_MAX_KEYS_PER_VIEW = 80;
+const POOL_LAYOUT_MAX_KEYS_PER_VIEW = 80;
 
 const VIEW_KEY = /^[a-z][a-z0-9_]{0,63}$/;
 const COLUMN_KEY = /^(?:appliedFor|background|place|experience|salary|extra:[A-Za-z0-9_-]{1,80})$/;

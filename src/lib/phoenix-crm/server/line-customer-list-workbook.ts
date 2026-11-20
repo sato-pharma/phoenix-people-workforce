@@ -62,7 +62,7 @@ export type LineListInput = {
   territories: readonly LineListTerritory[];
 };
 
-export type LineListRegion = { regionName: string; territories: LineListTerritory[] };
+type LineListRegion = { regionName: string; territories: LineListTerritory[] };
 
 export const NO_REGION = "No region";
 export const VACANT_SEAT = "Seat vacant";
@@ -79,7 +79,7 @@ function listRank(listType: string): number {
  * Pharmacy, then by name. One ordering, used by every sheet, so the Summary and the region sheets read
  * in the same order.
  */
-export function groupLineTerritories(territories: readonly LineListTerritory[]): LineListRegion[] {
+function groupLineTerritories(territories: readonly LineListTerritory[]): LineListRegion[] {
   const byRegion = new Map<string, LineListTerritory[]>();
   for (const territory of territories) {
     const regionName = territory.regionName?.trim() || NO_REGION;
@@ -106,10 +106,10 @@ export function groupLineTerritories(territories: readonly LineListTerritory[]):
     }));
 }
 
-export type ListCounts = { pm: number; am: number; pharmacy: number; validated: number; waiting: number; total: number };
+type ListCounts = { pm: number; am: number; pharmacy: number; validated: number; waiting: number; total: number };
 
 /** AM · PM · Pharmacies, counted apart — a pharmacy is never inside PM or AM. */
-export function countCustomers(customers: readonly LineListCustomer[]): ListCounts {
+function countCustomers(customers: readonly LineListCustomer[]): ListCounts {
   const counts: ListCounts = { am: 0, pharmacy: 0, pm: 0, total: 0, validated: 0, waiting: 0 };
   for (const customer of customers) {
     if (customer.listType === "PM") counts.pm += 1;
@@ -123,7 +123,7 @@ export function countCustomers(customers: readonly LineListCustomer[]): ListCoun
 }
 
 /** Excel refuses `[]:*?/\` in a sheet name and anything past 31 characters; two regions never share one. */
-export function regionSheetName(regionName: string, taken: Set<string>): string {
+function regionSheetName(regionName: string, taken: Set<string>): string {
   const base = regionName.replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 31) || "Region";
   let name = base;
   for (let index = 2; taken.has(name.toLowerCase()); index += 1) {

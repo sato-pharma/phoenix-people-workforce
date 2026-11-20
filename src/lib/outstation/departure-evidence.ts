@@ -41,9 +41,9 @@ export const DEPARTURE_REVIEW_DISTANCE_KM = 5;
  * A departure photo taken within a couple of minutes of the arrival photo did not evidence a
  * day's work — it is the employee taking both captures at once on arrival. Accepted, flagged.
  */
-export const DEPARTURE_REVIEW_MINIMUM_MINUTES = 10;
+const DEPARTURE_REVIEW_MINIMUM_MINUTES = 10;
 
-export type DepartureReviewFlag =
+type DepartureReviewFlag =
   | "far_from_arrival"
   | "too_soon_after_arrival"
   | "outside_trip_window";

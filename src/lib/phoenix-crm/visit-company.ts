@@ -53,13 +53,13 @@ export const COMPANY_MOST: Readonly<Record<VisitCompanyChoice, number>> = { sing
 export type CompanyOffer = { hrId: string; role: "manager" | "product_manager"; position: number | null };
 
 /** Which side of the company a person came from: the management line, or the product side (product, group product, training). */
-export type CompanionSide = "manager" | "product";
+type CompanionSide = "manager" | "product";
 
 /** One person on the visit besides the rep, in the order the visit lists them. */
-export type VisitCompanion = { hrId: string; side: CompanionSide };
+type VisitCompanion = { hrId: string; side: CompanionSide };
 
 /** The slots a visit stores, and everyone on it. */
-export type CompanyStorage = {
+type CompanyStorage = {
   kind: PhoenixCrmVisitKind;
   managerHrId: string | null;
   seniorHrId: string | null;
@@ -73,7 +73,7 @@ export type CompanyResult = { ok: true; value: CompanyStorage } | { ok: false; e
 export const CHOOSE_ONE_FOR_DOUBLE = "Choose the one person who was on the double visit.";
 export const CHOOSE_TWO_FOR_CHAIN = "Choose the two or more people who were on the chain visit.";
 export const COMPANY_NOT_OFFERED = "Choose someone from the list. Reload the page.";
-export const TOO_MANY_ON_A_VISIT = `A visit takes at most ${MOST_ON_A_VISIT} people besides the rep.`;
+const TOO_MANY_ON_A_VISIT = `A visit takes at most ${MOST_ON_A_VISIT} people besides the rep.`;
 
 /** What the picker says under the choice: how many to tick. */
 export function companyHint(choice: VisitCompanyChoice, picked: number): string {

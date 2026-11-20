@@ -12,12 +12,6 @@ type ThemeContextValue = {
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
-const fallbackThemeContext: ThemeContextValue = {
-  setTheme: () => undefined,
-  theme: "light",
-  toggleTheme: () => undefined,
-};
-
 // Browser storage can throw on access (a private window, blocked site data); the theme then falls back
 // to light and is simply not remembered (2026-10-26 cache audit, P3).
 function readSavedTheme(): string | null {
@@ -76,12 +70,3 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useTheme() {
-  const context = React.useContext(ThemeContext);
-
-  if (!context) {
-    return fallbackThemeContext;
-  }
-
-  return context;
-}

@@ -22,7 +22,7 @@ function clean(value: unknown): string {
 }
 
 /** The same EGP shape as every outstation notice. */
-export function formatNoticeEgp(value: number): string {
+function formatNoticeEgp(value: number): string {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
 }
 

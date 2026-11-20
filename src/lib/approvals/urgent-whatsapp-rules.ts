@@ -36,7 +36,7 @@ export const APPROVAL_REMINDER_SWITCH = "approval_whatsapp_reminder" as const;
 export const APPROVAL_REMINDER_EVENT = "approval_whatsapp_reminder";
 
 /** "More than three days", in elapsed hours at the step. */
-export const APPROVAL_WAITING_HOURS = 72;
+const APPROVAL_WAITING_HOURS = 72;
 
 /**
  * The most sent in one tick. Five ticks a morning at this cap is 40, and he counted 25 approvers. A bounded run stays
@@ -58,7 +58,7 @@ export const EXCUSE_OPEN_STATUSES = ["pending_manager"] as const;
 export const MARKETING_OPEN_STATUSES = ["pending_approval"] as const;
 export const DIRECT_ORDER_OPEN_STATUSES = ["pending_approval"] as const;
 
-export type ApprovalChain = "leave" | "excuse" | "marketing" | "direct_order";
+type ApprovalChain = "leave" | "excuse" | "marketing" | "direct_order";
 export type ApprovalCounts = Record<ApprovalChain, number>;
 
 /** One open request at one step, whoever it waits on. Both approver fields null means nobody can be told. */

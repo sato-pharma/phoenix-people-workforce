@@ -338,15 +338,15 @@ export const TRAVEL_MIN_METERS = 2_000;
 export const ZERO_JITTER_METERS = 5;
 
 /** …and it only counts with enough readings, enough customers and enough hours to rule out drift. */
-export const ZERO_JITTER_MIN_FIXES = 4;
-export const ZERO_JITTER_MIN_CUSTOMERS = 3;
-export const ZERO_JITTER_MIN_SPAN_MINUTES = 120;
+const ZERO_JITTER_MIN_FIXES = 4;
+const ZERO_JITTER_MIN_CUSTOMERS = 3;
+const ZERO_JITTER_MIN_SPAN_MINUTES = 120;
 
 /** Identical accuracy this many times in a day. Real accuracy wanders with the sky and the walls. */
 export const CONSTANT_ACCURACY_MIN_FIXES = 5;
 
 /** A coordinate that is exactly itself at four decimals (~11 m) was chosen, not measured. */
-export const TYPED_COORDINATE_DECIMALS = 4;
+const TYPED_COORDINATE_DECIMALS = 4;
 
 /**
  * At or above this reported accuracy the fix is an APPROXIMATE-LOCATION fix, and no precision test

@@ -8,9 +8,9 @@ import { getNotificationRolePolicies, type NotificationRoleKey, type Notificatio
 import { getEmailNotificationPolicies, type EmailNotificationPolicy, type EmailNotificationType } from "@/lib/notifications/email";
 import { getEmailTemplateCatalog, type EmailTemplateRow } from "@/lib/email-templates/service";
 
-export type EmailControlCenterSourceSystem = "role_recipients" | "email_notifications" | "email_templates";
+type EmailControlCenterSourceSystem = "role_recipients" | "email_notifications" | "email_templates";
 
-export type EmailControlCenterRecipientSummary = {
+type EmailControlCenterRecipientSummary = {
   kind: "roles" | "recipient_mode" | "template_rules" | "not_role_configurable";
   roles?: string[];
   recipientMode?: string;
@@ -38,7 +38,7 @@ export type EmailControlCenterItem = {
   lastSentAt?: string | null;
 };
 
-export type EmailControlCenterGroup = {
+type EmailControlCenterGroup = {
   module: string;
   items: EmailControlCenterItem[];
 };

@@ -34,18 +34,13 @@ export function isFriday(dateIso: string): boolean {
 }
 
 /** Head office works Sunday to Thursday. */
-export function isOfficeReportDay(dateIso: string): boolean {
+function isOfficeReportDay(dateIso: string): boolean {
   const day = weekdayOf(dateIso);
   return day >= 0 && day <= 4;
 }
 
-/** The field force works Saturday to Thursday. */
-export function isFieldReportDay(dateIso: string): boolean {
-  return !isFriday(dateIso);
-}
-
 /** The Saturday that opens the field week holding `dateIso`. */
-export function weekStartSaturday(dateIso: string): string {
+function weekStartSaturday(dateIso: string): string {
   return addDays(dateIso, -((weekdayOf(dateIso) + 1) % 7));
 }
 

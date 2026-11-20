@@ -114,7 +114,7 @@ export function managerAreasTickedLine(ticked: number, offered: number): string 
 
 // ── One cell of the week ───────────────────────────────────────────────────────────────────────
 
-export type ManagerGlanceCellState = "planned" | "open" | "passed_open";
+type ManagerGlanceCellState = "planned" | "open" | "passed_open";
 
 export type ManagerGlanceCell = {
   half: ManagerHalf;
@@ -199,7 +199,7 @@ export function managerGlanceGridRow(row: ManagerGlanceDayRow): [string, string,
 
 // ── The customers ──────────────────────────────────────────────────────────────────────────────
 
-export const MANAGER_GLANCE_GRADES = ["A", "B", "C", "none"] as const;
+const MANAGER_GLANCE_GRADES = ["A", "B", "C", "none"] as const;
 export type ManagerGlanceGrade = (typeof MANAGER_GLANCE_GRADES)[number];
 
 /** "A", "B" or "C" whatever the list holds ("a", " B "); anything else is no grade. */
@@ -617,8 +617,6 @@ export function managerSendTally(
     planned: coming.reduce((sum, day) => sum + day.halves.filter((half) => isPlanned(day, half)).length, 0),
   };
 }
-
-export type DistrictManagerDayStanding = DistrictManagerDay["standing"];
 
 /**
  * The pill on a district manager's own day (owner, 2026-11-08). One set of words, never a sentence put together on

@@ -79,7 +79,7 @@ export const TEST_APPROVAL_KINDS: readonly TestApprovalKind[] = [
 ];
 
 /** A decision the tab may send. Each kind takes exactly two of these: a yes, and a no that needs words. */
-export type TestApprovalDecision = "approve" | "refuse" | "return" | "reject" | "reopen";
+type TestApprovalDecision = "approve" | "refuse" | "return" | "reject" | "reopen";
 
 export type TestApprovalItem = {
   /** Unique on the page: the kind and the row id. */
@@ -484,7 +484,7 @@ const DECISIONS_OF: Record<TestApprovalKind, readonly [TestApprovalDecision, Tes
   manager_single_visit_day: ["approve", "refuse"],
 };
 
-export function isTestApprovalKind(value: unknown): value is TestApprovalKind {
+function isTestApprovalKind(value: unknown): value is TestApprovalKind {
   return typeof value === "string" && (TEST_APPROVAL_KINDS as readonly string[]).includes(value);
 }
 

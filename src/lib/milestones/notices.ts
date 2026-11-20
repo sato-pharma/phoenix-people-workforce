@@ -53,10 +53,10 @@ import {
 
 /** The audience registered in role-recipients.ts and seeded in notification_role_policies. Super
  *  Admin alone today, because the owner narrowed the whole module to Super Admin on 2026-09-23. */
-export const MILESTONE_NOTICE_AUDIENCE_KEY = "service_milestone_notice";
+const MILESTONE_NOTICE_AUDIENCE_KEY = "service_milestone_notice";
 
 /** How far ahead the reminder — and the page's default window, and the seen route — all look. */
-export const MILESTONE_NOTICE_WINDOW_DAYS = 30;
+const MILESTONE_NOTICE_WINDOW_DAYS = 30;
 
 /** The look-ahead window: today in Cairo through thirty days on. THE ONE DEFINITION (see header). */
 export function milestoneNoticeWindow(from: PlainDate = todayInCairo()): { from: PlainDate; to: PlainDate } {
@@ -140,7 +140,7 @@ const MILESTONE_NOTICE_LIST_CAP = 12;
  * The reminder's text. Pure — the part worth pinning. Names, never codes (AGENTS.md §4); the date is
  * printed in full, and for a birthday it is the birthday date, never an age.
  */
-export function buildMilestoneNoticeMessage(occasions: readonly MilestoneNoticeOccasion[], today: PlainDate): string {
+function buildMilestoneNoticeMessage(occasions: readonly MilestoneNoticeOccasion[], today: PlainDate): string {
   const lines: string[] = [];
   const services = occasions.filter((occasion) => occasion.kind === "service").length;
   const birthdays = occasions.length - services;

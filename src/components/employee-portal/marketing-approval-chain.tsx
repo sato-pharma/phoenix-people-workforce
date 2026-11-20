@@ -58,7 +58,7 @@ export function formatDateTime(value: string | null) {
  * (the landing kit): emerald approved, amber waiting, rose rejected, slate not reached. A returned
  * rung is back with its requester, so it waits in amber too. Whole literals, so Tailwind ships them.
  */
-export const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
+const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
   approved: "border-l-emerald-500",
   current: "border-l-amber-400",
   pending: "border-l-slate-300",
@@ -67,7 +67,7 @@ export const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
   skipped: "border-l-slate-200",
 };
 
-export const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
+const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
   approved: "Approved",
   current: "Waiting",
   pending: "Not reached yet",

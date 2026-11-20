@@ -73,7 +73,7 @@ import { todayInCairo } from "@/lib/date-only";
  */
 
 /** The seat-side facts the page shows and the record is written from. */
-export type JoiningFormSeat = {
+type JoiningFormSeat = {
   areaCode: string | null;
   areaId: number | null;
   areaName: string | null;

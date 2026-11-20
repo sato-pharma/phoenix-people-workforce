@@ -32,7 +32,7 @@ const CAP: Record<string, [number, number]> = {
   PS: [29, 30], IS: [29, 30], "IS-S": [29, 30], "IS-L": [29, 30], SF: [34, 35], "EP-PHS": [34, 35],
 };
 
-export function foldAddress(value: unknown): string {
+function foldAddress(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKC")
     .toLowerCase()

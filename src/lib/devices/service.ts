@@ -38,31 +38,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { DEVICE_STATUS_LABEL } from "./types";
-import type {
-  AssignableEmployee,
-  AssignmentStatus,
-  CompanyDevice,
-  CreateDeviceInput,
-  CustodyDeviceFacts,
-  DeviceAssignment,
-  DeviceCategory,
-  DeviceRegisterData,
-  DeviceRegisterStats,
-  DeviceStatus,
-  HolderEmploymentState,
-  IssueDeviceInput,
-  LeaverHoldingDevices,
-  MarkDeviceInput,
-  MarkableDeviceStatus,
-  ReassignPlaceholderInput,
-  ReconcileDeviceInput,
-  ReserveDeviceInput,
-  ReturnCondition,
-  ReturnDeviceInput,
-  RevokeReservationInput,
-  SetAssignmentItemValuesInput,
-  WriteOffDeviceInput,
-} from "./types";
+import type { AssignableEmployee, AssignmentStatus, CompanyDevice, CreateDeviceInput, CustodyDeviceFacts, DeviceCategory, DeviceRegisterData, DeviceRegisterStats, DeviceStatus, HolderEmploymentState, IssueDeviceInput, LeaverHoldingDevices, MarkDeviceInput, MarkableDeviceStatus, ReassignPlaceholderInput, ReconcileDeviceInput, ReserveDeviceInput, ReturnCondition, ReturnDeviceInput, RevokeReservationInput, SetAssignmentItemValuesInput, WriteOffDeviceInput } from "./types";
 
 /** The employment statuses that make a current holder a leaver. Mirrors the mailbox register's. */
 const LEAVER_STATUSES = new Set(["resigned", "terminated"]);
@@ -182,7 +158,7 @@ function toAmount(value: number | string | null): number | null {
  * rather than rendered. A garbled amount on a custody receipt is worse than a blank: the blank says
  * "write it here" and a wrong number says "you agreed to this".
  */
-export function readItemValues(
+function readItemValues(
   raw: Record<string, number | string> | null | undefined,
 ): Record<string, number> | null {
   if (!raw || typeof raw !== "object") return null;
@@ -237,7 +213,7 @@ export function normalizeItemValues(
  * item not handed over. Returns null when nothing is priced, so the total cell prints a blank
  * rather than a zero.
  */
-export function totalItemValues(values: Record<string, number> | null | undefined): number | null {
+function totalItemValues(values: Record<string, number> | null | undefined): number | null {
   if (!values) return null;
   const amounts = Object.values(values).filter((amount) => Number.isFinite(amount));
   if (amounts.length === 0) return null;
@@ -595,50 +571,6 @@ export async function getDeviceRegisterData(): Promise<DeviceRegisterData> {
     assignable: await loadAssignableEmployees(),
     stats: buildDeviceStats(devices),
   };
-}
-
-/**
- * Every custody event against one device, newest first — the device's own history.
- *
- * Separate from the register read because it is per-device detail nobody needs until they open a
- * row, and loading it for 2,000 devices to render 40 would be a page-sized query for a panel.
- */
-export async function getDeviceHistory(deviceId: string): Promise<DeviceAssignment[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("device_assignments")
-    .select(ASSIGNMENT_COLUMNS)
-    .eq("device_id", deviceId)
-    .order("issued_on", { ascending: false })
-    .limit(200);
-  if (error) throw new Error(deviceErrorMessage(error));
-
-  const rows = (data ?? []) as AssignmentRow[];
-  const actors = await resolveHolders(rows.flatMap((row) => [row.issued_by, row.returned_by].filter(Boolean) as string[]));
-
-  return rows.map((row) => ({
-    id: row.id,
-    deviceId: row.device_id,
-    employeeHrId: row.employee_hr_id,
-    employeeName: row.employee_name,
-    jobTitle: row.job_title,
-    declarationNo: row.declaration_no,
-    handoverPlace: row.handover_place,
-    issuedOn: row.issued_on,
-    issuedBy: row.issued_by,
-    issuedByName: actors.get(String(row.issued_by ?? "").toLowerCase())?.name ?? null,
-    agreedValueEgp: toAmount(row.agreed_value_egp),
-    itemValuesEgp: readItemValues(row.item_values_egp),
-    status: row.status,
-    returnedOn: row.returned_on,
-    returnedBy: row.returned_by,
-    returnedByName: actors.get(String(row.returned_by ?? "").toLowerCase())?.name ?? null,
-    returnCondition: row.return_condition,
-    shortfallNote: row.shortfall_note,
-    settlementEgp: toAmount(row.settlement_egp),
-    reason: row.reason,
-    note: row.note,
-  }));
 }
 
 /**

@@ -343,11 +343,6 @@ export const columns: MasterColumn[] = [
 /** Columns holding a live formula — locked, so an overwrite cannot silently desync them. */
 export const FORMULA_KEYS = new Set<MasterColumnKey>(["rowCheck", "directManagerName"]);
 
-/** Reference columns the upload ignores — locked too, so nobody edits them expecting a save. */
-export const READ_ONLY_KEYS = new Set<MasterColumnKey>(
-  columns.filter((column) => column.readOnly === true).map((column) => column.key),
-);
-
 /**
  * Whether the upload ignores this column, so the sheet should lock it.
  *
@@ -424,7 +419,7 @@ export function documentColumnHeader(document: HiringDocumentColumnSpec): string
 /** The summary column that opens the hiring-documents block: "12 of 17". */
 export const HIRING_DOCUMENTS_SUMMARY_KEY: HiringDocumentColumnKey = "doc:__summary__";
 
-export const hiringDocumentColumnKey = (documentId: string): HiringDocumentColumnKey =>
+const hiringDocumentColumnKey = (documentId: string): HiringDocumentColumnKey =>
   `doc:${documentId}`;
 
 /** The document id a hiring-document column carries. */

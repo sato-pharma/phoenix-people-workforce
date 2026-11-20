@@ -146,7 +146,7 @@ export type InvalidEntry = { raw: string; type: string; reason: string; row?: nu
 // different pharmacies over time), and supabase-js sends one column list for a whole bulk upsert, so
 // a row without a name would null out a stored one. Best-effort like the backfill: a missing RPC
 // (pre-migration) or a failure never fails the save, whose mapping is already written.
-export async function fillBlankCustomerDetails(
+async function fillBlankCustomerDetails(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   rows: CustomerDetailRow[],
 ): Promise<number> {
@@ -219,7 +219,7 @@ export type BatchRollupRefresher = (
  * split net. Keyed by a brick the file's re-pointed rows now sit on, which is a brick that exists (the
  * queue's key references the brick master). Returns whether the file is now queued.
  */
-export async function queueBatchForRebuild(
+async function queueBatchForRebuild(
   supabase: BackfillClient,
   batchId: string,
   brickId: string | null,

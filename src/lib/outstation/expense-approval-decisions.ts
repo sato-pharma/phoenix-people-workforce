@@ -54,7 +54,7 @@ export function partitionExpenseApprovalRecords<T extends { tripId: string }>(
   return { payrollRecords, requestRecords };
 }
 
-export type OutstationRequestDecisionAction =
+type OutstationRequestDecisionAction =
   /** Accept the request and push it to payroll. */
   | "approve"
   /** Reject the request and pull any linked payroll row back out. */

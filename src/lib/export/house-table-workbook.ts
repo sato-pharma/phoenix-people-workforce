@@ -34,7 +34,7 @@ export { F };
  * ExcelJS throws on a data bar over a range it cannot resolve, and a decorative bar is never worth
  * failing an export for.
  */
-export function applyHouseDataBar(sheet: ExcelJS.Worksheet, ref: string, priority = 1) {
+function applyHouseDataBar(sheet: ExcelJS.Worksheet, ref: string, priority = 1) {
   // The rule is built as a NAMED CONST, not inlined — ExcelJS's `DataBarRuleType` does not declare
   // `color`, and TypeScript's excess-property check fires on a direct object literal but not on a
   // variable passed in. The kit's own `applyDataBar` is written the same way for the same reason;

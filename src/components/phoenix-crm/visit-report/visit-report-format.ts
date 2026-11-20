@@ -2,7 +2,7 @@ import { cairoStamp, countText, dayLabelWithYear } from "@/components/phoenix-cr
 import type { VisitReportField, VisitReportValue } from "@/lib/phoenix-crm/visit-report-fields";
 
 /** A blank is shown as a dash, never as a zero: the screen must not read "nobody did" into "nothing recorded". */
-export const VISIT_REPORT_BLANK = "—";
+const VISIT_REPORT_BLANK = "—";
 
 /** One field's value as the screen prints it. Instants are Cairo; counts carry their unit. */
 export function formatVisitReportValue(field: Pick<VisitReportField, "format">, value: VisitReportValue | undefined): string {

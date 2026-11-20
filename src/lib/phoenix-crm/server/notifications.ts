@@ -480,15 +480,15 @@ export type ManagerPlanNotice = {
 };
 
 /** The planning calendar a picked manager opens to see the half-days planned with him. */
-export const MANAGER_PLAN_WITH_YOU_PATH = "/employee-portals/plans/calendar";
+const MANAGER_PLAN_WITH_YOU_PATH = "/employee-portals/plans/calendar";
 
 /** The Approvals Hub page a waiting district-manager step opens on. */
-export function managerPlanHubPath(recordId: string): string {
+function managerPlanHubPath(recordId: string): string {
   return `/employee-portals/approvals/plan/${encodeURIComponent(recordId)}`;
 }
 
 /** Every notice raised about one district-manager plan record, of every step. */
-export function managerPlanNoticeKeyPrefix(recordId: string): string {
+function managerPlanNoticeKeyPrefix(recordId: string): string {
   return `phoenix_crm:manager_plan:${recordId}:`;
 }
 
@@ -2227,7 +2227,7 @@ export async function withdrawPhoenixCrmPlanNotices(plan: {
 }
 
 /** Every notice ever raised about one visit ask — each step, each person, and the test-world copies. */
-export function phoenixCrmVisitAskNoticeKeyPrefix(askId: string): string {
+function phoenixCrmVisitAskNoticeKeyPrefix(askId: string): string {
   return `phoenix_crm:visit_ask:${askId}:`;
 }
 
@@ -2252,7 +2252,7 @@ export async function withdrawPhoenixCrmVisitAskNotices(askId: string, step: "wa
 }
 
 /** Every notice ever raised about one double-visit request — each step, each person, and the test-world copies. */
-export function phoenixCrmDoubleVisitNoticeKeyPrefix(requestId: string): string {
+function phoenixCrmDoubleVisitNoticeKeyPrefix(requestId: string): string {
   return `phoenix_crm:double_visit:${requestId}:`;
 }
 

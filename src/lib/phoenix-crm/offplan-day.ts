@@ -61,7 +61,7 @@ export type OffPlanDay<T extends OffPlanVisitFacts> = {
 };
 
 /** The card a visit belongs on. A territory's rep on one visit day is one card. */
-export function offPlanDayKey(visit: Pick<OffPlanVisitFacts, "seatId" | "repHrId" | "repName" | "visitDate">): string {
+function offPlanDayKey(visit: Pick<OffPlanVisitFacts, "seatId" | "repHrId" | "repName" | "visitDate">): string {
   return `${visit.seatId}|${visit.repHrId ?? visit.repName}|${visit.visitDate}`;
 }
 

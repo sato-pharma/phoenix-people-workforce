@@ -46,7 +46,7 @@ import {
 /** The built-in questions as pool columns. Region and area are ONE column: the area is the region answered more precisely. */
 export const poolSharedColumnKeys = ["appliedFor", "background", "place", "experience", "salary"] as const;
 export type PoolSharedColumnKey = (typeof poolSharedColumnKeys)[number];
-export type PoolColumnKey = PoolSharedColumnKey | `extra:${string}`;
+type PoolColumnKey = PoolSharedColumnKey | `extra:${string}`;
 
 /**
  * The headers, in the bot's own words, from the one list the answers panel and the Screening
@@ -61,7 +61,7 @@ export const POOL_SHARED_QUESTION_HEADERS: Record<PoolSharedColumnKey, string> =
 };
 
 /** The answer keys (whatsapp-answer-edit.ts) each built-in column edits. Place edits two. */
-export const POOL_SHARED_COLUMN_EDIT_KEYS: Record<PoolSharedColumnKey, readonly BuiltInQuestionKey[]> = {
+const POOL_SHARED_COLUMN_EDIT_KEYS: Record<PoolSharedColumnKey, readonly BuiltInQuestionKey[]> = {
   appliedFor: ["job_title"],
   background: ["background"],
   experience: ["experience"],
@@ -70,7 +70,7 @@ export const POOL_SHARED_COLUMN_EDIT_KEYS: Record<PoolSharedColumnKey, readonly 
 };
 
 /** The saved built-in audiences, as a plain object so it can cross into a client component. */
-export type PoolSavedAudiences = Readonly<Record<string, readonly string[]>>;
+type PoolSavedAudiences = Readonly<Record<string, readonly string[]>>;
 
 /** What the server hands the pool so its headers can follow the bot. */
 export type PoolWhatsAppQuestions = {

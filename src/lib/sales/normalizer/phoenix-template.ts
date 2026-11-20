@@ -32,7 +32,7 @@ export const PHOENIX_TEMPLATE_SHEET = "Sales";
 export const PHOENIX_TEMPLATE_DISTRIBUTORS_SHEET = "Distributors";
 export const PHOENIX_TEMPLATE_PRODUCTS_SHEET = "Products";
 
-export type TemplateColumnKind = "input" | "auto" | "helper";
+type TemplateColumnKind = "input" | "auto" | "helper";
 
 export type TemplateColumn = {
   header: string;

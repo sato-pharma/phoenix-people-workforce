@@ -38,7 +38,7 @@ export const STAGE_VIEWS: ReadonlyArray<{ icon: ComponentType<{ className?: stri
  * The evidence panels are the ones the Held requests screen uses; this file reads nothing itself.
  */
 /** The two ways to lay out a trip day, side by side in one switch. */
-export const DAY_ORDERS: ReadonlyArray<{ hint: string; icon: ComponentType<{ className?: string }>; key: DayOrder; label: string }> = [
+const DAY_ORDERS: ReadonlyArray<{ hint: string; icon: ComponentType<{ className?: string }>; key: DayOrder; label: string }> = [
   { hint: "Each day's figures and tables, its map underneath, as on Field Activity", icon: List, key: "data-first", label: "Data first" },
   { hint: "Each day's map, its visits and check-ins under it", icon: MapPin, key: "map-first", label: "Map first" },
 ];

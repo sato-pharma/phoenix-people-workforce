@@ -60,9 +60,9 @@ export type ApprovalModule = (typeof approvalModules)[number];
  *  - `fyi`      — someone who does not decide is kept informed (HR, the chain, the execution roles).
  */
 export const approvalSteps = ["waiting", "decided", "returned", "reminder", "fyi"] as const;
-export type ApprovalStep = (typeof approvalSteps)[number];
+type ApprovalStep = (typeof approvalSteps)[number];
 
-export type ApprovalDecision = "approved" | "rejected" | "returned" | "acknowledged" | "cancelled";
+type ApprovalDecision = "approved" | "rejected" | "returned" | "acknowledged" | "cancelled";
 
 export type ApprovalIdentity = {
   module: ApprovalModule;

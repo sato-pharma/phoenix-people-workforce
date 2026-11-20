@@ -20,10 +20,10 @@ const HELD_VISITS_PAGE = "/admin/phoenix-crm/far-visit-holds";
 /** A doctor or an account is validated at a door; a pharmacy is validated by its own pin and holds no place row. */
 const LISTS_WITH_A_PLACE = ["AM", "PM"] as const;
 
-export type ValidatedCustomer = { id: string; name: string };
+type ValidatedCustomer = { id: string; name: string };
 
 /** The validated customers that hold no active place. Pure, so the test can break it. */
-export function validatedCustomersWithoutPlace(
+function validatedCustomersWithoutPlace(
   customers: readonly ValidatedCustomer[],
   customerIdsWithAnActivePlace: ReadonlySet<string>,
 ): ValidatedCustomer[] {

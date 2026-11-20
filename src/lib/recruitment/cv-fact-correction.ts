@@ -121,7 +121,7 @@ export function saysTheSameThing(a: unknown, b: unknown): boolean {
  * because the most recent job is still running. Anything under a year is that drift. The defect
  * this job exists for — a fresh graduate credited with years of experience — is never this small.
  */
-export const MIN_EXPERIENCE_YEARS_CHANGE = 1;
+const MIN_EXPERIENCE_YEARS_CHANGE = 1;
 
 /** Gate 6 — a sub-year move in years of experience is the clock, not a repair. */
 export function isExperienceDrift(current: unknown, proposed: unknown): boolean {

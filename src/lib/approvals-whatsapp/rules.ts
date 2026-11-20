@@ -7,8 +7,6 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 
-export const APPROVALS_WHATSAPP_PATH = "/admin/approvals-whatsapp";
-export const APPROVALS_WHATSAPP_API = "/api/admin/approvals-whatsapp";
 
 // ── Who may open it ──
 
@@ -164,7 +162,7 @@ export const EMPLOYEE_PARAMETER_FIELDS = [
   { key: "department", label: "Department" },
 ] as const;
 
-export type EmployeeParameterField = (typeof EMPLOYEE_PARAMETER_FIELDS)[number]["key"];
+type EmployeeParameterField = (typeof EMPLOYEE_PARAMETER_FIELDS)[number]["key"];
 
 export type ParameterSource =
   | { source: "fixed"; text: string }
@@ -188,7 +186,7 @@ export type RecipientProfile = {
 const MEDICAL = /pharm|medic|mbbch|m\.?b\.?b|doctor|dentist|dental|veterin|b\.?sc\.?\s*pharm|صيدل|طب|دكتور/i;
 
 /** "د." for a medical or pharmacy qualification, else "أ." — the FAB send of 18 Nov 2026 addressed people this way. */
-export function arabicTitleFor(profile: Pick<RecipientProfile, "qualification" | "jobTitle">): "د." | "أ." {
+function arabicTitleFor(profile: Pick<RecipientProfile, "qualification" | "jobTitle">): "د." | "أ." {
   return MEDICAL.test(profile.qualification ?? "") || /^dr\.?\s/i.test(profile.jobTitle ?? "") ? "د." : "أ.";
 }
 
@@ -198,7 +196,7 @@ function firstWord(value: string | null | undefined): string | null {
 }
 
 /** One employee field's value for one recipient, or null when the record does not hold it. */
-export function employeeFieldValue(field: EmployeeParameterField, profile: RecipientProfile): string | null {
+function employeeFieldValue(field: EmployeeParameterField, profile: RecipientProfile): string | null {
   switch (field) {
     case "name_with_title": {
       const first = firstWord(profile.nameAr) ?? firstWord(profile.displayName);

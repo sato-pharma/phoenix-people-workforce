@@ -32,7 +32,7 @@ export function isSessionVerificationUnavailableDigest(error: unknown): boolean 
  * keep re-rendering a page nobody is looking at. A run that has been quiet for two minutes starts
  * over.
  */
-export const SESSION_CHECK_RETRY_DELAYS_MS = [3_000, 5_000, 10_000, 20_000, 30_000] as const;
+const SESSION_CHECK_RETRY_DELAYS_MS = [3_000, 5_000, 10_000, 20_000, 30_000] as const;
 export const SESSION_CHECK_RETRY_WINDOW_MS = 10 * 60_000;
 const SESSION_CHECK_RUN_QUIET_RESET_MS = 2 * 60_000;
 

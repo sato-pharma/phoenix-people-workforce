@@ -26,14 +26,14 @@
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 
 /** Within this of home, a position is "at home" (a town and its edge). */
-export const CRM_HOME_RADIUS_KM = 25;
+const CRM_HOME_RADIUS_KM = 25;
 /** Within this of the claimed destination, a position is "at the destination". */
-export const CRM_DESTINATION_RADIUS_KM = 40;
+const CRM_DESTINATION_RADIUS_KM = 40;
 /** A trip whose destination is nearer home than this is not far enough for a "back home" day to mean anything. */
-export const CRM_OUTSTATION_MIN_KM = 60;
+const CRM_OUTSTATION_MIN_KM = 60;
 /** A claimed one-way distance is a look when it exceeds the farthest visit × this + `CRM_KM_SLACK`. */
-export const CRM_KM_ROAD_FACTOR = 1.5;
-export const CRM_KM_SLACK = 30;
+const CRM_KM_ROAD_FACTOR = 1.5;
+const CRM_KM_SLACK = 30;
 
 export type CrmPoint = { lat: number; lon: number };
 
@@ -94,7 +94,7 @@ export type CrmTripInput = {
 
 export type CrmWhereabouts = "destination" | "home" | "elsewhere" | "mixed" | "unknown" | "none";
 
-export type CrmNightReading = {
+type CrmNightReading = {
   /** The evening's last saved visit. */
   lastSavedAt: string | null;
   /** The next morning's first position: the Day Start, else the first visit. */

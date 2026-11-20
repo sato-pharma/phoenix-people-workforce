@@ -19,7 +19,7 @@
 import { systemInterviewVenue } from "@/config/system-settings";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
-export const PRINT_ADDRESS_CHOICES = ["registered", "office"] as const;
+const PRINT_ADDRESS_CHOICES = ["registered", "office"] as const;
 export type PrintAddressChoice = (typeof PRINT_ADDRESS_CHOICES)[number];
 
 /** What each choice is called on the prompt — English for the desk; the Arabic text is the address. */

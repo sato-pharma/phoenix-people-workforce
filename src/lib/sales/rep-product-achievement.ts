@@ -22,7 +22,7 @@ export const REP_ACHIEVEMENT_ALL = "all";
 
 export type SemesterKey = string; // "2026-S2"
 
-export type PeriodColumnKind = "month" | "quarter" | "semester";
+type PeriodColumnKind = "month" | "quarter" | "semester";
 
 export type PeriodColumn = {
   /** "2026-07", "2026-Q3", "2026-S2". */
@@ -43,7 +43,7 @@ export type PeriodColumn = {
  * - `unpublished` — every month of the column that has started is still unpublished for the line.
  * - `upcoming`    — no month of the column has started yet.
  */
-export type AchievementCellState = "graded" | "no-target" | "none" | "unpublished" | "upcoming";
+type AchievementCellState = "graded" | "no-target" | "none" | "unpublished" | "upcoming";
 
 export type AchievementCell = {
   state: AchievementCellState;
@@ -211,7 +211,7 @@ export function formatRepHireDate(hireDate: string | null | undefined): string |
 
 /** "70%" — whole percent on screen, as she wrote it. The export keeps the exact ratio. */
 
-export function formatAchievementPercent(value: number): string {
+function formatAchievementPercent(value: number): string {
   const percent = value * 100;
   const rounded = Math.round(percent);
   return `${Object.is(rounded, -0) ? 0 : rounded}%`;

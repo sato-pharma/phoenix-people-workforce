@@ -239,7 +239,7 @@ async function loadApprovedHalfDayVacationMap(
   return map;
 }
 
-export const fingerprintReportColumns: FingerprintReportColumn[] = [
+const fingerprintReportColumns: FingerprintReportColumn[] = [
   { always: true, key: "deviceUserId", label: "AC-No." },
   { always: true, key: "employeeHrId", label: "Employee ID" },
   { always: true, key: "employeeName", label: "Name" },

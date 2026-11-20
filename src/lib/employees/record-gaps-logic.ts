@@ -55,7 +55,7 @@ export type RecordGapSource = {
 };
 
 /** A bank account and an insurance number normally arrive after the first day, so this is said on the row. */
-export const RECORD_GAP_RECENT_JOINER_DAYS = 30;
+const RECORD_GAP_RECENT_JOINER_DAYS = 30;
 
 function hasText(value: string | null | undefined): boolean {
   return Boolean(value?.trim());
@@ -100,7 +100,7 @@ export function recordGapRow(source: RecordGapSource, todayKey: string): Employe
 }
 
 /** Most gaps first, then whoever has been here longest, so a recent joiner still waiting on a bank sits low. */
-export function recordGapOrder(left: EmployeeRecordGapRow, right: EmployeeRecordGapRow): number {
+function recordGapOrder(left: EmployeeRecordGapRow, right: EmployeeRecordGapRow): number {
   return (
     right.gaps - left.gaps ||
     (left.hireDate ?? "").localeCompare(right.hireDate ?? "") ||

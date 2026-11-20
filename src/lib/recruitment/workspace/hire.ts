@@ -40,15 +40,15 @@ import { listPlacementsFor } from "@/lib/recruitment/workspace/placements-db";
 import { roleTabForFamily, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 
 /** Shown on the greyed button to anyone without the employees grant. */
-export const HIRE_NEEDS_EMPLOYEE_MASTER = "Only Employee Master can complete a hire";
-export const HIRE_ALREADY_HIRED = "This candidate is already hired.";
+const HIRE_NEEDS_EMPLOYEE_MASTER = "Only Employee Master can complete a hire";
+const HIRE_ALREADY_HIRED = "This candidate is already hired.";
 
 /** Employee Master's own page — the admin shell's Add Employee lives here. */
 const EMPLOYEES_PATH = "/employees";
 
 const DM_TIERS = new Set(["DM", "ACTING_DM"]);
 
-export type HireSeatMatch = "area" | "region" | "title" | "any";
+type HireSeatMatch = "area" | "region" | "title" | "any";
 
 /** One open vacancy, with what the seat model says about its chair. */
 export type HireSeatCandidate = {

@@ -58,7 +58,7 @@ import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** How far back the visits column looks, and the line the "long empty" tile is drawn at. */
-export const EMPTY_SEAT_VISIT_WINDOW_DAYS = 60;
+const EMPTY_SEAT_VISIT_WINDOW_DAYS = 60;
 export const EMPTY_SEAT_LONG_DAYS = 60;
 
 export type EmptySeatClosing =

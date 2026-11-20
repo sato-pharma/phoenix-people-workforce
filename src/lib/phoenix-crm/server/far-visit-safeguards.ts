@@ -64,7 +64,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 /** The page the stuck-rep alert opens, and where the SFE decides a held visit. */
-export const FAR_VISIT_HOLDS_PATH = "/admin/phoenix-crm/far-visit-holds";
+const FAR_VISIT_HOLDS_PATH = "/admin/phoenix-crm/far-visit-holds";
 
 /** Who may read the held visits and decide them: the Super Admin and the SFE Manager, nobody else. */
 export function canDecideFarVisitHolds(viewer: PhoenixCrmViewer): boolean {
@@ -79,7 +79,7 @@ export function canDecideFarVisitHolds(viewer: PhoenixCrmViewer): boolean {
  * want of signal (`phoenix_crm_visit_capture_provenance.queued_seconds`, or an offline anchor): those
  * arrived late, so their saved time is not when he stood there. Empty on any error.
  */
-export async function loadVisitAnchors(input: { repHrId: string; isTest: boolean; now: Date }): Promise<TimedReading[]> {
+async function loadVisitAnchors(input: { repHrId: string; isTest: boolean; now: Date }): Promise<TimedReading[]> {
   try {
     const since = new Date(input.now.getTime() - IMPOSSIBLE_TRAVEL_LOOKBACK_MINUTES * 60 * 1000).toISOString();
     const supabase = getSupabaseAdmin();
@@ -568,8 +568,8 @@ export type FarVisitHoldRow = {
   isTest: boolean;
 };
 
-export const HOLD_SPOT_LABEL = "Where the rep stood";
-export const HOLD_PLACE_LABEL = "Customer's saved place";
+const HOLD_SPOT_LABEL = "Where the rep stood";
+const HOLD_PLACE_LABEL = "Customer's saved place";
 const HOLD_MAP_SIZE = { width: 256, height: 256, padding: 32 };
 
 /** The days of decided holds the page keeps beside the waiting ones. */

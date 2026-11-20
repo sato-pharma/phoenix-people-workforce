@@ -61,7 +61,7 @@ async function loadSharp(): Promise<SharpFactory> {
   return cachedSharp;
 }
 
-export type LetterboxBars = { top: number; bottom: number; left: number; right: number };
+type LetterboxBars = { top: number; bottom: number; left: number; right: number };
 
 export type NormalizedEmployeePhoto = {
   bytes: Buffer;

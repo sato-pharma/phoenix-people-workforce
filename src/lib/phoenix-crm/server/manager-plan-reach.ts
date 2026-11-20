@@ -48,7 +48,7 @@ import { managerChain, personKey, territoriesBelow, TERRITORY_TIER, type OrgSeat
 import { canOverrideDecision, decidesTestWorld, superAdminHasNoFieldWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import type { ProductManagerPlanner } from "@/lib/phoenix-crm/server/manager-plan-writers";
 
-export const MANAGER_PLAN_NOT_FOR_YOU =
+const MANAGER_PLAN_NOT_FOR_YOU =
   "A manager's weekly plan is read by that manager, the managers above, SFE, the CEO and the Super Admin.";
 
 /** A manager the viewer may read, with the seat his plan is filed on — none for a product manager. */
@@ -109,11 +109,6 @@ export function managerPlanWriterFor(
     productManagerTitle: productManager?.jobTitle ?? null,
     trainingManager: trainingManagersOf(viewer).some((entry) => entry.hrId === key),
   });
-}
-
-/** The viewer plans a week of his own, as any of the four kinds. */
-export function isManagerPlanner(viewer: PhoenixCrmViewer): boolean {
-  return managerPlanWriter(viewer) !== null;
 }
 
 /** A district manager's plan seat — the first DM or acting DM seat he holds — or null. */

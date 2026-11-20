@@ -23,7 +23,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 // The candidates worth comparing at the selection step.
 const SELECTION_STAGES = ["manager_interview_completed", "final_selection", "backup_candidate"] as const;
 
-export type SelectionBoardInterview = {
+type SelectionBoardInterview = {
   id: string;
   type: InterviewType;
   average: number | null;

@@ -27,7 +27,7 @@ import {
   type PhoenixRole,
 } from "./permissions";
 
-export type LockableModuleOption = {
+type LockableModuleOption = {
   key: PermissionResource;
   label: string;
 };

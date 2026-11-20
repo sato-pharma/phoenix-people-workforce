@@ -88,7 +88,7 @@ export type MarketingApprovalStepStatus =
   | "returned"
   | "skipped";
 
-export type MarketingRequestPharmacyTrackingStatus =
+type MarketingRequestPharmacyTrackingStatus =
   | "pending_validation"
   | "active"
   | "inactive";
@@ -184,22 +184,7 @@ export type MarketingProduct = {
   updatedAt: string;
 };
 
-export type MarketingPharmacyCodeReference = {
-  createdAt: string;
-  distributorId: number | null;
-  id: number;
-  importBatchId: string | null;
-  normalizedDistributorName: string;
-  rawArea: string | null;
-  rawDistributorName: string;
-  rawPharmacyAddress: string | null;
-  rawPharmacyCode: string;
-  rawRegion: string | null;
-  sourceFile: string;
-  sourceRow: number;
-};
-
-export type MarketingCapturedLocation = {
+type MarketingCapturedLocation = {
   capturedAccuracyMeters: number | null;
   capturedAddress: string | null;
   capturedAt: string | null;
@@ -207,7 +192,7 @@ export type MarketingCapturedLocation = {
   capturedLongitude: number | null;
 };
 
-export type MarketingEvidenceCapture = {
+type MarketingEvidenceCapture = {
   evidenceHasTimestamp: boolean;
   evidencePhotoCapturedAt: string | null;
   evidencePhotoName: string | null;
@@ -237,21 +222,6 @@ export type MarketingCustomer = MarketingCapturedLocation & MarketingEvidenceCap
   validatedByHrId: string | null;
   validationNotes: string | null;
   validationStatus: MarketingValidationStatus;
-};
-
-export type MarketingCustomerContact = {
-  active: boolean;
-  contactCode: string;
-  contactName: string;
-  createdAt: string;
-  createdByHrId: string | null;
-  crmCode: string | null;
-  customerId: string;
-  id: string;
-  mobileNumber: string | null;
-  notes: string | null;
-  specialty: string | null;
-  updatedAt: string;
 };
 
 export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCapture & {
@@ -496,8 +466,6 @@ export const MARKETING_CUSTOMER_SPECIALITIES = [
   "Urology",
 ] as const;
 
-export type MarketingCustomerSpeciality = (typeof MARKETING_CUSTOMER_SPECIALITIES)[number];
-
 /**
  * How a governorate hold is recognised on a stored `validation_notes` string.
  *
@@ -726,23 +694,6 @@ export type MarketingValidationPharmacyInput = {
    */
   licenseFileDataUrl?: string | null;
   licenseFileName?: string | null;
-};
-
-export type MarketingValidationLegacyPharmacyInput = {
-    capturedAccuracyMeters?: number | null;
-    capturedAddress?: string | null;
-    capturedAt?: string | null;
-    capturedLatitude?: number | null;
-    capturedLongitude?: number | null;
-    displayName: string;
-    evidenceHasTimestamp?: boolean;
-  evidencePhotoCapturedAt?: string | null;
-  /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
-  evidencePhotoDataUrl?: string | null;
-  evidencePhotoName?: string | null;
-  extractedAreaName?: string | null;
-  extractedGovernorateName?: string | null;
-  regionName?: string | null;
 };
 
 export type MarketingValidationReportRow = {
@@ -1113,25 +1064,6 @@ export type MarketingRequestFinanceRequirement = {
   requestId: string;
   reviewedAt: string | null;
   updatedAt: string;
-};
-
-export type MarketingEvidenceFile = {
-  capturedAccuracyMeters: number | null;
-  capturedAddress: string | null;
-  capturedAt: string | null;
-  capturedLatitude: number | null;
-  capturedLongitude: number | null;
-  contentType: string | null;
-  createdAt: string;
-  entityId: string;
-  entityType: MarketingEvidenceEntityType;
-  evidenceType: MarketingEvidenceType;
-  hasTimestamp: boolean;
-  id: string;
-  originalFileName: string | null;
-  storageBucket: string;
-  storagePath: string;
-  uploadedByHrId: string | null;
 };
 
 export type MarketingRoiInputProduct = {

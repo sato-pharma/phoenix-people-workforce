@@ -50,7 +50,7 @@ import { isRowPublished, rollupByDm, type VsTargetNode } from "@/lib/sales/vs-ta
 /** How a window is chosen. `published` is every published month there is — the cumulative board. */
 export type RankingWindowMode = "month" | "quarter" | "semester" | "year" | "published";
 
-export const RANKING_WINDOW_MODES: readonly RankingWindowMode[] = [
+const RANKING_WINDOW_MODES: readonly RankingWindowMode[] = [
   "month",
   "quarter",
   "semester",
@@ -249,7 +249,7 @@ export type RankingEntry = {
   trend: number | null;
 };
 
-export type RankingLineBoard = {
+type RankingLineBoard = {
   lineCode: string;
   lineLabel: string;
   entries: RankingEntry[];

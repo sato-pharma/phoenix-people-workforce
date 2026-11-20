@@ -34,9 +34,9 @@ export function careersRouteForTitle(title: string): CareersRoute | null {
 }
 
 // The website's own limits (`integrationJobCreateSchema`), so a long field is refused here in words.
-export const CARD_TITLE_MAX = 160;
-export const CARD_LOCATION_MAX = 160;
-export const CARD_DESCRIPTION_MAX = 5000;
+const CARD_TITLE_MAX = 160;
+const CARD_LOCATION_MAX = 160;
+const CARD_DESCRIPTION_MAX = 5000;
 
 /** The live cards' shape: `Medical Representative — Heliopolis`. One card names one area, or none. */
 export function cardTitle(title: string, area: string | null): string {

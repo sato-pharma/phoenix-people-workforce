@@ -13,7 +13,7 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
 export type AttendancePolicyEventType = "absence" | "early_leave" | "exception" | "late" | "single_punch";
 
-export type AttendancePolicyRule = {
+type AttendancePolicyRule = {
   deductionDays: string;
   deductionValue: string;
   eventType: AttendancePolicyEventType;

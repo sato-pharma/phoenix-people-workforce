@@ -34,7 +34,7 @@ export type HiredEmployeeTerms = {
   hireDate: string | null;
 };
 
-export type HireTermMismatchField = "employeeRecord" | "jobTitle" | "monthlyGross" | "startDate";
+type HireTermMismatchField = "employeeRecord" | "jobTitle" | "monthlyGross" | "startDate";
 
 export type HireTermMismatch = {
   field: HireTermMismatchField;

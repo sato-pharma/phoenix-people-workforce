@@ -17,7 +17,7 @@ import { ApiRateLimitError, assertApiRateLimit } from "@/lib/security/api-rate-l
 import { logError } from "@/lib/observability/log";
 
 export const PUBLIC_APPLY_AI_READS_PER_DAY = 100;
-export const PUBLIC_APPLY_AI_WINDOW_MS = 24 * 60 * 60 * 1000;
+const PUBLIC_APPLY_AI_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** One counter for the whole channel — the ceiling is on spend, not on any one sender. */
 const BUDGET_IDENTIFIER = "public-apply-ai-reads";

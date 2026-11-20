@@ -46,6 +46,21 @@ const SETTLE_MS = 5_000;
 /** Recorded time across all pages, and the most for one page. */
 export const VIDEO_RECORD_MS = 16_000;
 const VIDEO_PAGE_MS = 9_000;
+/** The length a person may ask for, in whole seconds. Without one, each page is scrolled once and the video ends. */
+export const VIDEO_MIN_SECONDS = 2;
+export const VIDEO_MAX_SECONDS = VIDEO_RECORD_MS / 1000;
+
+/**
+ * How long the next page is recorded. Without an asked length: up to 9 s, until the page has been
+ * scrolled to the bottom. With one: what is left of it, shared evenly by the pages still to come, and
+ * the page is held at its bottom until its share is used, so a short page no longer ends the video early.
+ */
+export function videoPageBudgetMs(input: { targetMs?: number; recordedMs: number; pagesLeft: number }): number {
+  const left = Math.max(0, VIDEO_RECORD_MS - input.recordedMs);
+  if (input.targetMs === undefined) return Math.min(VIDEO_PAGE_MS, left);
+  const wanted = Math.max(0, Math.min(VIDEO_RECORD_MS, input.targetMs) - input.recordedMs);
+  return Math.min(left, Math.ceil(wanted / Math.max(1, input.pagesLeft)));
+}
 export const VIDEO_MAX_PAGES = 3;
 const VIDEO_MAX_FRAMES = 320;
 const FULL_PAGE_MAX_HEIGHT = 12_000;
@@ -117,7 +132,7 @@ const PAGE_STUBS = `(() => {
 })();`;
 
 /** Scrolls whatever actually scrolls (the window, or the admin shell's own pane) by one step. */
-const SCROLL_STEP = (fraction: number) => `(() => {
+export const SCROLL_STEP = (fraction: number) => `(() => {
   const candidates = [document.scrollingElement, ...document.querySelectorAll("main, [data-scroll-root], div")];
   let target = null;
   for (const el of candidates) {
@@ -132,9 +147,18 @@ const SCROLL_STEP = (fraction: number) => `(() => {
   return { atEnd: target.scrollTop + target.clientHeight >= target.scrollHeight - 4 };
 })()`;
 
-type OpenedBrowser = { page: CapturePage; stopped: () => number; finish: () => Promise<void> };
+export type OpenedBrowser = { page: CapturePage; stopped: () => number; finish: () => Promise<void> };
+export type { CapturePage };
 
-async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, routes: SideEffectRoutes): Promise<OpenedBrowser> {
+/** A film (films/render.ts) holds its session for its own length and adds its masking script to every page. */
+export type OpenPageOptions = { sessionSeconds?: number; initScripts?: string[] };
+
+export async function openSignedInPage(
+  ctx: AccessContext,
+  viewport: CaptureViewport,
+  routes: SideEffectRoutes,
+  options: OpenPageOptions = {},
+): Promise<OpenedBrowser> {
   const puppeteer = await loadPuppeteer();
   const origin = captureOrigin();
   const policy: FencePolicy = { origin, sameAppOrigins: sameAppOrigins(), routes };
@@ -146,7 +170,7 @@ async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, r
     await revokeCaptureSession(session);
   };
   try {
-    session = await mintCaptureSession(ctx);
+    session = await mintCaptureSession(ctx, options.sessionSeconds);
     const executablePath = resolveChromiumPath();
     browser = (await puppeteer.launch({
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--hide-scrollbars"],
@@ -170,6 +194,7 @@ async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, r
     await page.setViewport({ ...shape });
     if (shape.isMobile) await page.setUserAgent(MOBILE_USER_AGENT);
     await page.evaluateOnNewDocument(PAGE_STUBS);
+    for (const script of options.initScripts ?? []) await page.evaluateOnNewDocument(script);
     await page.setRequestInterception(true);
     page.on("request", ((request: CaptureRequest) => {
       const decision = classifyCaptureRequest({ method: request.method(), url: request.url(), headers: request.headers() }, policy);
@@ -198,7 +223,7 @@ async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, r
   }
 }
 
-async function goTo(page: CapturePage, path: string, deadline: number): Promise<{ title: string; finalPath: string }> {
+export async function goTo(page: CapturePage, path: string, deadline: number): Promise<{ title: string; finalPath: string }> {
   const origin = captureOrigin();
   const budget = Math.max(2_000, Math.min(PAGE_LOAD_MS, deadline - Date.now() - 4_000));
   try {
@@ -267,8 +292,9 @@ export type VideoResult = {
 
 export async function recordPages(
   ctx: AccessContext,
-  input: { paths: string[]; viewport: CaptureViewport; routes: SideEffectRoutes },
+  input: { paths: string[]; viewport: CaptureViewport; routes: SideEffectRoutes; seconds?: number },
 ): Promise<VideoResult> {
+  const targetMs = input.seconds === undefined ? undefined : Math.min(VIDEO_RECORD_MS, Math.max(VIDEO_MIN_SECONDS, input.seconds) * 1000);
   const deadline = Date.now() + CAPTURE_DEADLINE_MS - 6_000; // leave room to encode and store
   return withChromiumSlot(async () => {
     checkDeadline(deadline - 8_000);
@@ -287,11 +313,11 @@ export async function recordPages(
       recordedMs += Date.now() - started;
     };
     try {
-      for (const path of input.paths) {
+      for (const [index, path] of input.paths.entries()) {
         if (Date.now() > deadline - 3_000 || recordedMs >= VIDEO_RECORD_MS) break;
         const { title, finalPath } = await goTo(opened.page, path, deadline);
         pages.push({ path, title, finalPath });
-        const pageBudget = Math.min(VIDEO_PAGE_MS, VIDEO_RECORD_MS - recordedMs);
+        const pageBudget = videoPageBudgetMs({ targetMs, recordedMs, pagesLeft: input.paths.length - index });
         const pageEnd = Date.now() + pageBudget;
         await hold(1_400, pageEnd);
         while (Date.now() < pageEnd - 800 && Date.now() < deadline) {
@@ -299,7 +325,8 @@ export async function recordPages(
           await hold(500, pageEnd);
           if (step?.atEnd) break;
         }
-        await hold(900, pageEnd);
+        // An asked length holds the page at its bottom until its share is used.
+        await hold(targetMs === undefined ? 900 : Math.max(0, pageEnd - Date.now()), pageEnd);
       }
       if (frames.length < 2) throw new ToolRefusal("The video came out empty. Try one page at a time.");
       const fps = Math.min(30, Math.max(2, frames.length / Math.max(0.5, recordedMs / 1000)));
@@ -316,7 +343,7 @@ export function ffmpegPath(env: Record<string, string | undefined> = process.env
   return (env.PHOENIX_FFMPEG_PATH ?? "").trim() || "ffmpeg";
 }
 
-function run(command: string, args: string[], stdin?: Buffer[], timeoutMs = 20_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
+export function run(command: string, args: string[], stdin?: Buffer[], timeoutMs = 20_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let stdout = "";

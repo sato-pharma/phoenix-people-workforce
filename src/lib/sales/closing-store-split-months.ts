@@ -42,7 +42,7 @@ export type StoreSplitMonth<T extends SplitSourceRow = SplitSourceRow> = {
 };
 
 /** The months whose split the sheets describe — see the header note. */
-export function storeSplitMonthsToReport<T extends SplitSourceRow>(
+function storeSplitMonthsToReport<T extends SplitSourceRow>(
   months: readonly StoreSplitMonth<T>[],
 ): StoreSplitMonth<T>[] {
   const applied = months.filter((month) => isStoreCitySplitActive(month.period));

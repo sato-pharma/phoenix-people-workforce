@@ -31,7 +31,7 @@ import {
   type MilestoneGroupCardVariant,
 } from "./group-card";
 
-export type MilestoneCardLayout = {
+type MilestoneCardLayout = {
   nameSize: number;
   nameWidth: number;
   citationLines: number;
@@ -48,7 +48,7 @@ export type MilestoneCardLayout = {
  * calls; the next chunk replaces the content, so the previous chunk's portraits are freed before the
  * following ones decode. The chunk PDFs are then stitched with pdf-lib into the one file.
  */
-export const MILESTONE_RENDER_CHUNK = 6;
+const MILESTONE_RENDER_CHUNK = 6;
 
 /**
  * The most cards one download may carry.
@@ -265,7 +265,7 @@ export async function renderMilestoneCardImage(
 
 // ── The group picture ─────────────────────────────────────────────────────────────────────────────
 
-export type MilestoneGroupLayout = {
+type MilestoneGroupLayout = {
   /** The point size each name settled at, in the order the faces print. */
   names: number[];
   /** The point size each sub-line settled at. Shorter than `names` when a face carried none. */

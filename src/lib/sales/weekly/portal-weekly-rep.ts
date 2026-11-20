@@ -75,7 +75,7 @@ export type RepWeeklyWeek = {
 };
 
 /** One product, across the rep's own areas. Units are this product's only. */
-export type RepWeeklyProduct = {
+type RepWeeklyProduct = {
   productCode: string;
   productName: string;
   unitsByWeek: Record<number, number>;
@@ -84,7 +84,7 @@ export type RepWeeklyProduct = {
 };
 
 /** One of the rep's own seats. A rep usually holds one; the screen lists them only when he holds more. */
-export type RepWeeklyArea = {
+type RepWeeklyArea = {
   key: string;
   lineName: string;
   areaName: string;

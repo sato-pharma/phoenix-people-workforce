@@ -2639,6 +2639,7 @@ import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.te
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runVulnScanTests } from "./vuln-scan.test.ts";
+import { runCiDuplicatesReportTests } from "./ci-duplicates-report.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
@@ -2845,6 +2846,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runDevServerLeanTests } from "./dev-server-lean.test.ts";
 import { runDevServerGracefulRestartTests } from "./dev-server-graceful-restart.test.ts";
+import { runDevServerPageRetentionTests } from "./dev-server-page-retention.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
@@ -3014,6 +3016,7 @@ import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.
 import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
 import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-representative-title.test.ts";
+import { runSeniorProductManagerTitleTests } from "./senior-product-manager-title.test.ts";
 import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-press.test.ts";
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runUrgentDeployTests } from "./urgent-deploy.test.ts";
@@ -10186,6 +10189,13 @@ await runTest(
   runVulnScanTests,
 );
 await runTest(
+  "the pull request copy-paste report names only the blocks THIS PR copied (jscpd's isNew against the base ref, "
+  + "never the ~1,000 already on main), cannot call a PR clean below its coverage floor or on a report it does not "
+  + "understand, pins each warning to a repo-relative file within GitHub's ten-per-step cap, and runs in ci.yml's "
+  + "static job on every event (no event condition), continue-on-error with its own timeout, so it can never redden a required check",
+  runCiDuplicatesReportTests,
+);
+await runTest(
   "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
   + "refuses when the managed file is absent or the wrong type, preserves appsscript.json and "
   + "every sibling file, and every docs/*-live-sheet.gs on disk is declared in the manifest) and its "
@@ -11158,8 +11168,13 @@ await runTest(
 );
 
 await runTest(
-  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 92% of the cap or after 90 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
+  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 86% of the cap or after 20 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
   runDevServerGracefulRestartTests,
+);
+
+await runTest(
+  "the dev server keeps more compiled pages only when asked: PHOENIX_DEV_PAGES_KEPT and PHOENIX_DEV_PAGE_IDLE_MINUTES reach Next's onDemandEntries outside production, unset or nonsense leaves Next's 5 pages and 1 minute, and the installed Next still reads both",
+  runDevServerPageRetentionTests,
 );
 
 await runTest(
@@ -12008,6 +12023,10 @@ await runTest(
 await runTest(
   "the Senior Medical Representative title behaves exactly like Medical Representative everywhere (job function, pay, attendance, compliance, CRM mirror, HR pay view, catalogue, import) while granting nothing new",
   runSeniorMedicalRepresentativeTitleTests,
+);
+await runTest(
+  "the Senior Product Manager title lands wherever Product Manager lands (job function, expense analysis, the exact-title checks) and never matches a Group Product Manager",
+  runSeniorProductManagerTitleTests,
 );
 
 await runTest("phoenix crm: no save bar takes two presses to discard", runPhoenixCrmDiscardOnePressTests);

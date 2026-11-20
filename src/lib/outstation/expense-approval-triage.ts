@@ -20,7 +20,7 @@
  * "All" and under neither narrowed choice, never quietly filed as clean.
  */
 
-export type ExpenseTripTriage = "clean" | "look";
+type ExpenseTripTriage = "clean" | "look";
 
 /** "" = no narrowing. */
 export type ExpenseTripTriageFilter = "" | ExpenseTripTriage;

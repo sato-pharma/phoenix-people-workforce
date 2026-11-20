@@ -25,7 +25,7 @@ import type { CrmContactKind } from "@/lib/crm/contact-taxonomy";
 
 export type DoctorCoverageGradeTier = "A" | "B" | "C";
 /** Scored kinds only — `unclassified` is never scored, by construction. */
-export type ScoredContactKind = Extract<CrmContactKind, "sp" | "hcp">;
+type ScoredContactKind = Extract<CrmContactKind, "sp" | "hcp">;
 
 export type DoctorCoverageNorms = Record<ScoredContactKind, Record<DoctorCoverageGradeTier, number>>;
 
@@ -61,7 +61,7 @@ export const DEFAULT_DOCTOR_COVERAGE_NORMS: DoctorCoverageNorms = {
   hcp: { A: 2, B: 1, C: 1 },
 };
 
-export const DEFAULT_DOCTOR_COVERAGE_CONFIG: DoctorCoverageConfig = {
+const DEFAULT_DOCTOR_COVERAGE_CONFIG: DoctorCoverageConfig = {
   lineOverrides: {},
   norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
   updatedAt: null,
@@ -177,7 +177,7 @@ export async function getDoctorCoverageConfig(): Promise<DoctorCoverageConfig> {
 }
 
 /** Clear the in-process cache — called after an admin update so the change shows immediately. */
-export function clearDoctorCoverageConfigCache(): void {
+function clearDoctorCoverageConfigCache(): void {
   configCache = null;
 }
 
@@ -233,7 +233,7 @@ export function validateDoctorCoverageNorms(input: unknown): DoctorCoverageNorms
  * scope that viewer to NO lines, and a silently empty board is the worst possible failure here —
  * indistinguishable from a territory that genuinely has no activity.
  */
-export function validateDoctorCoverageLineOverrides(input: unknown): DoctorCoverageLineOverrides {
+function validateDoctorCoverageLineOverrides(input: unknown): DoctorCoverageLineOverrides {
   const issues: string[] = [];
   const record = asRecord(input);
   const out: DoctorCoverageLineOverrides = {};

@@ -62,7 +62,7 @@ export function canReadPlaceMatches(viewer: PhoenixCrmViewer): boolean {
 }
 
 /** A stored signboard verdict, read defensively: anything unrecognised is "not read". */
-export function matchSignboardOf(value: unknown): MatchSignboard {
+function matchSignboardOf(value: unknown): MatchSignboard {
   if (!value || typeof value !== "object") return null;
   const verdict = (value as Row).verdict;
   return verdict === "match" || verdict === "other_name" || verdict === "no_name" || verdict === "unjudged" ? verdict : null;

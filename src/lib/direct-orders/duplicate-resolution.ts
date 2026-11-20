@@ -48,7 +48,7 @@ import { normalizeCustomerCode } from "@/lib/direct-orders/hold-decision";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A (distributor, customer) pair, however it reached the pharmacy. */
-export type PharmacyCodePair = { distributorCode: string; customerCode: string };
+type PharmacyCodePair = { distributorCode: string; customerCode: string };
 
 export type PharmacyForDedupe = {
   id: string;
@@ -383,7 +383,7 @@ export function findLookAlikeVenues(
 export const DEDUPE_OPEN_STATUSES = ["draft", "held", "pending_approval", "returned"] as const;
 
 /** One product on a request. A request with several is a family basket — today, Lacto only. */
-export type DedupeLine = {
+type DedupeLine = {
   productCode: string;
   qty: number;
   bonus: number;

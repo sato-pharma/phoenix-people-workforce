@@ -101,7 +101,7 @@ const NEVER_STARTED_STATUS = "declined_offer";
 export type VacantAreaStatus = "list" | "list_closed" | "holder_reseated" | "never_held";
 
 /** The person who last worked a vacant area, with the list they left behind. */
-export type VacantAreaHolder = {
+type VacantAreaHolder = {
   agentCrmId: number | null;
   /** AM + PM. A pharmacy is not a contact (owner, 2026-09-01). */
   contactCount: number;
@@ -171,7 +171,7 @@ export type HolderPerson = {
 
 /** On the same day, the more direct record wins. */
 const SOURCE_RANK = { seat: 0, earlier_seat: 1, vacancy_record: 2 } as const;
-export type HolderSource = keyof typeof SOURCE_RANK;
+type HolderSource = keyof typeof SOURCE_RANK;
 
 export type SeatLastPerson = {
   heldUntil: string | null;

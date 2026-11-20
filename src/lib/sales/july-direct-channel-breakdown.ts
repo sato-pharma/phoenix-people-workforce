@@ -37,7 +37,7 @@ import {
 /** The RPC's key for money that reached no area, rep or brick because it is a direct order. */
 const DIRECT_KEY = "__DIRECT__";
 
-export type JulyDirectAttribution = {
+type JulyDirectAttribution = {
   /** Uppercase area code → the direct money the owner's mapping put there. */
   valueByArea: ReadonlyMap<string, number>;
   /** Rep HR id → the same money by seat. */
@@ -61,7 +61,7 @@ function bump(map: Map<string, number>, key: string, delta: number): void {
  * row for a product that has no column would guarantee a mismatch against the RPC and permanently
  * disable the merge. Same rule, and the same reason, as resolveJulyDirectByArea.
  */
-export function resolveJulyDirectAttribution(
+function resolveJulyDirectAttribution(
   line: string | null,
   period: string | null,
   productCodes: ReadonlySet<string>,

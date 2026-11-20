@@ -58,20 +58,20 @@ import {
 import type { AccessActor } from "@/lib/admin/access-control";
 
 /** The login the reconciler names itself by in every record it touches. */
-export const HIRE_HANDOFF_ACTOR_ID = "hire-handoff";
+const HIRE_HANDOFF_ACTOR_ID = "hire-handoff";
 
 /** The cron job's lease key and how long one run may hold it. */
-export const HIRE_HANDOFF_LEASE_KEY = "hire-handoff-reconcile";
+const HIRE_HANDOFF_LEASE_KEY = "hire-handoff-reconcile";
 const LEASE_TTL_SECONDS = 10 * 60;
 
 /** A `pending` row this old was left by a door that never finished (a crash, a deploy). */
 export const HIRE_HANDOFF_STALE_PENDING_MS = 30 * 60 * 1000;
 /** At most this many steps a run, and the run stops starting new ones after this long. */
-export const HIRE_HANDOFF_STEPS_PER_RUN = 25;
+const HIRE_HANDOFF_STEPS_PER_RUN = 25;
 const RUN_BUDGET_MS = 40_000;
 
 /** A step that can never succeed by being run again — it is given up at once, with the reason. */
-export class HandoffNotRetryableError extends Error {
+class HandoffNotRetryableError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "HandoffNotRetryableError";
@@ -292,7 +292,7 @@ export async function retryHireHandoffStep(
   }
 }
 
-export type HireHandoffAttemptOutcome = {
+type HireHandoffAttemptOutcome = {
   attempts: number;
   hrId: string;
   lastError: string | null;
@@ -301,7 +301,7 @@ export type HireHandoffAttemptOutcome = {
 };
 
 /** One attempt at one row, recorded. Never throws: the outcome is the answer. */
-export async function attemptHireHandoffRow(
+async function attemptHireHandoffRow(
   row: HireHandoffRow,
   deps: HireHandoffRetryDeps = defaultHireHandoffRetryDeps,
   options: { actor?: AccessActor | null } = {},

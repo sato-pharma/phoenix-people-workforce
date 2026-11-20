@@ -45,9 +45,9 @@ export const INCIDENT_COLUMN_HEADINGS = [
 ] as const;
 
 export const SYSTEM_ROW_NAME = "System";
-export const NAME_NOT_RECORDED = "Name not recorded";
+const NAME_NOT_RECORDED = "Name not recorded";
 
-export const MODULE_LABEL_SOURCE_LABELS: Record<ModuleLabelSource, string> = {
+const MODULE_LABEL_SOURCE_LABELS: Record<ModuleLabelSource, string> = {
   nav_exact: "Sidebar page (exact)",
   nav_parent: "Sidebar page (parent)",
   page_trail: "Page the person was on",

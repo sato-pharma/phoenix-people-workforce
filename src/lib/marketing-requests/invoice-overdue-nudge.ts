@@ -236,7 +236,7 @@ export function isInvoiceChaseableRequestStatus(status: string | null | undefine
  * `resolveMarketingInvoiceObligation`, so the definition of "overdue" stays in one place. Reading
  * the status column alone would be the bug this whole feature exists to fix.
  */
-export async function loadOverdueMarketingInvoices(
+async function loadOverdueMarketingInvoices(
   today: string = currentCairoDateOnlyIso(),
 ): Promise<OverdueMarketingInvoice[]> {
   const supabase = getSupabaseAdmin();

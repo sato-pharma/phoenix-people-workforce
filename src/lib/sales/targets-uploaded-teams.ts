@@ -56,7 +56,7 @@ export type TargetDirectory = {
 };
 
 /** One target of a team: a rep, an area, a product and a month. */
-export type TargetTeamRow = {
+type TargetTeamRow = {
   period: string;
   repName: string;
   repHrId: string | null;

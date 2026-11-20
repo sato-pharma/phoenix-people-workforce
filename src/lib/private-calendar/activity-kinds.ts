@@ -111,7 +111,7 @@ export type PrivateCalendarVisitRecord = { bucket: VisitCountBucket; id: string;
 
 export type PrivateCalendarVisitSummary = Record<PrivateCalendarVisitKind, VisitCountSplit> & { all: VisitCountSplit };
 
-export function emptyPrivateCalendarVisitSummary(): PrivateCalendarVisitSummary {
+function emptyPrivateCalendarVisitSummary(): PrivateCalendarVisitSummary {
   return {
     all: emptyVisitCountSplit(),
     chain_regular: emptyVisitCountSplit(),

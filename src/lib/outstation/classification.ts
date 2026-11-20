@@ -1,7 +1,7 @@
 export const OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM = 60;
 export const TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM = 58;
 
-export type OutstationDistanceClassification =
+type OutstationDistanceClassification =
   | "eligible"
   | "tolerance_eligible"
   | "not_eligible"

@@ -52,7 +52,7 @@ import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** One column of the view: a week, a month, or the consolidated total after them. */
-export type KpiTrendColumnPlan = {
+type KpiTrendColumnPlan = {
   /** `w1`…`w5`, a month key such as `2026-07`, or `total`. */
   key: string;
   kind: "week" | "month" | "total";
@@ -205,7 +205,7 @@ export type KpiTrendSums = {
   frequencyBase: number;
 };
 
-export const EMPTY_KPI_TREND_SUMS: KpiTrendSums = {
+const EMPTY_KPI_TREND_SUMS: KpiTrendSums = {
   reps: 0,
   callDays: 0,
   amVerified: 0,
@@ -237,7 +237,7 @@ export function kpiTrendSumsOfRow(row: KpiRepRow): KpiTrendSums {
   };
 }
 
-export function addKpiTrendSums(left: KpiTrendSums, right: KpiTrendSums): KpiTrendSums {
+function addKpiTrendSums(left: KpiTrendSums, right: KpiTrendSums): KpiTrendSums {
   return {
     reps: left.reps + right.reps,
     callDays: left.callDays + right.callDays,
@@ -258,7 +258,7 @@ export function sumKpiTrend(parts: readonly KpiTrendSums[]): KpiTrendSums {
 }
 
 /** One call rate in a cell. `attainmentPct` is null with no target (pharmacy) or nothing to divide. */
-export type KpiTrendRate = {
+type KpiTrendRate = {
   verified: number;
   rate: number | null;
   target: number | null;
@@ -424,7 +424,7 @@ export type KpiTrendColumn = KpiTrendColumnPlan & {
   rules: "legacy" | "phoenix" | "mixed";
 };
 
-export type KpiTrendRepLine = {
+type KpiTrendRepLine = {
   key: string;
   repName: string;
   lineName: string | null;

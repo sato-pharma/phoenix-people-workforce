@@ -31,7 +31,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * courtesy: a failure there is logged and the offer still counts as sent — it is never sent twice.
  */
 
-export const JOB_OFFER_SMTP_PASSWORD_ENV = "JOB_OFFER_SMTP_APP_PASSWORD";
+const JOB_OFFER_SMTP_PASSWORD_ENV = "JOB_OFFER_SMTP_APP_PASSWORD";
 
 /** The `provider` an offer sent this way is recorded under in `email_delivery_events`. */
 export const JOB_OFFER_SMTP_PROVIDER = "turbify";
@@ -65,7 +65,7 @@ export function jobOfferSmtpFrom(from: string): { address: string; name: string 
 }
 
 /** The sentence HR reads when Turbify did not take the offer. */
-export function jobOfferSmtpFailureMessage(error: unknown): string {
+function jobOfferSmtpFailureMessage(error: unknown): string {
   if (isAuthenticationFailure(error)) {
     return `The offer was not sent: Turbify refused the app password for ${JOB_OFFER_SENDER_ADDRESS}. ${JOB_OFFER_SMTP_PASSWORD_ENV} needs a new app password minted for that mailbox.`;
   }
@@ -114,7 +114,7 @@ export type JobOfferSmtpTransport = {
  * The real transport: the personal mailbox's own nodemailer and IMAP helpers (one Turbify transport in
  * the codebase, not two). Loaded on first use, so importing the offer module costs no mail client.
  */
-export const turbifyJobOfferTransport: JobOfferSmtpTransport = {
+const turbifyJobOfferTransport: JobOfferSmtpTransport = {
   async compose(options) {
     const { composeRawMessage } = await import("@/lib/personal-mailbox/smtp");
     return composeRawMessage(options);
@@ -148,7 +148,7 @@ const MAX_REPLY_LENGTH = 300;
  * first guess (the server address, #140) was wrong. The reply line is the only place the reason lives.
  * It never reaches HR's screen: `jobOfferSmtpFailureMessage` stays built from the code alone.
  */
-export function maskedSmtpReply(value: unknown): string | null {
+function maskedSmtpReply(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const masked = value
     .replace(/<?[^\s<>()[\]"',;:]+@[^\s<>()[\]"',;:]+>?/g, "<address>")
@@ -162,7 +162,7 @@ export function maskedSmtpReply(value: unknown): string | null {
  * The reply code, the error class, the SMTP step it failed at (`DATA`, `MAIL FROM`, …) and Turbify's
  * reply line with every address masked — for the failure row and the log, never for HR's sentence.
  */
-export function smtpErrorContext(error: unknown) {
+function smtpErrorContext(error: unknown) {
   const e = (error && typeof error === "object" ? error : {}) as {
     code?: unknown;
     command?: unknown;

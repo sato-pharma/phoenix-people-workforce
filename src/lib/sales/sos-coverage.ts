@@ -137,7 +137,7 @@ export function sourceOnboardingFor(code: string): SourceOnboarding | null {
   return null;
 }
 
-export type SosDistributorCoverage = {
+type SosDistributorCoverage = {
   /** The FOLDED code — both Direct vintages share one row. */
   distributorCode: string;
   /** Human-readable name (standing rule: names, never raw codes). Falls back to the code. */
@@ -186,12 +186,12 @@ export type SosDistributorCoverage = {
  * thing `maskSosCoverageReport` can recognise a masked source by once the name is a free-text
  * label. A name-only list could not be masked at all.
  */
-export type SosMissingDistributor = {
+type SosMissingDistributor = {
   code: string;
   name: string;
 };
 
-export type SosPeriodCoverage = {
+type SosPeriodCoverage = {
   period: string;
   distributorCount: number;
   totalValue: number;
@@ -205,7 +205,7 @@ export type SosPeriodCoverage = {
 };
 
 /** A source that was absent on purpose for a stretch, because another source's file carried it. */
-export type SosMergedSource = {
+type SosMergedSource = {
   /** The folded display code of the source with no file of its own. */
   distributorCode: string;
   /** Its name, for the banner. */

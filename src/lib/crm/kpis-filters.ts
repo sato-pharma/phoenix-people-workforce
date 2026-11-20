@@ -106,7 +106,7 @@ export type KpiFilterableRow = {
  * people who missed; filtering for `noplan` returns people the plan never asked anything of. Those
  * are two completely different conversations for a manager to have.
  */
-export const KPI_BANDS = ["elite", "strong", "steady", "behind", "noplan"] as const;
+const KPI_BANDS = ["elite", "strong", "steady", "behind", "noplan"] as const;
 
 export type KpiBand = (typeof KPI_BANDS)[number];
 
@@ -185,7 +185,7 @@ export function pmBandOf(row: KpiFilterableRow): KpiBand {
  * The situations a manager actually goes looking for. Each is derived from fields already on the
  * row — no flag asks a question the board cannot answer from what it already fetched.
  */
-export const KPI_FLAGS = [
+const KPI_FLAGS = [
   "just-started",
   "never-reached",
   "no-calls",
@@ -220,7 +220,7 @@ export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
 };
 
 /** One line saying what the flag is FOR, shown under the label in the filter panel. */
-export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
+const KPI_FLAG_HINT: Record<KpiFlag, string> = {
   "just-started":
     "Hired inside this period and has worked under a third of its working days, so the board shows the figures and judges none of them.",
   "never-reached": "Has planned doctors and visited none of them. The most urgent row on the board.",
@@ -243,12 +243,12 @@ export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
  * cutover). Frequency then passes at the grade norm with extra visits allowed, so "exactly on plan"
  * would describe a rule that no longer exists.
  */
-export const KPI_FLAG_LABEL_PHOENIX: Partial<Record<KpiFlag, string>> = {
+const KPI_FLAG_LABEL_PHOENIX: Partial<Record<KpiFlag, string>> = {
   "perfect-frequency": "Every graded doctor at their grade norm",
   "under-visiting": "Doctors below their grade norm",
 };
 
-export const KPI_FLAG_HINT_PHOENIX: Partial<Record<KpiFlag, string>> = {
+const KPI_FLAG_HINT_PHOENIX: Partial<Record<KpiFlag, string>> = {
   "perfect-frequency": "100% frequency: every graded doctor got the visits their grade asks for. Extra visits are fine.",
   "under-visiting": "At least one graded doctor got fewer visits than their grade asks for.",
   "below-am-target": "Submitted morning visits came in under the AM target, judged on its own.",
@@ -321,7 +321,7 @@ export function kpiFlagsShownOn(row: KpiFilterableRow, report?: string): KpiFlag
 
 // ── Sorting ───────────────────────────────────────────────────────────────────────────────────
 
-export const KPI_SORT_FIELDS = [
+const KPI_SORT_FIELDS = [
   "rep",
   "line",
   "area",
@@ -343,28 +343,6 @@ export const KPI_SORT_FIELDS = [
 ] as const;
 
 export type KpiSortField = (typeof KPI_SORT_FIELDS)[number];
-
-export const KPI_SORT_LABEL: Record<KpiSortField, string> = {
-  rep: "Medical rep",
-  line: "Line",
-  area: "Area",
-  manager: "Manager",
-  coverage: "Coverage",
-  frequency: "Frequency",
-  am: "AM rate",
-  pm: "PM rate",
-  // No target exists yet (see PHARMACY_CALL_RATE_TARGET) — the label says "rate", never "% target".
-  pharmacy: "Pharmacy rate",
-  planned: "Planned doctors",
-  visited: "Covered doctors",
-  missed: "Not reached",
-  exact: "Exact",
-  below: "Below",
-  above: "Above",
-  calls: "Total calls",
-  campaign: "Campaign share",
-  workingdays: "Working days",
-};
 
 export type KpiSortDirection = "asc" | "desc";
 
@@ -540,7 +518,7 @@ export function matchesKpiRanges(row: KpiFilterableRow, ranges: KpiRangeFilters)
 }
 
 /** How many columns carry a bound — one filter each, whichever of min and max (or both) is set. */
-export function countKpiRanges(ranges: KpiRangeFilters): number {
+function countKpiRanges(ranges: KpiRangeFilters): number {
   return KPI_RANGE_FIELDS.filter((field) => {
     const range = ranges[field];
     return range != null && (range.min != null || range.max != null);
@@ -548,7 +526,7 @@ export function countKpiRanges(ranges: KpiRangeFilters): number {
 }
 
 /** The URL parameter a range rides in: `r_coverage=50..90`, either end blank for open. */
-export const KPI_RANGE_PARAM_PREFIX = "r_";
+const KPI_RANGE_PARAM_PREFIX = "r_";
 
 function rangeNumber(raw: string): number | null {
   const text = raw.trim();
@@ -886,7 +864,7 @@ function matchesManagerFacet(selected: string[], row: KpiFilterableRow): boolean
 }
 
 /** The "Reports to" options: each rep counted under his direct manager AND every manager above. */
-export function buildKpiManagerFacet(rows: readonly KpiFilterableRow[]): KpiFacetOption[] {
+function buildKpiManagerFacet(rows: readonly KpiFilterableRow[]): KpiFacetOption[] {
   const counts = new Map<string, { label: string; count: number }>();
   const add = (value: string, label: string) => {
     const existing = counts.get(value);
@@ -1073,7 +1051,7 @@ export type KpiFacetOption = { value: string; label: string; count: number };
  * Counts are computed against the rows passed in, so the panel can say "Giza 6" rather than making
  * a manager click to find out whether the filter is worth applying.
  */
-export function buildKpiFacet(
+function buildKpiFacet(
   rows: readonly KpiFilterableRow[],
   pick: (row: KpiFilterableRow) => string | null,
 ): KpiFacetOption[] {

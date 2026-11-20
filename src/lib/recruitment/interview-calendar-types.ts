@@ -204,7 +204,7 @@ export function resolveCalendarRole(input: {
 const RANK: Record<InterviewCalendarRole, number> = { commenter: 2, editor: 3, interviewer: 0, owner: 4, requester: 0, viewer: 1 };
 
 /** The higher of two levels; null is no access. */
-export function higherCalendarRole(
+function higherCalendarRole(
   left: InterviewCalendarRole | null,
   right: InterviewCalendarRole | null,
 ): InterviewCalendarRole | null {
@@ -240,7 +240,7 @@ export function linkRole(link: Pick<InterviewCalendarLinkGrant, "accessLevel" | 
 }
 
 /** Whether a link reaches this week at all — every week, for a whole-calendar link. */
-export function linkCoversWeek(link: Pick<InterviewCalendarLinkGrant, "weekStart"> | null, weekStart: string | null): boolean {
+function linkCoversWeek(link: Pick<InterviewCalendarLinkGrant, "weekStart"> | null, weekStart: string | null): boolean {
   if (!link) return false;
   return link.weekStart === null || (weekStart !== null && link.weekStart === weekStart);
 }
@@ -687,10 +687,6 @@ export const INTERVIEW_REQUEST_STATUS_LABEL: Record<InterviewRequestStatus, stri
   scheduled: "Times booked",
 };
 
-export function isInterviewRequestStatus(value: unknown): value is InterviewRequestStatus {
-  return value === "pending" || value === "scheduled" || value === "cancelled";
-}
-
 /** One CV on a request: a Recruitment candidate, or an outside person kept on the request only. */
 export type InterviewRequestItem = {
   id: string;
@@ -858,7 +854,7 @@ export type InterviewMeetingSummary = {
 };
 
 /** One section of a Zoom report: what it holds, or the sentence that says why it is empty. */
-export type InterviewInsightPart<T> = { data: T | null; note: string | null };
+type InterviewInsightPart<T> = { data: T | null; note: string | null };
 
 export type InterviewZoomInsights = {
   /** "not_held" before the interview's time is over; "ready" after, whatever Zoom had. */

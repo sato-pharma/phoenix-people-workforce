@@ -32,7 +32,7 @@ import type { WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspacePlaces, WorkspaceRegion } from "@/lib/recruitment/workspace/types";
 
 export type PlacesArea = { code: string; name: string; regionCode: string };
-export type PlacesSnapshot = {
+type PlacesSnapshot = {
   /** Active canonical areas in the org's sort order, each with its RECRUITMENT region. */
   areas: PlacesArea[];
   /** Vacant REP seats per AU area code, every line together. */
@@ -53,7 +53,7 @@ export function recruitmentRegionForSeatRegion(raw: string | null | undefined): 
 }
 
 /** Fold the two raw reads into the snapshot. PURE, so the grouping is testable without a database. */
-export function foldPlacesSnapshot(
+function foldPlacesSnapshot(
   areaRows: readonly { area_code?: unknown; area_name?: unknown; code_region_code?: unknown; is_active?: unknown }[],
   seatRows: readonly { seat_tier?: unknown; region_code?: unknown; area_code?: unknown; is_vacant?: unknown; is_other_pseudo_dm?: unknown }[],
 ): PlacesSnapshot {
@@ -117,7 +117,7 @@ function regionName(code: string): string {
 }
 
 /** The places of one tab from a snapshot. PURE. Regions keep the apply flow's own order. */
-export function buildWorkspacePlaces(tab: WorkspaceTabKey | null, snapshot: PlacesSnapshot): WorkspacePlaces {
+function buildWorkspacePlaces(tab: WorkspaceTabKey | null, snapshot: PlacesSnapshot): WorkspacePlaces {
   if (tab === "medical_rep") {
     const regions: WorkspaceRegion[] = [];
     for (const code of candidateRegionCodes) {

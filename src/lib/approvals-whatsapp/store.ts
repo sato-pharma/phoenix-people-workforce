@@ -29,12 +29,12 @@ import {
   type InboxThread,
 } from "@/lib/whatsapp-inbox/store";
 
-export const APPROVALS_WHATSAPP_MEDIA_BUCKET = "approvals-whatsapp-media";
-export const APPROVALS_LISTS_TABLE = "approvals_whatsapp_lists";
-export const APPROVALS_LIST_MEMBERS_TABLE = "approvals_whatsapp_list_members";
+const APPROVALS_WHATSAPP_MEDIA_BUCKET = "approvals-whatsapp-media";
+const APPROVALS_LISTS_TABLE = "approvals_whatsapp_lists";
+const APPROVALS_LIST_MEMBERS_TABLE = "approvals_whatsapp_list_members";
 export const APPROVALS_BROADCASTS_TABLE = "approvals_whatsapp_broadcasts";
 export const APPROVALS_BROADCAST_RECIPIENTS_TABLE = "approvals_whatsapp_broadcast_recipients";
-export const APPROVALS_LINE_LABEL = "Approvals line";
+const APPROVALS_LINE_LABEL = "Approvals line";
 export const APPROVALS_LINE_DISPLAY_NUMBER = "+20 10 40631155";
 
 const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
@@ -283,7 +283,7 @@ async function loadConversationRow(conversationId: string): Promise<Conversation
 }
 
 /** Why Phoenix cannot write to this chat at all, or null when it can. The 24-hour window is a separate, later question. */
-export function approvalsCannotSendReason(row: Pick<ConversationRow, "contact_wa_id" | "phone_number_id">): string | null {
+function approvalsCannotSendReason(row: Pick<ConversationRow, "contact_wa_id" | "phone_number_id">): string | null {
   if (!row.contact_wa_id) return "This person uses a WhatsApp username and did not share a phone number, so WhatsApp does not let Phoenix message them.";
   if (!whatsAppApprovalsLine()) return "The approvals line is not set up on this server.";
   if (row.phone_number_id !== approvalsLinePhoneNumberId()) return "This chat is on a WhatsApp number Phoenix no longer sends from.";
@@ -574,7 +574,7 @@ export async function listApprovalsBroadcasts(): Promise<ApprovalsBroadcastSumma
 
 export type ApprovalsReportOutcome = "pending" | "failed" | "sent" | "delivered" | "read" | "replied";
 
-export type ApprovalsReportRow = {
+type ApprovalsReportRow = {
   waId: string;
   phone: string | null;
   name: string;

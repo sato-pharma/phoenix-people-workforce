@@ -296,7 +296,7 @@ function HeroCard({ card }: { card: BandCard }) {
   );
 }
 
-export function SatoBand({
+function SatoBand({
   card,
   eyebrow,
   subtitle,
@@ -370,7 +370,7 @@ export function SatoBand({
 
 const MARQUEE = ["Success is Acquired by Talented Operators", "Sato Pharma", "Success is Acquired by Talented Operators", "Sato Pharma"];
 
-export function SatoFooter() {
+function SatoFooter() {
   const { t } = useCopy();
   return (
     <footer className="relative mt-16 overflow-hidden bg-[#111820] text-white lg:mt-24">

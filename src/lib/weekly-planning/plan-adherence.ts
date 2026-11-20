@@ -317,7 +317,7 @@ export function planAdherenceTone(scorePct: number | null): string {
 }
 
 /** The one-line human label for a verdict. Never a raw code — owner's standing rule. */
-export const PLAN_ADHERENCE_VERDICT_LABELS: ReadonlyMap<PlanAdherenceVerdict, string> = new Map([
+const PLAN_ADHERENCE_VERDICT_LABELS: ReadonlyMap<PlanAdherenceVerdict, string> = new Map([
   ["kept", "Kept"],
   // Leads with "Kept" because it now scores as kept — a label reading like a fault beside a number
   // that does not deduct for it is the kind of mismatch that makes people distrust the whole score.

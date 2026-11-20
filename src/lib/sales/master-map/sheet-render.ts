@@ -99,7 +99,7 @@ const ROW_HEIGHT = { area: 30, base: 21, line: 34, region: 38 } as const;
  * OVERFLOW_CELL cannot save a narrow one — a neighbour with text in it clips the overflow, and the
  * owner's rule is that a name is never cut off.
  */
-export const MANAGER_COLUMN_WIDTH = 330;
+const MANAGER_COLUMN_WIDTH = 330;
 
 /**
  * An organogram region column. Its header, not its cells, is the widest thing in it: at 180 the

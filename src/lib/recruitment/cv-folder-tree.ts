@@ -35,7 +35,7 @@
 export const MAX_CV_FOLDER_DEPTH = 5;
 
 /** Long enough for the longest real job title, short enough to read in a tree. Matches the shelf. */
-export const CV_FOLDER_NAME_MAX_LENGTH = 120;
+const CV_FOLDER_NAME_MAX_LENGTH = 120;
 
 /** One folder as it comes out of the database. */
 export type CvFolderRow = {

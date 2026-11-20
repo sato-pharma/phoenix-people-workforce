@@ -32,7 +32,6 @@ export type PhoenixHrReplyTemplateOutput = {
   preheader: string;
 };
 
-export const phoenixHrEmailSignaturePath = "/assets/branding/phoenix-hr-email-signature.png";
 export const phoenixHrEmailSignatureSmallPath = "/assets/branding/phoenix-hr-signature-small.png";
 export const phoenixHrEmailSignatureHostedUrl = phoenixEmailSignatureHostedUrl;
 

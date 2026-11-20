@@ -232,7 +232,7 @@ export function KpiTile({
  * A DISC rather than an emoji medal. Emoji render at wildly different sizes across Windows, iOS and
  * Android and would break the row's vertical rhythm on exactly the phones the field force uses.
  */
-export function KpiRank({ rank }: { rank: number }) {
+function KpiRank({ rank }: { rank: number }) {
   // Gold, silver and bronze for the podium three, each one flat tone with a rule of its own. A plain
   // number after that carries no medal.
   const style =

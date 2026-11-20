@@ -21,7 +21,7 @@ import { todayInCairo } from "@/lib/date-only";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type TeamHealthRep = {
+type TeamHealthRep = {
   hrId: string;
   name: string;
   coached: boolean;

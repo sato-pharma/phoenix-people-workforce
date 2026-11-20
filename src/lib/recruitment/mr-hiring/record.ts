@@ -50,7 +50,7 @@ import { bookingOutcomeForResult, MR_RESULT_STEP_LABELS, mrResultLabel } from "@
 export type MrWriteResult = { stage: MrStage };
 
 /** The status a result moves the candidate to, or null when it leaves the status as it is. */
-export function statusForResult(currentStatus: string, input: Pick<MrResultInput, "result">): "rejected" | "backup" | "shortlisted" | null {
+function statusForResult(currentStatus: string, input: Pick<MrResultInput, "result">): "rejected" | "backup" | "shortlisted" | null {
   if (input.result === "not_pass") return currentStatus === "rejected" ? null : "rejected";
   if (input.result === "backup") return currentStatus === "backup" ? null : "backup";
   return currentStatus === "new" || currentStatus === "backup" || currentStatus === "rejected" ? "shortlisted" : null;

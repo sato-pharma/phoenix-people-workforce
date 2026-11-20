@@ -16,7 +16,7 @@ type PlanNameFields = {
 };
 
 /** Pure, so a test can hold it. A row read without `manager_hr_id` keeps its stored manager name. */
-export function overlayPlanDisplayNames<T extends PlanNameFields>(
+function overlayPlanDisplayNames<T extends PlanNameFields>(
   plans: readonly T[],
   names: Pick<EmployeeNameIndex, "get">,
 ): T[] {

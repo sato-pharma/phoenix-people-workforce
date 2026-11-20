@@ -17,13 +17,13 @@ import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
  * the route turns into a 503 so the reader fails closed without revoking anything.
  */
 
-export const LIVE_ROLES = ["Super Admin", "CEO"] as const;
+const LIVE_ROLES = ["Super Admin", "CEO"] as const;
 /** The resources the five MCP tools are gated on. */
-export const LIVE_RESOURCES = ["employees", "vacancies", "organogram", "sales"] as const;
+const LIVE_RESOURCES = ["employees", "vacancies", "organogram", "sales"] as const;
 /** Never lockable on anyone (see module-locks.ts). A row naming one is ignored there, so it is here. */
 const NEVER_LOCKABLE = new Set(["employee_profile"]);
 
-export type LiveAccountRow = {
+type LiveAccountRow = {
   login_id: string | null;
   role: string | null;
   hr_id: string | null;
@@ -31,9 +31,9 @@ export type LiveAccountRow = {
   is_test_persona: boolean | null;
   session_version: number | null;
 };
-export type LiveAuthUser = { exists: boolean; bannedUntil: string | null; deletedAt: string | null };
-export type LiveEmployeeRow = { employment_status: string | null; last_working_date: string | null };
-export type LiveLockRow = { login_id: string | null; hr_id: string | null; module_key: string | null; unlock_at: string | null };
+type LiveAuthUser = { exists: boolean; bannedUntil: string | null; deletedAt: string | null };
+type LiveEmployeeRow = { employment_status: string | null; last_working_date: string | null };
+type LiveLockRow = { login_id: string | null; hr_id: string | null; module_key: string | null; unlock_at: string | null };
 export type LiveMatrix = Record<string, Partial<Record<string, readonly string[]>>>;
 
 export type LiveInputs = {

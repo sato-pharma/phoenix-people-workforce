@@ -89,7 +89,7 @@ function occurrenceRow(row: AuditOccurrenceInput) {
 /** Rows per RPC call: big enough to keep transatlantic round trips few, small enough for 8 s. */
 const WRITE_CHUNK = 500;
 
-export async function upsertFindings(
+async function upsertFindings(
   detector: string,
   runId: string | null,
   batch: FindingBatch,
@@ -121,7 +121,7 @@ export async function upsertFindings(
   return total;
 }
 
-export async function readWatermark(detector: string, override?: Client): Promise<Record<string, unknown> | null> {
+async function readWatermark(detector: string, override?: Client): Promise<Record<string, unknown> | null> {
   const { data, error } = await client(override)
     .from("system_audit_watermarks")
     .select("cursor")

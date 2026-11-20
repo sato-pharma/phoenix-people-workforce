@@ -67,7 +67,7 @@ export function territoryWindow(
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "2026-09" → "Sep 2026"; anything else passes through. */
-export function shortPeriodLabel(period: string): string {
+function shortPeriodLabel(period: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(period);
   if (!match) return period;
   const name = SHORT_MONTHS[Number(match[2]) - 1];

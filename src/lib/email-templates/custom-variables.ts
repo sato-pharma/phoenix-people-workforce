@@ -84,7 +84,7 @@ function linkedTeamName(row: EmployeeOrgFields & { teams?: unknown }): string | 
 
 const allowedSourceColumns = new Set(EMPLOYEE_VARIABLE_SOURCES.map((source) => source.column));
 
-export function isAllowedVariableSourceColumn(column: string) {
+function isAllowedVariableSourceColumn(column: string) {
   return allowedSourceColumns.has(String(column ?? "").trim());
 }
 

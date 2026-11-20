@@ -36,15 +36,6 @@ export const candidateStatusLabels: Record<CandidateStatus, string> = {
   shortlisted: "Shortlisted",
 };
 
-export const candidateStatusDescriptions: Record<CandidateStatus, string> = {
-  backup: "Held in reserve behind the shortlist.",
-  hired: "Joined the company.",
-  new: "Arrived. Nobody has looked at them yet.",
-  rejected: "Not proceeding.",
-  sent_to_manager: "Pushed to the hiring manager.",
-  shortlisted: "Worth taking forward.",
-};
-
 /** How long a status note may be. Long enough for a real reason, short enough to fit a table cell. */
 export const CANDIDATE_STATUS_NOTE_MAX_LENGTH = 300;
 

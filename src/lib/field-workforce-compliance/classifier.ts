@@ -243,7 +243,7 @@ function updateNoActivitySeverity(cells: FieldWorkforceDayCell[]) {
   }
 }
 
-export function buildFieldWorkforceNoActivityPattern(cells: FieldWorkforceDayCell[]) {
+function buildFieldWorkforceNoActivityPattern(cells: FieldWorkforceDayCell[]) {
   const noActivityCells = cells.filter((cell) =>
     cell.countedAsNoActivityCandidate &&
     !cell.isPreHire &&

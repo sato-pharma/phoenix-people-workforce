@@ -32,7 +32,7 @@ export const LEAKED_PASSWORD_MESSAGE =
   "This password has appeared in a known data leak, so it is one of the first that would be tried against your account. Choose a different one.";
 
 export const LEAKED_PASSWORD_RANGE_URL = "https://api.pwnedpasswords.com/range/";
-export const LEAKED_PASSWORD_TIMEOUT_MS = 3000;
+const LEAKED_PASSWORD_TIMEOUT_MS = 3000;
 
 export type LeakedPasswordVerdict =
   /** In a published breach. `timesSeen` is how often, as the service counts it. */

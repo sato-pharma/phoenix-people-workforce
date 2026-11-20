@@ -48,16 +48,7 @@ export const DIRECT_ORDER_STAGE_SEQUENCE: readonly DirectOrderStage[] = [
   "completed",
 ] as const;
 
-export const DIRECT_ORDER_STAGE_LABEL: Record<DirectOrderStage, string> = {
-  draft: "Draft",
-  customer_check: "Customer Verification",
-  approval: "Approvals",
-  finance: "Finance",
-  completed: "Completed",
-  stopped: "Stopped",
-};
-
-export type DirectOrderStatusTone = "neutral" | "waiting" | "attention" | "good" | "bad";
+type DirectOrderStatusTone = "neutral" | "waiting" | "attention" | "good" | "bad";
 
 export type DirectOrderStatusPresentation = {
   /** What the pill says. Short enough for a table cell — the owner's rule forbids wrapping. */

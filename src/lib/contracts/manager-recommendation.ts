@@ -42,7 +42,7 @@ export {
  */
 
 /** How far ahead a manager's "my team's renewals" list looks — past the reminder's first rung (75). */
-export const TEAM_RENEWAL_WINDOW_DAYS = 90;
+const TEAM_RENEWAL_WINDOW_DAYS = 90;
 
 export class ContractRecommendationError extends Error {
   readonly status: 400 | 403 | 404;

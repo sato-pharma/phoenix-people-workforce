@@ -44,7 +44,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * `app/api/share/marketing-requests/[token]/file/route.ts` states in its own header — accepting a
  * path, even a signed one, turns a file route into a read primitive over a whole bucket.
  */
-export const SATO_EMAIL_MEDIA_BUCKET = "sato-email-media";
+const SATO_EMAIL_MEDIA_BUCKET = "sato-email-media";
 const MEDIA_TABLE = "sato_email_media";
 
 /**
@@ -58,7 +58,7 @@ function isMissingTable(error: unknown): boolean {
   return code === "42P01" || code === "PGRST205" || (message.includes("relation") && message.includes("does not exist"));
 }
 
-export const SATO_EMAIL_MEDIA_MISSING_TABLE =
+const SATO_EMAIL_MEDIA_MISSING_TABLE =
   "File attachments are not available in this environment yet — the migration has not been applied here.";
 
 function mediaBaseUrl(): string {
@@ -74,7 +74,7 @@ function mediaBaseUrl(): string {
  * scheme alone, so an http address would be stripped out of the saved body and the sender would
  * watch his picture disappear with nothing explaining why.
  */
-export function satoEmailMediaUrl(token: string): string {
+function satoEmailMediaUrl(token: string): string {
   return `${mediaBaseUrl()}/api/sato-email/media/${encodeURIComponent(token)}`;
 }
 

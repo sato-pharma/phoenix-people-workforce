@@ -63,7 +63,7 @@ export async function scanTrainTicket(
   }
 }
 
-export class TicketScanRequestError extends Error {
+class TicketScanRequestError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TicketScanRequestError";

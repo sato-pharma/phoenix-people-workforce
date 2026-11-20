@@ -50,7 +50,7 @@ function managerMarketScope(row: VacancySeatRow) {
   );
 }
 
-export function vacancyReportSeatKey(row: VacancySeatRow) {
+function vacancyReportSeatKey(row: VacancySeatRow) {
   const level = classifyOrganogramStructureLevel(row);
   if (!level) return null;
 

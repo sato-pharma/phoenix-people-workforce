@@ -52,7 +52,7 @@ export type VisitReportFormat =
  * The least sight that reads a field. `manager`: the district manager (and so everyone above). `sfe`: the
  * SFE Manager and the Super Admin. `superAdmin`: the Super Admin alone.
  */
-export type VisitReportSight = "manager" | "sfe" | "superAdmin";
+type VisitReportSight = "manager" | "sfe" | "superAdmin";
 
 /** What a reader is: the same three names as the sight a field needs. */
 export type VisitReportReaderTier = VisitReportSight;
@@ -391,8 +391,8 @@ export function cleanVisitReportViewName(value: unknown): string | null {
  * One rep may be read over a quarter; a district is several reps' worth of rows, so a month — and so is a
  * manager (owner, 2026-10-20), whose visits run across every territory he went out on.
  */
-export const VISIT_REPORT_MAX_DAYS_REP = 92;
-export const VISIT_REPORT_MAX_DAYS_DISTRICT = 31;
+const VISIT_REPORT_MAX_DAYS_REP = 92;
+const VISIT_REPORT_MAX_DAYS_DISTRICT = 31;
 /**
  * One doctor or account, on a rep's territory or across a district, may be read over a year (owner, 2026-11-04:
  * "filter by rep or area then filter by dr or polyclinic"). One customer is a few visits a month, so a year of

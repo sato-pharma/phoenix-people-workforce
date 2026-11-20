@@ -133,7 +133,7 @@ function count(value: unknown): number {
 }
 
 /** The stored metrics, rebuilt key by key — nothing the two shapes do not name survives. */
-export function viewMetrics(section: HrOpsSection, raw: unknown): HrOpsLineMetrics {
+function viewMetrics(section: HrOpsSection, raw: unknown): HrOpsLineMetrics {
   const source = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   if (section === "office") {
     const office: HrOpsOfficeMetrics = {

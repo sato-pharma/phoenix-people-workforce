@@ -1,4 +1,4 @@
-import { boardNamesGivenNameAlone, signNamesCustomer, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
+import { boardNamesGivenNameAlone, signNamesCustomer } from "@/lib/phoenix-crm/signboard-rules";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Does the TIMETABLE in the photo name this customer?
@@ -41,7 +41,7 @@ import { boardNamesGivenNameAlone, signNamesCustomer, type PhoenixCrmSignboardCh
 // tests/phoenix-crm-am-pm-words.test.ts sweeps this tree. "customer" and "clinic".
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type ScheduleVerdictKind =
+type ScheduleVerdictKind =
   /** The timetable names the customer being seated. */
   | "match"
   /** It is a timetable, it was read, and this customer is not on it. Held for review. */
@@ -74,8 +74,8 @@ export type ScheduleLegibility = "clear" | "partial" | "unreadable";
  */
 export type ScheduleProblem = "not_a_timetable" | "on_a_screen" | "too_far" | "blurred" | "glare" | "cut_off";
 
-export const SCHEDULE_LEGIBILITIES: readonly ScheduleLegibility[] = ["clear", "partial", "unreadable"];
-export const SCHEDULE_PROBLEMS: readonly ScheduleProblem[] = ["not_a_timetable", "on_a_screen", "too_far", "blurred", "glare", "cut_off"];
+const SCHEDULE_LEGIBILITIES: readonly ScheduleLegibility[] = ["clear", "partial", "unreadable"];
+const SCHEDULE_PROBLEMS: readonly ScheduleProblem[] = ["not_a_timetable", "on_a_screen", "too_far", "blurred", "glare", "cut_off"];
 
 export function parseScheduleLegibility(value: unknown): ScheduleLegibility | null {
   return typeof value === "string" && (SCHEDULE_LEGIBILITIES as readonly string[]).includes(value) ? (value as ScheduleLegibility) : null;
@@ -450,5 +450,3 @@ export function scheduleHoldRecord(
   };
 }
 
-/** A signboard check and a schedule check are stored in the same column on different rows. */
-export type PhoenixCrmPlaceCheck = PhoenixCrmSignboardCheck | PhoenixCrmScheduleCheck;

@@ -30,11 +30,9 @@ import { cn } from "@/lib/utils";
 const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2");
 const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400";
 
-export const COVERAGE_SELECT_CLASS = SELECT_CLASS;
-export const COVERAGE_LABEL_CLASS = LABEL_CLASS;
 
 /** Serializes a selection into URL parameters, omitting every level that is not set. */
-export function appendCoverageParams(params: URLSearchParams, selection: CoverageFilterSelection) {
+function appendCoverageParams(params: URLSearchParams, selection: CoverageFilterSelection) {
   if (selection.region) params.set("region", selection.region);
   if (selection.line) params.set("line", selection.line);
   if (selection.area) params.set("area", selection.area);
@@ -42,7 +40,7 @@ export function appendCoverageParams(params: URLSearchParams, selection: Coverag
   return params;
 }
 
-export function CoverageScopeFields({
+function CoverageScopeFields({
   onChange,
   selection,
   tree,

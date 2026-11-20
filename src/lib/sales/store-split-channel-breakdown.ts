@@ -69,7 +69,7 @@ export type ChannelBreakdownStoreSplit = {
   movedValue: number;
 };
 
-export function emptyChannelBreakdownStoreSplit(): ChannelBreakdownStoreSplit {
+function emptyChannelBreakdownStoreSplit(): ChannelBreakdownStoreSplit {
   return { movedValue: 0, netByArea: new Map(), outByBrick: new Map() };
 }
 

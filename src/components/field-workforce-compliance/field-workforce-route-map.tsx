@@ -23,7 +23,7 @@ export type RouteCheckin = {
   lon: number | null;
 };
 
-export type RouteLeg = {
+type RouteLeg = {
   distanceKm: number | null;
   durationMinutes: number | null;
 };

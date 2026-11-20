@@ -63,8 +63,8 @@ import type { WorkspaceAnswerChip, WorkspaceAnswerFilter } from "@/lib/recruitme
 // ---------------------------------------------------------------------------------------------
 
 /** The chip keys of the six built-in answers, in the order an applicant meets them. "role" is the bot's `job_title` step. */
-export const BUILT_IN_CHIP_KEYS = ["role", "background", "region", "area", "experience", "salary"] as const;
-export type BuiltInChipKey = (typeof BUILT_IN_CHIP_KEYS)[number];
+const BUILT_IN_CHIP_KEYS = ["role", "background", "region", "area", "experience", "salary"] as const;
+type BuiltInChipKey = (typeof BUILT_IN_CHIP_KEYS)[number];
 
 const BUILT_IN_STEP: Record<BuiltInChipKey, BuiltInQuestionKey> = {
   area: "area",
@@ -96,7 +96,7 @@ export const OWNER_ANSWER_LABELS: Readonly<Record<string, string>> = {
  * The built-ins the database filter can match (`ats_candidate_answer_value`, foundation migration).
  * Role, region and area are the tabs themselves, so they are never answer filters.
  */
-export const FILTERABLE_BUILT_IN_KEYS: readonly BuiltInChipKey[] = ["background", "experience", "salary"];
+const FILTERABLE_BUILT_IN_KEYS: readonly BuiltInChipKey[] = ["background", "experience", "salary"];
 
 export const NOT_ANSWERED_LABEL = "Not answered";
 
@@ -110,7 +110,7 @@ const MONEY = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
  * How an answer reads on screen. A salary typed as a bare figure reads "30,000 EGP"; anything else —
  * a range, "negotiable", Arabic words — is the answer exactly as stored.
  */
-export function answerDisplayValue(key: string, stored: string): string {
+function answerDisplayValue(key: string, stored: string): string {
   if (isMoneyKey(key)) {
     const figure = parseDeclaredSalaryFigure(stored);
     if (figure !== null) return `${MONEY.format(figure)} EGP`;
@@ -141,7 +141,7 @@ export type AnswerChipContext = {
 };
 
 /** A chip's label: his words for the six, the bot's words for region and area, the admin's sentence for the rest. */
-export function answerChipLabel(key: string, question?: Pick<ChipQuestion, "bodyText"> | null): string {
+function answerChipLabel(key: string, question?: Pick<ChipQuestion, "bodyText"> | null): string {
   if (OWNER_ANSWER_LABELS[key]) return OWNER_ANSWER_LABELS[key];
   if (key === "region") return BUILT_IN_ANSWER_QUESTIONS.region;
   if (key === "area") return BUILT_IN_ANSWER_QUESTIONS.area;
@@ -462,7 +462,7 @@ export function filterableAnswerKeys(context: AnswerChipContext): string[] {
 // The loader
 // ---------------------------------------------------------------------------------------------
 
-export type ScreeningQuestionRow = {
+type ScreeningQuestionRow = {
   question_key: string | null;
   body_text: string | null;
   kind: string | null;
@@ -485,7 +485,7 @@ function readOptions(raw: unknown): { value: string; title: string }[] {
 }
 
 /** Fold the question rows and the saved built-in audiences into the context. PURE. */
-export function foldAnswerChipContext(
+function foldAnswerChipContext(
   rows: readonly ScreeningQuestionRow[],
   savedAudiences: ReadonlyMap<string, { appliesToRoleFamilies?: readonly string[] | undefined }>,
 ): AnswerChipContext {

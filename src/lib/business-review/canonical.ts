@@ -79,14 +79,7 @@ import {
   type ReviewCoverage,
   type SourceCoverage,
 } from "./coverage";
-import {
-  REVIEW_FLOOR,
-  periodColumnLabels,
-  quartersInWindow,
-  resolveReviewWindow,
-  windowLabel,
-  type ReviewWindow,
-} from "./period";
+import { REVIEW_FLOOR, periodColumnLabels, quartersInWindow, windowLabel, type ReviewWindow } from "./period";
 import { buildAttributionMap, hrKey, type AttributionMap, type Placement } from "./sources/attribution";
 import { isResignedStatus, leaverLabel } from "./employment-status";
 import { MARKETING_ORIGIN, MARKETING_RULE, loadMarketingFacts, type MarketingLoad } from "./sources/marketing";
@@ -301,7 +294,7 @@ function monthlySales(rows: readonly AchievementRow[], periods: readonly string[
 
 // ── Provenance ───────────────────────────────────────────────────────────────
 
-export type ReviewLineProvenance = {
+type ReviewLineProvenance = {
   line: ReviewLine;
   label: string;
   /** Actual value sitting on a (line, area, product) key that has a target. */
@@ -314,7 +307,7 @@ export type ReviewLineProvenance = {
   periodsWithoutTarget: string[];
 };
 
-export type ReviewProvenance = {
+type ReviewProvenance = {
   engine: "SoS Monthly Closing (au.f_monthly_achievement)";
   from: string;
   to: string;
@@ -1495,17 +1488,6 @@ export function buildCoverage(input: {
           }
         : null,
   });
-}
-
-/** Resolve a from/to request against what the data holds, then build it. The one entry point a
- *  page or route should call when it has raw request parameters. */
-export async function loadReviewForRequest(
-  fromParam: string | null | undefined,
-  toParam: string | null | undefined,
-): Promise<ReviewBundle> {
-  const available = await availableReviewPeriods();
-  const { window, adjustment } = resolveReviewWindow(fromParam, toParam, available);
-  return loadReviewBundle(window, adjustment);
 }
 
 /** Exported for the empty-state paths so a failed load never renders as "sold nothing". */

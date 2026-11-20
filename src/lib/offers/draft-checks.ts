@@ -16,7 +16,7 @@
  * Pure, so the composer can show them live as the form is filled and a test can pin every one.
  */
 
-import { daysBetween, isIsoDate } from "@/lib/offers/dates";
+import { daysBetween } from "@/lib/offers/dates";
 
 export type OfferDraftWarning = {
   /** Which input the note belongs beside. Matches the composer's field keys. */
@@ -101,7 +101,3 @@ export function offerWarningsFor(
   return warnings.filter((warning) => warning.field === field).map((warning) => warning.message);
 }
 
-/** True when a value is a date the checks above can actually reason about. */
-export function isCheckableDate(value: string): boolean {
-  return isIsoDate(value);
-}

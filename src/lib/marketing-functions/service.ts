@@ -17,6 +17,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { isProductManagerTitle } from "@/lib/employees/job-function";
 import { monthEndDate, monthKeyOf, monthStartDate, shiftMonthKey } from "./months";
 import { carryForwardItems, missingForSignature, normalizeFieldFeedbackInput, normalizeItems } from "./rules";
 import {
@@ -231,7 +232,7 @@ export async function listMarketingAuthors(access: AccessContext): Promise<RepOp
     .filter(
       (employee) =>
         withSheet.has(canonicalHrIdKey(employee.hrId)) ||
-        (employee.jobTitle === "Product Manager" && isActiveLifecycleStatus(employee.employmentStatus)),
+        (isProductManagerTitle(employee.jobTitle) && isActiveLifecycleStatus(employee.employmentStatus)),
     )
     .map((employee) => ({
       hrId: employee.hrId,

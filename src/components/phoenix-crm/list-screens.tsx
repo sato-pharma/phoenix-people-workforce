@@ -259,7 +259,7 @@ export function listBoardUrl(seatId: string, test: boolean, month?: string): str
 }
 
 /** Who decides a grade change — the district manager's one step — as a sentence. */
-export function deciderText(view: Pick<TerritoryListView, "isTest" | "territory">): string {
+function deciderText(view: Pick<TerritoryListView, "isTest" | "territory">): string {
   if (view.isTest) return "In test mode it is decided under Requests.";
   return view.territory.reviewerName ? `${view.territory.reviewerName} decides it.` : "The manager above this territory decides it.";
 }

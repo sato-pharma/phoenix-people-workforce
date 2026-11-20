@@ -4,10 +4,6 @@ function padDatePart(value: number) {
   return String(value).padStart(2, "0");
 }
 
-export function isDateOnlyString(value: string) {
-  return DATE_PREFIX_PATTERN.test(value.trim());
-}
-
 export function toDateOnlyString(value: Date | string | null | undefined) {
   if (!value) {
     return null;

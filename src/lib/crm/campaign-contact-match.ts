@@ -117,7 +117,7 @@ export type KnownContactRow = {
 };
 
 /** A doctor who is on the list, and the reps who actually call on him. */
-export type KnownContact = {
+type KnownContact = {
   /** The reps whose own registered list this doctor is on, lower-cased HR ids. */
   agentHrIds: ReadonlySet<string>;
   contactCrmId: string | null;
@@ -178,7 +178,7 @@ export function buildKnownContactIndex(rows: readonly KnownContactRow[]): KnownC
  *               shared customer or a territory question, and telling the rep to "fix his coding"
  *               would be wrong.
  */
-export type CampaignMatchScope = "other" | "own";
+type CampaignMatchScope = "other" | "own";
 
 export type CampaignContactMatch = {
   /** Reps who hold this doctor on their registered list, other than the one who logged the visit. */

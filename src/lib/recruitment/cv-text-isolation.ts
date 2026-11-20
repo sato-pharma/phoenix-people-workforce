@@ -34,7 +34,7 @@ import { logError } from "@/lib/observability/log";
 
 export const CV_PARSE_TIMEOUT_MS = 30_000;
 export const CV_PARSE_MAX_OLD_GENERATION_MB = 384;
-export const CV_PARSE_MAX_YOUNG_GENERATION_MB = 64;
+const CV_PARSE_MAX_YOUNG_GENERATION_MB = 64;
 
 export type IsolatedCvParseKind = "pdf" | "docx" | "doc";
 type IsolatedWorkerKind = IsolatedCvParseKind | "pdf-images";

@@ -13,7 +13,7 @@ export const ALL = "__all__" as const;
 export type CaptureValueDimension = "line" | "area" | "brick" | "region";
 
 /** How the list is ordered. Newest first by default. */
-export type CaptureSort = "date-desc" | "date-asc";
+type CaptureSort = "date-desc" | "date-asc";
 
 /** The slice of a capture row the filters read — both tab row types satisfy it. */
 export type FilterableCapture = {
@@ -131,7 +131,7 @@ export function cairoMonthKey(iso: string | null | undefined): string | null {
 }
 
 /** A readable label for a "YYYY-MM" month key, e.g. "September 2026". */
-export function cairoMonthLabel(monthKey: string): string {
+function cairoMonthLabel(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   if (!year || !month) return monthKey;
   const date = new Date(Date.UTC(year, month - 1, 1));

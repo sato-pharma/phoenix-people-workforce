@@ -82,7 +82,7 @@ export function unitsRatio(actualUnits: number | null | undefined, targetUnits: 
   return actual / targetUnits;
 }
 
-export type ForecastLineDraft = { productCode: string; units: number };
+type ForecastLineDraft = { productCode: string; units: number };
 
 export type ForecastDraftResult = { ok: true; value: ForecastLineDraft[] } | { ok: false; error: string };
 

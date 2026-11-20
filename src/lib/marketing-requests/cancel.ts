@@ -79,7 +79,7 @@ export function canCancelMarketingRequest(params: {
   return viewerMayCancelMarketingRequests(params.role) && isMarketingRequestCancellable(params.status);
 }
 
-export const MARKETING_CANCELLED_STATUS = "cancelled";
+const MARKETING_CANCELLED_STATUS = "cancelled";
 
 type CancelTarget = {
   requestCode: string | null;

@@ -298,7 +298,7 @@ export async function resolveMarketingReportShareLink(input: {
 // neutralised before the sheet opens it (audit S-APP-08).
 
 /** Where a token-scoped file lives. Kept beside the CSV builder so the two cannot disagree. */
-export function shareFileUrl(baseUrl: string, token: string, kind: "evidence" | "invoice" | "proof", requestCode: string): string {
+function shareFileUrl(baseUrl: string, token: string, kind: "evidence" | "invoice" | "proof", requestCode: string): string {
   const base = baseUrl.replace(/\/+$/, "");
   return `${base}/api/share/marketing-requests/${encodeURIComponent(token)}/file?kind=${kind}&request=${encodeURIComponent(requestCode)}`;
 }

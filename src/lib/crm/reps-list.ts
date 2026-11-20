@@ -155,7 +155,7 @@ export type RepsListGroup = {
  * column, not a mostly-empty one. Of the remaining 1,585, some 1,468 have a CRM address and 117
  * have no address anywhere, which is the only case that renders as an absence.
  */
-export type ContactSeenAt = {
+type ContactSeenAt = {
   address: string | null;
   /** ISO timestamp of that check-in, so the page can say how fresh the observation is. */
   at: string | null;
@@ -221,7 +221,7 @@ export type RepsListContact = DoctorListRow & {
  * "N of M shown" — but it is deliberately NOT named `contacts`, and printing it under that word is
  * the exact mistake this comment exists to stop.
  */
-export type RepsListCounts = {
+type RepsListCounts = {
   am: number;
   /** AM + PM. The owner's definition of a contact — pharmacies are never in here. */
   contacts: number;
@@ -274,7 +274,7 @@ const normalizeRegionKey = (value: string | null | undefined): string => (value 
  * locality-area-region ("Damanhor-Behira I-Alex", "Assiut -Assiut II-Upper Egypt"), and a locality
  * can carry its own hyphen ("Ma-adi"), so every leading run of parts is tried, the whole text first.
  */
-export function intakeLocalityKeys(intake: string | null | undefined): string[] {
+function intakeLocalityKeys(intake: string | null | undefined): string[] {
   const parts = (intake ?? "").split("-").map((part) => part.trim());
   const keys: string[] = [];
   for (let take = parts.length; take >= 1; take -= 1) {
@@ -302,7 +302,7 @@ export function brickCandidates(row: Pick<DoctorListRow, "contactCrmId" | "regio
  * The brick a row sits in: the first candidate the master names. A brick id with no live row in
  * `source_of_sales_bricks` is a stale mapping, not a brick, so the next candidate is tried.
  */
-export function resolveRowBrick(
+function resolveRowBrick(
   row: Pick<DoctorListRow, "contactCrmId" | "region">,
   index: BrickIndex,
 ): { brickId: string; meta: BrickMeta } | null {
@@ -424,7 +424,7 @@ export function groupContactsByBrick(rows: readonly RepsListContact[], index: Br
 }
 
 /** One mapped CRM region -> brick row of the shared copy, keyed as `normalizeRegionKey` keys it. */
-export type RegionBrickRow = { brickId: string; key: string };
+type RegionBrickRow = { brickId: string; key: string };
 
 const REGION_BRICK_MAP_LIMITS = { maxEntries: 1, maxRowsTotal: 10_000 };
 

@@ -42,7 +42,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export const SETTLE_PERIODS_PER_RUN = 3;
 
 /** How far back the status read looks. A move settles within hours; three days is already generous. */
-export const SETTLE_STATUS_WINDOW_DAYS = 3;
+const SETTLE_STATUS_WINDOW_DAYS = 3;
 
 /** The slice of the Supabase client this module uses. See the header on why it is structural. */
 export type SettleSupabase = {
@@ -157,7 +157,7 @@ async function publishedPeriods(supabase: SettleSupabase, periods: readonly stri
  * unparseable timestamp is also treated as current — this must never recompute a real period's net
  * because a date could not be read.
  */
-export function netPredatesMove(status: PeriodNetStatus | undefined): boolean {
+function netPredatesMove(status: PeriodNetStatus | undefined): boolean {
   if (!status) return false;
   if (!status.netComputedAt) return true;
   const net = new Date(status.netComputedAt).getTime();

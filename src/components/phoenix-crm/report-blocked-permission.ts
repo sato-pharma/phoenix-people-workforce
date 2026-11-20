@@ -30,7 +30,7 @@ const ENDPOINT = "/api/phoenix-crm/refused-readings";
  * `/employee-portals/field-crm/day/<seatId>` is the only route that names one, and null everywhere
  * else is correct rather than missing — the ROUTE resolves the rep from the session.
  */
-export function seatFromPath(pathname: string): string | null {
+function seatFromPath(pathname: string): string | null {
   const parts = pathname.split("/").filter(Boolean);
   const at = parts.indexOf("day");
   const seat = at >= 0 ? parts[at + 1] : undefined;

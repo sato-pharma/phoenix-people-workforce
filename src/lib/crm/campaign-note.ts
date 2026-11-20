@@ -52,8 +52,8 @@ export type CampaignSpeciality = {
   written: string;
 };
 
-export type CampaignPerson = { name: string; speciality: CampaignSpeciality | null };
-export type CampaignAccount = { kind: CampaignAccountKind; name: string };
+type CampaignPerson = { name: string; speciality: CampaignSpeciality | null };
+type CampaignAccount = { kind: CampaignAccountKind; name: string };
 
 export type CampaignNoteReading = {
   /** Everyone the note names, in the order written. A day's campaign note routinely holds several. */

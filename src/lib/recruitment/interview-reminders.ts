@@ -37,9 +37,9 @@ import {
 } from "@/lib/recruitment/interview-calendar-week";
 
 /** 5:00 PM Cairo — from here on, the next working day's list goes out. */
-export const EVENING_REMINDER_MINUTES = 17 * 60;
+const EVENING_REMINDER_MINUTES = 17 * 60;
 /** One hour ahead of the interview. */
-export const HOUR_REMINDER_LEAD_MINUTES = 60;
+const HOUR_REMINDER_LEAD_MINUTES = 60;
 const PORTAL_BASE = "/employee-portals/interview-calendar";
 const SEARCH_AHEAD_DAYS = 4;
 /**
@@ -48,9 +48,9 @@ const SEARCH_AHEAD_DAYS = 4;
  * Recording any outcome removes the interview from the reminder source, so the pump stops at once; this
  * bound only keeps a truly-abandoned interview from nagging forever.
  */
-export const AWAITING_PUMP_MAX_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS;
+const AWAITING_PUMP_MAX_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS;
 /** Not before this hour (Cairo) does the daily "record what happened" nag go out. */
-export const AWAITING_PUMP_MINUTES = 9 * 60;
+const AWAITING_PUMP_MINUTES = 9 * 60;
 
 export type InterviewReminder = {
   kind: "evening" | "hour" | "awaiting";
@@ -208,11 +208,11 @@ export type InterviewReminderSend = (reminder: InterviewReminder) => Promise<boo
  * responds, so it stays in-app + Telegram only — a daily e-mail for up to a month would be a nuisance,
  * and the pump is the one the owner described as "in-app and Telegram" (2026-09-23).
  */
-export function reminderChannels(reminder: Pick<InterviewReminder, "kind">): Array<"in_app" | "email" | "telegram"> {
+function reminderChannels(reminder: Pick<InterviewReminder, "kind">): Array<"in_app" | "email" | "telegram"> {
   return reminder.kind === "awaiting" ? ["in_app", "telegram"] : ["in_app", "email", "telegram"];
 }
 
-export const sendInterviewReminder: InterviewReminderSend = async (reminder) => {
+const sendInterviewReminder: InterviewReminderSend = async (reminder) => {
   const channels = reminderChannels(reminder);
   const result = await createSystemNotification({
     actionUrl: reminder.href,
@@ -280,7 +280,7 @@ const SETTLED_READ_CHUNK = 40;
  * Reads, in a few parallel round trips, what `settledReminderKeys` needs. Fails OPEN: any error
  * answers "nothing is settled", so every reminder takes the full, idempotent path as before.
  */
-export async function loadSettledReminderKeys(reminders: readonly InterviewReminder[]): Promise<Set<string>> {
+async function loadSettledReminderKeys(reminders: readonly InterviewReminder[]): Promise<Set<string>> {
   if (reminders.length === 0) return new Set();
   try {
     const db = getSupabaseAdmin();

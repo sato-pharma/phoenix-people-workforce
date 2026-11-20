@@ -71,7 +71,7 @@ export type DoubleVisitAuditWeek = {
   end: string;
 };
 
-export type DoubleVisitAuditRepRow = {
+type DoubleVisitAuditRepRow = {
   name: string;
   hrId: string | null;
   status: AuditStatus;
@@ -81,7 +81,7 @@ export type DoubleVisitAuditRepRow = {
   weekly: number[];
 };
 
-export type DoubleVisitAuditDayRow = {
+type DoubleVisitAuditDayRow = {
   date: string;
   weekday: string;
   weekLabel: string;
@@ -97,7 +97,7 @@ export type DoubleVisitAuditDayRow = {
   fieldHours: number | null;
 };
 
-export type DoubleVisitAuditVisitRow = {
+type DoubleVisitAuditVisitRow = {
   date: string;
   weekday: string;
   weekLabel: string;
@@ -116,7 +116,7 @@ export type DoubleVisitAuditVisitRow = {
   phoenixColumns: Record<string, string | number | null> | null;
 };
 
-export type DoubleVisitAuditCoach = {
+type DoubleVisitAuditCoach = {
   hrId: string;
   name: string;
   roleCode: DoubleVisitRoleCode | null;

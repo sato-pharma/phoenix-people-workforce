@@ -25,7 +25,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const BULK_DECISION_MAX = 50;
 
-export const BULK_DECISION_MODULES = ["leave", "excuse"] as const;
+const BULK_DECISION_MODULES = ["leave", "excuse"] as const;
 export type BulkDecisionModule = (typeof BULK_DECISION_MODULES)[number];
 export type BulkDecisionVerb = "approve" | "reject";
 

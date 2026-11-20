@@ -46,7 +46,7 @@ import { previousPeriod } from "@/lib/sales/source-coverage";
 import { sourceQuietIn } from "@/lib/sales/source-quiet-periods";
 
 /** A source that is quiet in this month because another source's file carried it. */
-export type MonthCompletenessMerge = {
+type MonthCompletenessMerge = {
   /** The quiet source, by name — standing rule: names, never raw codes. */
   name: string;
   /** The source whose file carried it. */
@@ -54,7 +54,7 @@ export type MonthCompletenessMerge = {
 };
 
 /** A source still owed for the month. Both halves travel: the name is shown, the code is matched. */
-export type MonthCompletenessMissing = {
+type MonthCompletenessMissing = {
   code: string;
   name: string;
 };
@@ -69,7 +69,7 @@ export type MonthCompletenessMissing = {
 export { SOURCE_QUIET_PERIODS, sourceQuietIn, type SourceQuietPeriod } from "@/lib/sales/source-quiet-periods";
 
 /** A source that files nothing this month by the owner's word. */
-export type MonthCompletenessQuiet = {
+type MonthCompletenessQuiet = {
   /** The quiet source, by name — standing rule: names, never raw codes. */
   name: string;
   /** His words and the date. */

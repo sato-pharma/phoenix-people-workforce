@@ -72,7 +72,7 @@ import {
  * customer" and "something is wrong here" is not a rounding error. Between the two the pair is
  * simply not remarked on: a name match 800 m away is a rep who pinned the next street.
  */
-export const DISTANT_TWIN_M = 5_000;
+const DISTANT_TWIN_M = 5_000;
 
 /**
  * How many contacts may carry a name before a match on it means nothing.
@@ -81,10 +81,10 @@ export const DISTANT_TWIN_M = 5_000;
  * by at most two contacts leaves 390 rows and at most three leaves 473 — while dropping the gate
  * entirely leaves 785, most of them common names shared by unrelated doctors.
  */
-export const RARE_NAME_MAX = 3;
+const RARE_NAME_MAX = 3;
 
 /** Below this many characters a name key is too short to identify anybody. */
-export const MIN_NAME_KEY = 4;
+const MIN_NAME_KEY = 4;
 
 /**
  * Above this many contacts, a shared phone stops being a fact about THIS contact.
@@ -102,7 +102,7 @@ export const MIN_NAME_KEY = 4;
  * That is a REP-level fact about the whole list, and repeating it on a hundred rows is the wrong
  * shape for it.
  */
-export const OBVIOUS_SWITCHBOARD_AT = 10;
+const OBVIOUS_SWITCHBOARD_AT = 10;
 
 /**
  * Metres. A contact whose own check-ins reach further than this from the pin cannot be one place.
@@ -110,7 +110,7 @@ export const OBVIOUS_SWITCHBOARD_AT = 10;
  * 50 km is a different claim from "the visits disagree" — at this range it is two governorates, so
  * either the pin or the check-in belongs to another contact entirely. 113 contacts qualify.
  */
-export const SCATTERED_M = 50_000;
+const SCATTERED_M = 50_000;
 
 /** One odd thing about one contact. `title` is the heading; `detail` is a single sentence. */
 export type PhoenixInsight = {

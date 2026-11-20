@@ -65,15 +65,11 @@ export const MARKETING_FUNCTION_CATEGORIES: readonly MarketingFunctionCategory[]
 /** The red she used for "creation" inside the Promotional materials cell. */
 export const MARKETING_FUNCTION_EMPHASIS_COLOR = "#FF0000";
 
-export const MARKETING_FUNCTION_CATEGORY_KEYS: readonly MarketingFunctionCategoryKey[] =
+const MARKETING_FUNCTION_CATEGORY_KEYS: readonly MarketingFunctionCategoryKey[] =
   MARKETING_FUNCTION_CATEGORIES.map((category) => category.key);
 
 export function isMarketingFunctionCategoryKey(value: unknown): value is MarketingFunctionCategoryKey {
   return typeof value === "string" && (MARKETING_FUNCTION_CATEGORY_KEYS as readonly string[]).includes(value);
-}
-
-export function marketingFunctionCategory(key: MarketingFunctionCategoryKey): MarketingFunctionCategory {
-  return MARKETING_FUNCTION_CATEGORIES.find((category) => category.key === key) ?? MARKETING_FUNCTION_CATEGORIES[0];
 }
 
 /** Her header row, verbatim. The parenthesis of the second head is the smaller type in her sheet. */

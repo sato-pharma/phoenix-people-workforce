@@ -44,7 +44,7 @@
  *
  * There is deliberately no member for the repeated-character rule — see the header.
  */
-export type PasswordProblem =
+type PasswordProblem =
   | "between 8 and 20 characters"
   | "an uppercase letter"
   | "a lowercase letter"
@@ -58,7 +58,7 @@ export type PasswordProblem =
  * promise Turbify will accept it — the repeated-character rule is not judged here on purpose, and
  * the form's own error is what answers that (header).
  */
-export function turbifyPasswordProblems(password: string | null | undefined): PasswordProblem[] {
+function turbifyPasswordProblems(password: string | null | undefined): PasswordProblem[] {
   const value = String(password ?? "");
   const problems: PasswordProblem[] = [];
 

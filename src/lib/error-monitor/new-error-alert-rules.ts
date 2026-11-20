@@ -112,7 +112,7 @@ export function newErrorAlertText(report: NewErrorReport): { message: string; ti
 }
 
 /** A process remembers what it already sent, so a repeat costs no database read. Bounded: a full memory starts over. */
-export const NEW_ERROR_MEMORY_LIMIT = 2_000;
+const NEW_ERROR_MEMORY_LIMIT = 2_000;
 
 /** True when the signature is new to this process (and is now remembered). */
 export function rememberNewErrorSignature(seen: Set<string>, signature: string, limit = NEW_ERROR_MEMORY_LIMIT): boolean {

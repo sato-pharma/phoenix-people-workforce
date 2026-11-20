@@ -14,7 +14,7 @@ import { isWithinProbationWindow, probationDaysRemaining, probationEndDate } fro
 
 import { ensureProbationCase, getProbationCaseByEmployee, isProbationFieldRoleTitle } from "./cases";
 
-export type BackfillEligibleRow = {
+type BackfillEligibleRow = {
   employeeHrId: string;
   employeeName: string | null;
   hireDate: string;
@@ -25,7 +25,7 @@ export type BackfillEligibleRow = {
   legacyEvaluationIds: string[];
 };
 
-export type BackfillUnresolvedRow = {
+type BackfillUnresolvedRow = {
   employeeHrId: string;
   employeeName: string | null;
   reason: string;
@@ -86,7 +86,7 @@ async function loadEvaluationIdsByHrId(): Promise<Map<string, string[]>> {
 /**
  * Compute the backfill plan (no writes). This is the report shown for approval before any write.
  */
-export async function planProbationCaseBackfill(): Promise<BackfillReport> {
+async function planProbationCaseBackfill(): Promise<BackfillReport> {
   const [employees, legacyByHrId, evalsByHrId] = await Promise.all([
     getEmployeeDirectoryRows(),
     loadLegacyProbationByHrId(),

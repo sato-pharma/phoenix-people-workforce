@@ -41,7 +41,7 @@ export type ClosedMonths = {
   all: string[];
 };
 
-export function closedMonthsFor(line: HubLineCode, months: ClosedMonths): Set<string> {
+function closedMonthsFor(line: HubLineCode, months: ClosedMonths): Set<string> {
   return new Set([...months.history, ...(months.published[line] ?? [])]);
 }
 
@@ -66,13 +66,13 @@ export type RoiContext = {
   isCommitted: (status: string) => boolean;
 };
 
-export type PharmacySales = {
+type PharmacySales = {
   byMonth: Record<string, number>;
   byLine: Partial<Record<HubLineCode, Record<string, number>>>;
   total: number;
 };
 
-export type HubRequestView = HubRequest & {
+type HubRequestView = HubRequest & {
   roiResult: RoiResult;
   windowLabel: string | null;
   windowClosed: boolean;
@@ -108,7 +108,7 @@ export type MatchItemView = MatchItem & {
 const pairKey = (distributorCode: string, customerCode: string): string => `${distributorCode.trim().toUpperCase()}|${customerCode.trim()}`;
 
 /** Index the closing rows by pair, so a pharmacy finds its rows without scanning. */
-export function indexSales(rows: readonly ClosingSalesRow[]): Map<string, ClosingSalesRow[]> {
+function indexSales(rows: readonly ClosingSalesRow[]): Map<string, ClosingSalesRow[]> {
   const index = new Map<string, ClosingSalesRow[]>();
   for (const row of rows) {
     const key = pairKey(row.distributorCode, row.clientCode);

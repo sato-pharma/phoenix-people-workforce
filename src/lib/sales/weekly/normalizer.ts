@@ -46,7 +46,7 @@ import type { WeeklyExcludedBranch, WeeklyExcludedItem, WeeklyParsedRow } from "
 export { WEEKLY_BRANCH_EXCLUDE_CODE } from "@/lib/sales/weekly/branch-region-map";
 
 /** A distributor item the alias dictionary has never seen — one row per distinct raw item. */
-export type WeeklyNormalizeUnknownProduct = {
+type WeeklyNormalizeUnknownProduct = {
   /** stable UI key */
   key: string;
   itemCode: string;
@@ -62,7 +62,7 @@ export type WeeklyNormalizeUnknownProduct = {
 };
 
 /** A distributor branch/depot the branch→region map has never seen. */
-export type WeeklyNormalizeUnknownBranch = {
+type WeeklyNormalizeUnknownBranch = {
   key: string;
   /** the text the map joins on — branch code when present, else branch name */
   rawBranch: string;
@@ -78,14 +78,14 @@ export type WeeklyNormalizeUnknownBranch = {
 };
 
 /** A blocker no mapping on this page can clear — shown so it is never mistaken for a mapping gap. */
-export type WeeklyNormalizeBlockedIssue = {
+type WeeklyNormalizeBlockedIssue = {
   field: string;
   message: string;
   value: string | null;
   rows: number;
 };
 
-export type WeeklyNormalizeCodedRow = {
+type WeeklyNormalizeCodedRow = {
   itemCode: string;
   productCode: string;
   productName: string;
@@ -105,7 +105,7 @@ export type WeeklyNormalizeCodedRow = {
  * Reported so the operator can see the normalizer knows this distributor's sheet, and see instantly
  * when it is running on the built-in layout rather than an override he saved.
  */
-export type WeeklyNormalizeTemplate = {
+type WeeklyNormalizeTemplate = {
   /** "override" = a layout saved for this distributor in Phoenix; "code" = the built-in one */
   source: "code" | "override";
   name: string;
@@ -389,7 +389,7 @@ export async function analyzeWeeklyForNormalization(input: {
 }
 
 /** Group the parsed rows into the coverage + unknowns shape the workspace renders. Pure. */
-export function summarizeWeeklyNormalization(
+function summarizeWeeklyNormalization(
   distributorCode: string,
   distributorName: string,
   fileName: string,

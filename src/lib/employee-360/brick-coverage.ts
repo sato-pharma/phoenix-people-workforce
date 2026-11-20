@@ -61,7 +61,7 @@ import type { Employee360Window } from "./service";
 /** How a brick of the area stands against the rep's current list. */
 export type Employee360BrickStatus = "covered" | "sales-no-doctor" | "doctor-no-sales" | "idle";
 
-export type Employee360AreaBrick = {
+type Employee360AreaBrick = {
   /** Never rendered — the name is. */
   brickId: string;
   brickName: string;
@@ -73,7 +73,7 @@ export type Employee360AreaBrick = {
 };
 
 /** A brick holding doctors or pharmacies from the rep's list that is NOT one of his area's. */
-export type Employee360OutsideBrick = {
+type Employee360OutsideBrick = {
   brickId: string;
   brickName: string;
   /** Null when the brick's area has no name on file — never replaced by the code. */
@@ -376,7 +376,7 @@ function loadClosingBrickSalesShared(line: string, period: string): Promise<Bric
  *
  * `viewerRole` decides the El Qema mask — see note 2 in the header.
  */
-export async function getEmployee360BrickCoverage(
+async function getEmployee360BrickCoverage(
   hrId: string,
   window: Pick<Employee360Window, "from" | "to">,
   viewerRole: PhoenixRole,

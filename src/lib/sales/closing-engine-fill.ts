@@ -65,7 +65,7 @@ export type EngineSheetFill = {
  * AreaBook have a header row, so their first record is row 2, while PickList has none and starts
  * at AC1.
  */
-export type EngineDataSheet = {
+type EngineDataSheet = {
   salesData: EngineValue[][];
   areaBook: EngineValue[][];
   pickList: string[];

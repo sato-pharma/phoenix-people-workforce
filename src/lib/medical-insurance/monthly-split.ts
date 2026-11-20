@@ -25,7 +25,7 @@
 import { annualRate, ageBandWords, type MedicalInsuranceCategory, type MedicalInsuranceMemberType, type MedicalInsuranceRateCard } from "./cost";
 
 /** The company's share of the employee's own cover, in basis points (owner, 2026-11-17). */
-export const COMPANY_SHARE_BASIS_POINTS = 7_000;
+const COMPANY_SHARE_BASIS_POINTS = 7_000;
 /** Life insurance a month for every person covered, on the employee's share (owner, 2026-11-17). */
 export const LIFE_INSURANCE_PER_PERSON_MONTHLY = 85;
 /** The least an employee carries of their own cover each month (owner, 2026-11-17). Never more than the month itself. */

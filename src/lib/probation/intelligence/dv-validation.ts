@@ -12,7 +12,7 @@ import { dvDayKey } from "./dv-source";
 export type EvaluatorRole = "dm" | "tm" | "pm_gpm" | "nsm";
 
 /** Terminal validation outcome for a detected DV-Day. */
-export type DvValidationStatus = "validated" | "duplicate" | "rejected" | "invalid";
+type DvValidationStatus = "validated" | "duplicate" | "rejected" | "invalid";
 
 export type ProbationCaseRef = {
   caseId: string;

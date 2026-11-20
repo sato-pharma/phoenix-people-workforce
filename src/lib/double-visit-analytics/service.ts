@@ -1478,10 +1478,6 @@ export function buildManagerSummariesDetailed(
   return { summaries, visitedKeysByManager };
 }
 
-export function buildManagerSummaries(rows: DoubleVisitDbRow[], employees: EmployeeDirectoryRow[], asOfDate: string) {
-  return buildManagerSummariesDetailed(rows, employees, asOfDate).summaries;
-}
-
 /** The coverage numerator, recovered exactly from the pair the summary already carries — see
  * buildManagerSummariesDetailed, where neglected is teamMrCount minus the team MRs actually
  * visited. Insight sentences must quote THIS, not distinctMrs, or the count in the sentence

@@ -25,7 +25,7 @@ const RETURNS_TABLE = "ats_candidate_district_returns";
 export type DistrictReturnReasonCode = "area_not_match" | "other";
 
 /** What each reason reads as on screen. Kept beside the type so the API and the queue agree. */
-export const DISTRICT_RETURN_REASON_LABELS: Record<DistrictReturnReasonCode, string> = {
+const DISTRICT_RETURN_REASON_LABELS: Record<DistrictReturnReasonCode, string> = {
   area_not_match: "Area doesn’t match",
   other: "Other reason",
 };
@@ -204,7 +204,7 @@ export type ReturnedCvItem = {
   returnedAt: string;
 };
 
-export type ReturnedCvReasonGroup = {
+type ReturnedCvReasonGroup = {
   reasonCode: DistrictReturnReasonCode;
   reasonLabel: string;
   items: ReturnedCvItem[];

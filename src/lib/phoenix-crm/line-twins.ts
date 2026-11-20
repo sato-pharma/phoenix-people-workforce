@@ -40,16 +40,14 @@ import { distanceMeters } from "@/lib/phoenix-crm/geo";
 import { validationNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { personNameWords } from "@/lib/phoenix-crm/signboard-rules";
 
-export { AGREE_METERS as LINE_TWIN_AGREE_METERS };
-
 /** A name shorter than this is never matched across lines: "محمد احمد" is far too many doctors. */
-export const LINE_TWIN_MIN_NAME_WORDS = 3;
+const LINE_TWIN_MIN_NAME_WORDS = 3;
 /** A customer holds at most five places; a copy never takes him past it. */
 export const LINE_TWIN_MAX_PLACES = 5;
 /** A place already this close to the point it would move to is left where it is. */
 export const LINE_TWIN_SAME_POINT_METERS = 1;
 /** The `point_source` of a copied place. */
-export const LINE_TWIN_POINT_SOURCE = "line_twin";
+const LINE_TWIN_POINT_SOURCE = "line_twin";
 
 /** The written reason every merge move carries (the database wants 10–500 characters). */
 export const LINE_TWIN_MOVE_REASON =
@@ -446,7 +444,7 @@ export type LineTwinShare = {
   validatedByHrId: string | null;
 };
 
-export type LineTwinSkip = {
+type LineTwinSkip = {
   customerId: string;
   seatId: string;
   name: string;

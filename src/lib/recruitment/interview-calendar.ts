@@ -368,7 +368,7 @@ export type InterviewCalendarCaller = {
 };
 
 /** The header a caller may carry the link in; the `link` query parameter works the same. */
-export const INTERVIEW_CALENDAR_LINK_HEADER = "x-interview-calendar-link";
+const INTERVIEW_CALENDAR_LINK_HEADER = "x-interview-calendar-link";
 
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,128}$/;
 
@@ -1671,7 +1671,7 @@ export function validateExternalPerson(raw: unknown): ExternalPersonInput {
 }
 
 /** A single interview's day, time and length. */
-export function validateInterviewTime(input: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown }) {
+function validateInterviewTime(input: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown }) {
   const dateKey = typeof input.dateKey === "string" ? input.dateKey.trim() : "";
   if (!isDateKey(dateKey)) throw new Error("Choose a date for the interview.");
   if (!isBookableDay(dateKey)) throw new Error("Interviews are not booked on that day.");
@@ -3418,6 +3418,3 @@ export async function getInterviewExternalCv(
 
 // ── Small readers the routes share ──────────────────────────────────────────────────────────────
 
-export function describeInterviewSlot(booking: Pick<InterviewBooking, "dateKey" | "startMinutes">): string {
-  return `${formatDayLong(booking.dateKey)}, ${formatTimeOfDay(booking.startMinutes)}`;
-}

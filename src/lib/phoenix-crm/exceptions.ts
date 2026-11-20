@@ -53,7 +53,7 @@ export function exceptionLabel(kind: ExceptionKind): string {
   return EXCEPTION_KINDS.find((entry) => entry.key === kind)?.label ?? kind;
 }
 
-export function exceptionWhy(kind: ExceptionKind): string {
+function exceptionWhy(kind: ExceptionKind): string {
   return EXCEPTION_KINDS.find((entry) => entry.key === kind)?.why ?? "";
 }
 
@@ -280,7 +280,7 @@ export type TerritoryException = {
  */
 export const ON_LEAVE_LABEL = "On leave";
 
-export type TerritoryOnLeave = {
+type TerritoryOnLeave = {
   seatId: string;
   territoryName: string;
   lineName: string | null;
@@ -394,7 +394,7 @@ export function judgeTerritory(facts: TerritoryFacts, rules: ExceptionRules): Te
   return null;
 }
 
-export type ExceptionsSummary = {
+type ExceptionsSummary = {
   territories: number;
   needingAttention: number;
   /**

@@ -82,7 +82,7 @@ export type PhoenixCrmManagerDayDetail = {
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const REFUSED = "This manager is not one you read in Phoenix CRM.";
 
-export async function loadPhoenixCrmManagerDayDetail(
+async function loadPhoenixCrmManagerDayDetail(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; date: unknown; test: unknown },
 ): Promise<PhoenixCrmManagerDayDetail> {

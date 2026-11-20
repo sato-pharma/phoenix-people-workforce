@@ -36,7 +36,7 @@ import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror";
  */
 
 /** Display name on the From header. The company as it appears on legal paperwork. */
-export const OFFER_SENDER_NAME = systemLegalEntity.legalNameEn;
+const OFFER_SENDER_NAME = systemLegalEntity.legalNameEn;
 
 /**
  * Fallback mailbox, used only when `JOB_OFFER_EMAIL_FROM` is unset.
@@ -131,19 +131,3 @@ export function resolveOfferSender(): OfferSender {
   return { allowedFrom: JOB_OFFER_SENDER_ADDRESSES, from, isConfigured: true, refusedFrom: null, replyTo };
 }
 
-/**
- * The company block printed on the offer itself — letterhead, signature and footer.
- *
- * Read from `systemLegalEntity` rather than retyped so that the offer, the employment contract
- * and Form 1 can never disagree about the employer's own name or registered address. A candidate
- * who receives an offer naming one entity and then a contract naming another has a real reason
- * to ask what they are signing.
- */
-export function offerCompanyIdentity() {
-  return {
-    addressAr: systemLegalEntity.headOfficeAr,
-    legalNameAr: systemLegalEntity.legalNameAr,
-    legalNameEn: systemLegalEntity.legalNameEn,
-    responsibleManagerAr: systemLegalEntity.responsibleManagerAr,
-  };
-}

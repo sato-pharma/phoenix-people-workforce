@@ -32,14 +32,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The admin-editable audience key (see role-recipients.ts). Defaults to Super Admin + HR Operations. */
 export const ACCEPTED_OFFER_AUDIENCE = "accepted_offer_alert" as const;
-export const ACCEPTED_OFFER_MODULE = "offers" as const;
-export const ACCEPTED_OFFER_EVENT_TYPE = "offer_accepted" as const;
+const ACCEPTED_OFFER_MODULE = "offers" as const;
+const ACCEPTED_OFFER_EVENT_TYPE = "offer_accepted" as const;
 
 /** In-app, push and Telegram — the owner's choice, 2026-10-02. Never email. */
 export const ACCEPTED_OFFER_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "push", "telegram"];
 
 /** The organogram, where an accepted offer's seat shows "Offer accepted — …" and is one press to hire. */
-export const ACCEPTED_OFFER_PATH = "/organogram" as const;
+const ACCEPTED_OFFER_PATH = "/organogram" as const;
 
 const NOT_RECORDED = "Not recorded";
 function stated(value: string | null | undefined): string {
@@ -77,14 +77,14 @@ export type AcceptedOfferAnnounceResult = {
 };
 
 /** The Employee Master, where the new record now sits (the notice names its HR ID to search for). */
-export const JOINED_EMPLOYEE_PATH = "/employees" as const;
+const JOINED_EMPLOYEE_PATH = "/employees" as const;
 
 /**
  * The joining-form version of the alert (owner, 2026-10-08). The candidate pressed Submit, so the
  * record is ALREADY made and seated — "open the organogram to seat them" would send HR to do work
  * that is done. It says what is left instead: check the record and finish what only HR can.
  */
-export function joinedOfferTitle(offer: Pick<OfferRecord, "candidateName">): string {
+function joinedOfferTitle(offer: Pick<OfferRecord, "candidateName">): string {
   return `Offer accepted — joining form completed: ${stated(offer.candidateName)}`;
 }
 
@@ -159,9 +159,9 @@ export async function announceJoiningFormBlocked(
 // ───────────────────────────────────────────────────── the team that works with the new hire ──
 
 /** The second notice: the hire's own line of management and the SFE Manager (owner, 2026-10-09). */
-export const ACCEPTED_OFFER_TEAM_EVENT_TYPE = "offer_accepted_team" as const;
+const ACCEPTED_OFFER_TEAM_EVENT_TYPE = "offer_accepted_team" as const;
 /** The SFE Manager is addressed by role, so it needs no new policy row and no migration. */
-export const ACCEPTED_OFFER_SFE_ROLE = "SFE Manager" as const;
+const ACCEPTED_OFFER_SFE_ROLE = "SFE Manager" as const;
 
 /** "Omar Arwa (Sohag 1) accepted the offer. Hire date: 11-1-2026." — the territory and date only when the offer has them. */
 export function acceptedOfferTeamMessage(offer: Pick<OfferRecord, "candidateName" | "startDate" | "territory">): string {
@@ -202,7 +202,7 @@ async function managerOf(hrId: string, warnings: string[]): Promise<string | nul
  * record's own manager is the answer; before it (HR marked the offer accepted by hand) the seat the
  * offer was written against names the manager. A seatless offer has neither, and says so as a warning.
  */
-export async function resolveHireManagerChain(
+async function resolveHireManagerChain(
   offer: Pick<OfferRecord, "vacancyId">,
   hire: { hrId: string } | undefined,
   warnings: string[],

@@ -24,13 +24,13 @@
  * work and his figures.
  */
 
-import { startedWindowCovers, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
+import { type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The RPC the views and this read share — every person on a started team, with his own window. */
-export const PHOENIX_CRM_STARTED_TEAM_REPS_RPC = "phoenix_crm_started_team_reps";
+const PHOENIX_CRM_STARTED_TEAM_REPS_RPC = "phoenix_crm_started_team_reps";
 
 /**
  * The DOCTOR-LIST door, and only that: every started team's people PLUS every rep who holds a Phoenix
@@ -87,14 +87,3 @@ async function loadRepWindows(rpc: string): Promise<StartedRepWindow[]> {
   }
 }
 
-/**
- * Whether ONE person's ONE day is counted from Phoenix CRM — for a reader that needs the answer for a
- * single rep-day and would otherwise ask the vendor. Reads the windows, then applies the shared rule.
- */
-export async function isStartedPhoenixRepDay(
-  rep: { hrId: string | null | undefined; crmId: number | null | undefined },
-  dateIso: string,
-): Promise<boolean> {
-  if (!dateIso) return false;
-  return startedWindowCovers(await loadStartedRepWindows(), rep, dateIso);
-}

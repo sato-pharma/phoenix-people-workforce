@@ -79,7 +79,7 @@ function offerFields(offer: OfferRecord): OfferFields {
   };
 }
 
-export function offerSubject(offer: Pick<OfferRecord, "revision" | "title">): string {
+function offerSubject(offer: Pick<OfferRecord, "revision" | "title">): string {
   // An updated offer says so first (owner, 2026-11-10), so it is never read as a copy of the first one.
   return offerSubjectFor(offer.title, offer.revision ?? 0);
 }

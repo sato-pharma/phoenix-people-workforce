@@ -94,7 +94,7 @@ export async function withdrawValidateAgainNoticeQuietly(customerId: string | nu
 export type WorldScope = { isTest: boolean; seatIds: string[] | null };
 
 /** What the look-alike list compares beside the name (server/line-lookalikes.ts); the rule never reads it. */
-export type TwinContact = { phone: string | null; referenceContactId: string | null };
+type TwinContact = { phone: string | null; referenceContactId: string | null };
 
 export type TwinWorld = LineTwinInput & { contacts: Map<string, TwinContact> };
 
@@ -236,7 +236,7 @@ export async function applyLineTwinMerges(moves: ReadonlyArray<LineTwinMove>, se
   return outcome;
 }
 
-export type ShareOutcome = { validated: number; skipped: Record<string, number>; failed: number; validatedShares: LineTwinShare[] };
+type ShareOutcome = { validated: number; skipped: Record<string, number>; failed: number; validatedShares: LineTwinShare[] };
 
 export async function applyLineTwinShares(plan: LineTwinSharePlan, settings: Settings): Promise<ShareOutcome> {
   const outcome: ShareOutcome = { validated: 0, skipped: {}, failed: 0, validatedShares: [] };

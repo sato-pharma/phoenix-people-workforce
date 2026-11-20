@@ -29,9 +29,9 @@ import { toDays, type HrOpsReportLineRow } from "./types";
  *   exempt      — the person is out of every automated deduction.
  *   not_priced  — there are days, but no figure could be worked out (no salary, or the list unread).
  */
-export type HrOpsPriceStatus = "priced" | "nothing" | "not_carried" | "exempt" | "not_priced";
+type HrOpsPriceStatus = "priced" | "nothing" | "not_carried" | "exempt" | "not_priced";
 
-export type HrOpsLinePrice = {
+type HrOpsLinePrice = {
   lineId: string;
   /** The days the figure prices: the decided days, else the days an Approve would start from. */
   days: number | null;
@@ -73,7 +73,7 @@ export const SALARY_LIST_UNREAD_NOTE = "Not priced: the salary list could not be
  * The days a row's figure is for. A rejected row prices nothing, and neither does a row CARRIED from
  * another report — that day is priced where it was decided, never twice.
  */
-export function daysToPrice(line: PricedLine): number | null {
+function daysToPrice(line: PricedLine): number | null {
   if (isCarried(line)) return null;
   if (line.decision === "rejected") return null;
   if (line.decision === "approved") return toDays(line.decided_days);
@@ -93,7 +93,7 @@ function salaryFor(salaries: ReadonlyMap<string, number>, hrId: string): number 
  * Pure: price each row against a salary map. `null` — or an EMPTY map, which is what the feeder
  * returns when its read failed — means the list was not read: every row with days is "Not priced".
  */
-export function priceLines(lines: readonly PricedLine[], salaries: ReadonlyMap<string, number> | null): HrOpsLinePrice[] {
+function priceLines(lines: readonly PricedLine[], salaries: ReadonlyMap<string, number> | null): HrOpsLinePrice[] {
   const readable = salaries && salaries.size > 0 ? salaries : null;
   return lines.map((line): HrOpsLinePrice => {
     const days = daysToPrice(line);

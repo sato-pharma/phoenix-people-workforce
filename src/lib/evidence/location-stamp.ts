@@ -75,7 +75,7 @@ export function formatCoordinatePair(latitude: number, longitude: number): strin
 }
 
 /** `Address: 12 Ahmed Orabi Street, Mohandessin, Giza Governorate` */
-export function formatEvidenceAddressLine(stamp: EvidenceLocationStamp): string {
+function formatEvidenceAddressLine(stamp: EvidenceLocationStamp): string {
   return `Address: ${clean(stamp.address) ?? EVIDENCE_ADDRESS_UNRESOLVED}`;
 }
 
@@ -86,7 +86,7 @@ export function formatEvidenceAddressLine(stamp: EvidenceLocationStamp): string 
  * nonsense match reads as the nonsense it is. Names only, never brick ids — the owner's standing
  * rule is human-readable names everywhere, and a code on an evidence photo helps nobody.
  */
-export function formatEvidenceTerritoryLine(stamp: EvidenceLocationStamp): string {
+function formatEvidenceTerritoryLine(stamp: EvidenceLocationStamp): string {
   const brick = clean(stamp.brickName);
   const area = clean(stamp.areaName);
   const region = clean(stamp.regionName);
