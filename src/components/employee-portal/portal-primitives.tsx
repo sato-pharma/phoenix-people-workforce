@@ -48,7 +48,7 @@ export function PortalSection({
               </h2>
             ) : null}
             {description ? (
-              <div className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+              <div className="phx-header-note mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
                 {description}
               </div>
             ) : null}

@@ -1307,6 +1307,14 @@ a[aria-current="page"] .nav-badge-alarm-glass {
   border-radius: 0 !important;
 }
 
+/* RULE 0 — NO SENTENCE UNDER A HEADER. Owner, 2026-11-20: "REMOVE ALL THESE TEXTS UNDER HEADERS",
+   "ALL HEADERS", "DELETE ANY TEXT UNDER ANY HEADER". Every shared header part marks its
+   description `phx-header-note` (pageHeaderDescriptionClassName, PortalSection, SectionCard,
+   CommandBand, AdminSectionHeader); inside the portal it is not drawn. The admin shell keeps it. */
+.employee-portal-shell .phx-header-note {
+  display: none !important;
+}
+
 /* RULE 1b — the native audio player. Chrome and Safari draw <audio controls> as a rounded pill
    from the browser's own shadow tree, which carries no class for RULE 1 to match — the CRM's
    voice notes were the one rounded shape left on a rep's screen. */

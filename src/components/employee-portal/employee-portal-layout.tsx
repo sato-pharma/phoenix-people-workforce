@@ -823,7 +823,7 @@ function EmployeePortalGreeting({ firstName }: { firstName: string }) {
 
   if (!online) {
     return (
-      <p className="flex items-center gap-1 text-phx-xs font-black uppercase tracking-[0.14em] text-red-600 sm:text-phx-xs" role="status">
+      <p className="flex items-center gap-1 text-phx-xs font-black uppercase tracking-[0.14em] text-red-400 sm:text-phx-xs lg:text-red-600" role="status">
         <WifiOff className="h-3 w-3 shrink-0" />
         {/* 🔴 Never "nothing will save" above "Saved on this phone": the press on staging showed the two together, and a rep who reads this line may not press at all. */}
         {visitsCanBeHeld ? "Offline — only visits will save" : "Offline — nothing will save"}
@@ -836,7 +836,7 @@ function EmployeePortalGreeting({ firstName }: { firstName: string }) {
     // narrower — the eyebrow steps aside and the bar shows the role alone: the column has ~90px
     // there, and "EMPLOYEE PORTAL" at 0.22em needed 130px, so it ran under the search icon. The
     // OFFLINE line above is a different branch and is never hidden.
-    <p className="hidden text-phx-xs font-black uppercase tracking-[0.16em] text-orange-600 min-[360px]:block min-[400px]:tracking-[0.22em] sm:text-phx-xs sm:tracking-[0.26em]">
+    <p className="hidden whitespace-nowrap text-phx-xs font-black uppercase leading-none tracking-[0.16em] text-orange-400 min-[360px]:block sm:leading-normal lg:text-orange-600 sm:tracking-[0.26em]">
       <span className={greeting ? "sm:hidden" : undefined}>Employee Portal</span>
       {greeting ? (
         <span className="hidden normal-case tracking-[0.02em] sm:inline">
@@ -944,7 +944,7 @@ function EmployeePortalInbox({ mailboxConnected }: { mailboxConnected: boolean }
       <button
         aria-expanded={open}
         aria-label={total > 0 ? `Inbox, ${total} unread` : "Inbox"}
-        className="relative inline-flex h-9 w-9 items-center justify-center text-phx-ink-soft transition hover:bg-phx-paper hover:text-phx-ink"
+        className="relative inline-flex h-9 w-9 items-center justify-center text-phx-ink-soft transition hover:bg-phx-paper hover:text-phx-ink max-lg:h-[38px] max-lg:w-[38px] max-lg:border max-lg:border-white/15 max-lg:text-white max-lg:hover:bg-white/10 max-lg:hover:text-white"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
@@ -1555,25 +1555,25 @@ export function EmployeePortalTopNav({
       {disableSessionGuard ? null : <SessionSecurityGuard />}
       <OneSignalProvider pushHrId={data.pushHrId} />
       <header
-        className={`fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl ${
+        className={`fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl max-lg:border-b-0 max-lg:bg-[#08111f] max-lg:shadow-[0_1px_0_rgba(255,255,255,0.06)] ${
           focusMode ? "hidden" : ""
         }`}
       >
         {/* The brand's three-colour hairline along the bar's top edge. */}
-        <div aria-hidden="true" className="h-[2px] w-full bg-gradient-to-r from-sky-500 via-[#F05A1A] to-emerald-500" />
-        <div className="mx-auto flex h-[54px] w-full max-w-[1560px] items-center gap-1 px-2 min-[360px]:gap-1.5 sm:gap-2.5 sm:px-4 lg:h-[62px] lg:px-8">
+        <div aria-hidden="true" className="h-[2px] w-full bg-gradient-to-r from-sky-500 via-[#F05A1A] to-emerald-500 max-lg:bg-none max-lg:bg-[#F05A1A]" />
+        <div className="mx-auto flex h-[54px] w-full max-w-[1560px] items-center gap-1.5 px-2 min-[360px]:gap-2 sm:gap-2.5 sm:px-4 lg:h-[62px] lg:px-8">
           <button
             aria-label="Menu"
             aria-controls="employee-portal-mobile-sidebar"
             aria-expanded={mobileMenuOpen}
-            className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded border border-orange-200 bg-orange-50 text-orange-700 shadow-[0_6px_16px_rgba(249,115,22,0.10)] transition hover:border-orange-300 hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-orange-500/20 lg:hidden"
+            className="relative inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center border border-white/15 text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-orange-500/40 lg:hidden"
             onClick={() => {
               setPinMode(false);
               setMobileMenuOpen((open) => !open);
             }}
             type="button"
           >
-            <Menu className="h-4 w-4" />
+            <Menu className="h-[18px] w-[18px]" />
             {queueBadges.length > 0 ? <PortalPendingCount navBadges={queueBadges} tone="menu" /> : null}
           </button>
           {/* `md:flex-none`, not `flex-1`, from the width where the search box appears. Measured
@@ -1593,7 +1593,7 @@ export function EmployeePortalTopNav({
           <div className="flex min-w-0 flex-1 items-center md:flex-none">
             <div className="min-w-0">
               <EmployeePortalGreeting firstName={firstName} />
-              <p className="text-phx-sm font-bold leading-tight text-slate-500 max-[359px]:[[role=status]~&]:hidden sm:text-phx-xs">{data.employee.roleLabel}</p>
+              <p className="mt-1 text-[13px] font-extrabold leading-tight tracking-[-0.01em] text-white max-[359px]:[[role=status]~&]:hidden lg:mt-0 lg:text-phx-xs lg:font-bold lg:tracking-normal lg:text-slate-500">{data.employee.roleLabel}</p>
             </div>
           </div>
 
@@ -1727,7 +1727,7 @@ export function EmployeePortalTopNav({
           {onOpenCommandBar ? (
             <button
               aria-label="Search pages and actions"
-              className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink md:hidden"
+              className="relative inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center border border-white/15 text-white transition hover:bg-white/10 md:hidden"
               onClick={onOpenCommandBar}
               type="button"
             >
@@ -1746,7 +1746,7 @@ export function EmployeePortalTopNav({
           {/* One bordered cluster for the ambient icon controls — zoom · notifications · messages —
               with hairline dividers, so they read as one control group at even 36px targets rather
               than three floating buttons. */}
-          <div className={`flex shrink-0 items-center border border-slate-200 bg-white [&>*:not(:first-child)]:border-l [&>*]:border-slate-200 ${adminSoftDepthClassName}`}>
+          <div className={`flex shrink-0 items-center border border-slate-200 bg-white [&>*:not(:first-child)]:border-l [&>*]:border-slate-200 max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none max-lg:[&>*]:border-l-0 ${adminSoftDepthClassName}`}>
             <DisplayScaleControl isAdminMode={false} />
             <EmployeePortalInbox mailboxConnected={data.mailboxConnected} />
           </div>
@@ -1755,15 +1755,15 @@ export function EmployeePortalTopNav({
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
               aria-label={`Account menu for ${employeeName}`}
-              className="flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-1.5 py-1 shadow-[0_8px_20px_rgba(15,23,42,0.06)] transition hover:border-orange-200 hover:bg-orange-50/70 sm:px-2"
+              className="flex items-center gap-1.5 border border-slate-200 bg-white px-1.5 py-1 shadow-[0_8px_20px_rgba(15,23,42,0.06)] transition hover:border-orange-200 hover:bg-orange-50/70 max-lg:h-[38px] max-lg:w-[38px] max-lg:justify-center max-lg:border-orange-500/75 max-lg:bg-transparent max-lg:p-0 max-lg:shadow-none lg:px-2"
               onClick={() => setUserMenuOpen((open) => !open)}
               type="button"
             >
-              <PortalAvatar fullName={employeeName} photoSrc={photoSrc} size="h-7 w-7" />
-              <div className="hidden pr-0.5 text-left sm:block">
+              <PortalAvatar fullName={employeeName} photoSrc={photoSrc} size="h-9 w-9 lg:h-7 lg:w-7" />
+              <div className="hidden pr-0.5 text-left lg:block">
                 <p className="text-xs font-semibold text-slate-800 whitespace-nowrap">{firstName}</p>
               </div>
-              <ChevronDown className="hidden h-3 w-3 text-slate-400 sm:block" />
+              <ChevronDown className="hidden h-3 w-3 text-slate-400 lg:block" />
             </button>
 
             {userMenuOpen ? (
