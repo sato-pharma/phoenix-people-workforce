@@ -71,7 +71,12 @@ export type FieldCameraReport = {
   warnings: string[];
 };
 
-export type FieldCameraCheck = { payload: SealPayload; report: FieldCameraReport };
+export type FieldCameraCheck = {
+  payload: SealPayload;
+  report: FieldCameraReport;
+  /** True when this seal already stands behind a watch on the SAME customer — a resend of one sync (`allowResend`). */
+  alreadyUsed: boolean;
+};
 
 /**
  * Judge a sealed file for a watch on `seat`. Throws a validation error naming the first thing that does not hold;
@@ -79,7 +84,15 @@ export type FieldCameraCheck = { payload: SealPayload; report: FieldCameraReport
  */
 export async function checkFieldCameraPhoto(
   bytes: Uint8Array,
-  context: { occupantHrIds: readonly string[] },
+  context: {
+    occupantHrIds: readonly string[];
+    /**
+     * The camera's own sync sends a visit again until Phoenix answers, so a seal already used FOR THE CUSTOMER IT
+     * NAMES is that same sync arriving twice, not a photo reused for a second customer. Never set by the Super
+     * Admin's upload, where every second use is refused.
+     */
+    allowResend?: boolean;
+  },
 ): Promise<FieldCameraCheck> {
   const verdict = verifySealedPhoto(bytes, { rootsPem: GOOGLE_ATTESTATION_ROOTS.map((root) => root.pem), identity: RELEASE_IDENTITY });
   if (!verdict.ok) throw validationError(`The Phoenix Camera seal does not hold: ${verdict.problem}`, "phoenix_crm_admin_photo_bad_seal");
@@ -105,12 +118,18 @@ export async function checkFieldCameraPhoto(
   const admin = getSupabaseAdmin();
   const used = await admin
     .from("phoenix_crm_admin_photo_validations")
-    .select("id")
+    .select("id, customer_id")
     .eq("seal_id", verdict.sealId)
     .neq("status", "cancelled")
-    .limit(1);
+    .limit(5);
   throwIfError(used.error);
-  if ((used.data ?? []).length > 0) {
+  const usedRows = (used.data ?? []) as { customer_id: string | null }[];
+  const resent =
+    context.allowResend === true &&
+    payload.visit !== null &&
+    usedRows.length > 0 &&
+    usedRows.every((row) => String(row.customer_id ?? "").toLowerCase() === payload.visit?.customerId);
+  if (usedRows.length > 0 && !resent) {
     throw validationError("This sealed photo was already used for a customer. Each photo validates one customer.", "phoenix_crm_admin_photo_seal_used");
   }
 
@@ -152,6 +171,7 @@ export async function checkFieldCameraPhoto(
 
   return {
     payload,
+    alreadyUsed: resent,
     report: {
       sealId: verdict.sealId,
       deviceKey: verdict.deviceKey,

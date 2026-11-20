@@ -77,7 +77,45 @@ export type SealPayload = {
   deviceModel: string;
   androidSdk: number;
   nonce: string;
+  /**
+   * The visit the photo was taken for (camera 2.0, the rep's offline app — owner, 20 Nov 2026: "the validation
+   * will register and the visit will register"). Inside the signature, so the phone cannot move a photo to
+   * another customer or another visit after the shutter. Absent on a photo taken for the Super Admin's upload.
+   */
+  visit: SealVisit | null;
 };
+
+/** What a camera-2.0 seal binds: the territory, the customer, the visit's own id and the offline clock. */
+export type SealVisit = {
+  seatId: string;
+  customerId: string;
+  /** The visit's uuid, chosen on the phone; a resend of the same sync is the same visit. */
+  visitId: string;
+  /** Phoenix's time anchor and the uptime since it (`offline-clock.ts`) — never a phone timestamp. */
+  offline: { anchorId: string; elapsedMs: number; bootId: string | null } | null;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The visit block, null when the seal carries none, or a string naming why it cannot be read. */
+function parseSealVisit(raw: unknown): SealVisit | null | string {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return "The seal's visit cannot be read.";
+  const v = raw as Record<string, unknown>;
+  if (!isText(v.seatId, 64) || !isText(v.customerId, 36) || !UUID_PATTERN.test(v.customerId) || !isText(v.visitId, 36) || !UUID_PATTERN.test(v.visitId)) {
+    return "The seal's visit cannot be read.";
+  }
+  let offline: SealVisit["offline"] = null;
+  if (v.offline !== undefined && v.offline !== null) {
+    const o = v.offline as Record<string, unknown>;
+    if (typeof o !== "object" || !isText(o.anchorId, 36) || !UUID_PATTERN.test(o.anchorId) || !isNumber(o.elapsedMs) || o.elapsedMs < 0) {
+      return "The seal's offline clock cannot be read.";
+    }
+    const bootId = typeof o.bootId === "string" && o.bootId.trim() ? o.bootId.trim().slice(0, 120) : null;
+    offline = { anchorId: o.anchorId.toLowerCase(), elapsedMs: Math.round(o.elapsedMs), bootId };
+  }
+  return { seatId: v.seatId.trim(), customerId: v.customerId.toLowerCase(), visitId: v.visitId.toLowerCase(), offline };
+}
 
 function isText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max;
@@ -115,6 +153,8 @@ export function parseSealPayload(text: string): SealPayload | string {
   if (p.networkTimeUtc !== null && !isInstant(p.networkTimeUtc)) return "The seal's time cannot be read.";
   for (const key of booleans) if (typeof p[key] !== "boolean") return "The seal's phone checks cannot be read.";
   if (!isText(p.deviceModel, 120) || !isText(p.nonce, 64)) return "The seal's contents cannot be read.";
+  const visit = parseSealVisit(p.visit);
+  if (typeof visit === "string") return visit;
   return {
     v: 1,
     app: p.app,
@@ -142,6 +182,7 @@ export function parseSealPayload(text: string): SealPayload | string {
     deviceModel: p.deviceModel,
     androidSdk: p.androidSdk as number,
     nonce: p.nonce,
+    visit,
   };
 }
 

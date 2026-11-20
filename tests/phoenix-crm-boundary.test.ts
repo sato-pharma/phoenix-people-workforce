@@ -449,6 +449,11 @@ const ROUTE_GATES: RouteGate[] = [
   // MONOTONIC time against, so an offline visit never needs a timestamp from a clock a rep can move.
   // Same permission and audience as entering a visit, because that is what it dates.
   post("time-anchor", "create"),
+  // The Phoenix Camera as the rep's offline visit app (owner, 20 Nov 2026): the pack the phone keeps for a day
+  // with no network, and the sync that records a sealed photo's validation and its visit. Both the app's alone
+  // (`captureClientOf`), at the gate entering a visit takes, because that is what they are.
+  get("field-camera/pack", "create"),
+  post("field-camera/sync", "create"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
   // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.

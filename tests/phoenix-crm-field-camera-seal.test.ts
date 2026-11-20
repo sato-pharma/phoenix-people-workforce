@@ -200,6 +200,71 @@ function payloadRulesBehave(): void {
   assert.match(sealPayloadWarnings(payloadOf({ timeSource: "phoenix", phoneClockUtc: "2026-11-20T09:50:00.000Z" }))[0], /off Phoenix's time/);
 }
 
+// Camera 2.0, the rep's offline visit app (owner, 20 Nov 2026): the signed visit block names the territory, the
+// customer, the visit's own id and the offline clock, so nothing the phone sends beside the photo can move them.
+function visitBlockBehaves(): void {
+  const base = JSON.parse(JSON.parse(splitSealedFile(fileOf("valid"))!.sealText).payload) as Record<string, unknown>;
+  const parse = (visit: unknown) => parseSealPayload(JSON.stringify({ ...base, visit }));
+  const customerId = "0b1e8a52-7c1f-4f3e-9d5a-2a4b6c8d0e1f";
+  const visitId = "6f2d9c41-3b7a-4e8f-a1c2-d3e4f5a6b7c8";
+  const anchorId = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+
+  const none = parseSealPayload(JSON.stringify(base));
+  assert.equal(typeof none, "object");
+  assert.equal((none as SealPayload).visit, null, "a photo taken for the Super Admin's upload carries no visit");
+
+  const online = parse({ seatId: " PED-CAI-01 ", customerId: customerId.toUpperCase(), visitId });
+  assert.equal(typeof online, "object", String(online));
+  assert.deepEqual((online as SealPayload).visit, { seatId: "PED-CAI-01", customerId, visitId, offline: null });
+
+  const offline = parse({ seatId: "PED-CAI-01", customerId, visitId, offline: { anchorId, elapsedMs: 3_600_000.4, bootId: "42" } });
+  assert.deepEqual((offline as SealPayload).visit?.offline, { anchorId, elapsedMs: 3_600_000, bootId: "42" });
+
+  assert.equal(typeof parse("visit"), "string", "a visit that is not an object is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId: "not-a-uuid", visitId }), "string", "a customer that is not an id is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId: "1" }), "string", "a visit id that is not a uuid is refused");
+  assert.equal(typeof parse({ seatId: "", customerId, visitId }), "string", "a visit with no territory is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, offline: { anchorId, elapsedMs: -1 } }), "string", "a negative uptime is refused");
+  assert.equal(typeof parse({ seatId: "PED-CAI-01", customerId, visitId, offline: { anchorId: "x", elapsedMs: 5 } }), "string", "an anchor that is not an id is refused");
+}
+
+function syncWiringHolds(): void {
+  const sync = read("src/lib/phoenix-crm/server/field-camera-sync.ts");
+  assert.match(sync, /function assertApp\(client: CaptureClient\): void \{\s*[^\n]*\n\s*if \(client !== "app"\) throw notFoundError/, "a browser is answered 404");
+  assert.ok(sync.split("assertApp(client);").length - 1 === 2, "both the pack and the sync are the app's alone");
+  assert.match(sync, /if \(form\.enteredAs !== "rep"\) throw notFoundError/, "the pack is the territory's own rep's");
+  assert.match(sync, /\.filter\(\(customer\) => !customer\.outside\)/, "the pack never carries a customer outside his list");
+  assert.match(sync, /checkFieldCameraPhoto\(bytes, \{ occupantHrIds: seatOccupants\(seat\), allowResend: true \}\)/, "the seal is judged in full and a resend is allowed");
+  assert.match(sync, /if \(!visit\) throw validationError/, "a seal with no visit block cannot record a visit");
+  assert.match(sync, /payload\.hrId !== viewer\.hrId\.trim\(\)\.toUpperCase\(\)/, "the seal must name this rep");
+  assert.match(sync, /visit\.seatId !== seat\.seatId/, "the seal must name this territory");
+  // Who, where and when come from the signed seal and are spread AFTER the body, so the body can never override them.
+  const save = sync.slice(sync.indexOf("await saveVisit("));
+  const spread = save.indexOf("...draft,");
+  assert.ok(spread > 0, "the body's visit fields are passed on");
+  for (const field of ["id: visit.visitId", "customerId: visit.customerId", "lat: payload.lat", "lon: payload.lon", "accuracyMeters: payload.accuracyMeters", "deviceMocked: payload.mock", "offline: visit.offline"]) {
+    const at = save.indexOf(field);
+    assert.ok(at > spread, `${field} comes from the seal, after the body`);
+  }
+  assert.ok(sync.indexOf("sealed.alreadyUsed") < sync.indexOf("validateWithRepSeal(viewer"), "a seal already used validates nobody twice");
+
+  const camera = read("src/lib/phoenix-crm/server/field-camera.ts");
+  assert.match(camera, /allowResend/, "the used-seal check knows a resend");
+
+  const service = read("src/lib/phoenix-crm/server/admin-photo.ts");
+  const rep = service.slice(service.indexOf("export async function validateWithRepSeal("));
+  assert.ok(rep.length > 0 && rep.indexOf("blockedReasonFor(") > 0, "the rep's sealed validation passes the same door as every validation");
+  assert.ok(rep.indexOf("uploadPhotoBytesForSlot(") > 0, "the sealed picture itself is the validated photo");
+
+  for (const path of ["app/api/phoenix-crm/field-camera/pack/route.ts", "app/api/phoenix-crm/field-camera/sync/route.ts"]) {
+    const route = read(path);
+    assert.match(route, /assertPermission\(access, "phoenix_crm", "create"\)/, `${path} is gated like entering a visit`);
+    assert.match(route, /captureClientOf\(request\.headers\)/, `${path} asks which client is calling`);
+  }
+  const syncRoute = read("app/api/phoenix-crm/field-camera/sync/route.ts");
+  assert.ok(syncRoute.indexOf("assertSameOriginMutation(request)") < syncRoute.indexOf("resolveAccessContext(request)"), "the sync checks its origin first");
+}
+
 function wiringHolds(): void {
   const server = read("src/lib/phoenix-crm/server/field-camera.ts");
   assert.match(server, /rootsPem: GOOGLE_ATTESTATION_ROOTS\.map\(\(root\) => root\.pem\)/, "production trusts Google's roots only");
@@ -240,5 +305,7 @@ function wiringHolds(): void {
 export function runPhoenixCrmFieldCameraSealTests(): void {
   verifierHolds();
   payloadRulesBehave();
+  visitBlockBehaves();
   wiringHolds();
+  syncWiringHolds();
 }

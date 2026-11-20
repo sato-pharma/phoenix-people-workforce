@@ -75,6 +75,40 @@ with `rep_source = 'sealed_photo'`, the seal's fix in the `rep_*` columns and `s
 key); `phoenix_crm_validate_with_admin_photo` then validates it exactly as a live one, still under the 250 m
 reading rule. The live path reads only `rep_source = 'live'` watches.
 
+## Camera 2.0 — the rep's own offline visit app
+
+The owner, 20 Nov 2026: each rep logs in with his HR ID and Phoenix password, sees his own list and today's plan,
+chooses Planned, Unplanned or Add new customer, and takes the photo; "if he has network the application refuses
+and tells him go validate in the main account"; and "we're not relying on WhatsApp ... the application will
+synchronize with Phoenix ... the validation will register and the visit will register". He chose: no numbers on
+the rep's screens, the same visit form as the main account, the sync sending itself when the network returns, and
+a new customer goes as a request for approval.
+
+Phoenix's half is two doors, both the app's alone (`captureClientOf` = `app`, a bearer token and no session
+cookie; a browser is answered 404):
+
+| Door | What it does |
+| --- | --- |
+| `GET /api/phoenix-crm/field-camera/pack` | What the phone keeps for a day with no network: his territory, his customers with today's plan, whether each is validated, what he discussed last time, and the line's products. Read from `loadVisitForm`, so the camera can never offer a customer or product the main account would not. |
+| `POST /api/phoenix-crm/field-camera/sync` | One sealed photo (base64, at most 15 MB) and the visit it was taken for. |
+
+The sync, in order (`src/lib/phoenix-crm/server/field-camera-sync.ts`):
+
+1. The seal is judged in full by `checkFieldCameraPhoto`, exactly as for the Super Admin's upload.
+2. The seal must carry a **visit block** — `{seatId, customerId, visitId, offline: {anchorId, elapsedMs, bootId}}` —
+   inside the signature, so nothing sent beside the photo can move it to another customer, territory or day.
+   It must name THIS rep (`hrId`) and THIS territory.
+3. A customer with no place is validated on the seal (`validateWithRepSeal`), the rep as the actor, through the
+   same door as every validation (status, an existing place, `blockedReasonFor`). A customer who already has a
+   place is not touched.
+4. The visit is saved by `saveVisit`, unchanged, as the app: the seal's position is its reading and the seal's
+   offline clock dates it (anchor plus uptime, never the phone's clock). Every field that says who, where or when
+   is taken from the seal AFTER the body's fields, so the body cannot override one.
+
+A resend of the same sync is the same visit (the same uuid) and the same seal (`allowResend`: a used seal whose
+every use was this customer counts as a resend, never a second validation). What goes back to the phone is
+"recorded" or the refusal's plain words — no distance, accuracy or check is named (golden rule #1).
+
 ## The signing key
 
 PKCS12 at `C:/Users/satoh/.phoenix-secrets/phoenix-camera/` with a copy in `F:/Phoenix Secrets Backup/phoenix-camera/`;
