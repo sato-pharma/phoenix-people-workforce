@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 13be9376-17b9-44e2-82bc-bc64a093c5df
-  modified: 2026-11-20T10:48:26.960Z
+  modified: 2026-11-20T11:04:05.594Z
 ---
 
 Owner, 20 Nov 2026 ~11:15 Cairo: "the spare laptop Windows was down, so I reinstalled its Windows ... I hate manual work. Automate." Everything on its C: is gone (OpenSSH, Node, Git, pnpm, the "Phoenix Dev Server" and "Phoenix Spare Browser Guard" tasks); D:\Phoenix may have survived if D: is its own partition.
@@ -23,6 +23,13 @@ Speed (owner, 20 Nov ~12:15: "I want the dev server to be super fast. Use all re
 Heap: lean's own 2,560 MB cap made Next restart its compiler at ~2 GB and threw away the warm-up's pages (12:40), so the launcher sets `PHOENIX_DEV_HEAP_MB=4096` with `--lean`. The warm list `D:\Phoenix\warm-routes.txt` takes `/path` (Super Admin) or `/path | <role> | <hrId>` (that person, one dev-auth sign-in each); Magdy El Senosey's (AI-0008, National Sales Manager) most-opened pages from activity_events are in it ("Warm his pages", 20 Nov). 🔴 **The spare holds only ~8 compiled pages**: 20 Nov 12:46 the 4 GB heap ran out (exit 134, "Ineffective mark-compacts") about 8 distinct routes in, while the graceful memory restart was still waiting for 3 requests in flight — so the list is /admin + his top 5, never 17.
 🔴 **"Sign in as <person>" in the browser pane: use http://127.0.0.1:3000, not localhost** — the pane holds the owner's REAL sign-in on localhost, and a page trusts a real session before the dev-auth preview cookie (`resolveAccessContextFromPage`), so localhost always lands back on Omar Gawish's Command Center. 127.0.0.1 has its own cookie jar; never sign him out to get around it. Google Maps does not draw on 127.0.0.1 (key referrer).
 🔴 **RAM cannot be added across the two laptops** (owner asked 20 Nov to "merge" main's free RAM with the spare's): one process can only use its own machine's memory; Windows will not page to a network disk, and Wi-Fi is far slower than the spare's own NVMe page file. The split that uses both is: spare = dev server, main = browser and sessions.
+
+Groups 1 and 2 of the spare list (owner, 20 Nov ~13:00: "start group one ... drop point number 2 [Telegram down alert] ... then start group 2 ... in one big PR"):
+- 🔴 **The launcher LOOPS**: `dev-server-run.ps1` restarts node when it exits on its own (15 s pause; 5 exits inside 20 min → logs it and waits 10 min). A deliberate stop is Stop-ScheduledTask "Phoenix Dev Server" FIRST, then kill node by command line — killing node alone is a crash and it comes back. It skips the warm-up (or stops it part-way) under 1,024 MB free, re-warms when `/api/healthz` `startedAt` changes, sets AboveNormal on every node of `D:\Phoenix\phoenix-workforce` each minute (excluding `runs\`), and sets `UV_THREADPOOL_SIZE=8`, `PHOENIX_DEV_PAGES_KEPT=6`, `PHOENIX_DEV_PAGE_IDLE_MINUTES=60`. Old copy: `spare-dev-server-run.ps1.bak-20261120-before-loop`. It takes effect at the next "Phoenix Dev Server" start (the 12:48 instance still runs the old script).
+- Task **"Phoenix Dev Server Nightly"** (S4U, 04:00) runs `D:\Phoenix\nightly-restart.ps1`: only when port 3000's listener is under `D:\Phoenix\phoenix-workforce` (a preview folder is skipped), stop task → kill node → start task; logs to warm.log.
+- `spare-test.ps1` waits for ≥2,048 MB free on the spare after taking the test lock (15 s polls, 20 min, then exit 5 "nothing was tested"); backup `.bak-20261120-ramwait`.
+- PR 666 (repo): the graceful memory restart now fires at 86% of the heap (was 92%) and waits at most 20 s for in-flight requests (was 90 s — the 12:46 crash); `PHOENIX_DEV_PAGES_KEPT` / `PHOENIX_DEV_PAGE_IDLE_MINUTES` feed Next's `onDemandEntries` (dev only, off unless set; `scripts/dev-server-page-retention.mjs`). Until 666 is on main those two switches are unread.
+- Git on the spare: `core.fscache`, `core.preloadindex`, `core.untrackedCache` true. Lean sets webpack `cache=false`, so `.next\dev\cache` (2.3 GB, written before lean) was dead weight and was deleted 20 Nov ~13:15. `spare-tunnel.ps1` already had `ServerAliveInterval=15`.
 
 **Why:** a fresh Windows breaks the trust anchor silently — `spare-address.ps1` just says "not found" forever.
 **How to apply:** if the spare is ever reinstalled again, re-run the same page and re-register "Phoenix Spare Rebuild"; never hand-edit the anchor. Related: [[the-spare-laptop-changes-address-it-is-not-off]], [[the-spare-laptop-keeps-its-own-env-local]].
