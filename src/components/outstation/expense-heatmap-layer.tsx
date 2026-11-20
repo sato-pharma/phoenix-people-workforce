@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
+import { LANDING_FOCUS, LandingPanel } from "@/components/employee-portal/landing-kit";
 import { compactEgp, egp } from "@/components/outstation/expense-shared/formatters";
 import {
   importGoogleLibrary,
@@ -101,7 +102,6 @@ export function ExpenseHeatmapLayer({
   unmappedCount = 0,
   unmappedAmount = 0,
   title = "Expense concentration",
-  subtitle = "Each dot is a destination — colour shows total spend (light = low, dark = high).",
 }: {
   points: ExpenseBubbleInput[];
   browserKey: string;
@@ -109,6 +109,7 @@ export function ExpenseHeatmapLayer({
   unmappedCount?: number;
   unmappedAmount?: number;
   title?: string;
+  /** No longer drawn: no sentence sits under a panel title (owner, 2026-11-20). Kept so callers compile. */
   subtitle?: string;
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -296,93 +297,80 @@ export function ExpenseHeatmapLayer({
       ? "linear-gradient(90deg, #FDE68A 0%, #F59E0B 55%, #78350F 100%)"
       : "linear-gradient(90deg, #FED7AA 0%, #F97316 55%, #9A3412 100%)";
 
+  // The landing kit's white panel (owner, 2026-11-20: "EVERY SINGLE COMPONENT TO BE PREMIUM
+  // POLISHED"): the tick title, the mode switch and the legend in its header, and no sentence under
+  // the title. It was a dark gradient band with an orange glow and pill chips.
   return (
-    <div className="overflow-hidden rounded-[18px] border border-phx-line bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
-      <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-phx-accent/20 blur-3xl"
-        />
-        <div className="relative z-10 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="inline-flex rounded-full border border-phx-accent/35 bg-phx-accent/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-phx-accent">
-              Geographic Intelligence
-            </p>
-            <h2 className="mt-3 text-xl font-black tracking-[-0.03em] text-white">{title}</h2>
-            <p className="mt-1 text-sm text-phx-line-strong">{subtitle}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {supportsApprovalSplit ? (
-              <div className="flex overflow-hidden rounded-full border border-white/15 bg-white/[0.06]">
-                {MODE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    className={`px-3 py-1 text-phx-sm font-bold uppercase tracking-[0.14em] transition-colors ${
-                      mode === option.value ? "bg-phx-accent text-white" : "text-phx-line-strong hover:text-white"
-                    }`}
-                    onClick={() => setMode(option.value)}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <div className="flex items-center gap-2 text-phx-sm font-bold uppercase tracking-[0.14em] text-phx-line-strong">
-              <span>Low</span>
-              <span
-                aria-hidden="true"
-                className="h-2.5 w-28 rounded-full transition-colors"
-                style={{ background: legendGradient }}
-              />
-              <span>High</span>
+    <LandingPanel
+      bodyClassName="space-y-3 p-3 sm:p-4"
+      right={
+        <>
+          {supportsApprovalSplit ? (
+            <div className="flex flex-wrap border border-slate-300" role="group" aria-label="Which expenses the map shows">
+              {MODE_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={mode === option.value}
+                  key={option.value}
+                  className={`min-h-9 px-3 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
+                    mode === option.value ? "bg-[#08111f] text-white" : "bg-white text-slate-600 hover:bg-slate-50 hover:text-[#08111f]"
+                  }`}
+                  onClick={() => setMode(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-3 p-5">
-        <div
-          className="flex items-center justify-center rounded-[14px] border border-[#DDE6F1] bg-phx-paper p-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]"
-          ref={mapRef}
-          style={{ height }}
-        >
-          {!browserKey ? (
-            <div>
-              <p className="text-sm font-black text-phx-ink">Map unavailable</p>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
-                NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
-              </p>
-            </div>
-          ) : error ? (
-            <div>
-              <p className="text-sm font-black text-phx-ink">Google Maps unavailable</p>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">{error}</p>
-            </div>
-          ) : !ready ? (
-            <p className="text-sm font-semibold text-phx-ink-soft">Loading Google Maps…</p>
-          ) : !hasPoints ? (
-            <p className="text-sm font-semibold text-phx-ink-soft">
-              {mode === "approved"
-                ? "No approved expenses on the map for these filters."
-                : mode === "pending"
-                  ? "No pending expenses on the map for these filters."
-                  : "No mappable expenses for these filters."}
-            </p>
           ) : null}
-        </div>
-
-        {unmappedCount > 0 ? (
-          <AdminCallout tone="warning">
-            <span>
-              <strong>{unmappedCount.toLocaleString()}</strong> expense row{unmappedCount === 1 ? "" : "s"}
-              {unmappedAmount > 0 ? ` (${egp(unmappedAmount)})` : ""} have no resolved location and aren&apos;t shown
-              on the map. They remain in every KPI, chart, table, and the export. Mapped spend shown:{" "}
-              {compactEgp(mappedSpend)} across {displayPoints.length} location{displayPoints.length === 1 ? "" : "s"}.
-            </span>
-          </AdminCallout>
+          <div className="flex items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
+            <span>Low</span>
+            <span aria-hidden="true" className="h-2 w-24" style={{ background: legendGradient }} />
+            <span>High</span>
+          </div>
+        </>
+      }
+      title={title}
+    >
+      <div
+        className="flex items-center justify-center border border-slate-200 bg-slate-50 p-6 text-center"
+        ref={mapRef}
+        style={{ height }}
+      >
+        {!browserKey ? (
+          <div>
+            <p className="text-sm font-black text-phx-ink">Map unavailable</p>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
+              NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
+            </p>
+          </div>
+        ) : error ? (
+          <div>
+            <p className="text-sm font-black text-phx-ink">Google Maps unavailable</p>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">{error}</p>
+          </div>
+        ) : !ready ? (
+          <p className="text-sm font-semibold text-phx-ink-soft">Loading Google Maps…</p>
+        ) : !hasPoints ? (
+          <p className="text-sm font-semibold text-phx-ink-soft">
+            {mode === "approved"
+              ? "No approved expenses on the map for these filters."
+              : mode === "pending"
+                ? "No pending expenses on the map for these filters."
+                : "No mappable expenses for these filters."}
+          </p>
         ) : null}
       </div>
-    </div>
+
+      {unmappedCount > 0 ? (
+        <AdminCallout tone="warning">
+          <span>
+            <strong>{unmappedCount.toLocaleString("en-US")}</strong> expense row{unmappedCount === 1 ? "" : "s"}
+            {unmappedAmount > 0 ? ` (${egp(unmappedAmount)})` : ""} have no resolved location and aren&apos;t shown
+            on the map. They remain in every KPI, chart, table, and the export. Mapped spend shown:{" "}
+            {compactEgp(mappedSpend)} across {displayPoints.length} location{displayPoints.length === 1 ? "" : "s"}.
+          </span>
+        </AdminCallout>
+      ) : null}
+    </LandingPanel>
   );
 }
