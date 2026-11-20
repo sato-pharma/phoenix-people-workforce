@@ -26,7 +26,7 @@ import { adminControlDepthClassName, adminSoftDepthClassName } from "@/component
  *   · the header counts are the "N open" chip from "Needs you";
  *   · the rows are `RepNeedRow`'s — a `w-1 self-stretch` rail, the name, a small meta line, a CTA
  *     on the right edge;
- *   · the "+" wears the same bordered, orange-on-hover CTA as "Track" and "Open".
+ *   · the "+" wears the same navy-framed CTA as "Track" and "Open", filled navy on hover.
  *
  * That is the whole answer to "contrasting and premium polished WITH the current overview": it reads
  * as the fourth panel of a set, and the only thing that contrasts is the green.
@@ -66,8 +66,8 @@ function CountChip({ done, label, planned }: { done: number; label: string; plan
   const complete = planned !== undefined && done >= planned;
   return (
     <span
-      className={`border px-1.5 py-px text-phx-sm font-bold uppercase tracking-[0.06em] tabular-nums ${
-        complete ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"
+      className={`border px-1.5 py-px text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums ${
+        complete ? "border-emerald-600/40 text-emerald-700" : "border-slate-300 text-slate-600"
       }`}
     >
       {planned === undefined ? `${label} ${done}` : `${label} ${done} of ${planned}`}
@@ -150,7 +150,7 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
         // end with, so the column's right edge keeps one rhythm.
         <Link
           aria-label={`Add a visit for ${stop.name}`}
-          className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center border border-slate-300 bg-white text-slate-600 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800 ${adminControlDepthClassName}`}
+          className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center border border-[#08111f] bg-white text-[#08111f] transition hover:bg-[#08111f] hover:text-white ${adminControlDepthClassName}`}
           href={addVisitHref(stop)}
         >
           <Plus aria-hidden="true" className="h-4 w-4" />
@@ -211,8 +211,11 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
         line, because the chips already fit there. Everything else is still the overview's, to the
         class, and `tests/phoenix-crm-today.test.ts` derives this string from that one.
       */}
-      <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">Your day</h2>
+      <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2.5">
+        <h2 className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]">
+          <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
+          Your day
+        </h2>
         <span className="min-w-0 break-words text-phx-sm font-semibold uppercase tracking-[0.08em] text-slate-400" dir="auto">
           {plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}
         </span>

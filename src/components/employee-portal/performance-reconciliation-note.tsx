@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
  * The one-line reconciliation note shown under a performance snapshot / leaderboard.
@@ -13,16 +13,23 @@ import { Info } from "lucide-react";
  * `unattributedSales` is `headline − Σ(shown members)`, so header = leaderboard + this.
  * Renders nothing when the gap is zero or negative (a fully-attributed scope needs no
  * explanation).
+ *
+ * Drawn in the landing language (owner, 2026-11-20 redesign): no filled box and no icon — a 2px
+ * rule on the left and the sentence beside it, the amount in the page's figure ink. `onNavy` sets
+ * it for the night-navy headline board, where the Regional Manager's region figures sit.
  */
 export function PerformanceReconciliationNote({
   unattributedSales,
   totalLabel,
   className,
+  onNavy = false,
 }: {
   unattributedSales: number;
   /** What the headline is called on this page, e.g. "Line Sales" / "Company Sales". */
   totalLabel: string;
   className?: string;
+  /** On a landing's night-navy headline board rather than a white page. */
+  onNavy?: boolean;
 }) {
   if (!(unattributedSales > 0.5)) return null;
 
@@ -33,15 +40,16 @@ export function PerformanceReconciliationNote({
   }).format(unattributedSales);
 
   return (
-    <div
-      className={`flex items-start gap-2.5 border border-slate-200 border-l-2 border-l-slate-400 bg-slate-50 px-3.5 py-2.5 ${className ?? ""}`}
+    <p
+      className={cn(
+        "min-w-0 break-words border-l-2 py-1 pl-3 text-phx-xs leading-relaxed",
+        onNavy ? "border-white/25 text-white/60" : "border-slate-300 text-slate-600",
+        className,
+      )}
     >
-      <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-      <p className="text-phx-xs font-medium leading-relaxed text-slate-600">
-        <span className="font-bold text-slate-800">{amount}</span> of {totalLabel} is Direct Orders and
-        vacant seats not attributed to anyone listed below — so {totalLabel} equals the leaderboard total
-        plus this amount.
-      </p>
-    </div>
+      <span className={cn("font-bold tabular-nums", onNavy ? "text-white" : "text-[#08111f]")}>{amount}</span> of{" "}
+      {totalLabel} is Direct Orders and vacant seats not attributed to anyone listed below — so {totalLabel} equals the
+      leaderboard total plus this amount.
+    </p>
   );
 }
