@@ -200,9 +200,11 @@ select is(pg_temp.rows_seen_by('00000000-0000-4000-8000-000000000041',
   'the Super Admin sees every access profile');
 
 -- ─── 4. The role helpers every policy calls ─────────────────────────────────────────────────────
+-- private.phx_current_role() is the role NAME (from phoenix_role); public.current_access_role() is the
+-- short access code (employee, manager, finance, company_reader, super_admin) from the profile's role.
 
 select is(pg_temp.rows_seen_by('00000000-0000-4000-8000-000000000001',
-  $$select count(*) from (select 1 where public.current_access_role() = 'Medical Rep') x$$), 1::bigint,
+  $$select count(*) from (select 1 where private.phx_current_role() = 'Medical Rep') x$$), 1::bigint,
   'a Medical Rep resolves to the Medical Rep role');
 select is(pg_temp.rows_seen_by('00000000-0000-4000-8000-000000000001',
   $$select count(*) from (select 1 where public.current_access_can_manage_payroll()) x$$), 0::bigint,
@@ -223,7 +225,7 @@ select is(pg_temp.rows_seen_by('00000000-0000-4000-8000-000000000041',
   $$select count(*) from (select 1 where public.current_access_is_super_admin()) x$$), 1::bigint,
   'the Super Admin is a Super Admin');
 select is(pg_temp.rows_seen_by('00000000-0000-4000-8000-000000000099',
-  $$select count(*) from (select 1 where public.current_access_role() = 'Employee') x$$), 1::bigint,
+  $$select count(*) from (select 1 where private.phx_current_role() = 'Employee' and public.current_access_role() = 'employee') x$$), 1::bigint,
   'a signed-in user with no access profile falls back to the plain Employee role');
 
 -- ─── 5. Writes from the browser are refused, even for the Super Admin ───────────────────────────
