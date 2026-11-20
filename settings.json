@@ -3,7 +3,8 @@
   "desktopSessionCleanupPeriodDays": 7,
   "env": {
     "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "333000"
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "333000",
+    "DO_NOT_TRACK": "1"
   },
   "permissions": {
     "allow": [

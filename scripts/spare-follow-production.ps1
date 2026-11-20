@@ -80,6 +80,20 @@ Start-Sleep 4
   }
 }
 
+# THE DEV SERVER'S RUN SCRIPT IS KEPT CURRENT ON THE SPARE (owner, 2026-11-20: "I want the dev server to be super fast").
+# spare-dev-server-run.ps1 beside this file is the source of D:\Phoenix\dev-server-run.ps1, which "Phoenix Dev Server" runs:
+# it starts the dev server and then compiles the pages in D:\Phoenix\warm-routes.txt so a first visit is fast. A changed copy
+# is sent and takes effect at the next dev server start; nothing is restarted for it.
+$runSrc = Join-Path $PSScriptRoot 'spare-dev-server-run.ps1'
+if (Test-Path -LiteralPath $runSrc) {
+  $runHash = (Get-FileHash -LiteralPath $runSrc -Algorithm SHA256).Hash
+  $runNow = "$(@(& "$PSScriptRoot\spare.ps1" -Command '"RUN " + $(if (Test-Path D:\Phoenix\dev-server-run.ps1) { (Get-FileHash D:\Phoenix\dev-server-run.ps1 -Algorithm SHA256).Hash } else { "none" })' -ConnectTimeout 20) | Where-Object { "$_" -like 'RUN *' } | Select-Object -First 1)".Trim()
+  if ($runNow -and $runNow -ne "RUN $runHash") {
+    & $scpExe @sshOpts $runSrc "${spare}:D:/Phoenix/dev-server-run.ps1"
+    Log $(if ($LASTEXITCODE) { "the dev server run script on the spare is old and could not be sent" } else { 'sent the current dev server run script (warm-up) to the spare; it applies at the next dev server start' })
+  }
+}
+
 if ($Target -eq 'production') {
   # Three tries, 15 s each (2026-11-13): from this home network about one connection in three to production's
   # Railway address (153.52.255.32) never completes - measured 7/20 from this laptop and 8/20 from the spare,

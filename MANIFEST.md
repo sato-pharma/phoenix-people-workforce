@@ -109,13 +109,15 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/slowness-sentinel-watch.ps1` | 2519 | `4523c5301ee076e8` |
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
 | `scripts/spare-address.ps1` | 9088 | `fd8ab944a982d43d` |
-| `scripts/spare-bootstrap.ps1` | 9169 | `dc8e4298c647a0a9` |
+| `scripts/spare-bootstrap.ps1` | 10306 | `85d11867a845b518` |
 | `scripts/spare-browser-guard.ps1` | 5743 | `cf1529a8a651e269` |
 | `scripts/spare-db-password-refresh.mjs` | 9203 | `d3457d933700661a` |
 | `scripts/spare-db-password-refresh.ps1` | 1110 | `19e5bfebc75143f5` |
-| `scripts/spare-follow-production.ps1` | 14830 | `c660be2c816f28da` |
+| `scripts/spare-dev-server-run.ps1` | 2512 | `f64459e125dc2b54` |
+| `scripts/spare-follow-production.ps1` | 16099 | `09a4b80fcdcbd062` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
-| `scripts/spare-rebuild.ps1` | 15408 | `cb1a6a9105bef7ae` |
+| `scripts/spare-rebuild.ps1` | 16066 | `a340f988ba99e056` |
+| `scripts/spare-speedup.ps1` | 4856 | `3acafdb715e7e366` |
 | `scripts/spare-test.ps1` | 12353 | `c9d6cb8223e53761` |
 | `scripts/spare-tunnel.ps1` | 2618 | `c0c4f69081da25ae` |
 | `scripts/spare.ps1` | 1891 | `7c8d47306f4274ef` |
@@ -141,4 +143,4 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/xlsx-snapshot-watch.ps1` | 14496 | `5ad89fa2d06b8a4b` |
 | `scripts/xlsx-snapshot.cmd` | 3542 | `e5634c4dda32d8a9` |
 | `scripts/xlsx-tripwire.ps1` | 25606 | `2e060f5e3887bc24` |
-| `settings.json` | 19697 | `804b594d6b5e53c4` |
+| `settings.json` | 19722 | `231fc25f40100e4f` |

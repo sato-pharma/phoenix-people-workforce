@@ -31,7 +31,9 @@ $kh = Join-Path $env:USERPROFILE '.ssh\known_hosts'
 $cfg = Join-Path $env:USERPROFILE '.ssh\config'
 $ssh = "$env:SystemRoot\System32\OpenSSH\ssh.exe"; $scp = "$env:SystemRoot\System32\OpenSSH\scp.exe"; $keyscan = "$env:SystemRoot\System32\OpenSSH\ssh-keyscan.exe"
 $primary = 'F:\Phoenix Workforce\phoenix-workforce'
-function Log($m) { $l = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m; Write-Output $l; Add-Content -LiteralPath $log -Value $l -Encoding utf8 }
+# Write-Host, never Write-Output: a Log call inside a function must not become part of its return value (the first live run,
+# 2026-11-20 11:55, returned a log line from Find-NewSpare as "the spare" and wrote blank entries into the SSH files).
+function Log($m) { $l = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m; Write-Host $l; Add-Content -LiteralPath $log -Value $l -Encoding utf8 }
 function Spare([string]$cmd) { @(& "$S\spare.ps1" -Command $cmd -ConnectTimeout 20) }
 function SpareUser { $u = "$(Get-Content -LiteralPath "$S\spare-user.txt" -ErrorAction SilentlyContinue | Select-Object -First 1)".Trim(); if ($u) { $u } else { 'TransferUser' } }
 
@@ -66,16 +68,19 @@ function Find-NewSpare {
     $banner = "$(& $ssh -o BatchMode=yes -o ConnectTimeout=6 -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o PreferredAuthentications=none -o LogLevel=INFO "phx-probe@$ip" exit 2>&1)"
     if ($banner -notmatch 'phx-spare=\d+' -or $banner -notmatch 'phx-user=(\S+)') { continue }
     $user = $Matches[1]
-    $tmp = Join-Path $env:TEMP "spare-rebuild-kh-$PID"
-    @(& $keyscan -T 6 -t ed25519,ecdsa,rsa $ip 2>$null) | Where-Object { $_ -and $_ -notlike '#*' } | Set-Content -LiteralPath $tmp -Encoding ascii
-    & $ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$tmp" -o IdentitiesOnly=yes -o LogLevel=QUIET -i $key "$user@$ip" hostname 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { Log "found the spare's banner at $ip (user $user) but the key sign-in failed - is the bootstrap's key step done?"; Remove-Item $tmp -ErrorAction SilentlyContinue; continue }
+    # Windows ssh-keyscan returns NOTHING (measured 2026-11-20), so the host key is taken the way ssh takes it on a first
+    # visit: accept-new into a private file, together with the key sign-in that proves our key is installed there.
+    $tmp = Join-Path $env:TEMP "spare-rebuild-kh-$PID"; Remove-Item $tmp -ErrorAction SilentlyContinue
+    & $ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$tmp" -o IdentitiesOnly=yes -o LogLevel=QUIET -i $key "$user@$ip" hostname 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmp)) { Log "found the spare's banner at $ip (user $user) but the key sign-in failed - is the bootstrap's key step done?"; Remove-Item $tmp -ErrorAction SilentlyContinue; continue }
     $keys = @(Get-Content -LiteralPath $tmp | ForEach-Object { ($_ -split ' ', 2)[1].Trim() } | Where-Object { $_ })
     Remove-Item $tmp -ErrorAction SilentlyContinue
+    if (-not $keys) { continue }
     return [pscustomobject]@{ Ip = $ip; User = $user; Keys = $keys }
   }
 }
 function Save-Spare($f) {
+  if ("$($f.Ip)" -notmatch '^\d{1,3}(\.\d{1,3}){3}$' -or -not "$($f.User)".Trim() -or -not $f.Keys) { Log "refused to record a half-found spare ($($f.Ip) / $($f.User))"; exit 1 }
   $bak = "$kh.bak-20261120-rebuild"; if (-not (Test-Path $bak)) { Copy-Item -LiteralPath $kh $bak }
   $mine = '^' + [regex]::Escape($f.Ip) + '[ ,]'
   $kept = @(Get-Content -LiteralPath $kh | Where-Object { $_ -notlike 'phoenix-spare *' -and $_ -notmatch $mine })
@@ -101,7 +106,7 @@ if (-not $known) {
 }
 
 # ---------- 2. TOOLS (the bootstrap's restart puts them on the remote-login PATH) ----------
-$t = Spare '$o = foreach ($c in "git","node","pnpm") { if (Get-Command $c -ErrorAction SilentlyContinue) { $c } }; "TOOLS " + ($o -join ","); "NODE " + (node -v); "DRIVE " + (Test-Path D:\Phoenix); "REPO " + [bool](git -C D:\Phoenix\phoenix-workforce rev-parse --verify -q HEAD 2>$null); "SETUP " + (Get-Content $env:ProgramData\ssh\phx-setup-ok.txt -ErrorAction SilentlyContinue)'
+$t = Spare '$env:Path += ";$env:APPDATA\npm"; $o = foreach ($c in "git","node","pnpm") { if (Get-Command $c -ErrorAction SilentlyContinue) { $c } }; "TOOLS " + ($o -join ","); "NODE " + (node -v); "DRIVE " + (Test-Path D:\Phoenix); "REPO " + [bool](git -C D:\Phoenix\phoenix-workforce rev-parse --verify -q HEAD 2>$null); "SETUP " + (Get-Content $env:ProgramData\ssh\phx-setup-ok.txt -ErrorAction SilentlyContinue)'
 $tools = "$($t | Where-Object { "$_" -like 'TOOLS *' })"
 if ($tools -ne 'TOOLS git,node,pnpm') { Log "spare answers but its tools are not all on the PATH yet ('$tools'; $(($t | Where-Object { "$_" -like 'SETUP *' }) -join '')) - waiting for the bootstrap's restart"; exit 1 }
 if ("$($t | Where-Object { "$_" -like 'DRIVE *' })" -ne 'DRIVE True') { Log 'spare has no D:\Phoenix yet - waiting for the bootstrap'; exit 1 }
