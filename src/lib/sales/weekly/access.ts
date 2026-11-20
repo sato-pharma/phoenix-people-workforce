@@ -40,7 +40,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * (AA) and the HR Manager. The latter also holds the system-administrator console, so every HR_ID
  * of that one person is expanded from the shared-identity groups instead of being listed by hand.
  */
-export const WEEKLY_FULL_ACCESS_HR_IDS: ReadonlySet<string> = new Set(
+const WEEKLY_FULL_ACCESS_HR_IDS: ReadonlySet<string> = new Set(
   [...sharedIdentityKeys("B-10"), canonicalHrIdKey("aa")].filter((id): id is string => Boolean(id)),
 );
 

@@ -11,7 +11,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // `email_delivery_events` table the Resend webhook writes (provider = "brevo"), so opens/clicks/
 // bounces land in one place regardless of which provider actually sent the mail.
 
-export type BrevoDeliveryStatus =
+type BrevoDeliveryStatus =
   | "bounced"
   | "clicked"
   | "complained"
@@ -251,7 +251,7 @@ const BREVO_EVENT_LOG_FILTER: Record<string, string> = {
   unsubscribed: "unsubscribed",
 };
 
-export type BrevoEventConfirmation = "confirmed" | "not_found" | "unavailable";
+type BrevoEventConfirmation = "confirmed" | "not_found" | "unavailable";
 
 type BrevoEventLogEntry = { email?: unknown; messageId?: unknown };
 
@@ -296,7 +296,7 @@ async function askBrevoEventLog(
  * Whether Brevo's own event log holds this bounce-list event. Never throws. Asks each configured
  * Brevo account; a miss is asked once more after a short wait, because the log can trail the webhook.
  */
-export async function confirmBrevoEventWithBrevo(
+async function confirmBrevoEventWithBrevo(
   input: { email: string | null; event: string; messageId: string | null },
   options: { retryDelayMs?: number } = {},
 ): Promise<BrevoEventConfirmation> {

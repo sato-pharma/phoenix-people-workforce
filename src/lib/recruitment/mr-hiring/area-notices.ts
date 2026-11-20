@@ -20,9 +20,9 @@ import { notifyMrAreaManagers } from "@/lib/recruitment/mr-hiring/notify";
 import { isMrLine, MR_LINE_LABELS, type MrLine } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 /** How long an undismissed notice stays on the banner. */
-export const MR_AREA_NOTICE_DAYS = 21;
+const MR_AREA_NOTICE_DAYS = 21;
 /** The most the banner lists at once — the newest first. */
-export const MR_AREA_NOTICE_LIMIT = 5;
+const MR_AREA_NOTICE_LIMIT = 5;
 
 export type MrAreaNotice = {
   id: string;

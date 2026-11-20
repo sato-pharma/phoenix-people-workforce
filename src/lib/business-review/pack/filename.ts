@@ -9,8 +9,6 @@
 // PDF, Excel and PowerPoint alike. Pulling the header build here lets a test construct a real
 // Response and prove it no longer throws.
 
-export type PackFileFormat = "pdf" | "pptx" | "xlsx";
-
 /** A filename a human can find again in a downloads folder, with no characters Windows refuses. */
 export function packFileName(subject: string, windowLabel: string, extension: string): string {
   const safe = `${subject} ${windowLabel}`.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();

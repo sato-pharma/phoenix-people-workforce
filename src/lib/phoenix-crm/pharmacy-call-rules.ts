@@ -247,7 +247,7 @@ export type ListedPharmacy = { customerId: string; name: string; status: string 
 export type NamedPharmacyLink = { kind: "existing"; customerId: string } | { kind: "new" } | { kind: "none" };
 
 /** Below this many letters a name is too short to be found INSIDE another one ("ال" is in everything). */
-export const PHARMACY_NAME_KEY_MIN_FOR_PARTIAL = 4;
+const PHARMACY_NAME_KEY_MIN_FOR_PARTIAL = 4;
 
 /** His list with each pharmacy's key beside it; a name with no key cannot match anything. */
 function keyedPharmacies(listed: readonly ListedPharmacy[]): Array<ListedPharmacy & { key: string }> {
@@ -289,7 +289,7 @@ export function linkNamedPharmacy(typed: string | null | undefined, listed: read
 }
 
 /** The most pharmacies one box files visits for — the database's own cap (`limit 5`). */
-export const MAX_NAMED_PHARMACIES = 5;
+const MAX_NAMED_PHARMACIES = 5;
 
 /**
  * What separates two pharmacies in the box: the Arabic and Latin comma and semicolon, a new line, and

@@ -42,7 +42,7 @@ export type WorkflowRegistryModule = {
   version: number;
 };
 
-export type WorkflowRegistryAuditRow = {
+type WorkflowRegistryAuditRow = {
   actorLoginId: string | null;
   createdAt: string;
   entityId: string | null;

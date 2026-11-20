@@ -33,7 +33,7 @@ import { isThinCvRead, scoreCvExtraction } from "@/lib/recruitment/cv-extraction
 import type { RuleExtractionResult } from "@/lib/recruitment/rule-extraction";
 
 /** Which engine a merged value came from — recorded so a wrong field can be traced to its source. */
-export type CvFieldSource = "rule" | "ai";
+type CvFieldSource = "rule" | "ai";
 
 export type MergedCvExtraction = {
   readonly fields: ExtractedCandidateFields;
@@ -47,7 +47,7 @@ export type MergedCvExtraction = {
  * Fields the rule engine owns outright. An AI value never overwrites a rule value here — it is only
  * used when the rules found nothing at all.
  */
-export const RULE_AUTHORITATIVE_FIELDS: readonly string[] = [
+const RULE_AUTHORITATIVE_FIELDS: readonly string[] = [
   "email",
   "phone",
   "whatsapp",
@@ -64,7 +64,7 @@ export const RULE_AUTHORITATIVE_FIELDS: readonly string[] = [
  * inference and marks "low" — pairing an employer to a date range, telling a current title from an
  * applied-for one, summing overlapping employment periods.
  */
-export const AI_PREFERRED_FIELDS: readonly string[] = [
+const AI_PREFERRED_FIELDS: readonly string[] = [
   "workHistory",
   "educationHistory",
   "currentJobTitle",

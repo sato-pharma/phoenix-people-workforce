@@ -113,7 +113,7 @@ export function isSalesDepartment(row: OrganogramRow) {
   return row.departmentName?.trim().toLowerCase() === "sales";
 }
 
-export function isMarketingDepartment(row: OrganogramRow) {
+function isMarketingDepartment(row: OrganogramRow) {
   return row.departmentName?.trim().toLowerCase() === "marketing";
 }
 
@@ -133,7 +133,7 @@ export function isOrganogramVisibleRow(row: OrganogramRow) {
   );
 }
 
-export function normalizeNameKey(value: string | null | undefined) {
+function normalizeNameKey(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
@@ -217,7 +217,7 @@ export function isNationalSalesManager(row: OrganogramRow) {
   return classifyOrganogramStructureLevel(row) === "nsm";
 }
 
-export function isRegionalSalesManager(row: OrganogramRow) {
+function isRegionalSalesManager(row: OrganogramRow) {
   return classifyOrganogramStructureLevel(row) === "rsm";
 }
 
@@ -239,7 +239,7 @@ export function isMedicalRep(row: OrganogramRow) {
   return classifyOrganogramStructureLevel(row) === "medicalRep";
 }
 
-export function isManagerLevel(row: OrganogramRow) {
+function isManagerLevel(row: OrganogramRow) {
   return (
     isNationalSalesManager(row) ||
     isRegionalSalesManager(row) ||

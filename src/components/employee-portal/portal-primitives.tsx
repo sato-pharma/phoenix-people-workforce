@@ -63,25 +63,6 @@ export function PortalSection({
   );
 }
 
-export function PortalToolbar({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 shadow-[0_8px_22px_rgba(15,23,42,0.05)] sm:flex-row sm:flex-wrap sm:items-end",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
 export function PortalFilterBar({
   children,
   countLabel,
@@ -270,12 +251,12 @@ export function PortalRecordFields({
 export type PortalTableBreakpoint = "md" | "lg" | "xl";
 
 /** The desktop table shows from `breakpoint`; the mobile card list is hidden from the same width. */
-export const portalTableShowClassName: Record<PortalTableBreakpoint, string> = {
+const portalTableShowClassName: Record<PortalTableBreakpoint, string> = {
   lg: "hidden lg:block",
   md: "hidden md:block",
   xl: "hidden xl:block",
 };
-export const portalTableCardHideClassName: Record<PortalTableBreakpoint, string> = {
+const portalTableCardHideClassName: Record<PortalTableBreakpoint, string> = {
   lg: "lg:hidden",
   md: "md:hidden",
   xl: "xl:hidden",

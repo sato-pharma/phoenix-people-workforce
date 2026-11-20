@@ -72,7 +72,7 @@ export type DistributionCandidate = {
   regionName: string | null;
 };
 
-export type DistributionMember = {
+type DistributionMember = {
   hrId: string;
   displayName: string;
   email: string;
@@ -281,7 +281,7 @@ export function resolveDistributionList(
 
 // ── Mail-server alias drift ──────────────────────────────────────────────────────────────────
 
-export type AliasDriftEntry = {
+type AliasDriftEntry = {
   email: string;
   /** left_company is the one that matters: the person is gone but company mail still reaches
    *  them. not_on_list is a routine membership change. */

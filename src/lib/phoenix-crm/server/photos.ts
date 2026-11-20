@@ -39,7 +39,7 @@ const SIGNED_LINK_MIN_LEFT_MS = 10 * 60 * 1000;
 const signedLinks = createSignedLinkMemo({ max: 5_000, minLeftMs: SIGNED_LINK_MIN_LEFT_MS });
 const SIGN_BATCH_MAX = 120;
 
-export type PhotoPurpose = "place" | "visit";
+type PhotoPurpose = "place" | "visit";
 
 function storageSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "territory";

@@ -46,7 +46,7 @@ export const ATTRIBUTION_CAVEAT =
   "and stay at region level; a name that states no place stays with its region's manager.";
 
 /** How a bucket was resolved. Drives section ordering: real managers first, residue last. */
-export type WeeklyManagerKind = "dm" | "ceo" | "vacant" | "unmapped";
+type WeeklyManagerKind = "dm" | "ceo" | "vacant" | "unmapped";
 
 export type WeeklyManagerBucket = {
   /** Stable grouping key; also the de-dupe key across fact rows. */

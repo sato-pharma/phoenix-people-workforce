@@ -374,7 +374,7 @@ export async function fenceRowsByInterviewBooking<T>(
 }
 
 /** The words the request routes already answer for a request that is not there. */
-export const INTERVIEW_REQUEST_NOT_FOUND = "That interview request is no longer there.";
+const INTERVIEW_REQUEST_NOT_FOUND = "That interview request is no longer there.";
 
 /** The interview requests this viewer may see: hidden people's CVs leave, and a request only about them leaves whole. */
 export async function fenceInterviewRequests<R extends FenceableInterviewRequest>(

@@ -70,7 +70,7 @@ export const HOUSE_COLORS = {
 export const HOUSE_MARK_SRC = "/brand/sato-pharma-logo-on-light.svg";
 
 /** Standard width of the mark on a letterhead. Below 24 mm the PHARMA counters fill in. */
-export const HOUSE_MARK_WIDTH_MM = 34;
+const HOUSE_MARK_WIDTH_MM = 34;
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────────
  * NO COMPANY SEAL ON A HIRING PAPER — owner's instruction, 2026-09-29: "remove the sato pharma
@@ -374,14 +374,6 @@ export const HOUSE_IDENTITY_CSS = `
   p, li { orphans: 3; widows: 3; }
   .lh__title, .lh__purpose { break-after: avoid; page-break-after: avoid; }
 `;
-
-/**
- * Hairlines never thinner than 0.5 pt.
- *
- * Below that a rule is thinner than a 600 dpi printer can resolve, so it drops out on some machines
- * and survives on others — which reads as a defective document rather than a thin line.
- */
-export const HOUSE_HAIRLINE_PT = 0.5;
 
 /**
  * The papers Phoenix writes, and which may therefore carry the house page number.

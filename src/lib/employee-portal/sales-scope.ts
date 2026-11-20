@@ -73,7 +73,7 @@ export function createPortalSalesLineScope({
   };
 }
 
-export function lineMatchesPortalSalesScope(
+function lineMatchesPortalSalesScope(
   line: string | null | undefined,
   scope: Pick<PortalSalesLineScope, "lineCandidates">,
 ) {

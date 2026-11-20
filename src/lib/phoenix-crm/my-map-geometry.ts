@@ -22,7 +22,7 @@ const MIN_ZOOM = 3;
 export const MY_MAP_GROUP_BELOW_ZOOM = 13;
 
 /** The side of one grouping cell on screen, in pixels: about one finger. */
-export const MY_MAP_GROUP_CELL_PX = 64;
+const MY_MAP_GROUP_CELL_PX = 64;
 
 /** Web Mercator, in pixels of the whole world at this zoom. */
 export function project(lon: number, lat: number, zoom: number): { x: number; y: number } {
@@ -51,22 +51,6 @@ export function fitZoom(points: ReadonlyArray<GeoPoint>, width: number, height: 
 }
 
 export type GeoBounds = { north: number; south: number; east: number; west: number };
-
-/** The smallest box holding every point; null for none. */
-export function boundsOf(points: ReadonlyArray<GeoPoint>): GeoBounds | null {
-  if (points.length === 0) return null;
-  let north = -Infinity;
-  let south = Infinity;
-  let east = -Infinity;
-  let west = Infinity;
-  for (const point of points) {
-    north = Math.max(north, point.lat);
-    south = Math.min(south, point.lat);
-    east = Math.max(east, point.lon);
-    west = Math.min(west, point.lon);
-  }
-  return { north, south, east, west };
-}
 
 /** Whether a point is inside a box — the list under the map follows what the map shows. */
 export function insideBounds(point: GeoPoint, bounds: GeoBounds): boolean {

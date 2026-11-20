@@ -32,7 +32,7 @@ export const MR_INTERVIEW_ROUNDS = ["hr_first", "dsm", "rsm", "hr_manager", "nsm
 export type MrInterviewRound = (typeof MR_INTERVIEW_ROUNDS)[number];
 
 /** Where a result can be recorded — the `step` column of `ats_mr_hiring_step_results`. */
-export const MR_RESULT_STEPS = ["hr_screening", "hr_first", "dsm", "rsm", "hr_manager", "nsm_final", "joint_final", "final_decision"] as const;
+const MR_RESULT_STEPS = ["hr_screening", "hr_first", "dsm", "rsm", "hr_manager", "nsm_final", "joint_final", "final_decision"] as const;
 export type MrResultStep = (typeof MR_RESULT_STEPS)[number];
 
 /**
@@ -63,7 +63,7 @@ export const MR_RESULTS = ["pass", "backup", "not_pass"] as const;
 export type MrResult = (typeof MR_RESULTS)[number];
 
 /** The NSM's two recommendations (§8). */
-export const MR_RECOMMENDATIONS = ["make_offer", "keep_backup"] as const;
+const MR_RECOMMENDATIONS = ["make_offer", "keep_backup"] as const;
 export type MrRecommendation = (typeof MR_RECOMMENDATIONS)[number];
 
 /**
@@ -79,7 +79,7 @@ export const MR_WORKFLOW_START = "2026-11-07T22:00:00.000Z";
  * workflow starts, so the CVs of the 7th are worked in it too; the one-channel hold still starts with
  * the workflow (MR_WORKFLOW_START), so a CV that came by email on the 7th is listed, never held.
  */
-export const MR_LIST_FROM = "2026-11-06T22:00:00.000Z";
+const MR_LIST_FROM = "2026-11-06T22:00:00.000Z";
 
 /** Whether an instant is on or after another. An unreadable date is never on or after anything. */
 export function receivedOnOrAfter(receivedAt: string | null | undefined, instant: string): boolean {
@@ -126,11 +126,6 @@ export const MR_ROUND_LABELS: Record<MrInterviewRound, string> = {
   nsm_final: "Final interview · NSM",
   rsm: "RSM interview · Pedia line",
 };
-
-/** Which result step an interview round's result is recorded under — the same key, by design. */
-export function resultStepForRound(round: MrInterviewRound): MrResultStep {
-  return round;
-}
 
 export const MR_RESULT_STEP_LABELS: Record<MrResultStep, string> = {
   dsm: "2nd interview · DSM",

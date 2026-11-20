@@ -39,7 +39,7 @@ import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 type Row = Record<string, unknown>;
 
 /** One request the pass closed, as the database function reports it. */
-export type PlanEditExpiryClosed = {
+type PlanEditExpiryClosed = {
   requestId: string;
   planId: string;
   seatId: string;

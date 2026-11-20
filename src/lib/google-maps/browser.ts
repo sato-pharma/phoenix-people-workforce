@@ -1,6 +1,6 @@
 "use client";
 
-export type GoogleLatLngLiteral = { lat: number; lng: number };
+type GoogleLatLngLiteral = { lat: number; lng: number };
 
 export type GoogleMapHandle = {
   fitBounds(bounds: GoogleLatLngBoundsHandle, padding?: number): void;
@@ -27,13 +27,13 @@ export type GooglePolylineHandle = {
   setMap(map: GoogleMapHandle | null): void;
 };
 
-export type GoogleHeatmapLayerHandle = {
+type GoogleHeatmapLayerHandle = {
   setMap(map: GoogleMapHandle | null): void;
   setData(data: unknown): void;
   set(key: string, value: unknown): void;
 };
 
-export type GoogleGeocoderResult = {
+type GoogleGeocoderResult = {
   results: Array<{ geometry: { location: unknown } }>;
 };
 
@@ -69,7 +69,7 @@ type GoogleMapsBootstrapNamespace = GoogleMapsApi & {
   __ib__?: () => void;
 };
 
-export function getLoadedGoogleMaps() {
+function getLoadedGoogleMaps() {
   return window.google?.maps ?? null;
 }
 

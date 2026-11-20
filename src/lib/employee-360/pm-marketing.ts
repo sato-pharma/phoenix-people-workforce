@@ -12,7 +12,7 @@ import { hrIdsMatch } from "@/lib/hr-id";
 import { buildKpiBand, getMarketingRoiReport } from "@/lib/marketing-requests/roi-report-service";
 import { emptyRoiFilterState } from "@/lib/marketing-requests/roi-report-types";
 
-export type PmMarketingRequest = {
+type PmMarketingRequest = {
   code: string;
   /** What the request is for, as the ROI tracker names it: its type and its customer. */
   typeName: string | null;

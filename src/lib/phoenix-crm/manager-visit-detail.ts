@@ -27,7 +27,7 @@ import { formatClockMinute } from "@/lib/phoenix-crm/timings";
  * Pure: no I/O, no permissions. A client component may import it as freely as a server read.
  */
 
-export type ManagerDayVisitSource = "own" | "ride_along" | "rep";
+type ManagerDayVisitSource = "own" | "ride_along" | "rep";
 
 /**
  * `with_senior` is HIS OWN visit logged on a half-day he planned With my manager or product manager (owner,

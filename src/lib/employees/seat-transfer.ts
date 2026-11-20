@@ -19,7 +19,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * sales attribution hang off — server-side enforcement here, not just hidden UI.
  */
 
-export type SeatTransferSeatOption = {
+type SeatTransferSeatOption = {
   seatId: string;
   seatTier: string;
   lineCode: string;

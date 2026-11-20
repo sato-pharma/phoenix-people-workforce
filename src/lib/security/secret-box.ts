@@ -35,7 +35,7 @@ export class SecretBoxError extends Error {
 }
 
 /** The server-only env secret a key is derived from. MAILBOX_MONITOR_SECRET unless a caller names another. */
-export type SecretBoxKeyEnv = "MAILBOX_MONITOR_SECRET" | "PHOENIX_AUTH_SECRET";
+type SecretBoxKeyEnv = "MAILBOX_MONITOR_SECRET" | "PHOENIX_AUTH_SECRET";
 
 function envSecret(keyEnv: SecretBoxKeyEnv = "MAILBOX_MONITOR_SECRET"): string {
   const raw = process.env[keyEnv];

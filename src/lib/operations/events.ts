@@ -12,7 +12,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // src/lib/security/login-security.ts for the System Audit page. What stays is the business
 // activity feed and the audit-log page reader.
 
-export type OperationalActivityEvent = {
+type OperationalActivityEvent = {
   description: string;
   module: string;
   status: string;

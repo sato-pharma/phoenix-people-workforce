@@ -14,7 +14,7 @@ import type { OutstationNoTicketFare } from "@/lib/outstation/types";
  * Pure and client-safe: the wizard shows the same figure the server will store.
  */
 
-export type TrainStation = {
+type TrainStation = {
   arabicName: string;
   index: number;
   latitude: number;
@@ -41,7 +41,7 @@ export type NoTicketFare =
     }
   | { reason: string; status: "unavailable" };
 
-export const NO_TICKET_TRIP_LEGS = 2;
+const NO_TICKET_TRIP_LEGS = 2;
 
 const STATIONS: TrainStation[] = TRAIN_STATIONS.map(([, name, arabicName, latitude, longitude], index) => ({
   arabicName,
@@ -52,10 +52,6 @@ const STATIONS: TrainStation[] = TRAIN_STATIONS.map(([, name, arabicName, latitu
 }));
 
 const FARES = new Map<string, number>(TRAIN_AC2_LOWEST_FARES.map(([from, to, fare]) => [`${from}>${to}`, fare]));
-
-export function trainStations(): readonly TrainStation[] {
-  return STATIONS;
-}
 
 export function trainFareBetween(fromIndex: number, toIndex: number): number | null {
   return FARES.get(`${fromIndex}>${toIndex}`) ?? null;
@@ -145,7 +141,7 @@ export function resolveNoTicketFare(input: {
 }
 
 /** One line for the employee and the approver: "Cairo → Asyut · EGP 210 each way · EGP 420 there and back". */
-export function describeNoTicketFare(fare: Extract<NoTicketFare, { status: "priced" }>): string {
+function describeNoTicketFare(fare: Extract<NoTicketFare, { status: "priced" }>): string {
   const money = (value: number) => `EGP ${value.toLocaleString("en-US")}`;
   return `${fare.fromStation.name} → ${fare.toStation.name} · second-class AC · ${money(fare.oneWayFare)} each way · ${money(fare.totalFare)} there and back`;
 }

@@ -33,7 +33,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 /** Twice the door comment's 1,000, the rep's ratio: this is the account the door had no time for. */
 export const MANAGER_VISIT_DETAIL_MAX = 2000;
 
-export type ManagerVisitDetailEdit = {
+type ManagerVisitDetailEdit = {
   visitId: string;
   /** Null when he left it empty, or cleared what he had written. */
   detailComment: string | null;

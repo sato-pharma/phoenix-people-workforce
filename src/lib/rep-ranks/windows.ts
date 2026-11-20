@@ -114,7 +114,7 @@ function build(kind: RankWindowKind, key: string, from: string, end: string, yes
 }
 
 /** The last working day on or before `iso`, looking back at most three weeks. Null if none. */
-export function lastWorkingDayOnOrBefore(iso: string, holidays?: CallRateHolidays): string | null {
+function lastWorkingDayOnOrBefore(iso: string, holidays?: CallRateHolidays): string | null {
   let cursor = iso;
   for (let step = 0; step < 21; step += 1) {
     if (isCallRateWorkingDay(cursor, holidays)) return cursor;

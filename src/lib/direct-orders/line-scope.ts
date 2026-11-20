@@ -21,7 +21,7 @@ export function directOrderLineKey(value: string | null | undefined): string {
 }
 
 /** Lines that run no direct orders at all (owner, 2026-10-29: "CNS … they do not have direct"). */
-export const LINES_WITHOUT_DIRECT_ORDERS: ReadonlySet<string> = new Set(["cns"]);
+const LINES_WITHOUT_DIRECT_ORDERS: ReadonlySet<string> = new Set(["cns"]);
 
 /** True when the line runs direct orders. A blank line answers false — never a window onto every line. */
 export function lineHasDirectOrders(line: string | null | undefined): boolean {

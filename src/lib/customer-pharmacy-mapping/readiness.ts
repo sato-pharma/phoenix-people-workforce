@@ -81,7 +81,7 @@ export type CustomerPharmacyReadinessRow = {
   links: CustomerPharmacyLinkSummary[];
 };
 
-export type CustomerPharmacyReadinessSummary = {
+type CustomerPharmacyReadinessSummary = {
   ready: number;
   pendingOnly: number;
   noLinks: number;
@@ -114,7 +114,7 @@ export type ReadinessLinkInput = {
   validationNotes: string | null;
 };
 
-export type ReadinessPharmacyInput = {
+type ReadinessPharmacyInput = {
   id: string;
   pharmacyCode: string | null;
   pharmacyName: string;
@@ -122,15 +122,15 @@ export type ReadinessPharmacyInput = {
 };
 
 /** A stored licence, signed - keyed by pharmacy id. Optional: the builder works without any. */
-export type ReadinessLicenseInput = { contentType: string; url: string };
+type ReadinessLicenseInput = { contentType: string; url: string };
 
-export type ReadinessDistributorCodeInput = {
+type ReadinessDistributorCodeInput = {
   id: string;
   distributorId: number | null;
   distributorPharmacyCode: string | null;
 };
 
-export type ReadinessDistributorInput = {
+type ReadinessDistributorInput = {
   id: number;
   name: string;
 };

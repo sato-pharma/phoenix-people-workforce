@@ -55,7 +55,7 @@ export { ROBOT_ACTOR } from "./safety";
 /** The note stamped on the disposition row so a reader knows the delete was automated. */
 const ROBOT_DELETE_NOTE = "Deleted by the Turbify revocation robot after the grace period." as const;
 
-export type RobotOutcome = {
+type RobotOutcome = {
   employeeName: string;
   workEmail: string;
   taskId: string;
@@ -160,7 +160,7 @@ function emptyResult(overrides: Partial<RobotRunResult>): RobotRunResult {
 }
 
 /** The live facts the gates need, shaped from the directory. */
-export function toRobotFacts(
+function toRobotFacts(
   rows: Array<{
     hrId: string;
     displayName: string;

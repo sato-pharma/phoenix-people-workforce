@@ -380,7 +380,7 @@ async function loadIdentityLinks(): Promise<SourceIdentityLink[]> {
   return rows.map((row) => ({ masterId: String(row.master_id), source: String(row.source), sourceId: String(row.source_id) }));
 }
 
-export async function loadMatchDecisions(): Promise<Map<string, StoredDecision>> {
+async function loadMatchDecisions(): Promise<Map<string, StoredDecision>> {
   const rows = await pageAll<Row>(() =>
     getSupabaseAdmin().from("customer_360_pharmacy_matches").select("id, name_key, brick_id, status, pairs, decided_by_hr_id, decided_at").is("withdrawn_at", null),
   );

@@ -57,10 +57,10 @@ import {
  * sat out, wrote no row and sent nothing, and the morning looked exactly like a clean one.
  */
 
-export const SWEEP_LEASE = "sweep";
+const SWEEP_LEASE = "sweep";
 /** The sweep's own row in system_audit_detector_runs — one a night, whatever the night did. */
 export const SWEEP_RUN_DETECTOR = "sweep";
-export const SWEEP_LEASE_SECONDS = 300;
+const SWEEP_LEASE_SECONDS = 300;
 export const SWEEP_BUDGET_MS = 240_000;
 export const PER_DETECTOR_MS = 90_000;
 export const RESTART_QUIET_HOURS = 18;
@@ -75,7 +75,7 @@ export function isDatabaseUnhealthy(text: string | null | undefined): boolean {
   );
 }
 
-export type SweepDetectorSummary = {
+type SweepDetectorSummary = {
   detector: string;
   status: DetectorRunStatus;
   scanned: number;

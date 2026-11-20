@@ -26,14 +26,14 @@ const terminalLifecycleStatuses = new Set([
   "suspended",
 ]);
 
-export type TelegramOnboardingTarget = {
+type TelegramOnboardingTarget = {
   email: string;
   hrId: string | null;
   name: string | null;
   userId: string;
 };
 
-export type TelegramOnboardingResult = {
+type TelegramOnboardingResult = {
   detail: string;
   email: string;
   status: "sent" | "skipped" | "failed";
@@ -64,7 +64,7 @@ type CreateLinkResult =
 // Generates a fresh single-use connect token for a specific user and stores it on
 // their telegram_connections row (one row per user, mirroring the in-portal flow).
 // Already-connected users are left untouched unless `force` is set.
-export async function createTelegramOnboardingLink(input: {
+async function createTelegramOnboardingLink(input: {
   force?: boolean;
   hrId?: string | null;
   ttlMinutes?: number;
@@ -120,7 +120,7 @@ export async function createTelegramOnboardingLink(input: {
 // Builds the connect link and emails the premium "connect Telegram" invitation to
 // a single employee. Honest about skips (no email / already connected / delivery
 // switched off) and never throws — returns a per-recipient result for the campaign.
-export async function sendTelegramConnectInvite(input: {
+async function sendTelegramConnectInvite(input: {
   email: string;
   force?: boolean;
   hrId?: string | null;
@@ -180,7 +180,7 @@ export async function sendTelegramConnectInvite(input: {
 
 // Active login accounts that have a work email and (by default) are not yet
 // connected to Telegram. user_id follows the auth convention login_id ?? hr_id.
-export async function listTelegramOnboardingTargets(options?: { onlyUnconnected?: boolean }): Promise<TelegramOnboardingTarget[]> {
+async function listTelegramOnboardingTargets(options?: { onlyUnconnected?: boolean }): Promise<TelegramOnboardingTarget[]> {
   const supabase = getSupabaseAdmin();
   const [usersRes, employeesRes, connectionsRes] = await Promise.all([
     supabase.from("app_auth_users").select("login_id,hr_id,is_active").eq("is_active", true),

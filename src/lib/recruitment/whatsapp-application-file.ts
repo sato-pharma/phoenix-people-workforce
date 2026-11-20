@@ -63,7 +63,7 @@ export function candidateApplicationPrintPath(candidateId: string): string {
 // page would be a third surface to keep in step, for a seat with no printing to do.
 
 /** The endpoint that builds one candidate's CV-and-application file for CV Lookup. */
-export function cvLookupApplicationApiPath(candidateId: string): string {
+function cvLookupApplicationApiPath(candidateId: string): string {
   return `/api/recruitment/cv-lookup/${encodeURIComponent(candidateId)}/application`;
 }
 

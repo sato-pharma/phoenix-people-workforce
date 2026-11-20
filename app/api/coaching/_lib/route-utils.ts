@@ -28,7 +28,7 @@ export class CoachingApiError extends Error {
   }
 }
 
-export async function requireCoachingAccess(request: Request): Promise<AccessContext> {
+async function requireCoachingAccess(request: Request): Promise<AccessContext> {
   const access = await resolveAccessContext(request);
   if (!access.loginId && !access.hrId) {
     throw new CoachingApiError("unauthenticated", "Not authenticated.", 401);

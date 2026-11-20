@@ -41,7 +41,7 @@ export const MEDICAL_REP_MIN_PHOTOS = 2;
 export const MEDICAL_REP_MAX_PHOTOS = 6;
 
 /** The photo types the server stores (car-evidence-storage.ts accepts these two images). */
-export const MEDICAL_REP_PHOTO_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
+const MEDICAL_REP_PHOTO_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
 
 /**
  * Whether a set of photos is enough to submit, in words the rep can act on — ONE answer for the

@@ -50,7 +50,7 @@ export const PRODUCTION_PLANNING_NUMBER_LOCALE = "en-EG";
  * src/lib/hiring-pack/render-shared.ts, which is the authority — the tail entries are the only
  * shaping faces the server container has, so neither list is tidied without the other.
  */
-export const PRODUCTION_PLANNING_FONT_STACK =
+const PRODUCTION_PLANNING_FONT_STACK =
   '"Tahoma", "Segoe UI", "Traditional Arabic", "Simplified Arabic", "Arial Unicode MS", ' +
   '"Noto Sans Arabic", "Noto Naskh Arabic", Arial, sans-serif';
 
@@ -71,8 +71,8 @@ export const PRODUCTION_PLANNING_WORKBOOK_FONT = "Tahoma";
  * the reorder email) it is spelled out with these. The screen and the stored name stay `Box`.
  */
 export const PACKAGING_BOX_CODE = "CARTON";
-export const PACKAGING_BOX_NAME_AR = "علبة التغليف";
-export const PACKAGING_BOX_NAME_EN = "Packaging box";
+const PACKAGING_BOX_NAME_AR = "علبة التغليف";
+const PACKAGING_BOX_NAME_EN = "Packaging box";
 
 /** The packaging row's name in a document, in the document's language. */
 export function packagingBoxName(lang: "ar" | "en"): string {
@@ -926,7 +926,7 @@ export type ProductionPlanningEmailCell = {
  * every quantity carries what it comes to in boxes underneath it. `count` arrives already formatted
  * with Latin digits and its thousands separators.
  */
-export function boxesLabel(count: string): string {
+function boxesLabel(count: string): string {
   return `${count} ${count.trim() === "1" ? "box" : "boxes"}`;
 }
 
@@ -1331,7 +1331,7 @@ export function buildSampleUnitsHintEn(measure: ProductMeasure): string {
  * three different facts, and a bare `-12` on a screen is the one rendering of this that a tired
  * reader at 4am misreads as twelve days of cover.
  */
-export function buildExpiryDaysNoteAr(daysLeft: string, expired: boolean, today: boolean): string {
+function buildExpiryDaysNoteAr(daysLeft: string, expired: boolean, today: boolean): string {
   if (today) return PP.expiryToday;
   return expired ? `منتهي منذ ${daysLeft} ${PP.unitDay}` : `باقي ${daysLeft} ${PP.unitDay}`;
 }
@@ -1342,7 +1342,7 @@ export function buildExpiryDaysNoteEn(daysLeft: string, expired: boolean, today:
 }
 
 /** The three expiry severity labels, keyed the way `evaluateExpiry` returns them. */
-export const EXPIRY_SEVERITY_LABELS = {
+const EXPIRY_SEVERITY_LABELS = {
   expired: PP.expirySeverityExpired,
   critical: PP.expirySeverityCritical,
   warning: PP.expirySeverityWarning,
@@ -1565,7 +1565,7 @@ const UNIT_LABELS_AR: Record<string, string> = {
   ton: "طن",
 };
 
-export function unitLabelAr(unit: string | null | undefined): string {
+function unitLabelAr(unit: string | null | undefined): string {
   if (!unit) return "";
   return UNIT_LABELS_AR[unit.trim().toLowerCase()] ?? unit;
 }
@@ -1830,7 +1830,7 @@ export const PRODUCTION_PLANNING_REFUSALS_EN: typeof PRODUCTION_PLANNING_REFUSAL
 export type ProductionPlanningNamed = { readonly nameAr: string; readonly nameEn: string };
 
 /** Arabic reads `nameAr`. */
-export function nameArabic(item: ProductionPlanningNamed): string {
+function nameArabic(item: ProductionPlanningNamed): string {
   return item.nameAr;
 }
 

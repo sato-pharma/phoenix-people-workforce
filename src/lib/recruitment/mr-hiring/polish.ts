@@ -22,7 +22,7 @@ import { logAppError } from "@/lib/error-monitor/service";
 import { MR_BOOKING_NOTES_LIMIT, MR_COMMENT_LIMIT } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 /** Which box the words were spoken into — it decides the register of the rewrite and its cap. */
-export const MR_POLISH_KINDS = ["result", "recommendation", "booking"] as const;
+const MR_POLISH_KINDS = ["result", "recommendation", "booking"] as const;
 export type MrPolishKind = (typeof MR_POLISH_KINDS)[number];
 
 export function isMrPolishKind(value: unknown): value is MrPolishKind {
@@ -35,7 +35,7 @@ export function mrPolishLimit(kind: MrPolishKind): number {
 }
 
 /** Sonnet answers a few sentences in seconds; past this the speaker is better served by the words as said. */
-export const MR_POLISH_TIMEOUT_MS = 45_000;
+const MR_POLISH_TIMEOUT_MS = 45_000;
 
 export class MrPolishError extends Error {
   code: "polish_failed" | "polish_not_configured" | "polish_rate_limited";
@@ -116,7 +116,7 @@ export function sanitizeMrPolished(raw: string, kind: MrPolishKind): string {
  * threw whole rewrites away (owner, 8 Nov 2026: "it doesn't change anything"). A number said with ألف or
  * مليون ("15 ألف") is that many thousands or millions. Anything else must have been said in digits.
  */
-export function mrSaidNumbers(spoken: string): Set<string> {
+function mrSaidNumbers(spoken: string): Set<string> {
   const said = new Set<string>();
   for (let small = 0; small <= 12; small += 1) said.add(String(small));
   for (const token of mrNumberTokens(spoken)) {

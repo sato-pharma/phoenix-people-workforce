@@ -39,7 +39,7 @@ export type CeoApprovalsExportFormat = "xlsx" | "pdf";
 export type CeoApprovalsExportRow = { note: string; row: MarketingCeoApprovalRow };
 
 /** A guard against a hand-made body, not a business limit: a period never holds anything near it. */
-export const CEO_APPROVALS_EXPORT_MAX_ROWS = 2000;
+const CEO_APPROVALS_EXPORT_MAX_ROWS = 2000;
 const MAX_NOTE_CHARS = 300;
 
 function cleanNote(value: unknown): string {

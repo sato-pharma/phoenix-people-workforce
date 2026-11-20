@@ -173,7 +173,7 @@ export function kpiTeamCoverage(rows: readonly KpiRepRow[], rules: KpisRules): K
 type KpisRules = Parameters<typeof kpiTeamFigures>[1];
 
 /** The order the band bar reads in: the best band first, then the two quiet states. */
-export const KPI_COVERAGE_BAND_ORDER = ["elite", "strong", "steady", "behind"] as const;
+const KPI_COVERAGE_BAND_ORDER = ["elite", "strong", "steady", "behind"] as const;
 
 /** One slice of the "where the reps stand" bar. */
 export type KpiCoverageBandSlice = {

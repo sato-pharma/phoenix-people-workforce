@@ -22,7 +22,7 @@ import { FRACTION_SCALE, PCT_SCALE, roundDiv } from "./rules";
  * Runs needed before a measured overage is offered as a recommendation. Two is not statistics; it
  * is the point at which a single mis-typed closing balance stops being the entire dataset.
  */
-export const MIN_RUNS_TO_LEARN = 2;
+const MIN_RUNS_TO_LEARN = 2;
 
 /** One material's actuals from one recorded run, as `prodplan_run_materials` holds them. */
 export type RunObservation = {

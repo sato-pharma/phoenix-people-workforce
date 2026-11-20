@@ -166,7 +166,7 @@ export type OfflineLookupData = {
   territoryAliases: AliasRow[];
 };
 
-export async function loadOfflineLookupData(): Promise<OfflineLookupData> {
+async function loadOfflineLookupData(): Promise<OfflineLookupData> {
   const supabase = getSupabaseAdmin();
   const [areas, bricks, territoryAliases, areaAliases, customers] = await Promise.all([
     readAll<AreaRow>(supabase, "source_of_sales_areas", "area_code, area_name, region_code", "area_code"),

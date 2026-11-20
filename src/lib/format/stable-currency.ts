@@ -40,11 +40,3 @@ export function stableCurrencyFormatter(
   };
 }
 
-/** One-shot form, for a call site that does not keep its formatter. */
-export function formatStableCurrency(
-  value: number,
-  locale: string | string[] | undefined,
-  options: Intl.NumberFormatOptions,
-): string {
-  return stableCurrencyFormatter(locale, options).format(value);
-}

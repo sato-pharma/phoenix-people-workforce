@@ -14,7 +14,7 @@ import { getLinesForReports, listReports } from "./store";
 import { HR_OPS_STATUS_LABELS, type HrOpsReportKind, type HrOpsReportRow, type HrOpsReportStatus } from "./types";
 
 /** How many of the newest reports the Overview's chart plots. */
-export const QUEUE_CHART_REPORTS = 10;
+const QUEUE_CHART_REPORTS = 10;
 
 export type HrOpsQueueReport = {
   id: string;

@@ -59,7 +59,7 @@ export const BRM_TYPE = -21;
 export const UNLABELED_FIELD_VISIT_TYPE = -30;
 // Training that the vendor sends as "Unknown" (owner ruling 2026-09-17). Same label and
 // bucket as TRAINING_TYPE; a separate constant because its stored description differs.
-export const UNLABELED_TRAINING_TYPE = -16;
+const UNLABELED_TRAINING_TYPE = -16;
 
 export type VisitBucket = "regular" | "campaign" | "training" | "admin";
 export type VisitClassification = { label: string; bucket: VisitBucket };

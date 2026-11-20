@@ -38,7 +38,7 @@ export type BadgeTone = "neutral" | "ok" | "warn" | "danger" | "info";
  * cards. These are the two clusters the 126 hand-rolled badges actually fell
  * into — they are not invented sizes.
  */
-export type BadgeSize = "sm" | "md";
+type BadgeSize = "sm" | "md";
 
 /** Superseded by `tone`. Kept so existing call sites keep compiling and rendering. */
 type LegacyVariant = "neutral" | "success" | "warning" | "danger";

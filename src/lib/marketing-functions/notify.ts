@@ -12,7 +12,7 @@ import { createSystemNotificationForRecipients } from "@/lib/notifications/syste
 
 import { monthKeyOf, monthTitle } from "./months";
 
-export const MARKETING_FUNCTIONS_PAGE_PATH = "/employee-portals/marketing-functions";
+const MARKETING_FUNCTIONS_PAGE_PATH = "/employee-portals/marketing-functions";
 
 type MonthRef = { id: string; author_hr_id: string; month: string; status: string; submitted_at?: string | null; reviewed_at?: string | null };
 

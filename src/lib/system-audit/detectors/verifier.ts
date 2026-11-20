@@ -16,7 +16,7 @@ import {
  * ledger's statuses would not be a dry run. The historical runner leaves it out for the same reason.
  */
 
-export const VERIFIER_DETECTOR = "verifier";
+const VERIFIER_DETECTOR = "verifier";
 
 export type VerifierDetectorDeps = {
   /** Which detector re-measures each family — built from the sweep's own list, never hardcoded. */

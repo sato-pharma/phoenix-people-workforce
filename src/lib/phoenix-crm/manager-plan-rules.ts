@@ -110,9 +110,9 @@ export function managerSlotKinds(kind: ManagerPlannerKind): ReadonlyArray<{ key:
 export const MANAGER_PEER_SLOT_LABEL = "With a manager or product manager";
 
 /** The most areas one half-day with a district manager holds — the database's own limit. */
-export const MANAGER_DM_VISIT_AREA_MAX = 60;
+const MANAGER_DM_VISIT_AREA_MAX = 60;
 /** The most people one "with my manager or product manager" half-day goes with — a visit's own cap (`MOST_ON_A_VISIT`). */
-export const MANAGER_SENIOR_PEOPLE_MAX = 12;
+const MANAGER_SENIOR_PEOPLE_MAX = 12;
 
 /** The most customers one half-day holds — a rep's PM day is capped at 15, so this is room, not a target. */
 export const MANAGER_SLOT_CUSTOMER_MAX = 60;
@@ -156,7 +156,7 @@ export function singleVisitHalfKey(date: string, half: ManagerHalf): string {
 }
 
 /** The date a half-day key names. */
-export function singleVisitDateOfKey(key: string): string {
+function singleVisitDateOfKey(key: string): string {
   return key.split("|")[0] ?? "";
 }
 
@@ -271,8 +271,8 @@ export function singleVisitDayAskError(input: {
 /** The grades he gives a customer he adds himself (owner, 2026-10-16: "A/B/C and potential grade"). */
 export const MANAGER_CUSTOMER_GRADES = ["A", "B", "C"] as const;
 export const MANAGER_CUSTOMER_POTENTIAL_GRADES = ["AA", "AB", "AC", "BA", "BB", "BC"] as const;
-export type ManagerCustomerGrade = (typeof MANAGER_CUSTOMER_GRADES)[number];
-export type ManagerCustomerPotentialGrade = (typeof MANAGER_CUSTOMER_POTENTIAL_GRADES)[number];
+type ManagerCustomerGrade = (typeof MANAGER_CUSTOMER_GRADES)[number];
+type ManagerCustomerPotentialGrade = (typeof MANAGER_CUSTOMER_POTENTIAL_GRADES)[number];
 
 export function isManagerPlanStatus(value: unknown): value is ManagerPlanStatus {
   return value === "draft" || value === "submitted" || value === "first_approved" || value === "approved" || value === "returned";
@@ -299,11 +299,11 @@ export function managerSlotKindLabel(kind: ManagerSlotKind): string {
   return MANAGER_SLOT_KINDS.find((entry) => entry.key === kind)?.label ?? kind;
 }
 
-export function isManagerCustomerGrade(value: unknown): value is ManagerCustomerGrade {
+function isManagerCustomerGrade(value: unknown): value is ManagerCustomerGrade {
   return typeof value === "string" && (MANAGER_CUSTOMER_GRADES as readonly string[]).includes(value);
 }
 
-export function isManagerCustomerPotentialGrade(value: unknown): value is ManagerCustomerPotentialGrade {
+function isManagerCustomerPotentialGrade(value: unknown): value is ManagerCustomerPotentialGrade {
   return typeof value === "string" && (MANAGER_CUSTOMER_POTENTIAL_GRADES as readonly string[]).includes(value);
 }
 
@@ -710,11 +710,11 @@ export function managerWriterTerritories(org: OrgIndex, writer: ManagerPlanWrite
  * replaces their legacy form must carry it; a district manager's board never offered it, and the database
  * refuses it for one (`manager_plan_bad_kind`).
  */
-export type ManagerAdminActivity = PhoenixCrmDayActivity | "office";
+type ManagerAdminActivity = PhoenixCrmDayActivity | "office";
 
-export const MANAGER_OFFICE_ACTIVITY = { key: "office", label: "Office" } as const;
+const MANAGER_OFFICE_ACTIVITY = { key: "office", label: "Office" } as const;
 
-export function isManagerAdminActivity(value: unknown): value is ManagerAdminActivity {
+function isManagerAdminActivity(value: unknown): value is ManagerAdminActivity {
   return value === "office" || isDayActivity(value);
 }
 
@@ -733,10 +733,6 @@ export function managerAdminActivities(kind: ManagerPlannerKind): Array<{ key: s
 
 /** plan — he may tick, save and send it; sent — it is sent, he may ask to edit; asked — his ask waits; closed. */
 export type ManagerWeekState = "plan" | "sent" | "asked" | "closed";
-
-export function isManagerPlanEditable(status: ManagerPlanStatus | null): boolean {
-  return status === null || status === "draft" || status === "returned";
-}
 
 /** A week gone for review: waiting on someone, or approved. Never a draft or a returned week. */
 export function isManagerPlanSent(status: ManagerPlanStatus | null): boolean {
@@ -894,7 +890,7 @@ export function managerWeekDays(weekStart: string, kind: ManagerPlannerKind): st
 
 // ── One half-day, as the screen sends it ────────────────────────────────────────────────────────
 
-export type ManagerSlotCustomerRef = { customerId: string } | { managerCustomerId: string };
+type ManagerSlotCustomerRef = { customerId: string } | { managerCustomerId: string };
 
 export type ManagerSlotDraft = {
   date: string;
@@ -1226,18 +1222,6 @@ export function managerPlanConversationAudience(input: {
   return [...people];
 }
 
-/** The person a week waits on, or null when it waits on nobody (a draft is his own, approved is closed). */
-export function managerPlanWaitingOn(input: {
-  status: ManagerPlanStatus | null;
-  firstApproverHrId: string | null;
-  secondApproverHrId: string | null;
-}): string | null {
-  const stage = managerPlanStage(input.status);
-  if (stage === "first") return input.firstApproverHrId;
-  if (stage === "second") return input.secondApproverHrId;
-  return null;
-}
-
 export function managerPlanStatusLabel(status: ManagerPlanStatus | null, week?: { weekStart: string | null; cairoToday: string }): string {
   if (week && isManagerWeekEndedUndecided(status, week.weekStart, week.cairoToday)) return MANAGER_WEEK_ENDED_LABEL;
   if (status === "submitted") return "Waiting for approval";
@@ -1300,7 +1284,7 @@ export function managerPlanStatusLine(input: {
 }
 
 /** The tracker's last step on a regional, national or product manager's approved week. */
-export const MANAGER_PLAN_HR_ACK_TEXT = "Acknowledged by HR automatically";
+const MANAGER_PLAN_HR_ACK_TEXT = "Acknowledged by HR automatically";
 
 /**
  * What a decision moves the week to — the database's own state machine, written once more so the screen
@@ -1442,7 +1426,7 @@ export function countsAsPlannersVisitWithDm(
 }
 
 /** One area of a "with a district manager" half-day, as the row stores it (`dm_visit.areas`). */
-export type ManagerDmVisitArea = { seatId: string; areaCode: string | null; areaName: string; seatIds: string[] };
+type ManagerDmVisitArea = { seatId: string; areaCode: string | null; areaName: string; seatIds: string[] };
 
 /** A "with a district manager" half-day's own content: who he goes with and the areas he ticked. */
 export type ManagerDmVisit = { dmHrId: string | null; areas: ManagerDmVisitArea[] };

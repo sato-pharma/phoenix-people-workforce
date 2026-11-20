@@ -82,7 +82,7 @@ export type MarketingCaseFileWarning = {
  * describes the customer. It never did. The customer's own geography is in
  * {@link MarketingCaseFileCustomerLocation}, and it is frequently a different place.
  */
-export type MarketingCaseFileRequester = {
+type MarketingCaseFileRequester = {
   areaName: string | null;
   hrId: string;
   lineName: string | null;
@@ -91,7 +91,7 @@ export type MarketingCaseFileRequester = {
   role: string | null;
 };
 
-export type MarketingCaseFileHeader = {
+type MarketingCaseFileHeader = {
   closedAt: string | null;
   /** approvedAt / rejectedAt / returnedAt — whichever terminal stamp this request carries. */
   decidedAt: string | null;
@@ -125,7 +125,7 @@ export type MarketingCaseFileHeader = {
 
 // ── money ────────────────────────────────────────────────────────────────────
 
-export type MarketingCaseFilePriorRequest = {
+type MarketingCaseFilePriorRequest = {
   actualSalesValue: number | null;
   estimatedCost: number;
   payDate: string | null;
@@ -202,14 +202,14 @@ export type MarketingCaseFileChain = {
 // ── customer ─────────────────────────────────────────────────────────────────
 
 /** The CUSTOMER's own geography, as captured on site. Not the requester's — see the note there. */
-export type MarketingCaseFileCustomerLocation = {
+type MarketingCaseFileCustomerLocation = {
   /** Captured on the doorstep, so it is PII: withheld from viewers with no stake in the request. */
   capturedAddress: CaseFileBlock<string | null>;
   extractedAreaName: string | null;
   extractedGovernorateName: string | null;
 };
 
-export type MarketingCaseFileCustomerValidation = {
+type MarketingCaseFileCustomerValidation = {
   /**
    * Never surfaced anywhere until now, though 155 of 157 customers and 286 of 289 pharmacies sit
    * at `pending`. "Nobody has ever validated this customer" must be visible, not silent.
@@ -221,7 +221,7 @@ export type MarketingCaseFileCustomerValidation = {
   validatedByName: string | null;
 };
 
-export type MarketingCaseFileEvidencePhoto = {
+type MarketingCaseFileEvidencePhoto = {
   capturedAt: string | null;
   /**
    * The capture filename. On its own this is NOT proof and must never be shown as such — for every
@@ -535,7 +535,7 @@ export type MarketingRequestEventKind =
  * approval step holds one string and every comment overwrites it, so the step row shows the latest
  * and nothing else; the event log keeps each one with its own timestamp.
  */
-export type MarketingCaseFileHistoryEntry = {
+type MarketingCaseFileHistoryEntry = {
   /** Cairo-formatted server-side. The owner's standing rule: never a raw UTC stamp on screen. */
   atLabel: string;
   /**

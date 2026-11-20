@@ -354,7 +354,7 @@ export async function loadCrmTripEvidence(requestId: number): Promise<CrmTripEvi
  * places with their brick and area, and its planned activities. Shared by the approver's reading and
  * the expense wizard's "your plan for these days" line.
  */
-export async function loadTripPlanDays(
+async function loadTripPlanDays(
   org: Awaited<ReturnType<typeof loadPhoenixCrmOrg>>,
   hrId: string,
   dates: ReadonlyArray<string>,

@@ -50,7 +50,7 @@ export const SAFE_BUDGET = 860;
 /** The module key this digest is filed under. Must also appear in `telegramKeepsParagraphs`. */
 export const NEEDS_YOU_MODULE = "needs_you";
 
-export type TelegramSectionKind = "not-proven" | "yours" | "elsewhere" | "worth-knowing";
+type TelegramSectionKind = "not-proven" | "yours" | "elsewhere" | "worth-knowing";
 
 /** One rendered section. `lines` are finished sentences — this file never phrases, only fits. */
 export type TelegramSection = {

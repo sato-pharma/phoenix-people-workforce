@@ -18,10 +18,10 @@ import type { HrOpsReportRow } from "./types";
  * ONE page serves both ends (app/(admin)/hr-reports): she opens it in the /hr namespace, the HR
  * Manager at its own address on the admin rail, and the page picks the view from the grant.
  */
-export const REVIEWER_PAGE_PATH = "/hr/hr-reports";
-export const DECIDER_PAGE_PATH = "/hr-reports";
+const REVIEWER_PAGE_PATH = "/hr/hr-reports";
+const DECIDER_PAGE_PATH = "/hr-reports";
 
-export function reportActionUrl(base: string, reportId: string): string {
+function reportActionUrl(base: string, reportId: string): string {
   return `${base}?report=${encodeURIComponent(reportId)}`;
 }
 

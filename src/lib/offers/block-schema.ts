@@ -23,7 +23,7 @@ import type { OfferBlockType } from "@/lib/offers/types";
  * `html` is the escape hatch: typed exactly as written, PDF only, no canvas. Turning it into a
  * canvas too would take away the one field whose purpose is to accept anything.
  */
-export type OfferFieldKind = "color" | "html" | "prose" | "text" | "textarea" | "toggle";
+type OfferFieldKind = "color" | "html" | "prose" | "text" | "textarea" | "toggle";
 
 export type OfferFieldDef = {
   hint?: string;
@@ -32,7 +32,7 @@ export type OfferFieldDef = {
   label: string;
 };
 
-export type OfferListDef = {
+type OfferListDef = {
   /** A blank row, used by the list's own Add button. */
   blank: Record<string, string | boolean>;
   fields: OfferFieldDef[];

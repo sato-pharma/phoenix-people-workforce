@@ -25,7 +25,7 @@ export type InboxOutboundMediaType = "image" | "video" | "audio" | "document";
  * Meta's own ceilings per kind of attachment. A file over its ceiling is refused by Meta with a
  * generic error, so it is refused here first with a sentence that says why.
  */
-export const WHATSAPP_MEDIA_LIMIT_BYTES: Record<InboxOutboundMediaType, number> = {
+const WHATSAPP_MEDIA_LIMIT_BYTES: Record<InboxOutboundMediaType, number> = {
   audio: 16 * 1024 * 1024,
   document: 100 * 1024 * 1024,
   image: 5 * 1024 * 1024,
@@ -89,7 +89,7 @@ export async function uploadWhatsAppMedia(input: {
 
 // ── Templates ────────────────────────────────────────────────────────────────────────────────────
 
-export type TemplateField = {
+type TemplateField = {
   /**
    * The form key: `header:1`, `body:1`, `body:first_name`. Scoped by part because a positional title
    * and a positional message BOTH number their blanks from 1 — one shared key would put the title's
@@ -207,7 +207,7 @@ export function mapInboxTemplate(raw: RawTemplate): InboxTemplate | null {
 }
 
 /** One part's text with every blank filled from that part's own keys, as the person will read it. */
-export function fillTemplateText(text: string, values: Record<string, string>, part: TemplatePart): string {
+function fillTemplateText(text: string, values: Record<string, string>, part: TemplatePart): string {
   return text.replace(PLACEHOLDER, (whole, name: string) => values[`${part}:${name}`]?.trim() || whole);
 }
 

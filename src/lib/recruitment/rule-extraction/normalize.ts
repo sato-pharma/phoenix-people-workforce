@@ -164,7 +164,7 @@ const WRAPPED_EMAIL_ENDINGS: ReadonlySet<string> = new Set([
  * when the two halves TOGETHER form a valid address ending in a real ending, so ordinary prose that
  * happens to end a line in "@" — or a whole address followed by a short word — is left alone.
  */
-export function repairWrappedContacts(text: string): string {
+function repairWrappedContacts(text: string): string {
   return (
     text
       // "wafaa borhan75 @gmil.com" — spaces hugging the @ are a layout artifact, never part of an
@@ -191,7 +191,7 @@ export function repairWrappedContacts(text: string): string {
 // Hyperlink annotations
 // ---------------------------------------------------------------------------
 
-export type ExtractedLink = { readonly label: string; readonly url: string };
+type ExtractedLink = { readonly label: string; readonly url: string };
 
 const MARKDOWN_LINK = /\[([^\]]*)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g;
 
@@ -200,7 +200,7 @@ const MARKDOWN_LINK = /\[([^\]]*)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g;
  * whatever glyphs happened to be painted on the page, and is frequently a truncated copy of the
  * very URL it hides.
  */
-export function extractMarkdownLinks(text: string): ExtractedLink[] {
+function extractMarkdownLinks(text: string): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   for (const match of text.matchAll(MARKDOWN_LINK)) {
     links.push({ label: (match[1] ?? "").trim(), url: (match[2] ?? "").trim() });

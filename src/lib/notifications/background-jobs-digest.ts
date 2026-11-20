@@ -52,7 +52,7 @@ async function resolveNotifyRecipients(): Promise<{ recipients: NotifyRecipient[
   return { recipients, warnings };
 }
 
-export function buildBackgroundJobsRunMessage(input: BackgroundJobsRunNotifyInput): string {
+function buildBackgroundJobsRunMessage(input: BackgroundJobsRunNotifyInput): string {
   const date = todayDisplay();
   const lines: string[] = [];
   if (input.status === "success") {

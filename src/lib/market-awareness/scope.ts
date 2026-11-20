@@ -19,7 +19,7 @@ import type { MarketAwarenessStatus } from "@/lib/market-awareness/types";
  * specific statement, and answer 35 confirms it by settling where the Marketing Manager's OWN
  * request goes, a question that only arises if he can raise one.
  */
-export const MARKET_AWARENESS_CREATOR_ROLES: readonly PhoenixRole[] = [
+const MARKET_AWARENESS_CREATOR_ROLES: readonly PhoenixRole[] = [
   "Product Manager",
   "Group Product Manager",
   "Marketing Manager",

@@ -30,7 +30,7 @@ import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 /** A half of a field day. The same two words as a visit's list type, which is how a visit is matched. */
 export type DoubleVisitHalf = PhoenixCrmListType;
 
-export const DOUBLE_VISIT_HALVES: readonly DoubleVisitHalf[] = ["AM", "PM"];
+const DOUBLE_VISIT_HALVES: readonly DoubleVisitHalf[] = ["AM", "PM"];
 
 /** The app role that plans double visits — an acting district manager holds it too. */
 export const DOUBLE_VISIT_PLANNER_ROLE = "District Manager";
@@ -131,7 +131,7 @@ export function isDoubleVisitDayOpen(isoDay: string, cairoToday: string): boolea
 
 export type DoubleVisitSlotRefusalKind = "bad_input" | "not_field_time" | "passed" | "ahead" | "holiday" | "not_team";
 
-export type ResolvedDoubleVisitSlot = {
+type ResolvedDoubleVisitSlot = {
   date: string;
   weekStart: string;
   half: DoubleVisitHalf;

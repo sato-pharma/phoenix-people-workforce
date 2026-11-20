@@ -55,7 +55,7 @@ import {
   type CustomerSubjectRef,
 } from "./subject";
 
-export type CustomerCodeLink = {
+type CustomerCodeLink = {
   readonly areaCode: string | null;
   readonly brickId: string | null;
   readonly customerCode: string;
@@ -82,7 +82,7 @@ export type CustomerSubjectSummary = {
   readonly venueType: string | null;
 };
 
-export type CustomerMarketingRequestRow = {
+type CustomerMarketingRequestRow = {
   readonly estimatedCost: number | null;
   readonly id: string;
   readonly requestCode: string | null;
@@ -91,7 +91,7 @@ export type CustomerMarketingRequestRow = {
   readonly status: string | null;
 };
 
-export type CustomerDirectOrderRow = {
+type CustomerDirectOrderRow = {
   readonly createdAt: string | null;
   readonly fromMarketingRequestId: string | null;
   readonly id: string;

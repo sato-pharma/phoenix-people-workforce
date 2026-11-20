@@ -16,9 +16,9 @@ import {
   type MarketingFunctionCategoryKey,
 } from "./vocabulary";
 
-export const MAX_ITEMS_PER_MONTH = 200;
+const MAX_ITEMS_PER_MONTH = 200;
 export const MAX_TEXT = 2000;
-export const MAX_SHORT_TEXT = 160;
+const MAX_SHORT_TEXT = 160;
 
 function cleanText(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
@@ -64,7 +64,7 @@ export type MonthFigures = {
 };
 
 /** "Done" is the end-of-month status; until that is set, the mid-month one counts. */
-export function itemIsDone(item: Pick<MarketingFunctionItem, "statusMid" | "statusEnd">): boolean {
+function itemIsDone(item: Pick<MarketingFunctionItem, "statusMid" | "statusEnd">): boolean {
   return (item.statusEnd ?? item.statusMid) === "done";
 }
 

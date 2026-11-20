@@ -62,7 +62,7 @@ export type LinkableSession = {
 };
 
 /** Rule 1: the candidate the bot itself wrote the answers onto. */
-export function byBotLink(sessions: readonly LinkableSession[]): Map<string, string> {
+function byBotLink(sessions: readonly LinkableSession[]): Map<string, string> {
   const proposed = new Map<string, string>();
   for (const session of sessions) {
     const candidateId = textOrNull(session.applied_candidate_id);
@@ -75,7 +75,7 @@ export function byBotLink(sessions: readonly LinkableSession[]): Map<string, str
  * Rule 2: the candidate made from the CV that opened the conversation. The message id is unique per
  * channel, so each id matches one intake row at most and a batch can never pass the page limit.
  */
-export async function byOpeningCv(sessions: readonly LinkableSession[]): Promise<Map<string, string>> {
+async function byOpeningCv(sessions: readonly LinkableSession[]): Promise<Map<string, string>> {
   const sessionsByMessage = new Map<string, string[]>();
   for (const session of sessions) {
     const messageId = textOrNull(session.cv_wamid);

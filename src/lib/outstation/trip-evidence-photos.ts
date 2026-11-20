@@ -27,7 +27,7 @@ import type {
   OutstationEvidenceGateStatus,
 } from "@/lib/outstation/types";
 
-export type ApproverTripPhotoKind = "arrival" | "departure";
+type ApproverTripPhotoKind = "arrival" | "departure";
 
 export type ApproverTripPhoto = {
   capturedAt: string | null;

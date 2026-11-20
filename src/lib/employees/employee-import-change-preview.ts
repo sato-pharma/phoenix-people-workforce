@@ -31,7 +31,7 @@
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import type { EmployeeImportRecord } from "@/lib/imports/employee-import-types";
 
-export type ImportChangeGroup =
+type ImportChangeGroup =
   | "Identity"
   | "Organization"
   | "Contact & Residence"
@@ -39,7 +39,7 @@ export type ImportChangeGroup =
   | "Payroll"
   | "System";
 
-export type ImportFieldChange = {
+type ImportFieldChange = {
   /** The column header as the template prints it. */
   label: string;
   group: ImportChangeGroup;

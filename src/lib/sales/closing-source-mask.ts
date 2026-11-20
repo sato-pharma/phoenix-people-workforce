@@ -146,7 +146,7 @@ export function maskedClosingClientCodes(
  * on purpose: he asked for the sales to appear in totals, and a dropped bar makes the breakdown
  * stop reconciling with the total tile above it, which is its own kind of trace.
  */
-export const MASKED_SOURCE_CODE = "" as const;
+const MASKED_SOURCE_CODE = "" as const;
 export const MASKED_SOURCE_LABEL = "—" as const;
 
 function isMaskedCode(value: string | null | undefined): boolean {

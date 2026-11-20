@@ -20,24 +20,24 @@ import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 import type { IReports360Checkin, IReports360Visit } from "@/lib/crm/vendor-row-types";
 
-export type IReports360RepDayVisit = IReports360Visit & {
+type IReports360RepDayVisit = IReports360Visit & {
   kind: "campaign" | "regular" | "other";
   mode: "single" | "double";
   partnerName: string | null;
   role: "primary" | "double";
 };
 
-export type IReports360DayRouteLeg = {
+type IReports360DayRouteLeg = {
   distanceKm: number | null;
   durationMinutes: number | null;
 };
 
-export type IReports360DayRoute = {
+type IReports360DayRoute = {
   encodedPolyline: string | null;
   legs: IReports360DayRouteLeg[];
 };
 
-export type IReports360RepDayCheckin = IReports360Checkin & {
+type IReports360RepDayCheckin = IReports360Checkin & {
   /**
    * Rep name when this check-in is BORROWED — i.e. this person was the double/triple-visitor and
    * the named rep is the one who physically checked in and submitted the visit. null when the

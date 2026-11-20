@@ -21,7 +21,7 @@ function normalizeCode(value: string | number | null | undefined) {
   return String(value).trim().toUpperCase();
 }
 
-export function organogramTitleText(row: Pick<OrganogramReportRow, "jobTitle" | "positionTitle">) {
+function organogramTitleText(row: Pick<OrganogramReportRow, "jobTitle" | "positionTitle">) {
   // Prefer a non-empty positionTitle; an empty-string positionTitle falls back to
   // jobTitle so classification/KPIs don't blank out on "" (vs null).
   return String((row.positionTitle?.trim() ? row.positionTitle : row.jobTitle) ?? "")
@@ -251,7 +251,7 @@ export function seatOccupancyKey(
 // the physical area is occupied regardless of which manager either record names.
 // Area is the SPECIFIC name only (never region) for the same reason as
 // seatOccupancyKey — a broad region spans many area seats.
-export function seatIdentityKey(
+function seatIdentityKey(
   row: Pick<OrganogramReportRow, "jobTitle" | "positionTitle" | "areaName" | "lineName">,
 ): string | null {
   const level = classifyOrganogramStructureLevel(row);
@@ -378,7 +378,7 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
   });
 }
 
-export function sanitizeOrganogramVacancyCodes(rows: OrganogramReportRow[]) {
+function sanitizeOrganogramVacancyCodes(rows: OrganogramReportRow[]) {
   return rows.map((row) => {
     if (row.type !== "vacancy") return row;
     const label = publicVacancyLabel(row.vacancyCode ?? row.hrId);

@@ -59,7 +59,7 @@ const DEVICE_ID_KEY = "com.hmdm.DEVICE_ID";
 const REP_RULES_PREFIX = /^rep tablets/i;
 
 /** How long the download-link check waits for the agent's host before it calls the link unreachable. */
-export const AGENT_DOWNLOAD_CHECK_TIMEOUT_MS = 15_000;
+const AGENT_DOWNLOAD_CHECK_TIMEOUT_MS = 15_000;
 
 /** Statuses a server answers when it will not take a HEAD — the check then asks for one byte instead. */
 const HEAD_REFUSED = new Set([403, 405, 501]);
@@ -72,7 +72,7 @@ export class HeadwindEnrollmentError extends Error {
 }
 
 /** What the page may show about a code WITHOUT showing the code. */
-export type HeadwindEnrollmentSummary = {
+type HeadwindEnrollmentSummary = {
   saved: boolean;
   templateName: string | null;
   /** The agent package the tablet will install, read out of the component name. */

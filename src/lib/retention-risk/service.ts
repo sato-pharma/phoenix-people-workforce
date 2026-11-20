@@ -66,11 +66,11 @@ export function cairoDateIso(at: Date = new Date()): string {
  * times a day, so a same-day read is empty for the entire field force. Measuring today would
  * report every rep in the company as silent every single morning.
  */
-export function retentionRiskMeasurableThrough(now: Date = new Date()): string {
+function retentionRiskMeasurableThrough(now: Date = new Date()): string {
   return addDays(cairoDateIso(now), -1);
 }
 
-export type RetentionRiskWindow = {
+type RetentionRiskWindow = {
   /** Inclusive last date of the scan — the leave look-ahead end. */
   end: string;
   /** Last date CRM silence can be judged to. */
@@ -79,7 +79,7 @@ export type RetentionRiskWindow = {
   start: string;
 };
 
-export function resolveRetentionRiskWindow(now: Date = new Date()): RetentionRiskWindow {
+function resolveRetentionRiskWindow(now: Date = new Date()): RetentionRiskWindow {
   const measurableThrough = retentionRiskMeasurableThrough(now);
   return {
     end: addDays(cairoDateIso(now), LEAVE_LOOKAHEAD_DAYS),

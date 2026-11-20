@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type ReferenceGapKind = "product" | "brick" | "area" | "region" | "distributor";
 
-export type ReferenceGap = {
+type ReferenceGap = {
   /** The orphan code exactly as used in the sheets (normalized for matching). */
   code: string;
   affectedRows: number;
@@ -14,7 +14,7 @@ export type ReferenceGap = {
   periods: string[];
 };
 
-export type ReferenceGapGroup = {
+type ReferenceGapGroup = {
   kind: ReferenceGapKind;
   label: string;
   description: string;

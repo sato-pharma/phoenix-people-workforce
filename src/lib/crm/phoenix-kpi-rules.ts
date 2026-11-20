@@ -158,7 +158,7 @@ export function dailyFollowUp(input: {
   };
 }
 
-export type PhoenixSlice = {
+type PhoenixSlice = {
   visits: number;
   /** visits / working days. Null when the rep had no working day in the window. */
   rate: number | null;

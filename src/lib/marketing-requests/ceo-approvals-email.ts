@@ -48,12 +48,6 @@ export const APPROVED_REQUESTS_MAX_RECIPIENTS = 60;
 
 export type ApprovedRequestMark = "none" | "executed" | "hold";
 
-export type ApprovedRequestsEmailSelection = {
-  mark: ApprovedRequestMark;
-  note: string;
-  requestId: string;
-};
-
 /** What a row starts as before he touches it: red when Finance executed it, hold when it is held. */
 export function defaultMarkFor(row: Pick<MarketingCeoApprovalRow, "financeState">): ApprovedRequestMark {
   if (row.financeState === "executed") return "executed";
@@ -122,7 +116,7 @@ function dayLabel(day: string, withYear: boolean): string {
   return `${ordinal(date)} ${MONTHS[month - 1]}${withYear ? ` ${year}` : ""}`;
 }
 
-export function approvedRequestsRangeLabel(range: CeoApprovalsRange): string {
+function approvedRequestsRangeLabel(range: CeoApprovalsRange): string {
   const withYear = range.from.slice(0, 4) !== range.to.slice(0, 4);
   if (range.from === range.to) return dayLabel(range.from, withYear);
   return `${dayLabel(range.from, withYear)} to ${dayLabel(range.to, withYear)}`;

@@ -28,9 +28,9 @@ export type OfferCopyPerson = {
   vacant: boolean;
 };
 
-export type OfferCopyArea = { code: string; name: string; people: OfferCopyPerson[] };
-export type OfferCopyRegion = { areas: OfferCopyArea[]; code: string; name: string };
-export type OfferCopyLine = { code: string; name: string; regions: OfferCopyRegion[] };
+type OfferCopyArea = { code: string; name: string; people: OfferCopyPerson[] };
+type OfferCopyRegion = { areas: OfferCopyArea[]; code: string; name: string };
+type OfferCopyLine = { code: string; name: string; regions: OfferCopyRegion[] };
 
 export type OfferCopyDirectory = { hrTeam: OfferCopyPerson[]; lines: OfferCopyLine[] };
 

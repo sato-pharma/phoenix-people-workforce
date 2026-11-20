@@ -54,7 +54,7 @@ export const INTEGRATION_CATEGORIES: readonly IntegrationCategory[] = [
  *            shown as "not configured".
  *   none     no credential exists: an open feed, or a file the reader's own browser loads.
  */
-export type IntegrationCredential =
+type IntegrationCredential =
   | { kind: "env"; anyOf: readonly (readonly string[])[] }
   | { kind: "switch"; name: string }
   | { kind: "outside"; where: string }

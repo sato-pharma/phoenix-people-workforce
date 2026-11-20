@@ -28,7 +28,7 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { districtReturnSuppressionKey } from "@/lib/recruitment/district-manager-folders";
 
 /** The table, named once so a rename is one edit and a typo cannot half-apply. */
-export const CALL_ACTIONS_TABLE = "ats_candidate_call_actions";
+const CALL_ACTIONS_TABLE = "ats_candidate_call_actions";
 
 const CLAIM_COLUMNS = "candidate_id,manager_hr_id,manager_name,acted_at";
 

@@ -725,7 +725,7 @@ export type TerritoryListView = {
 };
 
 /** The database refuses a sixth active place (phoenix_crm_add_place, too_many_places). */
-export const PHOENIX_CRM_PLACES_MAX = 5;
+const PHOENIX_CRM_PLACES_MAX = 5;
 
 /**
  * The written reason moving a customer to another rep needs — the same bounds a place move has
@@ -733,7 +733,7 @@ export const PHOENIX_CRM_PLACES_MAX = 5;
  * captured. `phoenix_crm_move_customer` repeats both bounds, so a phone cannot get round them.
  */
 export const CUSTOMER_MOVE_REASON_MIN = 10;
-export const CUSTOMER_MOVE_REASON_MAX = 500;
+const CUSTOMER_MOVE_REASON_MAX = 500;
 
 export function mapTimings(raw: unknown): PhoenixCrmTiming[] {
   if (!Array.isArray(raw)) return [];
@@ -882,7 +882,7 @@ async function mintReferenceCustomers(seat: OrgSeat, isTest: boolean): Promise<v
  */
 export const REFERENCE_MINT_FRESH_MS = 5 * 60_000;
 /** The most seats whose last mint is remembered; past it the oldest goes, which costs one extra mint. */
-export const REFERENCE_MINT_STAMPS_MAX = 2_000;
+const REFERENCE_MINT_STAMPS_MAX = 2_000;
 
 const referenceMints = createRecentOnce({ freshMs: REFERENCE_MINT_FRESH_MS, maxKeys: REFERENCE_MINT_STAMPS_MAX });
 
@@ -3355,7 +3355,7 @@ export async function addPlace(
 }
 
 /** What the rep is told once a new signboard photo is saved. Never names a check or a model. */
-export const SIGNBOARD_RETAKE_SAVED_TEXT: Record<"confirmed" | "checking", string> = {
+const SIGNBOARD_RETAKE_SAVED_TEXT: Record<"confirmed" | "checking", string> = {
   confirmed: "The customer's name was read on the new photo. This place is confirmed.",
   checking: "The new photo is saved. The system is checking this place.",
 };

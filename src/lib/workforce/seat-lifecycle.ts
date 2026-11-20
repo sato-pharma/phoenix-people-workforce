@@ -55,7 +55,7 @@ function sameText(left: unknown, right: unknown) {
   return Boolean(leftText && rightText && leftText === rightText);
 }
 
-export function hasCompleteWorkforceSeat(input: WorkforceSeatInput) {
+function hasCompleteWorkforceSeat(input: WorkforceSeatInput) {
   return (
     typeof input.areaId === "number" &&
     typeof input.lineId === "number" &&
@@ -118,7 +118,7 @@ export function calculateWorkforceStructureSummary(input: {
   };
 }
 
-export function continuityHrIds(input: SalesContinuitySeat) {
+function continuityHrIds(input: SalesContinuitySeat) {
   return Array.from(
     new Set(
       [input.currentHrId, ...(input.previousHrIds ?? [])]

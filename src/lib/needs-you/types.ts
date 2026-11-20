@@ -289,7 +289,7 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
  * `yours` is the only lane the empty-state sentence is gated on, because the sentence says "nothing
  * is waiting on a decision only you can make" and that is exactly what this lane means.
  */
-export type NeedsYouLane = "yours" | "someone-else" | "worth-knowing";
+type NeedsYouLane = "yours" | "someone-else" | "worth-knowing";
 
 /**
  * `merge` exists and is never produced in v1. This board reads no GitHub: `scripts/needs-you.mjs` is
@@ -297,7 +297,7 @@ export type NeedsYouLane = "yours" | "someone-else" | "worth-knowing";
  * would be a second copy of a rule whose wrong answer walks the owner into a merge. The slot stays
  * so a later phase adds a row rather than a column.
  */
-export type NeedsYouKind = "approval" | "publish" | "expiry" | "flag" | "merge";
+type NeedsYouKind = "approval" | "publish" | "expiry" | "flag" | "merge";
 
 export type NeedsYouItem = {
   /** Stable within a board — `"leave-approvals:pending"`, `"monthly-closings:2026-08"`. */

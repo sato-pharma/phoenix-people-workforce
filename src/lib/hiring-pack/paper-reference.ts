@@ -28,15 +28,10 @@ import { paperReferencePrintsOnFace } from "@/lib/hiring-pack/forms-drive";
 import type { PrintableDocument } from "@/lib/hiring-pack/document-registry";
 
 /** `HR-2026-000123`: the prefix, the year it was issued, and a six-digit running number. */
-export const PAPER_REFERENCE_PATTERN = /^HR-\d{4}-\d{6,}$/;
+const PAPER_REFERENCE_PATTERN = /^HR-\d{4}-\d{6,}$/;
 
 export function isPaperReference(value: unknown): value is string {
   return typeof value === "string" && PAPER_REFERENCE_PATTERN.test(value);
-}
-
-/** The line printed on the paper. Arabic label, the number itself held left-to-right. */
-export function paperReferenceText(reference: string): string {
-  return `رقم المرجع: ${reference}`;
 }
 
 const REFERENCE_CLASS = "hp-ref";
@@ -47,7 +42,7 @@ const REFERENCE_CLASS = "hp-ref";
  * `unicode-bidi: isolate` on the number is what keeps "HR-2026-000123" reading left to right inside
  * an Arabic line; without it the hyphens are neutral and the groups come out reversed.
  */
-export const PAPER_REFERENCE_CSS = `
+const PAPER_REFERENCE_CSS = `
   .${REFERENCE_CLASS} { display: block; margin-top: .6mm; color: #64748b; font-size: 6.5pt; font-weight: 600; line-height: 1.4; }
   .${REFERENCE_CLASS} bdi { unicode-bidi: isolate; direction: ltr; letter-spacing: .02em; }
   .${REFERENCE_CLASS}--fixed { position: fixed; bottom: 3mm; left: 4mm; margin: 0; z-index: 5; }

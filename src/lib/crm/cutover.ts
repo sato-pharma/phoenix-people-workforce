@@ -41,14 +41,10 @@ export const NO_CRM_CUTOVER: CrmCutoverSetting = Object.freeze({ cutoverDate: nu
 
 /** How long a process trusts the setting it read. A cutover is a once-in-a-lifetime switch; a minute of
  * lag on it costs nothing, and a read per vendor tick would. */
-export const CRM_CUTOVER_CACHE_MS = 60_000;
+const CRM_CUTOVER_CACHE_MS = 60_000;
 
 /** The machine reason a stood-down vendor pull reports. */
 export const VENDOR_SYNC_RETIRED_REASON = "vendor_sync_retired";
-
-/** What a person pressing a vendor sync button is told once it is stood down. */
-export const VENDOR_SYNC_RETIRED_MESSAGE =
-  "iReports360 has been retired. Visits and plans are entered in Phoenix now, so there is nothing to pull from it.";
 
 const MONTH_NAMES = [
   "January",
@@ -153,7 +149,7 @@ export function isOnOrAfterCrmCutover(setting: CrmCutoverSetting, day: string): 
 }
 
 /** Pure: the calendar month the cutover date falls in, or null with no date. */
-export function crmCutoverMonth(setting: CrmCutoverSetting): CrmMonth | null {
+function crmCutoverMonth(setting: CrmCutoverSetting): CrmMonth | null {
   if (!setting.cutoverDate) return null;
   return { month: Number(setting.cutoverDate.slice(5, 7)), year: Number(setting.cutoverDate.slice(0, 4)) };
 }

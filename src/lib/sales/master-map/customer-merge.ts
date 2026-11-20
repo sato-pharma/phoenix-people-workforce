@@ -31,7 +31,7 @@ export type MasterMapCustomerInput = {
   source: string | null;
 };
 
-export type MasterMapCustomerCode = {
+type MasterMapCustomerCode = {
   customerCode: string;
   distributorCode: string;
 };
@@ -116,17 +116,6 @@ const MERGE_SLICE = 2_000;
  */
 function distributorKey(folded: string, row: MasterMapCustomerInput): string {
   return `${folded}\u001F${row.brickId}\u001F${row.distributorCode}`;
-}
-
-/**
- * The merge key for one row. Exported so the tests can pin each guard independently rather than
- * inferring it from a row count.
- */
-export function masterMapMergeKey(
-  row: MasterMapCustomerInput,
-  distinguished: ReadonlySet<string>,
-): string {
-  return mergeKeyOfFolded(row, normalizeCustomerName(row.customerName), distinguished);
 }
 
 /** The merge key, for a row whose name is already folded — the merge folds each name once. */

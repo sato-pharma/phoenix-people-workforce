@@ -43,7 +43,7 @@ export function foldCustomerName(value: string | null | undefined): string {
 }
 
 /** Generic words that say nothing about WHICH customer it is ("pharmacy", "new", "doctor", "hospital"). */
-export const CUSTOMER_NAME_STOP_WORDS: ReadonlySet<string> = new Set([
+const CUSTOMER_NAME_STOP_WORDS: ReadonlySet<string> = new Set([
   "صيدلية",
   "صيدليه",
   "فارما",

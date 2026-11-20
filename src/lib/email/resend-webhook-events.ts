@@ -4,7 +4,7 @@ import { redactCredentialLinksInJson } from "@/lib/email/credential-redaction";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type ResendDeliveryStatus =
+type ResendDeliveryStatus =
   | "bounced"
   | "clicked"
   | "complained"

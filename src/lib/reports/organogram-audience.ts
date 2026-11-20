@@ -196,7 +196,7 @@ export function resolveOrganogramAudienceSelection(
 /* ------------------------------------------------------------------ */
 
 /** Outlook's own separator. Gmail, Outlook Web and Apple Mail all accept it. */
-export const ORGANOGRAM_EMAIL_SEPARATOR = "; ";
+const ORGANOGRAM_EMAIL_SEPARATOR = "; ";
 
 /**
  * The only domain a COPIED address may belong to. `employees.work_email` is a free-text
@@ -205,7 +205,7 @@ export const ORGANOGRAM_EMAIL_SEPARATOR = "; ";
  * personal address is not a work email, so it never reaches the clipboard — the person is
  * listed as left out instead, exactly like someone with no address.
  */
-export const ORGANOGRAM_COMPANY_EMAIL_DOMAIN = "satopharma.com";
+const ORGANOGRAM_COMPANY_EMAIL_DOMAIN = "satopharma.com";
 
 export function isOrganogramCompanyEmail(email: string | null | undefined): boolean {
   const value = email?.trim().toLowerCase() ?? "";

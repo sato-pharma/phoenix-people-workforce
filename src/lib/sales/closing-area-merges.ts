@@ -39,7 +39,7 @@ import type {
 
 const up = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
 
-export type ClosingAreaMergeRule = {
+type ClosingAreaMergeRule = {
   /** Area code the merged row survives under. */
   keepAreaCode: string;
   /** Area code folded into `keepAreaCode`; dropped from the matrix, its sales added in. */

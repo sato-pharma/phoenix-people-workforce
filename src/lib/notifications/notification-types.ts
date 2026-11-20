@@ -38,7 +38,7 @@ export {
   type NotificationBellCategory,
 } from "@/lib/notifications/notification-bell-categories";
 
-export type NotificationTypeDelivery = "direct_email" | "both";
+type NotificationTypeDelivery = "direct_email" | "both";
 
 export type NotificationTypeEntry = {
   delivery?: NotificationTypeDelivery;
@@ -450,7 +450,7 @@ export const UNTYPED_SENDS: ReadonlyArray<{ channel: "email" | "telegram"; file:
 
 // ── Readable names ────────────────────────────────────────────────────────────────────────────
 
-export const NOTIFICATION_MODULE_LABELS: Readonly<Record<string, string>> = {
+const NOTIFICATION_MODULE_LABELS: Readonly<Record<string, string>> = {
   attendance: "Attendance",
   attendance_digest: "Weekly attendance review",
   birthday: "Birthdays",
@@ -501,7 +501,7 @@ export const NOTIFICATION_CHANNEL_LABELS: Readonly<Record<SystemNotificationChan
   telegram: "Telegram",
 };
 
-export const NOTIFICATION_RECIPIENT_LABELS: Readonly<Record<NotificationRecipientStrategy, string>> = {
+const NOTIFICATION_RECIPIENT_LABELS: Readonly<Record<NotificationRecipientStrategy, string>> = {
   actor: "The person who acted",
   admin: "Administrators",
   area_manager: "Area manager",
@@ -521,14 +521,14 @@ export const NOTIFICATION_RECIPIENT_LABELS: Readonly<Record<NotificationRecipien
   workflow_step_approver: "The current approver",
 };
 
-export const NOTIFICATION_PRIORITY_LABELS: Readonly<Record<SystemNotificationPriority, string>> = {
+const NOTIFICATION_PRIORITY_LABELS: Readonly<Record<SystemNotificationPriority, string>> = {
   critical: "Critical",
   high: "High",
   low: "Low",
   normal: "Normal",
 };
 
-export function notificationModuleLabel(module: string): string {
+function notificationModuleLabel(module: string): string {
   return NOTIFICATION_MODULE_LABELS[module] ?? module.replace(/[._-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 

@@ -11,7 +11,7 @@
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const HANDSET_LIMIT_DAYS = 14;
+const HANDSET_LIMIT_DAYS = 14;
 
 export type HandsetReminderStage = "seven" | "ten" | "twelve" | "thirteen" | "over";
 

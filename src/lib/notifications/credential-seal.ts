@@ -16,7 +16,7 @@ import { openSecret, sealSecret } from "@/lib/security/secret-box";
  * outright and the row says `credentialRedacted`. Only emails stamped `credentialEmail` are touched;
  * every other email is stored exactly as before.
  */
-export const CREDENTIAL_SEAL_CONTEXT = "notification-outbox-credential";
+const CREDENTIAL_SEAL_CONTEXT = "notification-outbox-credential";
 
 /** The fields of a credential email that carry the credential itself. */
 type CredentialFields = {

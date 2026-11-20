@@ -69,7 +69,7 @@ export function groupOf(customer: ListCustomer): Omit<CustomerGroup, "customers"
 }
 
 /** Accounts (AM) before doctors (PM), then by name — the order a rep's own list keeps. */
-export function byTypeThenName(left: ListCustomer, right: ListCustomer): number {
+function byTypeThenName(left: ListCustomer, right: ListCustomer): number {
   if (left.listType !== right.listType) return left.listType === "AM" ? -1 : 1;
   return left.name.localeCompare(right.name);
 }

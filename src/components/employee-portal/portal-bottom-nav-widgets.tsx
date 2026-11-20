@@ -57,7 +57,7 @@ export const PORTAL_QUICK_ACTION_ICONS: Record<PortalQuickActionKey, LucideIcon>
  * z-[60]/[61]: above the z-40 bar it opens from, below the z-[90] command bar, which is the one
  * surface allowed to cover everything.
  */
-export function PortalBottomSheet({
+function PortalBottomSheet({
   children,
   onClose,
   title,

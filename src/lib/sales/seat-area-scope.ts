@@ -50,7 +50,7 @@ export type SeatAreaScope = {
  */
 const SEAT_AREA_SCOPED_ROLES = new Set<PhoenixRole>(["District Manager", "Manager", "Regional Manager"]);
 
-export function isSeatAreaScopedRole(role: PhoenixRole): boolean {
+function isSeatAreaScopedRole(role: PhoenixRole): boolean {
   return SEAT_AREA_SCOPED_ROLES.has(role);
 }
 

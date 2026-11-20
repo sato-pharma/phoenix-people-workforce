@@ -52,7 +52,7 @@ export function kpiShortDay(iso: string | null | undefined): string | null {
 }
 
 /** The planned days that have come by `asOf`, earliest first. Those are the days a late doctor missed. */
-export function kpiMissedPlanDays(doctor: Pick<KpiCoverageDoctor, "planDates">, asOf: string): string[] {
+function kpiMissedPlanDays(doctor: Pick<KpiCoverageDoctor, "planDates">, asOf: string): string[] {
   return doctor.planDates.filter((day) => day <= asOf).sort();
 }
 
@@ -148,10 +148,10 @@ export function kpiFloorSentence(summary: KpiRepCoverageSummary): string {
 
 // ── How late ─────────────────────────────────────────────────────────────────────────────────
 
-export const KPI_LATE_AGES = ["this-week", "last-week", "older"] as const;
+const KPI_LATE_AGES = ["this-week", "last-week", "older"] as const;
 export type KpiLateAge = (typeof KPI_LATE_AGES)[number];
 
-export const KPI_LATE_AGE_LABEL: Record<KpiLateAge, string> = {
+const KPI_LATE_AGE_LABEL: Record<KpiLateAge, string> = {
   "this-week": "Missed in the last 7 days",
   "last-week": "Missed 8 to 14 days ago",
   older: "Missed more than 14 days ago",
@@ -281,7 +281,7 @@ function finish(groups: Iterable<KpiCoverageGroup>): KpiCoverageGroup[] {
  * biggest group leads and a tie goes alphabetically. Every doctor is in exactly one group, so the groups'
  * planned add up to his Planned and their covered to his Covered.
  */
-export function kpiCoverageGroups(
+function kpiCoverageGroups(
   doctors: readonly KpiCoverageDoctor[],
   keyOf: (doctor: KpiCoverageDoctor) => string,
   order?: readonly string[],

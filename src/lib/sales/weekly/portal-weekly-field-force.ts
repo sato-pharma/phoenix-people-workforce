@@ -90,7 +90,7 @@ export type FieldForceSeatIndex = {
 };
 
 /** An area a district manager owns with no rep seat under it. */
-export type FieldForceManagerArea = {
+type FieldForceManagerArea = {
   managerName: string;
   lineCode: string;
   lineName: string;

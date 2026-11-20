@@ -140,7 +140,7 @@ export type PersonFacts = {
 };
 
 /** Why a saved visit is DELIBERATELY not expected at a door. Each is counted, never dropped silently. */
-export type LifecycleExclusion =
+type LifecycleExclusion =
   | "test_row"
   | "manager_own_visit"
   | "removed_by_admin"
@@ -161,7 +161,7 @@ export type LifecycleExclusion =
   | "repeat_save_collapsed"
   | "partnered_double_feed";
 
-export type LifecycleStage = 1 | 2 | 3 | 4 | 5;
+type LifecycleStage = 1 | 2 | 3 | 4 | 5;
 
 /**
  * A stage where a visit that should have arrived did not (`missing`, and its three named shapes), or
@@ -171,7 +171,7 @@ export type LifecycleStage = 1 | 2 | 3 | 4 | 5;
  *   merged      — two DIFFERENT customers folded into one stop by the duplicate collapse (lead R3);
  *   vendor      — an iReports360 row served beside the rep's own Phoenix CRM day (lead R12).
  */
-export type LifecycleFailureKind = "missing" | "no_approval" | "departed" | "merged" | "extra" | "vendor";
+type LifecycleFailureKind = "missing" | "no_approval" | "departed" | "merged" | "extra" | "vendor";
 
 export type StageFailure = {
   stage: LifecycleStage;
@@ -182,11 +182,11 @@ export type StageFailure = {
   found: number;
 };
 
-export type StageUnreadable = { stage: LifecycleStage; sources: string[]; ids: string[] };
+type StageUnreadable = { stage: LifecycleStage; sources: string[]; ids: string[] };
 
 // ── S1 — the countable rule ────────────────────────────────────────────────────────────────────────
 
-export type CountableVerdict =
+type CountableVerdict =
   | { countable: true }
   | { countable: false; stuck: false; reason: LifecycleExclusion }
   /** Off-plan, not `out_of_list`, and NO approval row: nothing can ever count it. A defect, not a rule. */
@@ -206,7 +206,7 @@ export type CountableVerdict =
  * below or be expected at a door — without them, every copy the conversion left uncounted read as a
  * lost visit and a call-rate shortfall.
  */
-export function countableVerdict(visit: SavedVisit): CountableVerdict {
+function countableVerdict(visit: SavedVisit): CountableVerdict {
   if (visit.archivedAt) return { countable: false, stuck: false, reason: "archived_visit" };
   // `(null is null or …)` passes; a copy passes only on `ireports360_kpi_counted` TRUE — SQL reads a
   // null flag as not counted, so a null here is not counted either.
@@ -241,7 +241,7 @@ export function countableVerdict(visit: SavedVisit): CountableVerdict {
 // ── S2 — the started team's window ─────────────────────────────────────────────────────────────────
 
 /** The join `crm_visits_unified` makes: `seat_id`, `visit_date >= starts_on`, `visit_date < stops_on`. */
-export function seatWindowVerdict(
+function seatWindowVerdict(
   seatId: string,
   visitDate: string,
   windows: readonly StartedSeatWindow[],
@@ -269,7 +269,7 @@ export type TeamMove = { id: string; seatId: string; teamThen: string; teamNow: 
 export type TeamMoveNote = "team_moved_same_verdict" | "seat_history_missing" | "seat_history_ambiguous";
 
 /** The team a seat sat under on a day, from its dated history. Half-open, as the history is written. */
-export function teamOnDay(
+function teamOnDay(
   seatId: string,
   date: string,
   history: readonly SeatHistoryRow[],
@@ -827,7 +827,7 @@ export function kpiExpectation(input: {
 
 /** The namespace every visit-lifecycle correlation id is minted in. Never change it: rows written
  * before the change would stop linking to the rows written after. */
-export const VISIT_LIFECYCLE_UUID_NAMESPACE = "5b2f7c1e-8d4a-4e3b-9f6a-0c1d2e3f4a5b";
+const VISIT_LIFECYCLE_UUID_NAMESPACE = "5b2f7c1e-8d4a-4e3b-9f6a-0c1d2e3f4a5b";
 
 /** RFC 4122 version-5 UUID (SHA-1, name-based). */
 export function uuidV5(name: string, namespace: string): string {

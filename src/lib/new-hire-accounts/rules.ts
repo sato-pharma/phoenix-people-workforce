@@ -14,13 +14,11 @@
 // The account: docs/phoenix-crm-offplan-exemptions.md, "New Hire Accounts".
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export const NEW_HIRE_ACCOUNTS_PATH = "/admin/field-crm/new-hire-accounts";
-
 /** The field roles the page reaches. The one role that matters is what is on the login, never the job title. */
 export const NEW_HIRE_ROLES = ["Medical Rep", "District Manager"] as const;
 
 /** How far back a hire date still counts as new. A date ahead of today always does: people are invited before they start. */
-export const NEW_HIRE_WINDOW_DAYS = 90;
+const NEW_HIRE_WINDOW_DAYS = 90;
 
 export const NEW_HIRE_CHANNELS = ["sato_email", "private_email", "whatsapp"] as const;
 

@@ -104,7 +104,7 @@ export type RefusedSubject = "visit" | "place";
 export type BlockedPermission = "location" | "camera";
 
 /** Every reason the table's own CHECK allows, in the order it was taught them. */
-export const REFUSED_REASONS: readonly RefusedReason[] = [
+const REFUSED_REASONS: readonly RefusedReason[] = [
   "no_fix",
   "rough",
   "off_listing",
@@ -138,7 +138,7 @@ export function parseRefusedReason(value: unknown): RefusedReason {
     : "rough";
 }
 
-export const BLOCKED_PERMISSIONS: readonly BlockedPermission[] = ["location", "camera"];
+const BLOCKED_PERMISSIONS: readonly BlockedPermission[] = ["location", "camera"];
 
 /** A permission name from a browser, or null for anything else — the row's own CHECK allows two. */
 export function parseBlockedPermission(value: unknown): BlockedPermission | null {

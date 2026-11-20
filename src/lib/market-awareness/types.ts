@@ -49,7 +49,7 @@ export type MarketAwarenessDecisionAction = (typeof MARKET_AWARENESS_DECISION_AC
  */
 export type MarketAwarenessStepCode = "group" | "ceo" | "manager";
 
-export type MarketAwarenessActivityType = {
+type MarketAwarenessActivityType = {
   id: number;
   code: string;
   name: string;
@@ -58,19 +58,19 @@ export type MarketAwarenessActivityType = {
   active: boolean;
 };
 
-export type MarketAwarenessProduct = {
+type MarketAwarenessProduct = {
   productCode: string;
   productName: string | null;
   lineId: number | null;
 };
 
-export type MarketAwarenessBrick = {
+type MarketAwarenessBrick = {
   brickId: string;
   brickName: string | null;
   isPrimary: boolean;
 };
 
-export type MarketAwarenessCostItem = {
+type MarketAwarenessCostItem = {
   id: number;
   label: string;
   amount: number;

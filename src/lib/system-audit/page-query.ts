@@ -38,10 +38,10 @@ export const SYSTEM_AUDIT_SEARCH_MAX = 200;
 const MODULE_LABEL_MAX = 200;
 const HR_KEY_MAX = 64;
 
-export const SYSTEM_AUDIT_SCOPES = ["only", "shared", "system"] as const satisfies readonly SharedScope[];
+const SYSTEM_AUDIT_SCOPES = ["only", "shared", "system"] as const satisfies readonly SharedScope[];
 
 /** The URL parameter names, one per filter. Arrays repeat the name (`module=A&module=B`). */
-export const SYSTEM_AUDIT_PARAM = {
+const SYSTEM_AUDIT_PARAM = {
   from: "from",
   to: "to",
   hrKey: "hrKey",
@@ -99,7 +99,7 @@ function readOne(input: QueryInput, name: string, label: string): string | null 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** A real calendar day as YYYY-MM-DD, or a refusal. `2026-02-30` is refused, never rolled over. */
-export function parseCairoDate(value: string, label: string): string {
+function parseCairoDate(value: string, label: string): string {
   const match = ISO_DATE.exec(value);
   if (!match) throw new SystemAuditQueryError(`${label} must be a date written as YYYY-MM-DD.`);
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -286,12 +286,12 @@ export function describeSystemAuditFilters(filters: SystemAuditFilters): string 
 // Refused here, in words, before the database function sees them; the function re-checks every
 // rule and its own refusal is shown verbatim when it disagrees.
 
-export const SYSTEM_AUDIT_REASON_MAX = 2000;
+const SYSTEM_AUDIT_REASON_MAX = 2000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /** The statuses a person may set by hand. FIXED — VERIFIED belongs to the verifier alone. */
 const HUMAN_STATUSES = ["investigating", "not_fixed", "fix_implemented", "no_defect", "unknown"] as const;
-export type HumanStatus = (typeof HUMAN_STATUSES)[number];
+type HumanStatus = (typeof HUMAN_STATUSES)[number];
 
 export type StatusChangeInput = {
   to: HumanStatus;

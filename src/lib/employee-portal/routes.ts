@@ -1,8 +1,3 @@
-export const employeePortalOwnedRoutePatterns = [
-  "/employee-portals",
-  "/employee-portals/*",
-  "/leave-management/vacation-control",
-] as const;
 
 const exactEmployeePortalOwnedRoutes = new Set<string>([
   "/employee-portals",

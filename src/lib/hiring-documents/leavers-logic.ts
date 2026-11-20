@@ -38,7 +38,7 @@ export function leaverMailboxStanding(statuses: ReadonlyArray<string | null>): H
   return statuses.every((status) => status === "not_applicable") ? "not_needed" : "pending";
 }
 
-export type LeaverExitPaper = {
+type LeaverExitPaper = {
   document: HiringDocumentDefinition;
   signal: HiringDocumentSignal;
   /** "either": one of the two labour papers, neither chosen yet. "greyed": the other one was chosen. */

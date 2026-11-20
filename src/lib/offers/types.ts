@@ -181,7 +181,7 @@ export type OfferJobTitleInput = {
 export type OfferStatus = "accepted" | "declined" | "draft" | "pending_approval" | "sent" | "withdrawn";
 
 /** Who asked for an offer's approval, who decided, and what he said when he sent it back. */
-export type OfferApproval = {
+type OfferApproval = {
   approvedAt: string | null;
   approvedBy: string | null;
   requestedAt: string | null;

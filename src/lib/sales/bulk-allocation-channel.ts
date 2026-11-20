@@ -48,7 +48,7 @@ export const BULK_DISTRIBUTOR_LABEL = "EPDA-BULK";
  * different things: a product mis-mastered onto another line must not be spread across THAT line's
  * areas, and the line is the grain every caller of `buildBulkAllocation` already works in.
  */
-export const BULK_ALLOCATION_LINES = ["Pedia"] as const;
+const BULK_ALLOCATION_LINES = ["Pedia"] as const;
 
 /**
  * 🔴 THE ONLY PRODUCT THE ALLOCATION MOVES — IVYRONC (owner, 2026-10-09): "IN EPDA BULK ONLY
@@ -96,13 +96,13 @@ export const BULK_ALLOCATION_START_PERIOD = "2026-09";
 export const EPDA_CONTRIBUTION_START_PERIOD = "2026-10";
 
 /** EPDA-BULK and EPDA-Pharmacies. The main EPDA book (`EP`) is retail and is one of the weights. */
-export const EPDA_CONTRIBUTION_DISTRIBUTOR_CODES = ["EP-BK", "EP-PHS"] as const;
+const EPDA_CONTRIBUTION_DISTRIBUTOR_CODES = ["EP-BK", "EP-PHS"] as const;
 
 /** Ivyronc, Royafloxacin, Saginko. Every other product of the two books keeps its invoiced area. */
-export const EPDA_CONTRIBUTION_PRODUCT_CODES = ["IV001", "RO001", "SA001"] as const;
+const EPDA_CONTRIBUTION_PRODUCT_CODES = ["IV001", "RO001", "SA001"] as const;
 
 /** The lines those three products are on (live master, read 2026-11-04): Ivyronc Pedia, the other two Anti Infective. */
-export const EPDA_CONTRIBUTION_LINES = ["Pedia", "Anti Infective"] as const;
+const EPDA_CONTRIBUTION_LINES = ["Pedia", "Anti Infective"] as const;
 
 const squeezed = (value: unknown) => String(value ?? "").replace(/\s+/g, "").toUpperCase();
 

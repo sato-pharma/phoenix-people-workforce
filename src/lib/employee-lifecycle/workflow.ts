@@ -11,12 +11,12 @@ export const contractWorkflowRegistryModuleKey = "contracts";
 
 type LifecycleAccess = Pick<AccessContext, "role">;
 
-export function toResignationWorkflowStatus(status: ResignationStatus | string | null | undefined) {
+function toResignationWorkflowStatus(status: ResignationStatus | string | null | undefined) {
   const normalized = String(status ?? "submitted").trim().toLowerCase();
   return `resignation_${normalized || "submitted"}`;
 }
 
-export function resignationActionKey(action: ResignationWorkflowAction) {
+function resignationActionKey(action: ResignationWorkflowAction) {
   return `resignation_${action}`;
 }
 
@@ -69,7 +69,7 @@ export async function assertProbationWorkflowTransition(input: {
   });
 }
 
-export function toContractWorkflowStatus(status: ContractRenewalStatus | string | null | undefined) {
+function toContractWorkflowStatus(status: ContractRenewalStatus | string | null | undefined) {
   const normalized = String(status ?? "requested").trim().toLowerCase();
   return `contract_${normalized || "requested"}`;
 }

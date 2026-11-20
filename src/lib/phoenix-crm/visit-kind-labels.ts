@@ -19,7 +19,7 @@ export const PHOENIX_VISIT_KIND_LABELS: Record<PhoenixCrmVisitKind, string> = {
   chain: "Chain visit",
 };
 
-export function isPhoenixCrmVisitKind(value: unknown): value is PhoenixCrmVisitKind {
+function isPhoenixCrmVisitKind(value: unknown): value is PhoenixCrmVisitKind {
   return value === "single" || value === "double" || value === "product_manager" || value === "chain";
 }
 

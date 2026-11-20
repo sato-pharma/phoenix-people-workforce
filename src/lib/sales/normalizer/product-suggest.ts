@@ -14,7 +14,7 @@ import { IGNORE_PRODUCT_CODE } from "@/lib/sales/normalizer/types";
 
 export type CatalogProduct = { code: string; name: string; family?: string; line?: string };
 export type KnownProductAlias = { alias: string; distributorCode: string; productCode: string };
-export type ProductSuggestSource = "sister_code" | "known_name" | "same_strength" | "ai";
+type ProductSuggestSource = "sister_code" | "known_name" | "same_strength" | "ai";
 export type ProductSuggestion = {
   raw: string;
   code: string | null;
@@ -46,7 +46,7 @@ const LIQUID_WORDS = new Set(["drop", "drops", "syp", "syrup", "solution", "susp
 const PACK_WORDS = /^(tab|tabs|tablet|tablets|cap|caps|capsule|capsules|sachet|sachets|ml|gm|g|fct|amp|amps)\b/;
 
 // The distributor family a code belongs to: "IS-T" → "IS", "EG-HOS" → "EG", "IS" → "IS".
-export function sisterRoot(distributorCode: string): string {
+function sisterRoot(distributorCode: string): string {
   return normalizeCodeKey(distributorCode).split("-")[0] ?? "";
 }
 
@@ -59,7 +59,7 @@ export function cleanProductName(value: string): string {
   return normalizeAliasKey(stripped);
 }
 
-export type ProductSignature = { strengths: number[]; liquid: boolean; variants: string[] };
+type ProductSignature = { strengths: number[]; liquid: boolean; variants: string[] };
 
 function splitUnits(text: string): string {
   return String(text ?? "").toLowerCase().replace(/(\d)([a-z])/g, "$1 $2").replace(/([a-z])(\d)/g, "$1 $2");
@@ -68,7 +68,7 @@ function splitUnits(text: string): string {
 // What a name says about the medicine: its mg strengths, whether it is a liquid, and its variant words.
 // A catalog name may carry a bare strength ("Tebofortine Forte 80"); a distributor name's bare numbers
 // are pack counts ("30TAB", "400 GM"), so only "<n> mg" counts there.
-export function productSignature(text: string, opts: { catalogName?: boolean } = {}): ProductSignature {
+function productSignature(text: string, opts: { catalogName?: boolean } = {}): ProductSignature {
   const spaced = splitUnits(text).replace(/[^a-z0-9./]+/g, " ");
   const strengths = new Set<number>();
   const mg = /(\d+(?:\.\d+)?)\s*mg\b/g;
@@ -101,7 +101,7 @@ function catalogSignature(product: CatalogProduct): ProductSignature {
 }
 
 // True when the item names a strength and the product names a different one — never the same medicine.
-export function strengthConflicts(itemName: string, product: CatalogProduct | undefined): boolean {
+function strengthConflicts(itemName: string, product: CatalogProduct | undefined): boolean {
   if (!product || !itemName) return false;
   const item = productSignature(itemName).strengths;
   const own = catalogSignature(product).strengths;
@@ -178,7 +178,7 @@ function productByCode(ctx: ProductSuggestContext, code: string): CatalogProduct
 }
 
 // Steps 1-3 for one item. Returns null when no free evidence settles it (the AI is asked next).
-export function freeProductSuggestion(item: ProductItem, ctx: ProductSuggestContext): ProductSuggestion | null {
+function freeProductSuggestion(item: ProductItem, ctx: ProductSuggestContext): ProductSuggestion | null {
   const current = normalizeCodeKey(ctx.distributorCode);
   const root = sisterRoot(ctx.distributorCode);
   const name = String(item.rawName || (isCodeLike(item.raw) ? "" : item.raw) || "").trim();
@@ -250,7 +250,7 @@ export function freeProductSuggestion(item: ProductItem, ctx: ProductSuggestCont
 
 // When the item's family is ours but no product of it has the item's strength or form, say so: the
 // usual answer is another company's pack or a strength Phoenix does not sell.
-export function noMatchReason(item: ProductItem, ctx: ProductSuggestContext): string {
+function noMatchReason(item: ProductItem, ctx: ProductSuggestContext): string {
   const name = String(item.rawName || (isCodeLike(item.raw) ? "" : item.raw) || "").trim();
   if (!name) return `No name in the sheet and no sister distributor knows item ${item.raw} — pick it by hand.`;
   const { family, fits } = sameStrengthMatches(name, ctx.catalog);
@@ -263,7 +263,7 @@ export function noMatchReason(item: ProductItem, ctx: ProductSuggestContext): st
 
 // The candidate list the AI sees: every product with the names distributors already use for it, and
 // IGNORE with the names already set aside, so "not ours" is an answer it can give.
-export function buildAiProductCandidates(catalog: CatalogProduct[], aliases: KnownProductAlias[], perProduct = 5): AiCandidate[] {
+function buildAiProductCandidates(catalog: CatalogProduct[], aliases: KnownProductAlias[], perProduct = 5): AiCandidate[] {
   const namesByCode = new Map<string, string[]>();
   for (const alias of aliases) {
     if (isCodeLike(alias.alias)) continue;

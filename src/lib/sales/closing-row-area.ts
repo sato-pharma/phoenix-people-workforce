@@ -42,11 +42,6 @@ export function closingAreaOf(row: ClosingAreaRow): string {
   return normalize(row.sheetAreaCode) || normalize(row.areaCode);
 }
 
-/** The customer's own master location — where the shop physically is, per its brick. */
-export function resolvedAreaOf(row: ClosingAreaRow): string {
-  return normalize(row.areaCode);
-}
-
 /**
  * True when this row was booked somewhere OTHER than its customer's master location.
  *

@@ -50,7 +50,7 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * `/api/auth/` — sign-in, sign-out, the idle heartbeat, the password link and passkeys: each acts on
  * the test account's OWN login row, never on the person it mirrors.
  */
-export const TEST_ACCOUNT_WRITABLE_PREFIXES = ["/api/phoenix-crm/", "/api/auth/"] as const;
+const TEST_ACCOUNT_WRITABLE_PREFIXES = ["/api/phoenix-crm/", "/api/auth/"] as const;
 
 /**
  * POST routes that RENDER and persist NOTHING — a test account reads the real person's own keepsake
@@ -93,7 +93,7 @@ export const TEST_ACCOUNT_DRY_RUN_POSTS = ["/api/outstation/submit", "/api/outst
  * src/lib/error-monitor/user-error-screens.ts files it under the test login with `hr_id` empty, which
  * is exactly how the System Audit files a test account's errors. Exact paths, never a prefix.
  */
-export const TEST_ACCOUNT_OWN_DIAGNOSTIC_POSTS = ["/api/errors/screen"] as const;
+const TEST_ACCOUNT_OWN_DIAGNOSTIC_POSTS = ["/api/errors/screen"] as const;
 
 export function isTestAccount(access: Pick<AccessContext, "testPersona"> | null | undefined): boolean {
   return Boolean(access?.testPersona);

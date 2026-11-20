@@ -35,7 +35,7 @@ import type { DeviceImportRow } from "./bulk-import";
 import type { DeviceCategory } from "./types";
 
 /** The US tenant. EU tenants are `https://app.eu.action1.com/api/3.0` — set the env var. */
-export const ACTION1_DEFAULT_BASE_URL = "https://app.action1.com/api/3.0";
+const ACTION1_DEFAULT_BASE_URL = "https://app.action1.com/api/3.0";
 
 /**
  * Long enough for a fleet listing, short enough that a wedged tenant does not hold an admin's
@@ -48,7 +48,7 @@ const ACTION1_MAX_PAGES = 20;
 
 export type Action1Record = Record<string, unknown>;
 
-export type Action1Config = {
+type Action1Config = {
   baseUrl: string;
   clientId: string;
   clientSecret: string;
@@ -83,11 +83,7 @@ export class Action1RequestError extends Error {
   }
 }
 
-export function isAction1Configured(): boolean {
-  return Boolean(process.env.ACTION1_CLIENT_ID?.trim() && process.env.ACTION1_CLIENT_SECRET?.trim());
-}
-
-export function action1Config(): Action1Config {
+function action1Config(): Action1Config {
   const clientId = process.env.ACTION1_CLIENT_ID?.trim();
   const clientSecret = process.env.ACTION1_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
@@ -117,7 +113,7 @@ const isRecord = (value: unknown): value is Action1Record =>
  * Case and punctuation are exactly the axis Action1 could differ from this code on without either
  * being wrong, so they are removed from the comparison rather than guessed at.
  */
-export const normalizeAction1Key = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalizeAction1Key = (key: string): string => key.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /**
  * Every primitive in the record, by normalized key, SHALLOWEST WINS — under BOTH its own name and
@@ -174,7 +170,7 @@ const pick = (flat: Map<string, string>, candidates: readonly string[]): string 
 };
 
 /** Candidate spellings, most likely first. See the file header on why these are lists. */
-export const ACTION1_KEYS = {
+const ACTION1_KEYS = {
   endpointId: ["id", "endpoint_id", "device_id", "agent_id", "uuid"],
   hostname: ["name", "hostname", "computer_name", "endpoint_name", "device_name", "machine_name", "dns_name"],
   manufacturer: ["manufacturer", "system_manufacturer", "computer_manufacturer", "vendor", "make"],

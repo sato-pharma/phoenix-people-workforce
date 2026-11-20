@@ -18,12 +18,12 @@
 // key instead means no screen can shift an interview onto the neighbouring day by formatting it in
 // the wrong zone. Arithmetic on keys runs at UTC noon, which no offset can push across midnight.
 
-export const CALENDAR_TIME_ZONE = "Africa/Cairo";
+const CALENDAR_TIME_ZONE = "Africa/Cairo";
 
 /** 9:00 AM, in minutes after midnight — where the week grid opens. */
 export const WORKDAY_START_MINUTES = 9 * 60;
 /** 5:00 PM — where the week grid's usual rows end. Nothing is refused after it. */
-export const WORKDAY_END_MINUTES = 17 * 60;
+const WORKDAY_END_MINUTES = 17 * 60;
 /** Midnight at the end of the day — an interview must END by then. */
 export const DAY_END_MINUTES = 24 * 60;
 export const SLOT_MINUTES = 30;

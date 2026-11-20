@@ -38,7 +38,7 @@ export function selectWeeklyScopeRegionNames(rows: readonly WeeklyScopeRegionRow
 }
 
 /** Pure: only a territory viewer bound to exactly one region has that region named on his scope line. */
-export function weeklyScopeNamesOneRegion(scope: WeeklyAccessScope): boolean {
+function weeklyScopeNamesOneRegion(scope: WeeklyAccessScope): boolean {
   return scope.tier === "territory" && scope.allowedRegionCodes !== null && scope.allowedRegionCodes.size === 1;
 }
 

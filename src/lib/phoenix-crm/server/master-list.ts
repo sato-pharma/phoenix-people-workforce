@@ -188,7 +188,7 @@ export async function loadMasterList(viewer: PhoenixCrmViewer): Promise<MasterLi
 
 // ── What he says ────────────────────────────────────────────────────────────────────────────────
 
-export const MAX_PROFILE_MEMBERS = 200;
+const MAX_PROFILE_MEMBERS = 200;
 
 export type MasterDecisionResult = { anchorPlaceId: string; verdict: MasterVerdict | null };
 

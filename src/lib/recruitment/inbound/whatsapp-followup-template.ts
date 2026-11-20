@@ -62,11 +62,6 @@ function recruitmentLine() {
 
 let statusCache: { at: number; status: TemplateApprovalStatus } | null = null;
 
-/** Test seam. */
-export function resetFollowupStatusCache(): void {
-  statusCache = null;
-}
-
 /** Where the follow-up template stands with Meta, cached ten minutes. A failed read is "pending". */
 export async function followupTemplateStatus(): Promise<{ status: TemplateApprovalStatus; label: string }> {
   if (statusCache && Date.now() - statusCache.at < STATUS_CACHE_TTL_MS) {

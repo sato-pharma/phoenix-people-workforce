@@ -33,7 +33,7 @@ const SYNC_REQUEST_TIMEOUT_MS = 170_000;
  * audit row (the tail measured 24.3 s on 2026-09-03).
  */
 export const TERRITORY_SYNC_SCHEDULED_BUDGET_MS = 240_000;
-export const TERRITORY_SYNC_BUTTON_BUDGET_MS = 80_000;
+const TERRITORY_SYNC_BUTTON_BUDGET_MS = 80_000;
 
 /** A period is not started with less than this left: a no-op period answers in about a second. */
 const MIN_START_MS = 10_000;
@@ -53,7 +53,7 @@ export function territorySyncCallWasCut(message: string): boolean {
   );
 }
 
-export type TerritoryPeriodFailure = { period: string; message: string; attempts: number };
+type TerritoryPeriodFailure = { period: string; message: string; attempts: number };
 
 export type TerritoryRestampOutcome = {
   restampedRows: number;

@@ -26,7 +26,7 @@
 /** Two events this far apart (or less) belong to one operation. */
 export const COLLAPSE_GAP_MS = 10 * 60 * 1000;
 /** Two page-load starts this close are the same page load (the clocks are the browser's and ours). */
-export const PAGE_LOAD_MATCH_MS = 2_000;
+const PAGE_LOAD_MATCH_MS = 2_000;
 /** The ledger's cap on stored event ids per occurrence. */
 export const MAX_SOURCE_REFS = 50;
 

@@ -38,17 +38,17 @@ export function isMissingPharmacist(venue: VenueGapCandidate): boolean {
 }
 
 /** No distributor code: this venue's distributor sales cannot be attributed back to it. */
-export function isMissingDistributorCode(venue: VenueGapCandidate): boolean {
+function isMissingDistributorCode(venue: VenueGapCandidate): boolean {
   return venue.distributorCodes.length === 0;
 }
 
 /** Not linked to a CRM contact, so no trade badge reaches the rep's own list. */
-export function isMissingCrmLink(venue: VenueGapCandidate): boolean {
+function isMissingCrmLink(venue: VenueGapCandidate): boolean {
   return venue.crmContactId === null;
 }
 
 /** Still waiting for a System Admin to confirm it. */
-export function isAwaitingConfirmation(venue: VenueGapCandidate): boolean {
+function isAwaitingConfirmation(venue: VenueGapCandidate): boolean {
   return venue.verificationStatus === "pending_review";
 }
 

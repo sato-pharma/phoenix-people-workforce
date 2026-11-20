@@ -20,7 +20,7 @@
  */
 
 /** Which of the two numbered forms this is. */
-export type CustodyVariant = "laptop" | "mobileTablet";
+type CustodyVariant = "laptop" | "mobileTablet";
 
 /**
  * The values Phoenix fills in. Everything else on the page is standing text or a blank for the pen.
@@ -98,13 +98,13 @@ export type CustodyField = {
 };
 
 /** A row of the "بيان العهدة المسلَّمة" table: a numbered item, and blanks for what it is. */
-export type CustodyItemRow = {
+type CustodyItemRow = {
   number: string;
   itemAr: string;
 };
 
 /** One numbered undertaking, e.g. "(7) ألتزم برد العهدة …". */
-export type CustodyClause = {
+type CustodyClause = {
   number: string;
   body: string;
 };
@@ -220,15 +220,6 @@ export function custodyTemplateStrings(template: CustodyTemplate): string[] {
       column.attestationAr,
     ]),
   ];
-}
-
-/** Every token a template actually uses, sorted — the archive tests pin this per form. */
-export function custodyTemplateTokens(template: CustodyTemplate): CustodyToken[] {
-  const used = new Set<CustodyToken>();
-  for (const field of [...template.holderFields, ...template.technicalFields]) {
-    if (field.token) used.add(field.token);
-  }
-  return [...used].sort();
 }
 
 /**

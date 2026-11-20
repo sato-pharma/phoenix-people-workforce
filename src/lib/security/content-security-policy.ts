@@ -140,7 +140,7 @@ export function pageContentSecurityPolicy(
  * is the `report-uri` (Firefox, Safari) and the `csp-report` endpoint of `report-to` (Chromium).
  */
 export const CSP_REPORT_PATH = "/api/security/csp-report";
-export const CSP_REPORT_GROUP = "csp-report";
+const CSP_REPORT_GROUP = "csp-report";
 
 /**
  * The `Reporting-Endpoints` header a page carries with the report-only policy. Same-origin, so the
@@ -159,7 +159,7 @@ export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"
  *                          the Maps JavaScript API's tiles and markers (Google's own CSP guide)
  *   *.onesignal.com        the push-permission prompt's pictures
  */
-export const REPORT_ONLY_IMAGE_SOURCES = [
+const REPORT_ONLY_IMAGE_SOURCES = [
   "'self'",
   "data:",
   "blob:",

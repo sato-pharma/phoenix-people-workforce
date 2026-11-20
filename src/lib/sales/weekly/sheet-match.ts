@@ -82,11 +82,6 @@ export function weeklySheetMatcher(
   return entry?.[1][role];
 }
 
-/** Every distributor code that has a sheet rule (Direct reads its first sheet by header name and has none). */
-export function weeklySheetMatcherCodes(): string[] {
-  return Object.keys(WEEKLY_SHEET_MATCHERS);
-}
-
 /** True when at least one cell of the sheet holds a value (ExcelJS: `actualRowCount`, rows with values). */
 function sheetHasData(sheet: ExcelJS.Worksheet): boolean {
   return sheet.actualRowCount > 0;

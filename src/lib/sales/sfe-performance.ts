@@ -37,7 +37,7 @@ async function loadLatestAnalyticsPeriod(): Promise<string | null> {
   return rows[0]?.period ?? null;
 }
 
-export type SfeLineTarget = {
+type SfeLineTarget = {
   line: string;
   target: number;
   actual: number;

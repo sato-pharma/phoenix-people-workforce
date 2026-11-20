@@ -58,7 +58,7 @@ export type MrBookingInput = {
 };
 
 /** The largest monthly salary a recommendation may propose — a typo guard, not a pay policy. */
-export const MR_SALARY_CEILING = 1_000_000;
+const MR_SALARY_CEILING = 1_000_000;
 
 function object(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("The request was empty — try again.");

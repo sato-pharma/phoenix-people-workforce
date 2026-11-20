@@ -13,7 +13,7 @@
  * Display only. The server list stays whole — the claim checks and the PDF read it as it is.
  */
 
-export const REPEAT_TAP_WINDOW_SECONDS = 120;
+const REPEAT_TAP_WINDOW_SECONDS = 120;
 
 export type RouteCheckinRow = {
   address: string | null;
@@ -29,12 +29,12 @@ export type RouteCheckinRow = {
   withoutPerson?: boolean;
 };
 
-export type RouteVisitRow = { kind: string; role: string };
+type RouteVisitRow = { kind: string; role: string };
 
 export type HiddenBorrowedCheckins = { count: number; via: string };
 
 /** The check-in's place: the contact by id, else by name, else the address, else its GPS to 4 decimals. */
-export function checkinPlaceKey(checkin: RouteCheckinRow): string | null {
+function checkinPlaceKey(checkin: RouteCheckinRow): string | null {
   if (checkin.contactCrmId != null) return `id:${checkin.contactCrmId}`;
   const name = checkin.contact?.trim().toLowerCase();
   if (name) return `n:${name}`;

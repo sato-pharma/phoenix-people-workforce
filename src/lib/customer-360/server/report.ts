@@ -107,12 +107,6 @@ async function loadBase(): Promise<{ base: Base; refreshing: boolean }> {
   return { base: current.base, refreshing: true };
 }
 
-/** Test-only: forget the held copy. */
-export function _resetCustomer360ReportCache(): void {
-  held = null;
-  rebuilding = null;
-}
-
 export type Customer360Report = {
   hubs: HubView[];
   matchItems: MatchItemView[];

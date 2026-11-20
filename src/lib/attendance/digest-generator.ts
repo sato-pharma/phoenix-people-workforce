@@ -15,9 +15,9 @@
 import type { FingerprintReportRow } from "@/lib/attendance/fingerprint-report.ts";
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 
-export type DigestLineStatus = "late" | "short_hours" | "early_leave" | "missing_punch";
+type DigestLineStatus = "late" | "short_hours" | "early_leave" | "missing_punch";
 
-export type BuiltDigestLine = {
+type BuiltDigestLine = {
   workDate: string;
   status: DigestLineStatus;
   lateMinutes: number;
@@ -107,7 +107,7 @@ export function isDigestibleRow(row: FingerprintReportRow): boolean {
   return Number.isFinite(days) && days > 0;
 }
 
-export function buildDigestLine(row: FingerprintReportRow): BuiltDigestLine {
+function buildDigestLine(row: FingerprintReportRow): BuiltDigestLine {
   return {
     workDate: row.dateIso,
     status: statusFor(row),

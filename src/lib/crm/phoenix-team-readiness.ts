@@ -99,7 +99,7 @@ export type TeamReadinessFacts = {
   repSeats: TeamReadinessRepSeat[];
 };
 
-export type PhoenixTeamReadinessVerdict = "counted" | "ready" | "nearly" | "not_ready";
+type PhoenixTeamReadinessVerdict = "counted" | "ready" | "nearly" | "not_ready";
 
 export type PhoenixTeamReadinessRow = {
   teamSeatId: string;

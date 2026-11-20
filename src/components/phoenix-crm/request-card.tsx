@@ -57,7 +57,7 @@ type DecideResult = {
 };
 
 /** What the request asks for, in one line. */
-export function requestSubject(request: Pick<ListRequest, "kind" | "currentGrade" | "proposedGrade" | "dropReasonLabel">): string {
+function requestSubject(request: Pick<ListRequest, "kind" | "currentGrade" | "proposedGrade" | "dropReasonLabel">): string {
   if (request.kind === "drop") return `Leave the list · ${request.dropReasonLabel ?? "Reason not given"}`;
   if (request.kind === "add") return `Add to the list · Grade ${request.proposedGrade ?? "—"} proposed`;
   if (request.kind === "restore") return "Bring back to the list from the Archive";

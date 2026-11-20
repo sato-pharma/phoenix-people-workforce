@@ -27,8 +27,6 @@ export type DigestLineAction =
 
 export type DeductionMethod = "salary" | "annual_balance";
 
-export const DEDUCTION_METHODS: readonly DeductionMethod[] = ["salary", "annual_balance"];
-
 export function isDeductionMethod(value: unknown): value is DeductionMethod {
   return value === "salary" || value === "annual_balance";
 }
@@ -270,7 +268,7 @@ function addDaysIso(dateIso: string, days: number): string {
  * can be on, so leave never reaches it; it exists only so a predicate that never says "working"
  * cannot loop forever.
  */
-export const ANSWER_WINDOW_MAX_CALENDAR_DAYS = 1000;
+const ANSWER_WINDOW_MAX_CALENDAR_DAYS = 1000;
 
 /**
  * The last day an employee can still answer: the Nth day AFTER the release date that counts toward

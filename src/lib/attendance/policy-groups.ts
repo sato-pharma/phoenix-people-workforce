@@ -18,7 +18,7 @@ export type AttendancePolicyGroupDbRow = {
 const basePolicySelect = "id,policy_name,target_type,target_value,scheduled_start,scheduled_end,grace_minutes,is_active,effective_from,effective_to";
 const policySelectWithWeekdays = `${basePolicySelect},working_weekdays`;
 
-export function isMissingWorkingWeekdaysColumn(error: unknown) {
+function isMissingWorkingWeekdaysColumn(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
   return /working_weekdays|schema cache|PGRST204|42703/i.test(text);
 }
@@ -42,7 +42,7 @@ export type AttendanceFlexPolicyGroupDbRow = AttendancePolicyGroupDbRow & {
 
 const flexPolicySelect = `${policySelectWithWeekdays},flex_minutes,required_minutes,half_day_split_minutes,judgment_mode`;
 
-export function isMissingFlexColumns(error: unknown) {
+function isMissingFlexColumns(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
   return /flex_minutes|required_minutes|half_day_split_minutes|judgment_mode|schema cache|PGRST204|42703/i.test(text);
 }

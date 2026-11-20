@@ -42,7 +42,7 @@ async function fetchLocationIqJson(url: URL): Promise<unknown> {
   }
 }
 
-export type LocationIqAddress = {
+type LocationIqAddress = {
   house_number?: string;
   road?: string;
   neighbourhood?: string;

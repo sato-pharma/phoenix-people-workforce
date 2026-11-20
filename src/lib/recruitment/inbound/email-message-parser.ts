@@ -25,7 +25,7 @@ function titleCaseFromLocalPart(address: string): string {
  * `related: true`, e.g. a signature logo referenced via cid: in the HTML body) is excluded — it is
  * structurally an embedded asset, not a standalone attachment — as is any unsupported file type.
  */
-export function pickCvAttachments(attachments: ParsedMail["attachments"] | undefined): InboundCvAttachment[] {
+function pickCvAttachments(attachments: ParsedMail["attachments"] | undefined): InboundCvAttachment[] {
   return (attachments ?? [])
     .filter((entry) => !entry.related && detectCvFileKind(entry.contentType ?? "", entry.filename ?? "") !== "unsupported")
     .map((entry) => ({

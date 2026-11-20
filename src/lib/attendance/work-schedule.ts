@@ -34,7 +34,7 @@ export function normalizeAttendanceWorkingWeekdays(value: unknown): AttendanceWo
   return weekdays.length > 0 ? weekdays : null;
 }
 
-export function weekdayForIsoDate(dateIso: string): AttendanceWorkingWeekday | null {
+function weekdayForIsoDate(dateIso: string): AttendanceWorkingWeekday | null {
   if (!isoDatePattern.test(dateIso)) return null;
   return new Date(`${dateIso}T00:00:00Z`).getUTCDay() as AttendanceWorkingWeekday;
 }

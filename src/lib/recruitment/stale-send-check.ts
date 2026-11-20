@@ -67,7 +67,7 @@ export { STALE_SEND_ESCALATE_AFTER_DAYS, STALE_SEND_NUDGE_AFTER_DAYS } from "@/l
 export const STALE_SEND_CHANNELS = ["in_app", "telegram", "push"] as const;
 
 /** Where a manager lands from the nudge — the same screen the original send links to. */
-export const STALE_SEND_MANAGER_ACTION_URL = "/employee-portals/recruitment-candidates";
+const STALE_SEND_MANAGER_ACTION_URL = "/employee-portals/recruitment-candidates";
 
 /**
  * Where the recruitment desk lands from a manager-hold return (`manager-hold-return.ts` reads this).
@@ -98,7 +98,7 @@ export type SentCandidate = {
   sentAt: string;
 };
 
-export type WaitingCandidate = SentCandidate & { daysWaiting: number };
+type WaitingCandidate = SentCandidate & { daysWaiting: number };
 
 export type ManagerNudge = {
   candidates: WaitingCandidate[];
@@ -273,7 +273,7 @@ export function buildStrandedEscalationMessage(stranded: readonly StrandedSend[]
 }
 
 /** Every candidate still sitting in `sent_to_manager` with a recorded send time. */
-export async function loadSentCandidatesAwaitingDecision(): Promise<SentCandidate[]> {
+async function loadSentCandidatesAwaitingDecision(): Promise<SentCandidate[]> {
   const supabase = getSupabaseAdmin();
   let data: Array<Record<string, unknown>>;
   try {
@@ -323,7 +323,7 @@ export async function loadSentCandidatesAwaitingDecision(): Promise<SentCandidat
  * 28% of a rep's own direct orders — and here it would silently declare a working manager
  * unreachable and escalate every one of their CVs.
  */
-export async function loadActiveManagerHrIds(managerHrIds: readonly string[]): Promise<Set<string>> {
+async function loadActiveManagerHrIds(managerHrIds: readonly string[]): Promise<Set<string>> {
   const wanted = Array.from(
     new Set(
       managerHrIds

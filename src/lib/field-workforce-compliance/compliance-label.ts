@@ -10,7 +10,7 @@
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "2026-11-01" → "1 Nov 2026". Built by hand so the server and the browser print the same bytes. */
-export function formatComplianceStartDate(dateIso: string): string {
+function formatComplianceStartDate(dateIso: string): string {
   const [year, month, day] = dateIso.slice(0, 10).split("-");
   const monthName = MONTHS[Number(month) - 1];
   if (!year || !monthName || !day) return dateIso;

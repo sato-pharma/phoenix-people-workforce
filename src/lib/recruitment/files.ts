@@ -107,7 +107,7 @@ export async function listCandidateCardFiles(
  * `"email" | "whatsapp" | null` across intake analytics, the 6h digest and WhatsApp health, and a new
  * value there would move the intake counts the owner reads.
  */
-export type CandidateFileUploadOrigin = "interview_calendar" | "ats_upload" | "whatsapp_inbox";
+type CandidateFileUploadOrigin = "interview_calendar" | "ats_upload" | "whatsapp_inbox";
 
 export type UploadCandidateFileInput = {
   candidateId: string;

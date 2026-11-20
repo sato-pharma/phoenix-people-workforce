@@ -27,7 +27,7 @@
 import { distanceMeters, formatDistance } from "@/lib/phoenix-crm/geo";
 import { MAX_TRAVEL_KMH } from "@/lib/phoenix-crm/location-integrity";
 
-export type CaseStoryReading = {
+type CaseStoryReading = {
   label: string;
   lat: number;
   lon: number;
@@ -111,7 +111,7 @@ export type CaseStoryInput = {
   visitDate: string | null;
 };
 
-export type CaseEvidence = { label: string; value: string };
+type CaseEvidence = { label: string; value: string };
 
 export type CaseStory = {
   /** One sentence: the measured fact, for the row itself. Never a verdict and never a question. */
@@ -233,7 +233,7 @@ function asStrings(value: unknown): string[] {
 }
 
 /** A gap in words. Seconds up to a minute, then minutes, then hours — never a bare number of seconds. */
-export function spokenGap(seconds: number): string {
+function spokenGap(seconds: number): string {
   const absolute = Math.abs(seconds);
   if (absolute < 1) return "less than a second";
   if (absolute < 90) return `${Math.round(absolute)} seconds`;
@@ -268,7 +268,7 @@ function fasterThanAnyoneTravels(metresApart: number, seconds: number, input: Ca
 }
 
 /** A list of names as a reader would say it: "A", "A and B", "A, B and C". */
-export function spokenList(values: ReadonlyArray<string>): string {
+function spokenList(values: ReadonlyArray<string>): string {
   const kept = values.filter((value) => value.trim() !== "");
   if (kept.length === 0) return "";
   if (kept.length === 1) return kept[0]!;
@@ -713,7 +713,7 @@ function flagOrdinaryCause(flag: string): string | null {
 }
 
 /** Each finding as a sentence, falling back to the label the board already prints, then to its own words. */
-export function integrityFlagSentence(flag: string, input: CaseStoryInput, labelled: string | null): string {
+function integrityFlagSentence(flag: string, input: CaseStoryInput, labelled: string | null): string {
   const fact = flagFact(flag, input);
   if (fact !== null) return fact;
   if (labelled !== null && labelled !== "" && labelled !== flag) return `${labelled}.`;
@@ -786,7 +786,7 @@ function evidenceOf(input: CaseStoryInput): CaseEvidence[] {
  * Null when there is nothing to compare: fewer than two distinct coordinates, which is every replay
  * case and any case whose readings all sit on one point.
  */
-export function caseComparison(input: CaseStoryInput): CaseComparison | null {
+function caseComparison(input: CaseStoryInput): CaseComparison | null {
   const find = (label: string): CaseStoryReading | null => input.readings.find((r) => r.label === label) ?? null;
   const capture =
     find(CASE_READING_LABELS.visitSaved) ?? find(CASE_READING_LABELS.placeCaptured) ?? input.readings[0] ?? null;

@@ -8,7 +8,7 @@ import {
 } from "@/config/sidebar-domains";
 import type { NavigationSection } from "@/config/system-navigation";
 
-export type RenderedDomainGroup = {
+type RenderedDomainGroup = {
   heading: string;
   sections: NavigationSection[];
 };

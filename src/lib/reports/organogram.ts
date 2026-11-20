@@ -286,10 +286,6 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
   );
 }
 
-export function isPortalOrganogramRole(access: AccessContext) {
-  return access.role === "National Sales Manager";
-}
-
 // Who may see the SENSITIVE (Personal + Compensation) sections when they press a
 // person on the organogram. Deliberately a NARROW allowlist — admins / HR / finance
 // only — because the chart's viewer set is wider than that: the line-scoped roles
@@ -355,7 +351,7 @@ export function canAccessCompanyVacancies(access: AccessContext) {
 
 // District Manager sees only vacancies reporting directly to them (their own team's open
 // seats), matching getEmployeePortalVacancies' manager_hr_id scoping.
-export function isTeamScopedVacancyRole(access: AccessContext) {
+function isTeamScopedVacancyRole(access: AccessContext) {
   return access.role === "District Manager";
 }
 

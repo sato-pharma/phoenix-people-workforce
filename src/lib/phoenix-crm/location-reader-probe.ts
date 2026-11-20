@@ -39,7 +39,7 @@ export type LocationReaderAnswer = {
 };
 
 /** The codes a capture may carry. The server keeps only these, so a body cannot write prose here. */
-export const LOCATION_READER_FINDINGS = [
+const LOCATION_READER_FINDINGS = [
   "navigator_own_property",
   "reader_not_engine_object",
   "method_own_property",
@@ -47,7 +47,7 @@ export const LOCATION_READER_FINDINGS = [
   "position_not_engine_object",
 ] as const;
 
-export type LocationReaderFinding = (typeof LOCATION_READER_FINDINGS)[number];
+type LocationReaderFinding = (typeof LOCATION_READER_FINDINGS)[number];
 
 /** The parts of the page the probe reads, passed in so it can be judged without a browser. */
 export type LocationReaderScope = {

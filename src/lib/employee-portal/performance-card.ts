@@ -57,7 +57,7 @@ import {
 import { SALES_VS_TARGET_FLOOR, salesVsTargetPeriods } from "@/lib/sales/vs-target";
 
 /** One month on the card's chart. Percent only — see note 2. */
-export type PerformanceCardMonth = {
+type PerformanceCardMonth = {
   period: string;
   /** "Jul", "Aug" — the window names its own year once, in the label beneath. */
   label: string;

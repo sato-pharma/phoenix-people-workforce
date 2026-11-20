@@ -15,7 +15,7 @@ export const REP_EXCEPTIONS_ADMIN_PATH = "/admin/field-crm/rep-exceptions";
 
 export const REP_EXCEPTION_DATES_TEXT = "Choose a first day and a last day. The last day must not be before the first day or before today.";
 
-export const REP_EXCEPTION_ACTIONS = ["open", "close"] as const;
+const REP_EXCEPTION_ACTIONS = ["open", "close"] as const;
 
 export type RepExceptionAction = (typeof REP_EXCEPTION_ACTIONS)[number];
 

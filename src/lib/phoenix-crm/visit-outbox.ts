@@ -102,7 +102,7 @@ export function waitingCustomerIds(entries: readonly QueuedVisit[], seatId: stri
 }
 
 /** A failed send, as the network layer reports it. */
-export type SendFailure = { code: string | null; message: string };
+type SendFailure = { code: string | null; message: string };
 
 export type OutboxDeps = {
   storage: OutboxStorage | null;

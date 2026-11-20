@@ -8,7 +8,7 @@
 
 import { cairoTodayIso } from "@/lib/crm/dates";
 
-export type EarlyBirdsPeriodHalf = 1 | 2;
+type EarlyBirdsPeriodHalf = 1 | 2;
 
 export type EarlyBirdsPeriod = {
   /** `YYYY-MM-H1` | `YYYY-MM-H2`. Fixed width, so lexical order IS chronological order. */

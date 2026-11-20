@@ -52,7 +52,7 @@ export type BulkCvEmployee = {
   hrId: string;
 };
 
-export type BulkCvCandidate = {
+type BulkCvCandidate = {
   displayName: string;
   hasCv: boolean;
   hrId: string;

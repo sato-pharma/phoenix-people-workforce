@@ -204,7 +204,7 @@ export type FieldActivityStop = {
 };
 
 /** A call on the day that carries no GPS fix — no contact attached, or the subject's own record. */
-export type FieldActivityUnlocatedVisit = {
+type FieldActivityUnlocatedVisit = {
   ampm: string | null;
   savedAt: string | null;
   savedOn: string | null;
@@ -254,12 +254,12 @@ export type FieldActivityOwnVisitRow = {
 };
 
 /** One of his own visits as the day prints it: the row, with its log time read as a clock. */
-export type FieldActivityOwnVisit = Omit<FieldActivityOwnVisitRow, "loggedAt" | "date"> & {
+type FieldActivityOwnVisit = Omit<FieldActivityOwnVisitRow, "loggedAt" | "date"> & {
   /** Wall clock "HH:MM:SS" of the log, or null. */
   loggedAt: string | null;
 };
 
-export type FieldActivityDayKind = "field" | "field-no-gps" | "leave" | "own-visits" | "office" | "weekend" | "empty";
+type FieldActivityDayKind = "field" | "field-no-gps" | "leave" | "own-visits" | "office" | "weekend" | "empty";
 
 export type FieldActivityDay = {
   dateIso: string;

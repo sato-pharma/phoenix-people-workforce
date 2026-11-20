@@ -87,7 +87,7 @@ export type EmployeePlanActivityType = (typeof employeePlanActivityTypes)[number
 // OR a full day. Days with no requirement are off and never block submit.
 // ---------------------------------------------------------------------------
 export type PlanSlot = "full" | "am" | "pm";
-export type PlanWorkweekCategory = "field" | "head_office";
+type PlanWorkweekCategory = "field" | "head_office";
 export type PlanDayRequirement = "full" | "am" | "half";
 
 export type PlanWorkweek = {
@@ -161,14 +161,14 @@ export function planWorkweekAllowsHalfDays(workweek: PlanWorkweek): boolean {
  * request and never planned by hand. "National Vacation" is not here: it is always seeded as the
  * whole required day, so it completes the day on its own.
  */
-export const PLAN_LEAVE_ACTIVITY_TYPES: readonly string[] = ["Vacation", "Excuse"];
+const PLAN_LEAVE_ACTIVITY_TYPES: readonly string[] = ["Vacation", "Excuse"];
 
 export function isPlanLeaveActivity(activityType: string | null | undefined): boolean {
   return PLAN_LEAVE_ACTIVITY_TYPES.includes(String(activityType ?? "").trim());
 }
 
 /** The fixed times an AM or PM plan row is stored with; anything else is a full day. */
-export const PLAN_SLOT_TIMES: Record<Exclude<PlanSlot, "full">, { start: string; end: string }> = {
+const PLAN_SLOT_TIMES: Record<Exclude<PlanSlot, "full">, { start: string; end: string }> = {
   am: { start: "09:00", end: "13:00" },
   pm: { start: "13:00", end: "17:00" },
 };

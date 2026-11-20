@@ -32,7 +32,7 @@ import { metresBetween, type CheckinPoint } from "@/lib/crm/location-confidence"
  * and comfortably wider than a phone's own error on a street; it is the figure the confidence
  * scoring already treats as "near".
  */
-export const TOGETHER_M = 150;
+const TOGETHER_M = 150;
 
 export type ObservedPoint = {
   lat: number;

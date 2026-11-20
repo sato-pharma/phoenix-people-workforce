@@ -15,7 +15,7 @@ export const cvDatabaseHeaders = [
   "CV Name",
 ] as const;
 
-export type CvDatabaseHeader = (typeof cvDatabaseHeaders)[number];
+type CvDatabaseHeader = (typeof cvDatabaseHeaders)[number];
 export type CvExperienceStatus = "experienced" | "fresh" | "unknown";
 
 export type CvDatabaseRow = {
@@ -300,15 +300,3 @@ export function summarizeCvDatabase(rows: CvDatabaseRow[]): CvDatabaseSummary {
   };
 }
 
-export function rowsForCvWorkbook(rows: CvDatabaseRow[]) {
-  return rows.map((row) => ({
-    Name: row.name,
-    "Date of sending CV": row.dateOfSendingCv,
-    "Medical Sales Exp?": row.status === "experienced" ? "Yes" : row.status === "fresh" ? "No" : row.medicalSalesExp,
-    From: row.from,
-    To: row.to,
-    Duration: row.duration || formatDurationMonths(row.durationMonths),
-    Companies: row.companies,
-    "CV Name": row.cvName,
-  }));
-}

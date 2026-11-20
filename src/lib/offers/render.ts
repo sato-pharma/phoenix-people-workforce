@@ -60,7 +60,7 @@ function escapeHtml(value: string): string {
  * First and last word only. A three-part Arabic name rendered as three letters overflows the disc,
  * and a one-word name still has to produce something rather than an empty circle.
  */
-export function offerInitials(name: string): string {
+function offerInitials(name: string): string {
   const words = name
     .split(/[\s.]+/)
     .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
@@ -897,7 +897,7 @@ export type RenderedOffer = {
  * Chromium renders this in a SEPARATE document that inherits none of the page's CSS, so every rule
  * here has to be inline and every colour a literal.
  */
-export function offerPageHeaderHtml(
+function offerPageHeaderHtml(
   blocks: OfferBlock[],
   tokens: Record<string, string>,
   theme: OfferTheme,

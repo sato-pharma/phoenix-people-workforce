@@ -5,7 +5,7 @@
 } from "@/lib/imports/org-rules";
 import { toOrgTitleCase } from "@/lib/imports/org-title-case";
 
-export type OrgValue = {
+type OrgValue = {
   rawValue: string | null;
   normalizedName: string | null;
   displayName: string | null;

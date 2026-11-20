@@ -27,14 +27,14 @@ export const TURBIFY_IMAP = { host: "imap.mail.yahoo.com", port: 993, secure: tr
 export const TURBIFY_SMTP = { host: "smtp.bizmail.yahoo.com", port: 465, secure: true } as const;
 
 export const PERSONAL_MAILBOX_PAGE_SIZE = 30;
-export const MAX_RECIPIENTS = 50;
-export const MAX_SUBJECT_LENGTH = 500;
-export const MAX_BODY_LENGTH = 100_000;
+const MAX_RECIPIENTS = 50;
+const MAX_SUBJECT_LENGTH = 500;
+const MAX_BODY_LENGTH = 100_000;
 /** Yahoo accepts 25 MB; base64 inflates by a third, so 15 MB of files stays well under it. */
 export const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 10;
 /** Inline images (a signature logo) are embedded into the reader up to this much in total. */
-export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
 
 /** How many of the newest unread emails one inbox check brings back for new-mail alerts. */
 export const PERSONAL_MAILBOX_ALERT_LIMIT = 5;

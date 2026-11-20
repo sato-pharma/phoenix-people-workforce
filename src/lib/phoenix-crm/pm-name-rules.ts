@@ -165,7 +165,7 @@ export function doctorFullNameProblem(parts: DoctorNameParts): string | null {
  * name beside itself, in any two neighbouring places, is refused, and one name written with and without
  * its ال (شلبي الشلبي) is the same name. Returns the doubled name, or null.
  */
-export function doubledNamePart(name: string | null | undefined): string | null {
+function doubledNamePart(name: string | null | undefined): string | null {
   const words = personNameWords(name ?? "").map((entry) => entry.word);
   for (let index = 1; index < words.length; index += 1) {
     if (bareName(words[index - 1]) !== bareName(words[index])) continue;
@@ -181,7 +181,7 @@ function bareName(word: string): string {
 }
 
 /** What the rep reads when one name fills two boxes: his own fix, never that anybody looked. */
-export function doubledNameSentence(word: string): string {
+function doubledNameSentence(word: string): string {
   return `${word} is written twice. Write the first, middle and last name, each one once.`;
 }
 

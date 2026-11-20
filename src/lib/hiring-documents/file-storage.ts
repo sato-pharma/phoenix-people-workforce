@@ -24,8 +24,6 @@ export const HIRING_DOCUMENT_ALLOWED_CONTENT_TYPES = new Set([
   "image/webp",
 ]);
 
-const HIRING_DOCUMENT_SIGNED_URL_TTL_SECONDS = 60 * 5;
-
 function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
   const normalized = String(value ?? "")
     .trim()
@@ -139,16 +137,3 @@ export async function downloadHiringDocumentFile(path: string): Promise<Buffer> 
   return Buffer.from(await data.arrayBuffer());
 }
 
-/**
- * A short-lived signed URL, for the one case streaming cannot serve: an inline PDF viewer that
- * needs byte-range requests. Five minutes, because a link to a personnel document should expire
- * before the person who opened it has finished reading the page it was on.
- */
-export async function createHiringDocumentSignedUrl(path: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .storage.from(HIRING_DOCUMENTS_BUCKET)
-    .createSignedUrl(path, HIRING_DOCUMENT_SIGNED_URL_TTL_SECONDS);
-
-  if (error) return null;
-  return data.signedUrl;
-}

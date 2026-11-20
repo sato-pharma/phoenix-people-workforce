@@ -13,7 +13,7 @@ import { ipAddressVersion } from "@/lib/security/ip-address";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const DEFAULT_BLOCK_DAYS = 30;
+const DEFAULT_BLOCK_DAYS = 30;
 
 /**
  * What a blocked person is told at every sign-in door (password, fingerprint, face). It used to be

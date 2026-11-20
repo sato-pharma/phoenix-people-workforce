@@ -42,7 +42,7 @@ export const SURFACE_VS_TARGET = "Sales vs Target";
 export const VS_TARGET_HISTORY_START = "2026-01";
 
 /** Areas were unified from this month; before it, only line totals are comparable. */
-export const AREAS_UNIFIED_FROM = "2026-07";
+const AREAS_UNIFIED_FROM = "2026-07";
 
 /**
  * How close a pre-July LINE total must come to agreeing, in EGP. A line total here is the sum of its
@@ -51,7 +51,7 @@ export const AREAS_UNIFIED_FROM = "2026-07";
  * CNS read 0.02 EGP on 14 Nov 2026 with the money identical. One pound is far below any real move
  * and far above that rounding.
  */
-export const LINE_TOTAL_TOLERANCE_EGP = 1;
+const LINE_TOTAL_TOLERANCE_EGP = 1;
 
 export type DeclaredLineTotal = {
   period: string;
@@ -90,9 +90,9 @@ export const DECLARED_AREA_DIFFERENCES: readonly DeclaredAreaDifference[] = [
   { period: "2026-09", lineCode: "anti_infective", areaCode: "UE4", diff: -222.3, reason: SEPTEMBER_ASSUIT_SPLIT },
 ];
 
-export type DeclaredFinding = SalesTruthFinding & { reason: string };
+type DeclaredFinding = SalesTruthFinding & { reason: string };
 
-export type ClassifiedSurface = {
+type ClassifiedSurface = {
   surface: string;
   declared: DeclaredFinding[];
   unexplained: SalesTruthFinding[];

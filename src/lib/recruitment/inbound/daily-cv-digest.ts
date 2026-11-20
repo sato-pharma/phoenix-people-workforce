@@ -96,7 +96,7 @@ export function shouldAlertImmediatelyForInboundCv(input: {
  * layer claims a per-recipient idempotency key derived from the Cairo date (see
  * notifyDailyCvDigest), and a claim that loses the race is dropped before anything is sent.
  */
-export const DAILY_CV_DIGEST_CAIRO_HOUR = 18;
+const DAILY_CV_DIGEST_CAIRO_HOUR = 18;
 
 /**
  * How far back the loader reads. The digest only ever reports ONE Cairo day, but "today in Cairo"
@@ -107,7 +107,7 @@ export const DAILY_CV_DIGEST_CAIRO_HOUR = 18;
 const LOOKBACK_HOURS = 36;
 
 /** Where one arrival is filed — one entry per tab, as `ats_candidate_placements` holds it. */
-export type DailyCvDigestPlacement = {
+type DailyCvDigestPlacement = {
   tab: WorkspaceRoleTab;
   regionCode?: string | null;
   areaCode?: string | null;
@@ -318,7 +318,7 @@ export type DailyCvDigestSourceRow = DailyCvDigestRow & { id: string; declaredRo
  * window the digest still counts the day — everyone simply reads as filed nowhere yet. Every other
  * error is thrown.
  */
-export async function loadRecentCandidateDigestRows(now: Date = new Date()): Promise<DailyCvDigestSourceRow[]> {
+async function loadRecentCandidateDigestRows(now: Date = new Date()): Promise<DailyCvDigestSourceRow[]> {
   const since = new Date(now.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
   const supabase = recruitmentDb();
 

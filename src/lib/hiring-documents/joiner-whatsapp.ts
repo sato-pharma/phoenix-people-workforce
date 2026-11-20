@@ -51,7 +51,7 @@ export function joinerAttendanceTimeLabel(time: string | null): string | null {
 }
 
 /** The papers this joiner still has to bring, in the checklist's order. */
-export function joinerPapersToBring(
+function joinerPapersToBring(
   documents: readonly PaperDefinition[],
   employeeDocuments: JoinerWhatsAppInput["employeeDocuments"],
 ): string[] {

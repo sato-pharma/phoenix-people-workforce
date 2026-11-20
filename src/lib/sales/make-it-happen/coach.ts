@@ -35,7 +35,7 @@ export type CoachFacts = {
 };
 
 /** One sentence per Pedia half, in the order the plan meets them. Empty for every other plan. */
-export function halvesSentence(facts: CoachFacts): string {
+function halvesSentence(facts: CoachFacts): string {
   return (facts.halves ?? [])
     .map((half) =>
       half.shortValueLabel
@@ -106,7 +106,7 @@ function figuresIn(text: string): string[] {
  * The clause that says what the percentage MEANS. A model rewrites it into something else even
  * with every figure intact ("July to September is 24.0% of target"), so it is kept word for word.
  */
-export function coachAnchorPhrase(facts: CoachFacts): string {
+function coachAnchorPhrase(facts: CoachFacts): string {
   if (facts.projectedAchievementLabel == null) return `There is no target set for ${facts.periodLabel}`;
   if (facts.reachable === false) return `your best for ${facts.periodLabel} is ${facts.projectedAchievementLabel} of target`;
   if (facts.onTrack) return `on track for ${facts.projectedAchievementLabel} of target`;

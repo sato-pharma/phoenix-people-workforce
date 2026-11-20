@@ -51,7 +51,7 @@ export function normalizeNumber(value: unknown) {
  * The FAIL note for a number cell held as text with two readings, or null when it has at most one.
  * Named by row and column, with both readings, so the person fixing the sheet knows what to type.
  */
-export function ambiguousNumberNote(raw: unknown, rowNumber: number, column: string): string | null {
+function ambiguousNumberNote(raw: unknown, rowNumber: number, column: string): string | null {
   const unwrapped = raw && typeof raw === "object" && "result" in raw ? (raw as { result?: unknown }).result : raw;
   if (typeof unwrapped !== "string") return null;
   const text = normalizeNumberText(unwrapped);
@@ -79,7 +79,7 @@ export function normalizeMonth(value: unknown) {
   return monthIndex >= 0 ? monthIndex + 1 : 0;
 }
 
-export function buildValidationState(messages: string[]) {
+function buildValidationState(messages: string[]) {
   return messages.some((message) => message.startsWith("FAIL:"))
     ? ("failed" as SalesValidationState)
     : messages.length > 0

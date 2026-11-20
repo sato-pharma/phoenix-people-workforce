@@ -86,11 +86,6 @@ export type ClosingExportPayload = {
   review: Awaited<ReturnType<typeof loadClosingPerformanceReview>>;
 };
 
-/** An empty filter, for a caller that narrows nothing. */
-export function emptyClosingExportFilter(): ClosingExportFilter {
-  return { areaCodes: [], productCodes: [], regionCodes: [], search: "" };
-}
-
 /**
  * Read a filter off a query string.
  *

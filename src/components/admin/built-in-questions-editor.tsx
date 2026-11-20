@@ -53,7 +53,7 @@ import {
  * genuinely new, the builder below this one creates a whole question.
  */
 
-export type BuiltInPromptOptionRow = {
+type BuiltInPromptOptionRow = {
   value: string;
   defaultTitle: string;
   defaultDescription?: string;

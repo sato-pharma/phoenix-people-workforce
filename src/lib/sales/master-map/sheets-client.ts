@@ -35,7 +35,7 @@ function base64Url(value: Buffer | string): string {
  * Exchange a service-account key for an access token (the standard JWT bearer flow).
  * `nowSeconds` is injectable so the assertion can be tested without freezing the clock globally.
  */
-export async function mintServiceAccountToken(
+async function mintServiceAccountToken(
   key: ServiceAccountKey,
   nowSeconds: number = Math.floor(Date.now() / 1000),
 ): Promise<string> {

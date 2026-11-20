@@ -18,7 +18,7 @@ import { useId, useState } from "react";
 import { messageOf } from "@/components/phoenix-crm/api";
 import { CrmButton, CrmField, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 
-export const ADMINISTRATOR_NOTE_MAX = 500;
+const ADMINISTRATOR_NOTE_MAX = 500;
 
 /**
  * Said above a card's own Approve and Refuse when the Administrator is using them (owner, 2026-10-14: in an

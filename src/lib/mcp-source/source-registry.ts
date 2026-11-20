@@ -25,21 +25,21 @@ const seatCoverage = {
   au_v_seat_occupancy_all: ["au_occupancy"],
 };
 
-export const EMPLOYEES_SPEC: SourceSpec = {
+const EMPLOYEES_SPEC: SourceSpec = {
   dataset: "employees",
   watched: ["employees", ...LOOKUPS],
   coverage: { employees: ["employees"], ...lookupCoverage },
   required: ["employees"],
 };
 
-export const ORGANIZATION_SPEC: SourceSpec = {
+const ORGANIZATION_SPEC: SourceSpec = {
   dataset: "organization",
   watched: [...SEATS, "employees", "offers", "position_vacancies", ...LOOKUPS],
   coverage: { ...seatCoverage, ...lookupCoverage, employees: ["employees"], offers: ["offers"], position_vacancies: ["position_vacancies"] },
   required: ["au_v_org_tree", "employees"],
 };
 
-export const VACANCIES_SPEC: SourceSpec = {
+const VACANCIES_SPEC: SourceSpec = {
   dataset: "vacancies",
   watched: [...SEATS, "employees", "offers", "position_vacancies", ...LOOKUPS],
   coverage: { ...seatCoverage, ...lookupCoverage, employees: ["employees"], offers: ["offers"], position_vacancies: ["position_vacancies"] },
@@ -83,7 +83,7 @@ const closingFacts = [
   ...SEATS,
 ];
 
-export const SALES_SPEC: SourceSpec = {
+const SALES_SPEC: SourceSpec = {
   dataset: "published_sales",
   watched: [...SALES_WATCHED],
   coverage: {

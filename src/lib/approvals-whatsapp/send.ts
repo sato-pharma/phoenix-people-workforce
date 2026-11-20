@@ -51,16 +51,16 @@ import {
 } from "@/lib/whatsapp-inbox/graph";
 import { whatsAppApprovalsLine } from "@/lib/whatsapp-inbox/lines";
 
-export const APPROVALS_TEXT_MAX_LENGTH = 4096;
-export const APPROVALS_CAPTION_MAX_LENGTH = 1024;
+const APPROVALS_TEXT_MAX_LENGTH = 4096;
+const APPROVALS_CAPTION_MAX_LENGTH = 1024;
 /** Most recipients one bulk send may name — the daily limit is 250, so a bigger batch could never be sent anyway. */
-export const APPROVALS_BATCH_MAX = 250;
+const APPROVALS_BATCH_MAX = 250;
 /** The pause between two bulk messages. Meta allows far more per second; this keeps one send gentle on the line. */
-export const APPROVALS_BULK_GAP_MS = 400;
+const APPROVALS_BULK_GAP_MS = 400;
 /** A send still `sending` this long after its last message is treated as interrupted, and Resume may pick it up. */
-export const APPROVALS_STALE_SEND_MS = 10 * 60 * 1000;
+const APPROVALS_STALE_SEND_MS = 10 * 60 * 1000;
 
-export const APPROVALS_WINDOW_CLOSED_MESSAGE =
+const APPROVALS_WINDOW_CLOSED_MESSAGE =
   "More than 24 hours have passed since this person last wrote, so WhatsApp only allows an approved template now.";
 
 export class ApprovalsWhatsAppSendError extends Error {
@@ -96,7 +96,7 @@ function line(): { phoneNumberId: string; businessAccountId: string } {
 }
 
 /** The detail every send carries, so `postToGraph` files it in the approvals store with who sent it. */
-export function approvalsLogContext(input: {
+function approvalsLogContext(input: {
   sentByHrId: string | null;
   conversationId?: string | null;
   broadcastId?: string | null;
@@ -199,7 +199,7 @@ export async function sendApprovalsMedia(input: {
 }
 
 /** The approved templates of the approvals line's own account — the only wordings the composer may send. */
-export async function listApprovalsApprovedTemplates(): Promise<InboxTemplate[]> {
+async function listApprovalsApprovedTemplates(): Promise<InboxTemplate[]> {
   try {
     return await listApprovedTemplates(line().businessAccountId);
   } catch (error) {
@@ -296,7 +296,7 @@ export type BulkRecipientInput = {
   listId?: unknown;
 };
 
-export type BulkPlanRecipient = ApprovalsRecipient & {
+type BulkPlanRecipient = ApprovalsRecipient & {
   name: string;
   values: Record<string, string>;
   renderedBody: string;
@@ -496,7 +496,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * The template is looked up once at the start: a wording Meta withdrew in between fails every remaining row with that
  * reason instead of sending something else.
  */
-export async function runApprovalsBroadcast(input: { broadcastId: string; sentByHrId: string | null; gapMs?: number }): Promise<{ accepted: number; failed: number }> {
+async function runApprovalsBroadcast(input: { broadcastId: string; sentByHrId: string | null; gapMs?: number }): Promise<{ accepted: number; failed: number }> {
   const supabase = getSupabaseAdmin();
   const gap = input.gapMs ?? APPROVALS_BULK_GAP_MS;
   const { data: broadcast, error } = await supabase

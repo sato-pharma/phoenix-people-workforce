@@ -43,7 +43,7 @@ function isTableMissing(error: { code?: string; message?: string } | null): bool
  * for a whole team, money-adjacent ones included. The route asks this AND `crm_visits:update` before it
  * writes; the matrix is the boundary, this the narrowing (the same two gates as Rep Doctor Lists).
  */
-export function canSetPhoenixTeamStarts(access: Pick<AccessContext, "role" | "scope">): boolean {
+function canSetPhoenixTeamStarts(access: Pick<AccessContext, "role" | "scope">): boolean {
   return access.role === "Super Admin" || access.scope === "system";
 }
 

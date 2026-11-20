@@ -36,7 +36,7 @@ import {
  * `readCursor` answers null: a file run always starts from its own beginning.
  */
 
-export type StoredIssue = {
+type StoredIssue = {
   signatureKey: string;
   family: SystemAuditFamily;
   errorCode: string;
@@ -49,7 +49,7 @@ export type StoredIssue = {
   lastSeenAt: string | null;
 };
 
-export type StoredOccurrence = Omit<
+type StoredOccurrence = Omit<
   AuditOccurrenceInput,
   "attemptCount" | "pageLoads" | "firstEventAt" | "lastEventAt" | "sourceRefs" | "isTest" | "evidence"
 > & {
@@ -65,7 +65,7 @@ export type StoredOccurrence = Omit<
 
 export type FileSinkEntry = { occurrence: StoredOccurrence; issue: StoredIssue };
 
-export type MasterRowStatus = { status: SystemAuditStatus; rootCauseLevel: RootCauseLevel; rootCause: string | null };
+type MasterRowStatus = { status: SystemAuditStatus; rootCauseLevel: RootCauseLevel; rootCause: string | null };
 
 /** The eleven columns of the owner's brief, in his order, then the technical columns. */
 export const MASTER_CSV_HEADERS = [
@@ -130,7 +130,7 @@ function cairoStamp(iso: string): string {
 }
 
 /** The status the ledger itself would show when no verifier has spoken: the issue's own. */
-export function issueStatusFor(entry: FileSinkEntry): MasterRowStatus {
+function issueStatusFor(entry: FileSinkEntry): MasterRowStatus {
   return { status: entry.issue.status, rootCauseLevel: entry.issue.rootCauseLevel, rootCause: entry.issue.rootCause };
 }
 

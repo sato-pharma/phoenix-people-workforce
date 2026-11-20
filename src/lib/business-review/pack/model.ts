@@ -75,7 +75,7 @@ export type PackCell = string | number | null;
 export type PackAlign = "left" | "right";
 
 /** One bar. `value` is null when the figure is not gradeable — the bar is then drawn as absent, never 0. */
-export type PackChartItem = { label: string; value: number | null; note?: string | null };
+type PackChartItem = { label: string; value: number | null; note?: string | null };
 
 /**
  * A chart drawn above a section's table.

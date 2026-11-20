@@ -52,7 +52,7 @@ import type { DeviceCategory } from "./types";
  * if the writer and the parser agree on the row by a SHARED CONSTANT rather than by counting.
  */
 export const DEVICE_IMPORT_HEADER_ROW = HOUSE_MASTHEAD_ROWS + 2;
-export const DEVICE_IMPORT_NOTE_ROW = HOUSE_MASTHEAD_ROWS + 1;
+const DEVICE_IMPORT_NOTE_ROW = HOUSE_MASTHEAD_ROWS + 1;
 export const DEVICE_IMPORT_FIRST_DATA_ROW = DEVICE_IMPORT_HEADER_ROW + 1;
 
 /** Refused above this. A fleet is a few hundred devices; more is a wrong file, not a request. */
@@ -187,7 +187,7 @@ export type DeviceImportRow = {
   note: string | null;
 };
 
-export type DeviceImportPreviewRow = DeviceImportRow & {
+type DeviceImportPreviewRow = DeviceImportRow & {
   /** Resolved from `heldBy`, in the directory's own casing. Null when the row names nobody. */
   resolvedHolderHrId: string | null;
   resolvedHolderName: string | null;
@@ -213,7 +213,7 @@ export type DeviceImportPreview = {
   };
 };
 
-export type DeviceImportOutcome = {
+type DeviceImportOutcome = {
   rowNumber: number;
   assetTag: string;
   result: "imported" | "skipped" | "failed";

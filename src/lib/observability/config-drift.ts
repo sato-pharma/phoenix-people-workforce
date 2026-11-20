@@ -24,7 +24,7 @@ import { telegramEnvironmentStatus } from "@/lib/notifications/telegram";
 // (sendNotificationEmailDirect skips ALL outbox mail if NOTIFICATION_EMAIL_FROM is unset;
 // the Resend delivery webhook 500s on every callback if RESEND_WEBHOOK_SECRET is unset), so
 // their silent absence must be just as loud here.
-export const NOTIFICATION_DRIFT_ENV = [
+const NOTIFICATION_DRIFT_ENV = [
   "EMAIL_NOTIFICATIONS_ENABLED",
   "RESEND_API_KEY",
   "NOTIFICATION_EMAIL_FROM",
@@ -48,7 +48,7 @@ function unsetInProduction(names: readonly string[]) {
 // meant to protect. This alarm must fire wherever a route would reject real cron traffic, which
 // is the precise inverse of the routes' own bypass: anywhere that is not local `development`.
 // Owner-signed-off 2026-08-27 to mirror the route condition rather than enumerate prod+staging.
-export const DEPLOYMENT_DRIFT_ENV = ["CRON_SECRET"] as const;
+const DEPLOYMENT_DRIFT_ENV = ["CRON_SECRET"] as const;
 
 function unsetOnAnyDeployment(names: readonly string[]) {
   if (process.env.NODE_ENV === "development") return [];
@@ -60,7 +60,7 @@ function unsetOnAnyDeployment(names: readonly string[]) {
 // §3 / master-map-sheet-live-on-prod memory), so the token is deliberately ABSENT on staging.
 // Unlike CRON_SECRET it must therefore stay on the production-only gate — a deployment-wide check
 // would fire false drift noise on every staging readiness probe.
-export const PRODUCTION_ONLY_DRIFT_ENV = ["MASTER_MAP_SYNC_TOKEN"] as const;
+const PRODUCTION_ONLY_DRIFT_ENV = ["MASTER_MAP_SYNC_TOKEN"] as const;
 
 // Same failure shape, Telegram side, read via the notifications module's own env-status
 // helper (this file must not read Telegram env vars directly — see

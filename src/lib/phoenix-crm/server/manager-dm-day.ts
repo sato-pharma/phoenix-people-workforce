@@ -97,7 +97,7 @@ function joinedAreas(areas: ReadonlyArray<{ areaName: string }> | undefined): st
 }
 
 /** One half-day of his week, in the words the senior manager reads. */
-export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyArray<ManagerSlotCustomerRow>, names: PeopleNames, seatOf: SeatLookup): DistrictManagerDayHalf {
+function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyArray<ManagerSlotCustomerRow>, names: PeopleNames, seatOf: SeatLookup): DistrictManagerDayHalf {
   const planned = [...customers]
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((row) => ({

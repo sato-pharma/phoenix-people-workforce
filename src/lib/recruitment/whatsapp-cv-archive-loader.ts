@@ -11,10 +11,10 @@ import {
   type WhatsAppCvArchiveView,
 } from "@/lib/recruitment/whatsapp-cv-archive";
 
-export const WHATSAPP_CV_ARCHIVE_TABLE = "ats_whatsapp_cv_archive";
-export const WHATSAPP_CV_ARCHIVE_FILES_TABLE = "ats_whatsapp_cv_archive_files";
+const WHATSAPP_CV_ARCHIVE_TABLE = "ats_whatsapp_cv_archive";
+const WHATSAPP_CV_ARCHIVE_FILES_TABLE = "ats_whatsapp_cv_archive_files";
 /** A bucket of its own, so nothing that lists or cleans `recruitment-files` can reach the Archive. */
-export const WHATSAPP_CV_ARCHIVE_BUCKET = "recruitment-cv-archive";
+const WHATSAPP_CV_ARCHIVE_BUCKET = "recruitment-cv-archive";
 
 const ARCHIVE_COLUMNS =
   "id,full_name,phone,whatsapp,email,job_title,region,area,background,experience,expected_salary,extra_answers,received_at,folder_path";

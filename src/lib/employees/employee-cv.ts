@@ -45,7 +45,7 @@ import { isUuid } from "@/lib/http/uuid";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const EMPLOYEE_CVS_BUCKET = "employee-cvs";
+const EMPLOYEE_CVS_BUCKET = "employee-cvs";
 
 // Re-exported so a server caller reaches everything about CVs through this one module, while the
 // values themselves live in the client-safe half — see the header of ./employee-cv-limits.ts.
@@ -556,7 +556,7 @@ async function findStagedPath(draftId: string): Promise<{ contentType: string; p
  * `move`, not download-and-re-upload: the bytes never come back through this process, so a 15MB
  * scan costs nothing but a metadata call, and there is no window where two copies exist.
  */
-export async function attachStagedEmployeeCv(input: {
+async function attachStagedEmployeeCv(input: {
   actorHrId?: string | null;
   draftId: string;
   fileName?: string | null;

@@ -96,7 +96,7 @@ export async function resolveCeoSignature(): Promise<CeoSignature> {
 export const CEO_DEFAULT_CLOSING = "Sincerely";
 
 /** A closing line is a short phrase, not a paragraph, and never markup. */
-export const CEO_MAX_CLOSING_CHARS = 60;
+const CEO_MAX_CLOSING_CHARS = 60;
 
 export function normalizeCeoClosing(value: string): string {
   const cleaned = String(value ?? "")

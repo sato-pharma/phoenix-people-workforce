@@ -10,7 +10,7 @@ import { detectContradictions, type Contradiction } from "./contradictions";
 import type { ProbationEvaluatorRole, ProbationRecommendation, ProbationScorecard } from "./types";
 import { isUuid } from "@/lib/http/uuid";
 
-export type ProbationReadiness =
+type ProbationReadiness =
   | "not_decision_ready"
   | "lean_continue"
   | "review_recommended"

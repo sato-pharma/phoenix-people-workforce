@@ -26,7 +26,7 @@ import { MR_INTERVIEW_ROUNDS, type MrInterviewRound, type MrLine, type MrResultS
 import { normalizeGovernorate } from "@/lib/recruitment/candidate-region";
 
 /** What this viewer may do to this candidate now. */
-export type MrRowActions = {
+type MrRowActions = {
   /** The step this viewer may record a result at now, or null. */
   record: MrResultStep | null;
   /** HR may decide the DSM step without the DSM's feedback (§6). */
@@ -73,7 +73,7 @@ export type MrInterviewRow = MrRow & {
 };
 
 /** The result step a workflow step is recorded under, or null where nothing is recorded (6 and 8). */
-export function resultStepForStage(step: MrStep, jointFinal: boolean): MrResultStep | null {
+function resultStepForStage(step: MrStep, jointFinal: boolean): MrResultStep | null {
   switch (step) {
     case "screening":
       return "hr_screening";
