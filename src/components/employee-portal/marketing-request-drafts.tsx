@@ -2473,11 +2473,11 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Product ROI table --- Desktop (the sheet's own width decides, not the viewport) */}
-          <div className="hidden border-t border-slate-200 @2xl:block">
+          <div className="hidden border-t border-slate-200 @3xl:block">
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
             ) : (
-              <table className="w-full table-fixed border-collapse text-left text-phx-md">
+              <table className="w-full table-fixed border-collapse text-left text-phx-md" data-portal-desktop-table>
                 <colgroup>
                   <col className="w-[34%]" />
                   <col className="w-[12%]" />
@@ -2542,7 +2542,7 @@ function MarketingRequestDraftWorkspaceInner() {
           </div>
 
           {/* Product ROI --- phone rows: hairlines, no card on the card */}
-          <div className="border-t border-slate-200 @2xl:hidden">
+          <div className="border-t border-slate-200 @3xl:hidden">
             {productLineMetrics.length === 0 ? (
               <LandingEmpty>
                 Add product quantities to preview ROI.
@@ -2726,8 +2726,8 @@ function MarketingRequestDraftWorkspaceInner() {
           ) : (
             <>
               {/* Desktop table — the sheet's own width decides (container query), never a sideways scroll */}
-              <div className="hidden @2xl:block">
-                <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+              <div className="hidden @3xl:block">
+                <table className="w-full table-fixed border-collapse text-left text-phx-sm" data-portal-desktop-table>
                   <colgroup>
                     <col className="w-[18%]" />
                     <col className="w-[11%]" />
@@ -2863,7 +2863,7 @@ function MarketingRequestDraftWorkspaceInner() {
               </div>
 
               {/* Phone rows — hairlines on the sheet, no card on the card */}
-              <div className="divide-y divide-slate-100 @2xl:hidden">
+              <div className="divide-y divide-slate-100 @3xl:hidden">
                 {filteredApproved.length === 0 ? (
                   <LandingEmpty>
                     {approvedSearch
