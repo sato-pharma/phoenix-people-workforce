@@ -11,7 +11,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 import { employeeExitDay, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { compareInvoiceToPlan, MEDICAL_INSURANCE_INVOICE_KINDS, type InvoiceComparison, type MedicalInsuranceInvoiceKind } from "./compare";
+import { compareInvoiceToPlan, invoiceDatesProblem, MEDICAL_INSURANCE_INVOICE_KINDS, type InvoiceComparison, type MedicalInsuranceInvoiceKind } from "./compare";
 import {
   parseRateCard,
   withPlanRates,
@@ -1054,7 +1054,8 @@ export async function recordMedicalInsuranceInvoice(access: AccessContext, input
   if (!MEDICAL_INSURANCE_INVOICE_KINDS.includes(kind)) throw new MedicalInsuranceInputError("Choose what the bill is for.");
   const coversFrom = cleanDay(input.coversFrom, "The first day the bill covers");
   const coversTo = cleanDay(input.coversTo, "The last day the bill covers");
-  if (coversFrom && coversTo && coversTo < coversFrom) throw new MedicalInsuranceInputError("The bill's last day is before its first.");
+  const datesProblem = invoiceDatesProblem(kind, coversFrom, coversTo);
+  if (datesProblem) throw new MedicalInsuranceInputError(datesProblem);
   const typed = cleanMoney(input.totalDue, "The total");
   const totalDue = kind === "deletions" ? -Math.abs(typed) : typed;
 

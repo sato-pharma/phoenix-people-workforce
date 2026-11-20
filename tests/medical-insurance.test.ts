@@ -5,7 +5,7 @@ import ExcelJS from "exceljs";
 
 import { hrBundleGrants } from "../src/lib/auth/hr-functions.ts";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
-import { compareInvoiceToPlan } from "../src/lib/medical-insurance/compare.ts";
+import { compareInvoiceToPlan, invoiceDatesProblem } from "../src/lib/medical-insurance/compare.ts";
 import {
   additionCharge,
   annualRate,
@@ -490,6 +490,18 @@ function testEachBillIsComparedWithThePlan() {
   const oneBill = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: POLICY.endsOn, kind: "opening", totalDue: yearly.opening.total }, yearly);
   assert.equal(oneBill.expected, yearly.opening.total, "a policy paid once a year is held against the whole opening statement");
   assert.equal(oneBill.instalment, null);
+  // An opening bill must say which day it covers from: without it instalments 2 to 4 were held against the first,
+  // cards and issue fee included, because the form never asked (found on 20 Nov 2026 recording INV6021-2026-1).
+  assert.match(invoiceDatesProblem("opening", null, null) ?? "", /first day the bill covers/, "an opening bill with no first day is refused");
+  assert.equal(invoiceDatesProblem("opening", "2027-02-22", "2027-05-21"), null, "a later quarter with its dates is accepted");
+  assert.match(invoiceDatesProblem("additions", "2027-03-01", "2027-02-01") ?? "", /before its first/, "a last day before the first is refused");
+  assert.equal(invoiceDatesProblem("additions", null, null), null, "an endorsement may leave its dates open");
+  assert.equal(invoiceDatesProblem("other", null, null), null);
+  const recordForm = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-cost.tsx", "utf8"));
+  assert.match(recordForm, /fields\.kind !== "other" \? \(/, "the record form asks the cover dates on an opening bill too, not only on additions and deletions");
+  assert.match(recordForm, /datesProblem !== null/, "the record button waits for the dates the bill needs");
+  const recordService = stripComments(readFileSync("src/lib/medical-insurance/service.ts", "utf8"));
+  assert.match(recordService, /invoiceDatesProblem\(kind, coversFrom, coversTo\)/, "the server refuses a bill whose dates the form would refuse");
 
   const additions = compareInvoiceToPlan({ coversFrom: POLICY.startsOn, coversTo: "2027-03-31", kind: "additions", totalDue: 0 }, year);
   assert.deepEqual(additions.lines.map((line) => [line.name, line.planned]), [["Joiner", false], ["March Joiner", true]], "a day-one joiner belongs on the opening bill, not an endorsement");
