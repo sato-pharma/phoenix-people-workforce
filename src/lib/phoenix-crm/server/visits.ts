@@ -1680,7 +1680,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       offlineAnchorId = offlineClaim.anchorId;
     }
   }
-  const [placesResult, issuedAt, listedPharmacies, unvalidatedCustomer, earlierVisits] = await Promise.all([
+  const [placesResult, issuedAt, listedPharmacies, unvalidatedCustomer, earlierVisits, nameReview] = await Promise.all([
     supabase
       .from("phoenix_crm_places")
       // Both readings travel: the photograph's and the pin, the two a rep's visit is measured against below,
@@ -1716,6 +1716,17 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
           .is("imported_from_ireports360_at", null)
           // The visit being saved never counts against itself, so a retried save is never refused.
           .neq("id", visitId)
+      : Promise.resolve(null),
+    // A name photo the Phoenix Camera sent for this customer that waits for the Super Admin (owner,
+    // 20 Nov 2026): the customer is excluded from the third-visit refusal while it waits.
+    enteredAs === "rep"
+      ? supabase
+          .from("phoenix_crm_camera_items")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_id", visit.customerId)
+          .eq("is_test", isTest)
+          .eq("outcome", "waiting")
+          .neq("photo_kind", "place")
       : Promise.resolve(null),
   ]);
   // Decided here, where it can be tested without a database; the function only checks each pharmacy is
@@ -1753,8 +1764,13 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     ) {
       throw validationError(fullNameNeededSentence(String(customer.name)));
     }
+    // 🔴 A CUSTOMER WHOSE NAME PHOTO WAITS ON THE CAMERA PAGE IS NOT REFUSED A THIRD VISIT (owner,
+    // 20 Nov 2026): the rep did his part; the Super Admin's decision is what is outstanding. An unreadable
+    // read leaves the rule as it was (counted as none waiting).
+    const awaitsNameReview = Boolean(nameReview && !nameReview.error && (nameReview.count ?? 0) > 0);
     if (
       customer &&
+      !awaitsNameReview &&
       unvalidatedVisitRefused({
         listType: customer.list_type,
         validated: customer.validated_at !== null && customer.validated_at !== undefined,

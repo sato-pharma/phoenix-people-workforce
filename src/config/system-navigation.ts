@@ -16,6 +16,7 @@ import {
   CalendarHeart,
   CalendarRange,
   CalendarX2,
+  Camera,
   ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
@@ -4926,6 +4927,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    // Every photo the Phoenix Camera sent, and the ones that wait for the Super Admin's decision (owner, 20 Nov
+    // 2026: "Every camera visit and validation lands there", "Exclude the SFE totally"). His ALONE:
+    // `canEnterMissedRecords` is the enforcing gate inside the page and both routes; this card only draws the link.
+    href: "/admin/field-crm/camera-reviews",
+    icon: Camera,
+    label: "Camera Reviews",
+    description: "Every photo the Phoenix Camera sent: decide the ones that wait, take back one recorded at once, and set the daily limit.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Any rep, a switch and the dates (owner, 2026-11-03: "open or close this feature by a toggle or be able to
     // control duration for any rep"). The Super Admin's and, since 2026-11-03, the SFE Manager's:
     // `canManageRepExceptions` is the enforcing gate inside the page and the route; this card only draws the link.
@@ -5608,6 +5620,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm/sfe-recommendations",
           // The visit recordings a chosen rep makes: field evidence, the Super Admin's alone.
           "/admin/field-crm/visit-recording",
+          // The Phoenix Camera's photos and their decisions: field evidence, the Super Admin's alone, same band.
+          "/admin/field-crm/camera-reviews",
           // A rep's polyclinics and their daily number: the same Super Admin's own controls over a rep's field work.
           "/admin/field-crm/venue-caps",
           // Any rep's unplanned visit limit and its dates: the same two people's controls.
