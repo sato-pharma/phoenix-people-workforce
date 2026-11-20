@@ -7,6 +7,7 @@ import { ArrowUpRight, Clock, ClipboardList, Inbox, UserCheck } from "lucide-rea
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { ActionCenterHub } from "@/components/action-center/action-center-hub";
 import { DecidedForMeList } from "@/components/action-center/decided-for-me-list";
+import { LANDING_FOCUS, LANDING_INK } from "@/components/employee-portal/landing-kit";
 import { HistoricalApprovalsList } from "@/components/action-center/historical-approvals-list";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
 import type { ActionHubData, ActionHubModule, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
@@ -101,24 +102,23 @@ export function ActionsWorkspace({
 
       {/* flex-wrap, never a scroller: four tabs do not fit a 375px screen on one line, and the
           house rule forbids a horizontal scroll anywhere. */}
-      <div className="flex flex-wrap gap-1 border-b border-[#E5EAF1]">
+      {/* The kit's tab: small navy capitals on a 2px navy underline when chosen, the count a plain
+          figure beside the words — never a filled orange pill. */}
+      <div className="flex flex-wrap gap-x-1 border-b border-slate-200">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
+            className={`-mb-px flex min-h-10 items-center gap-2 border-b-2 px-3 pb-2 pt-1 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:px-4 ${LANDING_FOCUS} ${
               tab === key
-                ? "border-b-2 border-orange-500 text-slate-900"
-                : "border-b-2 border-transparent text-slate-400 hover:text-slate-600"
+                ? `border-[#08111f] ${LANDING_INK}`
+                : "border-transparent text-slate-500 hover:text-[#08111f]"
             }`}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon aria-hidden="true" className="h-3.5 w-3.5" />
             {label}
-            <span
-              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-phx-2xs font-black leading-none ${
-                tab === key ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-500"
-              }`}
-            >
+            <span className={`tabular-nums ${tab === key ? LANDING_INK : "text-slate-400"}`}>
               {count}
             </span>
           </button>
@@ -128,16 +128,16 @@ export function ActionsWorkspace({
       {/* Where the queues that LEFT this hub now live. flex-wrap, so three links never make a
           scroller. */}
       {movedOutQueues && movedOutQueues.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-slate-200 bg-slate-50 px-3 py-2">
-          <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Each in its own inbox</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-slate-200 bg-white px-3 py-2">
+          <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Each in its own inbox</span>
           {movedOutQueues.map(({ href, label }) => (
             <Link
-              className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-orange-600"
+              className={`inline-flex items-center gap-1 text-sm font-bold underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`}
               href={href}
               key={href}
             >
               {label}
-              <ArrowUpRight className="h-3 w-3" />
+              <ArrowUpRight aria-hidden="true" className="h-3 w-3" />
             </Link>
           ))}
         </div>

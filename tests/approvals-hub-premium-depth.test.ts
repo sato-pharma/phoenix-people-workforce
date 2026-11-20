@@ -80,11 +80,19 @@ export function runApprovalsHubPremiumDepthTests() {
     `${DIR}: ${ownBand.join(", ")} draw(s) its own dark header band. Use adminPanelHeaderClassName ` +
       `and keep only the padding at the call site.`,
   );
-  const bandUsers = files.filter(({ source }) => source.includes("adminPanelHeaderClassName")).length;
+  //    Since the portal redesign (owner, 2026-11-20: "EVERY SINGLE COMPONENT TO BE PREMIUM POLISHED")
+  //    most of the hub's panels wear the landing kit's head — `LandingPanel`, the orange tick over a
+  //    navy small-capital title — instead of the dark band; the band stays on the files outside that
+  //    pass (the decision kit, the direct-order detail, stuck approvals). Either is a SHARED head, so
+  //    the floor counts both: what it guards is a panel heading drawn its own way.
+  const sharedHeadUsers = files.filter(
+    ({ source }) => source.includes("adminPanelHeaderClassName") || /\bLandingPanel\b/.test(source),
+  ).length;
   assert.ok(
-    bandUsers >= 10,
-    `${DIR}: only ${bandUsers} file(s) use the shared header band, expected at least 10. If the ` +
-      `band was removed from the hub's panels, that is a look change the owner did not ask for.`,
+    sharedHeadUsers >= 10,
+    `${DIR}: only ${sharedHeadUsers} file(s) head their panels with the shared header band or the ` +
+      `landing kit's LandingPanel, expected at least 10. A panel heading drawn its own way is the ` +
+      `drift this floor exists to catch.`,
   );
 
   // 3. EVERY SURFACE TOKEN THIS MODULE LEANS ON CARRIES DEPTH AND NO RADIUS, read at its source —

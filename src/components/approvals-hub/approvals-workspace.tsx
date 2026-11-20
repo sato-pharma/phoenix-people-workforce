@@ -11,10 +11,18 @@ import type {
   ApprovalScopeData,
   CompanyRequestItem,
 } from "@/lib/approvals-hub/service";
-import { adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_ROW_LINK,
+  LandingEmpty,
+  LandingPanel,
+  LandingRailLine,
+} from "@/components/employee-portal/landing-kit";
 import type { MyRequestItem } from "@/components/action-center/types";
 import { MyRequestsList } from "@/components/action-center/my-requests-list";
-import { SlaAgeChip, type ApprovalsSlaModule } from "@/components/approvals-hub/sla-badge";
+import { SlaAgeChip, SlaAgeRail, type ApprovalsSlaModule } from "@/components/approvals-hub/sla-badge";
 import { HistoryList } from "@/components/approvals-hub/history-list";
 import { ApprovalScopeList } from "@/components/approvals-hub/approval-scope-list";
 import { CompanyRequestsList } from "@/components/approvals-hub/company-requests-list";
@@ -91,27 +99,34 @@ type Props = {
   bulkDecisionModule?: BulkDecisionModule | null;
 };
 
+/** The white sheet a stand-alone line sits on: the kit's hairline and the soft depth token. */
+const SHEET = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
+/**
+ * One waiting row: who (the name in full), what, and how long it has waited — the age in coloured
+ * small capitals and a thin rail under the row, emerald inside the window, amber near, rose over.
+ */
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
   return (
-    <Link
-      href={card.href}
-      className={`flex items-center justify-between gap-3 ${adminSoftPanelClassName} px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50/40`}
-    >
-      <div className="min-w-0">
-        {/* Wraps, never ellipsises. The name is now the employee RECORD name, which runs to four
-            and five parts here, and the owner's rule puts wrapping ahead of a truncation. The row
-            grows taller, never wider: this column is min-w-0 beside a shrink-0 one. */}
-        <p className="break-words text-sm font-bold text-slate-900">{card.employeeName}</p>
-        <p className="break-words text-xs text-slate-600">{card.title}</p>
+    <Link href={card.href} className={`flex min-w-0 flex-col gap-2 px-3 py-3 sm:px-4 ${LANDING_ROW_LINK}`}>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          {/* Wraps, never ellipsises. The name is now the employee RECORD name, which runs to four
+              and five parts here, and the owner's rule puts wrapping ahead of a truncation. The row
+              grows taller, never wider: this column is min-w-0 beside a shrink-0 one. */}
+          <p className="break-words text-sm font-bold text-slate-900" dir="auto">{card.employeeName}</p>
+          <p className="break-words text-xs text-slate-600">{card.title}</p>
+        </div>
+        <div className="flex max-w-40 shrink-0 flex-col items-end gap-1 text-right">
+          {/* Overdue framing only applies to items actually awaiting this viewer's action —
+              not "Coming to you" or "Your own requests" (readOnly sections). */}
+          {!readOnly && typeof card.ageDays === "number" ? <SlaAgeChip ageDays={card.ageDays} module={slaModule} /> : null}
+          <span className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
+            {readOnly ? "View" : card.statusLabel}
+          </span>
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {/* Overdue framing only applies to items actually awaiting this viewer's action —
-            not "Coming to you" or "Your own requests" (readOnly sections). */}
-        {!readOnly && typeof card.ageDays === "number" ? <SlaAgeChip ageDays={card.ageDays} module={slaModule} /> : null}
-        <span className="whitespace-nowrap border border-slate-300 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600">
-          {readOnly ? "View" : card.statusLabel}
-        </span>
-      </div>
+      {!readOnly && typeof card.ageDays === "number" ? <SlaAgeRail ageDays={card.ageDays} module={slaModule} /> : null}
     </Link>
   );
 }
@@ -200,27 +215,22 @@ export function ApprovalsWorkspace({
     <div className="space-y-5">
       {/* The tabs WRAP onto a second row: at 375px a Leave strip is 513px and a Plan strip 935px, and
           a sideways-scrolling strip hides the tabs past the edge (the fits-the-screen golden rule). */}
-      <div className="flex flex-wrap gap-x-1 border-b border-phx-line">
+      {/* The kit's tab: small navy capitals on a 2px navy underline when chosen, the count a plain
+          figure beside the words — never a filled orange pill. */}
+      <div className="flex flex-wrap gap-x-1 border-b border-slate-200">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
             type="button"
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 pb-2.5 pt-1 text-sm font-bold transition-colors ${
-              tab === key
-                ? "border-b-2 border-orange-500 text-slate-900"
-                : "border-b-2 border-transparent text-slate-400 hover:text-slate-600"
+            className={`-mb-px flex min-h-10 items-center gap-2 border-b-2 px-3 pb-2 pt-1 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:px-4 ${LANDING_FOCUS} ${
+              tab === key ? `border-[#08111f] ${LANDING_INK}` : "border-transparent text-slate-500 hover:text-[#08111f]"
             }`}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon aria-hidden="true" className="h-3.5 w-3.5" />
             {label}
-            <span
-              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-phx-2xs font-black leading-none ${
-                tab === key ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-500"
-              }`}
-            >
-              {count}
-            </span>
+            <span className={`tabular-nums ${tab === key ? LANDING_INK : "text-slate-400"}`}>{count}</span>
           </button>
         ))}
       </div>
@@ -228,9 +238,11 @@ export function ApprovalsWorkspace({
       {tab === "pending" ? (
         <div className="space-y-6">
           {pendingNotice ? (
-            <p role="status" className={`${adminSoftPanelClassName} px-4 py-3 text-sm font-bold text-rose-700`}>
-              {pendingNotice}
-            </p>
+            <div role="status" className={SHEET}>
+              <LandingRailLine rail="bg-rose-500">
+                <span className="font-bold text-rose-700">{pendingNotice}</span>
+              </LandingRailLine>
+            </div>
           ) : null}
           {bulkDecisionModule && tickableCards.length > 0 ? (
             <BulkDecisionBar
@@ -245,9 +257,9 @@ export function ApprovalsWorkspace({
           ) : null}
           {sections.every((s) => s.cards.length === 0) ? (
             pendingNotice ? null : (
-              <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
-                Nothing waiting on you right now.
-              </p>
+              <div className={SHEET}>
+                <LandingEmpty>Nothing waiting on you right now.</LandingEmpty>
+              </div>
             )
           ) : (
             sections
@@ -257,15 +269,20 @@ export function ApprovalsWorkspace({
                 const sectionIds = section.cards.map((card) => card.id);
                 const tickedHere = sectionIds.filter((id) => ticked.has(id)).length;
                 const allTicked = tickedHere === sectionIds.length;
+                // A section is one kit panel: its title and count in the header, the Select all on the
+                // right, and its rows on hairlines. The sentence that used to sit under the title is
+                // gone (owner, 2026-11-20: no sentence under any header) — the title says it.
                 return (
-                  <section key={section.key} className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <div className="flex items-baseline gap-2">
-                        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{section.title}</h3>
-                        <span className="text-phx-xs font-bold text-slate-400">{section.cards.length}</span>
-                      </div>
-                      {tickable ? (
-                        <label className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-slate-700">
+                  <LandingPanel
+                    key={section.key}
+                    title={
+                      <>
+                        {section.title} <span className="tabular-nums text-slate-500">{section.cards.length}</span>
+                      </>
+                    }
+                    right={
+                      tickable ? (
+                        <label className={`flex min-h-11 cursor-pointer items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.1em] ${LANDING_INK}`}>
                           <input
                             type="checkbox"
                             className={phxCheckInputClassName}
@@ -277,14 +294,14 @@ export function ApprovalsWorkspace({
                           />
                           Select all ({section.cards.length})
                         </label>
-                      ) : null}
-                    </div>
-                    {section.subtitle ? <p className="text-xs text-slate-500">{section.subtitle}</p> : null}
-                    <div className="space-y-2">
+                      ) : null
+                    }
+                  >
+                    <ul className="divide-y divide-slate-200">
                       {section.cards.map((card) =>
                         tickable ? (
-                          <div key={card.id} className="flex items-stretch gap-2">
-                            <label className={`flex w-11 shrink-0 cursor-pointer items-center justify-center ${adminSoftPanelClassName}`}>
+                          <li key={card.id} className="flex min-w-0 items-stretch">
+                            <label className="flex w-11 shrink-0 cursor-pointer items-center justify-center border-r border-slate-200">
                               <input
                                 type="checkbox"
                                 className={phxCheckInputClassName}
@@ -296,13 +313,15 @@ export function ApprovalsWorkspace({
                             <div className="min-w-0 flex-1">
                               <Card card={card} readOnly={section.readOnly} slaModule={slaModule} />
                             </div>
-                          </div>
+                          </li>
                         ) : (
-                          <Card key={card.id} card={card} readOnly={section.readOnly} slaModule={slaModule} />
+                          <li key={card.id} className="min-w-0">
+                            <Card card={card} readOnly={section.readOnly} slaModule={slaModule} />
+                          </li>
                         ),
                       )}
-                    </div>
-                  </section>
+                    </ul>
+                  </LandingPanel>
                 );
               })
           )}

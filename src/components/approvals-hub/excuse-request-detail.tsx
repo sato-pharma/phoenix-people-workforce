@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LANDING_INK, LandingPanel, LandingRailLine } from "@/components/employee-portal/landing-kit";
 import type { ExcuseApprovalDetail } from "@/lib/approvals-hub/service";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
@@ -11,12 +12,28 @@ type Props = {
   backHref: string;
 };
 
+/** The white sheet a stand-alone line sits on: the kit's hairline and the soft depth token. */
+const SHEET = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
 function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2">
-      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="text-sm font-semibold text-slate-900">{value === null || value === undefined || value === "" ? "—" : value}</dd>
+    <div className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0">
+      <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+      <dd className={`break-words text-sm font-semibold ${LANDING_INK}`} dir="auto">
+        {value === null || value === undefined || value === "" ? "—" : value}
+      </dd>
     </div>
+  );
+}
+
+function Back({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] underline-offset-4 transition-colors hover:underline motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`}
+    >
+      <ArrowLeft aria-hidden="true" className="h-4 w-4" /> Back to list
+    </Link>
   );
 }
 
@@ -25,54 +42,46 @@ export function ExcuseRequestDetail({ detail, backHref }: Props) {
   if (detail.notFound || !req) {
     return (
       <div className="space-y-4">
-        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-          <ArrowLeft className="h-4 w-4" /> Back to list
-        </Link>
-        <p className={`${adminSoftPanelClassName} px-4 py-6 text-sm text-slate-600`}>
-          This excuse request could not be found, or you do not have access to it.
-        </p>
+        <Back href={backHref} />
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-amber-500">This excuse request could not be found, or you do not have access to it.</LandingRailLine>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-        <ArrowLeft className="h-4 w-4" /> Back to list
-      </Link>
+      <Back href={backHref} />
 
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
-        <div>
-          <p className="font-mono text-phx-xs font-bold tracking-wide text-slate-500">{req.requestCode}</p>
-          <h2 className="text-lg font-black text-slate-900">{req.employeeName}</h2>
-          <p className="text-sm text-slate-600">
-            {req.excuseType === "morning" ? "Morning" : "Afternoon"} excuse · {req.excuseDate}
-          </p>
+      {/* The head is the request's code, the name and its standing (no sentence under a header); the
+          excuse's half of the day and its date are the first rows of Request details. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-3">
+        <div className="min-w-0">
+          <p className="text-phx-xs font-bold uppercase tracking-[0.1em] tabular-nums text-slate-500">{req.requestCode}</p>
+          <h2 className={`break-words text-lg font-black ${LANDING_INK}`} dir="auto">{req.employeeName}</h2>
         </div>
-        <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
-          {requestStatusLabel(req.status)}
-        </span>
+        <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600">{requestStatusLabel(req.status)}</span>
       </div>
 
       {detail.readOnlyReason ? (
-        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
-          {detail.readOnlyReason}
-        </p>
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-slate-400">{detail.readOnlyReason}</LandingRailLine>
+        </div>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className={adminPanelClassName}>
-          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
-          </header>
-          <dl className="px-4 py-2">
+        <LandingPanel title="Request details">
+          <dl className="px-3 py-1 sm:px-4">
+            <Row label="Type" value={`${req.excuseType === "morning" ? "Morning" : "Afternoon"} excuse`} />
+            <Row label="Date" value={req.excuseDate} />
             <Row label="Duration" value={`${req.durationHours} hours`} />
             <Row label="Line" value={req.lineName} />
             <Row label="Department" value={req.departmentName} />
             <Row label="Manager" value={req.managerName} />
             <Row label="Manager reply" value={req.managerDecisionComment} />
           </dl>
-        </section>
+        </LandingPanel>
 
         {detail.canAct ? (
           <DecisionActions
