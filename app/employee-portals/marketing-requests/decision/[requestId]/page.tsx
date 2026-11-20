@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_INK,
+  LandingTick,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -28,11 +34,14 @@ function SafeState({
 }) {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center px-4 py-10">
-      <section className="border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-600">Phoenix Workforce</p>
-        <h1 className="mt-2 text-2xl font-black text-slate-950">{title}</h1>
-        <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{message}</p>
-        <Link className="mt-5 inline-flex border border-slate-300 px-4 py-2 text-sm font-black text-slate-700" href={actionHref}>
+      <section className={`border border-slate-200 bg-white px-4 py-5 sm:px-6 ${adminSoftDepthClassName}`}>
+        <p className="flex min-w-0 items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+          <LandingTick />
+          <span className="min-w-0 break-words">Phoenix Workforce</span>
+        </p>
+        <h1 className={`mt-2 break-words text-phx-2xl font-black ${LANDING_INK}`}>{title}</h1>
+        <p className="mt-3 break-words text-phx-sm font-medium leading-6 text-slate-600">{message}</p>
+        <Link className={landingActionClassName("outline", "mt-5")} href={actionHref}>
           {actionLabel}
         </Link>
       </section>

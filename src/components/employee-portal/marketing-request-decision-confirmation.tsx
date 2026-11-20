@@ -15,23 +15,51 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { formatStableCurrency } from "@/lib/format/stable-currency";
 import { cn } from "@/lib/utils";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS, LANDING_INK, LandingTick, LandingTitle } from "@/components/employee-portal/landing-kit";
 import { forecastRoiStatusLabel } from "@/lib/marketing-requests/roi-labels";
 import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-pharmacy-cross-use-flag";
 
+/** The small-capital label above a value (the landing kit). */
+const FACT_LABEL_CLASS = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+
 /**
- * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
- * reads as "this is nothing", which is a different claim from "this was never recorded".
+ * One labelled field, on the hairline grid of its section — never a tinted tile. An absent value
+ * renders "Not captured" rather than an empty cell — a blank reads as "this is nothing", which is a
+ * different claim from "this was never recorded".
  */
 function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className="bg-slate-50 px-3 py-2.5">
-      <p className="text-phx-sm uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`text-phx-md font-medium ${value ? "text-slate-950" : "text-slate-400"}`}>
+    <div className="min-w-0 border-b border-r border-slate-200 bg-white px-3 py-2.5">
+      <p className={FACT_LABEL_CLASS}>{label}</p>
+      <p className={`mt-0.5 break-words text-phx-md font-semibold ${value ? LANDING_INK : "text-slate-500"}`} dir="auto">
         {value || "Not captured"}
       </p>
+    </div>
+  );
+}
+
+/**
+ * The hairline grid the detail fields sit on. The cells draw their own right and bottom hairlines
+ * and the grid is pulled 1px under the clipped frame, so an odd count leaves white, not a grey hole.
+ */
+function DetailGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="@container mt-2 overflow-hidden border border-slate-200">
+      <div className="-mb-px -mr-px grid grid-cols-1 @md:grid-cols-2">{children}</div>
+    </div>
+  );
+}
+
+/** A section title inside the review sheet: the kit's tick and navy capitals, nothing under it. */
+function SheetTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-6">
+      <LandingTitle>{children}</LandingTitle>
     </div>
   );
 }
@@ -43,7 +71,7 @@ function fallbackLabel(decision: MarketingRequestDecision) {
 }
 
 function egp(value: number) {
-  return `EGP ${Math.round(Number.isFinite(value) ? value : 0).toLocaleString("en-US")}`;
+  return `EGP ${formatStableCurrency(Math.round(Number.isFinite(value) ? value : 0), "en-US", { maximumFractionDigits: 0 })}`;
 }
 
 function initials(name: string) {
@@ -52,11 +80,16 @@ function initials(name: string) {
   return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
 }
 
-function stepStateClasses(step: { isCurrent: boolean; status: string }) {
-  if (step.isCurrent) return "bg-orange-500 text-white";
-  if (step.status === "approved") return "bg-slate-900 text-white";
-  if (step.status === "rejected" || step.status === "returned") return "bg-rose-100 text-rose-700";
-  return "bg-slate-100 text-slate-500";
+/**
+ * The approval-progress rail: state shown by the rail's colour, never a filled pill — amber where
+ * it waits (this step, yours), emerald approved, rose rejected or returned, slate not reached.
+ * Whole literals, so Tailwind ships every one.
+ */
+function stepRailClass(step: { isCurrent: boolean; status: string }) {
+  if (step.isCurrent) return "border-l-amber-400";
+  if (step.status === "approved") return "border-l-emerald-500";
+  if (step.status === "rejected" || step.status === "returned") return "border-l-rose-500";
+  return "border-l-slate-300";
 }
 
 export function MarketingRequestDecisionConfirmation({
@@ -163,26 +196,33 @@ export function MarketingRequestDecisionConfirmation({
   return (
     <section className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-        <div className="bg-slate-950 px-6 py-5">
-          <p className="text-phx-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Marketing · action required</p>
-          <h1 className="mt-1 text-xl font-semibold text-white">Review marketing request</h1>
-        </div>
+        {/* The sheet's own head: the kit's tick over a navy title on white — the black band and its
+            orange eyebrow are gone. */}
+        <header className="border-b border-slate-200 px-4 py-4 sm:px-6">
+          <p className="flex items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+            <LandingTick />
+            Marketing · action required
+          </p>
+          <h1 className={`mt-1.5 break-words text-[22px] font-bold leading-tight tracking-[-0.01em] ${LANDING_INK}`}>
+            Review marketing request
+          </h1>
+        </header>
 
-        <div className="px-6 py-5">
-          <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
-            <div className="flex h-11 w-11 items-center justify-center bg-orange-50 text-sm font-semibold text-orange-700">
+        <div className="px-4 py-5 sm:px-6">
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-4">
+            <div aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center bg-[#08111f] text-phx-sm font-bold tracking-[0.04em] text-white">
               {initials(summary.requesterName)}
             </div>
-            <div className="flex-1">
-              <p className="text-phx-lg font-medium text-slate-950">{summary.requesterName}</p>
-              <p className="text-xs text-slate-500">
+            <div className="min-w-0 flex-1">
+              <p className={`break-words text-phx-lg font-bold ${LANDING_INK}`} dir="auto">{summary.requesterName}</p>
+              <p className="break-words text-phx-xs font-medium text-slate-500">
                 {summary.requesterHrId}
                 {summary.lineName ? ` · ${summary.lineName} line` : ""}
               </p>
             </div>
-            <div className="text-right">
-              <p className="font-mono text-xs text-slate-700">{summary.requestCode}</p>
-              <span className="mt-1 inline-block bg-amber-100 px-2.5 py-1 text-phx-xs font-medium text-amber-800">
+            <div className="min-w-0 text-right">
+              <p className="break-words font-mono text-phx-xs text-slate-600">{summary.requestCode}</p>
+              <span className="mt-1 inline-block text-phx-xs font-bold uppercase tracking-[0.08em] text-amber-700">
                 Pending your approval
               </span>
             </div>
@@ -196,71 +236,73 @@ export function MarketingRequestDecisionConfirmation({
             <MarketingSalesEvidencePanel requestId={summary.requestId} />
           </div>
 
-          <p className="mt-4 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">What&apos;s being requested</p>
+          <SheetTitle>What&apos;s being requested</SheetTitle>
           {summary.products.length > 0 ? (
             <>
-              {/* Mobile: card list (tables are desktop-only) */}
-              <div className="mt-2 space-y-2 md:hidden">
+              {/* Mobile: one hairline list (tables are desktop-only) — never a card per line */}
+              <ul className="mt-2 divide-y divide-slate-200 border border-slate-200 md:hidden">
                 {summary.products.map((product, index) => (
-                  <div className={`border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`} key={`m-${product.name}-${index}`}>
-                    <p className="text-phx-md font-medium text-slate-950">{product.name}</p>
-                    <div className="mt-1.5 flex items-center justify-between text-xs">
+                  <li className="px-3 py-2.5" key={`m-${product.name}-${index}`}>
+                    <p className={`break-words text-phx-md font-semibold ${LANDING_INK}`}>{product.name}</p>
+                    <div className="mt-1.5 flex items-center justify-between gap-3 text-phx-xs">
                       <span className="text-slate-500">
-                        Qty <span className="font-semibold text-slate-800">{product.quantity}</span>
+                        Qty <span className={`font-bold tabular-nums ${LANDING_INK}`}>{product.quantity}</span>
                       </span>
-                      <span className="font-medium text-slate-950">{egp(product.value)}</span>
+                      <span className={`font-bold tabular-nums ${LANDING_INK}`}>{egp(product.value)}</span>
                     </div>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
               {/* Desktop: table */}
-              <table className="mt-2 hidden w-full table-fixed border-collapse text-sm md:table">
+              <table className="mt-2 hidden w-full table-fixed border-collapse border border-slate-200 text-phx-sm md:table">
                 <colgroup>
                   <col className="w-[60%]" />
                   <col className="w-[15%]" />
                   <col className="w-[25%]" />
                 </colgroup>
                 <thead>
-                  <tr className="bg-slate-950 text-white">
-                    <th className="px-3 py-2 text-left font-medium">Product</th>
-                    <th className="px-3 py-2 text-right font-medium">Qty</th>
-                    <th className="px-3 py-2 text-right font-medium">Value</th>
+                  <tr className="border-b border-slate-200">
+                    <th className="px-3 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500" scope="col">Product</th>
+                    <th className="px-3 py-2.5 text-right text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500" scope="col">Qty</th>
+                    <th className="px-3 py-2.5 text-right text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500" scope="col">Value</th>
                   </tr>
                 </thead>
                 <tbody>
                   {summary.products.map((product, index) => (
-                    <tr key={`${product.name}-${index}`} className="border-b border-orange-100">
-                      <td className="min-w-0 break-words px-3 py-2 text-slate-950">{product.name}</td>
-                      <td className="px-3 py-2 text-right text-slate-600">{product.quantity}</td>
-                      <td className="px-3 py-2 text-right text-slate-950">{egp(product.value)}</td>
+                    <tr key={`${product.name}-${index}`} className="border-b border-slate-200 transition-colors last:border-b-0 hover:bg-slate-50 motion-reduce:transition-none">
+                      <td className={`min-w-0 break-words px-3 py-2.5 font-semibold ${LANDING_INK}`}>{product.name}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{product.quantity}</td>
+                      <td className={`px-3 py-2.5 text-right font-bold tabular-nums ${LANDING_INK}`}>{egp(product.value)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </>
           ) : (
-            <p className="mt-2 text-sm text-slate-500">No products listed on this request.</p>
+            <p className="mt-2 text-phx-sm text-slate-500">No products listed on this request.</p>
           )}
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Estimated cost</p>
-              <p className="text-base font-medium text-slate-950">{egp(summary.estimatedCost)}</p>
+          {/* The four figures on hairlines — no tinted tiles, no orange box. */}
+          <div className="mt-4 grid grid-cols-2 gap-px border border-slate-200 bg-slate-200">
+            <div className="min-w-0 bg-white px-3 py-2.5">
+              <p className={FACT_LABEL_CLASS}>Estimated cost</p>
+              <p className={`mt-1 break-words text-phx-lg font-bold tabular-nums ${LANDING_INK}`}>{egp(summary.estimatedCost)}</p>
             </div>
-            <div className="bg-orange-50 px-3 py-2.5">
-              <p className="text-phx-sm uppercase tracking-wide text-orange-700">
+            <div className="min-w-0 bg-white px-3 py-2.5">
+              <p className={FACT_LABEL_CLASS}>
                 Required ROI{summary.roiDurationMonths ? ` · ${summary.roiDurationMonths} mo` : ""}
               </p>
-              <p className="text-base font-medium text-orange-800">{egp(summary.requiredRoiValue)}</p>
+              <p className={`mt-1 break-words text-phx-lg font-bold tabular-nums ${LANDING_INK}`}>{egp(summary.requiredRoiValue)}</p>
             </div>
-            <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
-              <p className="whitespace-nowrap text-phx-md font-medium text-slate-950">{summary.customerName ?? "—"}</p>
+            <div className="min-w-0 bg-white px-3 py-2.5">
+              <p className={FACT_LABEL_CLASS}>Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
+              {/* Wraps: a long pharmacy name takes a second line rather than pushing the page sideways. */}
+              <p className={`mt-1 break-words text-phx-md font-semibold ${LANDING_INK}`} dir="auto">{summary.customerName ?? "—"}</p>
               <NotOnCrmListFlag compact flag={summary.customerCrmListFlag} />
             </div>
-            <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
-              <p className="text-phx-md font-medium text-slate-950">{summary.payDate}</p>
+            <div className="min-w-0 bg-white px-3 py-2.5">
+              <p className={FACT_LABEL_CLASS}>Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
+              <p className={`mt-1 break-words text-phx-md font-semibold tabular-nums ${LANDING_INK}`}>{summary.payDate}</p>
             </div>
           </div>
 
@@ -274,8 +316,8 @@ export function MarketingRequestDecisionConfirmation({
               <NotOnCrmListFlag flag={summary.customerCrmListFlag} />
             </div>
           ) : null}
-          <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Customer detail</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <SheetTitle>Customer detail</SheetTitle>
+          <DetailGrid>
             <DetailField label="Customer code" value={summary.customerCode} />
             <DetailField label="Customer name" value={summary.customerName} />
             <DetailField label="Type" value={summary.customerType} />
@@ -284,9 +326,9 @@ export function MarketingRequestDecisionConfirmation({
             <DetailField label="Contact mobile" value={summary.customerContactMobile} />
             <DetailField label="Area" value={summary.customerArea} />
             <DetailField label="Governorate" value={summary.customerGovernorate} />
-          </div>
+          </DetailGrid>
           {summary.customerAddress ? (
-            <p className={`mt-2 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-600 ${adminSoftDepthClassName}`}>
+            <p className="mt-2 break-words border-l-2 border-slate-300 py-1 pl-3 text-phx-sm font-medium leading-5 text-slate-600" dir="auto">
               {summary.customerAddress}
             </p>
           ) : null}
@@ -303,38 +345,47 @@ export function MarketingRequestDecisionConfirmation({
                 className="h-64 w-full bg-slate-50 object-contain"
                 src={summary.evidencePhotoUrl}
               />
-              <figcaption className="border-t border-emerald-200 px-3 py-1.5 text-phx-xs font-semibold text-emerald-700">
+              <figcaption className="break-words border-t border-slate-200 px-3 py-1.5 text-phx-xs font-bold uppercase tracking-[0.08em] text-emerald-700">
                 Live capture photo on file{summary.evidencePhotoName ? ` · ${summary.evidencePhotoName}` : ""}
               </figcaption>
             </figure>
           ) : summary.evidencePhotoName ? (
-            <p className="mt-2 text-phx-xs font-semibold text-amber-700">
-              Live capture photo recorded as {summary.evidencePhotoName}, but no image was retained for this customer. Treat the premises as unverified.
-            </p>
+            <div className="mt-2 flex min-w-0 gap-3">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+              <p className="min-w-0 break-words text-phx-xs font-semibold text-amber-800">
+                Live capture photo recorded as {summary.evidencePhotoName}, but no image was retained for this customer. Treat the premises as unverified.
+              </p>
+            </div>
           ) : (
-            <p className="mt-2 text-phx-xs font-semibold text-amber-700">No live capture photo on file for this customer.</p>
+            <div className="mt-2 flex min-w-0 gap-3">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+              <p className="min-w-0 break-words text-phx-xs font-semibold text-amber-800">No live capture photo on file for this customer.</p>
+            </div>
           )}
 
-          <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
+          <SheetTitle>
             Target pharmacies{summary.targetPharmacies.length ? ` · ${summary.targetPharmacies.length}` : ""}
-          </p>
+          </SheetTitle>
           {summary.targetPharmacies.length > 0 ? (
-            <div className="mt-2 space-y-2">
+            <ul className="mt-2 divide-y divide-slate-200 border border-slate-200">
               {summary.targetPharmacies.map((pharmacy, index) => (
-                <div className={`border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`} key={`${pharmacy.pharmacyCode}-${index}`}>
+                <li
+                  className={`min-w-0 border-l-[3px] px-3 py-2.5 ${
+                    pharmacy.referenceStatus === "matched" ? "border-l-emerald-500" : "border-l-amber-400"
+                  }`}
+                  key={`${pharmacy.pharmacyCode}-${index}`}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-phx-md font-medium text-slate-950">{pharmacy.pharmacyName}</p>
+                    <p className={`min-w-0 break-words text-phx-md font-semibold ${LANDING_INK}`} dir="auto">{pharmacy.pharmacyName}</p>
                     <span
-                      className={`px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${
-                        pharmacy.referenceStatus === "matched"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-amber-100 text-amber-800"
+                      className={`text-phx-xs font-bold uppercase tracking-[0.08em] ${
+                        pharmacy.referenceStatus === "matched" ? "text-emerald-700" : "text-amber-700"
                       }`}
                     >
                       {pharmacy.referenceStatus}
                     </span>
                   </div>
-                  <p className="mt-1 text-phx-xs font-semibold text-slate-500">
+                  <p className="mt-1 break-words text-phx-xs font-semibold text-slate-500">
                     {pharmacy.distributorName} · vendor code {pharmacy.distributorPharmacyCode} · pharmacy {pharmacy.pharmacyCode}
                   </p>
                   {/* Validated WITH this request's customer — the pairing, not the venue (owner,
@@ -386,19 +437,19 @@ export function MarketingRequestDecisionConfirmation({
                     </p>
                   ) : null}
                   {pharmacy.notes ? (
-                    <p className="mt-1 text-phx-xs font-medium text-slate-600">{pharmacy.notes}</p>
+                    <p className="mt-1 break-words text-phx-xs font-medium text-slate-600" dir="auto">{pharmacy.notes}</p>
                   ) : null}
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : (
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-phx-sm text-slate-500">
               No target pharmacies were attached to this request — nothing can be attributed to it.
             </p>
           )}
 
-          <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Request detail</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <SheetTitle>Request detail</SheetTitle>
+          <DetailGrid>
             <DetailField label="Request code" value={summary.requestCode} />
             <DetailField label="Request type" value={summary.requestType} />
             <DetailField label="Request date" value={summary.requestDate} />
@@ -415,11 +466,11 @@ export function MarketingRequestDecisionConfirmation({
               }
             />
             <DetailField label="Direct sales tracked" value={summary.trackDirectSales ? "Yes" : "No"} />
-          </div>
+          </DetailGrid>
           {summary.notes ? (
             <>
-              <p className="mt-4 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Requester notes</p>
-              <p className={`mt-1 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-700 ${adminSoftDepthClassName}`}>
+              <SheetTitle>Requester notes</SheetTitle>
+              <p className="mt-2 break-words border-l-2 border-slate-300 py-1 pl-3 text-phx-sm font-medium leading-5 text-slate-700" dir="auto">
                 {summary.notes}
               </p>
             </>
@@ -427,18 +478,19 @@ export function MarketingRequestDecisionConfirmation({
 
           {summary.chain.length > 0 ? (
             <>
-              <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Approval progress</p>
-              <div className="mt-2 flex flex-wrap items-center gap-1">
+              <SheetTitle>Approval progress</SheetTitle>
+              {/* One vertical rail, the step's state in the rail's colour — never a filled pill. */}
+              <ol className="mt-2 space-y-1">
                 {summary.chain.map((step, index) => (
-                  <span key={`${step.stepName}-${index}`} className="flex items-center gap-1">
-                    <span className={`px-2.5 py-1 text-phx-xs font-medium ${stepStateClasses(step)}`}>
-                      {step.stepName}
-                      {step.isCurrent ? " · you" : ""}
-                    </span>
-                    {index < summary.chain.length - 1 ? <span className="text-slate-300">›</span> : null}
-                  </span>
+                  <li
+                    className={`border-l-[3px] py-1 pl-3 text-phx-sm font-semibold ${stepRailClass(step)} ${LANDING_INK}`}
+                    key={`${step.stepName}-${index}`}
+                  >
+                    {step.stepName}
+                    {step.isCurrent ? " · you" : ""}
+                  </li>
                 ))}
-              </div>
+              </ol>
             </>
           ) : null}
 
@@ -458,50 +510,53 @@ export function MarketingRequestDecisionConfirmation({
           <SamePharmacyCrossUseNotice className="mt-6" flag={summary.samePharmacyDirectOrders} />
 
           {summary.twinOf.length > 0 ? (
-            <div className="mt-6 border border-rose-300 bg-rose-50 p-3">
-              <p className="text-sm font-semibold text-rose-900">
-                {summary.twinOf.length === 1
-                  ? "This looks like a second copy of an earlier request"
-                  : `This looks like a copy of ${summary.twinOf.length} earlier requests`}
-              </p>
-              <ul className="mt-1 flex flex-col gap-1">
-                {summary.twinOf.map((twin) => (
-                  <li className="text-xs text-rose-900" key={twin.requestCode}>
-                    <span className="font-semibold">{twin.requestCode}</span> · {twin.statusLabel} · submitted {twin.submittedDay}.{" "}
-                    {twin.description}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-rose-800">
-                Check the earlier request before you decide. If this is the same activity, return or reject this copy.
-              </p>
+            <div className="mt-6 flex min-w-0 gap-3" role="alert">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+              <div className="min-w-0">
+                <p className="break-words text-phx-sm font-bold text-rose-800">
+                  {summary.twinOf.length === 1
+                    ? "This looks like a second copy of an earlier request"
+                    : `This looks like a copy of ${summary.twinOf.length} earlier requests`}
+                </p>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {summary.twinOf.map((twin) => (
+                    <li className="break-words text-phx-xs text-slate-700" key={twin.requestCode}>
+                      <span className={`font-bold ${LANDING_INK}`}>{twin.requestCode}</span> · {twin.statusLabel} · submitted {twin.submittedDay}.{" "}
+                      {twin.description}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 break-words text-phx-xs font-semibold text-slate-700">
+                  Check the earlier request before you decide. If this is the same activity, return or reject this copy.
+                </p>
+              </div>
             </div>
           ) : null}
 
           {summary.contestedBy.length > 0 ? (
-            <div className="mt-6 border border-amber-300 bg-amber-50 p-3">
-              <p className="text-sm font-semibold text-amber-900">
-                The same sales would be counted for {summary.contestedBy.length === 1 ? "another request" : `${summary.contestedBy.length} other requests`}
-              </p>
-              <ul className="mt-1 flex flex-col gap-1">
-                {summary.contestedBy.map((overlap) => (
-                  <li className="text-xs text-amber-900" key={overlap.requestCode}>
-                    {overlap.description}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-xs text-amber-800">
-                Approve only if this overlap is intended. Otherwise return it for edit so the targets or the
-                measurement window can be separated.
-              </p>
+            <div className="mt-6 flex min-w-0 gap-3">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+              <div className="min-w-0">
+                <p className="break-words text-phx-sm font-bold text-amber-800">
+                  The same sales would be counted for {summary.contestedBy.length === 1 ? "another request" : `${summary.contestedBy.length} other requests`}
+                </p>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {summary.contestedBy.map((overlap) => (
+                    <li className="break-words text-phx-xs text-slate-700" key={overlap.requestCode}>
+                      {overlap.description}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 break-words text-phx-xs font-semibold text-slate-700">
+                  Approve only if this overlap is intended. Otherwise return it for edit so the targets or the
+                  measurement window can be separated.
+                </p>
+              </div>
             </div>
           ) : null}
 
           <div className="mt-6 border-t border-slate-200 pt-4">
-            <p className="text-sm font-medium text-slate-950">Your decision</p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Confirm inside Phoenix. Total requested value {egp(totalValue || summary.estimatedCost)}.
-            </p>
+            <LandingTitle>Your decision</LandingTitle>
 
             <textarea
               className={cn(phxTextareaClassName, "mt-3 min-h-24")}
@@ -512,15 +567,21 @@ export function MarketingRequestDecisionConfirmation({
             />
 
             {error ? (
-              <p className="mt-3 border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-700">{error}</p>
+              <div className="mt-3 flex min-w-0 gap-3" role="alert">
+                <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+                <p className="min-w-0 break-words text-phx-sm font-semibold text-rose-800">{error}</p>
+              </div>
             ) : null}
             {success ? (
-              <p className="mt-3 border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-700">{success}</p>
+              <div className="mt-3 flex min-w-0 gap-3" role="status">
+                <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-emerald-500" />
+                <p className="min-w-0 break-words text-phx-sm font-semibold text-emerald-800">{success}</p>
+              </div>
             ) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
-                className="bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className={approvalActionClassName("approve", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
                 disabled={isPending || decided}
                 onClick={() => requestDecision("approve")}
                 type="button"
@@ -529,7 +590,7 @@ export function MarketingRequestDecisionConfirmation({
               </button>
               {summary.allowReturn ? (
                 <button
-                  className="border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-50"
+                  className={approvalActionClassName("return", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
                   disabled={isPending || decided}
                   onClick={() => requestDecision("return")}
                   type="button"
@@ -539,7 +600,7 @@ export function MarketingRequestDecisionConfirmation({
               ) : null}
               {summary.allowReject ? (
                 <button
-                  className="border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50"
+                  className={approvalActionClassName("reject", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
                   disabled={isPending || decided}
                   onClick={() => requestDecision("reject")}
                   type="button"
@@ -550,7 +611,7 @@ export function MarketingRequestDecisionConfirmation({
             </div>
 
             {needsReason ? (
-              <p className="mt-3 text-phx-xs text-slate-500">
+              <p className="mt-3 break-words text-phx-xs text-slate-500">
                 Returning sends it back to {summary.requesterName} to edit and resubmit — earlier approvals are kept.
               </p>
             ) : null}
@@ -563,33 +624,28 @@ export function MarketingRequestDecisionConfirmation({
           <div
             aria-labelledby="marketing-decision-confirm-title"
             aria-modal
-            className="w-full max-w-md border border-slate-200 bg-white shadow-xl"
+            className={`w-full max-w-md border border-slate-200 bg-white ${adminSoftDepthClassName}`}
             ref={dialogRef}
             role="dialog"
           >
             <div className="px-5 py-4">
-              <h2 className="text-base font-semibold text-slate-950" id="marketing-decision-confirm-title">
-                {confirmPrompt.title}
+              <h2 className={`flex items-center gap-2 break-words text-phx-base font-bold ${LANDING_INK}`} id="marketing-decision-confirm-title">
+                <LandingTick />
+                <span className="min-w-0">{confirmPrompt.title}</span>
               </h2>
-              <p className="mt-2 text-sm text-slate-700">{confirmPrompt.body}</p>
-              <p className="mt-2 text-sm font-medium text-slate-950">{confirmPrompt.consequence}</p>
+              <p className="mt-2 break-words text-phx-sm text-slate-700">{confirmPrompt.body}</p>
+              <p className={`mt-2 break-words text-phx-sm font-semibold ${LANDING_INK}`}>{confirmPrompt.consequence}</p>
             </div>
             <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">
               <button
-                className={`border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 ${adminSoftDepthClassName}`}
+                className={approvalActionClassName("neutral", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
                 onClick={() => setPendingConfirm(null)}
                 type="button"
               >
                 {confirmPrompt.cancelLabel}
               </button>
               <button
-                className={`px-4 py-2 text-sm font-medium text-white ${
-                  pendingConfirm === "reject"
-                    ? "bg-rose-600"
-                    : pendingConfirm === "return"
-                      ? "bg-amber-600"
-                      : "bg-emerald-600"
-                }`}
+                className={approvalActionClassName("confirm", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
                 onClick={confirmPending}
                 type="button"
               >

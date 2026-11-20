@@ -9,14 +9,12 @@ import {
   type ReactNode,
 } from "react";
 import {
-  BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardList,
   FileCheck2,
-  ListChecks,
   Megaphone,
   MessageCircle,
   PackagePlus,
@@ -38,9 +36,15 @@ import {
   MarketingProgressStrip,
 } from "@/components/employee-portal/marketing-approval-timeline";
 import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingBar,
+  LandingEmpty,
+  LandingMeta,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -73,11 +77,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
   phxButtonAccentClassName,
+  phxButtonGhostClassName,
   phxFieldClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -254,28 +259,66 @@ function egp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-const CAPTURE_BAND_STYLE: Record<RoiConfidenceBand, string> = {
-  high: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  medium: "border-amber-200 bg-amber-50 text-amber-800",
-  low: "border-rose-200 bg-rose-50 text-rose-700",
+/** Capture quality's tone: a rail at the left and a coloured score, never a tinted box. */
+const CAPTURE_BAND_TONE: Record<RoiConfidenceBand, { rail: string; text: string }> = {
+  high: { rail: "bg-emerald-500", text: "text-emerald-700" },
+  medium: { rail: "bg-amber-400", text: "text-amber-700" },
+  low: { rail: "bg-rose-500", text: "text-rose-700" },
 };
+
+/** The small capitals every label in this workspace is set in. */
+const MICRO_LABEL = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 function fieldNumber(value: string) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function roiBadgeVariant(status: string): "success" | "warning" | "neutral" {
-  if (status === "covers_required") return "success";
-  if (status === "under_target") return "warning";
-  return "neutral";
+/** A forecast ROI status as coloured small text — the state is the colour, never a filled pill. */
+function roiStatusTone(status: string): string {
+  if (status === "covers_required") return "text-emerald-700";
+  if (status === "under_target") return "text-amber-700";
+  return "text-slate-500";
 }
 
-/** Coverage bar color: green >= 100%, amber 50-99%, red < 50% */
-function coverageGradient(pct: number): string {
-  if (pct >= 100) return "from-emerald-600 to-emerald-300";
-  if (pct >= 50) return "from-amber-500 to-amber-300";
-  return "from-rose-600 to-rose-300";
+function StatusText({ children, tone }: { children: ReactNode; tone: string }) {
+  return (
+    <span className={cn("min-w-0 break-words text-right text-phx-xs font-bold uppercase tracking-[0.08em]", tone)}>
+      {children}
+    </span>
+  );
+}
+
+/** Coverage bar fill, flat: green >= 100%, amber 50-99%, red < 50% */
+function coverageFill(pct: number): string {
+  if (pct >= 100) return "bg-emerald-500";
+  if (pct >= 50) return "bg-amber-400";
+  return "bg-rose-500";
+}
+
+/**
+ * A panel's header row: the kit's tick-and-capitals title, and an optional right slot for a count.
+ * The frames around it stay written out at each panel, so each keeps the ground it already drew.
+ */
+function PanelHeader({ right, title }: { right?: ReactNode; title: ReactNode }) {
+  return (
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+      <LandingTitle>{title}</LandingTitle>
+      {right ? (
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 text-slate-500">{right}</div>
+      ) : null}
+    </header>
+  );
+}
+
+/** One request in a list: a 4px rail carrying its state, then the words. Hairline between rows. */
+function RailRow({ children, rail }: { children: ReactNode; rail: string }) {
+  return (
+    <div className="flex min-w-0 gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0 sm:px-4">
+      <span aria-hidden="true" className={cn("w-1 shrink-0 self-stretch", rail)} />
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
 }
 
 /** #6 - Shorten product name for <select> on narrow screens */
@@ -315,47 +358,50 @@ function emptyPayload(): DraftWorkspacePayload {
 
 function MetricSkeleton() {
   return (
-    <div className="animate-pulse border border-slate-100 bg-slate-50 px-4 py-3">
-      <div className="h-2.5 w-16 bg-slate-200" />
-      <div className="mt-2.5 h-5 w-12 bg-slate-200" />
+    <div aria-busy="true" className="min-w-0 bg-white px-3 py-2.5">
+      <span className="sr-only">Loading</span>
+      <div aria-hidden="true" className="employee-portal-skeleton h-3 w-16" />
+      <div aria-hidden="true" className="employee-portal-skeleton mt-2 h-[22px] w-10" />
     </div>
   );
 }
 
 function FormSkeleton() {
   return (
-    <div className="animate-pulse space-y-4 p-5">
-      <div className="h-4 w-28 bg-slate-200" />
+    <div aria-busy="true" className="space-y-4 px-3 py-4 sm:px-4">
+      <span className="sr-only">Loading</span>
+      <div aria-hidden="true" className="employee-portal-skeleton h-4 w-28" />
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="h-10 bg-slate-100" />
-        <div className="h-10 bg-slate-100" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-10" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-10" />
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="h-10 bg-slate-100" />
-        <div className="h-10 bg-slate-100" />
-        <div className="h-10 bg-slate-100" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-10" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-10" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-10" />
       </div>
-      <div className="h-10 bg-slate-100" />
-      <div className="h-20 bg-slate-100" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-10" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-20" />
     </div>
   );
 }
 
 function TableSkeleton({ cols, rows }: { cols: number; rows: number }) {
   return (
-    <div className="animate-pulse">
-      <div className="flex gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+    <div aria-busy="true">
+      <span className="sr-only">Loading</span>
+      <div className="flex gap-2 border-b border-slate-200 px-3 py-2.5 sm:px-4">
         {Array.from({ length: cols }).map((_, i) => (
-          <div key={i} className="h-2.5 flex-1 bg-slate-200" />
+          <div aria-hidden="true" key={i} className="employee-portal-skeleton h-3 flex-1" />
         ))}
       </div>
       {Array.from({ length: rows }).map((_, r) => (
         <div
           key={r}
-          className="flex gap-2 border-b border-slate-50 px-4 py-3"
+          className="flex gap-2 border-b border-slate-200 px-3 py-3 last:border-b-0 sm:px-4"
         >
           {Array.from({ length: cols }).map((_, c) => (
-            <div key={c} className="h-3.5 flex-1 bg-slate-100" />
+            <div aria-hidden="true" key={c} className="employee-portal-skeleton h-3.5 flex-1" />
           ))}
         </div>
       ))}
@@ -398,7 +444,7 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
       .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
       .join(" ");
 
-    // Gradient fill area path
+    // Flat fill under the line (no gradient — the kit's flat-colour rule)
     const areaD = `${pathD} L ${w} ${h} L 0 ${h} Z`;
 
     return { areaD, coords, h, pathD, w };
@@ -407,36 +453,33 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
   if (!points) return null;
 
   return (
-    <div className="mt-2 border border-slate-100 bg-slate-50 p-2">
-      <p className="mb-1 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-400">
+    <div className="mt-3 border-t border-slate-200 pt-2.5">
+      <p className={cn("mb-1.5", MICRO_LABEL)}>
         Cost Trend (last {Math.min(drafts.length, 12)} drafts)
       </p>
       <svg
+        aria-hidden="true"
         viewBox={`0 0 ${points.w} ${points.h}`}
         className="h-9 w-full"
         preserveAspectRatio="none"
       >
-        <defs>
-          <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f97316" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#f97316" stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-        <path d={points.areaD} fill="url(#spark-grad)" />
+        <path d={points.areaD} fill="#08111f" fillOpacity="0.06" />
         <path
           d={points.pathD}
           fill="none"
-          stroke="#f97316"
+          stroke="#08111f"
           strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+          vectorEffect="non-scaling-stroke"
         />
-        {/* Latest point dot */}
-        <circle
-          cx={points.coords[points.coords.length - 1].x}
-          cy={points.coords[points.coords.length - 1].y}
-          r="2.5"
-          fill="#f97316"
+        {/* Latest point: a square mark, the kit's 90° corners */}
+        <rect
+          x={points.coords[points.coords.length - 1].x - 2.5}
+          y={points.coords[points.coords.length - 1].y - 2.5}
+          width="5"
+          height="5"
+          fill="#08111f"
         />
       </svg>
     </div>
@@ -447,40 +490,20 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
 /* --------- Sub-components --------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function MetricCard({
-  accent,
-  icon: Icon,
+/** One count in the workspace's figure strip: a small-capital label over a navy tabular figure. */
+function MetricCell({
   label,
   value,
 }: {
-  accent: "orange" | "slate" | "emerald" | "blue";
-  icon: React.ElementType;
   label: string;
   value: number | string;
 }) {
-  const borderColors: Record<string, string> = {
-    blue: "border-l-blue-500",
-    emerald: "border-l-emerald-500",
-    orange: "border-l-orange-500",
-    slate: "border-l-slate-400",
-  };
-  const iconColors: Record<string, string> = {
-    blue: "text-blue-500",
-    emerald: "text-emerald-500",
-    orange: "text-orange-500",
-    slate: "text-slate-400",
-  };
   return (
-    <div
-      className={`border border-slate-200 border-l-[3px] bg-white px-3 py-2.5 ${borderColors[accent]}`}
-    >
-      <div className="flex items-center gap-1.5">
-        <Icon className={`h-3 w-3 ${iconColors[accent]}`} />
-        <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
-          {label}
-        </p>
-      </div>
-      <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
+    <div className="min-w-0 bg-white px-3 py-2.5">
+      <p className={cn("break-words", MICRO_LABEL)}>{label}</p>
+      <p className={cn("mt-1 break-words text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums", LANDING_INK)}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -521,11 +544,9 @@ function SelectField({
 
 function RoiMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 border border-slate-100 bg-slate-50 px-3 py-2">
-      <span className="text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
-        {label}
-      </span>
-      <span className="text-phx-md font-black text-slate-950">{value}</span>
+    <div className="min-w-0 bg-white px-3 py-2.5 sm:px-4">
+      <p className={cn("break-words", MICRO_LABEL)}>{label}</p>
+      <p className={cn("mt-1 break-words text-phx-md font-bold tabular-nums", LANDING_INK)}>{value}</p>
     </div>
   );
 }
@@ -533,10 +554,10 @@ function RoiMetric({ label, value }: { label: string; value: string }) {
 function ReadOnlyValue({ label, value }: { label: string; value: string }) {
   return (
     <div className={`flex h-10 min-w-0 flex-col justify-center border border-slate-200 bg-white px-3 ${adminSoftDepthClassName}`}>
-      <span className="text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-400">
+      <span className="text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
         {label}
       </span>
-      <span className="text-phx-md font-black text-slate-800">{value}</span>
+      <span className={cn("text-phx-md font-bold tabular-nums", LANDING_INK)}>{value}</span>
     </div>
   );
 }
@@ -643,26 +664,32 @@ function DirectOrderSettleControl({
 
   if (row.directOrderOffset) {
     return (
-      <div className="mt-1.5 min-w-0 border border-emerald-200 bg-emerald-50 px-2.5 py-2">
-        <p className="text-phx-xs font-bold text-emerald-800">
-          Settled against a direct order — no transfer
-        </p>
-        <p className="mt-0.5 break-words text-phx-sm font-medium text-emerald-900">
-          {row.directOrderOffset.orderLabel} · {egp(row.directOrderOffset.amount)}
-        </p>
-        {row.directOrderOffset.note ? (
-          <p className="mt-0.5 break-words text-phx-sm font-medium text-slate-600">{row.directOrderOffset.note}</p>
-        ) : null}
-        {canSettle ? (
-          <button
-            className="mt-1 text-phx-sm font-bold text-rose-700 underline disabled:opacity-50"
-            disabled={isBusy}
-            onClick={() => void remove()}
-            type="button"
-          >
-            {isBusy ? "Removing..." : "Remove settlement"}
-          </button>
-        ) : null}
+      <div className="mt-1.5 flex min-w-0 gap-2.5">
+        <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-emerald-500" />
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-phx-xs font-bold text-emerald-700">
+            Settled against a direct order — no transfer
+          </p>
+          <p className={cn("mt-0.5 break-words text-phx-sm font-medium tabular-nums", LANDING_INK)}>
+            {row.directOrderOffset.orderLabel} · {egp(row.directOrderOffset.amount)}
+          </p>
+          {row.directOrderOffset.note ? (
+            <p className="mt-0.5 break-words text-phx-sm font-medium text-slate-600">{row.directOrderOffset.note}</p>
+          ) : null}
+          {canSettle ? (
+            <button
+              className={cn(
+                "mt-1 text-phx-sm font-bold text-rose-700 underline underline-offset-2 disabled:opacity-50",
+                LANDING_FOCUS,
+              )}
+              disabled={isBusy}
+              onClick={() => void remove()}
+              type="button"
+            >
+              {isBusy ? "Removing..." : "Remove settlement"}
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -672,7 +699,7 @@ function DirectOrderSettleControl({
   if (!isOpen) {
     return (
       <button
-        className={`mt-1.5 w-full border border-slate-200 bg-white px-2.5 py-2 text-left text-phx-xs font-bold text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 ${adminControlDepthClassName}`}
+        className={landingActionClassName("outline", "mt-1.5 w-full")}
         onClick={() => void open()}
         type="button"
       >
@@ -683,7 +710,7 @@ function DirectOrderSettleControl({
 
   return (
     <div className={`mt-1.5 min-w-0 space-y-1.5 border border-slate-200 bg-white p-2.5 ${adminSoftDepthClassName}`}>
-      <p className="text-phx-sm font-medium text-slate-500">
+      <p className="break-words text-phx-sm font-medium text-slate-600">
         No cash moves. The order&apos;s outstanding amount falls by this sum and no transfer proof is needed.
       </p>
       {options === null ? (
@@ -719,7 +746,7 @@ function DirectOrderSettleControl({
           />
           <div className="flex flex-wrap gap-1.5">
             <button
-              className={cn(phxButtonAccentClassName, "shrink-0")}
+              className={cn(phxButtonAccentClassName, "shrink-0 motion-reduce:transition-none", LANDING_FOCUS)}
               disabled={isBusy || !orderId}
               onClick={() => void settle()}
               type="button"
@@ -727,7 +754,7 @@ function DirectOrderSettleControl({
               {isBusy ? "Settling..." : "Settle"}
             </button>
             <button
-              className={`border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-600 ${adminControlDepthClassName}`}
+              className={cn(phxButtonGhostClassName, "shrink-0 motion-reduce:transition-none", LANDING_FOCUS)}
               disabled={isBusy}
               onClick={() => setIsOpen(false)}
               type="button"
@@ -755,12 +782,12 @@ function EvidenceUpload({
   onUpload: (file: File | null | undefined) => void;
 }) {
   return (
-    <label className={`flex min-w-0 cursor-pointer flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50 ${adminControlDepthClassName}`}>
-      <span className="flex items-center gap-1.5 text-phx-xs font-bold text-slate-700">
+    <label className={`flex min-w-0 cursor-pointer flex-col gap-1 border border-slate-200 bg-white px-2.5 py-2 transition-colors hover:border-[#08111f] focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#F05A1A] motion-reduce:transition-none ${adminControlDepthClassName}`}>
+      <span className={cn("flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.08em]", LANDING_INK)}>
         {isUploading ? (
-          <LoadingSpinner />
+          <LoadingSpinner className="h-3 w-3 text-slate-500" />
         ) : (
-          <Upload className="h-3 w-3 text-orange-600" />
+          <Upload aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-500" />
         )}
         {isUploading ? "Uploading..." : label}
       </span>
@@ -788,8 +815,8 @@ function EvidenceUpload({
  */
 function EvidenceOnFile({ fileName, label }: { fileName: string | null; label: string }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 ${adminControlDepthClassName}`}>
-      <span className="text-phx-xs font-bold text-slate-700">{label}</span>
+    <div className={`flex min-w-0 flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 ${adminRecessedDepthClassName}`}>
+      <span className={MICRO_LABEL}>{label}</span>
       <span className="break-all text-phx-sm font-medium text-slate-500">
         {fileName ?? "Finance attaches it"}
       </span>
@@ -797,17 +824,17 @@ function EvidenceOnFile({ fileName, label }: { fileName: string | null; label: s
   );
 }
 
-/** Inline share bar in ROI table --- gradient proportional to share % */
+/** Inline share bar in ROI table --- a flat navy fill proportional to share % */
 function ShareBar({ pct }: { pct: number }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden sm:flex h-1.5 flex-1 overflow-hidden bg-slate-100">
+      <div className="hidden h-1 flex-1 bg-slate-100 @2xl:flex">
         <div
-          className="h-full bg-gradient-to-r from-orange-500 to-orange-200 transition-all duration-300"
+          className="h-full bg-[#08111f] transition-[width] duration-300 motion-reduce:transition-none"
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
-      <span className="shrink-0 text-right font-bold text-orange-700">
+      <span className={cn("shrink-0 text-right font-bold tabular-nums", LANDING_INK)}>
         {pct}%
       </span>
     </div>
@@ -832,40 +859,40 @@ function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
   const pctOther = 100 - pctCovers - pctUnder;
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
+    <div className="space-y-2">
+      <div className="flex h-1 w-full gap-px bg-slate-100">
         {pctCovers > 0 && (
           <div
-            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+            className="h-full bg-emerald-500 transition-[width] duration-500 motion-reduce:transition-none"
             style={{ width: `${pctCovers}%` }}
           />
         )}
         {pctUnder > 0 && (
           <div
-            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+            className="h-full bg-amber-400 transition-[width] duration-500 motion-reduce:transition-none"
             style={{ width: `${pctUnder}%` }}
           />
         )}
         {pctOther > 0 && (
           <div
-            className="h-full bg-gradient-to-r from-slate-300 to-slate-200 transition-all duration-500"
+            className="h-full bg-slate-300 transition-[width] duration-500 motion-reduce:transition-none"
             style={{ width: `${pctOther}%` }}
           />
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-phx-sm font-medium text-slate-500">
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 bg-emerald-500" />
-          Covers ROI {covers}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-emerald-500" />
+          Covers ROI <span className={cn("tabular-nums", LANDING_INK)}>{covers}</span>
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 bg-amber-500" />
-          Under Target {under}
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-amber-400" />
+          Under Target <span className={cn("tabular-nums", LANDING_INK)}>{under}</span>
         </span>
         {other > 0 && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-1.5 w-1.5 bg-slate-300" />
-            Not Calculated {other}
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden="true" className="inline-block h-2 w-2 bg-slate-300" />
+            Not Calculated <span className={cn("tabular-nums", LANDING_INK)}>{other}</span>
           </span>
         )}
       </div>
@@ -1645,9 +1672,10 @@ function MarketingRequestDraftWorkspaceInner() {
     <div className="space-y-3" dir="auto">
       {/* ------ Offline Banner (#3) ------------------------------------------------------------------------------------------------------------------ */}
       {!isOnline && (
-        <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
-          <WifiOff className="h-3.5 w-3.5 shrink-0" />
-          <span>
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+          <WifiOff aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+          <span className="min-w-0 break-words text-phx-sm font-semibold text-slate-700">
             You are offline.
             {queueLength > 0
               ? ` ${queueLength} draft${queueLength > 1 ? "s" : ""} queued.`
@@ -1656,9 +1684,9 @@ function MarketingRequestDraftWorkspaceInner() {
         </div>
       )}
 
-      {/* ------ Metric Cards + Refresh --------------------------------------------------------------------------------------------------------- */}
-      <div className="flex items-start gap-2">
-        <div className="grid flex-1 gap-2 grid-cols-2 xs:grid-cols-4">
+      {/* ------ Figure strip + Refresh: four counts on one sheet, one hairline between them ------------------------------ */}
+      <div className="flex min-w-0 items-stretch gap-2">
+        <div className={`grid min-w-0 flex-1 grid-cols-2 gap-px border border-slate-200 bg-slate-200 xs:grid-cols-4 ${adminSoftDepthClassName}`}>
           {isLoading ? (
             <>
               <MetricSkeleton />
@@ -1668,36 +1696,16 @@ function MarketingRequestDraftWorkspaceInner() {
             </>
           ) : (
             <>
-              <MetricCard
-                accent="orange"
-                icon={ClipboardList}
-                label="Drafts"
-                value={workspace.drafts.length}
-              />
-              <MetricCard
-                accent="emerald"
-                icon={CheckCircle2}
-                label="Approved"
-                value={workspace.approvedRequests.length}
-              />
-              <MetricCard
-                accent="slate"
-                icon={Megaphone}
-                label="Customers"
-                value={workspace.customers.length}
-              />
-              <MetricCard
-                accent="blue"
-                icon={PackagePlus}
-                label="Products"
-                value={workspace.products.length}
-              />
+              <MetricCell label="Drafts" value={workspace.drafts.length} />
+              <MetricCell label="Approved" value={workspace.approvedRequests.length} />
+              <MetricCell label="Customers" value={workspace.customers.length} />
+              <MetricCell label="Products" value={workspace.products.length} />
             </>
           )}
         </div>
         <button
           aria-label="Refresh data"
-          className="flex h-10 w-10 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
+          className={landingActionClassName("outline", "h-auto min-h-10 w-10 bg-white px-0 sm:min-h-10")}
           onClick={() => {
             setIsLoading(true);
             setMessage(null);
@@ -1707,119 +1715,85 @@ function MarketingRequestDraftWorkspaceInner() {
           type="button"
         >
           {isLoading ? (
-            <LoadingSpinner />
+            <LoadingSpinner className="h-3.5 w-3.5 text-current" />
           ) : (
-            <RefreshCcw className="h-3.5 w-3.5" />
+            <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" />
           )}
         </button>
       </div>
 
       {/* ------ Draft ROI Health + Sparkline ------------------------------------------------------------------------------------------ */}
       {!isLoading && workspace.drafts.length > 0 && (
-        <div className={`border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
-              Draft ROI Health
-            </span>
-            <span className="text-phx-xs font-bold text-slate-600">
-              Total: {egp(totalDraftValue)}
-            </span>
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            right={
+              <span className={MICRO_LABEL}>
+                Total: <span className={cn("tabular-nums", LANDING_INK)}>{egp(totalDraftValue)}</span>
+              </span>
+            }
+            title="Draft ROI Health"
+          />
+          <div className="px-3 py-3 sm:px-4">
+            <DraftStatusBar drafts={workspace.drafts} />
+            {/* #5 --- Time-series sparkline */}
+            {workspace.drafts.length >= 2 && (
+              <CostSparkline drafts={workspace.drafts} />
+            )}
           </div>
-          <DraftStatusBar drafts={workspace.drafts} />
-          {/* #5 --- Time-series sparkline */}
-          {workspace.drafts.length >= 2 && (
-            <CostSparkline drafts={workspace.drafts} />
-          )}
-        </div>
+        </section>
       )}
 
-      {/* ------ Alert Messages --------------------------------------------------------------------------------------------------------------------------------- */}
+      {/* ------ Alert Messages: the tone is the rail, the words stay slate ------------------------------------------------------- */}
       {message ? (
         <div
-          className={`flex items-center gap-2 border px-3 py-2 text-phx-md font-semibold transition-all ${
-            message.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-amber-200 bg-amber-50 text-amber-900"
-          }`}
+          className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}
+          role={message.type === "error" ? "alert" : "status"}
         >
+          <span
+            aria-hidden="true"
+            className={`w-1 shrink-0 self-stretch ${message.type === "success" ? "bg-emerald-500" : "bg-amber-400"}`}
+          />
           {message.type === "success" && (
-            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <CheckCircle2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
           )}
-          <span className="min-w-0 break-words">{message.text}</span>
+          <span className="min-w-0 break-words text-phx-sm font-semibold text-slate-700">{message.text}</span>
         </div>
       ) : null}
 
-      {/* ------ Tab Switcher --------------------------------------------------------------------------------------------------------------------------------------- */}
-      <div className={`grid grid-cols-3 gap-1 border border-slate-200 bg-slate-50 p-1 ${adminSoftDepthClassName}`}>
-        <button
-          className={`flex min-w-0 flex-wrap items-center justify-center gap-1 px-1 py-2 text-phx-md font-bold transition sm:gap-1.5 sm:px-3 ${
-            activeView === "create"
-              ? "bg-orange-500 text-white shadow-sm"
-              : "bg-transparent text-slate-600 hover:bg-white"
-          }`}
-          onClick={() => setActiveView("create")}
-          type="button"
-        >
-          <Megaphone className="h-3.5 w-3.5" />
-          <span>Create</span>
-          {!isLoading && (
-            <span
-              className={`ml-0.5 px-1.5 py-0.5 text-phx-sm font-black ${
-                activeView === "create"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200/60 text-slate-500"
-              }`}
+      {/* ------ Tab Switcher: the active tab is navy on a navy rule, never an orange fill ------------------------------------- */}
+      <div className={`grid grid-cols-3 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        {(
+          [
+            ["create", Megaphone, "Create", workspace.drafts.length],
+            ["approved", FileCheck2, "Approved", workspace.approvedRequests.length],
+            ["tracking", ClipboardList, "Tracking", workspace.returnedToMe.length + workspace.inApproval.length],
+          ] as const
+        ).map(([view, Icon, label, count]) => {
+          const active = activeView === view;
+          return (
+            <button
+              aria-pressed={active}
+              className={cn(
+                "flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 border-b-2 px-1 py-2 text-phx-xs font-bold uppercase tracking-[0.08em] transition-colors motion-reduce:transition-none sm:px-3",
+                LANDING_FOCUS,
+                active
+                  ? "border-[#08111f] text-[#08111f]"
+                  : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-[#08111f]",
+              )}
+              key={view}
+              onClick={() => setActiveView(view)}
+              type="button"
             >
-              {workspace.drafts.length}
-            </span>
-          )}
-        </button>
-        <button
-          className={`flex min-w-0 flex-wrap items-center justify-center gap-1 px-1 py-2 text-phx-md font-bold transition sm:gap-1.5 sm:px-3 ${
-            activeView === "approved"
-              ? "bg-orange-500 text-white shadow-sm"
-              : "bg-transparent text-slate-600 hover:bg-white"
-          }`}
-          onClick={() => setActiveView("approved")}
-          type="button"
-        >
-          <FileCheck2 className="h-3.5 w-3.5" />
-          <span>Approved</span>
-          {!isLoading && (
-            <span
-              className={`ml-0.5 px-1.5 py-0.5 text-phx-sm font-black ${
-                activeView === "approved"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200/60 text-slate-500"
-              }`}
-            >
-              {workspace.approvedRequests.length}
-            </span>
-          )}
-        </button>
-        <button
-          className={`flex min-w-0 flex-wrap items-center justify-center gap-1 px-1 py-2 text-phx-md font-bold transition sm:gap-1.5 sm:px-3 ${
-            activeView === "tracking"
-              ? "bg-orange-500 text-white shadow-sm"
-              : "bg-transparent text-slate-600 hover:bg-white"
-          }`}
-          onClick={() => setActiveView("tracking")}
-          type="button"
-        >
-          <ClipboardList className="h-3.5 w-3.5" />
-          <span>Tracking</span>
-          {!isLoading && (
-            <span
-              className={`ml-0.5 px-1.5 py-0.5 text-phx-sm font-black ${
-                activeView === "tracking"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200/60 text-slate-500"
-              }`}
-            >
-              {workspace.returnedToMe.length + workspace.inApproval.length}
-            </span>
-          )}
-        </button>
+              <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+              <span>{label}</span>
+              {!isLoading && (
+                <span className={cn("tabular-nums", active ? "text-[#08111f]" : "text-slate-400")}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
@@ -1831,62 +1805,59 @@ function MarketingRequestDraftWorkspaceInner() {
       >
         {/* ------ Resubmit banner --------------------------------------------------------------------------------------------------------------------------- */}
         {resubmitRequestId ? (
-          <div className="border border-amber-200 bg-amber-50 px-3 py-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-phx-md font-semibold text-amber-900">
-              <span className="flex min-w-0 items-center gap-2">
-                <Pencil className="h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 break-words">
-                  Editing returned request{" "}
-                  <span className="font-mono font-black">
-                    {resubmitRequestCode}
-                  </span>{" "}
-                  — resubmitting will resume at the step that returned it.
+          <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+            <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-phx-sm font-semibold text-slate-700">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Pencil aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                  <span className="min-w-0 break-words">
+                    Editing returned request{" "}
+                    <span className={cn("font-mono font-black", LANDING_INK)}>
+                      {resubmitRequestCode}
+                    </span>{" "}
+                    — resubmitting will resume at the step that returned it.
+                  </span>
                 </span>
-              </span>
-              <button
-                className="flex shrink-0 items-center gap-1 border border-amber-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-amber-800 transition hover:bg-amber-100"
-                onClick={cancelResubmit}
-                type="button"
-              >
-                <X className="h-3 w-3" />
-                Cancel resubmit
-              </button>
-            </div>
-            {resubmitReturnReason ? (
-              <div className="mt-2 border-l-4 border-amber-500 bg-white/70 px-3 py-2 text-phx-sm text-amber-900">
-                <span className="font-bold">
-                  Returned{resubmitReturnedBy ? ` by ${resubmitReturnedBy}` : ""} — reason:
-                </span>{" "}
-                <span className="break-words">{resubmitReturnReason}</span>
+                <button
+                  className={landingActionClassName("outline")}
+                  onClick={cancelResubmit}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="h-3 w-3" />
+                  Cancel resubmit
+                </button>
               </div>
-            ) : null}
+              {resubmitReturnReason ? (
+                <div className="mt-2.5 border-t border-slate-200 pt-2.5 text-phx-sm text-slate-700">
+                  <span className="font-bold text-amber-700">
+                    Returned{resubmitReturnedBy ? ` by ${resubmitReturnedBy}` : ""} — reason:
+                  </span>{" "}
+                  <span className="break-words" dir="auto">{resubmitReturnReason}</span>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
-        {/* ------ Draft Form Card ------------------------------------------------------------------------------------------------------------------------ */}
-        <Card className="overflow-hidden border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        {/* ------ Draft Form: a kit sheet around the ADR-skinned form (the fields keep their form tokens) ------------------ */}
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           {isLoading ? (
             <FormSkeleton />
           ) : (
             <form aria-busy={isSaving} onSubmit={submitDraft}>
               {/* Form header */}
-              <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
-                      {resubmitRequestId ? "Edit & Resubmit" : "Create Draft"}
-                    </p>
-                    <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-                      {resubmitRequestId
-                        ? "Returned request"
-                        : "Activity request"}
-                    </h2>
-                  </div>
-                  <Badge variant={roiBadgeVariant(roiPreview.roiStatus)}>
-                    {forecastRoiStatusLabel(roiPreview.roiStatus)}
-                  </Badge>
-                </div>
-              </div>
+              <PanelHeader
+                right={
+                  <>
+                    <LandingMeta items={[resubmitRequestId ? "Edit & Resubmit" : "Create Draft"]} />
+                    <StatusText tone={roiStatusTone(roiPreview.roiStatus)}>
+                      {forecastRoiStatusLabel(roiPreview.roiStatus)}
+                    </StatusText>
+                  </>
+                }
+                title={resubmitRequestId ? "Returned request" : "Activity request"}
+              />
 
               {/* Form fields */}
               <div className="grid gap-3 p-4 sm:grid-cols-6">
@@ -2135,8 +2106,9 @@ function MarketingRequestDraftWorkspaceInner() {
                         window running to 2052, and a campaign that can never be judged reads
                         "waiting for the data" for twenty-six years without ever looking wrong. */}
                     {roiMonthsWarning(roiDurationMonths) ? (
-                      <p className="mt-1 border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-semibold text-amber-800">
-                        {roiMonthsWarning(roiDurationMonths)}
+                      <p className="mt-1 flex min-w-0 gap-2 text-phx-xs font-semibold text-slate-700">
+                        <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+                        <span className="min-w-0 break-words">{roiMonthsWarning(roiDurationMonths)}</span>
                       </p>
                     ) : null}
                   </Field>
@@ -2157,8 +2129,8 @@ function MarketingRequestDraftWorkspaceInner() {
                   </Field>
                 </div>
 
-                {/* ------ Product Lines --------------------------------------------------------------------------------------------------------- */}
-                <div className="sm:col-span-6">
+                {/* ------ Product Lines: the row switches on its OWN width (container query), so exactly one layout shows at every width ------ */}
+                <div className="@container sm:col-span-6">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
@@ -2184,7 +2156,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         )}
                       </div>
                       <button
-                        className={`flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
+                        className={`flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS} ${adminControlDepthClassName}`}
                         onClick={addProductLine}
                         type="button"
                       >
@@ -2201,7 +2173,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           key={line.key}
                         >
                           {/* Desktop layout */}
-                          <div className="hidden sm:grid gap-2 sm:grid-cols-[minmax(0,1fr)_100px_100px_120px_80px_36px]">
+                          <div className="hidden gap-2 @2xl:grid @2xl:grid-cols-[minmax(0,1fr)_100px_100px_120px_80px_36px]">
                             <SelectField
                               disabled={visibleProducts.length === 0}
                               onChange={(value) =>
@@ -2273,7 +2245,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             />
                             <button
                               aria-label="Remove product"
-                              className={`flex h-10 w-full items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
+                              className={`flex h-10 w-full items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 motion-reduce:transition-none ${LANDING_FOCUS} ${adminControlDepthClassName}`}
                               onClick={() =>
                                 removeProductLine(line.key)
                               }
@@ -2284,7 +2256,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           </div>
 
                           {/* Mobile layout (#6 --- short product names) */}
-                          <div className="block md:hidden space-y-2">
+                          <div className="space-y-2 @2xl:hidden">
                             <SelectField
                               disabled={visibleProducts.length === 0}
                               onChange={(value) =>
@@ -2324,7 +2296,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               />
                               <button
                                 aria-label="Remove product"
-                                className={`flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
+                                className={`flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 motion-reduce:transition-none ${LANDING_FOCUS} ${adminControlDepthClassName}`}
                                 onClick={() =>
                                   removeProductLine(line.key)
                                 }
@@ -2382,7 +2354,7 @@ function MarketingRequestDraftWorkspaceInner() {
               </div>
 
               {/* Form footer */}
-              <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+              <div className="border-t border-slate-200 px-3 py-3 sm:px-4">
                 {/*
                   Why Save is refusing. A disabled button carries no tooltip — its pointer events
                   are off — so without this line the requester is told nothing at all, and the two
@@ -2411,53 +2383,42 @@ function MarketingRequestDraftWorkspaceInner() {
                   </p>
                 ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2 text-phx-md font-bold text-slate-700">
-                    <TrendingUp className="h-4 w-4 shrink-0 text-orange-500" />
-                    <span>
-                      Required ROI: {egp(roiPreview.requiredRoiValue)}
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <TrendingUp aria-hidden="true" className="h-3.5 w-3.5 shrink-0 self-center text-slate-500" />
+                    <span className={MICRO_LABEL}>Required ROI:</span>{" "}
+                    <span className={cn("text-phx-md font-bold tabular-nums", LANDING_INK)}>
+                      {egp(roiPreview.requiredRoiValue)}
                     </span>
                   </div>
-                  <Button
+                  <button
                     aria-describedby={
                       saveBlockers.length > 0 ? SAVE_BLOCKED_HINT_ID : undefined
                     }
-                    className="min-h-10 gap-1.5 bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600"
+                    className={cn(phxButtonAccentClassName, "min-h-10 justify-center motion-reduce:transition-none", LANDING_FOCUS)}
                     disabled={!canSave}
                     type="submit"
                   >
                     {isSaving ? (
                       <LoadingSpinner className="text-white" />
                     ) : resubmitRequestId ? (
-                      <RefreshCcw className="h-3.5 w-3.5" />
+                      <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" />
                     ) : (
-                      <Save className="h-3.5 w-3.5" />
+                      <Save aria-hidden="true" className="h-3.5 w-3.5" />
                     )}
                     {resubmitRequestId ? "Resubmit Request" : "Save Draft"}
-                  </Button>
+                  </button>
                 </div>
               </div>
             </form>
           )}
-        </Card>
+        </section>
 
-        {/* ------ ROI Preview Card --------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-              <BarChart3 className="h-3.5 w-3.5" />
-            </div>
-            <div>
-              <p className="text-phx-md font-black text-slate-950">
-                ROI Preview
-              </p>
-              <p className="text-phx-sm font-medium text-slate-400">
-                Recalculates on save
-              </p>
-            </div>
-          </div>
+        {/* ------ ROI Preview: one sheet — figure strip, coverage bar, capture rail, then the product table (phones: rows) ---- */}
+        <section className={`@container min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader title="ROI Preview" />
 
           {/* ROI metrics row */}
-          <div className="mt-3 grid gap-2 grid-cols-2 xs:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px border-b border-slate-200 bg-slate-200 @lg:grid-cols-4">
             <RoiMetric
               label="Est. Cost"
               value={egp(fieldNumber(estimatedCost))}
@@ -2473,48 +2434,46 @@ function MarketingRequestDraftWorkspaceInner() {
             <RoiMetric label={ROI_FORECAST_COVERAGE_LABEL} value={`${coveragePct}%`} />
           </div>
 
-          {/* Smart coverage bar --- green/amber/red */}
-          <div className="mt-2 overflow-hidden bg-slate-100">
-            <div className="flex h-2 w-full overflow-hidden">
-              <div
-                className={`h-full bg-gradient-to-r ${coverageGradient(coveragePct)} transition-all duration-500`}
-                style={{ width: `${coveragePct}%` }}
-              />
-            </div>
+          {/* Smart coverage bar --- green/amber/red, flat */}
+          <div className="px-3 pt-3.5 sm:px-4">
+            <LandingBar fill={coverageFill(coveragePct)} pct={coveragePct} />
           </div>
 
           {/* Capture quality — trust in the FUTURE ROI, scored from what the requester can still fix. */}
-          <div
-            className={`mt-3 border px-3 py-2 ${
-              captureHasInput
-                ? CAPTURE_BAND_STYLE[captureConfidence.band]
-                : "border-slate-200 bg-slate-50 text-slate-500"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-phx-sm font-bold uppercase tracking-[0.10em]">
-                Capture Quality
-              </span>
-              {captureHasInput ? (
-                <span className="text-phx-md font-black">
-                  {captureConfidence.score}
-                  <span className="text-phx-sm font-bold">/100</span>
-                </span>
-              ) : (
-                <span className="text-phx-xs font-bold">Not scored yet</span>
+          <div className="flex min-w-0 gap-3 px-3 py-3 sm:px-4">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "w-1 shrink-0 self-stretch",
+                captureHasInput ? CAPTURE_BAND_TONE[captureConfidence.band].rail : "bg-slate-300",
               )}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                <span className={MICRO_LABEL}>
+                  Capture Quality
+                </span>
+                {captureHasInput ? (
+                  <span className={cn("text-phx-md font-black tabular-nums", CAPTURE_BAND_TONE[captureConfidence.band].text)}>
+                    {captureConfidence.score}
+                    <span className="text-phx-sm font-bold">/100</span>
+                  </span>
+                ) : (
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Not scored yet</span>
+                )}
+              </div>
+              <p className="mt-1 break-words text-phx-xs font-medium leading-snug text-slate-600">
+                {!captureHasInput
+                  ? "Pick the customer, products and pay date — the score shows how measurable this request will be."
+                  : captureConfidence.weakest
+                    ? captureConfidence.weakest.detail
+                    : "Everything needed to measure this request is captured."}
+              </p>
             </div>
-            <p className="mt-1 text-phx-xs font-medium leading-snug">
-              {!captureHasInput
-                ? "Pick the customer, products and pay date — the score shows how measurable this request will be."
-                : captureConfidence.weakest
-                  ? captureConfidence.weakest.detail
-                  : "Everything needed to measure this request is captured."}
-            </p>
           </div>
 
-          {/* Product ROI table --- Desktop */}
-          <div className="mt-3 hidden md:block overflow-hidden border border-slate-200">
+          {/* Product ROI table --- Desktop (the sheet's own width decides, not the viewport) */}
+          <div className="hidden border-t border-slate-200 @2xl:block">
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
             ) : (
@@ -2526,21 +2485,21 @@ function MarketingRequestDraftWorkspaceInner() {
                   <col className="w-[20%]" />
                   <col className="w-[16%]" />
                 </colgroup>
-                <thead className="bg-slate-50 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
+                <thead className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                   <tr>
-                    <th className="border-b border-r border-slate-100 px-3 py-2">
+                    <th className="border-b border-slate-200 px-3 py-2 sm:px-4">
                       Product
                     </th>
-                    <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                    <th className="border-b border-slate-200 px-3 py-2 text-right">
                       Qty
                     </th>
-                    <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                    <th className="border-b border-slate-200 px-3 py-2 text-right">
                       Unit Price
                     </th>
-                    <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                    <th className="border-b border-slate-200 px-3 py-2 text-right">
                       ROI Value
                     </th>
-                    <th className="border-b border-slate-100 px-3 py-2 text-right">
+                    <th className="border-b border-slate-200 px-3 py-2 text-right sm:pr-4">
                       Share
                     </th>
                   </tr>
@@ -2548,19 +2507,19 @@ function MarketingRequestDraftWorkspaceInner() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {productLineMetrics.map((product) => (
                     <tr key={product.key}>
-                      <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2 font-bold text-slate-950">
+                      <td className={cn("min-w-0 break-words px-3 py-2 font-bold sm:px-4", LANDING_INK)} dir="auto">
                         {product.productName}
                       </td>
-                      <td className="border-r border-slate-100 px-3 py-2 text-right font-medium text-slate-600">
+                      <td className="px-3 py-2 text-right font-medium tabular-nums text-slate-600">
                         {product.quantity}
                       </td>
-                      <td className="border-r border-slate-100 px-3 py-2 text-right font-medium text-slate-600">
+                      <td className="px-3 py-2 text-right font-medium tabular-nums text-slate-600">
                         {egp(product.factoryPrice)}
                       </td>
-                      <td className="border-r border-slate-100 px-3 py-2 text-right font-bold text-slate-950">
+                      <td className={cn("px-3 py-2 text-right font-bold tabular-nums", LANDING_INK)}>
                         {egp(product.expectedValue)}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-2 text-right sm:pr-4">
                         <ShareBar
                           pct={Math.round(product.valueShare * 100)}
                         />
@@ -2570,7 +2529,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   {productLineMetrics.length === 0 ? (
                     <tr>
                       <td
-                        className="px-3 py-5 text-center text-phx-sm font-medium text-slate-400"
+                        className="px-3 py-5 text-center text-phx-sm font-medium text-slate-500"
                         colSpan={5}
                       >
                         Add product quantities to preview ROI.
@@ -2582,56 +2541,56 @@ function MarketingRequestDraftWorkspaceInner() {
             )}
           </div>
 
-          {/* Product ROI --- Mobile cards */}
-          <div className="mt-3 block md:hidden space-y-2">
+          {/* Product ROI --- phone rows: hairlines, no card on the card */}
+          <div className="border-t border-slate-200 @2xl:hidden">
             {productLineMetrics.length === 0 ? (
-              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-xs font-medium text-slate-400">
+              <LandingEmpty>
                 Add product quantities to preview ROI.
-              </p>
+              </LandingEmpty>
             ) : (
               productLineMetrics.map((product) => (
                 <div
                   key={product.key}
-                  className={`border border-slate-200 bg-slate-50 p-3 space-y-1.5 ${adminPanelDepthClassName}`}
+                  className="space-y-2 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:px-4"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-phx-md font-bold text-slate-950">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className={cn("min-w-0 break-words text-phx-md font-bold", LANDING_INK)} dir="auto">
                       {product.productName}
                     </p>
-                    <span className="text-phx-sm font-black text-orange-600">
+                    <span className={cn("shrink-0 text-phx-sm font-black tabular-nums", LANDING_INK)}>
                       {Math.round(product.valueShare * 100)}%
                     </span>
                   </div>
-                  <div className="h-1 overflow-hidden bg-slate-200">
+                  <div aria-hidden="true" className="h-1 bg-slate-100">
                     <div
-                      className="h-full bg-gradient-to-r from-orange-500 to-orange-200"
+                      className="h-full bg-[#08111f]"
                       style={{
                         width: `${Math.min(Math.round(product.valueShare * 100), 100)}%`,
                       }}
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-1 text-phx-sm">
-                    <div>
-                      <span className="font-medium text-slate-400">
+                  <div className="grid grid-cols-3 gap-2 text-phx-sm">
+                    <div className="min-w-0">
+                      <span className={MICRO_LABEL}>
                         Qty
                       </span>
-                      <p className="font-bold text-slate-700">
+                      <p className="break-words font-bold tabular-nums text-slate-700">
                         {product.quantity}
                       </p>
                     </div>
-                    <div>
-                      <span className="font-medium text-slate-400">
+                    <div className="min-w-0">
+                      <span className={MICRO_LABEL}>
                         Unit
                       </span>
-                      <p className="font-bold text-slate-700">
+                      <p className="break-words font-bold tabular-nums text-slate-700">
                         {egp(product.factoryPrice)}
                       </p>
                     </div>
-                    <div>
-                      <span className="font-medium text-slate-400">
+                    <div className="min-w-0">
+                      <span className={MICRO_LABEL}>
                         Value
                       </span>
-                      <p className="font-bold text-slate-950">
+                      <p className={cn("break-words font-bold tabular-nums", LANDING_INK)}>
                         {egp(product.expectedValue)}
                       </p>
                     </div>
@@ -2640,93 +2599,88 @@ function MarketingRequestDraftWorkspaceInner() {
               ))
             )}
           </div>
-        </Card>
+        </section>
 
-        {/* ------ Draft Rows Card ------------------------------------------------------------------------------------------------------------------------ */}
-        <Card className="border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center bg-slate-100 text-slate-600 ring-1 ring-slate-200">
-              <ListChecks className="h-3.5 w-3.5" />
-            </div>
-            <div>
-              <p className="text-phx-md font-black text-slate-950">
-                Draft Rows
-              </p>
-              {workspace.drafts.length > 0 ? (
-                <p className="text-phx-sm font-medium text-slate-400">
-                  {`${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className="mt-3 space-y-1.5">
+        {/* ------ Draft Rows: hairline rows on one sheet; the newest save flashes an emerald rule, not an orange box ------- */}
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            right={
+              workspace.drafts.length > 0 ? (
+                <LandingMeta items={[`${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`]} />
+              ) : null
+            }
+            title="Draft Rows"
+          />
+          <div>
             {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="animate-pulse border border-slate-100 bg-slate-50 p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <div className="h-2.5 w-20 bg-slate-200" />
-                      <div className="h-4 w-16 bg-slate-200" />
+              <div aria-busy="true">
+                <span className="sr-only">Loading</span>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div
+                    aria-hidden="true"
+                    key={i}
+                    className="space-y-2 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:px-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-2">
+                        <div className="employee-portal-skeleton h-3 w-20" />
+                        <div className="employee-portal-skeleton h-4 w-16" />
+                      </div>
+                      <div className="employee-portal-skeleton h-3 w-20" />
                     </div>
-                    <div className="h-5 w-20 bg-slate-200" />
+                    <div className="employee-portal-skeleton h-3 w-24" />
                   </div>
-                  <div className="mt-2 h-2.5 w-24 bg-slate-200" />
-                </div>
-              ))
+                ))}
+              </div>
             ) : (
               <>
                 {workspace.drafts.slice(0, 6).map((draft) => (
                   <div
-                    className={`border p-2.5 transition-colors duration-700 ${
+                    className={`border-b border-l-[3px] border-b-slate-100 px-3 py-2.5 transition-colors duration-700 motion-reduce:transition-none sm:px-4 ${
                       highlightDraftId === draft.id
-                        ? "border-orange-300 bg-orange-50/60"
-                        : "border-slate-100 bg-slate-50/60"
+                        ? "border-l-emerald-500 bg-slate-50"
+                        : "border-l-transparent"
                     }`}
                     key={draft.id}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-phx-sm font-bold text-slate-500">
+                        <p className="break-words font-mono text-phx-sm font-bold text-slate-500">
                           {draft.requestCode}
                         </p>
-                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
+                        <p className={cn("mt-0.5 text-phx-md font-black tabular-nums", LANDING_INK)}>
                           {egp(draft.estimatedCost)}
                         </p>
                       </div>
-                      <Badge
-                        variant={roiBadgeVariant(draft.roiStatus)}
-                      >
+                      <StatusText tone={roiStatusTone(draft.roiStatus)}>
                         {forecastRoiStatusLabel(draft.roiStatus)}
-                      </Badge>
+                      </StatusText>
                     </div>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1 text-phx-sm font-medium text-slate-400">
-                        <CalendarDays className="h-2.5 w-2.5" />
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                      <span className="flex items-center gap-1 text-phx-sm font-medium tabular-nums text-slate-500">
+                        <CalendarDays aria-hidden="true" className="h-3 w-3" />
                         {draft.requestDate}
                       </span>
                       <span className="text-phx-sm font-bold text-slate-500">
-                        {Math.round(draft.roiCoverageRatio * 100)}%
+                        <span className={cn("tabular-nums", LANDING_INK)}>{Math.round(draft.roiCoverageRatio * 100)}%</span>
                         {" "}forecast coverage
                       </span>
                     </div>
                   </div>
                 ))}
                 {workspace.drafts.length === 0 ? (
-                  <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
+                  <LandingEmpty>
                     No draft rows yet.
-                  </p>
+                  </LandingEmpty>
                 ) : (
-                  <p className="mt-1 text-center text-phx-sm font-semibold text-slate-400">
+                  <p className="break-words px-3 py-2.5 text-center text-phx-sm font-semibold text-slate-500 sm:px-4">
                     Forecast only — {ROI_ACTUAL_IN_TRACKING_NOTE}.
                   </p>
                 )}
               </>
             )}
           </div>
-        </Card>
+        </section>
       </div>
 
       {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
@@ -2736,28 +2690,26 @@ function MarketingRequestDraftWorkspaceInner() {
         ref={approvedPanelRef}
         className={activeView === "approved" ? "space-y-3" : "hidden"}
       >
-        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
-                  Finance Evidence
-                </p>
-                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-                  Approved Requests
-                </h2>
-              </div>
-              <Badge variant="neutral">
-                {filteredApproved.length === workspace.approvedRequests.length
-                  ? `${workspace.approvedRequests.length} rows`
-                  : `${filteredApproved.length} / ${workspace.approvedRequests.length}`}
-              </Badge>
-            </div>
+        <section className={`@container min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <div>
+            <PanelHeader
+              right={
+                <LandingMeta
+                  items={[
+                    "Finance Evidence",
+                    filteredApproved.length === workspace.approvedRequests.length
+                      ? `${workspace.approvedRequests.length} rows`
+                      : `${filteredApproved.length} / ${workspace.approvedRequests.length}`,
+                  ]}
+                />
+              }
+              title="Approved Requests"
+            />
 
-            {/* #7 --- Search input */}
+            {/* #7 --- Search input: its own toolbar row under the title */}
             {workspace.approvedRequests.length > 0 && (
-              <div className="relative mt-2">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <div className="relative border-b border-slate-200 px-3 py-2.5 sm:px-4">
+                <Search aria-hidden="true" className="absolute left-5.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 sm:left-6.5" />
                 <input
                   className={cn(phxFieldClassName, "pl-8")}
                   onChange={(e) => setApprovedSearch(e.target.value)}
@@ -2773,8 +2725,8 @@ function MarketingRequestDraftWorkspaceInner() {
             <TableSkeleton cols={6} rows={4} />
           ) : (
             <>
-              {/* Desktop table */}
-              <div className="hidden md:block">
+              {/* Desktop table — the sheet's own width decides (container query), never a sideways scroll */}
+              <div className="hidden @2xl:block">
                 <table className="w-full table-fixed border-collapse text-left text-phx-sm">
                   <colgroup>
                     <col className="w-[18%]" />
@@ -2785,27 +2737,27 @@ function MarketingRequestDraftWorkspaceInner() {
                     <col className="w-[17%]" />
                     <col className="w-[17%]" />
                   </colgroup>
-                  <thead className="bg-slate-50 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <tr>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                      <th className="border-b border-slate-200 px-3 py-2 sm:px-4">
                         Customer &amp; Contact
                       </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                      <th className="border-b border-slate-200 px-3 py-2">
                         Transfer Date &amp; Line
                       </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                      <th className="border-b border-slate-200 px-3 py-2">
                         Notes
                       </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2 text-right">
+                      <th className="border-b border-slate-200 px-3 py-2 text-right">
                         Amount
                       </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                      <th className="border-b border-slate-200 px-3 py-2">
                         Invoice due
                       </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
+                      <th className="border-b border-slate-200 px-3 py-2">
                         Proof
                       </th>
-                      <th className="border-b border-slate-100 px-3 py-2">
+                      <th className="border-b border-slate-200 px-3 py-2 sm:pr-4">
                         Invoice
                       </th>
                     </tr>
@@ -2813,28 +2765,28 @@ function MarketingRequestDraftWorkspaceInner() {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredApproved.map((row) => (
                       <tr key={row.id} className="align-top">
-                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2" dir="auto">
-                          <p className="font-bold text-slate-900">{row.customerName}</p>
+                        <td className="min-w-0 break-words px-3 py-2.5 sm:px-4" dir="auto">
+                          <p className={cn("font-bold", LANDING_INK)}>{row.customerName}</p>
                           <p className="mt-0.5 font-medium text-slate-600">{row.contactForMoneyTransfer}</p>
                         </td>
-                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
+                        <td className="min-w-0 break-words px-3 py-2.5 font-medium tabular-nums text-slate-600">
                           {transferDateLabel(row.moneyTransferDate)}
                           <span className="mt-0.5 block">{row.line ?? "—"}</span>
                         </td>
-                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2 text-slate-500">
+                        <td className="min-w-0 break-words px-3 py-2.5 text-slate-500">
                           <p className="text-phx-xs font-medium break-words" dir="auto">
                             {row.notes || "—"}
                           </p>
                         </td>
-                        <td className="border-r border-slate-100 min-w-0 break-words px-3 py-2 text-right font-bold text-slate-900">
+                        <td className={cn("min-w-0 break-words px-3 py-2.5 text-right font-bold tabular-nums", LANDING_INK)}>
                           {egp(row.sumOfAmount)}
                         </td>
                         {/* The invoice this approval obliges, and whether it is late. The status
                             is derived from the deadline at read time, never read raw — see
                             src/lib/marketing-requests/invoice-obligation.ts. */}
-                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2">
+                        <td className="min-w-0 break-words px-3 py-2.5 tabular-nums">
                           {row.invoiceDaysOverdue > 0 ? (
-                            <span className="inline-block border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-sm font-bold text-rose-700">
+                            <span className="font-bold text-rose-700">
                               {row.invoiceDueLabel}
                             </span>
                           ) : (
@@ -2843,7 +2795,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             </span>
                           )}
                         </td>
-                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2">
+                        <td className="min-w-0 break-words px-3 py-2.5">
                           {workspace.canUploadMoneyTransferProof ? (
                             <EvidenceUpload
                               accept="image/jpeg,image/png,image/webp"
@@ -2874,7 +2826,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             row={row}
                           />
                         </td>
-                        <td className="min-w-0 break-words px-3 py-2">
+                        <td className="min-w-0 break-words px-3 py-2.5 sm:pr-4">
                           <EvidenceUpload
                             accept="image/jpeg,image/png,image/webp,application/pdf"
                             fileName={row.invoiceFileName}
@@ -2897,7 +2849,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     {filteredApproved.length === 0 ? (
                       <tr>
                         <td
-                          className="px-3 py-6 text-center text-phx-sm font-medium text-slate-400"
+                          className="px-3 py-6 text-center text-phx-sm font-medium text-slate-500"
                           colSpan={7}
                         >
                           {approvedSearch
@@ -2910,52 +2862,52 @@ function MarketingRequestDraftWorkspaceInner() {
                 </table>
               </div>
 
-              {/* Mobile cards */}
-              <div className="block md:hidden divide-y divide-slate-100">
+              {/* Phone rows — hairlines on the sheet, no card on the card */}
+              <div className="divide-y divide-slate-100 @2xl:hidden">
                 {filteredApproved.length === 0 ? (
-                  <p className="px-4 py-5 text-center text-phx-xs font-medium text-slate-400">
+                  <LandingEmpty>
                     {approvedSearch
                       ? "No matching results."
                       : "No approved requests yet."}
-                  </p>
+                  </LandingEmpty>
                 ) : (
                   filteredApproved.map((row) => (
-                    <div key={row.id} className="space-y-2 px-3 py-3">
+                    <div key={row.id} className="space-y-2.5 px-3 py-3 sm:px-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-phx-md font-bold text-slate-950" dir="auto">
+                          <p className={cn("break-words text-phx-md font-bold", LANDING_INK)} dir="auto">
                             {row.customerName}
                           </p>
-                          <p className="mt-0.5 text-phx-sm font-medium text-slate-400" dir="auto">
+                          <p className="mt-0.5 break-words text-phx-sm font-medium text-slate-500" dir="auto">
                             {row.contactForMoneyTransfer}
                           </p>
                         </div>
-                        <span className="shrink-0 bg-slate-100 px-2 py-0.5 text-phx-sm font-black text-slate-900">
+                        <span className={cn("shrink-0 text-phx-md font-black tabular-nums", LANDING_INK)}>
                           {egp(row.sumOfAmount)}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-phx-sm">
-                        <span className="font-medium text-slate-400">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-phx-sm">
+                        <span className={MICRO_LABEL}>
                           Transfer
                         </span>
-                        <span className="text-right font-bold text-slate-600">
+                        <span className="min-w-0 break-words text-right font-bold tabular-nums text-slate-700">
                           {transferDateLabel(row.moneyTransferDate)}
                         </span>
-                        <span className="font-medium text-slate-400">
+                        <span className={MICRO_LABEL}>
                           Line
                         </span>
-                        <span className="text-right font-bold text-slate-600">
+                        <span className="min-w-0 break-words text-right font-bold tabular-nums text-slate-700">
                           {row.line ?? "-"}
                         </span>
-                        <span className="font-medium text-slate-400">
+                        <span className={MICRO_LABEL}>
                           Invoice due
                         </span>
                         <span
                           className={
                             row.invoiceDaysOverdue > 0
-                              ? "whitespace-nowrap text-right font-black text-rose-700"
-                              : "whitespace-nowrap text-right font-bold text-slate-600"
+                              ? "whitespace-nowrap text-right font-black tabular-nums text-rose-700"
+                              : "whitespace-nowrap text-right font-bold tabular-nums text-slate-700"
                           }
                         >
                           {row.invoiceDueLabel}
@@ -2963,7 +2915,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
 
                       {row.notes ? (
-                        <p className="text-phx-sm font-medium text-slate-500 break-words" dir="auto">
+                        <p className="break-words text-phx-sm font-medium text-slate-600" dir="auto">
                           {row.notes}
                         </p>
                       ) : null}
@@ -3021,7 +2973,7 @@ function MarketingRequestDraftWorkspaceInner() {
               </div>
             </>
           )}
-        </Card>
+        </section>
       </div>
 
       {/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */}
@@ -3031,138 +2983,110 @@ function MarketingRequestDraftWorkspaceInner() {
         ref={trackingPanelRef}
         className={activeView === "tracking" ? "space-y-3" : "hidden"}
       >
-        {/* ------ Returned to me ----------------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-amber-600">
-                  Action Needed
-                </p>
-                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-                  Returned to me
-                </h2>
-              </div>
-              <Badge variant="warning">
-                {workspace.returnedToMe.length} returned
-              </Badge>
-            </div>
-          </div>
-          <div className="space-y-1.5 p-4">
-            {isLoading ? (
-              <TableSkeleton cols={3} rows={2} />
-            ) : workspace.returnedToMe.length === 0 ? (
-              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
-                Nothing returned to you right now.
-              </p>
-            ) : (
-              workspace.returnedToMe.map((request) => {
+        {/* ------ Returned to me: hairline rows on one sheet, the state on an amber rail ------------------------------------ */}
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            right={<LandingMeta items={["Action Needed", `${workspace.returnedToMe.length} returned`]} />}
+            title="Returned to me"
+          />
+          {isLoading ? (
+            <TableSkeleton cols={3} rows={2} />
+          ) : workspace.returnedToMe.length === 0 ? (
+            <LandingEmpty>
+              Nothing returned to you right now.
+            </LandingEmpty>
+          ) : (
+            <div>
+              {workspace.returnedToMe.map((request) => {
                 const progress =
                   workspace.stepProgressByRequestId[request.id] ?? null;
                 return (
-                  <div
-                    className="border border-amber-200 bg-amber-50/40 p-3"
-                    key={request.id}
-                  >
+                  <RailRow key={request.id} rail="bg-amber-400">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-phx-md font-black text-slate-950" dir="auto">
+                        <p className={cn("break-words text-phx-md font-black", LANDING_INK)} dir="auto">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
-                        <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                        <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
-                          · {egp(request.estimatedCost)}
+                          · <span className={cn("font-bold tabular-nums", LANDING_INK)}>{egp(request.estimatedCost)}</span>
                         </p>
-                        <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-400">
+                        <p className="mt-0.5 break-words font-mono text-phx-xs font-medium text-slate-500">
                           Ref {request.requestCode}
                         </p>
                       </div>
                       <button
-                        className={cn(phxButtonAccentClassName, "shrink-0")}
+                        className={landingActionClassName("solid")}
                         onClick={() => void startResubmit(request)}
                         type="button"
                       >
-                        <Pencil className="h-3 w-3" />
+                        <Pencil aria-hidden="true" className="h-3 w-3" />
                         Edit &amp; Resubmit
                       </button>
                     </div>
                     {progress?.returnReason ? (
-                      <p className="mt-2 border border-amber-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-amber-800">
-                        <span className="font-bold">Return reason: </span>
+                      <p className="mt-2 break-words border-t border-slate-100 pt-2 text-phx-xs font-medium text-slate-700">
+                        <span className="font-bold text-amber-700">Return reason: </span>
                         {progress.returnReason}
                       </p>
                     ) : null}
-                  </div>
+                  </RailRow>
                 );
-              })
-            )}
-          </div>
-        </Card>
-
-        {/* ------ In approval -------------------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
-                  In Flight
-                </p>
-                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-                  In approval
-                </h2>
-              </div>
-              <Badge variant="neutral">
-                {workspace.inApproval.length} pending
-              </Badge>
+              })}
             </div>
-          </div>
-          <div className="space-y-1.5 p-4">
-            {isLoading ? (
-              <TableSkeleton cols={3} rows={3} />
-            ) : workspace.inApproval.length === 0 ? (
-              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
-                No requests are currently in approval.
-              </p>
-            ) : (
-              workspace.inApproval.map((request) => {
+          )}
+        </section>
+
+        {/* ------ In approval: a navy rail — in flight, nothing waiting on the requester ----------------------------------- */}
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            right={<LandingMeta items={["In Flight", `${workspace.inApproval.length} pending`]} />}
+            title="In approval"
+          />
+          {isLoading ? (
+            <TableSkeleton cols={3} rows={3} />
+          ) : workspace.inApproval.length === 0 ? (
+            <LandingEmpty>
+              No requests are currently in approval.
+            </LandingEmpty>
+          ) : (
+            <div>
+              {workspace.inApproval.map((request) => {
                 const progress =
                   workspace.stepProgressByRequestId[request.id] ?? null;
                 const expanded = expandedTrackingId === request.id;
                 const detail = detailCache[request.id];
                 return (
-                  <div
-                    className={`border border-slate-200 bg-slate-50/50 p-3 ${adminSoftDepthClassName}`}
-                    key={request.id}
-                  >
+                  <RailRow key={request.id} rail="bg-[#08111f]">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-phx-md font-black text-slate-950" dir="auto">
+                        <p className={cn("break-words text-phx-md font-black", LANDING_INK)} dir="auto">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
-                        <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                        <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
-                          · {egp(request.estimatedCost)}
+                          · <span className={cn("font-bold tabular-nums", LANDING_INK)}>{egp(request.estimatedCost)}</span>
                         </p>
-                        <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-400">
+                        <p className="mt-0.5 break-words font-mono text-phx-xs font-medium text-slate-500">
                           Ref {request.requestCode}
                         </p>
                       </div>
                       <button
                         aria-expanded={expanded}
-                        className={`flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
+                        className={landingActionClassName("outline")}
                         onClick={() =>
                           void toggleTrackingExpand(request.id)
                         }
                         type="button"
                       >
                         {expanded ? (
-                          <ChevronDown className="h-3 w-3" />
+                          <ChevronDown aria-hidden="true" className="h-3 w-3" />
                         ) : (
-                          <ChevronRight className="h-3 w-3" />
+                          <ChevronRight aria-hidden="true" className="h-3 w-3" />
                         )}
                         {expanded ? "Hide timeline" : "View timeline"}
                       </button>
@@ -3177,9 +3101,9 @@ function MarketingRequestDraftWorkspaceInner() {
                     </div>
 
                     {expanded ? (
-                      <div className="mt-2 border-t border-slate-200 pt-2">
+                      <div className="mt-2 border-t border-slate-100 pt-2">
                         {loadingDetailId === request.id && !detail ? (
-                          <div className="flex items-center gap-2 px-1 py-2 text-phx-xs font-medium text-slate-400">
+                          <div aria-busy="true" className="flex items-center gap-2 px-1 py-2 text-phx-xs font-medium text-slate-500">
                             <LoadingSpinner />
                             Loading timeline...
                           </div>
@@ -3187,8 +3111,8 @@ function MarketingRequestDraftWorkspaceInner() {
                           <>
                             <MarketingApprovalTimeline requestCode={request.requestCode} steps={detail.steps} />
                             {detail.viewerCanComment ? (
-                              <div className="mt-3 border border-sky-200 bg-sky-50/40 px-3 py-3">
-                                <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-sky-700">
+                              <div className="mt-3 border-t border-slate-200 pt-3">
+                                <p className={cn("mb-1.5", MICRO_LABEL)}>
                                   Add your comment
                                 </p>
                                 <MarketingAdvisoryCommentBox
@@ -3205,18 +3129,18 @@ function MarketingRequestDraftWorkspaceInner() {
                             ) : null}
                           </>
                         ) : (
-                          <p className="px-1 py-2 text-phx-xs font-medium text-slate-400">
+                          <p className="px-1 py-2 text-phx-xs font-medium text-slate-500">
                             Timeline unavailable.
                           </p>
                         )}
                       </div>
                     ) : null}
-                  </div>
+                  </RailRow>
                 );
-              })
-            )}
-          </div>
-        </Card>
+              })}
+            </div>
+          )}
+        </section>
 
         {/* ------ Rejected ----------------------------------------------------------------------------------------------------------------------------------- */}
         {/*
@@ -3229,59 +3153,45 @@ function MarketingRequestDraftWorkspaceInner() {
           cards use. A requester opening this card has exactly one question, and making them click
           to reach the answer is the failure this card exists to end.
         */}
-        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-slate-100 bg-rose-50/60 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-rose-600">
-                  Not Proceeding
-                </p>
-                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-                  Rejected
-                </h2>
-              </div>
-              <Badge variant="neutral">
-                {workspace.rejected.length} rejected
-              </Badge>
-            </div>
-          </div>
-          <div className="space-y-1.5 p-4">
-            {isLoading ? (
-              <TableSkeleton cols={3} rows={2} />
-            ) : workspace.rejected.length === 0 ? (
-              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
-                No requests have been rejected.
-              </p>
-            ) : (
-              workspace.rejected.map((request) => {
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            right={<LandingMeta items={["Not Proceeding", `${workspace.rejected.length} rejected`]} />}
+            title="Rejected"
+          />
+          {isLoading ? (
+            <TableSkeleton cols={3} rows={2} />
+          ) : workspace.rejected.length === 0 ? (
+            <LandingEmpty>
+              No requests have been rejected.
+            </LandingEmpty>
+          ) : (
+            <div>
+              {workspace.rejected.map((request) => {
                 const rejection =
                   workspace.rejectionByRequestId[request.id] ?? null;
                 return (
-                  <div
-                    className="border border-rose-200 bg-rose-50/30 p-3"
-                    key={request.id}
-                  >
+                  <RailRow key={request.id} rail="bg-rose-500">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-phx-md font-black text-slate-950" dir="auto">
+                        <p className={cn("break-words text-phx-md font-black", LANDING_INK)} dir="auto">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
-                        <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                        <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
-                          · {egp(request.estimatedCost)}
+                          · <span className={cn("font-bold tabular-nums", LANDING_INK)}>{egp(request.estimatedCost)}</span>
                         </p>
-                        <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-400">
+                        <p className="mt-0.5 break-words font-mono text-phx-xs font-medium text-slate-500">
                           Ref {request.requestCode}
                         </p>
                       </div>
-                      <span className="shrink-0 border border-rose-200 bg-white px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-[0.06em] text-rose-700">
+                      <StatusText tone="text-rose-700">
                         Rejected
-                      </span>
+                      </StatusText>
                     </div>
 
-                    <div className="mt-2 border-t border-rose-200/70 pt-2">
+                    <div className="mt-2 border-t border-slate-100 pt-2">
                       {rejection ? (
                         <>
                           {/*
@@ -3300,28 +3210,28 @@ function MarketingRequestDraftWorkspaceInner() {
                               .filter(([, value]) => Boolean(value))
                               .map(([label, value]) => (
                                 <div className="flex items-baseline gap-2" key={label}>
-                                  <dt className="w-[66px] shrink-0 text-phx-xs font-bold uppercase tracking-[0.08em] text-rose-700/70">
+                                  <dt className="w-[66px] shrink-0 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                                     {label}
                                   </dt>
-                                  <dd className="min-w-0 text-phx-xs font-bold text-slate-700">
+                                  <dd className="min-w-0 break-words text-phx-xs font-bold tabular-nums text-slate-700" dir="auto">
                                     {value}
                                   </dd>
                                 </div>
                               ))}
                           </dl>
                           {rejection.reason ? (
-                            <p className="mt-1.5 border border-rose-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-rose-900">
-                              <span className="font-bold">Reason: </span>
+                            <p className="mt-1.5 break-words text-phx-xs font-medium text-slate-700">
+                              <span className="font-bold text-rose-700">Reason: </span>
                               {rejection.reason}
                             </p>
                           ) : (
-                            <p className="mt-1.5 text-phx-xs font-medium text-slate-400">
+                            <p className="mt-1.5 text-phx-xs font-medium text-slate-500">
                               No reason was recorded.
                             </p>
                           )}
                         </>
                       ) : (
-                        <p className="text-phx-xs font-medium text-slate-400">
+                        <p className="break-words text-phx-xs font-medium text-slate-500">
                           Rejection details unavailable — the approval chain for
                           this request could not be read.
                         </p>
@@ -3332,12 +3242,12 @@ function MarketingRequestDraftWorkspaceInner() {
                         the requester can ask why it was refused and the approver can answer, right
                         here. Every message emails the requester, cc's everyone on the request, and
                         pings them in-app / Telegram. */}
-                    <div className="mt-2 border-t border-rose-200/70 pt-2">
+                    <div className="mt-2 border-t border-slate-100 pt-2">
                       <button
                         aria-expanded={
                           openRejectedConversationId === request.id
                         }
-                        className="flex w-full items-center justify-center gap-1.5 border border-rose-200 bg-white px-2.5 py-2 text-phx-xs font-bold text-rose-700 transition hover:bg-rose-50"
+                        className={landingActionClassName("outline", "w-full")}
                         onClick={() =>
                           setOpenRejectedConversationId((current) =>
                             current === request.id ? null : request.id,
@@ -3345,7 +3255,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         }
                         type="button"
                       >
-                        <MessageCircle className="h-3.5 w-3.5" />
+                        <MessageCircle aria-hidden="true" className="h-3.5 w-3.5" />
                         {openRejectedConversationId === request.id
                           ? "Hide conversation"
                           : "Open conversation & reply"}
@@ -3359,81 +3269,77 @@ function MarketingRequestDraftWorkspaceInner() {
                         </div>
                       ) : null}
                     </div>
-                  </div>
+                  </RailRow>
                 );
-              })
-            )}
-          </div>
-        </Card>
-
-        {/* ------ Drafts ------------------------------------------------------------------------------------------------------------------------------------- */}
-        <Card className="overflow-hidden border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">
-                  Not Submitted
-                </p>
-                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
-                  Drafts
-                </h2>
-              </div>
-              <Badge variant="neutral">{workspace.drafts.length} drafts</Badge>
+              })}
             </div>
-          </div>
-          <div className="space-y-1.5 p-4">
-            {isLoading ? (
-              <TableSkeleton cols={3} rows={2} />
-            ) : workspace.drafts.length === 0 ? (
-              <p className="border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
-                No drafts yet.
-              </p>
-            ) : (
-              workspace.drafts.map((draft) => (
-                <div
-                  className="flex flex-wrap items-center justify-between gap-2 border border-slate-100 bg-slate-50/60 p-3"
-                  key={draft.id}
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-phx-sm font-bold text-slate-500">
-                      {draft.requestCode}
-                    </p>
-                    <p className="mt-0.5 text-phx-md font-black text-slate-950">
-                      {customerNameMap.get(draft.customerId) ?? "Customer"}
-                    </p>
-                    <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-                      {requestTypeNameMap.get(draft.requestTypeId) ??
-                        "Request"}{" "}
-                      · {egp(draft.estimatedCost)}
-                    </p>
+          )}
+        </section>
+
+        {/* ------ Drafts: a slate rail — not yet submitted ------------------------------------------------------------------------- */}
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            right={<LandingMeta items={["Not Submitted", `${workspace.drafts.length} drafts`]} />}
+            title="Drafts"
+          />
+          {isLoading ? (
+            <TableSkeleton cols={3} rows={2} />
+          ) : workspace.drafts.length === 0 ? (
+            <LandingEmpty>
+              No drafts yet.
+            </LandingEmpty>
+          ) : (
+            <div>
+              {workspace.drafts.map((draft) => (
+                <RailRow key={draft.id} rail="bg-slate-300">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="break-words font-mono text-phx-sm font-bold text-slate-500">
+                        {draft.requestCode}
+                      </p>
+                      <p className={cn("mt-0.5 break-words text-phx-md font-black", LANDING_INK)} dir="auto">
+                        {customerNameMap.get(draft.customerId) ?? "Customer"}
+                      </p>
+                      <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
+                        {requestTypeNameMap.get(draft.requestTypeId) ??
+                          "Request"}{" "}
+                        · <span className={cn("font-bold tabular-nums", LANDING_INK)}>{egp(draft.estimatedCost)}</span>
+                      </p>
+                    </div>
+                    <button
+                      className={landingActionClassName("outline")}
+                      onClick={() => setActiveView("create")}
+                      type="button"
+                    >
+                      <Pencil aria-hidden="true" className="h-3 w-3" />
+                      Continue editing
+                    </button>
                   </div>
-                  <button
-                    className={`flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
-                    onClick={() => setActiveView("create")}
-                    type="button"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Continue editing
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
+                </RailRow>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
-      {/* ------ Empty-data hint ------------------------------------------------------------------------------------------------------------------------------ */}
+      {/* ------ Empty-data hint: a slate rail line on a white sheet ------------------------------------------------------------- */}
       {!isLoading && !workspace.canCreateDraft ? (
-        <div className={`border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500 ${adminSoftDepthClassName}`}>
-          You have review access to marketing requests. Draft creation is limited to assigned requesters in the employee directory.
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-slate-300" />
+          <p className="min-w-0 break-words text-phx-sm font-medium text-slate-600">
+            You have review access to marketing requests. Draft creation is limited to assigned requesters in the employee directory.
+          </p>
         </div>
       ) : !isLoading &&
         (workspace.customers.length === 0 ||
           workspace.products.length === 0) ? (
-        <div className={`border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500 ${adminSoftDepthClassName}`}>
-          {workspace.customers.length === 0
-            ? "No active marketing customers available. Customer creation is coming next."
-            : "No active marketing products available. Run the reference-data seed."}
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-slate-300" />
+          <p className="min-w-0 break-words text-phx-sm font-medium text-slate-600">
+            {workspace.customers.length === 0
+              ? "No active marketing customers available. Customer creation is coming next."
+              : "No active marketing products available. Run the reference-data seed."}
+          </p>
         </div>
       ) : null}
     </div>

@@ -16,12 +16,22 @@ import {
   Search,
   Timer,
   Undo2,
-  Wallet,
   XCircle,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
+import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingEmpty,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { MarketingAdvisoryCommentBox } from "@/components/employee-portal/marketing-advisory-comment-box";
 import {
   ApprovalHistory,
@@ -31,7 +41,6 @@ import {
 import { MarketingRequestHistory } from "@/components/employee-portal/marketing-request-history";
 import {
   PortalDesktopTable,
-  PortalMetricCard,
   PortalPagination,
   PortalRecordCard,
   PortalResponsiveDataList,
@@ -39,8 +48,6 @@ import {
 import { MarketingRequestApproverDetail } from "@/components/marketing-requests/marketing-request-approver-detail";
 import { MarketingInboxCancelButton } from "@/components/marketing-requests/marketing-inbox-cancel-button";
 import { MarketingRequestedProductHistory } from "@/components/marketing-requests/marketing-requested-product-history";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -50,7 +57,7 @@ import type {
   MarketingApproverOversightRow,
   MarketingApproverUpcomingRow,
 } from "@/lib/marketing-requests/service";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Helpers ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
@@ -93,26 +100,17 @@ function waitLabel(days: number | null): string {
  * supplier who has not yet been told either way, so the cost of a stalled rung is real. Three days
  * is the point at which the request stops being "in progress" and starts being "sitting".
  */
-function waitTone(days: number | null): { accent: string; header: string; pill: string } {
+function waitTone(days: number | null): { accent: string; text: string } {
+  // The landing kit's rail: the card's left edge carries the escalation, the words carry the
+  // same colour — no tinted header, no filled pill. A fresh request is navy: it is yours, and
+  // nothing about it is late yet.
   if (days !== null && days >= 7) {
-    return {
-      accent: "border-l-rose-500",
-      header: "from-white via-rose-50/50 to-white",
-      pill: "border-rose-200 bg-rose-50 text-rose-800",
-    };
+    return { accent: "border-l-rose-500", text: "text-rose-700" };
   }
   if (days !== null && days >= 3) {
-    return {
-      accent: "border-l-amber-500",
-      header: "from-white via-amber-50/50 to-white",
-      pill: "border-amber-200 bg-amber-50 text-amber-900",
-    };
+    return { accent: "border-l-amber-500", text: "text-amber-700" };
   }
-  return {
-    accent: "border-l-orange-500",
-    header: "from-white via-orange-50/30 to-white",
-    pill: "border-slate-200 bg-slate-50 text-slate-600",
-  };
+  return { accent: "border-l-[#08111f]", text: "text-slate-500" };
 }
 
 /**
@@ -131,38 +129,31 @@ function WaitPill({ days }: { days: number | null }) {
   if (days === null) return null;
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-phx-sm font-black uppercase tracking-[0.1em] ${waitTone(days).pill}`}
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] ${waitTone(days).text}`}
     >
-      <Timer className="h-3 w-3" />
+      <Timer aria-hidden="true" className="h-3 w-3" />
       {waitLabel(days)}
     </span>
   );
 }
 
-/** One heading shape for every queue on the page, so four sections read as one workspace. */
-function QueueHeading({
-  description,
-  icon: Icon,
-  title,
-  tone,
-}: {
-  description: string;
-  icon: typeof Inbox;
-  title: string;
-  tone: string;
-}) {
+/**
+ * One heading shape for every queue on the page, so four sections read as one workspace: the kit's
+ * tick and navy capitals, nothing under it (owner, 2026-11-20: a header is a title).
+ */
+function QueueHeading({ title }: { title: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ring-1 ${tone}`}>
-        <Icon className="h-3.5 w-3.5" />
-      </div>
-      <div className="min-w-0">
-        <h2 className="text-phx-lg font-black tracking-tight text-slate-950">{title}</h2>
-        <p className="text-phx-xs font-medium text-slate-400">{description}</p>
-      </div>
+    <div className="px-0.5 pt-1">
+      <LandingTitle>{title}</LandingTitle>
     </div>
   );
 }
+
+/** A step or state in small coloured capitals — the kit's replacement for a filled pill. */
+const STATE_TEXT_CLASS = "text-phx-xs font-bold uppercase tracking-[0.08em]";
+
+/** The small-capital label above a figure. */
+const FACT_LABEL_CLASS = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Skeleton --------------------------------------------------------------------------------------------------------------------------------------- */
@@ -170,14 +161,45 @@ function QueueHeading({
 
 function RowSkeleton() {
   return (
-    <div className={`animate-pulse space-y-2 rounded-sm border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
-      <div className="h-3 w-32 rounded-sm bg-slate-200" />
-      <div className="h-2.5 w-48 rounded-sm bg-slate-100" />
-      <div className="flex gap-2">
-        <div className="h-8 w-24 rounded-sm bg-slate-100" />
-        <div className="h-8 w-24 rounded-sm bg-slate-100" />
-        <div className="h-8 w-24 rounded-sm bg-slate-100" />
+    <div aria-busy="true" className={`space-y-2 border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
+      <span className="sr-only">Loading</span>
+      <div aria-hidden="true" className="employee-portal-skeleton h-3 w-32" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-2.5 w-48" />
+      <div aria-hidden="true" className="flex gap-2">
+        <div className="employee-portal-skeleton h-8 w-24" />
+        <div className="employee-portal-skeleton h-8 w-24" />
+        <div className="employee-portal-skeleton h-8 w-24" />
       </div>
+    </div>
+  );
+}
+
+/** One headline figure on the inbox's navy board: a coloured rail, the label, the figure, one note. */
+function BoardTile({
+  label,
+  note,
+  rail,
+  tone,
+  value,
+}: {
+  label: string;
+  note: string;
+  /** The tile's 2px left rail, in the tone the figure reads in. */
+  rail: string;
+  tone?: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className={cn("min-w-0 border-l-2 px-3 py-2.5", LANDING_NAVY_TILE, rail)}>
+      <p className="min-w-0 break-words text-phx-xs font-bold uppercase leading-tight tracking-[0.1em] text-white/60">
+        {label}
+      </p>
+      <div className="mt-1.5">
+        <LandingFigure onNavy size="md" tone={tone}>
+          {value}
+        </LandingFigure>
+      </div>
+      <p className="mt-1 break-words text-phx-xs font-medium text-white/45">{note}</p>
     </div>
   );
 }
@@ -199,16 +221,17 @@ function InboxRowCard({
 }) {
   const days = daysWaiting(row.submittedAt);
   const tone = waitTone(days);
+  // The Waiting figure takes the escalation colour once it is late; until then it is navy like
+  // every other figure on the card.
+  const waitFigureTone = days !== null && days >= 3 ? tone.text : LANDING_INK;
 
   return (
-    <Card
-      className={`rounded-sm border border-l-[3px] border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)] ${tone.accent}`}
+    <article
+      className={`@container min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName} border-l-[3px] ${tone.accent}`}
     >
-      <div
-        className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${tone.header}`}
-      >
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
+          <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
             {row.requestCode}
           </p>
           {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
@@ -231,47 +254,40 @@ function InboxRowCard({
             ("National Sales Manager Approval") sat side by side and burst the card. Given the whole
             width on a phone they stack under the customer instead, and neither has to wrap its own
             text — which the owner rules forbid. */}
-        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+        <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 sm:w-auto sm:justify-end">
           <WaitPill days={days} />
-          <Badge variant="warning">{row.currentStepName}</Badge>
+          <span className={`${STATE_TEXT_CLASS} break-words ${LANDING_INK}`}>{row.currentStepName}</span>
         </div>
       </div>
 
       {/* The four numbers an approver checks BEFORE reading anything, moved to the top of the card.
           They used to sit underneath both detail panels, so the money and the pay date were the last
           thing on a very tall row rather than the first — reaching them meant scrolling past every
-          product line and every pharmacy on the request. */}
-      <div className="grid gap-3 border-b border-slate-100 px-4 py-3 sm:grid-cols-4">
-        <div className="flex flex-col">
-          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-            Estimated Cost
-          </span>
-          <span className="text-phx-md font-black text-slate-950">
+          product line and every pharmacy on the request. Two to a row on a phone, four once the
+          card itself is wide enough (its own width, not the screen's). */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-slate-200 px-4 py-3 @xl:grid-cols-4">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={FACT_LABEL_CLASS}>Estimated Cost</span>
+          <span className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
             {egp(row.estimatedCost)}
           </span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-            Pay Date
-          </span>
-          <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
-            <CalendarDays className="h-3 w-3 text-slate-400" />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={FACT_LABEL_CLASS}>Pay Date</span>
+          <span className={`flex items-center gap-1 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
+            <CalendarDays aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-400" />
             {formatDate(row.payDate)}
           </span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-            Submitted
-          </span>
-          <span className="text-phx-md font-bold text-slate-700">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={FACT_LABEL_CLASS}>Submitted</span>
+          <span className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
             {formatDate(row.submittedAt)}
           </span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-            Waiting
-          </span>
-          <span className="whitespace-nowrap text-phx-md font-bold text-slate-700">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={FACT_LABEL_CLASS}>Waiting</span>
+          <span className={`break-words text-phx-md font-bold tabular-nums ${waitFigureTone}`}>
             {waitLabel(days)}
           </span>
         </div>
@@ -285,7 +301,7 @@ function InboxRowCard({
           Deliberately OUTSIDE the collapsible below. It is a one-line strip, and putting it behind
           a disclosure — even one that opens by default — would put it one click away for anyone who
           collapsed the row, which is exactly what that instruction forbids. */}
-      <div className="border-b border-slate-100 px-4 py-3">
+      <div className="border-b border-slate-200 px-4 py-3">
         <MarketingRequestedProductHistory requestId={row.id} />
       </div>
 
@@ -299,27 +315,27 @@ function InboxRowCard({
           cost before. What it adds is the other direction — an approver holding eight requests can
           now collapse them and scan a queue, which the old wall of always-expanded panels made
           impossible. Collapsing also skips this panel's own per-row fetch. */}
-      <div className="border-b border-slate-100">
+      <div className="border-b border-slate-200">
         <button
           aria-expanded={isDetailOpen}
-          className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left transition hover:bg-slate-50"
+          className={`flex min-h-11 w-full items-center justify-between gap-2 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
           onClick={onToggleDetail}
           type="button"
         >
-          <span className="inline-flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+          <span className={`inline-flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.12em] ${LANDING_INK}`}>
             {isDetailOpen ? (
-              <ChevronDown className="h-3.5 w-3.5" />
+              <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
             ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             )}
             Full request detail
           </span>
-          <span className="whitespace-nowrap text-phx-sm font-bold text-slate-400">
+          <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
             {isDetailOpen ? "Hide" : "Show"}
           </span>
         </button>
         {isDetailOpen ? (
-          <div className="border-t border-slate-100 px-4 py-3">
+          <div className="border-t border-slate-200 px-4 py-3">
             <MarketingRequestApproverDetail requestId={row.id} />
           </div>
         ) : null}
@@ -351,44 +367,43 @@ function InboxRowCard({
 
           This is an AFFORDANCE, never an authorisation: the decision page and the decision API each
           re-run the whole gate, so hiding a control here removes a dead end, it grants nothing. */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 px-4 py-3">
+        {/* The decisions wear the one approvals interface (approval-action-kit) — the same Approve,
+            Return and Reject the request page and every other approval screen draw. */}
         <Link
-          className={cn(
-            phxButtonApproveDenseClassName,
-            "inline-flex min-h-9 items-center gap-1.5 px-4 text-phx-sm font-bold shadow-sm transition",
-          )}
+          className={approvalActionClassName("approve", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
           href={decisionHref(decisionBasePath, row.id, "approve")}
         >
-          <CheckCircle2 className="h-3.5 w-3.5" />
+          <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
           {row.decisionLabels.approve}
         </Link>
         {row.allowReturn ? (
           <Link
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-4 text-phx-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-50"
+            className={approvalActionClassName("return", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
             href={decisionHref(decisionBasePath, row.id, "return")}
           >
-            <Undo2 className="h-3.5 w-3.5" />
+            <Undo2 aria-hidden="true" className="h-3.5 w-3.5" />
             {row.decisionLabels.return}
           </Link>
         ) : null}
         {row.allowReject ? (
           <Link
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-rose-300 bg-white px-4 text-phx-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-50"
+            className={approvalActionClassName("reject", "regular", `motion-reduce:transition-none ${LANDING_FOCUS}`)}
             href={decisionHref(decisionBasePath, row.id, "reject")}
           >
-            <XCircle className="h-3.5 w-3.5" />
+            <XCircle aria-hidden="true" className="h-3.5 w-3.5" />
             {row.decisionLabels.reject}
           </Link>
         ) : null}
         <Link
-          className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          className={landingActionClassName("outline", "ml-auto")}
           href={`/marketing-requests/${row.id}`}
         >
-          <Eye className="h-3.5 w-3.5" />
+          <Eye aria-hidden="true" className="h-3.5 w-3.5" />
           Open the full record
         </Link>
       </div>
-    </Card>
+    </article>
   );
 }
 
@@ -398,10 +413,10 @@ function InboxRowCard({
 
 function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: MarketingApproverInboxRow }) {
   return (
-    <Card className="rounded-sm border border-l-[3px] border-sky-200 border-l-sky-500 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-sky-50/40 to-white px-4 py-3">
+    <article className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName} border-l-[3px] border-l-sky-500`}>
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
+          <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{row.requestCode}</p>
           {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
               second line" and only the first half is the owner's rule — AGENTS.md §4 says that where
               the no-ellipsis rule meets the no-horizontal-scroll rule, WRAPPING WINS. The measurement
@@ -418,16 +433,16 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
           <NotOnCrmListFlag compact flag={row.customerCrmListFlag} />
         </div>
         {/* Same width rule as the decision card above — `w-full` below `sm`, never `shrink-0`. */}
-        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+        <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 sm:w-auto sm:justify-end">
           <WaitPill days={daysWaiting(row.submittedAt)} />
-          <Badge variant="neutral">For your comment</Badge>
+          <span className={`${STATE_TEXT_CLASS} text-sky-700`}>For your comment</span>
         </div>
       </div>
 
       <div className="px-4 py-3">
         <MarketingAdvisoryCommentBox onPosted={onPosted} requestId={row.id} />
       </div>
-    </Card>
+    </article>
   );
 }
 
@@ -577,113 +592,116 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
 
   return (
     <div className="space-y-3" dir="auto">
-      {/* ------ Header + Refresh ------------------------------------------------------------------------------------------------------------- */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-            <Inbox className="h-3.5 w-3.5" />
-          </div>
-          <div>
-            <h2 className="text-phx-lg font-black tracking-tight text-slate-950">
-              Requests awaiting my decision
-            </h2>
-            <p className="text-phx-xs font-medium text-slate-400">
-              {/* `rows` is emptied on every failure path, so without the error leg a failed load
-                  reported "0 requests pending" — a count, in the same place a real count goes. */}
-              {isLoading
-                ? "Loading…"
-                : error
-                  ? "Could not be counted"
-                  : `${rows.length} request${rows.length === 1 ? "" : "s"} pending`}
-            </p>
-          </div>
-        </div>
-        <button
-          aria-label="Refresh inbox"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
-          onClick={() => {
-            setIsLoading(true);
-            setError(null);
-            void loadInbox();
-          }}
-          title="Refresh inbox"
-          type="button"
-        >
-          {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-
-      {/* ------ Error ------------------------------------------------------------------------------------------------------------------------------------- */}
-      {error ? (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
-          <span className="min-w-0 break-words">{error}</span>
-        </div>
-      ) : null}
-
       {/* ------ What this queue is worth, before any of it is read --------------------------------
           The page opened straight onto row one and answered "how much money is stopped on me" and
-          "how long has the worst of it been stopped" only by reading every card to the bottom. */}
-      {!isLoading && !isCompletelyEmpty ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <PortalMetricCard
-            accent="orange"
-            icon={Inbox}
-            label="Awaiting my decision"
-            note={rows.length === 0 ? "Nothing is stopped on you" : "Your rung is the open one"}
-            value={rows.length}
-          />
-          {rows.length > 0 ? (
-            <PortalMetricCard
-              accent="emerald"
-              icon={Wallet}
-              label="Value awaiting me"
-              note="Estimated cost of the requests above"
-              value={egp(valueAwaitingMe)}
+          "how long has the worst of it been stopped" only by reading every card to the bottom.
+          These are the page's headline figures, so they stand on its ONE navy board (the landing
+          kit); the count and the refresh sit in the board's own header. */}
+      <LandingNavyBoard
+        label="Requests awaiting my decision"
+        right={
+          <>
+            {/* `rows` is emptied on every failure path, so without the error leg a failed load
+                reported "0 requests pending" — a count, in the same place a real count goes. */}
+            <LandingMeta
+              items={[
+                isLoading
+                  ? "Loading…"
+                  : error
+                    ? "Could not be counted"
+                    : `${rows.length} request${rows.length === 1 ? "" : "s"} pending`,
+              ]}
+              onNavy
             />
-          ) : null}
-          {rows.length > 0 ? (
-            <PortalMetricCard
-              accent={longestWait >= 7 ? "rose" : longestWait >= 3 ? "amber" : "slate"}
-              icon={Timer}
-              label="Longest wait"
-              note="Since the requester submitted it"
-              value={waitLabel(longestWait)}
-            />
-          ) : null}
-          {upcomingRows.length > 0 ? (
-            <PortalMetricCard
-              accent="sky"
-              icon={Clock3}
-              label="Coming to me"
-              note="You approve later in the chain"
-              value={upcomingRows.length}
-            />
-          ) : null}
-          {advisoryRows.length > 0 ? (
-            <PortalMetricCard
-              accent="sky"
-              icon={MessageSquareText}
-              label="For my comment"
-              note="Non-blocking — the chain moves without you"
-              value={advisoryRows.length}
-            />
-          ) : null}
-          {oversightRows.length > 0 ? (
-            <PortalMetricCard
-              accent="slate"
-              icon={Eye}
-              label="In approval company-wide"
-              note="Held by other approvers — view only"
-              value={oversightRows.length}
-            />
-          ) : null}
+            <button
+              aria-label="Refresh inbox"
+              className={`flex h-10 w-10 shrink-0 items-center justify-center border border-white/20 text-white/70 transition-colors hover:bg-white/10 hover:text-white motion-reduce:transition-none sm:h-9 sm:w-9 ${LANDING_FOCUS}`}
+              onClick={() => {
+                setIsLoading(true);
+                setError(null);
+                void loadInbox();
+              }}
+              title="Refresh inbox"
+              type="button"
+            >
+              {isLoading ? <LoadingSpinner /> : <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" />}
+            </button>
+          </>
+        }
+      >
+        {isLoading ? (
+          <div aria-busy="true" className="space-y-3 px-1 py-2">
+            <span className="sr-only">Loading</span>
+            <div aria-hidden="true" className="employee-portal-skeleton h-[22px] w-24 opacity-20" />
+            <div aria-hidden="true" className="employee-portal-skeleton h-1 w-full opacity-20" />
+          </div>
+        ) : !isCompletelyEmpty ? (
+          <div className="@container">
+            <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2 @3xl:grid-cols-3">
+              <BoardTile
+                label="Awaiting my decision"
+                note={rows.length === 0 ? "Nothing is stopped on you" : "Your rung is the open one"}
+                rail="border-l-white/70"
+                value={rows.length}
+              />
+              {rows.length > 0 ? (
+                <BoardTile
+                  label="Value awaiting me"
+                  note="Estimated cost of the requests above"
+                  rail="border-l-emerald-400"
+                  value={egp(valueAwaitingMe)}
+                />
+              ) : null}
+              {rows.length > 0 ? (
+                <BoardTile
+                  label="Longest wait"
+                  note="Since the requester submitted it"
+                  rail={longestWait >= 7 ? "border-l-rose-400" : longestWait >= 3 ? "border-l-amber-400" : "border-l-white/30"}
+                  tone={longestWait >= 7 ? "text-rose-300" : longestWait >= 3 ? "text-amber-300" : undefined}
+                  value={waitLabel(longestWait)}
+                />
+              ) : null}
+              {upcomingRows.length > 0 ? (
+                <BoardTile
+                  label="Coming to me"
+                  note="You approve later in the chain"
+                  rail="border-l-amber-400"
+                  value={upcomingRows.length}
+                />
+              ) : null}
+              {advisoryRows.length > 0 ? (
+                <BoardTile
+                  label="For my comment"
+                  note="Non-blocking — the chain moves without you"
+                  rail="border-l-sky-400"
+                  value={advisoryRows.length}
+                />
+              ) : null}
+              {oversightRows.length > 0 ? (
+                <BoardTile
+                  label="In approval company-wide"
+                  note="Held by other approvers — view only"
+                  rail="border-l-white/30"
+                  value={oversightRows.length}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </LandingNavyBoard>
+
+      {/* ------ Error: a rose rail, the words in slate ---------------------------------------------- */}
+      {error ? (
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+          <span className="min-w-0 break-words text-phx-md font-semibold text-slate-700">{error}</span>
         </div>
       ) : null}
 
-      {/* ------ Queue navigator ------------------------------------------------------------------- */}
+      {/* ------ Queue navigator: navy words on a navy rule, never a filled chip ------------------- */}
       {!isLoading && segments.length > 1 ? (
         <div
-          className="flex w-full gap-1 overflow-x-auto rounded-sm border border-slate-200 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className={`grid w-full grid-cols-2 border border-slate-200 bg-white sm:flex ${adminSoftDepthClassName}`}
           role="tablist"
         >
           {segments.map((segment) => {
@@ -692,23 +710,21 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             return (
               <button
                 aria-selected={isActive}
-                className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-3 py-2 text-phx-sm font-bold transition-colors ${
+                className={cn(
+                  "inline-flex min-h-11 min-w-0 flex-1 flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 border-b-2 px-2 py-2 text-center text-phx-xs font-bold uppercase tracking-[0.08em] transition-colors motion-reduce:transition-none",
+                  LANDING_FOCUS,
                   isActive
-                    ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
+                    ? "border-[#08111f] text-[#08111f]"
+                    : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-[#08111f]",
+                )}
                 key={segment.key}
                 onClick={() => setQueue(segment.key)}
                 role="tab"
                 type="button"
               >
-                <Icon className="h-3.5 w-3.5 shrink-0" />
-                <span>{segment.label}</span>
-                <span
-                  className={`rounded-sm px-1.5 py-0.5 text-phx-sm font-black ${
-                    isActive ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"
-                  }`}
-                >
+                <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <span className="break-words">{segment.label}</span>
+                <span className={cn("tabular-nums", isActive ? "text-[#08111f]" : "text-slate-400")}>
                   {segment.count}
                 </span>
               </button>
@@ -724,26 +740,24 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           <RowSkeleton />
         </div>
       ) : isCompletelyEmpty ? (
-        <Card className="flex flex-col items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
-            <Inbox className="h-4 w-4" />
-          </div>
-          <p className="text-phx-base font-black text-slate-800">
+        <section className={`flex flex-col items-center justify-center gap-2 border border-slate-200 bg-white px-4 py-10 text-center ${adminSoftDepthClassName}`}>
+          <Inbox aria-hidden="true" className="h-5 w-5 text-slate-400" />
+          <p className={`text-phx-base font-black ${LANDING_INK}`}>
             No marketing requests involve you right now
           </p>
           <p className="max-w-sm text-phx-sm font-medium text-slate-500">
             Requests appear here from the moment they are submitted — both the ones waiting on you and
             the ones still moving toward your step.
           </p>
-        </Card>
+        </section>
       ) : activeQueue === "decide" ? (
         <div className="space-y-3">
           {/* Search, order and a single control that opens or closes every panel at once. An
               approver holding eight requests could previously only read them in submission order,
               in full, one wall of panels after another. */}
-          <div className="flex flex-col gap-2 rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:flex-row sm:flex-wrap sm:items-center">
-            <label className={`flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 sm:max-w-xs ${adminSoftDepthClassName}`}>
-              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <div className={`flex flex-col gap-2 border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center ${adminSoftDepthClassName}`}>
+            <label className={`flex min-w-0 flex-1 items-center gap-2 border border-slate-300 bg-white px-3 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/20 sm:max-w-xs ${adminChipDepthClassName}`}>
+              <Search aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
               {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
               <input
                 className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-phx-md"
@@ -757,11 +771,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               {DECIDE_SORTS.map((option) => (
                 <button
                   aria-pressed={sort === option.key}
-                  className={`min-h-9 whitespace-nowrap rounded-sm border px-3 text-phx-sm font-bold transition ${
-                    sort === option.key
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
+                  className={landingActionClassName(sort === option.key ? "solid" : "outline", "whitespace-nowrap")}
                   key={option.key}
                   onClick={() => setSort(option.key)}
                   type="button"
@@ -771,7 +781,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               ))}
             </div>
             <button
-              className="min-h-9 whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:ml-auto"
+              className={landingActionClassName("outline", "whitespace-nowrap sm:ml-auto")}
               onClick={() =>
                 setCollapsedIds(
                   openRowCount > 0 ? new Set(rows.map((row) => row.id)) : new Set<string>(),
@@ -784,9 +794,9 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           </div>
 
           {visibleRows.length === 0 ? (
-            <Card className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-              <p className="text-phx-md font-bold text-slate-700">No request matches this search.</p>
-            </Card>
+            <section className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+              <LandingEmpty>No request matches this search.</LandingEmpty>
+            </section>
           ) : (
             visibleRows.map((row) => (
               <InboxRowCard
@@ -814,23 +824,13 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             any way to see it. No decision buttons here — it is not their turn — but the request, where
             it is stopped, who holds it, and how long it has been in the system are all visible. */
         <div className="space-y-3">
-          <QueueHeading
-            description="Requests where you approve later in the chain — not yet your turn"
-            icon={Clock3}
-            title="Coming to you"
-            tone="bg-amber-50 text-amber-600 ring-amber-100"
-          />
+          <QueueHeading title="Coming to you" />
           <ChainWatchList rows={upcomingRows} />
         </div>
       ) : activeQueue === "advisory" ? (
         /* ------ Advisory: requests awaiting your comment (non-blocking) ------------------------------- */
         <div className="space-y-3">
-          <QueueHeading
-            description={`${advisoryRows.length} request${advisoryRows.length === 1 ? "" : "s"} you can comment on`}
-            icon={MessageSquareText}
-            title="Awaiting your comment"
-            tone="bg-sky-50 text-sky-600 ring-sky-100"
-          />
+          <QueueHeading title="Awaiting your comment" />
           {advisoryRows.map((row) => (
             <AdvisoryRowCard key={`advisory-${row.id}`} onPosted={() => void loadInbox()} row={row} />
           ))}
@@ -848,12 +848,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             is why ChainWatchList, the renderer both watch lists share, is declared BELOW rather than
             above. The test sees the markup it actually renders. */
         <div className="space-y-3">
-          <QueueHeading
-            description={`${oversightRows.length} request${oversightRows.length === 1 ? "" : "s"} moving through the chain — view only, the decision is the named approver's`}
-            icon={Eye}
-            title="Everything in approval"
-            tone="bg-slate-100 text-slate-600 ring-slate-200"
-          />
+          <QueueHeading title="Everything in approval" />
           <ChainWatchList onCancelled={() => void loadInbox()} rows={oversightRows} />
         </div>
       )}
@@ -922,14 +917,14 @@ function ChainWatchList({
   const age = (row: MarketingApproverOversightRow) =>
     row.ageDays === 0 ? "Submitted today" : `${row.ageDays} ${row.ageDays === 1 ? "day" : "days"} in system`;
 
+  /** The age in coloured small capitals — rose past a week, amber past three days, slate before. */
+  const ageTone = (row: MarketingApproverOversightRow) =>
+    row.ageDays >= 7 ? "text-rose-700" : row.ageDays >= 3 ? "text-amber-700" : "text-slate-500";
+
   return (
-    <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+    <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <PortalResponsiveDataList
-        empty={
-          <p className="px-4 py-8 text-center text-phx-md font-bold text-slate-500">
-            Nothing is in this list right now.
-          </p>
-        }
+        empty={<LandingEmpty>Nothing is in this list right now.</LandingEmpty>}
         getKey={(row) => `watch-${row.id}`}
         items={[...visible]}
         renderCard={(row) => (
@@ -937,11 +932,8 @@ function ChainWatchList({
             accent={row.ageDays >= 7 ? "rose" : row.ageDays >= 3 ? "amber" : "slate"}
             actions={
               <div className="flex flex-wrap items-start gap-2">
-                <Link
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-                  href={`/marketing-requests/${row.id}`}
-                >
-                  <Eye className="h-3.5 w-3.5" />
+                <Link className={landingActionClassName("outline")} href={`/marketing-requests/${row.id}`}>
+                  <Eye aria-hidden="true" className="h-3.5 w-3.5" />
                   Open the full record
                 </Link>
                 {onCancelled && row.canCancel ? (
@@ -953,20 +945,18 @@ function ChainWatchList({
                 ) : null}
               </div>
             }
+            className="border-b border-slate-200 last:border-b-0"
             meta={
               <>
                 <span className="block">
-                  {row.requestCode} · Customer: {row.customerName} · {egp(row.estimatedCost)}
+                  {row.requestCode} · Customer: {row.customerName} ·{" "}
+                  <span className={`font-bold tabular-nums ${LANDING_INK}`}>{egp(row.estimatedCost)}</span>
                 </span>
                 <span className="mt-1 block text-slate-700">{holder(row)}</span>
-                <span className="mt-0.5 block text-slate-400">{position(row)}</span>
+                <span className="mt-0.5 block text-slate-500">{position(row)}</span>
               </>
             }
-            status={
-              <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2.5 py-1 text-phx-xs font-black text-slate-700">
-                {age(row)}
-              </span>
-            }
+            status={<span className={`whitespace-nowrap ${STATE_TEXT_CLASS} ${ageTone(row)}`}>{age(row)}</span>}
             title={row.requestTitle}
           />
         )}
@@ -986,11 +976,11 @@ function ChainWatchList({
             }
           >
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="border-b border-slate-200">
                 {["Request", "Customer", "Raised by", "Value", "Now with", "Position", "In system", ""].map(
                   (heading, index) => (
                     <th
-                      className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500"
+                      className="px-3 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500"
                       key={`${heading}-${index}`}
                       scope="col"
                     >
@@ -1002,45 +992,35 @@ function ChainWatchList({
             </thead>
             <tbody>
               {visible.map((row) => (
-                <tr className="border-b border-slate-100 transition hover:bg-orange-50/30" key={`watch-row-${row.id}`}>
-                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-500">
+                <tr
+                  className="border-b border-slate-200 align-top transition-colors last:border-b-0 hover:bg-slate-50 motion-reduce:transition-none"
+                  key={`watch-row-${row.id}`}
+                >
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-500">
                     {row.requestCode}
                   </td>
-                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-md font-black text-slate-950">
+                  <td className={`min-w-0 break-words px-3 py-2.5 text-phx-md font-bold ${LANDING_INK}`} dir="auto">
                     {row.customerName}
                   </td>
-                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-semibold text-slate-700" dir="auto">
                     {row.requesterName}
                   </td>
-                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-md font-black text-slate-950">
+                  <td className={`min-w-0 break-words px-3 py-2.5 text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
                     {egp(row.estimatedCost)}
                   </td>
-                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-semibold text-slate-700">
                     {holder(row)}
                   </td>
-                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-medium text-slate-500">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-medium tabular-nums text-slate-500">
                     {position(row)}
                   </td>
                   <td className="min-w-0 break-words px-3 py-2.5">
-                    <span
-                      className={`inline-block px-2.5 py-1 text-phx-xs font-black ${
-                        row.ageDays >= 7
-                          ? "bg-rose-50 text-rose-800"
-                          : row.ageDays >= 3
-                            ? "bg-amber-50 text-amber-900"
-                            : "bg-slate-100 text-slate-700"
-                      }`}
-                    >
-                      {age(row)}
-                    </span>
+                    <span className={`${STATE_TEXT_CLASS} ${ageTone(row)}`}>{age(row)}</span>
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex flex-wrap items-start justify-end gap-2">
-                      <Link
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-                        href={`/marketing-requests/${row.id}`}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
+                      <Link className={landingActionClassName("outline")} href={`/marketing-requests/${row.id}`}>
+                        <Eye aria-hidden="true" className="h-3.5 w-3.5" />
                         Open the full record
                       </Link>
                       {onCancelled && row.canCancel ? (
@@ -1063,7 +1043,7 @@ function ChainWatchList({
           label={`Showing ${safePage * WATCH_PAGE_SIZE + 1}–${safePage * WATCH_PAGE_SIZE + visible.length} of ${rows.length}`}
         >
           <button
-            className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+            className={landingActionClassName("outline")}
             disabled={safePage === 0}
             onClick={() => setPage(Math.max(0, safePage - 1))}
             type="button"
@@ -1071,7 +1051,7 @@ function ChainWatchList({
             Previous
           </button>
           <button
-            className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+            className={landingActionClassName("outline")}
             disabled={safePage >= pageCount - 1}
             onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
             type="button"
@@ -1080,7 +1060,7 @@ function ChainWatchList({
           </button>
         </PortalPagination>
       ) : null}
-    </Card>
+    </section>
   );
 }
 
@@ -1109,8 +1089,10 @@ function MarketingInboxTabs({ decisionBasePath }: { decisionBasePath: string }) 
 
   return (
     <div className="space-y-4">
+      {/* The page's two views, drawn like every portal tab bar now: navy words on a navy rule,
+          never a filled chip. */}
       <div
-        className="inline-flex w-full overflow-hidden rounded-sm border border-slate-200 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:w-auto"
+        className={`grid w-full grid-cols-2 border border-slate-200 bg-white sm:inline-grid sm:w-auto ${adminSoftDepthClassName}`}
         role="tablist"
       >
         {INBOX_TABS.map((definition) => {
@@ -1119,11 +1101,13 @@ function MarketingInboxTabs({ decisionBasePath }: { decisionBasePath: string }) 
           return (
             <button
               aria-selected={isActive}
-              className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-4 py-2 text-phx-md font-bold transition-colors sm:flex-none ${
+              className={cn(
+                "inline-flex min-h-11 min-w-0 items-center justify-center gap-2 border-b-2 px-4 py-2 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:min-w-[10rem]",
+                LANDING_FOCUS,
                 isActive
-                  ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+                  ? "border-[#08111f] text-[#08111f]"
+                  : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-[#08111f]",
+              )}
               key={definition.key}
               onClick={() => {
                 if (definition.key === "history") setHistoryOpened(true);
@@ -1132,11 +1116,11 @@ function MarketingInboxTabs({ decisionBasePath }: { decisionBasePath: string }) 
               role="tab"
               type="button"
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               <span>{definition.label}</span>
               <span
-                className={`hidden whitespace-nowrap text-phx-xs font-medium sm:inline ${
-                  isActive ? "text-slate-300" : "text-slate-400"
+                className={`hidden text-phx-xs font-medium normal-case tracking-normal sm:inline ${
+                  isActive ? "text-slate-500" : "text-slate-400"
                 }`}
               >
                 {definition.description}

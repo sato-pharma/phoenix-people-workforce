@@ -669,7 +669,6 @@ export function runReact418HydrationSafeTextTests() {
     "src/components/coaching/employee-coaching-review-impl.tsx": 1,
     "src/components/employee-portal/employee-excuses-workspace.tsx": 1,
     "src/components/employee-portal/employee-portal-layout.tsx": 1,
-    "src/components/employee-portal/marketing-control-workspace.tsx": 1,
     "src/components/employee-portal/my-visits-workspace.tsx": 2,
     "src/components/employee-portal/private-calendar.tsx": 1,
     "src/components/field-workforce-compliance/field-workforce-compliance-workspace.tsx": 1,

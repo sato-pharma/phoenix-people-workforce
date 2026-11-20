@@ -72,8 +72,13 @@ export function runMarketingValidationPharmacyCardMinWidthTests() {
   //    330px mobile track and got cut mid-word by the customer card's `overflow-hidden`. It keeps
   //    `min-w-0` and now wraps. (The original code also carried `text-ellipsis`, which never
   //    rendered an ellipsis — the owner's rule forbids it regardless.)
+  //
+  //    Since 2026-11-20 the subtitle is gone (owner: no text under any header) and the heading is
+  //    the landing kit's `LandingTitle` — tick plus navy capitals, its own classes held in the kit.
+  //    What this pins is unchanged: the grid item keeps `min-w-0`, and the wrapper around the
+  //    heading never becomes a nowrap line or a sideways scroller.
   const sectionHeader = source.match(
-    /<div className="([^"]*)">\s*<div className="flex flex-col gap-3 border-t border-slate-100 pt-4[^"]*">\s*<div className="([^"]+)">\s*<p className="([^"]*)">Venue Validation<\/p>\s*<p className="([^"]+)">/,
+    /<div className="([^"]*)">\s*<div className="flex flex-col gap-3 border-t border-slate-200 pt-4[^"]*">\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<div className="([^"]+)">\s*<LandingTitle as="h3">Venue Validation<\/LandingTitle>/,
   );
   assert.ok(
     sectionHeader,
@@ -82,14 +87,10 @@ export function runMarketingValidationPharmacyCardMinWidthTests() {
   assert.ok(
     sectionHeader[1].split(/\s+/).includes("min-w-0"),
     `${WORKSPACE}: the Venue Validation section's grid item is "${sectionHeader[1]}" — it is ` +
-      `missing "min-w-0". Without it the item sizes to its subtitle's min-content width inside a ` +
-      `330px phone track, and the customer card's "overflow-hidden" cuts the sentence mid-word.`,
+      `missing "min-w-0". Without it the item sizes to its heading's min-content width inside a ` +
+      `330px phone track, and the customer card's "overflow-hidden" cuts the words mid-word.`,
   );
-  for (const [label, classes] of [
-    ["subtitle wrapper", sectionHeader[2]],
-    ["heading", sectionHeader[3]],
-    ["subtitle", sectionHeader[4]],
-  ] as const) {
+  for (const [label, classes] of [["heading wrapper", sectionHeader[2]]] as const) {
     assert.ok(
       !classes.split(/\s+/).includes("overflow-x-auto") && !classes.split(/\s+/).includes("whitespace-nowrap"),
       `${WORKSPACE}: the Venue Validation ${label} is "${classes}" — a nowrap line inside a sideways ` +

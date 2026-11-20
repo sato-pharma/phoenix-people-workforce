@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { CheckCircle2, Send } from "lucide-react";
 
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
@@ -54,7 +55,7 @@ export function MarketingAdvisoryCommentBox({
   if (isPosted) {
     return (
       <p className="flex items-center gap-1.5 text-phx-sm font-bold text-emerald-700">
-        <CheckCircle2 className="h-3.5 w-3.5" />
+        <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
         Comment shared with the reviewer.
       </p>
     );
@@ -62,7 +63,7 @@ export function MarketingAdvisoryCommentBox({
 
   return (
     <div className="space-y-2">
-      <p className="text-phx-xs font-medium text-slate-500">
+      <p className="break-words text-phx-xs font-medium text-slate-500">
         Your comment is shared with the reviewer and does not affect the approval — it cannot approve or reject the request.
       </p>
       <textarea
@@ -72,14 +73,14 @@ export function MarketingAdvisoryCommentBox({
         placeholder="Add a comment for the reviewer…"
         value={comment}
       />
-      {error ? <p className="text-phx-xs font-semibold text-rose-600">{error}</p> : null}
+      {error ? <p className="break-words text-phx-xs font-semibold text-rose-700" role="alert">{error}</p> : null}
       <button
-        className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-sky-600 px-4 text-phx-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className={landingActionClassName("solid", "disabled:cursor-not-allowed")}
         disabled={isSubmitting}
         onClick={() => void submit()}
         type="button"
       >
-        {isSubmitting ? <LoadingSpinner /> : <Send className="h-3.5 w-3.5" />}
+        {isSubmitting ? <LoadingSpinner /> : <Send aria-hidden="true" className="h-3.5 w-3.5" />}
         {isSubmitting ? "Sending…" : "Post comment"}
       </button>
     </div>
