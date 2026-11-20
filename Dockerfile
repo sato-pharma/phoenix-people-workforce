@@ -19,7 +19,9 @@
 # the digest is what is pulled. Read 2026-10-23 from public.ecr.aws, Docker Hub and mirror.gcr.io — all three
 # answered the same multi-arch index digest below. To move it on purpose, read the tag's current digest
 #   docker buildx imagetools inspect public.ecr.aws/docker/library/node:24-alpine
-# and replace the digest here. Pinned by tests/dockerfile-reproducible.test.ts.
+# and replace the digest here. Pinned by tests/dockerfile-reproducible.test.ts. Since 20 Nov 2026 Dependabot's
+# docker entry (.github/dependabot.yml) proposes the tag's current digest once a month, so Node and Alpine
+# security fixes arrive as a PR; a Node major stays a deliberate upgrade.
 FROM public.ecr.aws/docker/library/node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS base
 
 # Install dependencies only when needed
