@@ -153,15 +153,26 @@ function payloadRulesBehave(): void {
   assert.match(problems({ mockAppActive: true })[0], /fake-location app was switched on/);
   assert.match(problems({ rooted: true })[0], /rooted/);
   assert.match(problems({ emulator: true })[0], /real phone/);
-  assert.match(problems({ provider: "network" })[0], /satellites/);
-  assert.match(problems({ timeSource: "phone" })[0], /satellites/);
+  // The rep never waits for the satellites: the phone's combined position stands beside the satellites alone.
+  assert.deepEqual(problems({ provider: "fused", satellitesUsed: 0 }), []);
+  assert.deepEqual(problems({ provider: "network", satellitesUsed: 0 }), []);
+  assert.match(problems({ provider: "passive" })[0], /own location service/);
+  assert.match(problems({ timeSource: "guess" })[0], /which clock/);
+  assert.deepEqual(problems({ timeSource: "phoenix" }), []);
+  assert.deepEqual(problems({ timeSource: "phone", networkTimeUtc: null }), []);
+  // Four satellites are asked of a position from the satellites alone, and only of one.
   assert.match(problems({ satellitesUsed: 3 })[0], /at least 4/);
   assert.deepEqual(problems({ satellitesUsed: 4 }), []);
-  // Inside a polyclinic the position is taken at the door and held: up to ten minutes stands, one more refuses.
-  assert.deepEqual(problems({ fixAgeMs: 61_000 }), []);
-  assert.deepEqual(problems({ fixAgeMs: 600_000 }), []);
-  assert.match(problems({ fixAgeMs: 600_001 })[0], /more than 10 minutes old/);
-  assert.match(problems({ fixAgeMs: -1 })[0], /more than 10 minutes old/);
+  // Two minutes before the shutter to thirty seconds after it: the photo is taken at once and the location locks after.
+  assert.deepEqual(problems({ fixAgeMs: 120_000 }), []);
+  assert.match(problems({ fixAgeMs: 120_001 })[0], /more than 2 minutes before the photo/);
+  assert.deepEqual(problems({ fixAgeMs: -30_000 }), []);
+  assert.match(problems({ fixAgeMs: -30_001 })[0], /more than 30 seconds after the photo/);
+  // The owner's "at least 98% accurate": 40 m (Android's 68% radius) is 98% within 74 m; one metre more refuses.
+  assert.deepEqual(problems({ accuracyMeters: 40 }), []);
+  assert.match(problems({ accuracyMeters: 41 })[0], /98% sure of the place only to 76 m, and 74 m is the most accepted/);
+  // The satellites' and Phoenix's clocks are compared only when the time is the satellites'.
+  assert.deepEqual(problems({ timeSource: "phoenix", networkTimeUtc: "2026-11-20T09:40:00.000Z" }), []);
   assert.ok(problems({ accuracyMeters: 400 }).length > 0, "a reading rougher than the validated place's line refuses");
   assert.ok(problems({ lat: 0, lon: 0 }).length > 0, "0,0 refuses");
   assert.match(problems({ takenAtUtc: new Date(now + 10 * 60_000).toISOString() })[0], /later than now/);
@@ -176,11 +187,17 @@ function payloadRulesBehave(): void {
   const warnings = sealPayloadWarnings(payloadOf({ phoneClockUtc: "2026-11-20T09:50:00.000Z", networkTimeUtc: null, developerOptions: true, adb: true }));
   assert.equal(warnings.length, 4);
   assert.match(warnings.join(" "), /clock was 10 minutes off/);
-  // A position carried in from the door is never silent: the Super Admin reads its age beside the photo.
+  // A position over a minute old is never silent: the Super Admin reads its age beside the photo.
   assert.deepEqual(sealPayloadWarnings(payloadOf({ fixAgeMs: 60_000 })), []);
-  const door = sealPayloadWarnings(payloadOf({ fixAgeMs: 240_000 }));
-  assert.equal(door.length, 1);
-  assert.match(door[0], /taken 4 minutes before the photo, at the building's door/);
+  assert.deepEqual(sealPayloadWarnings(payloadOf({ fixAgeMs: -20_000 })), [], "a location locked just after the shutter is the normal case");
+  const old = sealPayloadWarnings(payloadOf({ fixAgeMs: 110_000 }));
+  assert.equal(old.length, 1);
+  assert.match(old[0], /taken 2 minutes before the photo/);
+  // The phone's own clock is the last resort, and the Super Admin is told when it was the one used.
+  const phoneTime = sealPayloadWarnings(payloadOf({ timeSource: "phone", networkTimeUtc: null, phoneClockUtc: "2026-11-20T09:50:00.000Z" }));
+  assert.equal(phoneTime.length, 1);
+  assert.match(phoneTime[0], /phone's own clock/);
+  assert.match(sealPayloadWarnings(payloadOf({ timeSource: "phoenix", phoneClockUtc: "2026-11-20T09:50:00.000Z" }))[0], /off Phoenix's time/);
 }
 
 function wiringHolds(): void {

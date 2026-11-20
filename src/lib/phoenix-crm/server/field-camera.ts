@@ -59,6 +59,10 @@ export type FieldCameraReport = {
   accuracyMeters: number;
   satellitesUsed: number;
   satellitesSeen: number;
+  /** Where the position came from (`gps`, `fused`, `network`); absent on seals checked before camera 1.2.0, all `gps`. */
+  provider?: string;
+  /** Which clock the time came from (`satellites`, `phoenix`, `phone`); absent before camera 1.2.0, all `satellites`. */
+  timeSource?: string;
   deviceModel: string;
   androidSdk: number;
   appVersion: string;
@@ -161,6 +165,8 @@ export async function checkFieldCameraPhoto(
       accuracyMeters: payload.accuracyMeters,
       satellitesUsed: payload.satellitesUsed,
       satellitesSeen: payload.satellitesSeen,
+      provider: payload.provider,
+      timeSource: payload.timeSource,
       deviceModel: payload.deviceModel,
       androidSdk: payload.androidSdk,
       appVersion: payload.appVersion,

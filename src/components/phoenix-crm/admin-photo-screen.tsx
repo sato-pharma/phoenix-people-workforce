@@ -194,7 +194,7 @@ function AdminPhotoForm({
     ? [
         ...(seal
           ? [
-              { label: "Location from", value: "The Phoenix Camera seal (satellites)" },
+              { label: "Location from", value: seal.source },
               { label: "Photo taken", value: seal.takenAtText },
               { label: "Satellites", value: seal.satellites },
               { label: "Phone", value: `${seal.phone} · key ${seal.phoneKey}` },

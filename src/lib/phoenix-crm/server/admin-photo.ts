@@ -169,6 +169,8 @@ export type AdminPhotoLocation = {
 /** What the Super Admin reads about a Phoenix Camera seal that held. */
 export type AdminPhotoSealView = {
   takenAtText: string;
+  /** Where the seal's position came from, in words. */
+  source: string;
   satellites: string;
   phone: string;
   /** Short and stable, so the same phone is recognisable photo after photo. */
@@ -240,6 +242,9 @@ async function watchView(watch: WatchRow): Promise<AdminPhotoWatchView> {
       seal: report
         ? {
             takenAtText: adminPhotoTimeText(report.takenAtUtc),
+            source: !report.provider || report.provider === "gps"
+              ? "The Phoenix Camera seal (satellites)"
+              : "The Phoenix Camera seal (Wi-Fi, mobile network and satellites)",
             satellites: `${report.satellitesUsed} used of ${report.satellitesSeen} seen`,
             phone: `${report.deviceModel} · Android ${report.androidSdk} · ${report.securityLevel === "StrongBox" ? "StrongBox chip" : "secure chip"}`,
             phoneKey: report.deviceKey.slice(0, 12).toUpperCase(),
