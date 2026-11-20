@@ -373,7 +373,7 @@ export function AdminSectionHeader({
           <span className="h-2 w-2 shrink-0 bg-phx-accent" />
           <h2 className="text-lg font-black tracking-tight text-slate-900">{title}</h2>
         </div>
-        <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+        <p className="phx-header-note mt-2 text-sm leading-6 text-slate-500">{description}</p>
       </div>
       {action ? <div className="w-full sm:w-auto">{action}</div> : null}
     </div>

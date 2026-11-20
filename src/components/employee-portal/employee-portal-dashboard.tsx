@@ -1189,7 +1189,7 @@ function IncentivePayoutCurveChart({
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
         </div>
-        <span className="text-phx-sm font-medium text-slate-400">{subtitle ?? "Achievement vs Payout %"}</span>
+        <span className="phx-header-note text-phx-sm font-medium text-slate-400">{subtitle ?? "Achievement vs Payout %"}</span>
       </div>
       <div className="p-5">
         <ChartErrorBoundary>
