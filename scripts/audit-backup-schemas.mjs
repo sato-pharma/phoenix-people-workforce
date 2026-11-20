@@ -112,7 +112,7 @@ export const VERDICT = {
  * evidence for the day in `why` (the row's own timestamp, the migration that first names it).
  *
  * @typedef {{ decision: "drop" | "export-then-drop" | "keep", until?: string, decidedOn: string,
- *   decidedBy: string, why: string, sheet?: string, dated?: string }} SnapshotDecision
+ *   decidedBy: string, why: string, sheet?: string, dated?: string, standing?: boolean }} SnapshotDecision
  */
 export const DECISIONS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "backup-schema-decisions.json");
 
@@ -249,7 +249,7 @@ export function daysBetween(fromIso, toIso) {
  * stays, because the next such dependency will not announce itself.
  *
  * @param {{ schema: string, tables?: string[], blockers?: string[] }} entry
- * @param {{ today: string, retentionDays?: number, decisions?: Record<string, SnapshotDecision> }} options
+ * @param {{ today: string, retentionDays?: number, decisions?: Record<string, SnapshotDecision>, standing?: SnapshotDecision | null }} options
  * @returns {{ verdict: string, reason: string, date: string | null, ageDays: number | null, decision?: SnapshotDecision | null }}
  */
 export function classify(entry, options) {
@@ -417,7 +417,7 @@ export function isSnapshotTableName(name) {
  * were six and seven days from it when this was found.
  *
  * @param {{ schema: string, table: string, blockers?: string[] }} entry
- * @param {{ today: string, retentionDays?: number, decisions?: Record<string, SnapshotDecision> }} options
+ * @param {{ today: string, retentionDays?: number, decisions?: Record<string, SnapshotDecision>, standing?: SnapshotDecision | null }} options
  * @returns {{ verdict: string, reason: string, date: string | null, ageDays: number | null, decision?: SnapshotDecision | null }}
  */
 export function classifyTable(entry, options) {
