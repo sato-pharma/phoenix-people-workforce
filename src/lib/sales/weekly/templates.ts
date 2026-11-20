@@ -8,28 +8,6 @@
 
 export type WeeklySheetRole = "sales" | "return" | "stock";
 
-/** A column pinned by 1-based index inside a given sheet. */
-export type WeeklyColumnRef = number;
-
-/** Describes one physical sheet inside a distributor workbook (matched by name token). */
-export type WeeklySheetDescriptor = {
-  role: WeeklySheetRole;
-  /** sheet name must contain this token (case-insensitive); when omitted, the only/first sheet is used */
-  sheetNameIncludes?: string;
-  /** exact sheet name (case-insensitive) — preferred over the token when present */
-  sheetName?: string;
-  /** 1-based header row; data starts at headerRow + 1 */
-  headerRow: number;
-};
-
-export type WeeklyDistributorLayout = {
-  /** canonical distributor code (uppercased) */
-  code: string;
-  display: string;
-  /** PS ships two separate matrix files; everyone else ships one combined workbook */
-  separateSalesStockFiles?: boolean;
-};
-
 // Fallback display names used when the master reference lacks a name row.
 const WEEKLY_DISTRIBUTOR_FALLBACK_NAMES: Record<string, string> = {
   IS: "Ibn Sina",
@@ -51,7 +29,7 @@ export function weeklyTemplateDistributorFallbackName(distributorCode: string): 
 const WEEKLY_SPLIT_SALES_STOCK_DISTRIBUTORS = ["PS"];
 
 /** True when a distributor ships its weekly feed as separate Sales and Stock files. */
-export function weeklyDistributorSplitsSalesStock(distributorCode: string): boolean {
+function weeklyDistributorSplitsSalesStock(distributorCode: string): boolean {
   return WEEKLY_SPLIT_SALES_STOCK_DISTRIBUTORS.includes((distributorCode ?? "").trim().toUpperCase());
 }
 

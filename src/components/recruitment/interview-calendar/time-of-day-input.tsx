@@ -16,7 +16,7 @@ export function parseTimeOfDay(text: string): number | null {
 }
 
 /** 1145 → "19:05", the value a time field takes. */
-export function timeOfDayValue(minutes: number | null): string {
+function timeOfDayValue(minutes: number | null): string {
   if (minutes === null || !Number.isInteger(minutes) || minutes < 0 || minutes >= 24 * 60) return "";
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }

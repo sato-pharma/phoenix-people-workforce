@@ -9,7 +9,7 @@ import type {
 } from "@/lib/sales/territory/types";
 import { areaLoadFailedText } from "@/lib/sales/territory/drilldown-words";
 
-export type AreaFetchState =
+type AreaFetchState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }

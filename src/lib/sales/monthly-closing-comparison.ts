@@ -64,7 +64,7 @@ export type DistributorRollup = {
   valueShare: number; // ratio 0..1
 };
 
-export type LeaderCell = { distributorCode: string; distributorName: string; share: number } | null;
+type LeaderCell = { distributorCode: string; distributorName: string; share: number } | null;
 
 export type ValueGridRow = {
   byDistributor: Record<string, number>;
@@ -137,7 +137,7 @@ function nameOf(map: Map<string, string>, code: string) {
 
 // ── Pure helpers (unit-tested) ───────────────────────────────────────────────
 
-export function distinctDistributors(rows: { distributorCode: string }[], maps: ComparisonNameMaps) {
+function distinctDistributors(rows: { distributorCode: string }[], maps: ComparisonNameMaps) {
   const seen = new Map<string, { code: string; name: string }>();
   rows.forEach((row) => {
     if (row.distributorCode && !seen.has(row.distributorCode)) {

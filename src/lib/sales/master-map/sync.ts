@@ -151,7 +151,7 @@ async function orderTabs(
   if (requests.length > 0) await batchUpdate(token, spreadsheetId, requests);
 }
 
-export function summariseTree(tree: MasterMapTree): {
+function summariseTree(tree: MasterMapTree): {
   customers: number;
   regions: number;
   unnamedCustomers: number;

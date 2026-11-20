@@ -61,7 +61,7 @@ export function cycleMonthsOfCurrentYear(now: Date = new Date()): string[] {
 
 // ── Aggregation ───────────────────────────────────────────────────────────────
 
-export type SummaryTotals = { salesUnits: number; salesValue: number; stockUnits: number };
+type SummaryTotals = { salesUnits: number; salesValue: number; stockUnits: number };
 
 const ZERO: SummaryTotals = { salesUnits: 0, salesValue: 0, stockUnits: 0 };
 
@@ -2477,7 +2477,7 @@ export type MonthTargetInput = {
   targetValue: number;
 };
 
-export type VsTargetRow = {
+type VsTargetRow = {
   label: string;
   salesUnits: number;
   targetUnits: number;
@@ -2490,7 +2490,7 @@ export type VsTargetRow = {
   unmapped: boolean;
 };
 
-export type VsTargetRegion = VsTargetRow & { regionCode: string; areas: VsTargetRow[] };
+type VsTargetRegion = VsTargetRow & { regionCode: string; areas: VsTargetRow[] };
 
 export type VsTargetSection = VsTargetRow & {
   regions: VsTargetRegion[];

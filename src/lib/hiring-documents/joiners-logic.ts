@@ -17,7 +17,7 @@ import { isUuid } from "@/lib/http/uuid";
 import { isIsoDate } from "@/lib/offers/dates";
 
 /** A joiner who starts within this many days with something still to agree is called first. */
-export const HIRING_JOINER_SOON_DAYS = 3;
+const HIRING_JOINER_SOON_DAYS = 3;
 
 /** A note is a line or two about one phone call; this is the point it stops being one. */
 export const HIRING_JOINER_NOTES_MAX = 1000;

@@ -134,13 +134,6 @@ export async function listSalesDistributors(): Promise<SalesDistributorEntry[]> 
   return buildSalesDistributorEntries(master, profiledCodes);
 }
 
-export async function getDistributor(code: string): Promise<SalesDistributorEntry | null> {
-  const key = normalizeCodeKey(code);
-  if (!key) return null;
-  const all = await listSalesDistributors();
-  return all.find((d) => d.code === key) ?? null;
-}
-
 // Re-exported from the weekly registry so callers have ONE place to ask "is this weekly-applicable?".
 export const isWeeklyDistributor = isWeeklyDistributorCode;
 
@@ -200,7 +193,7 @@ export type DistributorHealth = {
   lastWeeklyWeek: string | null;
 };
 
-export type ReadinessBand = "Healthy" | "Attention" | "High-Risk";
+type ReadinessBand = "Healthy" | "Attention" | "High-Risk";
 export type DistributorReadiness = { score: number; band: ReadinessBand };
 
 // Active-row count for one distributor; tolerant of a missing table (returns 0).
@@ -258,10 +251,6 @@ export function readinessFromHealth(h: DistributorHealth): DistributorReadiness 
   if (h.lastMonthlyPeriod || h.lastWeeklyWeek) score += 15;
   const band: ReadinessBand = score >= 85 ? "Healthy" : score >= 55 ? "Attention" : "High-Risk";
   return { score, band };
-}
-
-export async function getDistributorReadiness(code: string): Promise<DistributorReadiness> {
-  return readinessFromHealth(await getDistributorHealth(code));
 }
 
 // C4: certification status (display only — no import gate yet). Defaults to "Draft" when the table

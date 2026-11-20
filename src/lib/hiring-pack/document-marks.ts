@@ -99,8 +99,6 @@ export const DOCUMENT_MARK_DEFAULT_SIZE: Readonly<Record<DocumentMark, { w: numb
 /** Every mark's artwork, or null for one that could not be read. */
 export type MarkArtwork = Readonly<Record<DocumentMark, string | null>>;
 
-export const NO_MARK_ARTWORK: MarkArtwork = { stamp: null, signature: null };
-
 /** Whether any row in a layout is a mark at all — the question that decides if a bucket read runs. */
 export function layoutUsesMark(rows: readonly DocumentFieldRow[], mark: DocumentMark): boolean {
   return rows.some((row) => !row.hidden && row.source.kind === "mark" && row.source.mark === mark);

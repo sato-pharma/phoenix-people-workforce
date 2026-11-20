@@ -57,7 +57,7 @@ export type AutoVariableKey = (typeof AUTO_VARIABLE_KEYS)[number];
  * happens to sit in that category. The placeholders a template uses are what actually decide whether
  * it can be filled, so they are what decides where it is offered.
  */
-export const EMPLOYEE_ONLY_VARIABLE_KEYS = ["probation_end_date", "contract_renewal_date"] as const;
+const EMPLOYEE_ONLY_VARIABLE_KEYS = ["probation_end_date", "contract_renewal_date"] as const;
 
 const EMPLOYEE_ONLY_KEY_SET = new Set<string>(EMPLOYEE_ONLY_VARIABLE_KEYS);
 
@@ -100,7 +100,7 @@ const AUTO_KEY_SET = new Set<string>(AUTO_VARIABLE_KEYS);
  * unknown one simply becomes a box to type in. These exist so the editor can offer a starting
  * vocabulary rather than leaving him to invent names with nothing to copy.
  */
-export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
+const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
   address: "Address",
   candidate_first_name: "Candidate first name (auto)",
   candidate_name: "Candidate full name (auto)",
@@ -131,7 +131,7 @@ export const SUGGESTED_VARIABLE_LABELS: Record<string, string> = {
 const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/gu;
 
 /** A placeholder key normalized the way both the editor and the renderer must agree on. */
-export function normalizeVariableKey(raw: string): string {
+function normalizeVariableKey(raw: string): string {
   return raw.trim().toLowerCase();
 }
 

@@ -187,7 +187,7 @@ export type EmployeeDayOutcome =
   | "future"
   | "not_flex_eligible";
 
-export type EmployeeDayReportRow = {
+type EmployeeDayReportRow = {
   dateIso: string;
   weekday: string;
   outcome: EmployeeDayOutcome;

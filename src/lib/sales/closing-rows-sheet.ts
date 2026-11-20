@@ -60,7 +60,7 @@ export const CLOSING_ROWS_SHEET_NAME = "Rows" as const;
  * Its own band, not "Performance review": this is the audit layer under every other tab, and
  * filing it under the review would put it beside three sheets that answer a different question.
  */
-export const CLOSING_ROWS_SHEET_BAND = "The counted rows" as const;
+const CLOSING_ROWS_SHEET_BAND = "The counted rows" as const;
 
 /** Column headings, in order. The Rows sheet is the same 18 columns in both workbooks. */
 export const CLOSING_ROWS_HEADERS: readonly string[] = [
@@ -110,7 +110,7 @@ export const CLOSING_ROWS_COLUMN_FORMATS: readonly (ReviewColumnFormat | null)[]
   CLOSING_ROWS_HEADERS.map((heading) => (PLAIN_COLUMNS.has(heading) ? "plain" : null));
 
 /** How a row reached the closing — three different answers, and a reader can act on each. */
-export type ClosingRowRoute = "Distributor" | "Direct order" | "Office allocation";
+type ClosingRowRoute = "Distributor" | "Direct order" | "Office allocation";
 
 /** The channel words the sheet prints, from Phoenix's own classifier rather than a second rule. */
 const CHANNEL_LABEL: Record<CustomerChannel, string> = {
@@ -123,7 +123,7 @@ function masked(distributorCode: string): boolean {
   return MASKED_SOURCE_DISTRIBUTORS.has(distributorCode.trim().toUpperCase());
 }
 
-export function closingRowRoute(row: ClosingDetailRow): ClosingRowRoute {
+function closingRowRoute(row: ClosingDetailRow): ClosingRowRoute {
   if (isOfficeDistributorCode(row.distributorCode)) return "Office allocation";
   return row.isDirect ? "Direct order" : "Distributor";
 }
@@ -136,7 +136,7 @@ export function closingRowRoute(row: ClosingDetailRow): ClosingRowRoute {
  * exactly what the substituted Main Stores rows carry (closing-main-stores.ts), so a row blanked
  * here is indistinguishable from one that arrived blanked.
  */
-export function closingRowDistributor(
+function closingRowDistributor(
   row: ClosingDetailRow,
   names: ReadonlyMap<string, string>,
 ): string {
@@ -156,7 +156,7 @@ const figure = (value: number | null | undefined): EngineValue =>
  * zero in that column reads as a quantity, and the question a reader asks of it ("was there a
  * bonus?") has a yes/no answer.
  */
-export function closingRowsRecord(
+function closingRowsRecord(
   row: ClosingDetailRow,
   names: ReadonlyMap<string, string>,
 ): EngineValue[] {

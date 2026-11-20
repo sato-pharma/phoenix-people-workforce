@@ -1,6 +1,6 @@
 export type VisitsSyncTrigger = "cron" | "manual" | "manual_backfill";
-export type VisitsSyncStatus = "running" | "success" | "failed";
-export type VisitsMappingStatus = "agent_unmapped" | "double_unmapped" | "either_unmapped" | "fully_mapped";
+type VisitsSyncStatus = "running" | "success" | "failed";
+type VisitsMappingStatus = "agent_unmapped" | "double_unmapped" | "either_unmapped" | "fully_mapped";
 
 /** Where a visit's canonical time came from: the GPS check-in (real on-site presence), the rep's
  * save/submission time (a proxy — often logged hours later or the next morning), or none. */

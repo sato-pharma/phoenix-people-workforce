@@ -8,7 +8,7 @@ import type { ScoreComponentKey, ComponentResult, ProbationScoreResult, Feedback
 import { meanScorecard } from "./scoring";
 import type { ProbationEvaluatorRole } from "./types";
 
-export type ContradictionSeverity = "info" | "warning" | "high";
+type ContradictionSeverity = "info" | "warning" | "high";
 
 export type Contradiction = {
   type:
@@ -26,7 +26,7 @@ export type Contradiction = {
 };
 
 // Tunable thresholds (on the 1..10 scale). Kept here (documented) rather than magic numbers inline.
-export const CONTRADICTION_THRESHOLDS = {
+const CONTRADICTION_THRESHOLDS = {
   /** Spread (max-min) across present component scores that flags a variance contradiction. */
   varianceSpread: 3,
   /** Deviation of one component from the mean of present components that flags an outlier. */

@@ -12,7 +12,7 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import type { WhatsAppSourceContext } from "@/lib/recruitment/candidate-source-context";
 
 export type InboundQueueChannel = "whatsapp" | "email";
-export type InboundQueueStatus = "queued" | "processing" | "done" | "dead";
+type InboundQueueStatus = "queued" | "processing" | "done" | "dead";
 
 // Payloads carry REFERENCES only — the worker downloads WhatsApp media by id and re-fetches the
 // email by UID, so no (potentially large) bytes ever sit in a jsonb row.

@@ -22,7 +22,7 @@ const MINUTES_PER_DAY = 1440;
 const LATEST_END_MINUTE = MINUTES_PER_DAY + 360;
 /** No customer receives for more than 16 hours in one window; longer is a typing slip. */
 const LONGEST_WINDOW_MINUTES = 16 * 60;
-export const PHOENIX_CRM_WINDOWS_PER_DAY_MAX = 4;
+const PHOENIX_CRM_WINDOWS_PER_DAY_MAX = 4;
 
 const CLOCK_PATTERN = /^(\d{1,2}):(\d{2})$/;
 

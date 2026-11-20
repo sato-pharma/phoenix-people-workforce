@@ -46,7 +46,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type OrphanedRequestModule = "direct-order" | "marketing" | "vacation";
 
 /** Whether the person who can no longer act is the one who raised it or the one who must decide it. */
-export type OrphanedActorRole = "requester" | "approver";
+type OrphanedActorRole = "requester" | "approver";
 
 /** A human label for each module, as a person would say it — never a table name. */
 export const orphanedRequestModuleLabels: Record<OrphanedRequestModule, string> = {

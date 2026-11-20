@@ -86,7 +86,7 @@ function personKey(hrId: string | null | undefined): string {
  * kept per person, and the Phoenix visit's name wins because it is the one every other screen prints. A name that
  * arrives with no HR id is still dropped when it is the same text as one already kept. Order is first met.
  */
-export function distinctTilePeople(
+function distinctTilePeople(
   loaderPeople: ReadonlyArray<{ hrId: string | null; name: string }>,
   visitPeople: ReadonlyArray<{ hrId?: string | null; name: string }>,
 ): string[] {

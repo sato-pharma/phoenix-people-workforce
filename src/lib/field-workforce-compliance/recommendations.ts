@@ -39,7 +39,7 @@ const commonDecisionStatuses: FieldWorkforceDecisionStatus[] = [
   "Cancelled",
 ];
 
-export const fieldWorkforceDecisionReasons: FieldWorkforceDecisionReason[] = [
+const fieldWorkforceDecisionReasons: FieldWorkforceDecisionReason[] = [
   "System issue",
   "Manager approved field exception",
   "Official training",
@@ -60,7 +60,7 @@ const approvedFinalActionStatuses = new Set<FieldWorkforceDecisionStatus>([
   "Approved for Payroll Deduction Report",
 ]);
 
-export function fieldWorkforceDecisionStatusesForRecommendationType(
+function fieldWorkforceDecisionStatusesForRecommendationType(
   recommendationType: FieldWorkforceRecommendationType,
 ): FieldWorkforceDecisionStatus[] {
   if (recommendationType === "leave_reconciliation") {
@@ -258,7 +258,7 @@ function coverageStatusForDates(input: {
   return input.dates.every((date) => covered.has(date)) ? "already_covered" : "needs_reconciliation";
 }
 
-export function buildFieldWorkforceRecommendationKey(input: {
+function buildFieldWorkforceRecommendationKey(input: {
   dates: string[];
   employeeCode: string;
   recommendationType: FieldWorkforceRecommendationType;

@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import { adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import { cn } from "@/lib/utils";
 
-export const WORKSPACE_SHORTCUTS: ReadonlyArray<{ keys: string[]; does: string }> = [
+const WORKSPACE_SHORTCUTS: ReadonlyArray<{ keys: string[]; does: string }> = [
   { does: "Open the next CV", keys: ["↓", "J"] },
   { does: "Open the previous CV", keys: ["↑", "K"] },
   { does: "Close the opened CV", keys: ["Esc"] },

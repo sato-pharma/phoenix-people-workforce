@@ -17,10 +17,6 @@ export const REMINDER_TEAM_ROLES = ["Super Admin", "HR Operations", "HR Resourci
 /** The seat that reads every item whatever its sharing — the HR Manager's, per the brief. */
 export const REMINDER_OVERSEER_ROLE = "Super Admin" as const;
 
-export function isReminderTeamRole(role: string | null | undefined): boolean {
-  return (REMINDER_TEAM_ROLES as readonly string[]).includes(String(role ?? ""));
-}
-
 /**
  * The person looking, as the rules in ./logic.ts understand them — or null when the session carries
  * no HR id at all (the guest session), which can see nothing.

@@ -58,8 +58,8 @@ export const interviewOutcomes = [
 ] as const;
 export type InterviewOutcome = (typeof interviewOutcomes)[number];
 
-export const minRating = 1;
-export const maxRating = 5;
+const minRating = 1;
+const maxRating = 5;
 
 export function isInterviewOutcome(value: unknown): value is InterviewOutcome {
   return typeof value === "string" && (interviewOutcomes as readonly string[]).includes(value);

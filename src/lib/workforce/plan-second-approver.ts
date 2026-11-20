@@ -19,7 +19,7 @@
 
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 
-export type DmPlanSecondApproval = {
+type DmPlanSecondApproval = {
   /** The District Managers' manager: the FIRST approver, whose plans' stage two this adds. */
   managerHrId: string;
   /** Who decides the stage after that manager — never the CEO for these plans. */
@@ -30,7 +30,7 @@ export type DmPlanSecondApproval = {
   approverTitle: string;
 };
 
-export const DM_PLAN_SECOND_APPROVALS: readonly DmPlanSecondApproval[] = [
+const DM_PLAN_SECOND_APPROVALS: readonly DmPlanSecondApproval[] = [
   {
     managerHrId: "PD-0001",
     approverHrId: "A-12",

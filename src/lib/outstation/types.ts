@@ -18,7 +18,7 @@ export type OutstationExpenseType = "traveling" | "meeting" | "other";
  */
 export type OutstationTransportationType = "car" | "train" | "bus" | "other" | "no_ticket";
 
-export type OutstationCalculationStatus =
+type OutstationCalculationStatus =
   | "blocked"
   | "calculated"
   | "submitted";

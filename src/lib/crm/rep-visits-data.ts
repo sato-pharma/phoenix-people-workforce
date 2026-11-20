@@ -236,7 +236,7 @@ function directoryWindowStart(dateTo: string): string {
  * campaign row read exactly as it does today. A directory that cannot be read must not take the
  * drill-down down with it, and must never make a visit look like something it is not.
  */
-export async function loadRepContactDirectory(
+async function loadRepContactDirectory(
   hrId: string | null,
   dateTo: string,
 ): Promise<KnownContactIndex> {

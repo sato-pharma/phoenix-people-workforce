@@ -44,9 +44,6 @@ export type CrmVisitTypeMeaning = "AV" | "CP";
 /** Regular customer visit. Counted as a visit by every caller; deliberately absent from the table. */
 export const CRM_REGULAR_VISIT_TYPE = 0;
 
-/** Annual Vacation — the only leave code iReports360 gives Phoenix. */
-export const CRM_ANNUAL_VACATION_VISIT_TYPE_CODE = -4;
-
 const CRM_VISIT_TYPE_MEANINGS: ReadonlyMap<number, CrmVisitTypeMeaning> = new Map<number, CrmVisitTypeMeaning>([
   [-1, "CP"], // Conference
   [-2, "CP"], // Group Meeting
@@ -91,7 +88,7 @@ export const CRM_WORKING_VISIT_TYPE_CODES: ReadonlySet<number> = new Set<number>
 );
 
 /** iReports360's campaign visit. On an archive day it counts as an UNPLANNED visit — see below. */
-export const CRM_CAMPAIGN_VISIT_TYPE_CODE = -8;
+const CRM_CAMPAIGN_VISIT_TYPE_CODE = -8;
 
 /**
  * Whether a field visit is UNPLANNED — the word that replaced "campaign" everywhere a rule or a screen

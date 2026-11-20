@@ -282,7 +282,7 @@ function flag(value: boolean): number {
   return value ? 0 : 1;
 }
 
-export function compareSuggestions(left: DaySuggestion, right: DaySuggestion): number {
+function compareSuggestions(left: DaySuggestion, right: DaySuggestion): number {
   return (
     flag(!left.alreadyOnDay) - flag(!right.alreadyOnDay) ||
     flag(!left.pending) - flag(!right.pending) ||

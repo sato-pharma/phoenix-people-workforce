@@ -11,12 +11,7 @@ import { emailNotificationsEnabled } from "@/lib/notifications/email";
 import { logError } from "@/lib/observability/log";
 import { computeListCoverage } from "@/lib/sato-email/list-groups";
 import { loadSatoEmailAttachments, resolveSatoEmailAttachments } from "@/lib/sato-email/media";
-import {
-  buildSatoEmailIdempotencyKey,
-  buildSatoEmailSendPlan,
-  findUnfilledPlaceholders,
-  SATO_EMAIL_MAX_PER_EMAIL,
-} from "@/lib/sato-email/plan";
+import { buildSatoEmailIdempotencyKey, buildSatoEmailSendPlan, findUnfilledPlaceholders } from "@/lib/sato-email/plan";
 import {
   resolveSatoEmailAudience,
   type SatoEmailDraft,
@@ -572,4 +567,3 @@ async function recordCeoEmailSend(input: {
   });
 }
 
-export { SATO_EMAIL_MAX_PER_EMAIL as CEO_EMAIL_MAX_PER_EMAIL };

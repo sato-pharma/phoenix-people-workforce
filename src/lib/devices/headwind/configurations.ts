@@ -109,7 +109,7 @@ export type HeadwindConfigurationBranding = {
 
 /** The three sizes the agent's launcher understands. Anything else is ignored on the tablet. */
 export const HEADWIND_ICON_SIZES = ["SMALL", "MEDIUM", "LARGE"] as const;
-export type HeadwindIconSize = (typeof HEADWIND_ICON_SIZES)[number];
+type HeadwindIconSize = (typeof HEADWIND_ICON_SIZES)[number];
 
 /**
  * What the title across the top of the company home screen SHOWS — Headwind's `DesktopHeader` enum,
@@ -121,7 +121,6 @@ export type HeadwindIconSize = (typeof HEADWIND_ICON_SIZES)[number];
  * left out of what Phoenix offers rather than printing that number across a rep's screen.
  */
 export const HEADWIND_DESKTOP_HEADERS = ["NO_HEADER", "DEVICE_ID", "DESCRIPTION", "TEMPLATE"] as const;
-export type HeadwindDesktopHeader = (typeof HEADWIND_DESKTOP_HEADERS)[number];
 
 /**
  * Every value the enum can HOLD — what the server accepts back. The `CUSTOM` kinds are not offered,
@@ -191,7 +190,7 @@ export async function listHeadwindConfigurations(
 }
 
 /** True for "Rep tablets" and every line's copy of it. */
-export function isRepRules(configuration: { name: string }): boolean {
+function isRepRules(configuration: { name: string }): boolean {
   return configuration.name.startsWith(REP_RULES_PREFIX);
 }
 
@@ -611,7 +610,7 @@ export async function writeHeadwindAppLink(
  * (runbook §8.16, §8.18). So only `ok` — `https://`, answering 200 itself — is a working link; a 301 is
  * as dead to the tablet as a 404, and the launcher listed after it never arrives.
  */
-export type HeadwindInstallLinkVerdict =
+type HeadwindInstallLinkVerdict =
   | "ok"
   | "redirect"
   | "missing"
@@ -632,12 +631,12 @@ const INSTALL_LINK_LABELS: Record<HeadwindInstallLinkVerdict, string> = {
   "unreachable": "Could not be reached",
 };
 
-export function installLinkLabel(verdict: HeadwindInstallLinkVerdict): string {
+function installLinkLabel(verdict: HeadwindInstallLinkVerdict): string {
   return INSTALL_LINK_LABELS[verdict];
 }
 
 /** How long one link is given to answer — the tablet's own downloader is not more patient. */
-export const INSTALL_LINK_TIMEOUT_MS = 20_000;
+const INSTALL_LINK_TIMEOUT_MS = 20_000;
 
 export type HeadwindInstallLinkProbe = {
   status: number | null;
@@ -718,7 +717,7 @@ function appName(app: Record<string, unknown>): string {
   return asText(app.name) ?? asText(app.pkg) ?? "An app with no name";
 }
 
-export type HeadwindInstallLink = {
+type HeadwindInstallLink = {
   applicationId: number | null;
   name: string;
   version: string | null;

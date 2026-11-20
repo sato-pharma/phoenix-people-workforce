@@ -430,7 +430,7 @@ export interface RepCardPdfInput {
 }
 
 /** The area's row in the AreaBook, matched case-insensitively — HR and area codes are mixed case. */
-export function findAreaRow(fill: ClosingEngineFill, areaCode: string): EngineValue[] | null {
+function findAreaRow(fill: ClosingEngineFill, areaCode: string): EngineValue[] | null {
   const wanted = areaCode.trim().toUpperCase();
   if (!wanted) return null;
   return (
@@ -454,7 +454,7 @@ export function findAreaRow(fill: ClosingEngineFill, areaCode: string): EngineVa
  * contract in triplicate, a custody receipt per device — and this is a single-page report read mostly
  * on screen. Every other document keeps the rule; government forms remain exempt permanently.
  */
-export function buildRepCardHtml(input: RepCardPdfInput): string {
+function buildRepCardHtml(input: RepCardPdfInput): string {
   const row = findAreaRow(input.fill, input.areaCode);
   const mark = satoLogoDataUri();
   const letterhead = `<header class="lh">

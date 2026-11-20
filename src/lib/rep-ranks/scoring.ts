@@ -104,8 +104,8 @@ export const RANK_START_BONUS_MAX = 5;
 export function startBonusPoints(score: number | null): number {
   return score === null ? 0 : Math.round((score / 100) * RANK_START_BONUS_MAX * 10) / 10;
 }
-export const RANK_START_BEST_MINUTES = 8 * 60;
-export const RANK_START_WORST_MINUTES = 12 * 60;
+const RANK_START_BEST_MINUTES = 8 * 60;
+const RANK_START_WORST_MINUTES = 12 * 60;
 
 /** Fewest days with field work before a window ranks anyone. Below it the rep is listed, unranked. */
 export const RANK_MIN_ACTIVE_DAYS: Record<"day" | "week" | "month" | "quarter" | "semester", number> = {
@@ -237,7 +237,7 @@ function unrankedReasonOf(facts: RankRepFacts, windowKind: keyof typeof RANK_MIN
 }
 
 /** Higher total first; then PM call rate, AM call rate, and finally the name, so nothing is random. */
-export function compareStandings(a: RankStanding, b: RankStanding): number {
+function compareStandings(a: RankStanding, b: RankStanding): number {
   const total = (b.total ?? -1) - (a.total ?? -1);
   if (total !== 0) return total;
   const pm = (b.pillars.pmCallRate ?? -1) - (a.pillars.pmCallRate ?? -1);
@@ -247,7 +247,7 @@ export function compareStandings(a: RankStanding, b: RankStanding): number {
   return a.repName.localeCompare(b.repName);
 }
 
-export const LINE_NOT_RECORDED = "Line not recorded";
+const LINE_NOT_RECORDED = "Line not recorded";
 
 /**
  * Scores and ranks one window. Ranked reps first in rank order, then the unranked by name. Company

@@ -31,10 +31,10 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CrmAccountSetupSubject } from "@/lib/crm/account-setup-messages";
 
-export const CRM_ACCOUNT_SETUP_TABLE = "crm_account_setup_tasks" as const;
+const CRM_ACCOUNT_SETUP_TABLE = "crm_account_setup_tasks" as const;
 
-export type CrmAccountSetupStatus = "pending" | "completed" | "not_applicable";
-export type CrmAccountSetupSource = "manual_add" | "employee_import";
+type CrmAccountSetupStatus = "pending" | "completed" | "not_applicable";
+type CrmAccountSetupSource = "manual_add" | "employee_import";
 
 export type CrmAccountSetupTaskRow = {
   crmId: string | null;
@@ -287,21 +287,6 @@ export async function getCrmAccountSetupQueue(): Promise<CrmAccountSetupQueue> {
     recentlyResolved: mapped.filter((task) => task.status !== "pending").slice(0, 25),
     schemaMissing: false,
   };
-}
-
-/** How many people are still waiting for a CRM account. Null means the table is not there yet. */
-export async function countPendingCrmAccountSetupTasks(): Promise<number | null> {
-  try {
-    const { count, error } = await getSupabaseAdmin()
-      .from(CRM_ACCOUNT_SETUP_TABLE)
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending");
-    if (error) throw error;
-    return count ?? 0;
-  } catch (error) {
-    if (isCrmAccountSetupSchemaMissing(error)) return null;
-    throw error;
-  }
 }
 
 async function markTask(input: {

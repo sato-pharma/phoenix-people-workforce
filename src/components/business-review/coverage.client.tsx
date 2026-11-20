@@ -41,7 +41,7 @@ const STATUS_LABEL: Record<SourceCoverage["status"], string> = {
   empty: "No data",
 };
 
-export function CoverageStatusChip({ status }: { status: SourceCoverage["status"] }) {
+function CoverageStatusChip({ status }: { status: SourceCoverage["status"] }) {
   return (
     <span className={cn("rounded px-1.5 py-0.5 text-phx-2xs font-bold", STATUS_STYLE[status])}>
       {STATUS_LABEL[status]}

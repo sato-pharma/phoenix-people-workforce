@@ -24,7 +24,7 @@ export type Decimal = {
  * divisor still reads correctly at any money scale a human will look at, while staying far below
  * the point where the digits become noise on a 288px panel.
  */
-export const DIVISION_SCALE = 18;
+const DIVISION_SCALE = 18;
 
 /** Most significant digits a value may carry before the display is meaningless. */
 export const MAX_SIGNIFICANT_DIGITS = 18;

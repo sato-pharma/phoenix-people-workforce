@@ -39,7 +39,7 @@ export const WHATSAPP_VIDEOS_BUCKET = "whatsapp-videos";
  * and matching the bucket's own file_size_limit means a file is never downloaded only to be
  * refused on upload.
  */
-export const MAX_INBOUND_VIDEO_BYTES = 104_857_600;
+const MAX_INBOUND_VIDEO_BYTES = 104_857_600;
 
 /**
  * How many times a failing fetch is retried before it is left alone.
@@ -50,7 +50,7 @@ export const MAX_INBOUND_VIDEO_BYTES = 104_857_600;
  * on every tick, forever. The row is never deleted: a permanent `fetch_error` is the record that
  * this video existed and could not be recovered, which is worth strictly more than a clean table.
  */
-export const MAX_FETCH_ATTEMPTS = 5;
+const MAX_FETCH_ATTEMPTS = 5;
 
 /**
  * `waId` is the sender's phone number, or null for a sender who uses a WhatsApp username and whose

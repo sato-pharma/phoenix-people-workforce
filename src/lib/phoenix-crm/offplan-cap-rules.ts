@@ -171,7 +171,7 @@ export function offPlanExemptionSentence(allowance: OffPlanAllowance, voice: "re
 }
 
 /** "2026-11-23" → "23 November", read from the ISO day itself so no timezone can move it. */
-export function offPlanDayLabel(isoDay: string): string {
+function offPlanDayLabel(isoDay: string): string {
   const [year, month, day] = isoDay.split("-").map(Number);
   if (!year || !month || !day) return isoDay;
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });

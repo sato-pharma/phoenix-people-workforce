@@ -25,7 +25,7 @@
 export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
 
 /** Where the admin shell's Phoenix CRM lives. `server/page.ts` names the same address PHOENIX_CRM_ADMIN_PATH. */
-export const PHOENIX_CRM_ADMIN_BASE = "/admin/field-crm";
+const PHOENIX_CRM_ADMIN_BASE = "/admin/field-crm";
 
 /**
  * The address a team-calendar square opens: one person's day in full, a rep's (`day`) or a manager's

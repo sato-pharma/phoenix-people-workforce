@@ -198,12 +198,12 @@ export function teamVisitOrigin(
   return row.is_unplanned === true ? "unplanned" : "planned";
 }
 
-export function emptyTeamVisitDay(): TeamVisitDay {
+function emptyTeamVisitDay(): TeamVisitDay {
   return { am: 0, pm: 0, pharmacies: 0, times: [], waiting: 0 };
 }
 
 /** "Oct 28, 11:16 AM" → "11:16 AM". */
-export function cairoTimeOnly(iso: string | null | undefined): string | null {
+function cairoTimeOnly(iso: string | null | undefined): string | null {
   const full = cairoMonthDayTime12h(iso);
   if (!full || full === "-") return null;
   const at = full.lastIndexOf(", ");

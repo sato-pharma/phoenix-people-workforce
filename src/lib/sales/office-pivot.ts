@@ -6,14 +6,14 @@ import ExcelJS from "exceljs";
 // stop at the first fully-blank row. Units (not value) are read; office sales value is recomputed
 // downstream as allocated qty × factory price.
 
-export type OfficePivotRow = {
+type OfficePivotRow = {
   productName: string;
   units: number;
   rowNumber: number;
 };
 
 /** A row whose product name is present but whose units cell could not be read as a number. */
-export type OfficePivotBadUnitsRow = {
+type OfficePivotBadUnitsRow = {
   productName: string;
   rawUnits: string;
   rowNumber: number;

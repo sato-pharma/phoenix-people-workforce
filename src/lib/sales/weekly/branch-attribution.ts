@@ -170,14 +170,14 @@ const TRACKED_LINE_NAMES: string[] = SALES_LINES.map((line) => lineName(line.cod
 );
 
 /** One area's cut, already rendered — so a screen can lay the parts out without redoing the maths. */
-export type WeeklyBranchSplitShare = {
+type WeeklyBranchSplitShare = {
   areaCode: string;
   areaName: string;
   /** "25%" or "11.11%": the same rounding the workbook prints, so the two can never disagree. */
   percentLabel: string;
 };
 
-export type WeeklyBranchSplitArithmetic = {
+type WeeklyBranchSplitArithmetic = {
   /** The lines that share this exact arithmetic — usually all three, so it is stated once. */
   lines: string[];
   /** "UE1 Minia 1 25%   ·   UE2 Minia 2 25%   ·   ..." — describeBranchAreaShares' own wording. */

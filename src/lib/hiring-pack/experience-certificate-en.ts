@@ -51,10 +51,7 @@
 
 import { systemLegalEntity } from "@/config/system-settings";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
-import {
-  HOUSE_IDENTITY_CSS,
-  HOUSE_MARK_SRC,
-} from "@/lib/hiring-pack/house-identity";
+import { HOUSE_IDENTITY_CSS } from "@/lib/hiring-pack/house-identity";
 import {
   certificateMonthYear,
   certificateSignCellsHtml,
@@ -77,11 +74,8 @@ import {
 import { resolveServicePeriod } from "@/lib/hiring-pack/service-period";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
-/** The version id, as the template registry knows it. Never renamed — a reprint resolves through it. */
-export const EXPERIENCE_CERTIFICATE_EN_ID = "experience-certificate-en-v1";
-
 /** The rule an absent value prints as. The Latin twin of the Arabic papers' run of dots. */
-export const EN_BLANK_RULE = "……………………";
+const EN_BLANK_RULE = "……………………";
 
 /**
  * How to address him.
@@ -381,5 +375,3 @@ ${flowFieldLayer(fields, {
 </html>`;
 }
 
-/** The mark this page carries, so a test can assert the on-light file without parsing the HTML. */
-export const EXPERIENCE_CERTIFICATE_EN_MARK = HOUSE_MARK_SRC;

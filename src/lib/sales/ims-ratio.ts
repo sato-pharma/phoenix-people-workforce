@@ -1,4 +1,3 @@
-import { selectAllRows } from "@/lib/sales/master-data/list";
 
 /**
  * IMS (market share) ratio integrity for the Source-of-Sales geography master.
@@ -119,23 +118,3 @@ export function summarizeImsRatios(areas: ImsAreaRow[], regions: ImsRegionRow[])
   };
 }
 
-/** Live drift check against the current master tables. */
-export async function checkImsRatioIntegrity(): Promise<ImsRatioSummary> {
-  const [areas, regions] = await Promise.all([
-    selectAllRows("source_of_sales_areas", "area_code"),
-    selectAllRows("source_of_sales_regions", "region_code"),
-  ]);
-
-  return summarizeImsRatios(
-    areas.map((row) => ({
-      area_code: String(row.area_code),
-      region_code: String(row.region_code),
-      active: row.active !== false,
-      ims_ratio: row.ims_ratio === null || row.ims_ratio === undefined ? null : Number(row.ims_ratio),
-    })),
-    regions.map((row) => ({
-      region_code: String(row.region_code),
-      ims_ratio: row.ims_ratio === null || row.ims_ratio === undefined ? null : Number(row.ims_ratio),
-    })),
-  );
-}

@@ -47,7 +47,7 @@ export type KpiDoctorFilterable = {
 };
 
 /** The Frequency report's verdicts, worst first — the order the chips are offered in. */
-export const KPI_DOCTOR_STATUSES = [
+const KPI_DOCTOR_STATUSES = [
   "not-visited",
   "below",
   "above",
@@ -60,7 +60,7 @@ export const KPI_DOCTOR_STATUSES = [
 export type KpiDoctorStatus = (typeof KPI_DOCTOR_STATUSES)[number];
 
 /** The same words the verdict chips wear (reps-list-activity.ts ACTIVITY_LABEL, "Exact / Below / Above"). */
-export const KPI_DOCTOR_STATUS_LABEL: Record<KpiDoctorStatus, string> = {
+const KPI_DOCTOR_STATUS_LABEL: Record<KpiDoctorStatus, string> = {
   "not-visited": "Not visited",
   below: "Below",
   above: "Above",
@@ -70,17 +70,17 @@ export const KPI_DOCTOR_STATUS_LABEL: Record<KpiDoctorStatus, string> = {
   "at-norm": "At norm",
 };
 
-export const KPI_DOCTOR_SEEN = ["covered", "not-covered"] as const;
-export type KpiDoctorSeen = (typeof KPI_DOCTOR_SEEN)[number];
-export const KPI_DOCTOR_SEEN_LABEL: Record<KpiDoctorSeen, string> = {
+const KPI_DOCTOR_SEEN = ["covered", "not-covered"] as const;
+type KpiDoctorSeen = (typeof KPI_DOCTOR_SEEN)[number];
+const KPI_DOCTOR_SEEN_LABEL: Record<KpiDoctorSeen, string> = {
   covered: "Covered",
   "not-covered": "Not covered",
 };
 
 /** Only a doctor with no visit can be late; a covered doctor is neither late nor early. */
-export const KPI_DOCTOR_TIMING = ["late", "not-due"] as const;
-export type KpiDoctorTiming = (typeof KPI_DOCTOR_TIMING)[number];
-export const KPI_DOCTOR_TIMING_LABEL: Record<KpiDoctorTiming, string> = {
+const KPI_DOCTOR_TIMING = ["late", "not-due"] as const;
+type KpiDoctorTiming = (typeof KPI_DOCTOR_TIMING)[number];
+const KPI_DOCTOR_TIMING_LABEL: Record<KpiDoctorTiming, string> = {
   late: "Late · planned day passed",
   "not-due": "Not due yet",
 };
@@ -133,7 +133,7 @@ export const EMPTY_KPI_DOCTOR_FILTER: KpiDoctorFilter = {
 };
 
 /** The URL parameter each doctor filter rides in. Prefixed `d` so none can collide with a rep filter. */
-export const KPI_DOCTOR_PARAMS = {
+const KPI_DOCTOR_PARAMS = {
   query: "dq",
   specialities: "dspec",
   bricks: "dbrick",

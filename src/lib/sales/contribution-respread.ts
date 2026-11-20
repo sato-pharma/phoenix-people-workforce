@@ -101,7 +101,7 @@ export function round6(value: number): number {
  * (a negative total) lands its residual on the slice best able to absorb it instead of on the one
  * closest to zero.
  */
-export function spreadByShares(
+function spreadByShares(
   total: number,
   areaShare: ReadonlyMap<string, number>,
 ): Map<string, number> {
@@ -134,7 +134,7 @@ export function spreadByShares(
  * Largest remainder, with the area code settling a tie so every read lands the same. The sign is
  * taken off first, so a net return spreads the same way as a net sale.
  */
-export function spreadWholeUnitsByShares(
+function spreadWholeUnitsByShares(
   total: number,
   areaShare: ReadonlyMap<string, number>,
 ): Map<string, number> {
@@ -168,7 +168,7 @@ export function spreadWholeUnitsByShares(
  * An area with no positive value takes no share: it is absent from the map rather than present at
  * zero, so `spreadByShares` never has to decide what a zero-weight slice means.
  */
-export function areaValueShares(base: readonly RespreadRow[]): Map<string, number> {
+function areaValueShares(base: readonly RespreadRow[]): Map<string, number> {
   const areaValue = new Map<string, number>();
   for (const row of base) {
     const areaCode = String(row.areaCode ?? "").trim().toUpperCase();
@@ -189,7 +189,7 @@ export function areaValueShares(base: readonly RespreadRow[]): Map<string, numbe
  * same product's units"). Only ever handed the rows of ONE product, which is what makes adding the
  * units meaningful. An area whose units net to nothing or less takes no share, as in the value rule.
  */
-export function areaUnitShares(base: readonly RespreadRow[]): Map<string, number> {
+function areaUnitShares(base: readonly RespreadRow[]): Map<string, number> {
   const areaUnits = new Map<string, number>();
   for (const row of base) {
     const areaCode = String(row.areaCode ?? "").trim().toUpperCase();

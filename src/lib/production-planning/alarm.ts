@@ -23,7 +23,7 @@ import type { MaterialRequirement } from "./requirements";
 import { QTY_SCALE } from "./rules";
 
 /** How urgent, so the email can lead with the one that cannot wait. */
-export type AlarmSeverity = "out_of_stock" | "below_threshold" | "approaching";
+type AlarmSeverity = "out_of_stock" | "below_threshold" | "approaching";
 
 export type AlarmVerdict = {
   readonly materialId: string;

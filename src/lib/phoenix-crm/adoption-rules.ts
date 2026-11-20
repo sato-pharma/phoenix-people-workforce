@@ -38,7 +38,7 @@
  * under a list of people waiting for it. `working` is above it for the same reason — a healthy
  * territory is still a territory the rollout reached.
  */
-export const ADOPTION_STAGES = [
+const ADOPTION_STAGES = [
   {
     key: "never_touched",
     label: "Never opened the module",
@@ -60,11 +60,11 @@ export const ADOPTION_STAGES = [
 
 export type AdoptionStage = (typeof ADOPTION_STAGES)[number]["key"];
 
-export function adoptionLabel(stage: AdoptionStage): string {
+function adoptionLabel(stage: AdoptionStage): string {
   return ADOPTION_STAGES.find((entry) => entry.key === stage)?.label ?? stage;
 }
 
-export function adoptionWhy(stage: AdoptionStage): string {
+function adoptionWhy(stage: AdoptionStage): string {
   return ADOPTION_STAGES.find((entry) => entry.key === stage)?.why ?? "";
 }
 
@@ -190,7 +190,7 @@ export function judgeAdoption(facts: AdoptionFacts, rules: AdoptionRules): Terri
   return of("started", list === null ? null : `${list.validated} of ${list.total} validated`);
 }
 
-export type AdoptionSummary = {
+type AdoptionSummary = {
   territories: number;
   /** Territories on an open line — the only ones adoption can be measured for. */
   open: number;

@@ -55,7 +55,7 @@ export const recruitmentDeskAlertRoles: readonly PhoenixRole[] = [...recruitment
 const recruitmentWorkRoles: readonly PhoenixRole[] = [...recruitmentManageRoles, "HR Resourcing"];
 // Roles that may read every requisition/application (managers see only their own). The Talent
 // Acquisition seat reads the whole pool — the owner chose "whole company" for her scope.
-export const recruitmentGlobalReadRoles: readonly PhoenixRole[] = [
+const recruitmentGlobalReadRoles: readonly PhoenixRole[] = [
   "Super Admin",
   "HR Resourcing",
   "CEO",

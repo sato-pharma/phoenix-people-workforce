@@ -25,7 +25,7 @@ import { getUnstampedAgentAccounts, queryVisits } from "@/lib/crm/reads";
  */
 
 /** The visit columns the summary reads. */
-export const CRM_WORK_AFTER_DATE_COLUMNS = "visit_date, agent_hr_id, agent_crm_id, double_hr_id, double2_hr_id";
+const CRM_WORK_AFTER_DATE_COLUMNS = "visit_date, agent_hr_id, agent_crm_id, double_hr_id, double2_hr_id";
 
 export type CrmWorkAfterDateRow = {
   agent_crm_id?: number | string | null;

@@ -40,7 +40,7 @@ export type JobPostTitleDraft = Omit<JobPostTitle, "descriptionAr" | "id" | "tit
 
 /** Eight lines a list is what one 1080×1350 picture holds at a readable size (the table says the same). */
 export const JOB_POST_MAX_LINES = 8;
-export const JOB_POST_TITLE_MAX = 80;
+const JOB_POST_TITLE_MAX = 80;
 const LEAD_MAX = 120;
 const REST_MAX = 200;
 const FACT_MAX = 60;

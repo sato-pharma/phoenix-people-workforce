@@ -58,7 +58,7 @@ export type BrickCoverageStatus =
   /** Neither. Kept, but last. */
   | "idle";
 
-export type BrickCoverageRow = {
+type BrickCoverageRow = {
   seatId: string;
   territoryName: string;
   /** Never rendered on its own — the name is. */
@@ -78,7 +78,7 @@ export type BrickCoverageRow = {
   sales: number;
 };
 
-export type BrickCoverageSummary = {
+type BrickCoverageSummary = {
   bricks: number;
   withSales: number;
   salesNoList: number;

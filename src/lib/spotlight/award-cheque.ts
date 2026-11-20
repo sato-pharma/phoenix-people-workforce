@@ -101,7 +101,7 @@ export type AwardChequeRow = {
 };
 
 /** What prints before real names, awards and amounts are supplied. */
-export const AWARD_CHEQUE_PLACEHOLDER: AwardChequeRow = {
+const AWARD_CHEQUE_PLACEHOLDER: AwardChequeRow = {
   recipientName: "[ RECIPIENT NAME ]",
   awardTitle: "[ AWARD TITLE — e.g. Rank 1 · Achievement ]",
   positionTitle: "[ POSITION ]",
@@ -124,7 +124,7 @@ function egpFigures(n: number | null): { whole: string; cents: string } {
 }
 
 /** "فقط … لا غير" — the words a cheque writes so the figure cannot be raised. Empty when unknown. */
-export function chequeAmountInArabic(amountEgp: number | null): string {
+function chequeAmountInArabic(amountEgp: number | null): string {
   const spelled = spellEgyptianAmount(amountEgp);
   return spelled === "" ? "" : `فقط ${spelled} لا غير`;
 }
@@ -607,7 +607,7 @@ export function awardChequeDocumentHtml(row: AwardChequeRow = AWARD_CHEQUE_PLACE
 }
 
 /** Render one cheque to PDF. Throws `ChromiumUnavailableError` when the runtime cannot produce one. */
-export async function renderAwardChequePdf(row: AwardChequeRow = AWARD_CHEQUE_PLACEHOLDER): Promise<Uint8Array> {
+async function renderAwardChequePdf(row: AwardChequeRow = AWARD_CHEQUE_PLACEHOLDER): Promise<Uint8Array> {
   const html = awardChequeDocumentHtml(row);
   return withChromiumPage(async (page) => {
     await page.setContent(html, { waitUntil: "networkidle0" });

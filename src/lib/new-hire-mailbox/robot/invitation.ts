@@ -49,7 +49,7 @@ export const INVITATION_ACTIVATION_URL = "https://mail.turbify.com/login" as con
 const TEMP_PASSWORD_LABEL = "Temp Password";
 
 /** What a usable invitation yields. Never logged, never stringified into a message. */
-export type InvitationCredentials = {
+type InvitationCredentials = {
   /** The mailbox this invitation activates, lower-cased. */
   address: string;
   /** Turbify's one-use temp password for that mailbox. */

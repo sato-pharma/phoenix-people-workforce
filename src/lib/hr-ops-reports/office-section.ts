@@ -108,7 +108,7 @@ function policyTime(value: string | null | undefined): string | null {
 }
 
 /** The policy's day count, as a number of days — `""` means it offered none. */
-export function parseSuggestedDays(value: string | null | undefined): number | null {
+function parseSuggestedDays(value: string | null | undefined): number | null {
   const text = String(value ?? "").trim();
   if (!text) return null;
   const parsed = Number(text);
@@ -119,7 +119,7 @@ export function parseSuggestedDays(value: string | null | undefined): number | n
  * The flags a JUDGED punched day carries, from the fingerprint report's own verdict. Lateness is a
  * flag in its own right even when the day also ran short, because she confirms each fact apart.
  */
-export function punchFlags(punch: NonNullable<OfficeDayInput["punch"]>): HrOpsFlag[] {
+function punchFlags(punch: NonNullable<OfficeDayInput["punch"]>): HrOpsFlag[] {
   const flags: HrOpsFlag[] = [];
   const status = String(punch.status ?? "").trim();
   if (status === "Single punch") flags.push("single_punch");

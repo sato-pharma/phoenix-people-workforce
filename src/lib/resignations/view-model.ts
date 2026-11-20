@@ -22,7 +22,7 @@ export const ALL_RESIGNATION_FILTER = "__all__";
 /** Statuses where the workflow is finished — archive, not work. */
 const closedResignationStatuses = new Set<string>(["completed", "cancelled", "rejected"]);
 
-export function isClosedResignation(record: Pick<ResignationRecord, "status">) {
+function isClosedResignation(record: Pick<ResignationRecord, "status">) {
   return closedResignationStatuses.has(record.status);
 }
 
@@ -82,7 +82,7 @@ export function formatPayrollCandidateSystemId(id: string) {
  * (UTC) and the browser compute the same calendar day. Inline `new Date()` math here is what
  * produced React hydration error #418 on this page in production.
  */
-export function daysUntilEffectiveDate(
+function daysUntilEffectiveDate(
   value: string | null | undefined,
   referenceDate = new Date(),
 ) {
@@ -95,35 +95,6 @@ export type ResignationDaysState = {
   text: string;
   tone: "danger" | "neutral" | "warning";
 };
-
-/**
- * How the "days left" cell reads. The previous page ran a bare `days <= 7` test, so every past-due
- * row — including ones completed months ago — rendered a red "-23 days / Escalation window". On
- * production that was 11 of 12 visible rows.
- */
-export function resignationDaysState(
-  record: Pick<ResignationRecord, "effectiveDate" | "status">,
-  referenceDate = new Date(),
-): ResignationDaysState {
-  if (isClosedResignation(record)) {
-    return { label: "Workflow closed", text: "—", tone: "neutral" };
-  }
-
-  const days = daysUntilEffectiveDate(record.effectiveDate, referenceDate);
-  if (days === null) return { label: "No effective date", text: "-", tone: "neutral" };
-  if (days < 0) {
-    const overdue = Math.abs(days);
-    return {
-      label: "Left, never completed",
-      text: `${overdue} ${overdue === 1 ? "day" : "days"} overdue`,
-      tone: "danger",
-    };
-  }
-  if (days === 0) return { label: "Last working day", text: "Today", tone: "danger" };
-  if (days <= 7) return { label: "Escalation window", text: `${days} days`, tone: "danger" };
-  if (days <= 30) return { label: "In progress", text: `${days} days`, tone: "warning" };
-  return { label: "In progress", text: `${days} days`, tone: "neutral" };
-}
 
 /**
  * Terminated employees are not a separate system — they are resignation records whose employee

@@ -56,7 +56,7 @@ export type InferableCandidate = {
 };
 
 /** Which field produced the answer — carried so a screen and a log can say why a CV is where it is. */
-export type InferenceBasis =
+type InferenceBasis =
   | "governorate"
   | "address"
   | "vacancy"

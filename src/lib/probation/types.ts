@@ -44,7 +44,7 @@ export type ProbationRow = {
   workflow?: ProbationWorkflowRecord | null;
 };
 
-export type ProbationWorkflowStatus =
+type ProbationWorkflowStatus =
   | "active"
   | "passed"
   | "terminated";
@@ -57,13 +57,6 @@ export type ProbationWorkflowAction =
   | "manager_feedback"
   | "pass"
   | "terminate";
-
-export type ProbationReminderRecipient = {
-  email: string | null;
-  hrId: string;
-  name: string | null;
-  role: "HR Pilot Approver" | "Direct Manager" | "Manager of Manager";
-};
 
 export type ProbationWorkflowRecord = {
   allowedActions?: ProbationWorkflowAction[];
@@ -97,28 +90,3 @@ export type ProbationWorkflowRecord = {
   completedBy: string | null;
 };
 
-export type ProbationFeedbackReportRow = {
-  areaName: string;
-  directManager: string;
-  directManagerHrId: string | null;
-  employeeHrId: string;
-  employeeName: string;
-  feedbackDate: string | null;
-  feedbackStatus: "pending" | "submitted";
-  feedbackSubmittedBy: string | null;
-  feedbackText: string | null;
-  hireDate: string;
-  lineName: string;
-  managerOfManager: string;
-  managerOfManagerHrId: string | null;
-  probationDayStatus: string;
-  recommendation: string | null;
-  teamName: string;
-};
-
-export type CreateProbationEvaluationInput = {
-  employeeHrId: string;
-  evaluationScores?: Record<string, number | string | null>;
-  managerFeedback?: string | null;
-  workflowNotes?: string | null;
-};

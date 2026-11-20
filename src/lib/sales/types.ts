@@ -102,7 +102,7 @@ export type SalesProductPerformanceRow = {
   target: number;
 };
 
-export type SalesDashboardFilterOptions = {
+type SalesDashboardFilterOptions = {
   families: string[];
   lines: string[];
   managers: string[];

@@ -47,13 +47,13 @@ export type ReviewWeekWindow = SettlementWeek & {
 };
 
 /** The first month the review covers (owner, 2026-09-17: "build starting from 1 august"). */
-export const FIRST_REVIEW_MONTH = "2026-08";
+const FIRST_REVIEW_MONTH = "2026-08";
 
 /** The month between the old day-24 cycle and calendar months. */
-export const TRANSITION_REVIEW_MONTH = "2026-09";
+const TRANSITION_REVIEW_MONTH = "2026-09";
 
 /** September 2026, the month between the old day-24 cycle and calendar months. */
-export const SEPTEMBER_2026_WEEKS: readonly SettlementWeek[] = Object.freeze([
+const SEPTEMBER_2026_WEEKS: readonly SettlementWeek[] = Object.freeze([
   { index: 2, startIso: "2026-09-01", endIso: "2026-09-06" },
   { index: 3, startIso: "2026-09-07", endIso: "2026-09-13" },
   { index: 4, startIso: "2026-09-14", endIso: "2026-09-23" },

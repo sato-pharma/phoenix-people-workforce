@@ -104,7 +104,7 @@ export type MrCandidateFacts = {
 };
 
 /** What state the current step is in. */
-export type MrStepState =
+type MrStepState =
   | "to_record"
   | "to_book"
   | "booked"
@@ -138,7 +138,7 @@ export type MrNextAction =
   | "mark_hired";
 
 /** Who the next action waits for. */
-export type MrWaitingFor =
+type MrWaitingFor =
   | { kind: "hr" }
   | { kind: "hr_manager" }
   | { kind: "interview" }
@@ -227,7 +227,7 @@ export function mrConfirmedArea(facts: Pick<MrCandidateFacts, "results">): strin
  * of this regional manager"). A Pedia area directly under the NSM has no RSM interview. An RSM
  * interview already booked or evaluated keeps its step, so nothing that happened ever disappears.
  */
-export function mrRsmApplies(facts: Pick<MrCandidateFacts, "results" | "bookings" | "pediaAreaUnderRsm">): boolean {
+function mrRsmApplies(facts: Pick<MrCandidateFacts, "results" | "bookings" | "pediaAreaUnderRsm">): boolean {
   if (mrConfirmedLine(facts) === "pedia" && facts.pediaAreaUnderRsm) return true;
   return facts.bookings.some((booking) => booking.round === "rsm") || facts.results.some((row) => row.step === "rsm");
 }
@@ -429,14 +429,6 @@ export function mrHiringStage(facts: MrCandidateFacts, now: Date = new Date()): 
     return openAt("offer", "offer_expired", "open_offer", { kind: "hr" });
   }
   return openAt("offer", "offer_sent", "open_offer", { kind: "candidate" });
-}
-
-/** The DSM interview that HR may decide on without feedback — ended, and the DSM recorded nothing. */
-export function dsmBookingAwaitingFeedback(facts: Pick<MrCandidateFacts, "bookings" | "results">, now: Date): MrBookingFact | null {
-  const booking = latestBooking(facts.bookings, ["dsm"]);
-  if (!booking || !mrInterviewEnded(booking, now)) return null;
-  if (latestResult(facts.results, ["dsm"])) return null;
-  return booking;
 }
 
 /** The latest booking of one round, for the writers that need "the" DSM or final interview. */

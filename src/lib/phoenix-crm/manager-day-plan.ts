@@ -23,7 +23,7 @@ export function planCustomerKey(customerId: unknown, managerCustomerId: unknown)
   return own ? `m:${own}` : null;
 }
 
-export type ManagerDayPlanCustomer = {
+type ManagerDayPlanCustomer = {
   name: string;
   key: string | null;
   own: boolean;
@@ -34,7 +34,7 @@ export type ManagerDayPlanCustomer = {
   place: string | null;
 };
 
-export type ManagerDayPlanHalf = {
+type ManagerDayPlanHalf = {
   half: ManagerHalf;
   kind: ManagerSlotKind;
   kindLabel: string;

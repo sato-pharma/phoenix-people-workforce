@@ -33,8 +33,6 @@ export type InvitationChannel = "whatsapp" | "email";
 /** `invitation` is the interview itself; `company_details` is the location, LinkedIn and website alone. */
 export type InvitationKind = "invitation" | "company_details";
 
-export const INVITATION_RECIPIENTS: readonly InvitationRecipient[] = ["candidate", "interviewer"];
-
 export function isInvitationRecipient(value: unknown): value is InvitationRecipient {
   return value === "candidate" || value === "interviewer";
 }
@@ -85,7 +83,7 @@ export type InvitationFacts = {
   location?: string | null;
 };
 
-export type InvitationLine = { label: string; value: string };
+type InvitationLine = { label: string; value: string };
 
 export type InvitationMessage = {
   /** The whole message as plain text — WhatsApp's body, and the e-mail's text part. */

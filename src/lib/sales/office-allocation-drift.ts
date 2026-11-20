@@ -70,7 +70,7 @@ export type OfficeAllocationCell = {
   units: number;
 };
 
-export type OfficeAllocationDriftArea = {
+type OfficeAllocationDriftArea = {
   lineCode: string;
   areaCode: string;
   /** What the rows hold today. */
@@ -81,7 +81,7 @@ export type OfficeAllocationDriftArea = {
   unitsDelta: number;
 };
 
-export type OfficeAllocationDriftLine = {
+type OfficeAllocationDriftLine = {
   lineCode: string;
   /** The line's Office units — the same figure on both sides, by construction. */
   officeUnits: number;
@@ -205,7 +205,7 @@ export function diffOfficeAllocation(input: {
 }
 
 /** One import batch of a period, as much of it as both sides of this comparison need. */
-export type PeriodBatch = {
+type PeriodBatch = {
   id: string;
   distributorCode: string;
   /**
@@ -226,7 +226,7 @@ export type PeriodBatch = {
  * `status` is not filtered: every one of the 151 batches on production is `validated` (read
  * 2026-10-09), because this table holds committed uploads and a rejected preview never reaches it.
  */
-export async function loadPeriodBatches(period: string): Promise<PeriodBatch[]> {
+async function loadPeriodBatches(period: string): Promise<PeriodBatch[]> {
   const supabase = getSupabaseAdmin();
   const result = await supabase
     .from("source_of_sales_import_batches")
@@ -289,7 +289,7 @@ export async function loadPeriodsWithOfficeBatch(): Promise<string[]> {
  * Matched with `isOfficeDistributorCode`, not an equality test: production stores exactly `Office`
  * today, and the repo's own question about a row is case- and space-tolerant for a reason.
  */
-export function pickOfficeBatch(batches: readonly PeriodBatch[]): PeriodBatch | null {
+function pickOfficeBatch(batches: readonly PeriodBatch[]): PeriodBatch | null {
   const office = batches
     .filter((batch) => isOfficeDistributorCode(batch.distributorCode))
     .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
@@ -302,7 +302,7 @@ export function pickOfficeBatch(batches: readonly PeriodBatch[]): PeriodBatch | 
  * Paged past PostgREST's 1,000-row cap — August's Office batch alone is 3,840 rows, so an unpaged
  * read would silently return a quarter of it and report a clean month.
  */
-export async function loadStoredOfficeAllocation(batchId: string): Promise<OfficeAllocationCell[]> {
+async function loadStoredOfficeAllocation(batchId: string): Promise<OfficeAllocationCell[]> {
   const supabase = getSupabaseAdmin();
   const byCell = new Map<string, OfficeAllocationCell>();
   const pageSize = 1000;
@@ -338,7 +338,7 @@ export async function loadStoredOfficeAllocation(batchId: string): Promise<Offic
  * `priceOf` and that product's official `line` as `lineOf` — the identical two callbacks
  * `computeOfficeAllocation` passes, so this is the rule's own output and not a restatement of it.
  */
-export async function loadTodaysOfficeAllocation(
+async function loadTodaysOfficeAllocation(
   period: string,
   stored: readonly OfficeAllocationCell[],
 ): Promise<OfficeAllocationCell[]> {

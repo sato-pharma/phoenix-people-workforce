@@ -40,7 +40,7 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A seat's customer channels for one month. `distributor` already EXCLUDES the warehouses. */
-export type RepRankingChannels = {
+type RepRankingChannels = {
   /**
    * The published distributor book less its warehouse rows AND less Office, so the channels add to
    * `sales` on every line.
@@ -61,7 +61,7 @@ export type RepRankingChannels = {
   office: number;
 };
 
-export type RepRankingProduct = {
+type RepRankingProduct = {
   productCode: string;
   productName: string;
   family: string;
@@ -113,7 +113,7 @@ export type RepRankingSeat = {
   products: RepRankingProduct[];
 };
 
-export type RepRankingTeam = {
+type RepRankingTeam = {
   managerName: string;
   /** The seats reporting to this manager, in the ranking's own order. */
   seats: RepRankingSeat[];

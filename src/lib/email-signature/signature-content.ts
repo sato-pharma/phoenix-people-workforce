@@ -7,9 +7,8 @@ import type { BusinessCardFields } from "@/lib/business-cards/card-content";
 // a logo and a few text cells lets a person delete the Phoenix logo, or the phone number, and keep
 // the rest. A single picture can only be removed whole.
 
-export const SIGNATURE_WEB = "satopharma.com";
-export const SIGNATURE_WEB_URL = "https://www.satopharma.com";
-export const SIGNATURE_OFFICE = "Sheraton El Matar, Cairo";
+const SIGNATURE_WEB = "satopharma.com";
+const SIGNATURE_OFFICE = "Sheraton El Matar, Cairo";
 export const SIGNATURE_TAGLINE = "Sato Pharma\u2019s HR platform";
 
 export type SignatureLines = {

@@ -42,7 +42,7 @@ import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 // I/O; src/lib/phoenix-crm/server/signboard-check.ts fetches the bytes and calls the model.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type SignboardVerdictKind =
+type SignboardVerdictKind =
   /** The signboard names the customer this place was validated for. */
   | "match"
   /** The signboard names somebody else. A held place and a review row. */
@@ -250,7 +250,7 @@ export const SIGNBOARD_STAMP_WORST_CASE_LINES = 8;
 /** A one-line band is ~0.06 of a portrait frame, and no real stamp is ever that short. */
 export const SIGNBOARD_CROP_MIN_FRACTION = 0.18;
 /** Past this the crop would be eating the picture, so stop and let the prompt's own guard carry it. */
-export const SIGNBOARD_CROP_MAX_FRACTION = 0.6;
+const SIGNBOARD_CROP_MAX_FRACTION = 0.6;
 
 /**
  * What fraction of the bottom of a stored place photo is Phoenix's own caption box.
@@ -798,7 +798,7 @@ export function nameIsPinnableAcrossScripts(customerName: string | null, listTyp
 }
 
 /** Does any name on this sign's judged axis use the customer's own script? */
-export function signSharesCustomerScript(
+function signSharesCustomerScript(
   sign: PhoenixCrmSign,
   input: { customerName: string | null; listType: PhoenixCrmListType },
 ): boolean {
@@ -832,7 +832,7 @@ export function signSharesCustomerScript(
  * not "fix" it by loosening `compileArabicWord`; it is pinned by the geo module's own tests and that
  * table carries Egypt's whole brick geography.
  */
-export function nameMatchesAcrossScripts(input: {
+function nameMatchesAcrossScripts(input: {
   customerName: string;
   candidate: string;
   listType: PhoenixCrmListType;
@@ -1292,7 +1292,7 @@ export function judgeSignboards(input: {
 }
 
 /** One sign, for a reader that answered in the old single-signboard shape. */
-export function asOneSign(input: {
+function asOneSign(input: {
   signText: string | null;
   personNames: readonly string[];
   placeNames: readonly string[];
@@ -1575,7 +1575,7 @@ export function heldSignboardReadHappened(check: PhoenixCrmSignboardCheck): bool
 }
 
 /** Unread places, with not one read answering, after which the hourly run stops: the reader is down. */
-export const HELD_SIGNBOARD_READER_DOWN_AFTER = 3;
+const HELD_SIGNBOARD_READER_DOWN_AFTER = 3;
 
 /**
  * Is the reader down, on this run's evidence? Only when NOTHING has answered: one photo whose every call
@@ -1898,8 +1898,8 @@ export function buildingSignboardNow(
  * widened by the photo's claimed radius up to a place's 250 m — so an iPhone handing the camera an
  * approximate position is not refused at the right door, and a photo from across town still is.
  */
-export const SIGNBOARD_RETAKE_MAX_METERS = 500;
-export const SIGNBOARD_RETAKE_MAX_SLACK_METERS = 250;
+const SIGNBOARD_RETAKE_MAX_METERS = 500;
+const SIGNBOARD_RETAKE_MAX_SLACK_METERS = 250;
 
 export function signboardRetakeIsAtThePlace(distanceMeters: number, accuracyMeters: number | null): boolean {
   if (!Number.isFinite(distanceMeters)) return false;

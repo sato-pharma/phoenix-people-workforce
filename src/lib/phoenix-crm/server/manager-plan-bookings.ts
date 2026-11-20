@@ -76,7 +76,7 @@ export function otherManagersOnRepDay(
 }
 
 /** Every sent with-a-rep half-day on these reps' seats inside [from, to], from every kind of planner. */
-export async function loadRepDayBookings(input: {
+async function loadRepDayBookings(input: {
   repSeatIds: ReadonlyArray<string>;
   from: string;
   to: string;

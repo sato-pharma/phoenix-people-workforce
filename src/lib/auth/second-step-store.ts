@@ -252,7 +252,7 @@ export async function issueTrustedDevice(input: {
 }
 
 /** True only for a token this account was given, inside its 30 days. */
-export async function trustedDeviceIsValid(input: {
+async function trustedDeviceIsValid(input: {
   db?: SecondStepDb;
   loginId: string;
   nowMs?: number;
@@ -342,7 +342,7 @@ export async function readSecondStepStatus(loginId: string, nowMs = Date.now(), 
 // ── The whole step, as the sign-in route asks it ────────────────────────────────────────────────
 
 /** What the sign-in page needs to set an authenticator app up: the key, typed or opened by link. */
-export type SecondStepSetupOffer = {
+type SecondStepSetupOffer = {
   account: string;
   otpauthUri: string;
   secret: string;

@@ -54,7 +54,7 @@ export type RoiSheetRawRow = {
 // Grouped line-item (one request line = one Date row + its continuation rows)
 // ---------------------------------------------------------------------------
 
-export type RoiSheetProductLine = {
+type RoiSheetProductLine = {
   sheetProductCode: string | null;
   sheetProductName: string | null;
   quantity: number;
@@ -185,7 +185,7 @@ export function normalizeCustomerCode(value: unknown): {
 // Sheet product NAMES that do not match the marketing catalog by name. Most products
 // resolve by code (productByCode below); this map only covers the name fallback used when
 // a row has no usable code. Map the sheet spelling to the catalog's normalized name.
-export const ROI_SHEET_PRODUCT_NAME_ALIASES: Record<string, string> = {
+const ROI_SHEET_PRODUCT_NAME_ALIASES: Record<string, string> = {
   saginkgo: "saginko",
   "royafloxacin 500 tab": "royafloxacin",
 };
@@ -198,7 +198,7 @@ export function aliasProductLookupKey(name: string | null): string | null {
 
 // Sheet distributor labels vs the marketing_distributors registry's normalized names.
 // e.g. sheet "IBNSINA" -> registry "ibn sina"; sheet "EPDA Lacto" -> registry "epda".
-export const ROI_SHEET_DISTRIBUTOR_NAME_ALIASES: Record<string, string> = {
+const ROI_SHEET_DISTRIBUTOR_NAME_ALIASES: Record<string, string> = {
   ibnsina: "ibn sina",
   "epda lacto": "epda",
   "epda lacto warehouse": "epda",
@@ -370,7 +370,7 @@ export type RoiImportLookups = {
   knownPharmacyCodes: Set<string>;
 };
 
-export type RoiImportFlag =
+type RoiImportFlag =
   | "missing_request_code"
   | "unknown_requester"
   | "junk_row"
@@ -382,7 +382,7 @@ export type RoiImportFlag =
   | "date_swap_applied"
   | "roi_mismatch";
 
-export type RoiImportPreviewLine = {
+type RoiImportPreviewLine = {
   index: number;
   requestCode: string | null;
   hrId: string | null;

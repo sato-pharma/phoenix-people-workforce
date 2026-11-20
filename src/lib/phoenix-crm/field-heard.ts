@@ -72,7 +72,7 @@ export function heardTallyText(tally: HeardTally): string {
   return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
-export type HeardObjectionCount = HeardTally & { key: HeardObjection; label: string };
+type HeardObjectionCount = HeardTally & { key: HeardObjection; label: string };
 
 /** What was said, in the rep's words, beside the objection it came with. Never the rep's name. */
 export type HeardNote = {

@@ -75,17 +75,17 @@
 /** The measures the overall percentage is built from, in the order it prints them. */
 export const KPI_INDEX_COMPONENT_KEYS = ["coverage", "frequency", "am", "pm"] as const;
 
-export type KpiIndexComponentKey = (typeof KPI_INDEX_COMPONENT_KEYS)[number];
+type KpiIndexComponentKey = (typeof KPI_INDEX_COMPONENT_KEYS)[number];
 
 /** The short name each component answers to on the line. Matches the tiles and the columns. */
-export const KPI_INDEX_COMPONENT_LABEL: Record<KpiIndexComponentKey, string> = {
+const KPI_INDEX_COMPONENT_LABEL: Record<KpiIndexComponentKey, string> = {
   coverage: "Coverage",
   frequency: "Frequency",
   am: "AM",
   pm: "PM",
 };
 
-export type KpiIndexComponent = {
+type KpiIndexComponent = {
   key: KpiIndexComponentKey;
   label: string;
   /** What the board prints for this measure. Null when it could not be scored at all. */

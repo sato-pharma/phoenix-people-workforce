@@ -106,7 +106,7 @@ export type RoiFilterOption = {
   count: number;
 };
 
-export type RoiFilterDimensionType = "multiselect" | "dateRange" | "numberRange" | "toggle";
+type RoiFilterDimensionType = "multiselect" | "dateRange" | "numberRange" | "toggle";
 
 /**
  * A single dimension as resolved for one viewer's visible request set.
@@ -461,7 +461,7 @@ export type MarketingRoiViewSalesRow = {
   value: number;
 };
 
-export type MarketingRoiViewSalesContext = {
+type MarketingRoiViewSalesContext = {
   requestId: string;
   requestCode: string;
   customerName: string;
@@ -587,7 +587,7 @@ export type MarketingCoverageRequestIndexEntry = MarketingRoiRequestIndexEntry &
 /** Governance surface — who last exported this report, and when. Read-only, best-effort
  *  (marketing_roi_export_audit is an append-only audit trail, not load-bearing for the
  *  report itself) — null when no export has happened yet or the audit read fails. */
-export type MarketingCoverageLastExport = {
+type MarketingCoverageLastExport = {
   exportedByName: string;
   exportedAt: string;
 };

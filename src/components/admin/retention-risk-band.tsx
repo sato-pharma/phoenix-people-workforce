@@ -279,7 +279,7 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
  * of width cannot hold a table without either scrolling sideways or shrinking the type, and both
  * are forbidden. Square, and every line wraps rather than truncating.
  */
-export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
+function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
   return (
     <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
@@ -372,20 +372,3 @@ export function RetentionRiskColumnSkeleton() {
   );
 }
 
-/** Server component: loads the cached view and renders the band. Suspended by both landing pages. */
-export async function RetentionRiskBandSection() {
-  const view = await getRetentionRiskView();
-  return <RetentionRiskBand view={view} />;
-}
-
-export function RetentionRiskBandSkeleton() {
-  return (
-    <SectionShell description="Loading the retention-risk review." title="Retention risk">
-      <div className="space-y-2 px-5 py-6">
-        <div className="h-4 w-1/3 bg-slate-100" />
-        <div className="h-4 w-2/3 bg-slate-100" />
-        <div className="h-4 w-1/2 bg-slate-100" />
-      </div>
-    </SectionShell>
-  );
-}

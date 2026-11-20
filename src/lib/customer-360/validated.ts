@@ -101,7 +101,7 @@ export function isValidatedPhoenixHubRow(row: PhoenixCustomerRow): boolean {
 // ── Marketing customers ─────────────────────────────────────────────────────────────────────────
 
 /** The two statuses a marketing customer is validated at. `pending` is out. */
-export const VALIDATED_MARKETING_CUSTOMER_STATUSES = ["system_validated", "sfe_validated"] as const;
+const VALIDATED_MARKETING_CUSTOMER_STATUSES = ["system_validated", "sfe_validated"] as const;
 
 export type MarketingCustomerRow = {
   id: string;

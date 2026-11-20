@@ -21,7 +21,7 @@ export const OPENAI_EMAIL_DEFAULT_MODEL = OPENAI_NANO_MODEL;
 export const OPENAI_EMAIL_TIMEOUT_MS = 25_000;
 export const OPENAI_MAX_RETRIES = 1;
 export const OPENAI_ROUTE_BUDGET_MS = 60_000;
-export const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
+const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
 
 // Deliberately its OWN tier, not the email nano default: parsing a CEO's free-
 // text payroll instructions (resolving names against a 100+ person roster,

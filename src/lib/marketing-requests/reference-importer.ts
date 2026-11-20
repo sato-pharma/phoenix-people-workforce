@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type MarketingDistributorSeed = {
+type MarketingDistributorSeed = {
   active: boolean;
   displayName: string;
   distributorCode: string;
@@ -24,7 +24,7 @@ export type MarketingProductSeed = {
   sourceFile: string;
 };
 
-export type MarketingPharmacyCodeReferenceSeed = {
+type MarketingPharmacyCodeReferenceSeed = {
   normalizedDistributorName: string;
   rawArea: string | null;
   rawDistributorName: string;

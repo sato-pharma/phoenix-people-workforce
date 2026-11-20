@@ -191,7 +191,7 @@ export function teamVisitTimelineLine(timeline: TeamVisitTimeline): string | nul
   return `First ${timeline.first} · last ${timeline.last} · ${teamVisitSpanLabel(timeline.spanMinutes)}`;
 }
 
-export type TeamVisitHourCount = { block: TeamVisitHourBlock; visits: number };
+type TeamVisitHourCount = { block: TeamVisitHourBlock; visits: number };
 
 export type TeamVisitHourSpread = {
   blocks: TeamVisitHourCount[];
@@ -251,13 +251,6 @@ export function teamVisitRepState(rep: Pick<TeamVisitRep, "person"> & { vacant?:
   return "saved";
 }
 
-export const TEAM_VISIT_REP_STATE_LABEL: Record<TeamVisitRepState, string> = {
-  none: TEAM_VISITS_NONE_SAVED,
-  saved: "Visits saved",
-  vacant: "Seat is vacant",
-  "waiting-only": "Every visit waiting for validation",
-};
-
 export type TeamVisitDayRollup = {
   am: number;
   pm: number;
@@ -313,7 +306,7 @@ export type TeamVisitDistrictRollup = {
 };
 
 /** A district's stable key — the same one the screen's sections and anchors use. */
-export function teamVisitDistrictKey(district: Pick<TeamVisitDistrict, "regionName" | "districtName" | "managerName">): string {
+function teamVisitDistrictKey(district: Pick<TeamVisitDistrict, "regionName" | "districtName" | "managerName">): string {
   return `${district.regionName}|${district.districtName}|${district.managerName}`;
 }
 
@@ -350,7 +343,7 @@ export function teamVisitTeamRollup(report: Pick<TeamVisitsReport, "districts">,
   );
 }
 
-export type TeamVisitRepRef = {
+type TeamVisitRepRef = {
   seatId: string;
   person: string;
   territory: string;
@@ -581,7 +574,7 @@ export function teamVisitBusinessDayOf(iso: string | null | undefined): string |
   return cairoBusinessDay(value);
 }
 
-export type TeamVisitPaceSide = {
+type TeamVisitPaceSide = {
   /** Every visit saved, waiting ones included. */
   saved: number;
   /** AM and PM visits to a validated customer — the doctor visits. */
@@ -723,8 +716,8 @@ export function teamVisitPaceLine(difference: number): string {
  * The window a rep's day strip draws: 7 AM to midnight, as visit-day minutes. A time saved outside it sits on the
  * strip's edge, so it is still seen.
  */
-export const TEAM_VISIT_STRIP_FROM = (7 - VISIT_DAY_CUTOFF_HOURS) * 60;
-export const TEAM_VISIT_STRIP_TO = (24 - VISIT_DAY_CUTOFF_HOURS) * 60;
+const TEAM_VISIT_STRIP_FROM = (7 - VISIT_DAY_CUTOFF_HOURS) * 60;
+const TEAM_VISIT_STRIP_TO = (24 - VISIT_DAY_CUTOFF_HOURS) * 60;
 
 /** The hours printed under the strip. */
 export const TEAM_VISIT_STRIP_TICKS: ReadonlyArray<{ label: string; left: number }> = [8, 12, 16, 20].map((hour) => ({

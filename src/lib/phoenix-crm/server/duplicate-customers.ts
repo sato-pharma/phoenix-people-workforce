@@ -53,7 +53,7 @@ function identityKindOf(listType: unknown): IdentityKind {
 }
 
 /** One row of a rep's list, as this report reads it. */
-export type DuplicateCustomerEntry = {
+type DuplicateCustomerEntry = {
   customerId: string;
   grade: string | null;
   listType: string | null;
@@ -65,7 +65,7 @@ export type DuplicateCustomerEntry = {
  * What the one-off merge (owner, 2026-10-08) would do with this group — a SENTENCE, never a button.
  * The board still acts on nothing; this only makes the backlog readable without running the script.
  */
-export type DuplicateMergeVerdict = { kind: "keep"; keptName: string; why: string } | { kind: "refused"; why: string };
+type DuplicateMergeVerdict = { kind: "keep"; keptName: string; why: string } | { kind: "refused"; why: string };
 
 export type DuplicateCustomerGroup = {
   /** The kind and the folded name the rows share — the key, never shown as a label. */

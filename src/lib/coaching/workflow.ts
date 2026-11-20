@@ -11,7 +11,7 @@ export type CoachingWorkflowActionKey =
   | "submit"
   | "update_draft";
 
-export function toCoachingWorkflowStatus(status: CoachingReportStatus | string | null | undefined) {
+function toCoachingWorkflowStatus(status: CoachingReportStatus | string | null | undefined) {
   const normalized = String(status ?? "").trim().toLowerCase();
   return normalized || "draft";
 }

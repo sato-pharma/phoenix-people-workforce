@@ -43,7 +43,7 @@ import { listScreeningQuestionLabels } from "@/lib/recruitment/screening-questio
 import type { ScreeningQuestionLabel } from "@/lib/recruitment/whatsapp-answers";
 
 /** One person who has opened this CV, by name. */
-export type CandidateRecordViewer = {
+type CandidateRecordViewer = {
   /** The reader's name, or null when their HR id matched no employee — the page says so in words. */
   name: string | null;
   firstSeenAt: string;
@@ -52,7 +52,7 @@ export type CandidateRecordViewer = {
 };
 
 /** One hand-built folder this CV sits in. */
-export type CandidateRecordFolder = {
+type CandidateRecordFolder = {
   folderId: string;
   /** The folder names from the top down, this folder last. */
   path: string[];

@@ -189,7 +189,7 @@ function employeeToNodeInput(employee: Awaited<ReturnType<typeof getEmployeeDire
  * count from the workforce-metrics headcount — two different populations — so the rate could move
  * without a single record changing. Pure, so the arithmetic is testable without a database.
  */
-export function computeEmployeeHealth(input: {
+function computeEmployeeHealth(input: {
   gradedHrIds: readonly string[];
   issueHrIds: readonly string[];
 }): { gradedEmployees: number; healthyEmployees: number; healthRate: number | null } {

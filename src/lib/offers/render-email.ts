@@ -222,7 +222,7 @@ function grid(cells: string[], perRow: number): string {
  */
 const SIGN_AND_RETURN_SENTENCE = /Please confirm your acceptance of this offer by signing below and\s+returning a copy of this letter\.\s*/i;
 const SIGN_AND_RETURN_STEP = /^\s*Sign the acceptance below and return a scanned copy\b/i;
-export const OFFER_ACCEPT_STEP_HEADING = "Accept online";
+const OFFER_ACCEPT_STEP_HEADING = "Accept online";
 export const OFFER_ACCEPT_STEP_TEXT = "Use the Accept button below before the validity date shown in this email.";
 
 function dropSignAndReturn(text: string, acceptUrl: string | undefined): string {

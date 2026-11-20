@@ -63,7 +63,7 @@ function cellTriple(cell: MonthlyClosingCell | undefined): EngineValue[] {
 }
 
 /** Every column heading, and the widths that go with them — one list so they cannot drift apart. */
-export function closingNoOfficeColumns(
+function closingNoOfficeColumns(
   matrix: MonthlyClosingMatrix,
 ): { headers: string[]; widths: number[] } {
   const headers = ["Region", "Area"];

@@ -67,7 +67,7 @@ export function assembleWhatsAppSourceContext(
 // chains and legal footers, which cost tokens and actively mislead — a quoted thread contains OUR
 // wording, not the applicant's. 300 for a subject (long enough for "Application for National Sales
 // Manager – Anti-Infective Line"), 2000 for a body.
-export const MAX_COVER_SUBJECT_CHARS = 300;
+const MAX_COVER_SUBJECT_CHARS = 300;
 export const MAX_COVER_BODY_CHARS = 2000;
 
 /**

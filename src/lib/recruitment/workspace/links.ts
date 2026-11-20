@@ -18,7 +18,7 @@ import { emptyWorkspaceFilters, serializeWorkspaceFilters, type WorkspaceFilters
 import type { WorkspaceRoleTab, WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
 
 /** The workspace's own page. HR-namespace surfaces (Talent Acquisition's panel) pass `/hr/recruitment`. */
-export const WORKSPACE_BASE_PATH = "/recruitment";
+const WORKSPACE_BASE_PATH = "/recruitment";
 export const HR_WORKSPACE_BASE_PATH = "/hr/recruitment";
 
 type LinkOptions = { basePath?: string };
@@ -29,15 +29,6 @@ export function workspaceHref(overrides: Partial<WorkspaceFilters> = {}, options
   const query = serializeWorkspaceFilters(filters).toString();
   const base = options.basePath ?? WORKSPACE_BASE_PATH;
   return query ? `${base}?${query}` : base;
-}
-
-/** One tab, optionally one region (or "unspecified") and one area inside it. */
-export function workspaceTabHref(
-  tab: WorkspaceTabKey,
-  place: { region?: string | null; area?: string | null } = {},
-  options: LinkOptions = {},
-): string {
-  return workspaceHref({ tab, region: place.region ?? null, area: place.area ?? null }, options);
 }
 
 /** One CV, opened in the tab it sits in (or the viewer's first tab when none is named). */

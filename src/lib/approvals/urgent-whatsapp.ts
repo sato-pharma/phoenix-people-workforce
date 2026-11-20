@@ -51,7 +51,7 @@ export function approvalReminderMessage(total: number): Record<string, unknown> 
   return buildTemplateMessage(TEMPLATE, { "body:count": String(total) }) as Record<string, unknown> & { type: string };
 }
 
-export type ApprovalReminderLine = { phoneNumberId: string; businessAccountId: string };
+type ApprovalReminderLine = { phoneNumberId: string; businessAccountId: string };
 
 export type ApprovalReminderDeps = {
   now: () => Date;

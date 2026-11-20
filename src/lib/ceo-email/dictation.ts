@@ -46,7 +46,7 @@ export { CEO_DICTATION_MAX_BYTES, CEO_DICTATION_MAX_SECONDS, dictationExtension,
  * company, not clinical data — and the finished letter leaves through Resend regardless.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
 
-export function isCeoDictationConfigured(): boolean {
+function isCeoDictationConfigured(): boolean {
   return hasGroqApiKey();
 }
 

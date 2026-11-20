@@ -102,7 +102,7 @@ const filterInput = z
 const orderInput = z.object({ column: z.string().max(80), ascending: z.boolean().optional() }).optional();
 
 /** A stable order, so page after page neither repeats nor skips a row: the asked one, else `id`, else the first column. */
-export function stableOrder(plan: TableReadPlan, known: readonly string[]): { column: string; ascending: boolean } {
+function stableOrder(plan: TableReadPlan, known: readonly string[]): { column: string; ascending: boolean } {
   if (plan.orderBy) return plan.orderBy;
   if (known.includes("id")) return { column: "id", ascending: true };
   return { column: plan.columns[0], ascending: true };
@@ -263,7 +263,7 @@ const EXPORT_READ_BUDGET_MS = 15_000;
 const EXPORT_BUILD_DEADLINE_MS = 30_000;
 const EXPORT_PAGE_ROWS = TABLE_READ_MAX_ROWS;
 
-export function exportCell(value: unknown, cut: { count: number }): string | number | null {
+function exportCell(value: unknown, cut: { count: number }): string | number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : String(value);
   if (typeof value === "boolean") return value ? "Yes" : "No";

@@ -34,7 +34,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The same budget the signboard read takes, and for the same reason: he is standing in a corridor. */
-export const PHOENIX_CRM_SCHEDULE_TIMEOUT_MS = 8_000;
+const PHOENIX_CRM_SCHEDULE_TIMEOUT_MS = 8_000;
 
 /**
  * The OpenAI model the door reads a timetable with — asked only when Claude's ACCOUNT is dead (out of
@@ -47,7 +47,7 @@ export const PHOENIX_CRM_SCHEDULE_TIMEOUT_MS = 8_000;
  * median and 6.2 s at p95 — inside the door's 8 s. Never move it back to nano to save money without
  * replaying those photos first.
  */
-export const PHOENIX_CRM_SCHEDULE_MODEL = "gpt-5.4-mini";
+const PHOENIX_CRM_SCHEDULE_MODEL = "gpt-5.4-mini";
 
 /**
  * 🔴 CLAUDE READS THE TIMETABLE FIRST SINCE 2026-10-19 (`preferProvider: "anthropic"`), AND BY NAME.

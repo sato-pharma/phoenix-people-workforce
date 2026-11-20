@@ -147,11 +147,11 @@ export type ScreenPruneResult = {
  */
 export const ORPHAN_PRUNE_BATCH = 1_000;
 /** A day past the owner's 90: a file the row-driven removal is still due to take is left to it. */
-export const ORPHAN_MIN_AGE_DAYS = 91;
+const ORPHAN_MIN_AGE_DAYS = 91;
 const STORAGE_LIST_PAGE = 1_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type OrphanBucketResult = {
+type OrphanBucketResult = {
   bucket: string;
   /** Folders of Cairo days strictly before this one are swept; null when the bucket was not swept. */
   before: string | null;
@@ -163,7 +163,7 @@ export type OrphanBucketResult = {
   error: string | null;
 };
 
-export type OrphanPruneResult = {
+type OrphanPruneResult = {
   cap: number;
   /** The night's cap was reached: more old files may be waiting for the next night. */
   capped: boolean;
@@ -267,7 +267,7 @@ async function oldCrashFiles(supabase: Client, before: string, max: number): Pro
  * that fails is reported per bucket — `found` null, never 0 — and the caller makes the night partial.
  * Only names of the buckets' own shapes are touched.
  */
-export async function pruneOrphanScreens(
+async function pruneOrphanScreens(
   input: { nowMs: number; notAfter: string | null; limit?: number },
   override?: Client,
 ): Promise<OrphanPruneResult> {

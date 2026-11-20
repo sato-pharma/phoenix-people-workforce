@@ -59,7 +59,7 @@ const TOKEN_PATTERN = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 /** The class the chip carries. Also the hook the canvas stylesheet paints it with. */
 export const OFFER_TOKEN_CHIP_CLASS = "phx-offer-token";
 
-export function escapeOfferHtml(value: string): string {
+function escapeOfferHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

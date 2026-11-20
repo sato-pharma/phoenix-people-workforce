@@ -21,7 +21,7 @@
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 
 /** Every distributor code the Direct channel has ever been written under, normalized. */
-export const DIRECT_CHANNEL_ALIASES: ReadonlySet<string> = new Set(["DIRECT", "DIRECTREQ"]);
+const DIRECT_CHANNEL_ALIASES: ReadonlySet<string> = new Set(["DIRECT", "DIRECTREQ"]);
 
 /** The surviving code — the module, because that is what feeds every month from 2026-08 on. */
 export const DIRECT_CHANNEL_CODE = "DIRECTREQ";

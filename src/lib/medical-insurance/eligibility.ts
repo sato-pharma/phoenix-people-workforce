@@ -34,7 +34,7 @@ import {
 } from "./cost";
 
 /** How far ahead a joiner or leaver appears on the list as coming up. */
-export const MEDICAL_INSURANCE_HORIZON_DAYS = 30;
+const MEDICAL_INSURANCE_HORIZON_DAYS = 30;
 
 export type EmployeeFacts = {
   hrId: string;
@@ -167,7 +167,7 @@ function isOpenOn(member: MemberFacts, day: string): boolean {
  * suggestion for whoever adds the joiner, never a decision: the category is what the employee is
  * entitled to, and no column on their record states it.
  */
-export function suggestCategory(jobTitle: string | null, members: readonly MemberFacts[], employeesByHrId: ReadonlyMap<string, EmployeeFacts>): MedicalInsuranceCategory | null {
+function suggestCategory(jobTitle: string | null, members: readonly MemberFacts[], employeesByHrId: ReadonlyMap<string, EmployeeFacts>): MedicalInsuranceCategory | null {
   const wanted = String(jobTitle ?? "").trim().toLowerCase();
   if (!wanted) return null;
   const counts = new Map<MedicalInsuranceCategory, number>();
@@ -385,7 +385,7 @@ export function buildMedicalInsuranceActions(input: {
   };
 }
 
-export type CostLineKind = "opening" | "addition" | "deletion" | "planned_addition" | "planned_deletion";
+type CostLineKind = "opening" | "addition" | "deletion" | "planned_addition" | "planned_deletion";
 
 export type CostLine = {
   key: string;

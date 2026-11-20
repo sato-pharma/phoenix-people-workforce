@@ -61,7 +61,7 @@ export const MAX_NOTE_FACTS = 12;
 const MAX_FACT_LABEL_CHARS = 40;
 const MAX_FACT_VALUE_CHARS = 80;
 /** The approver types this by hand; a couple of paragraphs is already generous. */
-export const MAX_NOTE_DRAFT_CHARS = 1_200;
+const MAX_NOTE_DRAFT_CHARS = 1_200;
 
 function clamp(value: string, max: number) {
   const trimmed = String(value ?? "").replace(/\s+/g, " ").trim();

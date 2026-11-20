@@ -32,19 +32,19 @@ import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 // ── A · an impossible location at validation ────────────────────────────────────────────────────
 
 /** Never reaches back: a place validated before this Cairo visit day is never re-judged (owner: "from today"). */
-export const IMPOSSIBLE_LOCATION_FROM_DAY = "2026-11-10";
+const IMPOSSIBLE_LOCATION_FROM_DAY = "2026-11-10";
 
 /** Below this distance nothing is impossible: a rep who drove across a district is still in it. */
-export const IMPOSSIBLE_TRAVEL_MIN_METERS = 3000;
+const IMPOSSIBLE_TRAVEL_MIN_METERS = 3000;
 
 /** Faster than this through a city, between his last saved visit and this reading, is not travel. */
-export const IMPOSSIBLE_TRAVEL_KMH = 80;
+const IMPOSSIBLE_TRAVEL_KMH = 80;
 
 /** Only a visit saved in the last hour is an anchor: an older one says nothing about where he is now. */
 export const IMPOSSIBLE_TRAVEL_LOOKBACK_MINUTES = 60;
 
 /** An anchor must itself be a sharp reading: a rough visit is no proof of where he stood. */
-export const ANCHOR_MAX_ACCURACY_METERS = 50;
+const ANCHOR_MAX_ACCURACY_METERS = 50;
 
 /** A point refused as impossible is refused again, exactly, for this long — a Wi-Fi guess repeats itself. */
 export const IMPOSSIBLE_POINT_MEMORY_HOURS = 6;
@@ -173,7 +173,7 @@ export function readingsApartMeters(place: TwoReadings): number | null {
 // ── B and C · a rep stuck at one spot ──────────────────────────────────────────────────────────
 
 /** Five far refusals on one customer, from one spot, mean the PLACE is wrong — not the rep. */
-export const STUCK_MIN_TRIES = 5;
+const STUCK_MIN_TRIES = 5;
 
 /**
  * How many Cairo days of far tries are read together (owner, 2026-11-11). One day was the first rule, and
@@ -183,10 +183,10 @@ export const STUCK_MIN_TRIES = 5;
 export const STUCK_LOOKBACK_DAYS = 7;
 
 /** "One spot": every try within this distance of the first one's neighbourhood. */
-export const STUCK_SPREAD_METERS = 50;
+const STUCK_SPREAD_METERS = 50;
 
 /** Only a sharp try counts towards being stuck — a rough reading is no proof of where he stood. */
-export const STUCK_MAX_ACCURACY_METERS = 30;
+const STUCK_MAX_ACCURACY_METERS = 30;
 
 export type FarTry = { lat: number; lon: number; accuracyMeters: number | null };
 

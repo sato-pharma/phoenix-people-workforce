@@ -96,7 +96,7 @@ function egp(value: number) {
   return `EGP ${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-export function twinStatusLabel(twin: Pick<TwinCandidate, "currentStepCode" | "status">) {
+function twinStatusLabel(twin: Pick<TwinCandidate, "currentStepCode" | "status">) {
   return marketingRequestStatusLabel({ currentStepCode: twin.currentStepCode, status: twin.status });
 }
 

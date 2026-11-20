@@ -26,7 +26,7 @@ import { systemDeployment } from "@/config/system-settings";
 
 import { CONNECTOR_ROLES, type ConnectorRole } from "./types";
 
-export const CONNECTOR_SCOPE = "phoenix:read";
+const CONNECTOR_SCOPE = "phoenix:read";
 export const ACCESS_TOKEN_SECONDS = 3_600;
 export const REFRESH_TOKEN_SECONDS = 30 * 24 * 3_600;
 export const CODE_SECONDS = 120;
@@ -89,7 +89,7 @@ export function connectorOrigin(env: Record<string, string | undefined> = proces
   return url.origin;
 }
 
-export function connectorUrls(origin = connectorOrigin()) {
+function connectorUrls(origin = connectorOrigin()) {
   return {
     issuer: origin,
     resource: `${origin}/api/mcp`,
@@ -157,18 +157,18 @@ const random = (bytes = 32) => randomBytes(bytes).toString("base64url");
 export function newClientId() {
   return `phxcl_${random(18)}`;
 }
-export function newCode() {
+function newCode() {
   return `phxcd_${random(32)}`;
 }
-export function newAccessToken() {
+function newAccessToken() {
   return `phxat_${random(32)}`;
 }
-export function newRefreshToken() {
+function newRefreshToken() {
   return `phxrt_${random(32)}`;
 }
 
 /** PKCE S256: base64url(SHA-256(verifier)) must equal the challenge. Constant-time compare. */
-export function pkceMatches(verifier: unknown, challenge: string): boolean {
+function pkceMatches(verifier: unknown, challenge: string): boolean {
   if (typeof verifier !== "string" || !/^[A-Za-z0-9\-._~]{43,128}$/.test(verifier)) return false;
   const computed = Buffer.from(createHash("sha256").update(verifier, "ascii").digest("base64url"));
   const expected = Buffer.from(challenge);

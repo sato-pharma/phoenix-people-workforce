@@ -44,7 +44,7 @@ import {
 export const SALES_TRUTH_LANE = "sales-truth";
 
 /** The first month with its own check: Sales vs Target's engine starts here. */
-export const SALES_TRUTH_FIRST_OWN_MONTH = "2026-01";
+const SALES_TRUTH_FIRST_OWN_MONTH = "2026-01";
 
 const PAGE = "/sales/truth-check";
 const FINDING_LIST_CAP = 10;

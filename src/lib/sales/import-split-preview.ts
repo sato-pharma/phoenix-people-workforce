@@ -47,7 +47,7 @@ export type SplitPlanSourceRow = {
   qty: number;
 };
 
-export type SplitPlanCustomer = {
+type SplitPlanCustomer = {
   clientCode: string;
   clientName: string;
   /** The area the file books this customer in. */

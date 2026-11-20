@@ -1,4 +1,4 @@
-export type OneSignalPushSubscriptionChangeEvent = {
+type OneSignalPushSubscriptionChangeEvent = {
   current: { id: string | null; optedIn: boolean };
 };
 

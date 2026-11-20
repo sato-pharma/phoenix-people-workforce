@@ -362,7 +362,7 @@ export function ManagerPlanActualTable({
 }
 
 /** The visits alone, each Planned or Unplanned by its own flag: the half and the verdict lead the visit's own cell. */
-export function VisitsOnlyTable({ rows }: { rows: readonly PlanVsActualRow[] }) {
+function VisitsOnlyTable({ rows }: { rows: readonly PlanVsActualRow[] }) {
   return (
     <div className="@container grid min-w-0 gap-3">
       <div className="hidden min-w-0 @min-[720px]:block">

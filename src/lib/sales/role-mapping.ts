@@ -1,4 +1,4 @@
-export type SalesOrgRole = "MR" | "DSM" | "MR_DSM" | "NSM";
+type SalesOrgRole = "MR" | "DSM" | "MR_DSM" | "NSM";
 
 const salesRoleByHrId: Record<string, SalesOrgRole> = {
   "B-1": "MR_DSM",

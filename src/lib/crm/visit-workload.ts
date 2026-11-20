@@ -110,7 +110,7 @@ export type RepCheckinDetail = {
 
 export type CheckinPlace = { area: string | null; brick: string | null; km: number; region: string | null };
 
-export type RepVisitWorkloadDay = {
+type RepVisitWorkloadDay = {
   /** AM · PM · Pharmacies (the golden rule): `am` and `pm` never hold a pharmacy visit, whatever
    * period the vendor tagged it with — those are in `pharmacies`. am + pm + pharmacies = total. */
   am: number;

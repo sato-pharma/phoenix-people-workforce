@@ -68,7 +68,7 @@ export type EmployeeImportField =
   | "residenceCity"
   | "residenceArea";
 
-export type OrganizationEntityType =
+type OrganizationEntityType =
   | "department"
   | "line"
   | "area"

@@ -44,7 +44,7 @@ export const PAGE_CACHE_CONTROL = "private, no-cache, no-store, max-age=0, must-
 export const PAGE_CACHE_CONTROL_DIRECT = "private, no-cache, no-store, max-age=0, must-revalidate";
 
 /** Whether Cloudflare forwarded this request — it stamps `cf-ray` on every request it proxies. */
-export function cameThroughCloudflare(requestHeaders: Headers): boolean {
+function cameThroughCloudflare(requestHeaders: Headers): boolean {
   return requestHeaders.has("cf-ray");
 }
 

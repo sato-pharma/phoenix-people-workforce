@@ -130,7 +130,7 @@ export function channelGroupForCoarseSource(source: string | null | undefined): 
   }
 }
 
-export type SourceOfHireAdvertRow = {
+type SourceOfHireAdvertRow = {
   code: string;
   name: string;
   /** The advert kind's channel group, for grouping and for a kind that has no directory row. */
@@ -141,7 +141,7 @@ export type SourceOfHireAdvertRow = {
   autoHires: number;
 };
 
-export type SourceOfHireChannelRow = { channel: string; hires: number };
+type SourceOfHireChannelRow = { channel: string; hires: number };
 
 export type SourceOfHire = {
   totalHires: number;

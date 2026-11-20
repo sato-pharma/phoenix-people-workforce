@@ -55,7 +55,7 @@ export type EmployeeSeatDriftFactKind = "area" | "region" | "manager";
  * of the six rows corrected on 2026-10-12 had NO area on file, and those reps were shown "We don't
  * have your area on file yet" rather than being quietly scoped somewhere wrong.
  */
-export type EmployeeSeatDriftFact = {
+type EmployeeSeatDriftFact = {
   kind: EmployeeSeatDriftFactKind;
   /** What `employees` says, as a name. `null` when the record holds nothing. */
   employeeValue: string | null;

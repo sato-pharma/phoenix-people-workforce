@@ -42,7 +42,7 @@ function lineKey(line: { section: string; hr_key?: string; hrKey?: string; work_
  * spellings): the first kept, its flags and notes joined with the second's, so nothing is lost and
  * the unique (report, section, person, day) key holds.
  */
-export function dedupeLines(lines: readonly HrOpsLineDraft[]): HrOpsLineDraft[] {
+function dedupeLines(lines: readonly HrOpsLineDraft[]): HrOpsLineDraft[] {
   const byKey = new Map<string, HrOpsLineDraft>();
   for (const line of lines) {
     const key = lineKey(line);
@@ -64,7 +64,7 @@ export function dedupeLines(lines: readonly HrOpsLineDraft[]): HrOpsLineDraft[] 
  * `incomplete` marks each section whose build raised a warning — meaning a source behind its ROWS
  * could not be read in full — and the stale sweep in `buildHrOpsReport` leaves those rows alone.
  */
-export async function buildPeriodLines(
+async function buildPeriodLines(
   period: HrOpsPeriod,
   today: string,
 ): Promise<{ incomplete: Record<HrOpsSection, boolean>; lines: HrOpsLineDraft[]; warnings: string[] }> {

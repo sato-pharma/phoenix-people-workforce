@@ -34,7 +34,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type RawRecord = Record<string, unknown>;
 
 export type DeviceFact = { label: string; value: string };
-export type DeviceFactSection = { title: string; facts: DeviceFact[] };
+type DeviceFactSection = { title: string; facts: DeviceFact[] };
 
 export type HeadwindDeviceDetail = {
   deviceNumber: string;
@@ -44,7 +44,7 @@ export type HeadwindDeviceDetail = {
   sections: DeviceFactSection[];
 };
 
-export type HeadwindCommandRecord = {
+type HeadwindCommandRecord = {
   /** The action, as a person would say it — the past tense the audit row was written with. */
   summary: string;
   /** Who pressed it. A name where the audit row holds one, never a bare id. */
@@ -73,7 +73,7 @@ const ACRONYMS: Readonly<Record<string, string>> = {
 };
 
 /** A key such as `batteryLevel` as a person would read it: "Battery level". */
-export function humanizeHeadwindKey(key: string): string {
+function humanizeHeadwindKey(key: string): string {
   const words = key
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(/[_\s.]+/)

@@ -39,7 +39,7 @@ import { compareOldestFirst } from "@/lib/phoenix-crm/waiting-rules";
  * - `rejected`  — he was refused and the refusal can still be taken back;
  * - `sent_back` — his building was refused, so he is waiting to be captured again.
  */
-export type SeatedState = "waiting" | "in_use" | "rejected" | "sent_back";
+type SeatedState = "waiting" | "in_use" | "rejected" | "sent_back";
 
 /** What the system read beside this customer's name on the building's timetable. */
 export type SeatedTimetable = {

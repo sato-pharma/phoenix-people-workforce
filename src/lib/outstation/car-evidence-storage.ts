@@ -6,7 +6,7 @@ import type {
   OutstationTicketAttachmentMetadata,
 } from "@/lib/outstation/types";
 
-export const OUTSTATION_EVIDENCE_BUCKET = "outstation-evidence";
+const OUTSTATION_EVIDENCE_BUCKET = "outstation-evidence";
 
 const CAR_EVIDENCE_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const TICKET_ATTACHMENT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -144,7 +144,7 @@ export async function uploadOutstationDepartureEvidenceImage(params: {
  * keyed on the request, the stop number and the capture instant, so no stop photo can ever land on
  * another photo's path — the arrival, the departure or an earlier stop.
  */
-export function buildOutstationJourneyStopImagePath(input: {
+function buildOutstationJourneyStopImagePath(input: {
   capturedAtMs: number;
   employeeHrId: string;
   requestId: string | number;
@@ -181,7 +181,7 @@ export async function uploadOutstationJourneyStopImage(params: {
   return path;
 }
 
-export function buildOutstationTicketAttachmentPath(input: {
+function buildOutstationTicketAttachmentPath(input: {
   employeeHrId: string;
   fileName: string;
   index: number;
@@ -333,7 +333,7 @@ export async function uploadOutstationTicketAttachments(
   return uploaded;
 }
 
-export type OutstationMeetingInvoiceUpload = {
+type OutstationMeetingInvoiceUpload = {
   bytes: Buffer;
   contentType: string;
   fileName: string;
@@ -347,7 +347,7 @@ export type OutstationMeetingInvoiceUpload = {
  * one invoice per request, so an admin correcting it is expected to replace the same object
  * rather than accumulate versions.
  */
-export function buildOutstationMeetingInvoicePath(input: {
+function buildOutstationMeetingInvoicePath(input: {
   employeeHrId: string;
   fileName: string;
   requestId: string | number;
@@ -365,7 +365,7 @@ export function buildOutstationMeetingInvoicePath(input: {
  * error text names the right document — an admin who dropped in a .docx should read "invoice",
  * not "ticket attachment".
  */
-export function parseOutstationMeetingInvoiceDataUrl(input: {
+function parseOutstationMeetingInvoiceDataUrl(input: {
   dataUrl: string;
   fileName: string;
 }): OutstationMeetingInvoiceUpload {

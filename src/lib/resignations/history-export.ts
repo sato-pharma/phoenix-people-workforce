@@ -102,7 +102,7 @@ export function formatLengthOfService(hireDate: string | null | undefined, lastW
 }
 
 /** "declined_offer" is an exit CATEGORY that can sit on a terminated status — it wins the label. */
-export function resignationEmploymentStatusLabel(
+function resignationEmploymentStatusLabel(
   employmentStatus: string | null | undefined,
   exitCategory: string | null | undefined,
 ) {
@@ -240,7 +240,7 @@ export function buildResignationHistoryRows(
   });
 }
 
-export const payrollCandidateHistoryColumns: ExportColumn[] = [
+const payrollCandidateHistoryColumns: ExportColumn[] = [
   { key: "employee", label: "Employee", width: 30 },
   { key: "nameAr", label: "Arabic Name", width: 28 },
   { key: "hrId", label: "HR ID", text: true, width: 11 },

@@ -97,7 +97,7 @@ async function unpackBundle(packed: string): Promise<ReviewBundle> {
 /** Exported ONLY so a test can pin that the freshness stamp participates in the key: drop it and
  *  two reads taken either side of a target load would collide on the same entry. The array order
  *  IS the cache key — do not reorder casually. */
-export function reviewBundleCacheKeyParts(
+function reviewBundleCacheKeyParts(
   window: ReviewWindow,
   adjustment: string | null,
   stamp: string,

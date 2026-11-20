@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { formatDays, formatEgp, formatStamp, formatWorkDay } from "./format";
 
-export type RowMode = "reviewer" | "decider" | "reader";
+type RowMode = "reviewer" | "decider" | "reader";
 
 /** One row's figure from /priced (pricing.ts). Only `priced` carries an amount — never a zero for the rest. */
 export type RowPrice = {

@@ -54,11 +54,6 @@ export function managerPlanHref(planId: string, surface: "portal" | "admin" = "p
   return `${surface === "admin" ? "/admin" : "/employee-portals"}/approvals/plan/${encodeURIComponent(planId)}`;
 }
 
-/** "Week of 24 Oct" is built by the caller; the plan's own name for a list line. */
-export function managerPlanTitle(weekStart: string): string {
-  return `Phoenix CRM weekly plan · ${weekStart}`;
-}
-
 /**
  * The legacy plan's activity type a half-day reads as, so a screen built on that list keeps its colours
  * and its rules: with a rep and a single visit are both Field, and the seven day activities map to the five

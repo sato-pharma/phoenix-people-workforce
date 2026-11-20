@@ -23,7 +23,7 @@ export const SCREEN_BODY_MAX_BYTES = 1_700_000;
 /** Pictures one person may store in any rolling hour, counted from the table. */
 export const SCREEN_RATE_LIMIT_PER_HOUR = 40;
 export const SCREEN_MESSAGE_CAP = 1_000;
-export const SCREEN_PATH_CAP = 512;
+const SCREEN_PATH_CAP = 512;
 
 export type ScreenImageType = "image/jpeg" | "image/webp";
 
@@ -44,7 +44,7 @@ export type ScreenReportParse = { ok: true; report: ScreenReport } | { ok: false
 const DATA_URL = /^data:(image\/jpeg|image\/webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 
 /** Decoded size of a base64 body without decoding it. */
-export function base64DecodedLength(body: string): number {
+function base64DecodedLength(body: string): number {
   const padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor((body.length * 3) / 4) - padding);
 }
@@ -59,7 +59,7 @@ function isWebp(bytes: Uint8Array): boolean {
 }
 
 /** The picture from a data URL, or the reason it is refused. */
-export function decodeScreenImage(dataUrl: unknown): { ok: true; contentType: ScreenImageType; bytes: Uint8Array } | { ok: false; message: string } {
+function decodeScreenImage(dataUrl: unknown): { ok: true; contentType: ScreenImageType; bytes: Uint8Array } | { ok: false; message: string } {
   if (typeof dataUrl !== "string" || !dataUrl) return { ok: false, message: "The picture is missing." };
   // Checked on the text first, so an oversized body is refused before it is decoded.
   if (dataUrl.length > SCREEN_BODY_MAX_BYTES) return { ok: false, message: "The picture is larger than 1.2 MB." };
@@ -142,7 +142,7 @@ export function screenBodyTooLarge(contentLength: string | null): boolean {
 }
 
 /** A storage-path-safe form of an HR id or login: letters, digits and dashes only. */
-export function screenOwnerFolder(value: string | null | undefined): string {
+function screenOwnerFolder(value: string | null | undefined): string {
   const cleaned = String(value ?? "").trim().replace(/[^A-Za-z0-9-]+/g, "_").slice(0, 60);
   return cleaned || "unknown";
 }

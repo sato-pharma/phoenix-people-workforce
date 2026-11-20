@@ -191,7 +191,7 @@ function addVisitCounts(target: VisitCounts, source: VisitCounts): void {
   target.unplannedWaiting += source.unplannedWaiting;
 }
 
-export type RepVisitDay = { date: string; am: VisitCounts; pm: VisitCounts };
+type RepVisitDay = { date: string; am: VisitCounts; pm: VisitCounts };
 
 export type RepVisitGroup = {
   seatId: string;
@@ -446,7 +446,7 @@ export function groupCoverageByTerritory(rows: ReadonlyArray<Row>): { groups: Te
  * heading: a product manager's visits are NEVER folded into `doubleVisits`, which is the figure
  * district managers are measured on (CLAUDE.md, the 2026-10-02 lock).
  */
-export type ManagerVisitRole = "manager" | "senior" | "product_manager";
+type ManagerVisitRole = "manager" | "senior" | "product_manager";
 
 export type ManagerVisitEntry = {
   date: string;

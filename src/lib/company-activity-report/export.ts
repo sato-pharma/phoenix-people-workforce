@@ -116,7 +116,7 @@ export const OUTCOME_FILL: Record<CompanyActivityDayOutcome, string> = {
 
 // The text partner for each OUTCOME_FILL — a colored fill with matching text reads as a real badge
 // rather than a fill with plain body text sitting on top of it.
-export const OUTCOME_FONT: Record<CompanyActivityDayOutcome, string> = {
+const OUTCOME_FONT: Record<CompanyActivityDayOutcome, string> = {
   office_present: SLATE,
   crm_field_visit: SLATE,
   crm_leave: MUTED,
@@ -251,7 +251,7 @@ const SUMMARY_COLUMNS: TableColumn[] = [
 
 // 1-based column indexes into SUMMARY_COLUMNS that get severity banding after writeTable runs.
 export const SUMMARY_COL_NO_ENTRY = 18;
-export const SUMMARY_COL_NO_SIGNAL = 19;
+const SUMMARY_COL_NO_SIGNAL = 19;
 export const SUMMARY_COL_CONFLICT = 20;
 
 function summaryRowValues(row: CompanyActivityEmployeeSummary): CellValue[] {
@@ -355,7 +355,7 @@ const DETAIL_COLUMNS: TableColumn[] = [
 ];
 
 // 1-based column indexes into DETAIL_COLUMNS that get banded after writeTable runs.
-export const DETAIL_COL_OUTCOME = 6;
+const DETAIL_COL_OUTCOME = 6;
 export const DETAIL_COL_CONFLICT = 17;
 
 function detailRowValues(input: {

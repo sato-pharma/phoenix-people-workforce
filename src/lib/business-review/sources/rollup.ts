@@ -257,8 +257,6 @@ function finalize(acc: Acc, periods: readonly string[]): ReviewOverlay {
   };
 }
 
-export const EMPTY_OVERLAY: ReviewOverlay = finalize(newAcc(), []);
-
 /** A fresh empty overlay shaped for this window, so an absent unit still renders its month keys. */
 function emptyFor(periods: readonly string[]): ReviewOverlay {
   return finalize(newAcc(), periods);

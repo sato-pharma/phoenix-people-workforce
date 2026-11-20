@@ -28,7 +28,7 @@ export function changeHistoryIncludesMoney(access: Pick<AccessContext, "role">, 
 }
 
 /** The newest changes per log. A record edited more often than this shows its newest and says so. */
-export const CHANGE_HISTORY_LIMIT = 200;
+const CHANGE_HISTORY_LIMIT = 200;
 
 const RECORD_COLUMNS =
   "id, changed_at, change_kind, actor_login_id, actor_hr_id, actor_name, actor_source, changed_fields, masked_fields, old_values, new_values, write_channel, actor_job";

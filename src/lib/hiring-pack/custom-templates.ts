@@ -13,8 +13,6 @@
 // costs one round trip instead of an insert that fails halfway through an upload.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { customDocumentFor, type CustomHiringPackDocument } from "@/lib/hiring-pack/types";
-
 /** The private bucket the artwork lives in. Matches the migration's `storage.buckets` row. */
 export const CUSTOM_TEMPLATE_BUCKET = "hiring-pack-templates";
 
@@ -91,7 +89,7 @@ export const CUSTOM_TEMPLATE_MIN_PT = 72;
 export const CUSTOM_TEMPLATE_MAX_PT = 2400;
 
 /** How long a name may be. Long enough for a real form's full title, short enough to fit a row. */
-export const CUSTOM_TEMPLATE_MAX_NAME_LENGTH = 160;
+const CUSTOM_TEMPLATE_MAX_NAME_LENGTH = 160;
 
 /**
  * WHICH PACKAGE A TEMPLATE PRINTS IN — the owner, 2026-09-04: "I want to be able to group documents
@@ -197,7 +195,7 @@ export function isCustomTemplatePrintSides(value: unknown): value is CustomTempl
 }
 
 /** How many sheets of paper one copy of this template uses. */
-export function sheetsPerCopy(pageCount: number, printSides: CustomTemplatePrintSides): number {
+function sheetsPerCopy(pageCount: number, printSides: CustomTemplatePrintSides): number {
   if (pageCount <= 0) return 0;
   return printSides === "double" ? Math.ceil(pageCount / 2) : pageCount;
 }
@@ -230,7 +228,7 @@ export function describePrintInstruction(input: {
 }
 
 /** One printed side of a template, as the client describes it before it is stored. */
-export type CustomTemplatePageDraft = {
+type CustomTemplatePageDraft = {
   /** Zero-based, in printing order. */
   pageIndex: number;
   contentType: CustomTemplateContentType;
@@ -560,11 +558,6 @@ export function buildCustomTemplatePagePath(input: {
           : "png";
   const safeUnique = input.unique.replace(/[^a-zA-Z0-9-]+/g, "").slice(0, 32) || "page";
   return `${input.templateKey}/v${input.version}/${String(input.pageIndex).padStart(2, "0")}-${safeUnique}.${extension}`;
-}
-
-/** The `custom:<key>` document identity for a stored template. */
-export function documentForTemplateKey(templateKey: string): CustomHiringPackDocument {
-  return customDocumentFor(templateKey);
 }
 
 /**

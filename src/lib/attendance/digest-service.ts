@@ -364,7 +364,7 @@ export type DigestLineRow = {
   adjusted: boolean;
 };
 
-export type DigestRow = {
+type DigestRow = {
   id: number;
   employeeHrId: string;
   cycleKey: string;
@@ -532,7 +532,7 @@ function directoryRowFor(byKey: Map<string, EmployeeDirectoryRow>, hrId: string)
 // Annual balance
 // ---------------------------------------------------------------------------
 
-export type BalanceOption = {
+type BalanceOption = {
   /** Can annual balance pay for this whole day right now? */
   covers: boolean;
   /** Annual balance left before this day, in days. null when it could not be worked out. */

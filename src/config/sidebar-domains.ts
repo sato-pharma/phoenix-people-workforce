@@ -86,7 +86,7 @@ import {
  * sections come to sit under one heading in a deliberate reading order rather than the order they
  * happen to occupy in the seeds.
  */
-export type SidebarDomainGroup = {
+type SidebarDomainGroup = {
   /** The heading rendered above these rows. Merges one or more real sections. */
   heading: string;
   /** Section ids from `adminNavigationSectionSeeds`, rendered in this order. */

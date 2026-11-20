@@ -25,7 +25,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // A challenge is short-lived on purpose: it is the anti-replay window. Two minutes is long enough
 // for a person to find the fingerprint reader and short enough that a captured challenge is dead
 // before it is useful.
-export const webauthnChallengeTtlSeconds = 120;
+const webauthnChallengeTtlSeconds = 120;
 
 const registrationPurpose = "registration";
 const authenticationPurpose = "authentication";

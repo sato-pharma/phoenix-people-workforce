@@ -19,10 +19,10 @@
 import { isUuid } from "@/lib/http/uuid";
 
 /** The three recruitment addresses, longest first so a shorter one can never claim a longer path. */
-export const RECRUITMENT_ROOTS = ["/employee-portals/recruitment", "/hr/recruitment", "/recruitment"] as const;
+const RECRUITMENT_ROOTS = ["/employee-portals/recruitment", "/hr/recruitment", "/recruitment"] as const;
 
 /** The candidate page's own segment under a recruitment address. */
-export const CANDIDATE_PAGE_SEGMENT = "/candidate";
+const CANDIDATE_PAGE_SEGMENT = "/candidate";
 
 /**
  * The recruitment address the browser is in, read off its own path.

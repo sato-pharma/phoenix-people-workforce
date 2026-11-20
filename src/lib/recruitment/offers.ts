@@ -74,7 +74,7 @@ type OfferDbRow = {
   updated_at: string;
 };
 
-export function mapOffer(row: OfferDbRow): Offer {
+function mapOffer(row: OfferDbRow): Offer {
   return {
     id: row.id,
     applicationId: row.application_id,

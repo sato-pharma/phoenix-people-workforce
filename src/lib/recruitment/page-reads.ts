@@ -55,7 +55,7 @@ export const RECRUITMENT_READ_LABELS: Record<RecruitmentReadSource, string> = {
  * How long an OPTIONAL read may take before the page draws without it. The request timeout underneath
  * is fifteen seconds; an extra list is not worth that wait.
  */
-export const OPTIONAL_READ_DEADLINE_MS = 8_000;
+const OPTIONAL_READ_DEADLINE_MS = 8_000;
 
 export class RecruitmentReadTimeoutError extends Error {
   constructor(source: RecruitmentReadSource, deadlineMs: number) {
@@ -121,7 +121,7 @@ export async function settleRead<T>(
   }
 }
 
-export type RecruitmentManagerOption = { hrId: string; fullName: string };
+type RecruitmentManagerOption = { hrId: string; fullName: string };
 
 export type RecruitmentPageReads = {
   dashboard: () => PromiseLike<RecruitmentDashboard>;

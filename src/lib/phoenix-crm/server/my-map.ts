@@ -66,7 +66,7 @@ const SNAPSHOT_POINTS = 600;
 const SNAPSHOT_BRICKS = 8;
 
 /** Who this viewer is on the map: the whole company, a chain of managers, a district, or his own territory. */
-export function myMapScopeOf(viewer: PhoenixCrmViewer): MyMapScope {
+function myMapScopeOf(viewer: PhoenixCrmViewer): MyMapScope {
   if (viewer.basis === "all") return "company";
   const held = viewer.managerSeats.filter((seat) => isManagerTier(seat.tier) && !seat.isOtherPseudoDm);
   if (held.some((seat) => seat.tier === "RSM" || seat.tier === "NSM")) return "manager";

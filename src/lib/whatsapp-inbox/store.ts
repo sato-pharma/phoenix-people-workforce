@@ -42,8 +42,8 @@ import { ilikeContainsValue, ilikeExactValue } from "@/lib/supabase/search-filte
 export const WHATSAPP_INBOX_MEDIA_BUCKET = "whatsapp-inbox-media";
 
 /** The largest attachment copied into Phoenix automatically, and served through the inbox. */
-export const INBOX_MEDIA_CACHE_MAX_BYTES = 25 * 1024 * 1024;
-export const INBOX_MEDIA_MAX_FETCH_ATTEMPTS = 5;
+const INBOX_MEDIA_CACHE_MAX_BYTES = 25 * 1024 * 1024;
+const INBOX_MEDIA_MAX_FETCH_ATTEMPTS = 5;
 
 export class WhatsAppInboxNotFoundError extends Error {
   constructor(message = "That conversation no longer exists.") {
@@ -177,7 +177,7 @@ export function isReplyWindowOpen(lastInboundAt: string | null, now = Date.now()
 }
 
 /** `+20 10 1234 5678`-ish, for reading. Meta's digits are kept as they are when the shape is unknown. */
-export function formatWhatsAppPhone(waId: string | null): string | null {
+function formatWhatsAppPhone(waId: string | null): string | null {
   if (!waId) return null;
   const digits = waId.replace(/\D+/g, "");
   if (/^20\d{10}$/.test(digits)) return `+20 ${digits.slice(2, 4)} ${digits.slice(4, 8)} ${digits.slice(8)}`;
@@ -357,25 +357,25 @@ function summarize(
  * `Dr Ahmed (Tanta)` or `O'Brien`, and the strip meant the inbox could not find either. The values
  * are double-quoted now, so the characters reach the database as text; `%` and `*` are still
  * neutralised inside the shared helper, being wildcards rather than text. */
-export function sanitizeInboxSearch(value: string | null | undefined): string {
+function sanitizeInboxSearch(value: string | null | undefined): string {
   return String(value ?? "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 60);
 }
 
-export const INBOX_LIST_PAGE_SIZE = 150;
+const INBOX_LIST_PAGE_SIZE = 150;
 /** The most one database response is asked for; a longer page is read in several windows. */
 const INBOX_READ_WINDOW = 1000;
 
 /** How many chats one list request returns: a page by default, as many as "Show more" has asked for. There is no ceiling. */
-export function clampInboxListLimit(value: number | null | undefined): number {
+function clampInboxListLimit(value: number | null | undefined): number {
   const wanted = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : INBOX_LIST_PAGE_SIZE;
   return Math.max(1, wanted);
 }
 
 /** How far back "Waiting for us" looks. A chat older than this has gone cold, and the pile says how far it reaches. */
-export const INBOX_WAITING_WINDOW_DAYS = 30;
+const INBOX_WAITING_WINDOW_DAYS = 30;
 
 type WaitingChatRow = {
   conversation_id: string;

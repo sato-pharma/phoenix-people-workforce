@@ -15,7 +15,7 @@ import { CRM_CHECKINS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Ceiling on one customer's check-ins — a doctor seen weekly for six years is about 300. */
-export const OLD_CRM_CHECKINS_MAX = 3000;
+const OLD_CRM_CHECKINS_MAX = 3000;
 
 export type OldCrmCheckin = {
   checkinId: number | null;

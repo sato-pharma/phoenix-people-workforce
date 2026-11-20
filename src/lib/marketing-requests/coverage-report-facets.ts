@@ -54,7 +54,7 @@ const MULTISELECT_SPECS: MultiselectSpec[] = [
   { key: "status", label: "Status", extract: (e) => pair(e.status, marketingRequestStatusLabel(e.status)) },
 ];
 
-export function selectedCoverageValues(filters: MarketingCoverageFilterState, key: MarketingCoverageFilterKey): string[] {
+function selectedCoverageValues(filters: MarketingCoverageFilterState, key: MarketingCoverageFilterKey): string[] {
   if (key === "requestType") return filters.requestType.map(String);
   const value = (filters as Record<string, unknown>)[key];
   return Array.isArray(value) ? (value as string[]).map(String) : [];

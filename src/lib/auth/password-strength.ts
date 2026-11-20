@@ -16,7 +16,7 @@
  * doors, changing it and setting it from the link. Only an empty password is still refused.
  */
 
-export const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MIN_LENGTH = 8;
 
 /** False for a test account (`app_auth_users.is_test_persona`): its password is never checked against the rules. */
 export function chosenPasswordRulesApply(account: { isTestPersona?: boolean | null }): boolean {

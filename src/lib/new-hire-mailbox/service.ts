@@ -36,7 +36,7 @@ import type { NewHireMailboxSubject } from "@/lib/new-hire-mailbox/messages";
 
 export const NEW_HIRE_MAILBOX_TABLE = "new_hire_mailbox_tasks" as const;
 
-export type NewHireMailboxStatus = "pending" | "connected" | "not_needed";
+type NewHireMailboxStatus = "pending" | "connected" | "not_needed";
 export type NewHireMailboxSource = "manual_add" | "employee_import";
 
 /** A refusal a person can act on. The route returns its message as-is. */

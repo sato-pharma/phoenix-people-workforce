@@ -70,7 +70,7 @@ import { vacanciesForCandidate } from "@/lib/recruitment/vacancy-applicants";
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
 /** How we know this CV belongs to the seat. Ranked strongest-stated first — see the header. */
-export type SeatQueueSource = "sent" | "folder" | "whatsapp" | "email" | "read";
+type SeatQueueSource = "sent" | "folder" | "whatsapp" | "email" | "read";
 
 /** The answer: which source claimed this CV for the seat, and the sentence the screen prints. */
 export type SeatQueueMatch = {

@@ -1,4 +1,3 @@
-import type { NavigationSectionItem } from "@/config/system-navigation";
 
 /**
  * Personal navigation layout — the owner rearranging HIS OWN sidebar.
@@ -110,7 +109,7 @@ export function layoutOwnerKey(access: {
 
 /** A section in a saved layout. `label` is the owner's own name for it; `id` ties back to the
  *  code-defined section so a renamed section still matches its default when the layout is reset. */
-export type PersonalLayoutSection = {
+type PersonalLayoutSection = {
   id: string;
   label: string;
   /** Ordered hrefs. An href listed here is pulled OUT of whatever section defined it. */
@@ -180,8 +179,6 @@ export const HORIZONTAL_ZONES = [
   { key: "lowerRow", label: "Lower nav row", hint: "Below the page title." },
 ] as const;
 
-export type HorizontalZoneKey = (typeof HORIZONTAL_ZONES)[number]["key"];
-
 /**
  * The rearrangement below is generic over the item type, and deliberately so. The live sidebar
  * applies it to NavigationSectionItem (icons and all); the editor applies it to a plain
@@ -207,9 +204,6 @@ export type AppliedNavigationOf<TItem extends LayoutItemLike> = {
   /** The sidebar, after rearrangement. */
   sections: readonly LayoutSectionLike<TItem>[];
 };
-
-/** The live-sidebar case: the same result, over real navigation items. */
-export type AppliedNavigation = AppliedNavigationOf<NavigationSectionItem>;
 
 export function isPersonalNavigationLayout(value: unknown): value is PersonalNavigationLayout {
   if (!value || typeof value !== "object") return false;

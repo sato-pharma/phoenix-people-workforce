@@ -228,9 +228,9 @@ export type MonthlyDoctorRow = DoctorMonthTally & {
 };
 
 /** What the board calls the week a month opens with and does not own (owner, 2026-10-01). */
-export const LEADING_WEEK_LABEL = "First days";
+const LEADING_WEEK_LABEL = "First days";
 /** ...and the week the rep is in, whenever that is the week the board opens with — even when it also holds the month's first days (2026-10-31). */
-export const RUNNING_WEEK_LABEL = "This week";
+const RUNNING_WEEK_LABEL = "This week";
 
 /** A field-week of the month, with its own status and its days (the derived weekly plan). */
 export type MonthlyWeekView = {

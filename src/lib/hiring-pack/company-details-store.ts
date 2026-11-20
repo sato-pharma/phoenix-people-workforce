@@ -46,7 +46,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const TABLE = "hiring_pack_company_details";
 
 /** The ways this table can be absent, as one question. See the header. */
-export function isCompanyDetailsLayerMissing(error: unknown): boolean {
+function isCompanyDetailsLayerMissing(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   if (code === "PGRST205" || code === "PGRST204" || code === "42P01" || code === "42703") {
@@ -73,7 +73,7 @@ export type CompanyDetailOverride = {
  * Every stored override, keyed. Absent table, empty table and "everything reset" all answer `{}`,
  * which is the same instruction to the resolver: print the compiled default.
  */
-export async function loadCompanyDetailOverrides(): Promise<
+async function loadCompanyDetailOverrides(): Promise<
   Partial<Record<CompanyDetailKey, string>>
 > {
   const { data, error } = await getSupabaseAdmin()

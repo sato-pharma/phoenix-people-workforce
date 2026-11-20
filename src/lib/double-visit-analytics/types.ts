@@ -170,7 +170,7 @@ export type DoubleVisitRoleRollup = {
   totalDvs: number;
 };
 
-export type DoubleVisitInsightCategory =
+type DoubleVisitInsightCategory =
   | "balance"
   | "concentration"
   | "coverage"
@@ -519,7 +519,7 @@ export type DoubleVisitIntegrityIssue = {
 
 // Kept for the workspace's conditional "problematic imports" panel (always empty now that
 // there is no import concept) — see getDoubleVisitDataIntegrityReport in service.ts.
-export type DoubleVisitIntegrityImportSummary = {
+type DoubleVisitIntegrityImportSummary = {
   dateFrom: string;
   dateTo: string;
   duplicateWarningCount: number;

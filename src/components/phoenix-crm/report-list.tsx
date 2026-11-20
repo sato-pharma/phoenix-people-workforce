@@ -102,7 +102,7 @@ export function DayList({ days, today }: { days: ReadonlyArray<DayLine>; today: 
 
 // ── The list every section shares: show filter, search, pages, open days ────────────────────────
 
-export type ReportListWords = {
+type ReportListWords = {
   title: string;
   all: string;
   with: string;

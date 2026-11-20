@@ -49,7 +49,7 @@ export function telegramBotUsername() {
   return process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, "") || null;
 }
 
-export function telegramWebhookSecret() {
+function telegramWebhookSecret() {
   return process.env.NOTIFICATION_WEBHOOK_SECRET?.trim() || null;
 }
 
@@ -111,7 +111,7 @@ export function telegramEnvironmentStatus(): TelegramEnvironmentStatus {
   };
 }
 
-export function expectedTelegramWebhookUrl() {
+function expectedTelegramWebhookUrl() {
   const base = appUrl();
   return base ? `${base}/api/integrations/telegram/webhook` : null;
 }
@@ -199,7 +199,7 @@ export async function getTelegramWebhookStatus(): Promise<TelegramWebhookStatus>
   }
 }
 
-export function phoenixActionUrl(path: string | null | undefined) {
+function phoenixActionUrl(path: string | null | undefined) {
   const value = String(path ?? "").trim();
   if (!value) return appUrl() || "";
   if (/^https?:\/\//i.test(value)) return value;
@@ -298,12 +298,6 @@ function buildTelegramButtons(input: TelegramSendInput) {
   return { buttons: safeButtons };
 }
 
-export function buildTelegramDeepLink(token: string) {
-  const username = telegramBotUsername();
-  if (!username) return null;
-  return `https://t.me/${encodeURIComponent(username)}?start=${encodeURIComponent(token)}`;
-}
-
 type TelegramApiResult<T> = { ok: true; result: T } | { error: string; ok: false };
 
 // Generic Telegram Bot API caller used by the provisioning helpers. Send/webhook
@@ -336,14 +330,14 @@ async function callTelegram<T = unknown>(method: string, body?: Record<string, u
   }
 }
 
-export type TelegramBotIdentity = {
+type TelegramBotIdentity = {
   canJoinGroups: boolean | null;
   firstName: string | null;
   id: number | null;
   username: string | null;
 };
 
-export async function getTelegramBotIdentity(): Promise<{ error: string | null; identity: TelegramBotIdentity | null; ok: boolean }> {
+async function getTelegramBotIdentity(): Promise<{ error: string | null; identity: TelegramBotIdentity | null; ok: boolean }> {
   const result = await callTelegram<{ can_join_groups?: boolean; first_name?: string; id?: number; username?: string }>("getMe");
   if (!result.ok) return { error: result.error, identity: null, ok: false };
   return {
@@ -391,7 +385,7 @@ export async function buildTelegramDeepLinkFromToken(token: string): Promise<str
   return `https://t.me/${encodeURIComponent(username)}?start=${encodeURIComponent(token)}`;
 }
 
-export type TelegramProvisionStep = { detail: string; ok: boolean; step: string };
+type TelegramProvisionStep = { detail: string; ok: boolean; step: string };
 
 export type TelegramProvisionReport = {
   botUsername: string | null;

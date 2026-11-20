@@ -198,7 +198,7 @@ export type WeeklySalesDetailGroupRow = {
   returnsValue: number;
 };
 
-export type WeeklySalesDetailOption = { code: string; name: string };
+type WeeklySalesDetailOption = { code: string; name: string };
 
 export type WeeklySalesDetailView = {
   audience: WeeklySalesDetailAudience;
@@ -389,7 +389,7 @@ function passes(values: ReadonlySet<string>, mode: WeeklyFilterMode | null | und
 }
 
 /** True when the upload belongs to the period the rows were loaded for (the loader's own month/week rules). */
-export function weeklySalesUploadInPeriod(upload: WeeklySalesDetailUpload, period: WeeklySalesDetailPeriod): boolean {
+function weeklySalesUploadInPeriod(upload: WeeklySalesDetailUpload, period: WeeklySalesDetailPeriod): boolean {
   const months = new Set((period.cycleMonths ?? []).map((month) => month.trim()).filter(Boolean));
   const weeks = new Set((period.weekNumbers ?? []).map((week) => String(week)));
   return (
@@ -459,7 +459,7 @@ function accumulate(
 export type WeeklySalesDetailGroupCut = "depots" | "areas" | "regions" | "distributors";
 
 /** A cell's key in one grouping: exactly the `code` its group row carries. */
-export function weeklySalesDetailGroupKey(
+function weeklySalesDetailGroupKey(
   cell: Pick<WeeklySalesDetailCell, "branchKey" | "areaCode" | "regionCode" | "regionName" | "distributorCode">,
   cut: WeeklySalesDetailGroupCut,
 ): string {

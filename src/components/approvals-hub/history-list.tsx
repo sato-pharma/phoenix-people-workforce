@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 
 // Optionally carries who decided it (used only by the company-wide "All Decisions" tab).
-export type HistoryListItem = ResponderHistoryItem & { decidedByName?: string | null };
+type HistoryListItem = ResponderHistoryItem & { decidedByName?: string | null };
 
 type Props = {
   items: HistoryListItem[];

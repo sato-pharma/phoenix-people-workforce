@@ -33,7 +33,7 @@ export type SystemAuditRead =
 const count = (value: number) => value.toLocaleString("en-US");
 
 /** One sentence for the audit log, in the words the page itself uses. */
-export function systemAuditReadSummary(read: SystemAuditRead): string {
+function systemAuditReadSummary(read: SystemAuditRead): string {
   switch (read.kind) {
     case "incidents": {
       const shown = read.rows === 0 ? "no rows" : `rows ${count(read.offset + 1)}–${count(read.offset + read.rows)}`;

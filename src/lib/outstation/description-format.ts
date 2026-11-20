@@ -18,7 +18,7 @@
 import { codeOrWords, humanizeCode } from "@/lib/format/code-label";
 import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 
-export type OutstationEvidenceKind = "car" | "arrival";
+type OutstationEvidenceKind = "car" | "arrival";
 
 export type OutstationEvidenceStamp = {
   kind: OutstationEvidenceKind;
@@ -62,7 +62,7 @@ function tidy(value: string | null | undefined) {
 }
 
 /** "19 Sept 2026 · 12:33", in Cairo — the platform's one timestamp format. */
-export function formatOutstationEvidenceTime(value: string | null | undefined) {
+function formatOutstationEvidenceTime(value: string | null | undefined) {
   if (!value || Number.isNaN(new Date(value).getTime())) return null;
   return cairoDateTime(value);
 }

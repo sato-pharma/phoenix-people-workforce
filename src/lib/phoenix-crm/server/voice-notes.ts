@@ -89,7 +89,7 @@ export type VoiceSlot = { path: string; signedUrl: string; token: string; conten
  * visit by it. Handing the same field back here would put a timestamp with no authority into client
  * state, where the next person to need a capture time would find it already sitting in the payload.
  */
-export async function issueVoiceSlot(input: {
+async function issueVoiceSlot(input: {
   hrId: string;
   seat: OrgSeat;
   isTest: boolean;

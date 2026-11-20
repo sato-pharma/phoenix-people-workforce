@@ -48,8 +48,8 @@ import { isUuid } from "@/lib/http/uuid";
 import { logInfo, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const TABLET_RECORDING_BUCKET = "device-screen-recordings";
-export const TABLET_RECORDING_TABLE = "device_screen_recordings";
+const TABLET_RECORDING_BUCKET = "device-screen-recordings";
+const TABLET_RECORDING_TABLE = "device_screen_recordings";
 
 export const RECORDING_DEFAULT_SECONDS = 60;
 export const RECORDING_MIN_SECONDS = 5;
@@ -57,10 +57,10 @@ export const RECORDING_MAX_SECONDS = 300;
 /** How long a minted upload token is honoured. A capture plus its upload fits comfortably inside. */
 export const RECORDING_TOKEN_TTL_SECONDS = 15 * 60;
 /** How long a playback link the dashboard hands the browser stays valid. */
-export const RECORDING_SIGNED_URL_TTL_SECONDS = 60 * 60;
+const RECORDING_SIGNED_URL_TTL_SECONDS = 60 * 60;
 /** The bucket's own ceiling, matched here so an oversize upload is refused before it is stored. */
 export const RECORDING_MAX_BYTES = 268_435_456;
-export const RECORDING_ALLOWED_MIME = ["video/mp4", "video/webm"] as const;
+const RECORDING_ALLOWED_MIME = ["video/mp4", "video/webm"] as const;
 /**
  * How long a capture is kept (owner, 13 Nov 2026: "recordings 90 days"). The daily notification run
  * calls `purgeExpiredTabletRecordings`, which deletes the file and then its row, and says how many.
@@ -88,7 +88,7 @@ export const RECORDING_UPLOAD_ID_PARAM = "recordingId";
  * 🔴 NOT the `com.satopharma.phoenixworkforce.*` namespace — that is the FROZEN Expo app. This is a
  * distinct action, delivered to the RustDesk package, so no capture code is ever added to `mobile/`.
  */
-export const PHOENIX_RECORD_INTENT = "com.satopharma.phoenix.tablet.RECORD_SCREEN";
+const PHOENIX_RECORD_INTENT = "com.satopharma.phoenix.tablet.RECORD_SCREEN";
 
 export type RecordingStatus = "requested" | "ready" | "failed" | "expired";
 
@@ -158,7 +158,7 @@ type SlotRow = { status: string; requestedAtMs: number; uploadTokenHash: string 
  * Whether a slot's upload window has run out. PURE. An unreadable request time counts as run out —
  * a slot whose age cannot be told is never left open for ever.
  */
-export function recordingSlotExpired(requestedAtMs: number, nowMs: number): boolean {
+function recordingSlotExpired(requestedAtMs: number, nowMs: number): boolean {
   return !Number.isFinite(requestedAtMs) || nowMs > requestedAtMs + RECORDING_TOKEN_TTL_SECONDS * 1000;
 }
 

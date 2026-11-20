@@ -87,7 +87,7 @@ function toMb(bytes: number): number {
 const V8_GC_MINOR_MARK_SWEEP = 2;
 
 export type GcKind = "incremental" | "major" | "minor" | "other" | "weakcb";
-export type GcKindSummary = { count: number; maxMs: number; totalMs: number };
+type GcKindSummary = { count: number; maxMs: number; totalMs: number };
 export type GcWindow = Map<GcKind, GcKindSummary>;
 export type GcEntryLike = { detail?: unknown; duration: number; kind?: number };
 export type GcSummary = {

@@ -17,7 +17,7 @@ import type { MarketingRequestApprovalStep } from "@/lib/marketing-requests/type
 // only assert over source text.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ResubmitBasisTarget = {
+type ResubmitBasisTarget = {
   distributorCodeId: string | null;
   pharmacyId: string;
 };

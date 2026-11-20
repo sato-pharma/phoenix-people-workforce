@@ -220,7 +220,7 @@ function isWeightRow(
 }
 
 /** The region whose stores weigh in rule 2, as the organogram codes it (owner, 2026-11-04). */
-export const EPDA_STORES_WEIGH_REGION = "UE-2";
+const EPDA_STORES_WEIGH_REGION = "UE-2";
 
 /** The areas the line's organogram files under Upper Egypt 2 this month; empty without an organogram. */
 function retailWeightAreas(regions: SplitRegions | undefined): ReadonlySet<string> {

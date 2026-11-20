@@ -41,7 +41,7 @@ type ProbationCaseRow = {
   updated_at: string;
 };
 
-export function isProbationCaseSchemaMissing(error: unknown): boolean {
+function isProbationCaseSchemaMissing(error: unknown): boolean {
   const message = String((error as { message?: unknown })?.message ?? error ?? "").toLowerCase();
   return (
     message.includes("probation_cases") ||

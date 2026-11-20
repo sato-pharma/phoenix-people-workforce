@@ -34,12 +34,3 @@ export function venueWithoutDistributorCodeMessage(venueName?: string | null): s
   return `${label} has no distributor code, so it cannot be in a marketing request. ${CODELESS_VENUES_GO_TO_DIRECT_ORDERS}`;
 }
 
-/**
- * Whether a venue may be in Marketing at all: only a pharmacy, and only with a distributor code.
- *
- * `requiresDistributorCode` is `venueRequiresDistributorCode(venueType)` — passed in rather than
- * recomputed, so the venue-type module stays the one place that knows which types have an account.
- */
-export function marketingAcceptsVenue(input: { distributorCodeCount: number; requiresDistributorCode: boolean }): boolean {
-  return input.requiresDistributorCode && input.distributorCodeCount > 0;
-}

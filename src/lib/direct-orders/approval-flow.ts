@@ -89,7 +89,7 @@ export function directOrderExpectedRoleChain(requesterRole: PhoenixRole): Phoeni
 }
 
 /** True for the opening SFE validation rung. */
-export function isSfeValidationStep(step: Pick<DirectOrderStepState, "kind" | "role">): boolean {
+function isSfeValidationStep(step: Pick<DirectOrderStepState, "kind" | "role">): boolean {
   return step.kind === "role" && step.role === SFE_VALIDATION_ROLE;
 }
 

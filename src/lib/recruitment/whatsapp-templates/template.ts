@@ -9,8 +9,8 @@ import { extractVariableKeys } from "@/lib/recruitment/whatsapp-templates/variab
 /** Groups the templates on screen. Free text, not an enum — he adds a category by typing one. */
 export const DEFAULT_TEMPLATE_CATEGORY = "Interview";
 
-export const TEMPLATE_NAME_MAX_LENGTH = 80;
-export const TEMPLATE_CATEGORY_MAX_LENGTH = 40;
+const TEMPLATE_NAME_MAX_LENGTH = 80;
+const TEMPLATE_CATEGORY_MAX_LENGTH = 40;
 
 /**
  * WhatsApp's own text-message ceiling is 4096 characters, and the message travels inside a URL, so
@@ -18,7 +18,7 @@ export const TEMPLATE_CATEGORY_MAX_LENGTH = 40;
  * and some browsers refuse a URL past ~8000 characters. 2000 leaves comfortable room for the
  * encoded form of an Arabic address, where every character costs nine bytes once escaped.
  */
-export const TEMPLATE_BODY_MAX_LENGTH = 2000;
+const TEMPLATE_BODY_MAX_LENGTH = 2000;
 
 export type WhatsAppTemplate = {
   id: string;

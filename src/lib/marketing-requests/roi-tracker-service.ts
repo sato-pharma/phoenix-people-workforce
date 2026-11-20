@@ -48,7 +48,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * worse. Surfacing it here is what lets a reader tell "this campaign genuinely sold nothing"
  * apart from "this campaign is pointed at a pharmacy code that does not exist".
  */
-export type RoiTrackerPharmacyRow = {
+type RoiTrackerPharmacyRow = {
   pharmacyName: string;
   customerCode: string;
   distributorCode: string | null;
@@ -88,7 +88,7 @@ export type RoiTrackerReport = {
 const SUSPECT_REFERENCE_STATES = new Set(["not_found", "ambiguous", "pending"]);
 
 /** Reference state of a codeless target (a nursery). Deliberately NOT in SUSPECT_REFERENCE_STATES. */
-export const NO_CODE_REFERENCE_STATE = "no_code";
+const NO_CODE_REFERENCE_STATE = "no_code";
 
 /**
  * Which provenance this tracker reports on. The two are deliberately separate modules:

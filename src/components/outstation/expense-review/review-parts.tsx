@@ -18,7 +18,7 @@ export function egp(value: number) {
   return formatCurrencyValue(Number.isFinite(value) ? value : 0);
 }
 
-export const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
+const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
   fail: "bg-rose-100 font-black text-rose-700 ring-1 ring-inset ring-rose-300",
   none: "text-slate-700",
   warn: "bg-amber-100 font-bold text-amber-800",

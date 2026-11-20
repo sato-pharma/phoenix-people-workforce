@@ -317,7 +317,7 @@ export const NO_REGION = "none" as const;
 
 export type ScreeningRegionKey = CandidateRegionCode | typeof NO_REGION;
 
-export function screeningRegionKey(input: ScreeningOrderInput): ScreeningRegionKey {
+function screeningRegionKey(input: ScreeningOrderInput): ScreeningRegionKey {
   return input.region ?? NO_REGION;
 }
 

@@ -2,7 +2,6 @@ import type {
   CoachingParameterKey,
   CoachingScoreItemKey,
 } from "@/lib/coaching/constants";
-import type { AccessContext } from "@/lib/auth/permissions";
 
 export type CoachingReportStatus =
   | "draft"
@@ -222,7 +221,7 @@ export type CoachingParameterDistributionRow = {
   percent: number;
 };
 
-export type CoachingTrainingManagerComparisonStatus = "coached" | "not_coached";
+type CoachingTrainingManagerComparisonStatus = "coached" | "not_coached";
 
 export type CoachingTrainingManagerComparisonRow = {
   areaId: number | null;
@@ -277,6 +276,3 @@ export type CoachingScoreAnalytics = {
   strongestParameterDistribution: CoachingParameterDistributionRow[];
 };
 
-export type CoachingServiceContext = {
-  access: AccessContext;
-};

@@ -32,7 +32,7 @@ import { interviewOutcomeGroup, PLATFORM_LABEL } from "@/lib/recruitment/intervi
 import { cairoDateKey, cairoLocalToUtc, cairoMinutesOfDay } from "@/lib/recruitment/interview-calendar-week";
 import { interviewHalfOf, selectInterviewHalfDays, type InterviewHalfDay } from "@/lib/private-calendar/interview-halves";
 
-export const INTERVIEW_BOOKINGS_TABLE = "ats_interview_bookings";
+const INTERVIEW_BOOKINGS_TABLE = "ats_interview_bookings";
 
 /** One interview, one attendee: who sits in it and in what part. */
 export type InterviewAttendance = { interview: PrivateCalendarInterviewRow; hrId: string; isLead: boolean };

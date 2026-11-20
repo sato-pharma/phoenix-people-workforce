@@ -62,7 +62,7 @@ const ROUTES_FAILURE = /Google Routes API failed with (\d{3})(?::\s*([\s\S]*?))?
 const COULD_NOT_VALIDATE = /distance could not be validated/i;
 
 /** The stored reason, cleaned. Handles the pre-fix JSON shape and anything newer. */
-export function cleanEligibilityReason(raw: string | null | undefined): string | null {
+function cleanEligibilityReason(raw: string | null | undefined): string | null {
   const text = String(raw ?? "").trim();
   if (!text) return null;
 

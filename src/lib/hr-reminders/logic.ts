@@ -98,7 +98,7 @@ export function isIsoDay(value: unknown): value is string {
   return !Number.isNaN(date.getTime()) && fromUtcDate(date) === value;
 }
 
-export function isClockTime(value: unknown): value is string {
+function isClockTime(value: unknown): value is string {
   return typeof value === "string" && CLOCK_TIME.test(value);
 }
 
@@ -280,7 +280,7 @@ export function addDays(iso: string, days: number): string {
 }
 
 /** 0 = Sunday … 6 = Saturday. */
-export function weekdayIndex(iso: string): number {
+function weekdayIndex(iso: string): number {
   return toUtcDate(iso).getUTCDay();
 }
 
@@ -293,7 +293,7 @@ export function weekOf(iso: string): string[] {
   return Array.from({ length: 7 }, (_, index) => addDays(first, index));
 }
 
-export function startOfMonth(iso: string): string {
+function startOfMonth(iso: string): string {
   return `${iso.slice(0, 7)}-01`;
 }
 
@@ -405,7 +405,7 @@ export function describeSharing(
 type Plannable = Pick<ReminderRecord, "remindOn" | "startsAt" | "title">;
 
 /** Earlier day first, then earlier time, an all-day item before a timed one, then by title. */
-export function compareByDayThenTime(left: Plannable, right: Plannable): number {
+function compareByDayThenTime(left: Plannable, right: Plannable): number {
   const leftDay = left.remindOn ?? "9999-12-31";
   const rightDay = right.remindOn ?? "9999-12-31";
   if (leftDay !== rightDay) return leftDay < rightDay ? -1 : 1;

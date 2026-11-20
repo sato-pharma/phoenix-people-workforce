@@ -38,7 +38,7 @@
 type AnthropicEnv = Record<string, string | undefined>;
 
 export const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-export const ANTHROPIC_API_VERSION = "2023-06-01";
+const ANTHROPIC_API_VERSION = "2023-06-01";
 
 // The two tiers the app already thinks in (openai-client.ts: nano for drafting and reading, the strong
 // tier for payroll and faded signboards). Env overrides exist so a model can be changed on Railway
@@ -58,7 +58,7 @@ export type AnthropicFailureCode = "auth_failed" | "failed" | "quota_exceeded" |
 export type AnthropicAccount = "anthropic" | "anthropic_backup";
 
 // In the order they are asked. The first keeps the name it has always had, so nothing already set moves.
-export const ANTHROPIC_ACCOUNT_KEYS: readonly { account: AnthropicAccount; envName: string }[] = [
+const ANTHROPIC_ACCOUNT_KEYS: readonly { account: AnthropicAccount; envName: string }[] = [
   { account: "anthropic", envName: "ANTHROPIC_API_KEY" },
   { account: "anthropic_backup", envName: "ANTHROPIC_API_KEY_2" },
 ];
@@ -92,7 +92,7 @@ export function hasAnthropicApiKey(env: AnthropicEnv = process.env) {
 
 // The two failures that mean the ACCOUNT is dead, so the next account is asked. The same pair as
 // `shouldFailOverToNextProvider` in openai-client.ts, kept here because that module imports this one.
-export function shouldTryNextAnthropicAccount(code: AnthropicFailureCode) {
+function shouldTryNextAnthropicAccount(code: AnthropicFailureCode) {
   return code === "quota_exceeded" || code === "auth_failed";
 }
 
@@ -104,7 +104,7 @@ export function noteAnthropicAccountUnavailable(account: AnthropicAccount, nowMs
   accountBenchedUntil.set(account, nowMs + ANTHROPIC_ACCOUNT_BENCH_MS);
 }
 
-export function noteAnthropicAccountAvailable(account: AnthropicAccount) {
+function noteAnthropicAccountAvailable(account: AnthropicAccount) {
   accountBenchedUntil.delete(account);
 }
 
@@ -156,9 +156,9 @@ type AnthropicDocumentBlock = {
   title?: string;
   type: "document";
 };
-export type AnthropicContentBlock = AnthropicDocumentBlock | AnthropicImageBlock | AnthropicTextBlock;
+type AnthropicContentBlock = AnthropicDocumentBlock | AnthropicImageBlock | AnthropicTextBlock;
 
-export type AnthropicMessage = {
+type AnthropicMessage = {
   content: AnthropicContentBlock[];
   role: "assistant" | "user";
 };

@@ -24,9 +24,6 @@ import { HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
 import { HOUSE_XLSX_COLORS, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 
-/** Masthead rows 1-3; each report then writes its own notes before the header. */
-export const ATTENDANCE_MASTHEAD_ROWS = 3;
-
 export type AttendanceSeverity = "normal" | "watch" | "alert";
 
 /**

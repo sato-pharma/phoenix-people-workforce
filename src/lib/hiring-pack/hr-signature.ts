@@ -17,7 +17,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const HR_SIGNATURE_BUCKET = "hr-form-signatures";
+const HR_SIGNATURE_BUCKET = "hr-form-signatures";
 const OBJECT_PATH = "hr-signature.png";
 export const HR_SIGNATURE_MAX_BYTES = 1_500_000;
 

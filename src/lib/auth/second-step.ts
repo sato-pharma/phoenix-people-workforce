@@ -46,12 +46,12 @@ export function secondStepRequiredForRole(role: PhoenixRole | string | null | un
 }
 
 export const TOTP_PERIOD_SECONDS = 30;
-export const TOTP_DIGITS = 6;
+const TOTP_DIGITS = 6;
 /** One step either side of now: a phone's clock a few seconds off, or a code typed as it rolls over. */
-export const TOTP_STEPS_OF_SKEW = 1;
+const TOTP_STEPS_OF_SKEW = 1;
 
 /** His choice: a browser that passed the step is trusted for 30 days. */
-export const TRUSTED_DEVICE_DAYS = 30;
+const TRUSTED_DEVICE_DAYS = 30;
 export const TRUSTED_DEVICE_MAX_AGE_SECONDS = TRUSTED_DEVICE_DAYS * 24 * 60 * 60;
 export const trustedDeviceCookieName = "phoenix_trusted_device";
 
@@ -59,7 +59,7 @@ export const RECOVERY_CODE_COUNT = 10;
 /** A set-up key that was handed over waits this long for its first code; after that it finishes nothing. */
 export const PENDING_SETUP_MINUTES = 15;
 
-export const SECOND_STEP_ISSUER = "Phoenix Workforce";
+const SECOND_STEP_ISSUER = "Phoenix Workforce";
 
 // ── Base32 (RFC 4648, no padding): the alphabet authenticator apps read a key in ──────────────────
 

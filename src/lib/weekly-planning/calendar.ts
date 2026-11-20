@@ -142,7 +142,7 @@ function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
 
-export function normalizedPlanningCalendarKey(value: string | null | undefined) {
+function normalizedPlanningCalendarKey(value: string | null | undefined) {
   return cleanText(value).toLowerCase();
 }
 
@@ -343,7 +343,7 @@ function groupLabel(spellings: string[], dropBrackets: boolean) {
   return cleaned.find((spelling) => !isAllCaps(spelling)) ?? cleaned[0];
 }
 
-export type PlanningAreaGroup<T> = { items: T[]; key: string; label: string };
+type PlanningAreaGroup<T> = { items: T[]; key: string; label: string };
 export type PlanningRegionGroup<T> = { areas: PlanningAreaGroup<T>[]; items: T[]; key: string; label: string };
 
 function groupBy<T>(items: T[], valueOf: (item: T) => string | null | undefined, dropBrackets: boolean, emptyLabel: string) {
