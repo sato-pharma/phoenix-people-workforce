@@ -69,6 +69,8 @@ import { VenueTimetableScreen } from "@/components/phoenix-crm/venue-timetable-s
 import { SignboardRetakeScreen } from "@/components/phoenix-crm/signboard-retake-screen";
 import { SeatInVenueScreen } from "@/components/phoenix-crm/seat-in-venue-screen";
 import { TrustedPointScreen } from "@/components/phoenix-crm/trusted-point-screen";
+import { AdminPhotoAskCard } from "@/components/phoenix-crm/admin-photo-ask-card";
+import { AdminPhotoScreen } from "@/components/phoenix-crm/admin-photo-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import type { SeatedDraftState } from "@/components/phoenix-crm/shared-place-screens";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
@@ -554,6 +556,21 @@ export function ListTab({
         );
         break;
       }
+      case "admin-photo": {
+        // The Super Admin's alone, like the trusted point: offered only where `view.canPlaceOnTrustedPoint`, and the
+        // screen refuses to draw for anyone else (owner, 2026-11-20).
+        const { customerId } = current;
+        body = (
+          <AdminPhotoScreen
+            {...base}
+            customerId={customerId}
+            key={`admin-photo-${customerId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+          />
+        );
+        break;
+      }
       case "venue-timetable": {
         const { customerId, sharedPlaceId } = current;
         body = (
@@ -777,6 +794,10 @@ function ListHome({
       <CrmBlock className="border-t border-slate-100" title="Which part of the list">
         <CrmChoice columns={7} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
       </CrmBlock>
+
+      {/* The Super Admin's photo validation asks for this territory's live location (owner, 2026-11-20). Drawn
+          only while one is open, under the chooser — never above it — and only for whoever validates here. */}
+      {view.canValidateReference ? <AdminPhotoAskCard seatId={seatId} test={test} /> : null}
 
       {/* Only the Timetable reads this pair. The board and the customer parts (To validate, Your list,
           Outside the list, Archive) each carry their own filter row — brick, list, grade, specialty,

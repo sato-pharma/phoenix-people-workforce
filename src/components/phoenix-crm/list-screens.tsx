@@ -217,6 +217,7 @@ export type ListScreen =
   | { name: "seat-in-venue"; customerId: string }
   /** The Super Admin validates a customer on the point the reps' readings agree on (owner, 2026-11-10). */
   | { name: "trusted-point"; customerId: string }
+  | { name: "admin-photo"; customerId: string }
   /** A polyclinic's timetable photographed on its own, from the page of a customer waiting for it. */
   | { name: "venue-timetable"; customerId: string; sharedPlaceId: string }
   | { name: "grade"; customerId: string }

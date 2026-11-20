@@ -47,7 +47,7 @@ function storageSegment(value: string): string {
 
 export type PhotoSlot = { path: string; signedUrl: string; token: string; issuedAt: string };
 
-type PhotoSlotInput = {
+export type PhotoSlotInput = {
   hrId: string;
   seat: OrgSeat;
   isTest: boolean;
@@ -156,18 +156,35 @@ const DATA_URL_PATTERN = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/;
  */
 export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ path: string; issuedAt: string }> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const match = DATA_URL_PATTERN.exec(String(body.imageDataUrl ?? "").replace(/\s+/g, ""));
+  // Decoded BEFORE the slot is issued, exactly as before: a photo that cannot be read uses up no slot.
+  const bytes = decodeJpegDataUrl(body.imageDataUrl);
+  // Issues the slot with the same gate the browser's slot route uses: a place photo for the rep, a
+  // visit photo for whoever may enter this territory's visits.
+  return putPhotoInSlot(await requestPhotoSlot(viewer, body), bytes);
+}
+
+/**
+ * The Super Admin's own uploaded photo for a rep's place (owner, 2026-11-20, server/admin-photo.ts): the
+ * same decode, the same slot row and the same PUT as the native app's upload, for a slot the CALLER has
+ * already gated — so the path is slot-shaped and `phoenix_crm_take_photo` consumes it like any other.
+ */
+export async function uploadPhotoForSlot(input: PhotoSlotInput, imageDataUrl: unknown): Promise<{ path: string; issuedAt: string }> {
+  const bytes = decodeJpegDataUrl(imageDataUrl);
+  return putPhotoInSlot(await issuePhotoSlot(input), bytes);
+}
+
+function decodeJpegDataUrl(value: unknown): Buffer {
+  const match = DATA_URL_PATTERN.exec(String(value ?? "").replace(/\s+/g, ""));
   if (!match) throw validationError("The photo could not be read. Take it again.");
   const bytes = Buffer.from(match[1], "base64");
   if (bytes.length === 0) throw validationError("The photo is empty. Take it again.");
   if (bytes.length > PHOTO_MAX_UPLOAD_BYTES) {
     throw validationError("The photo is larger than Phoenix accepts. Take it again.");
   }
+  return bytes;
+}
 
-  // Issues the slot with the same gate the browser's slot route uses: a place photo for the rep, a
-  // visit photo for whoever may enter this territory's visits.
-  const slot = await requestPhotoSlot(viewer, body);
-
+async function putPhotoInSlot(slot: PhotoSlot, bytes: Buffer): Promise<{ path: string; issuedAt: string }> {
   let response: Response;
   try {
     // A deadline (REC-050): a stalled storage answer held the phone's save open with no end. A PUT,
