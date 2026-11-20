@@ -114,13 +114,14 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-db-password-refresh.mjs` | 9203 | `d3457d933700661a` |
 | `scripts/spare-db-password-refresh.ps1` | 1110 | `19e5bfebc75143f5` |
 | `scripts/spare-dev-server-run.ps1` | 6728 | `17357c7260562a63` |
-| `scripts/spare-follow-production.ps1` | 16099 | `09a4b80fcdcbd062` |
+| `scripts/spare-dev-server-run.sh` | 4624 | `17d636d00f77ab79` |
+| `scripts/spare-follow-production.ps1` | 9964 | `1cc4415a840a3ec7` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
 | `scripts/spare-rebuild.ps1` | 16066 | `a340f988ba99e056` |
 | `scripts/spare-speedup.ps1` | 4856 | `3acafdb715e7e366` |
-| `scripts/spare-test.ps1` | 13091 | `a46fe459fa65f575` |
+| `scripts/spare-test.ps1` | 10390 | `68bfca328740e19d` |
 | `scripts/spare-tunnel.ps1` | 2618 | `c0c4f69081da25ae` |
-| `scripts/spare.ps1` | 1891 | `7c8d47306f4274ef` |
+| `scripts/spare.ps1` | 2341 | `87027b073fc6b6c2` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
 | `scripts/tests/archive/run-all.mjs` | 4108 | `5ae84e5c757c2d1c` |
 | `scripts/tests/archive/test-busy-lock.mjs` | 7494 | `6cdb2fcde5618427` |
