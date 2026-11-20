@@ -49,6 +49,7 @@ const HELPER = "scripts/lib/refuse-arguments.mjs";
 const GATED = [
   "scripts/analyze-checkin-brick-groundtruth.mjs",
   "scripts/build-xlsx-from-json.mjs",
+  "scripts/db-access-tests.mjs",
   "scripts/export-backup-local.mjs",
   "scripts/export-derived-tables.mjs",
   "scripts/generate-cairo-zone-transitions.mjs",
