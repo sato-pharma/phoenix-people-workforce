@@ -80,8 +80,11 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   return Promise.race([work, limit]).finally(() => clearTimeout(timer));
 }
 
+type ImageBlock = { type: "image"; data: string; mimeType: string };
+
+/** The text ChatGPT reads always comes first; a capture's pictures follow it. */
 type ToolResult = {
-  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  content: [{ type: "text"; text: string }, ...ImageBlock[]];
   structuredContent?: Record<string, unknown>;
   _meta?: Record<string, unknown>;
   isError?: boolean;
@@ -91,7 +94,7 @@ type ToolResult = {
  * A capture's pictures as MCP image blocks, and its video (and the picture again, for a host that only
  * hands the view `window.openai`) in `_meta` for the capture viewer — never in the text ChatGPT reads.
  */
-function mediaParts(answer: ToolAnswer): Pick<ToolResult, "_meta"> & { images: Array<{ type: "image"; data: string; mimeType: string }> } {
+function mediaParts(answer: ToolAnswer): Pick<ToolResult, "_meta"> & { images: ImageBlock[] } {
   const attachments = answer.attachments ?? [];
   const images = attachments.flatMap((item) => (item.type === "image" ? [{ type: "image" as const, data: item.data, mimeType: item.mimeType }] : []));
   const video = attachments.find((item) => item.type === "video");

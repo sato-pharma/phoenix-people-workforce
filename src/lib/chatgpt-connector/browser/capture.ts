@@ -237,7 +237,7 @@ export async function captureScreenshot(
     try {
       const { title, finalPath } = await goTo(opened.page, input.path, deadline);
       const shape = CAPTURE_VIEWPORTS[input.viewport];
-      let height = shape.height;
+      let height: number = shape.height;
       let clip: Record<string, number> | undefined;
       if (input.fullPage) {
         const measured = Number(
