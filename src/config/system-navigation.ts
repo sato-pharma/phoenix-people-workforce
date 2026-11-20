@@ -5475,6 +5475,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         sectionId: "sales-source-of-sales",
         hrefs: [
           "/sales",
+          "/admin/field-sales/source-of-sales",
           "/sales/monthly-dashboard",
           "/sales/monthly-closing",
           "/sales/monthly-closing/performance-review",
