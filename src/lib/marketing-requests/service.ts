@@ -1,4 +1,6 @@
 import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
+import { actedBySuperAdmin } from "@/lib/phoenix-crm/super-admin-approval-rules";
+import { assertSuperAdminDecisionStands, loadSuperAdminHrIds } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { randomUUID } from "node:crypto";
 
 import { unstable_cache } from "next/cache.js";
@@ -6657,6 +6659,10 @@ export async function updateMarketingControlSetting(
   if (existing.adminOnly || existing.group === "validation") {
     assertMarketingValidationRuleControlAccess(access);
   }
+  // 🔴 A setting the Super Admin set last is changed by him alone (owner, 2026-11-20).
+  await assertSuperAdminDecisionStands(access.role === "Super Admin", [
+    (existingResult.data as MarketingControlSettingDbRow).updated_by_hr_id,
+  ]);
 
   const updateResult = await supabase
     .from("marketing_control_settings")
@@ -7132,6 +7138,14 @@ export async function createMarketingValidationRecord(
   // object outlives a rolled-back insert unless it is explicitly removed, and an orphaned photo of
   // a real shop front is exactly the kind of thing that must not linger unreferenced.
   const evidencePhotoPaths: string[] = [];
+  // 🔴 A verdict the Super Admin gave is never rewritten by a later capture below him (owner, 2026-11-20).
+  // The list is read only when a row he may have decided is met; the Super Admin himself is never held back.
+  let superAdminIds: Promise<Set<string>> | null = null;
+  const isSuperAdminsVerdict = async (decidedBy: unknown): Promise<boolean> => {
+    if (access.role === "Super Admin" || !cleanText(decidedBy)) return false;
+    superAdminIds ??= loadSuperAdminHrIds();
+    return actedBySuperAdmin([decidedBy], await superAdminIds);
+  };
   try {
     const rows: MarketingValidationReportRow[] = [];
     for (const normalizedCustomer of normalized.customers) {
@@ -7150,6 +7164,10 @@ export async function createMarketingValidationRecord(
     // exactly the same normalization and the same evidence rule as creating one. What is absent
     // here is IDENTITY (code, name, type, owner, area, line): supplying a customer's missing
     // evidence must not re-label it, or the ROI history would stop pointing at the same record.
+    // A customer the Super Admin validated keeps his verdict and its author when the evidence is
+    // completed below him; the capture itself is still saved (owner, 2026-11-20).
+    const keepsSuperAdminsVerdict = Boolean(existingCustomerRow) && !isVenueOnly
+      && await isSuperAdminsVerdict(existingCustomerRow?.validated_by_hr_id);
     const capturedColumns = {
       captured_accuracy_meters: normalizedCustomer.capturedAccuracyMeters,
       captured_address: normalizedCustomer.capturedAddress,
@@ -7164,12 +7182,14 @@ export async function createMarketingValidationRecord(
       extracted_governorate_name: normalizedCustomer.extractedGovernorateName,
       region_name: normalizedCustomer.regionName,
       updated_by_hr_id: hrIdForStorage(actorHrId),
-      validated_at: adminValidatedAt,
-      validated_by_hr_id: adminValidatedByHrId,
-      validation_notes: adminValidationNote,
-      validation_status: resolveMarketingValidationRecordStatus({
-        isOnBehalf,
-        systemStatus: normalizedCustomer.validationStatus,
+      ...(keepsSuperAdminsVerdict ? {} : {
+        validated_at: adminValidatedAt,
+        validated_by_hr_id: adminValidatedByHrId,
+        validation_notes: adminValidationNote,
+        validation_status: resolveMarketingValidationRecordStatus({
+          isOnBehalf,
+          systemStatus: normalizedCustomer.validationStatus,
+        }),
       }),
     };
 
@@ -7459,15 +7479,22 @@ export async function createMarketingValidationRecord(
             );
           }
 
+          // An approved link, or one the Super Admin last decided, keeps its verdict and its author.
+          const linkVerdictStands = Boolean(existingLinkRow) && access.role !== "Super Admin" && (
+            existingLinkRow?.validation_status === "admin_approved" ||
+            (existingLinkRow?.validation_status !== "pending" && await isSuperAdminsVerdict(existingLinkRow?.updated_by_hr_id))
+          );
           const reusedLinkInsert = existingLinkRow
             ? await supabase
               .from("marketing_customer_pharmacies")
-              .update({
-                updated_at: new Date().toISOString(),
-                updated_by_hr_id: hrIdForStorage(actorHrId),
-                validation_notes: linkValidationNotes,
-                validation_status: linkValidationStatus,
-              })
+              .update(linkVerdictStands
+                ? { updated_at: new Date().toISOString() }
+                : {
+                  updated_at: new Date().toISOString(),
+                  updated_by_hr_id: hrIdForStorage(actorHrId),
+                  validation_notes: linkValidationNotes,
+                  validation_status: linkValidationStatus,
+                })
               .eq("id", existingLinkRow.id)
               .neq("validation_status", "rejected")
               .select("*")
@@ -10925,6 +10952,10 @@ export async function mergeMarketingVenue(
   if (loser.mergedIntoPharmacyId) {
     throw conflictError(`"${loser.displayName}" was already merged into another venue.`);
   }
+  // 🔴 A venue the Super Admin validated is not merged away below him (owner, 2026-11-20).
+  await assertSuperAdminDecisionStands(access.role === "Super Admin", [
+    ((venuesResult.data ?? []) as MarketingPharmacyDbRow[]).find((row) => row.id === loserId)?.validated_by_hr_id,
+  ]);
   // Merging into a tombstone would build a chain that every reader then has to walk.
   if (survivor.mergedIntoPharmacyId) {
     throw conflictError(

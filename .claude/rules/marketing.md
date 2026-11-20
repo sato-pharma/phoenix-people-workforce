@@ -27,6 +27,8 @@ This file is loaded because this session opened a file of this module (or the mo
 
 ### Owner rules (moved from AGENTS.md §4)
 
+- 🔴 **HIS VERDICT STANDS** — a capture never rewrites a verdict the Super Admin gave (owner, 2026-11-20). Completing a customer he validated saves the evidence and keeps his verdict; an `admin_approved` link, or one he decided last, keeps its verdict; nobody else turns round his licence verdict, merges away a venue he validated or changes a control setting he set last. Account: `docs/phoenix-crm-validation-feedback.md`, "Direct Orders and Marketing Requests". Pinned by `tests/phoenix-crm-super-admin-approval-is-final.test.ts`.
+
 - 🔒 **AN AREA IS NOT PER LINE — A REP SEES ONLY HIS OWN LINE'S SPEND ON HIS PATCH** (owner, 2026-09-30, a "fatal mistake": the Gharbia 2 Pedia rep saw the CNS DM's campaign — *"it doesn't mean that he is the same area that he see his line"*). `public.areas` rows carry **`line_id` NULL**, so ONE area id is held by every line's rep there: area-only gave **46 of 82** pairs to another line, on **28 of 72** reps. The ROI territory route is area **AND** line (`territoryRouteAdmitsRequest`): an unknown line is REFUSED, a lineless rep gets NO route, never an area-only fallback. 🔴 **Customers and pharmacies stay LINE-AGNOSTIC** (his 2026-08-19 treasure ruling) — a shared doctor is not a shared campaign. Account: `docs/agents-owner-rules.md`.
 
 ### Customer, venue and licence validation (moved from AGENTS.md §4.1)

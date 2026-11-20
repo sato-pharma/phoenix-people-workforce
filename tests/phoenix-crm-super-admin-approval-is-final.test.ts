@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import { decideDirectOrderHold } from "../src/lib/direct-orders/hold-decision.ts";
 import {
   LIST_STANDING_EVENTS,
   PLACE_STANDING_EVENTS,
@@ -28,7 +29,10 @@ import {
  *   5. every screen that drew a Reject or Refuse draws the sentence instead, and bulk reject skips it;
  *   6. (owner, 2026-11-20) every other way the SFE Manager could undo or contradict the Super Admin is
  *      refused before its write: moving or removing a place, dropping, moving or bringing back a customer,
- *      refusing a step he approved, returning a plan he approved, turning round his doctor-list answer.
+ *      refusing a step he approved, returning a plan he approved, turning round his doctor-list answer;
+ *   7. (owner, 2026-11-20, "Direct orders, marketing requests") the same in those two modules: a rung he
+ *      approved, an order he approved, a pharmacy he ruled on, a customer, link, licence, setting or venue
+ *      he decided — none is reversed, refused, re-approved, merged away or overwritten below him.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -275,9 +279,46 @@ function checkEverySfeUndo(): void {
   );
 }
 
+function checkDirectOrdersAndMarketing(): void {
+  const ORDERS = "src/lib/direct-orders/service.ts";
+  const helper = read("src/lib/direct-orders/super-admin-decision.ts");
+  assert.match(helper, /access\.role === "Super Admin" \|\| access\.scope === "system"/, "Direct Orders' own test for the Super Admin");
+  assert.match(helper, /\.in\("status", \["approved_new", "matched_existing", "rejected"\]\)/, "every claim he decided, either way, is his ruling");
+  assert.match(helper, /if \(row\.hold_release_ground === "kept_held"\) actors\.push\(row\.hold_release_decided_by_hr_id\);/, "so is his ruling that a pharmacy's orders stay held");
+  assert.match(helper, /if \(row\.hold_release_ground === "admin_released"\) actors\.push\(row\.hold_release_decided_by_hr_id\);/, "an order he released into the chain is his");
+
+  // The ladder: a rung he approved is not rejected or returned later — the CEO keeps his say.
+  guardsBefore(ORDERS, "decideDirectOrder", "await assertSuperAdminDecisionStands(isSuperAdmin, approvedStepActors(steps));", '"phx_apply_direct_order_decision"', "a rung he approved");
+  assert.match(functionBody(ORDERS, "decideDirectOrder"), /if \(input\.decision !== "approve" && access\.role !== "CEO"\) \{/, "only a reject or a return is refused, and never the CEO's");
+  guardsBefore(ORDERS, "reverseDirectOrder", "approvedStepActors(await loadSteps(original.id))", ".insert({", "an order he approved is reversed by nobody below him");
+  guardsBefore(ORDERS, "confirmDirectOrderCleanup", "await assertPharmacyRulingStands(access, mergedId);", '.from("direct_order_pharmacies")', "a pharmacy he ruled on is not merged away");
+  guardsBefore(ORDERS, "confirmDirectOrderCleanup", "await assertOrderCarriedBySuperAdminStands(access, {", "cancelled", "an order he carried is not cancelled as a duplicate");
+  guardsBefore(ORDERS, "updateDirectOrderPharmacyDetails", "await assertPharmacyRulingStands(access, input.pharmacyId);", ".update(", "who and where a pharmacy he ruled on is");
+  guardsBefore(ORDERS, "replaceDirectOrderPharmacyCodes", "await assertPharmacyRulingStands(access, input.pharmacyId);", ".delete()", "the codes of a pharmacy he ruled on");
+  assert.match(read(ORDERS), /verified_at: new Date\(\)\.toISOString\(\),\s*\}\)\s*\.eq\("id", input\.pharmacyId\)\s*\.neq\("verification_status", "verified"\);/, "a confirmed pharmacy keeps the name of whoever confirmed it");
+  guardsBefore("src/lib/direct-orders/pharmacy-validation.ts", "decideDirectOrderPharmacyValidation", 'if (input.decision !== "reject") await assertPharmacyRulingStands(access, pharmacyId);', 'status: "approved_new"', "a pharmacy he refused is not approved through another claim");
+
+  // His "stays held" beats a code that would otherwise prove the pharmacy — and the SFE clean-up, which asks the same rule.
+  const provenCode = { distributorCode: "UCP", customerCode: "123456", mappedBrickId: "B1" } as never;
+  const kept = decideDirectOrderHold({ verificationStatus: "pending_review", declaredBrickId: "B1", distributorCodes: [provenCode], holdReleaseGround: "kept_held" });
+  assert.deepEqual([kept.hold, kept.ground], [true, "admin_kept_held"], "a pharmacy he ruled stays held stays held, whatever code arrives");
+  const proven = decideDirectOrderHold({ verificationStatus: "pending_review", declaredBrickId: "B1", distributorCodes: [provenCode], holdReleaseGround: null });
+  assert.equal(proven.hold, false, "without his ruling the same code still proves the pharmacy");
+
+  const MARKETING = "src/lib/marketing-requests/service.ts";
+  guardsBefore(MARKETING, "createMarketingValidationRecord", "const keepsSuperAdminsVerdict = Boolean(existingCustomerRow) && !isVenueOnly", ".update({ ...capturedColumns", "a customer he validated keeps his verdict");
+  assert.match(functionBody(MARKETING, "createMarketingValidationRecord"), /\.\.\.\(keepsSuperAdminsVerdict \? \{\} : \{\n\s+validated_at: adminValidatedAt,/, "the evidence is still saved; only the verdict columns stay his");
+  guardsBefore(MARKETING, "createMarketingValidationRecord", "const linkVerdictStands = Boolean(existingLinkRow)", '.from("marketing_customer_pharmacies")\n              .update(', "an approved link keeps its verdict");
+  assert.match(functionBody(MARKETING, "createMarketingValidationRecord"), /existingLinkRow\?\.validation_status === "admin_approved" \|\|/, "an admin-approved link is never rewritten by a capture");
+  guardsBefore("src/lib/marketing-requests/pharmacy-license-verdict.ts", "recordMarketingPharmacyLicenseVerdict", "await assertSuperAdminDecisionStands(false, [previous.license_name_checked_by_hr_id]);", "...licenseVerdictColumns(", "his licence verdict is not turned round");
+  guardsBefore(MARKETING, "mergeMarketingVenue", "await assertSuperAdminDecisionStands(access.role === \"Super Admin\", [", "moveMarketingVenueChildren(", "a venue he validated is not merged away");
+  guardsBefore(MARKETING, "updateMarketingControlSetting", "await assertSuperAdminDecisionStands(access.role === \"Super Admin\", [", ".update({", "a setting he set last");
+}
+
 export function runPhoenixCrmSuperAdminApprovalIsFinalTests(): void {
   checkRule();
   checkEverySfeUndo();
+  checkDirectOrdersAndMarketing();
   checkDatabase();
   checkService();
   checkScreens();

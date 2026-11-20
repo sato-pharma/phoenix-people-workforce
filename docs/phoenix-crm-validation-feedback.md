@@ -912,3 +912,26 @@ The owner, 20 November 2026: *"anything done by the system administrator in the 
 **Not covered by this change:** New Hire Accounts (a resend by the SFE Manager replaces a setup link the Super Admin sent; it decides nothing), the Doctor Coverage visit norms (a setting both may change, last save wins), and the SFE Manager's grants outside Phoenix CRM (attendance, leave, weekly sales, weekly plans, contact lists, sales import, employee profile), which were not traced row by row.
 
 Pinned by `tests/phoenix-crm-super-admin-approval-is-final.test.ts` (`checkEverySfeUndo`): each guard was removed in turn and the test failed naming it.
+
+### Direct Orders and Marketing Requests (the same evening)
+
+The owner, 20 November 2026: *"Also in direct orders and in marketing requests. And if I manual validate this to the manager doing, he cannot override my decision."* The same sentence, the same 403 and the same database list of Super Admins (`loadSuperAdminHrIds`); Direct Orders' shared checks live in `src/lib/direct-orders/super-admin-decision.ts`.
+
+| The act, by anybody who is not a Super Admin | Refused or kept when |
+| --- | --- |
+| Rejecting or returning a direct order at a later rung (`decideDirectOrder`) | he approved an earlier rung, in its holder's place or as himself. **The CEO keeps his say**: his own rung may still reject or return. Approving is never refused. |
+| Filing a reversal of an approved order (`reverseDirectOrder`) | he approved any rung of it |
+| Approving or matching a pharmacy claim (`decideDirectOrderPharmacyValidation`) | he confirmed the pharmacy, decided any of its claims either way, or ruled its orders stay held. Rejecting the claim agrees with him and stays open. |
+| Releasing a held order on a code (`decideDirectOrderHold`, which the rep's submit and the SFE clean-up both ask) | he ruled the pharmacy's orders stay held: the new ground `admin_kept_held` holds them whatever code arrives; his own release or confirmation is the way out |
+| Merging away a pharmacy, or cancelling an order as a duplicate (`confirmDirectOrderCleanup`) | the pharmacy is one he ruled on, or the order is one he approved a rung of or released. The whole plan is checked before its first write. |
+| Changing a pharmacy's name, brick, area, region (`updateDirectOrderPharmacyDetails`) or codes (`replaceDirectOrderPharmacyCodes`) | he ruled on it. Its doctor, address and CRM contact stay editable. |
+| A later order's SFE rung confirming the pharmacy again (`markDirectOrderPharmacyVerified`) | the pharmacy is already confirmed: the first confirmer's name is kept |
+| A capture completing a customer's evidence (`createMarketingValidationRecord`) | he validated the customer: the evidence is saved, his verdict, note and name stay |
+| The same capture re-deciding a customer–pharmacy link | the link is `admin_approved`, or he decided it last: it keeps its verdict and author |
+| Turning round or clearing the licence-name verdict (`recordMarketingPharmacyLicenseVerdict`) | he recorded it. Recording the same answer is allowed. |
+| Merging away a marketing venue (`mergeMarketingVenue`) | he validated it |
+| Changing a marketing control setting (`updateMarketingControlSetting`) | he set it last |
+
+**Not covered here, and why.** Finance's month booking, "Correct the total" and removing a service-fee settlement move money, which is never decided in chat — they are the Finance officer's and his own screens, reported to him, not changed. A rep attaching a NEW licence file still resets the licence verdict, because his verdict was about the old document. Marketing request types and workflow steps record no author, so who last set them cannot be told without a schema change. The marketing approval chain itself needed nothing: its gate checks identity, so nobody acts at his rung and no later rung overrides him there.
+
+Pinned by `checkDirectOrdersAndMarketing` in the same test: each of the 17 checks was broken in turn and the test failed naming it.
