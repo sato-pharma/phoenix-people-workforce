@@ -509,7 +509,7 @@ async function tellRepValidateAgain(viewer: PhoenixCrmViewer, result: Row): Prom
 
 // ── The Super Admin's page ──────────────────────────────────────────────────────────────────────
 
-export type ValidationReviewReading = { lat: number; lon: number; accuracyMeters: number | null };
+type ValidationReviewReading = { lat: number; lon: number; accuracyMeters: number | null };
 
 export type ValidationReviewRow = {
   reviewId: string;

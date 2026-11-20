@@ -12,7 +12,7 @@ const PAGE_PATH = "/hr-reminders";
 const HR_PAGE_PATH = "/hr/hr-reminders";
 
 /** The HR Manager opens the module at its admin address, the HR seats inside the `/hr` namespace. */
-export function reminderActionUrl(reminderId: string, member: Pick<TeamMember, "isOverseer"> | null): string {
+function reminderActionUrl(reminderId: string, member: Pick<TeamMember, "isOverseer"> | null): string {
   const base = member?.isOverseer ? PAGE_PATH : HR_PAGE_PATH;
   return `${base}?open=${encodeURIComponent(reminderId)}`;
 }

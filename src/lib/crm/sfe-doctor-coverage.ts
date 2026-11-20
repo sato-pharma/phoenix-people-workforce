@@ -76,6 +76,7 @@
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { collapseDuplicateVisitSubmissions, getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { isProductManagerTitle } from "@/lib/employees/job-function";
 import { scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
 import { crmTerritoryFrom } from "@/lib/crm/rep-name";
 import { cairoTodayIso } from "@/lib/crm/dates";
@@ -99,7 +100,7 @@ export const DOCTOR_COVERAGE_TARGETS: Record<DoctorCoverageGradeTier, number> = 
 /** Selected month plus this many prior months form the board and its trend line — 4 points. Each
  * trend point is scored against THAT month's own assigned list, never the selected month's, because
  * a list changes between months and re-using one would invent history. */
-export const DOCTOR_COVERAGE_MONTHS_BACK = 3;
+const DOCTOR_COVERAGE_MONTHS_BACK = 3;
 /**
  * Extra months of VISIT history read behind the trend window.
  *
@@ -111,13 +112,9 @@ export const DOCTOR_COVERAGE_MONTHS_BACK = 3;
 // Renamed from DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS on 2026-08-27. The number is unchanged; the
 // old name described a lapse test that no longer exists, and a constant whose name states a rule
 // the code stopped following is how a tired session re-derives the wrong model of the board.
-export const DOCTOR_COVERAGE_HISTORY_MONTHS_BACK = 2;
+const DOCTOR_COVERAGE_HISTORY_MONTHS_BACK = 2;
 /** Total depth of the visit read: the trend window plus the history above. */
 export const DOCTOR_COVERAGE_SCAN_MONTHS_BACK = DOCTOR_COVERAGE_MONTHS_BACK + DOCTOR_COVERAGE_HISTORY_MONTHS_BACK;
-/** First month the iReports360 plan mirror holds any assigned list. Verified on production
- * 2026-08-27 — January 2026 is the earliest `plan_date` in the table. A selected month before this
- * has no list to score, which the board reports rather than rendering as an empty panel. */
-export const DOCTOR_COVERAGE_PLAN_FIRST_MONTH = "2026-01";
 // SPECIALTY_MIX_TOP_N removed 2026-08-08. It capped the mix at 8 named values and folded the rest
 // into "Other" — a bucket defined by RANK, not by meaning, so it held different things for every
 // viewer and hid ~780 real physicians company-wide. Both mixes are complete now; see `mixFor`.
@@ -131,9 +128,9 @@ const COVERAGE_TONE_GOOD_PCT = 80;
 const COVERAGE_TONE_FAIR_PCT = 50;
 
 export type { DoctorCoverageGradeTier } from "@/lib/crm/doctor-coverage-config";
-export type DoctorCoverageStatus = "green" | "yellow" | "red";
+type DoctorCoverageStatus = "green" | "yellow" | "red";
 
-export type DoctorCoverageDoctorRow = {
+type DoctorCoverageDoctorRow = {
   contactCrmId: number;
   /** Human name, never a raw id (owner rule). Taken from the assigned list, which carries one on
    * every row, and falling back to the latest visit only if the list row somehow has none. */
@@ -160,7 +157,7 @@ export type DoctorCoverageDoctorRow = {
   visitsThisMonth: number;
 };
 
-export type DoctorCoverageRepRow = {
+type DoctorCoverageRepRow = {
   aDoctors: number;
   agentHrId: string | null;
   bDoctors: number;
@@ -238,7 +235,7 @@ export type DoctorCoverageOrgNode = {
  * company tile was identical to the digit — 6,416 assigned, 3,632 covered, 57%, 1,700 campaign
  * calls, 593 off-list. Nothing moved except who the rows belong to.
  */
-export type DoctorCoverageManagerRow = {
+type DoctorCoverageManagerRow = {
   aDoctors: number;
   bDoctors: number;
   cDoctors: number;
@@ -283,7 +280,7 @@ export type DoctorCoverageManagerRow = {
 };
 
 /** One doctor on the prioritised call list — the module's actual output for a manager or rep. */
-export type DoctorCoverageCallListRow = {
+type DoctorCoverageCallListRow = {
   contactCrmId: number;
   contactName: string;
   gradeTier: DoctorCoverageGradeTier;
@@ -346,7 +343,7 @@ export type DoctorCoverageFilters = {
 };
 
 /** Which filters are actually in force — surfaced so the board can say so on screen. */
-export type DoctorCoverageAppliedFilters = {
+type DoctorCoverageAppliedFilters = {
   active: boolean;
   grade: string | null;
   kind: string | null;
@@ -1327,7 +1324,7 @@ export function buildDoctorCoverageBoard(
   const productManagerKeys = new Set<string>();
   for (const rep of repRows.values()) {
     if (!rep.agentHrId) continue;
-    if (orgByHrId?.get(rep.agentHrId)?.title?.trim().toLowerCase() === "product manager") {
+    if (isProductManagerTitle(orgByHrId?.get(rep.agentHrId)?.title)) {
       productManagerKeys.add(rep.repKey);
     }
   }

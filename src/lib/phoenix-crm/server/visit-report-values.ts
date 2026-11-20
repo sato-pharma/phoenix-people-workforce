@@ -126,7 +126,7 @@ const LOCATION_FLAG_LABELS: Record<string, string> = {
   no_place: "No validated place",
 };
 
-export function locationFlagLabel(flag: unknown): string | null {
+function locationFlagLabel(flag: unknown): string | null {
   const key = text(flag);
   return key ? LOCATION_FLAG_LABELS[key] ?? humanise(key) : null;
 }

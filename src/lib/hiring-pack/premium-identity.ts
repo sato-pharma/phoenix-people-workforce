@@ -85,12 +85,12 @@ export function hrPaperWearsPremium(paperId: string): boolean {
  * The Arabic calligraphy. PLACEHOLDER ART the owner is replacing himself — never regenerate it; swap
  * the file when he sends the official one (`tests/phoenix-official-logo.test.ts` pins it).
  */
-export const PREMIUM_ARABIC_MARK_SRC = "/brand/sato-pharma-arabic-on-light.png";
+const PREMIUM_ARABIC_MARK_SRC = "/brand/sato-pharma-arabic-on-light.png";
 /** Its pixel size, so the watermark's height is known without loading it. */
 const ARABIC_MARK_PX = { width: 1100, height: 813 } as const;
 
 /** The official Phoenix emblem — the ringed bird over rising bars. Running foot only. */
-export const PREMIUM_PHOENIX_EMBLEM_SRC = "/brand/phoenix-login-emblem.png";
+const PREMIUM_PHOENIX_EMBLEM_SRC = "/brand/phoenix-login-emblem.png";
 
 /**
  * The Latin face of the chrome: the masthead's Latin line, the frame microtext and the running foot.
@@ -141,7 +141,7 @@ const FOOT_BOTTOM_MM = 10.5;
 const FOOT_EMBLEM_MM = 5.5;
 
 /** The content column every premium paper lays out in. */
-export const PREMIUM_COLUMN_MM = PREMIUM_PAGE_MM.width - 2 * PREMIUM_PAGE_MM.side;
+const PREMIUM_COLUMN_MM = PREMIUM_PAGE_MM.width - 2 * PREMIUM_PAGE_MM.side;
 /** The content column of a landscape sheet. */
 export const PREMIUM_LANDSCAPE_COLUMN_MM = PREMIUM_LANDSCAPE_MM.width - 2 * PREMIUM_LANDSCAPE_MM.side;
 
@@ -172,9 +172,9 @@ export function premiumBandSvg(color: string = HOUSE_COLORS.deep, widthMm: numbe
 }
 
 /** The phrase the frame's microtext repeats. Words the papers already carry, never new claims. */
-export const PREMIUM_FRAME_PHRASE = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE · PHOENIX WORKFORCE";
+const PREMIUM_FRAME_PHRASE = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE · PHOENIX WORKFORCE";
 /** The same phrase for a paper that says nothing about the app: Sato Pharma alone. */
-export const PREMIUM_FRAME_PHRASE_SATO = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE";
+const PREMIUM_FRAME_PHRASE_SATO = "SATO PHARMA L.L.C. · HUMAN RESOURCES · HEAD OFFICE";
 
 /**
  * WHOSE NAME THE RUNNING FOOT CARRIES. `"phoenix"` is the specimen the owner approved: the ringed

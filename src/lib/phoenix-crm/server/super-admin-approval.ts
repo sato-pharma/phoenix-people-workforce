@@ -16,7 +16,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { approvalLockedFor } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 
-export async function loadSuperAdminHrIds(): Promise<Set<string>> {
+async function loadSuperAdminHrIds(): Promise<Set<string>> {
   const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_super_admin_hr_ids");
   if (error) throw error;
   const ids = new Set<string>();

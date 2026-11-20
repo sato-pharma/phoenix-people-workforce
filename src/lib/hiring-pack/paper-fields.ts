@@ -87,7 +87,7 @@ export type PaperStore = "employee" | "profile" | "offboarding" | "company";
  * exactly as they are, so correcting a mistyped middle group cannot silently rewrite the whole
  * number.
  */
-export type PaperFieldKind =
+type PaperFieldKind =
   | "text"
   | "money"
   | "date"

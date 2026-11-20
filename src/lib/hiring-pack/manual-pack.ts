@@ -35,7 +35,7 @@ import type {
   OffboardingProfile,
 } from "@/lib/hiring-pack/types";
 
-export type ManualFieldKind = "text" | "date" | "money" | "number";
+type ManualFieldKind = "text" | "date" | "money" | "number";
 
 export type ManualPaperInput = {
   key: string;
@@ -46,7 +46,7 @@ export type ManualPaperInput = {
 type FieldSpec = { labelEn: string; kind: ManualFieldKind };
 
 /** Every value a typed-in paper may set, with what it is called on screen. */
-export const MANUAL_FIELDS: Readonly<Record<string, FieldSpec>> = {
+const MANUAL_FIELDS: Readonly<Record<string, FieldSpec>> = {
   "employee.nameAr": { labelEn: "Name (Arabic)", kind: "text" },
   "employee.fullName": { labelEn: "Name (English)", kind: "text" },
   "employee.hrId": { labelEn: "Employee code", kind: "text" },

@@ -73,7 +73,7 @@ export const COMPANY_RANK_BADGE_LIMIT = 15;
 export const LINE_RANK_BADGE_LIMIT = 7;
 
 /** One placing: the rank, the company it was won against, and the % that won it. */
-export type RepRankPlace = {
+type RepRankPlace = {
   rank: number;
   /**
    * The "out of N" the badge prints: every MEDICAL REP SEAT in the structure, vacant ones included.

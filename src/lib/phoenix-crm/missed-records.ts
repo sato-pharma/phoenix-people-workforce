@@ -30,13 +30,13 @@ import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/un
 export const MISSED_RECORD_MARK = "Entered by the Super Admin";
 
 /** Noon, in minutes past midnight: the time a visit is filed at when the Super Admin gives none. */
-export const MISSED_VISIT_DEFAULT_MINUTE = 12 * 60;
+const MISSED_VISIT_DEFAULT_MINUTE = 12 * 60;
 
 /**
  * Before 02:00 is the small hours AFTER the chosen day, which still belong to it — the visit day ends
  * at 02:00 (owner, 2026-09-29; `cairoBusinessDay`). phoenix_crm_admin_enter_visit reads it the same way.
  */
-export const VISIT_DAY_CUTOFF_MINUTE = 2 * 60;
+const VISIT_DAY_CUTOFF_MINUTE = 2 * 60;
 
 type Body = Record<string, unknown>;
 
@@ -74,7 +74,7 @@ export const MISSED_VISIT_KIND_LABELS: Record<MissedVisitKind, string> = {
   chain: "Chain",
 };
 
-export type MissedVisitEntry = {
+type MissedVisitEntry = {
   visitId: string;
   customerId: string;
   visitDate: string;
@@ -180,7 +180,7 @@ export function parseMissedVisit(raw: unknown, visitDay: string): MissedVisitPar
 
 // ── A manager's missed record (owner, 2026-10-24: "Visits and days") ────────────────────────────
 
-export type MissedManagerVisitEntry = {
+type MissedManagerVisitEntry = {
   clientRef: string;
   /** A customer of a rep list he reaches, or one of Manager's own list — exactly one. */
   customerId: string | null;
@@ -264,7 +264,7 @@ export function isManagerVisitEnteredForHim(visit: { enteredBy: unknown; manager
   return Boolean(enteredBy) && enteredBy !== personKey(visit.manager);
 }
 
-export type MissedActivityEntry = { activityDate: string; clear: false; draft: DayActivityDraft } | { activityDate: string; clear: true; draft: null };
+type MissedActivityEntry = { activityDate: string; clear: false; draft: DayActivityDraft } | { activityDate: string; clear: true; draft: null };
 
 export type MissedActivityParse = { ok: true; value: MissedActivityEntry } | { ok: false; error: string };
 

@@ -1,60 +1,6 @@
-/**
- * Phoenix CRM — a trustworthy Cairo time for a visit captured with no signal. Pure, no I/O.
- *
- * ## The problem, stated exactly
- *
- * Today a visit's time is the SERVER's: `captured_at` is the moment the server issued the photo's
- * upload slot, and the phone never supplies it. That is the strongest guarantee in the module —
- * every integrity check, the visit's date, its week, the planned-or-not verdict and the one-a-day
- * key all rest on a timestamp the phone cannot influence.
- *
- * With no signal there is no slot, so there is no server time. Something has to replace it, and the
- * obvious candidate is the phone's own clock — which is exactly what must NOT be used. The owner
- * ruled on this directly (2026-09-27), and his reasoning is the whole specification:
- *
- *   "I want the Cairo time, but I don't want the time on the phone because they may install an app
- *    that changes the time in the phone. I need what protects the system from fraud, but at the
- *    same time I need it to be accurate Cairo time."
- *
- * ## The answer: a server-minted ANCHOR plus the phone's MONOTONIC clock
- *
- * Two clocks live on a phone and only one of them is settable.
- *
- *   The WALL clock (`Date.now()`) is what a "change my time" app moves. It is never trusted here,
- *   and nothing in this module reads it to produce a capture time.
- *
- *   The MONOTONIC clock — Android's elapsed-realtime-since-boot, `performance.now()` in the app —
- *   counts forward at one second per second and has no setter. A user can reboot it to zero; he
- *   cannot wind it back or push it forward.
- *
- * So while the phone still has signal, the server hands it an ANCHOR: a row the server wrote, with
- * the server's own timestamp on it. The phone remembers that anchor beside its monotonic reading at
- * that instant. Later, offline, at the doctor's door, it records only the monotonic reading again.
- * It sends the anchor's id and the ELAPSED difference — never a timestamp.
- *
- *   capturedAt = (the server's own record of when it issued that anchor) + (elapsed monotonic time)
- *
- * The phone therefore never supplies a time. It supplies a duration, against a starting point the
- * server wrote itself and can look up. Moving the wall clock changes nothing in that equation.
- *
- * ## What still has to be checked, because a duration can be lied about too
- *
- * A patched build could inflate the elapsed number. That is why every bound below exists, and why
- * they are one-sided in the direction that matters: **a claim can only ever be pulled back towards
- * the truth, never pushed away from it.** The elapsed time cannot exceed the real time between the
- * server issuing the anchor and the server receiving the visit — the server knows both ends of that
- * window first-hand, so the widest possible lie is bounded by physics rather than by trust.
- */
-
-/** How a visit's time was established. `slot` is the online path and stays the default. */
-export type CaptureTimeSource =
-  /** The server issued the photo's upload slot at that moment. Unforgeable; the online path. */
-  | "slot"
-  /** Derived from a server-minted anchor plus elapsed monotonic time on the phone. */
-  | "offline_anchor";
 
 /** Why an offline time could not be established. A refusal is silent to the rep; see the header. */
-export type OfflineClockRefusal =
+type OfflineClockRefusal =
   | "no_anchor"
   | "anchor_not_his"
   | "anchor_too_old"

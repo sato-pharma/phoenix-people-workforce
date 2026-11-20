@@ -40,7 +40,7 @@ export function genericStepName(stepKey: VacationWorkflowStepKey): VacationGener
   return "hr_acknowledgement";
 }
 
-export function isManagementStep(stepKey: VacationWorkflowStepKey): boolean {
+function isManagementStep(stepKey: VacationWorkflowStepKey): boolean {
   return stepKey !== "hr";
 }
 
@@ -337,14 +337,6 @@ export function evaluateAdminOverride(input: {
   }
 
   return { available: true, availableAt, daysPending: rounded, reason: null, step: activeStep };
-}
-
-const HR_ACKNOWLEDGEMENT_LABEL = "HR Acknowledgement";
-
-export function genericStepLabel(stepKey: VacationWorkflowStepKey, approverTitle?: string | null): string {
-  if (stepKey === "hr") return HR_ACKNOWLEDGEMENT_LABEL;
-  const title = (approverTitle ?? "").trim();
-  return title ? `${title} Approval` : "Management Approval";
 }
 
 /**

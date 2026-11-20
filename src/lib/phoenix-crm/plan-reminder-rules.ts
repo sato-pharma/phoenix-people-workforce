@@ -32,7 +32,6 @@
  */
 
 import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
-import { addDaysIso } from "@/lib/crm/dates";
 import { fieldWeekDays, PLAN_DEADLINE_LABEL, repPlanWeek, weekdayOfIsoDay, weeklyPlanDueOn } from "@/lib/phoenix-crm/calendar";
 import { territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
@@ -62,7 +61,7 @@ export type PlanReminderDay = {
 };
 
 /** "Saturday 3 Oct" */
-export function reminderDayLabel(isoDay: string): string {
+function reminderDayLabel(isoDay: string): string {
   const [, month, day] = isoDay.split("-").map(Number);
   return `${PHOENIX_CRM_WEEKDAY_NAMES[weekdayOfIsoDay(isoDay)]} ${day} ${CAIRO_MONTHS[month - 1] ?? ""}`;
 }
@@ -164,13 +163,8 @@ export function managerReminder(input: {
   };
 }
 
-/** The last day a week can still be sent before it starts — the Friday. Exported for the tests' calendar walk. */
-export function lastReminderDay(weekStart: string): string {
-  return addDaysIso(weekStart, -1);
-}
-
 /** The team a territory belongs to: its district manager, or the vacant seat above it when nobody sits there. */
-export function teamKeyOf(org: OrgIndex, seat: OrgSeat): string {
+function teamKeyOf(org: OrgIndex, seat: OrgSeat): string {
   return territoryReviewer(org, seat.seatId)?.hrId ?? `vacant:${seat.parentSeatId ?? seat.seatId}`;
 }
 

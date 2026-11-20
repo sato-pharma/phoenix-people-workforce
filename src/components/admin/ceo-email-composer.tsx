@@ -27,7 +27,7 @@ import { CEO_ASSIST_MAX_INSTRUCTION_CHARS } from "@/lib/ceo-email/assist-limits"
  * screen is a textarea that stops him mid-sentence, and a larger one is a briefing whose second half
  * is silently dropped on the way.
  */
-export const CEO_COMPOSER_VARIANT: ComposerVariant = {
+const CEO_COMPOSER_VARIANT: ComposerVariant = {
   apiBase: "/api/admin/ceo-email",
   // One box, no mode buttons. The server reads what he asked for; see src/lib/ceo-email/assist.ts.
   assist: "understood",

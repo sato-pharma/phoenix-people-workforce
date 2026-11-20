@@ -59,7 +59,7 @@ export function softenShoutedName(token: string): string {
 }
 
 /** The title every candidate is greeted with (owner, 2026-10-20). */
-export const CANDIDATE_TITLE = "Dr";
+const CANDIDATE_TITLE = "Dr";
 
 /**
  * "Nevin" -> "Dr Nevin". An empty name stays EMPTY, so a template still refuses to send without one

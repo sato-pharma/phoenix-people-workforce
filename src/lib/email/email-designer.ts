@@ -12,7 +12,7 @@ import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
 import { TOKEN_REGISTRY, type TokenCategory } from "@/lib/email-templates/token-registry";
 
-export type EmailDesignerVariable = {
+type EmailDesignerVariable = {
   allowedTemplateTypes: readonly EmailTemplateKey[];
   category: TokenCategory;
   label: string;
@@ -20,7 +20,7 @@ export type EmailDesignerVariable = {
   token: string;
 };
 
-export type EmailRecipientPresetKey =
+type EmailRecipientPresetKey =
   | "candidate"
   | "direct_manager"
   | "direct_reports"
@@ -31,7 +31,7 @@ export type EmailRecipientPresetKey =
   | "hr_team"
   | "manager_chain";
 
-export type EmailRecipientPreset = {
+type EmailRecipientPreset = {
   description: string;
   key: EmailRecipientPresetKey;
   label: string;
@@ -44,7 +44,7 @@ export type TemplateRecipientPresetSelection = {
   to?: EmailRecipientPresetKey[];
 };
 
-export type EmailDraftValidationIssue = {
+type EmailDraftValidationIssue = {
   field: string;
   message: string;
   severity: "error" | "warning";

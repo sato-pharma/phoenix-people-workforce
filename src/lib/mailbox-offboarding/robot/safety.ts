@@ -48,7 +48,7 @@ export const ROBOT_ACTOR = "system:turbify-robot" as const;
  * two lists answer different questions and must be free to diverge: the register asks "should a
  * task exist?", this asks "may a robot act?". If they ever need to differ, the safer one is here.
  */
-export const ROBOT_LEAVER_STATUSES = ["resigned", "terminated"] as const;
+const ROBOT_LEAVER_STATUSES = ["resigned", "terminated"] as const;
 
 /**
  * How many whole days must have passed since the last working date before the robot will act.

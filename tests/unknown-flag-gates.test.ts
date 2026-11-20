@@ -101,6 +101,7 @@ const PINNED = [
   "scripts/check-tests-parse.mjs",
   "scripts/check-unbacked-branches.ts",
   "scripts/check-workbook-integrity.mjs",
+  "scripts/ci-duplicates-report.mjs",
   "scripts/ci-tree-reuse.mjs",
   "scripts/ci-unit-coverage.mjs",
   "scripts/cloud-mirror-drift-refresh.mjs",

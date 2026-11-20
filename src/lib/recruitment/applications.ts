@@ -62,7 +62,7 @@ import {
 } from "@/lib/recruitment/types";
 
 /** When this candidate was last pushed to the hiring manager, and who was told. */
-export type ManagerNotifiedStamp = {
+type ManagerNotifiedStamp = {
   managerName: string;
   sentAt: string;
 };

@@ -50,14 +50,14 @@ export type ResolveMarketingRoiScopeOptions = {
  * the requests related to his region"). It is the Medical Rep's territory route, widened from the rep's own area
  * to every area an ACTIVE employee under him stands on, and held to his own line exactly as the rep's is.
  */
-export const REGION_ROUTE_ROLE = "Regional Manager" as const;
+const REGION_ROUTE_ROLE = "Regional Manager" as const;
 
 /**
  * Who runs the region route: the Regional Manager over the region, and a District Manager over the areas of the
  * reps under them (owner, 2026-11-09: "all shortcuts we built for Hany, build it for all district managers, but
  * every one based on his scope"). Same two halves, same line hold — only the chain it walks is shorter.
  */
-export const TEAM_AREA_ROUTE_ROLES: ReadonlySet<string> = new Set<string>([REGION_ROUTE_ROLE, "District Manager"]);
+const TEAM_AREA_ROUTE_ROLES: ReadonlySet<string> = new Set<string>([REGION_ROUTE_ROLE, "District Manager"]);
 
 function isActiveDirectoryRow(row: EmployeeDirectoryRow): boolean {
   const status = String(row.employmentStatus ?? "").trim().toLowerCase();

@@ -583,7 +583,7 @@ export type CarryForwardOffer = {
  * list comes back empty and read that as “no layout to carry”. Carrying a company template’s
  * layout onto replaced artwork is real work; it belongs with the store that knows those versions.
  */
-export async function countDocumentFieldsByVersion(
+async function countDocumentFieldsByVersion(
   document: HiringPackDocument,
 ): Promise<VersionFieldCount[]> {
   const versions = templateVersionsFor(document);

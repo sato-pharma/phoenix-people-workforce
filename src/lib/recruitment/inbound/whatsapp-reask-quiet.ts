@@ -38,13 +38,7 @@ export const REASK_QUIET_MIN_MS = 2 * HOUR_MS;
 /** And no longer than this since the applicant last wrote — WhatsApp's window is 24 hours. */
 export const REASK_WINDOW_MARGIN_MS = 22 * HOUR_MS;
 /** Bounded so one run cannot fire a backlog at once. */
-export const REASK_MAX_PER_RUN = 20;
-
-export type ReaskCandidateRow = {
-  sessionId: string;
-  updatedAt: string | null;
-  lastInboundAt: string | null;
-};
+const REASK_MAX_PER_RUN = 20;
 
 /**
  * Pure: whether this conversation is due a re-ask now. Quiet 2 to 22 hours, and the applicant's own

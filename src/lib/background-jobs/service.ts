@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const JOB_EXPORTS_BUCKET = "job-exports";
 
-export type BackgroundJobStatus = "queued" | "processing" | "completed" | "failed";
+type BackgroundJobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface BackgroundJob {
   id: string;
@@ -67,7 +67,7 @@ export async function claimNextBackgroundJob(jobTypes: string[]): Promise<Backgr
  */
 export const STALE_BACKGROUND_JOB_MINUTES = 60;
 
-export const STALE_BACKGROUND_JOB_MESSAGE =
+const STALE_BACKGROUND_JOB_MESSAGE =
   "The job was interrupted (a restart, a deploy or a crash) while it was running.";
 
 type StaleBackgroundJob = Pick<BackgroundJob, "attempts" | "id" | "max_attempts" | "updated_at">;
@@ -144,13 +144,6 @@ export async function getBackgroundJob(id: string): Promise<BackgroundJob | null
   const { data, error } = await getSupabaseAdmin().from("background_jobs").select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return (data as BackgroundJob | null) ?? null;
-}
-
-export async function updateBackgroundJobProgress(id: string, progress: number): Promise<void> {
-  await getSupabaseAdmin()
-    .from("background_jobs")
-    .update({ progress: Math.max(0, Math.min(100, Math.round(progress))), updated_at: new Date().toISOString() })
-    .eq("id", id);
 }
 
 export interface CompleteBackgroundJobInput {

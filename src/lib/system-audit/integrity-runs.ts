@@ -27,12 +27,12 @@ function client(override?: Client): Client {
 }
 
 export const RECONCILIATION_DETECTOR = "reconciliation";
-export const RECONCILIATION_HISTORY_LENGTH = 30;
+const RECONCILIATION_HISTORY_LENGTH = 30;
 /** How far back "each other detector's latest run" looks. Stated on screen, never silent. */
-export const OTHER_DETECTOR_WINDOW = 500;
+const OTHER_DETECTOR_WINDOW = 500;
 export const NO_STORED_RUN_MESSAGE = "No stored run yet — the first nightly run stores its report.";
 
-export const RECONCILIATION_DOMAIN_LABELS: Record<string, string> = {
+const RECONCILIATION_DOMAIN_LABELS: Record<string, string> = {
   payroll: "Payroll",
   "deductions-attendance": "Deductions and attendance",
   "crm-sales": "CRM and sales",
@@ -41,7 +41,7 @@ export const RECONCILIATION_DOMAIN_LABELS: Record<string, string> = {
   "direct-orders": "Direct orders",
 };
 
-export const RECONCILIATION_SEVERITY_LABELS: Record<string, string> = {
+const RECONCILIATION_SEVERITY_LABELS: Record<string, string> = {
   critical: "Critical",
   high: "High",
   medium: "Medium",
@@ -49,14 +49,14 @@ export const RECONCILIATION_SEVERITY_LABELS: Record<string, string> = {
 
 export type IntegrityCheckStatus = "holds" | "breached" | "known-open" | "errored";
 
-export const INTEGRITY_CHECK_STATUS_LABELS: Record<IntegrityCheckStatus, string> = {
+const INTEGRITY_CHECK_STATUS_LABELS: Record<IntegrityCheckStatus, string> = {
   holds: "Holds",
   breached: "Breached",
   "known-open": "Known open",
   errored: "Not measured",
 };
 
-export const DETECTOR_RUN_STATUS_LABELS: Record<string, string> = {
+const DETECTOR_RUN_STATUS_LABELS: Record<string, string> = {
   running: "Running",
   ok: "Completed",
   partial: "Partly completed",
@@ -122,7 +122,7 @@ function toCounts(value: unknown): Record<string, number> {
   return out;
 }
 
-export function mapDetectorRun(row: Row): DetectorRunSummary {
+function mapDetectorRun(row: Row): DetectorRunSummary {
   const status = String(row.status ?? "running");
   return {
     id: String(row.id),
@@ -154,7 +154,7 @@ function side(value: unknown): { value: string; source: string } | null {
  * a run, and a check this cannot read becomes a NOT MEASURED row naming what was wrong — never a
  * dropped row.
  */
-export function mapReconciliationReport(report: unknown): {
+function mapReconciliationReport(report: unknown): {
   counts: ReconciliationCounts | null;
   generatedAt: string | null;
   checks: IntegrityCheckView[];

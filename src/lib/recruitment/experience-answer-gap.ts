@@ -20,7 +20,7 @@ export type ExperienceBand = { max: number | null; min: number };
  * A year either side of the band before it counts as a disagreement. The CV figure is the reader's
  * arithmetic over work-history dates, so "1 - 3 years" against 3.5 is rounding, not a contradiction.
  */
-export const EXPERIENCE_GAP_TOLERANCE_YEARS = 1;
+const EXPERIENCE_GAP_TOLERANCE_YEARS = 1;
 
 const NUMBER = String.raw`(\d+(?:\.\d+)?)`;
 

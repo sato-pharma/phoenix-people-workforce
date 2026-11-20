@@ -57,7 +57,7 @@ export const NATIVE_WEB_HANDOFF_TTL_SECONDS = 60;
 const KEY_PURPOSE = "phoenix.native-web-handoff.v1";
 
 /** Only the employee portal is reachable this way. Admin-shell routes are not offered by the app. */
-export const NATIVE_WEB_HANDOFF_HOME = "/employee-portals";
+const NATIVE_WEB_HANDOFF_HOME = "/employee-portals";
 
 /**
  * Marks a browser context as the native app's WebView, so the portal renders in "app mode" — its own

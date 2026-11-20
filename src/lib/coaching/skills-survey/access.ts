@@ -34,7 +34,7 @@ type SurveyPerson = Pick<
 >;
 
 /** Read the whole company. */
-export const skillsSurveyCompanyReaders: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
+const skillsSurveyCompanyReaders: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
   "Super Admin",
   "CEO",
   "SFE Manager",
@@ -42,15 +42,15 @@ export const skillsSurveyCompanyReaders: ReadonlySet<PhoenixRole> = new Set<Phoe
 ]);
 
 /** Read their own chain. */
-export const skillsSurveyChainReaders: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
+const skillsSurveyChainReaders: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
   "District Manager",
   "Regional Manager",
   "National Sales Manager",
 ]);
 
-export const skillsSurveyRaterRoles: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["District Manager"]);
+const skillsSurveyRaterRoles: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["District Manager"]);
 
-export const skillsSurveySettingsEditors: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
+const skillsSurveySettingsEditors: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
   "Super Admin",
   "Training Manager",
 ]);

@@ -19,7 +19,7 @@ import type { RoiTrackerRow } from "@/lib/marketing-requests/roi-tracker-service
 
 export type RoiConfidenceBand = "high" | "medium" | "low";
 
-export type RoiConfidenceFactor = {
+type RoiConfidenceFactor = {
   key: "pharmacy_codes" | "sales_coverage" | "targets" | "products";
   label: string;
   /** 0..1 — how well this factor scored. */

@@ -15,7 +15,7 @@ export type OutstationExpenseWorkflowActionKey =
   | "reject_before_payroll"
   | "submit";
 
-export function toOutstationExpenseWorkflowStatus(
+function toOutstationExpenseWorkflowStatus(
   status: string | null | undefined,
   options: { addedToPayroll?: boolean } = {},
 ) {

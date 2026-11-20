@@ -104,7 +104,7 @@ export type PlaceRecommendationView = {
   mine: boolean;
 };
 
-export type PlaceRecommendationWriterRole = "district_manager" | "sfe_manager";
+type PlaceRecommendationWriterRole = "district_manager" | "sfe_manager";
 
 function writerRoleOf(value: unknown): PlaceRecommendationWriterRole {
   return value === "sfe_manager" ? "sfe_manager" : "district_manager";
@@ -133,7 +133,7 @@ export type PlaceNoteIndex = {
   integrity: PlaceCheckIntegrityIndex;
 };
 
-export const EMPTY_PLACE_NOTE_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}, recommendations: {} };
+const EMPTY_PLACE_NOTE_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}, recommendations: {} };
 
 /**
  * The comments and recommendations on a set of places and venues, newest comment first and the

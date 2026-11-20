@@ -86,7 +86,7 @@ export type SuggestInput = {
 /** Why a day, or the whole week, cannot take a suggestion. */
 export type SuggestBlock = "passed" | "activity" | "full";
 
-export type SuggestSummary = {
+type SuggestSummary = {
   am: number;
   pm: number;
   /** Distinct bricks the placements sit in; a customer with no brick is not one. */

@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The incentive line every manager board measures against (the Gap to 90% tile, Districts Needing Attention). */
-export const INCENTIVE_LINE_PERCENT = 90;
+const INCENTIVE_LINE_PERCENT = 90;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
@@ -106,7 +106,7 @@ export type DistrictRow = {
   totalTarget: number;
 };
 
-export type DistrictAttentionRow = {
+type DistrictAttentionRow = {
   key: string;
   name: string;
   percent: number;
@@ -179,7 +179,7 @@ export function rankingBoardEmptyText(windowLabel: string | null | undefined): s
 
 export type PacingPoint = { period: string; salesValue: number; targetValue: number | null };
 
-export type PacingMonth = {
+type PacingMonth = {
   period: string;
   /** "Sep 2026" */
   label: string;

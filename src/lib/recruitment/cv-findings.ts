@@ -51,8 +51,6 @@ import type { Candidate } from "@/lib/recruitment/types";
  */
 export const ROW_FINDING_KEYS = ["yearsExperience", "nationalId", "currentJobTitle"] as const;
 
-export type RowFindingKey = (typeof ROW_FINDING_KEYS)[number];
-
 /**
  * The same field definitions the CV Data tab uses, narrowed to the three above.
  *

@@ -51,7 +51,7 @@ export type PrivateCalendarEmployeeOption = {
   managerName: string | null;
 };
 
-export type PrivateCalendarReportDetails = {
+type PrivateCalendarReportDetails = {
   checkIn: string | null;
   checkOut: string | null;
   scheduledTime: string | null;
@@ -59,7 +59,7 @@ export type PrivateCalendarReportDetails = {
 };
 
 /** A person a visit entry was made with, as the day tile names them. */
-export type PrivateCalendarTilePerson = { hrId: string | null; name: string };
+type PrivateCalendarTilePerson = { hrId: string | null; name: string };
 
 export type PrivateCalendarItem = {
   // The colour the item wears — who went (single, double, chain) for a CRM visit; attendance, vacation,
@@ -166,7 +166,7 @@ export type PrivateCalendarException = {
   title: string;
 };
 
-export type PrivateCalendarTeamSummary = PrivateCalendarEmployeeOption & {
+type PrivateCalendarTeamSummary = PrivateCalendarEmployeeOption & {
   exceptionCount: number;
   itemCount: number;
   sourceCounts: Record<PrivateCalendarSource, number>;

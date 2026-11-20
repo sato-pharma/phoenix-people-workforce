@@ -72,7 +72,7 @@ export type RequestSignal = {
   committed: boolean;
 };
 
-export type VisitSignal = {
+type VisitSignal = {
   recent: number;
   prior: number;
   recentMonths: string[];
@@ -150,7 +150,7 @@ export function requestSignal(request: RequestEvidence, closedMonths: readonly s
   };
 }
 
-export function visitSignal(evidence: VisitEvidence, closedMonths: readonly string[]): VisitSignal | null {
+function visitSignal(evidence: VisitEvidence, closedMonths: readonly string[]): VisitSignal | null {
   const sorted = [...closedMonths].sort();
   const recentMonths = sorted.slice(-3);
   const priorMonths = sorted.slice(-6, -3);

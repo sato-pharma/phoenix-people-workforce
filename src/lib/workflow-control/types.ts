@@ -75,7 +75,7 @@ export type WorkflowControlResult<T> =
   | { ok: true; data: T }
   | { ok: false; code: WorkflowControlErrorCode; error: string };
 
-export type WorkflowControlErrorCode =
+type WorkflowControlErrorCode =
   | "forbidden"
   | "persistence_disabled"
   | "publish_disabled"

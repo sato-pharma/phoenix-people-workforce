@@ -22,10 +22,10 @@
 export type InterviewHalf = "AM" | "PM";
 
 /** 13:00 Cairo — an interview starting from here is in the afternoon. */
-export const INTERVIEW_AFTERNOON_STARTS_AT_MINUTES = 13 * 60;
+const INTERVIEW_AFTERNOON_STARTS_AT_MINUTES = 13 * 60;
 
 /** How many interviews in one half make that half a day worked. */
-export const INTERVIEWS_THAT_MAKE_A_HALF_DAY = 2;
+const INTERVIEWS_THAT_MAKE_A_HALF_DAY = 2;
 
 /** The half an interview belongs to, by the Cairo minute it starts. */
 export function interviewHalfOf(startMinutesCairo: number): InterviewHalf {
@@ -48,7 +48,7 @@ export function interviewHalvesWorked(halves: readonly InterviewHalf[]): { am: b
 export type InterviewHalfDay = { am: boolean; amCount: number; date: string; hrId: string; pm: boolean; pmCount: number };
 
 /** A Thursday, the field force's morning-only day (same test as `isFieldWorkforceThursday`). */
-export function isInterviewThursday(date: string): boolean {
+function isInterviewThursday(date: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && new Date(`${date}T00:00:00Z`).getUTCDay() === 4;
 }
 

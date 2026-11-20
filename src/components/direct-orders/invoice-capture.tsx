@@ -7,7 +7,7 @@ import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 
-export type InvoiceApplyPayload = {
+type InvoiceApplyPayload = {
   productCode: string;
   qty: string;
   bonus: string;

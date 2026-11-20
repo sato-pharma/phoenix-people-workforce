@@ -22,14 +22,15 @@ import { logError } from "@/lib/observability/log";
 import { CAPTURE_VIEWER_URI, captureToolMeta, captureViewerResource, IMAGE_META_KEY, VIDEO_META_KEY } from "./browser/viewer";
 import { FILE_TOOLS } from "./files";
 import { DOMAIN_TOOLS } from "./tools";
+import { FILM_TOOLS } from "./tools/films";
 import { CAPTURE_TOOLS } from "./tools/screens";
 import { ToolRefusal, type ConnectorRole, type ConnectorTool, type ToolAnswer } from "./types";
 
-export const CONNECTOR_TOOL_TIMEOUT_MS = 40_000;
+const CONNECTOR_TOOL_TIMEOUT_MS = 40_000;
 /** ChatGPT reads the whole text; past this the rows are cut and the answer says so. */
 export const CONNECTOR_MAX_TEXT_CHARS = 180_000;
 
-export const CONNECTOR_INSTRUCTIONS = [
+const CONNECTOR_INSTRUCTIONS = [
   "Phoenix is Sato Pharma's HR, payroll, attendance, sales and field CRM system.",
   "Every tool reads live Phoenix data as the signed-in person and sees exactly what their own Phoenix screens show.",
   "Find a person with phoenix_find_people first when you only have a name, then pass their HR number to the other tools.",
@@ -37,10 +38,11 @@ export const CONNECTOR_INSTRUCTIONS = [
   "Show people by name, never by HR number alone. Dates are Cairo dates.",
   "When the person wants a sheet or a PDF, call phoenix_make_sheet or phoenix_make_pdf with the rows, and give them the download link it returns.",
   "When the person wants to SEE a Phoenix page, call phoenix_screenshot_page; for a moving look at one to three pages, call phoenix_record_video. Both open the live page read-only as the person, and return a picture or video plus a link only they can open.",
+  "When the person wants a film, a presentation video, a promo or an episode about Phoenix or a module (several minutes, up to twenty), write the script and call phoenix_make_film; it is made in the background, so tell them to ask later and answer with phoenix_film_status.",
 ].join(" ");
 
 export function allConnectorTools(): ConnectorTool[] {
-  return [...DOMAIN_TOOLS, ...FILE_TOOLS, ...CAPTURE_TOOLS] as ConnectorTool[];
+  return [...DOMAIN_TOOLS, ...FILE_TOOLS, ...CAPTURE_TOOLS, ...FILM_TOOLS] as ConnectorTool[];
 }
 
 export function toolsForRole(role: string, tools: ConnectorTool[] = allConnectorTools()): ConnectorTool[] {

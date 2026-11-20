@@ -137,7 +137,7 @@ export const RED_FLAGS_FOLDER = "Red flags";
 export const cabinetRedFlags = ["not_a_cv", "duplicate_copy", "auto_forward", "colleague", "source_unknown"] as const;
 export type CabinetRedFlag = (typeof cabinetRedFlags)[number];
 
-export const cabinetRedFlagLabels: Record<CabinetRedFlag, string> = {
+const cabinetRedFlagLabels: Record<CabinetRedFlag, string> = {
   auto_forward: "Auto-forwarded",
   colleague: "Sent by a colleague",
   duplicate_copy: "Duplicate copies",
@@ -146,7 +146,7 @@ export const cabinetRedFlagLabels: Record<CabinetRedFlag, string> = {
 };
 
 /** An email from this domain was passed on by somebody inside the company. */
-export const COMPANY_EMAIL_DOMAIN = "satopharma.com";
+const COMPANY_EMAIL_DOMAIN = "satopharma.com";
 
 /**
  * The company's own WhatsApp lines. A CV whose SENDER is one of these was forwarded by us — measured
@@ -154,7 +154,7 @@ export const COMPANY_EMAIL_DOMAIN = "satopharma.com";
  * import-sender list because a missing environment variable must not quietly turn our own forwards
  * into applicants.
  */
-export const COMPANY_WHATSAPP_LINES: readonly string[] = ["201159888247", "201098500699"];
+const COMPANY_WHATSAPP_LINES: readonly string[] = ["201159888247", "201098500699"];
 
 /** Everything this module needs about the candidate. Nothing the CV extractor wrote is on it. */
 export type CabinetCandidateRow = {
@@ -269,7 +269,7 @@ export function cabinetChannelFolder(
 }
 
 /** Whether the company forwarded this CV to itself. See the header for why it outranks an answer. */
-export function isAutoForwardedCv(intake: CabinetIntakeEvent | null, importSenders?: CabinetImportSenders | null): boolean {
+function isAutoForwardedCv(intake: CabinetIntakeEvent | null, importSenders?: CabinetImportSenders | null): boolean {
   if (!intake) return false;
   const meta = intake.raw_metadata ?? {};
   if (isTrue(meta.bulkImport)) return true;
@@ -289,7 +289,7 @@ export function isAutoForwardedCv(intake: CabinetIntakeEvent | null, importSende
 }
 
 /** Whether an email came from a company address. */
-export function isColleagueEmail(intake: CabinetIntakeEvent | null): boolean {
+function isColleagueEmail(intake: CabinetIntakeEvent | null): boolean {
   if (!intake || lower(intake.channel) !== "email") return false;
   const sender = lower(intake.sender_identifier);
   const at = sender.lastIndexOf("@");
@@ -327,7 +327,7 @@ const MENU_LABEL_BY_KEY = new Map<string, string>(
  * than reinterpret. So a label matches case-insensitively (one live record says "Office coordinator")
  * and anything else is "Other positions".
  */
-export function cabinetPositionFolder(candidate: CabinetCandidateRow): string {
+function cabinetPositionFolder(candidate: CabinetCandidateRow): string {
   const title = clean(candidate.applied_for_job_title);
   if (!title) return POSITION_NOT_STATED;
   return MENU_LABEL_BY_KEY.get(title.toLowerCase()) ?? OTHER_POSITIONS_FOLDER;
@@ -347,7 +347,7 @@ function companyAreaName(typed: string, areaRegions: AreaRegionMap): string | nu
  * override rather than the raw sales region. With no region at all the path stops at the position:
  * a region folder they never chose is exactly the guess this tree exists to stop making.
  */
-export function cabinetPlaceFolders(
+function cabinetPlaceFolders(
   candidate: CabinetCandidateRow,
   areaRegions: AreaRegionMap,
 ): { area: string | null; region: string | null } {

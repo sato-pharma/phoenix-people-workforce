@@ -84,7 +84,7 @@ export type DocumentFieldInventoryEntry = {
  * Keyed by the document union rather than by surface: an eleventh document cannot be added without
  * choosing its builder here, which is the same reason `RENDERERS` in the print route is exhaustive.
  */
-export function documentValues(
+function documentValues(
   document: PrintableDocument,
   data: HiringPackData,
 ): Record<string, string> {

@@ -21,7 +21,7 @@ const CV_BEARING_OUTCOMES = new Set([
 ]);
 const CANDIDATE_OUTCOMES = new Set(["candidate_created", "candidate_matched"]);
 
-export type IntakeChannelSummary = {
+type IntakeChannelSummary = {
   channel: string;
   total: number;
   candidates: number;

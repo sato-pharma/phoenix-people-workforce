@@ -94,7 +94,7 @@ export function windowLabel(window: SpotlightWindow): string {
  * Returned as `{ year, month, day: 1 }` because that is always the first of the following month:
  * a window is done the instant its final month is done, and no window ends mid-month.
  */
-export function availableFrom(window: SpotlightWindow): { year: number; month: number; day: 1 } | null {
+function availableFrom(window: SpotlightWindow): { year: number; month: number; day: 1 } | null {
   const periods = windowPeriods(window);
   const last = periods.at(-1);
   if (!last) return null;

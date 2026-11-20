@@ -29,17 +29,17 @@ import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 // ── The rule ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Two validations of one name further apart than this are two places, two profiles. */
-export const PROFILE_REACH_METERS = 500;
+const PROFILE_REACH_METERS = 500;
 /** Points within this of the anchor agree with it. */
 export const AGREE_METERS = 150;
 /** Visits that settle a single photographed place: at least this many… */
-export const SETTLING_VISITS = 3;
+const SETTLING_VISITS = 3;
 /** …with at least this share read at the place. */
-export const SETTLING_SHARE = 0.8;
+const SETTLING_SHARE = 0.8;
 /** How far back the visit timings read. */
 export const TIMING_DAYS = 90;
 
-export type MasterListType = "AM" | "PM" | "Pharmacy" | string;
+type MasterListType = "AM" | "PM" | "Pharmacy" | string;
 
 /** One validated place of one customer, as the Master List reads it. */
 export type MasterSubject = {
@@ -92,7 +92,7 @@ export type MasterDecision = {
 };
 
 export type MasterStatus = "confirmed" | "needs_look" | "rejected";
-export type MasterStatusSource = "owner" | "automatic";
+type MasterStatusSource = "owner" | "automatic";
 
 export type MasterTimings = {
   visits: number;
@@ -156,7 +156,7 @@ const FAMILY_LABEL: Record<string, string> = {
 };
 
 /** The brick group a profile is filed under: its speciality family, or Pharmacies. */
-export function groupLabelOf(listType: string, speciality: string | null): string {
+function groupLabelOf(listType: string, speciality: string | null): string {
   if (listType === "Pharmacy") return PHARMACIES_GROUP;
   const family = specialityFamily(speciality);
   if (family) return FAMILY_LABEL[family] ?? family;
@@ -273,7 +273,7 @@ export function timingsOf(visits: ReadonlyArray<MasterVisit>): MasterTimings {
 }
 
 /** The automatic status of a profile and its plain reason. */
-export function automaticStatus(
+function automaticStatus(
   anchor: MasterSubject,
   members: ReadonlyArray<MasterSubject>,
   visits: ReadonlyArray<MasterVisit>,

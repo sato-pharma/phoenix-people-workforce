@@ -27,7 +27,7 @@ import {
  * Lower-case and compared exactly — these are matched against `excelCellText(...).toLowerCase()`,
  * not normalized, so "Employee ID" matches and "Employee-ID" does not.
  */
-export const EMPLOYEE_UPLOAD_ID_HEADERS = ["employee id", "hr_id", "hr id", "employee code"] as const;
+const EMPLOYEE_UPLOAD_ID_HEADERS = ["employee id", "hr_id", "hr id", "employee code"] as const;
 
 /**
  * The header row must also carry ONE of these, so a stray "HR ID" note above the table cannot
@@ -46,9 +46,6 @@ export const EMPLOYEE_UPLOAD_ID_HEADERS = ["employee id", "hr_id", "hr id", "emp
  */
 export const EMPLOYEE_UPLOAD_NAME_HEADERS = ["full english name", "full name"] as const;
 
-/** @deprecated Kept for callers that only ever needed the template's own spelling. */
-export const EMPLOYEE_UPLOAD_NAME_HEADER = EMPLOYEE_UPLOAD_NAME_HEADERS[0];
-
 /**
  * How far down the sheet the header may sit.
  *
@@ -66,12 +63,6 @@ export type EmployeeUploadParseSuccess<TRow> = {
   firstDataRowNumber: number;
   rows: TRow[];
 };
-
-export function isEmployeeUploadParseFailure(
-  parsed: EmployeeUploadParseFailure | EmployeeUploadParseSuccess<unknown>,
-): parsed is EmployeeUploadParseFailure {
-  return "error" in parsed;
-}
 
 /**
  * Finds the header row and reads everything under it.

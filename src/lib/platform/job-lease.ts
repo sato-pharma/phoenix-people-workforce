@@ -18,7 +18,7 @@ import { hostname } from "node:os";
 
 import { logError, logInfo } from "@/lib/observability/log";
 
-export const JOB_LEASE_CLAIM_RPC = "claim_job_lease";
+const JOB_LEASE_CLAIM_RPC = "claim_job_lease";
 
 export type JobLeaseClaim =
   | { held: true; reason: "acquired" | "renewed" }

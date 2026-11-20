@@ -86,7 +86,7 @@ export type CountedVisit = {
   own: boolean;
 };
 
-export type FieldDirectoryEntry = {
+type FieldDirectoryEntry = {
   name: string;
   jobTitle: string | null;
   lineName: string | null;
@@ -97,7 +97,7 @@ export type FieldDirectoryEntry = {
 const personKey = (hrId: string | null | undefined): string | null => canonicalHrIdForDisplay(hrId);
 
 /** A CRM visit counts when it is a real visit (regular or double) or a pharmacy visit. */
-export function isCountedCrmVisit(row: Pick<CrmVisitRow, "visit_type" | "ampm" | "speciality" | "comment" | "visit_type_description" | "source" | "crm_visit_id">): boolean {
+function isCountedCrmVisit(row: Pick<CrmVisitRow, "visit_type" | "ampm" | "speciality" | "comment" | "visit_type_description" | "source" | "crm_visit_id">): boolean {
   const type = row.visit_type;
   if (type !== null && type !== undefined && (CRM_DOUBLE_VISIT_TYPE_CODES as readonly number[]).includes(Number(type))) return true;
   return isPharmacyVisitRow(row);
@@ -124,7 +124,7 @@ export function cairoClockTime(instant: string | null | undefined): string | nul
 }
 
 /** The CRM rows, merged, counted and resolved to the people they credit. */
-export function countCrmVisits(rows: readonly CrmVisitRow[]): CountedVisit[] {
+function countCrmVisits(rows: readonly CrmVisitRow[]): CountedVisit[] {
   const out: CountedVisit[] = [];
   for (const row of rows) {
     const date = String(row.visit_date ?? "").slice(0, 10);

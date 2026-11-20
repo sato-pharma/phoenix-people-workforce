@@ -131,7 +131,7 @@ export function hashHalves(hash: string): [number, number] | null {
 }
 
 /** Set bits in a 32-bit integer (the classic SWAR count). */
-export function popcount32(value: number): number {
+function popcount32(value: number): number {
   let v = value | 0;
   v = v - ((v >>> 1) & 0x55555555);
   v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);

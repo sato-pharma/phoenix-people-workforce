@@ -196,30 +196,3 @@ export type PreparedMessageRow = {
   createdAt: string;
 };
 
-/** The history strip on a candidate — what has already been prepared for this person, and when. */
-export async function listCandidatePreparedMessages(candidateId: string): Promise<PreparedMessageRow[]> {
-  const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from(SENDS_TABLE)
-    .select("id,to_number,rendered_body,opened_by_hr_id,created_at,ats_whatsapp_message_templates(name)")
-    .eq("candidate_id", candidateId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error) throw new Error(error.message);
-
-  return (data ?? []).map((raw) => {
-    const row = raw as Record<string, unknown>;
-    // The embedded parent arrives as an object from PostgREST, but a stale schema cache has been
-    // seen to hand it back as a one-element array. Both are read rather than one being trusted.
-    const embedded = row.ats_whatsapp_message_templates;
-    const parent = Array.isArray(embedded) ? embedded[0] : embedded;
-    return {
-      createdAt: String(row.created_at ?? ""),
-      id: String(row.id),
-      openedByHrId: textOrNull(row.opened_by_hr_id),
-      renderedBody: String(row.rendered_body ?? ""),
-      templateName: parent ? textOrNull((parent as Record<string, unknown>).name) : null,
-      toNumber: String(row.to_number ?? ""),
-    };
-  });
-}

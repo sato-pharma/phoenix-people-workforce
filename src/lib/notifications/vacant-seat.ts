@@ -74,7 +74,7 @@ export function onePerPerson(hrIds: readonly (string | null | undefined)[]): str
  * the same direction as `withoutDepartedHrIds` in role-recipients.ts: a seat must not read as empty
  * because a second table blinked.
  */
-export async function readCurrentRoleHolders(role: PhoenixRole): Promise<string[]> {
+async function readCurrentRoleHolders(role: PhoenixRole): Promise<string[]> {
   const hrIds = Array.from(new Set((await activeRoleSignIns([role])).map((signIn) => signIn.hrId)));
   if (hrIds.length === 0) return [];
   const departed = new Set<string>();

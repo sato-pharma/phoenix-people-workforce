@@ -28,7 +28,7 @@ export function tryParseAiJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
-export class AiJsonParseError extends Error {
+class AiJsonParseError extends Error {
   constructor(message = "The AI reply was not in the expected format. Try again.") {
     super(message);
     this.name = "AiJsonParseError";

@@ -48,7 +48,7 @@ export type DayDetailVisit = {
   archiveHistory?: boolean;
 };
 
-export type DayDetailPharmacy = {
+type DayDetailPharmacy = {
   name: string;
   /** The customers whose visits named it, in the order they were visited. */
   fromCustomers: string[];

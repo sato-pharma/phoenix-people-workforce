@@ -112,11 +112,6 @@ function statusLabelOf(status: ManagerCustomerStatus): string {
   return "On the list";
 }
 
-/** A removal still waiting on someone: with the regional manager, or with the NSM above him. */
-export function isRemovalOpen(status: ManagerCustomerStatus): boolean {
-  return status === "removal_pending" || status === "removal_first_approved";
-}
-
 /** The fields a removal's deciders and the Hub read, beyond what Manager's own list shows. */
 type ManagerCustomerRemoval = {
   managerHrId: string;
@@ -150,7 +145,7 @@ function viewOf(row: ManagerCustomerView & ManagerCustomerRemoval): ManagerCusto
   return view;
 }
 
-export function managerCustomerOf(raw: unknown): (ManagerCustomerView & ManagerCustomerRemoval) | null {
+function managerCustomerOf(raw: unknown): (ManagerCustomerView & ManagerCustomerRemoval) | null {
   const row = record(raw);
   const id = textOrNull(row.id);
   const managerHrId = personKey(textOrNull(row.manager_hr_id));

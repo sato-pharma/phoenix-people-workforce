@@ -244,7 +244,7 @@ export type LoadedProduct = {
   readonly notes: string | null;
 };
 
-export type LoadedLocation = {
+type LoadedLocation = {
   readonly id: string;
   readonly code: string;
   readonly nameAr: string;
@@ -298,7 +298,7 @@ export type LoadedStock = {
   readonly note: string | null;
 };
 
-export type LoadedPrice = {
+type LoadedPrice = {
   readonly materialId: string;
   readonly currency: Currency;
   readonly pricePerDisplayUnit: bigint;
@@ -306,7 +306,7 @@ export type LoadedPrice = {
   readonly supplierName: string | null;
 };
 
-export type LoadedSettings = {
+type LoadedSettings = {
   readonly defaultOveragePct: bigint;
   readonly reorderCoverRuns: bigint;
   readonly alarmEnabled: boolean;
@@ -914,7 +914,7 @@ export type PlanRequestInput = {
   readonly lang?: unknown;
 };
 
-export function parsePlanRequest(body: PlanRequestInput, data: ProductionPlanningData) {
+function parsePlanRequest(body: PlanRequestInput, data: ProductionPlanningData) {
   const productId = asText(body.productId) ?? data.products[0]?.id ?? null;
   if (!productId) throw new ProductionPlanningInputError(errorsFor(body).noProductToPlan, "productId");
   const product = data.products.find((candidate) => candidate.id === productId);
@@ -937,7 +937,7 @@ export function parsePlanRequest(body: PlanRequestInput, data: ProductionPlannin
   return { product, mode, requestedQty, sampleUnits, overridePct, willSendByMaterialId };
 }
 
-export type PlanResultRow = {
+type PlanResultRow = {
   readonly materialId: string;
   readonly code: string;
   readonly nameAr: string;
@@ -2883,4 +2883,3 @@ function computePlanInternal(data: ProductionPlanningData, productId: string) {
   return { product, run, requirements };
 }
 
-export { computePlanInternal as computeBaselineRequirements };

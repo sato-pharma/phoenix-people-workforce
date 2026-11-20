@@ -102,7 +102,7 @@ function applyReviewFilter(
 /** How many months the by-month series carries, newest last. */
 export const PERFORMANCE_REVIEW_MONTHS = 6;
 
-export type PerformanceReviewAreaRow = {
+type PerformanceReviewAreaRow = {
   achievement: number | null;
   areaCode: string;
   areaName: string;
@@ -118,7 +118,7 @@ export type PerformanceReviewAreaRow = {
   targetValue: number | null;
 };
 
-export type PerformanceReviewGroupRow = {
+type PerformanceReviewGroupRow = {
   achievement: number | null;
   /** How many areas rolled into this row. */
   areaCount: number;
@@ -130,7 +130,7 @@ export type PerformanceReviewGroupRow = {
   targetValue: number | null;
 };
 
-export type PerformanceReviewFamilyRow = {
+type PerformanceReviewFamilyRow = {
   achievement: number | null;
   family: string;
   /** How many distinct product codes make up this family. */
@@ -164,7 +164,7 @@ export type PerformanceReviewSeriesRow = {
  * ONE product code holds a real quantity and its units may be printed and summed down the column; a
  * family column spans concentrations, so its units are meaningless and the cell carries value only.
  */
-export type PerformanceMatrixColumn = {
+type PerformanceMatrixColumn = {
   key: string;
   label: string;
   productCount: number;
@@ -178,7 +178,7 @@ export type PerformanceMatrixColumn = {
  * `units` is parallel to `values` and to the matrix's columns. It is null at any position whose
  * column is not a single product code — never 0, which would read as "sold nothing".
  */
-export type PerformanceMatrixRow = {
+type PerformanceMatrixRow = {
   achievement: number | null;
   areaCode: string;
   areaName: string;
@@ -218,7 +218,7 @@ export type PerformanceMatrix = {
  * than one product code, so the decision has to travel on the data rather than be assumed by a
  * renderer downstream.
  */
-export type PerformanceProductMonthColumn = {
+type PerformanceProductMonthColumn = {
   key: string;
   label: string;
   subLabel: string;
@@ -233,7 +233,7 @@ export type PerformanceProductMonthColumn = {
  * deliberately NO row total — a row spans products, and units of different products are never
  * added. `growth[productIndex]` is that product's newest month over the one before it.
  */
-export type PerformanceProductMonthRow = {
+type PerformanceProductMonthRow = {
   areaCode: string;
   areaName: string;
   growth: Array<PerformanceReviewGrowth>;

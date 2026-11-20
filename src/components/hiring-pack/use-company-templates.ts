@@ -28,7 +28,7 @@ import type {
   CustomTemplatePrintSides,
 } from "@/lib/hiring-pack/custom-templates";
 
-export type StoredTemplatePage = {
+type StoredTemplatePage = {
   id: string;
   pageIndex: number;
   contentType: string;

@@ -27,8 +27,8 @@ import {
   type SkillsSurveyTrainingPriority,
 } from "@/lib/coaching/skills-survey/vocabulary";
 
-export const skillsSurveyMinScore = 0;
-export const skillsSurveyMaxScore = 5;
+const skillsSurveyMinScore = 0;
+const skillsSurveyMaxScore = 5;
 
 export type SkillsSurveySkill = {
   key: string;
@@ -241,7 +241,7 @@ export function buildSkillsSurveyRanking(
     }));
 }
 
-export type SkillsSurveySkillAnalysisRow = {
+type SkillsSurveySkillAnalysisRow = {
   skill: SkillsSurveySkill;
   rank: number | null;
   averageScore: number | null;

@@ -107,11 +107,6 @@ export function dosesPerRun(geometry: RunGeometry): bigint {
   return geometry.runVolumeMl / geometry.doseMl;
 }
 
-/** Bottles in one run when no samples are taken out of it. */
-export function goodUnitsPerRunWithoutSamples(geometry: RunGeometry): bigint {
-  return geometry.runVolumeMl / geometry.goodUnitMl;
-}
-
 /** How a good-unit count and a sample count become sets and boxes. */
 function packingFor(
   geometry: RunGeometry,

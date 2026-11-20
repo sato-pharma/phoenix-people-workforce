@@ -122,7 +122,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 export { CATCH_ALL_CONTACT_CRM_ID };
 
 /** The two reports, by name. Report 1 spans two lists; report 2 spans one. */
-export const AM_PM_LIST_TYPES = ["AM", "PM"] as const satisfies readonly CrmListType[];
+const AM_PM_LIST_TYPES = ["AM", "PM"] as const satisfies readonly CrmListType[];
 export const PHARMACY_LIST_TYPE = "Pharmacy" as const satisfies CrmListType;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ export type KpiBand = { readonly min: number; readonly max: number };
  * One list's standard. Every field is nullable and null means "the owner has not set this yet",
  * which renders as "Not scored". It NEVER means zero — see the header.
  */
-export type KpiListStandard = {
+type KpiListStandard = {
   /** Visits per working day expected on this list. */
   readonly callRatePerDay: number | null;
   /**
@@ -220,7 +220,7 @@ export const DEFAULT_REP_KPI_STANDARDS: RepKpiStandards = {
  * A stored standard, as an admin would edit it — every field optional, so a partial edit changes
  * only what it names and everything else keeps the shipped default.
  */
-export type StoredKpiListStandard = {
+type StoredKpiListStandard = {
   readonly callRatePerDay?: number | null;
   readonly callRateBand?: KpiBand | null;
   readonly coverageFloorPct?: number | null;
@@ -333,7 +333,7 @@ function score(value: number | null, target: number | null, band: KpiBand | null
 // The three numbers
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CallRateKpi = {
+type CallRateKpi = {
   /** Regular Sat-Wed visits this rep made to contacts on THIS list. */
   readonly visits: number;
   readonly workingDays: number;
@@ -342,7 +342,7 @@ export type CallRateKpi = {
   readonly score: KpiScore;
 };
 
-export type CoverageKpi = {
+type CoverageKpi = {
   /** Contacts on this rep's list of this type. */
   readonly panel: number;
   /** Of those, how many were visited at least ONCE. */
@@ -352,7 +352,7 @@ export type CoverageKpi = {
   readonly score: KpiScore;
 };
 
-export type FrequencyGradeRow = {
+type FrequencyGradeRow = {
   readonly grade: DoctorCoverageGradeTier;
   /** Visits per month this grade must receive. Null = this grade is not held to a frequency. */
   readonly norm: number | null;
@@ -360,7 +360,7 @@ export type FrequencyGradeRow = {
   readonly met: number;
 };
 
-export type FrequencyKpi = {
+type FrequencyKpi = {
   /** Contacts whose grade carries a real norm — the denominator. Unscored grades are excluded. */
   readonly scoredPanel: number;
   /** Of those, how many received at least their grade's norm. */
@@ -392,7 +392,7 @@ export type ListKpiBlock = {
  * header. `applicable` is false only when the rep has NEITHER list, which IS worth flagging —
  * unlike report 2, every rep is expected to carry AM/PM.
  */
-export type AmPmKpiReport = {
+type AmPmKpiReport = {
   readonly kind: "ampm";
   readonly applicable: boolean;
   readonly am: ListKpiBlock;
@@ -405,7 +405,7 @@ export type AmPmKpiReport = {
  * `applicable` false is NORMAL and must render as "Not applicable" — never a zero, a gap, a
  * warning or a red cell. Measured on production: 25 of 69 reps carry no pharmacy list at all.
  */
-export type PharmacyKpiReport = {
+type PharmacyKpiReport = {
   readonly kind: "pharmacy";
   readonly applicable: boolean;
   readonly pharmacies: ListKpiBlock;
@@ -742,19 +742,8 @@ export function unscoredLabel(reason: KpiUnscoredReason): string {
   }
 }
 
-/**
- * The two reports' display names.
- *
- * "Pharmacies" counts pharmacies; a pharmacy is NOT a contact and its row label is "Pharmacist",
- * never "Doctor" and never "Contact".
- */
-export const KPI_REPORT_TITLES = {
-  ampm: "Call rate, frequency and coverage — AM · PM",
-  pharmacy: "Call rate, frequency and coverage — Pharmacies",
-} as const;
-
 /** Every list type this module reports on, in report order. Kept in step with LIST_TYPES. */
-export const KPI_REPORTED_LIST_TYPES: readonly CrmListType[] = [...AM_PM_LIST_TYPES, PHARMACY_LIST_TYPE];
+const KPI_REPORTED_LIST_TYPES: readonly CrmListType[] = [...AM_PM_LIST_TYPES, PHARMACY_LIST_TYPE];
 
 /** True when `LIST_TYPES` still holds exactly what these two reports cover. Pinned by the tests. */
 export function kpiReportsCoverEveryListType(): boolean {

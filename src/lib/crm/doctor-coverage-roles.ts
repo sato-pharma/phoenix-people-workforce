@@ -92,9 +92,6 @@ const BASIS_BY_ROLE = new Map<string, DoctorCoverageScopeBasis>([
   ...SELF_ROLES.map((role) => [role, "self"] as const),
 ]);
 
-/** Every role with any access at all. */
-export const DOCTOR_COVERAGE_ROLES: readonly string[] = Array.from(BASIS_BY_ROLE.keys());
-
 /**
  * Roles that reach the board through the EMPLOYEE PORTAL rather than the admin shell.
  *

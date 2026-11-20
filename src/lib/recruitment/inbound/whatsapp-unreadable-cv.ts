@@ -56,7 +56,7 @@ import { textOnlySenderLabel, TEXT_ONLY_WINDOW_MS } from "@/lib/recruitment/inbo
 
 /** Same window as the text-only path, deliberately: a person who tries again tomorrow is a new
  *  attempt and deserves the same help, while a burst of photo pages tonight is one conversation. */
-export const UNREADABLE_CV_WINDOW_MS = TEXT_ONLY_WINDOW_MS;
+const UNREADABLE_CV_WINDOW_MS = TEXT_ONLY_WINDOW_MS;
 
 /** Why the attachment never became a candidate. Decides the WORDING, never whether to reply. */
 export type UnreadableCvCause = "not_recognised" | "too_large";
@@ -149,7 +149,7 @@ export function unreadableCvReplyText(
 }
 
 /** The default ceiling, named so the signature above and the screen can agree on one number. */
-export const DEFAULT_MAX_CV_BYTES = 15 * 1024 * 1024;
+const DEFAULT_MAX_CV_BYTES = 15 * 1024 * 1024;
 
 /**
  * The wording in code, with {maxMb} still a token — the fallback when nobody has reworded it, and
@@ -185,7 +185,7 @@ export function unreadableCvReplyDefault(cause: UnreadableCvCause): string {
  * Allowed to throw. A failure here must not silently widen the decision into a duplicate reply to a
  * real applicant — the caller treats the whole path as best-effort and drops it.
  */
-export async function countPriorUnreadable(input: { phone: string; now: Date }): Promise<number> {
+async function countPriorUnreadable(input: { phone: string; now: Date }): Promise<number> {
   const supabase = recruitmentDb();
   const sinceIso = new Date(input.now.getTime() - UNREADABLE_CV_WINDOW_MS).toISOString();
   const { count, error } = await supabase

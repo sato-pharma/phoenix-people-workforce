@@ -25,14 +25,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // a last working day before the month end does.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type SeatOccupancyStretch = {
+type SeatOccupancyStretch = {
   seatId: string;
   occupantHrId: string;
   effectiveFrom: string;
   effectiveTo: string | null;
 };
 
-export type EmploymentDates = { hireDate: string | null; lastWorkingDate: string | null };
+type EmploymentDates = { hireDate: string | null; lastWorkingDate: string | null };
 
 export type SeatTenure = {
   stretches: readonly SeatOccupancyStretch[];

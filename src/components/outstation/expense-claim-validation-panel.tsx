@@ -64,7 +64,7 @@ const VERDICT_STYLE: Record<FraudVerdict, { card: string; chip: string; label: s
  */
 const VERDICT_ORDER: Record<FraudVerdict, number> = { review: 0, unverifiable: 1, clean: 2 };
 
-export function orderClaimChecks<T extends { verdict: FraudVerdict }>(checks: T[]): T[] {
+function orderClaimChecks<T extends { verdict: FraudVerdict }>(checks: T[]): T[] {
   return checks
     .map((check, index) => ({ check, index }))
     .sort((left, right) => VERDICT_ORDER[left.check.verdict] - VERDICT_ORDER[right.check.verdict] || left.index - right.index)

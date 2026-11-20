@@ -101,7 +101,7 @@ export { ChromiumUnavailableError };
  *
  * A single-quoted attribute holds double quotes legally, so the stack can be dropped in whole.
  */
-export const PAGE_NUMBER_FOOTER = `<div style='width:100%;padding:0 10.2mm;font-family:${ARABIC_FONT_STACK};`
+const PAGE_NUMBER_FOOTER = `<div style='width:100%;padding:0 10.2mm;font-family:${ARABIC_FONT_STACK};`
   + `font-size:7pt;color:${HOUSE_COLORS.muted};direction:rtl;text-align:center'>`
   + `صفحة <span class="pageNumber"></span> من <span class="totalPages"></span>`
   + `</div>`;

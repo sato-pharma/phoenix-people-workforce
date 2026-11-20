@@ -24,9 +24,9 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import type { ReviewWindow } from "../period";
 import { periodMonthEnd } from "../period-format";
 
-export type MarketingBucket = "committed" | "pending";
+type MarketingBucket = "committed" | "pending";
 
-export type MarketingFact = {
+type MarketingFact = {
   period: string;
   requesterHrId: string;
   lineId: number | null;

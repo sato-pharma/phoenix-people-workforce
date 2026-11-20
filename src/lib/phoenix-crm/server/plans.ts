@@ -287,7 +287,7 @@ export function venueNamesOf(
   return loadSharedPlaceNames(sharedPlaceIds);
 }
 
-export type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
+type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
 
 /**
  * The plan save's readiness stamp, run at most once per territory inside `READINESS_STAMP_FRESH_MS`

@@ -68,7 +68,7 @@ export function reconciliationCheckRoute(result: Pick<ReconciliationCheckResult,
 }
 
 type PersonInfo = { hrIdDisplay?: string | null; name?: string | null; role?: string | null };
-export type PersonLookup = {
+type PersonLookup = {
   lookup(ids: string[]): Promise<Map<string, PersonInfo>> | Map<string, PersonInfo>;
 };
 
@@ -165,7 +165,7 @@ function dayBefore(day: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function detailHash(detail: string): string {
+function detailHash(detail: string): string {
   return crypto.createHash("sha256").update(detail).digest("hex").slice(0, 16);
 }
 

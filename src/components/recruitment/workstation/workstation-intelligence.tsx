@@ -64,7 +64,7 @@ import {
 } from "@/components/admin/admin-design-tokens";
 import { cn } from "@/lib/utils";
 
-export const intelligenceTabs = ["summary", "cv", "timeline", "notes"] as const;
+const intelligenceTabs = ["summary", "cv", "timeline", "notes"] as const;
 export type IntelligenceTab = (typeof intelligenceTabs)[number];
 
 const tabLabels: Record<IntelligenceTab, string> = {

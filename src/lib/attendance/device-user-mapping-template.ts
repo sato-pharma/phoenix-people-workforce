@@ -12,7 +12,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const templateHeaders = ["device_id", "device_user_id", "employee_hr_id", "is_active", "notes"] as const;
 const defaultDeviceId = process.env.ATTENDANCE_DEFAULT_DEVICE_ID || process.env.DEVICE_ID || "zkteco-main";
 
-export type DeviceMappingImportFailure = {
+type DeviceMappingImportFailure = {
   message: string;
   row: number;
 };

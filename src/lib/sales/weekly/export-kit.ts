@@ -114,10 +114,6 @@ export function sumifs1(sumKey: keyof typeof DATA, last: number, crit: Crit[]): 
   const tail = crit.map(([k, v]) => `,${dataRange(k, last)},"${esc(v)}"`).join("");
   return `SUMIFS(${dataRange(sumKey, last)}${tail})`;
 }
-/** COUNTIFS over Data columns with N equality criteria. */
-export function countifs1(last: number, crit: Crit[]): string {
-  return `COUNTIFS(${crit.map(([k, v]) => `${dataRange(k, last)},"${esc(v)}"`).join(",")})`;
-}
 export const div0 = (num: string, den: string) => `IFERROR(${num}/${den},0)`;
 export const sumRange = (range: string) => `SUM(${range})`;
 

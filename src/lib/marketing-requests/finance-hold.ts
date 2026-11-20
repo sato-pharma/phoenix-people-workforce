@@ -405,7 +405,7 @@ export async function placeMarketingRequestOnFinanceHold(params: {
  * applied, so the exact prior state is recoverable rather than guessed. `approved` is the fallback
  * when no such event exists — the base approved state, and never one that skips work.
  */
-export async function resolveMarketingFinanceHoldReleaseStatus(requestId: string): Promise<string> {
+async function resolveMarketingFinanceHoldReleaseStatus(requestId: string): Promise<string> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("marketing_request_events")

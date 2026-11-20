@@ -35,7 +35,7 @@ export const DECISION_WINDOW_DAYS = INTERVIEW_OUTCOME_WINDOW_DAYS;
 
 const DAY_MS = 86_400_000;
 
-export type SettleStatusEvent = { toStatus: string; actorHrId: string | null; createdAt: string; fromStatus?: string | null };
+type SettleStatusEvent = { toStatus: string; actorHrId: string | null; createdAt: string; fromStatus?: string | null };
 
 export type SettleEvidence = {
   startsAt: string;
@@ -107,7 +107,7 @@ export function inferInterviewOutcome(evidence: SettleEvidence): InferredOutcome
 
 type BookingRow = { id: string; candidate_id: string; starts_at: string; duration_minutes: number | null };
 
-export type SettledInterview = { bookingId: string; candidateId: string; outcome: InterviewOutcome; reason: string };
+type SettledInterview = { bookingId: string; candidateId: string; outcome: InterviewOutcome; reason: string };
 /** `stoppedEarly`: the run reached its deadline with interviews still to write; the next run settles them. */
 export type SettleRun = { considered: number; settled: SettledInterview[]; stoppedEarly: boolean };
 

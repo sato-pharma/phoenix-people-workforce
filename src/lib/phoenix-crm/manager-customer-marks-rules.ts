@@ -90,7 +90,7 @@ export function frequencyStanding(visits: number, target: number | null): Freque
 export type FrequencyPip = "done" | "due" | "over";
 
 /** At most this many pips are drawn; the rest is written as "+n". */
-export const FREQUENCY_PIPS_MAX = 6;
+const FREQUENCY_PIPS_MAX = 6;
 
 /**
  * One pip per visit owed: filled for each made, open for each still due, and the ones past the number apart.
@@ -135,7 +135,7 @@ export function customerPriority(insight: CustomerInsight | undefined): number {
 }
 
 /** At most this many customers of one list are marked "Go first". */
-export const SUGGESTED_MAX = 3;
+const SUGGESTED_MAX = 3;
 
 /**
  * The few customers to go to first: the highest priority, but only one who is behind his number or carries a
@@ -159,7 +159,7 @@ export type CustomerGroup = { key: string; label: string; ids: string[]; tone: C
 export type GroupableCustomer = { id: string; speciality: string | null; place: string | null; pharmacy: string | null };
 
 /** A shared speciality or place is offered as a group only when at least this many share it. */
-export const SHARED_FEATURE_MIN = 3;
+const SHARED_FEATURE_MIN = 3;
 /** And at most this many of each kind, the biggest first. */
 const SHARED_FEATURE_MAX = 3;
 

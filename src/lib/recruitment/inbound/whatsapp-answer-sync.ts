@@ -46,7 +46,7 @@ const PLACING_KEYS: readonly BuiltInQuestionKey[] = ["job_title", "region", "are
  * answer on the conversation (`applied_candidate_id`) so the next answer takes rule 1 at once —
  * without `applied_at`, which still means "the finished answers were applied".
  */
-export async function candidateForSessionAnswers(session: SessionRow): Promise<string | null> {
+async function candidateForSessionAnswers(session: SessionRow): Promise<string | null> {
   let cvWamid = session.cv_wamid ?? null;
   // A row read without the column (an older select) — read it, since rule 2 needs it.
   if (!session.applied_candidate_id && session.cv_wamid === undefined) {

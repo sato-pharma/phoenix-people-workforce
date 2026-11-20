@@ -1,27 +1,3 @@
-/**
- * New-hire CRM account setup — the words the New Hire CRM Setup tab shows, and nothing that reads
- * or writes.
- *
- * 🔴 THE NOTICE AND ITS DAILY REMINDER ARE RETIRED (2026-11-07). They asked somebody to give each new
- * field hire an iReports360 account; the vendor CRM was retired on 6 Nov 2026
- * (crm_cutover.vendor_sync_retired_at) and Phoenix CRM is the only source of field work, so nobody
- * can be given one any more. Their sender (account-setup-notify.ts), their reminder
- * (account-setup-reminder.ts), their `crm_account_setup_alert` audience and every word only the notice
- * used (title, body, email summary, button, channels, deep link) left together. Never re-wire them.
- *
- * Split from ./account-setup.ts on the same reasoning as retention-risk/messages.ts: this file
- * imports nothing, so the assertions that matter most — that a missing fact prints as "Not
- * recorded" rather than vanishing, and that nothing is ever truncated with an ellipsis — run for
- * real in a plain node test instead of by reading the source.
- */
-
-/**
- * The module and event type the retired notice was written under. Nothing sends under them any more;
- * they stay because they name the HISTORY rows already in notification_events
- * (`crm_account_setup` / `employee_added`), and because the new-hire mailbox notice still uses the
- * same event type (src/lib/notifications/operator-watch-channel-guard.ts keys on the type alone).
- */
-export const CRM_ACCOUNT_SETUP_MODULE = "crm_account_setup" as const;
 export const CRM_ACCOUNT_SETUP_EVENT_TYPE = "employee_added" as const;
 
 /**

@@ -290,7 +290,7 @@ function tokenFromLogin(payload: LoginResponse): string | null {
  * everything the server answered — a refused credential, a 5xx, a page that is not Headwind's — is a
  * `HeadwindRequestError` naming what came back and what to check.
  */
-export const HEADWIND_LOGIN_TIMEOUT_MS = 30_000;
+const HEADWIND_LOGIN_TIMEOUT_MS = 30_000;
 
 export async function getHeadwindToken(
   fetchImpl: typeof fetch = fetch,

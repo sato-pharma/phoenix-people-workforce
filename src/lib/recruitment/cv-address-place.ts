@@ -431,7 +431,7 @@ export function neighbourhoodMatchStrength(
  * covers up to twelve areas in this company, so it identifies a REGION and never an area, and the
  * caller that wants that answer already has `districtRoutingRegion` for it.
  */
-export type CvAreaGrade = "area" | "neighbourhood" | "governorate";
+type CvAreaGrade = "area" | "neighbourhood" | "governorate";
 
 /** What a CV's own text says about where its writer is, resolved against a list of real areas. */
 export type CvAreaEvidence = {

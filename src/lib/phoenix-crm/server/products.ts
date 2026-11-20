@@ -76,7 +76,3 @@ export async function lineProductsByFamily(lineName: string | null): Promise<Lin
   return byLine[key] ?? [];
 }
 
-/** The families a territory's rep can mark as discussed. Empty when the line has none on file. */
-export async function lineProductFamilies(lineName: string | null): Promise<string[]> {
-  return (await lineProductsByFamily(lineName)).map((entry) => entry.family);
-}

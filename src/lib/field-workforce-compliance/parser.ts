@@ -105,7 +105,7 @@ function toDateIso(year: number, month: number, day: number) {
   return date.toISOString().slice(0, 10);
 }
 
-export function parseMonthValue(value: unknown): number | null {
+function parseMonthValue(value: unknown): number | null {
   if (value instanceof Date) return value.getUTCMonth() + 1;
   if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 12) return value;
   const raw = text(value).toLowerCase();
@@ -117,7 +117,7 @@ export function parseMonthValue(value: unknown): number | null {
   return monthNames.get(raw.slice(0, 3)) ?? monthNames.get(raw) ?? null;
 }
 
-export function parseYearValue(value: unknown): number | null {
+function parseYearValue(value: unknown): number | null {
   if (value instanceof Date) return value.getUTCFullYear();
   if (typeof value === "number" && Number.isInteger(value)) {
     const year = toFourDigitYear(value);
@@ -136,7 +136,7 @@ function dateFromExcelSerial(value: number) {
   return date.toISOString().slice(0, 10);
 }
 
-export function parseDateValue(value: unknown): string | null {
+function parseDateValue(value: unknown): string | null {
   if (value instanceof Date) {
     return toDateIso(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
   }

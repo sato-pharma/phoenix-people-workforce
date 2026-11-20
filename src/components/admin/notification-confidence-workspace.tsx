@@ -16,7 +16,7 @@ import {
   phxFieldClassName,
 } from "@/components/ui/form-tokens";
 
-export type AdminConfidenceCheck = {
+type AdminConfidenceCheck = {
   detail: string;
   name: string;
   passed: boolean | null;

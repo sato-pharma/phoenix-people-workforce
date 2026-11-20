@@ -52,7 +52,7 @@ const SIGNATURE_BYTES = 16;
 export const EXCEL_HYPERLINK_LIMIT = 255;
 
 /** The PDF renderer every Export PDF link points at. */
-export const CLOSING_PDF_PATH = "/api/sales/monthly-closing/premium-export/pdf";
+const CLOSING_PDF_PATH = "/api/sales/monthly-closing/premium-export/pdf";
 
 export type SealedClosingSelection = {
   filter: ClosingExportFilter;

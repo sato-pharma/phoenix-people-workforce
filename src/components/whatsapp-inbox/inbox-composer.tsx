@@ -39,7 +39,7 @@ async function postForm(url: string, form: FormData): Promise<Record<string, unk
 }
 
 /** Why a chosen file cannot go, in a sentence — or null when it can. */
-export function outboundFileProblem(file: { size: number; type: string }): string | null {
+function outboundFileProblem(file: { size: number; type: string }): string | null {
   if (file.size === 0) return "That file is empty.";
   if (file.size > INBOX_UPLOAD_MAX_BYTES) return "Files over 25 MB cannot be sent from the inbox.";
   const type = outboundMediaTypeFor(file.type || "application/octet-stream");

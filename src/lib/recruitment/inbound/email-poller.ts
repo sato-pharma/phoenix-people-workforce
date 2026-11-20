@@ -49,8 +49,8 @@ export { summarizePollFailures, type FolderPollSummary, type MailboxPollSummary 
 // 'error' listener, so a mail host that accepted the connection and then went silent held the careers
 // poll (and the intake worker) past the route's own two-minute maxDuration, and a socket error raised
 // an uncaught exception. Same shape as the mailbox monitor's client (src/lib/mailbox-monitor/imap-client.ts).
-export const RECRUITMENT_IMAP_CONNECTION_TIMEOUT_MS = 15_000;
-export const RECRUITMENT_IMAP_GREETING_TIMEOUT_MS = 10_000;
+const RECRUITMENT_IMAP_CONNECTION_TIMEOUT_MS = 15_000;
+const RECRUITMENT_IMAP_GREETING_TIMEOUT_MS = 10_000;
 export const RECRUITMENT_IMAP_SOCKET_TIMEOUT_MS = 30_000;
 
 /** An ImapFlow client with the deadlines above and an 'error' listener attached before connect(). */
@@ -242,7 +242,7 @@ export async function pollAllRecruitmentMailboxes(): Promise<MailboxPollSummary[
   return summaries;
 }
 
-export class EmailMailboxNotConfiguredError extends Error {
+class EmailMailboxNotConfiguredError extends Error {
   constructor(mailboxLabel: string) {
     super(`Mailbox "${mailboxLabel}" is no longer configured.`);
     this.name = "EmailMailboxNotConfiguredError";

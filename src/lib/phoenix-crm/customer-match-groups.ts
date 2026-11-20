@@ -131,7 +131,7 @@ export function sameCustomer(left: CustomerSubject, right: CustomerSubject): boo
 }
 
 /** A rep's pin on another rep's kept point: how close it sits there, and how far from his own photograph. */
-export type PinOnOther = { otherKey: string; otherRepName: string; pinToOtherMeters: number; pinToPhotoMeters: number };
+type PinOnOther = { otherKey: string; otherRepName: string; pinToOtherMeters: number; pinToPhotoMeters: number };
 
 export function pinOnOther(subject: CustomerSubject, other: CustomerSubject): PinOnOther | null {
   if (!subject.pin || !subject.photo) return null;

@@ -3,19 +3,15 @@ import ExcelJS from "exceljs";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  weeklyBranchMapDistributors,
-  weeklyDistributorSplitsSalesStock,
-} from "@/lib/sales/weekly/templates";
 
 // ── shared map type ────────────────────────────────────────────────────────────────────────────────
 
 /** "sales" / "stock" for distributors with split files; "combined" for single-file distributors. */
-export type BranchMapType = "sales" | "stock" | "combined";
+type BranchMapType = "sales" | "stock" | "combined";
 
 // ── core reference type (used by the parser) ───────────────────────────────────────────────────────
 
-export type WeeklyPosRegionMappingReference = {
+type WeeklyPosRegionMappingReference = {
   distributorCode: string;
   normalizedColumnName: string;
   rawColumnName: string;
@@ -25,7 +21,7 @@ export type WeeklyPosRegionMappingReference = {
 
 // ── admin types (used by the branch-map admin UI) ─────────────────────────────────────────────────
 
-export type WeeklyPosRegionMappingRow = WeeklyPosRegionMappingReference & {
+type WeeklyPosRegionMappingRow = WeeklyPosRegionMappingReference & {
   id: string;
   regionName: string;
   updatedAt: string;
@@ -36,7 +32,7 @@ export type WeeklyPosRegionMappingAdmin = {
   regions: { regionCode: string; regionName: string }[];
 };
 
-export type BranchMapRow = {
+type BranchMapRow = {
   id: string;
   distributorCode: string;
   mapType: BranchMapType;
@@ -47,7 +43,7 @@ export type BranchMapRow = {
   updatedAt: string;
 };
 
-export type BranchMapDistributor = { code: string; name: string; splitsSalesStock: boolean };
+type BranchMapDistributor = { code: string; name: string; splitsSalesStock: boolean };
 
 export type BranchMapAdmin = {
   distributorCode: string;
@@ -75,7 +71,7 @@ type MappingInput = {
 
 // ── helpers ────────────────────────────────────────────────────────────────────────────────────────
 
-export function normalizeWeeklyPosColumnName(value: unknown): string {
+function normalizeWeeklyPosColumnName(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKC")
     .replace(/[_\s]*ك$/u, "")
@@ -107,16 +103,9 @@ function isMissingTable(error: unknown): boolean {
   return codeValue === "42P01" || /weekly_sales_pos_region_mappings|does not exist|Could not find the table/i.test(message);
 }
 
-function resolveDistributorCode(distributorCode: unknown): string {
-  const requested = code(distributorCode);
-  const distributors = weeklyBranchMapDistributors();
-  const match = distributors.find((d) => d.code.toUpperCase() === requested);
-  return match?.code ?? distributors[0]?.code ?? "PS";
-}
-
 // ── parser-facing read ────────────────────────────────────────────────────────────────────────────
 
-export async function listWeeklyPosRegionMappingReferences(
+async function listWeeklyPosRegionMappingReferences(
   distributorCode = "PS",
   mapType: BranchMapType = "combined",
 ): Promise<WeeklyPosRegionMappingReference[]> {
@@ -163,78 +152,9 @@ export async function loadWeeklyPosRegionMappingAdmin(distributorCode = "PS"): P
 
 // ── branch-map admin (used by /sales/weekly/branch-map page) ─────────────────────────────────────
 
-/** Full admin payload for the Branch Mapping UI — distributor dropdown + Sales/Stock/Combined tabs. */
-export async function loadBranchMapAdmin(distributorCode?: string): Promise<BranchMapAdmin> {
-  const distributors = weeklyBranchMapDistributors();
-  const activeCode = resolveDistributorCode(distributorCode);
-  const regionsByCode = await loadOfficialRegionMap();
-
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("weekly_sales_pos_region_mappings")
-    .select("id, distributor_code, map_type, raw_column_name, normalized_column_name, region_code, updated_at")
-    .eq("distributor_code", activeCode)
-    .order("map_type")
-    .order("raw_column_name");
-  if (error && !isMissingTable(error)) throw error;
-
-  const rows: BranchMapRow[] = (data ?? []).map((row) => ({
-    id: String(row.id ?? ""),
-    distributorCode: String(row.distributor_code ?? activeCode),
-    mapType: (row.map_type as BranchMapType) ?? "combined",
-    branchColumnName: String(row.raw_column_name ?? ""),
-    normalizedColumnName: String(row.normalized_column_name ?? ""),
-    regionCode: String(row.region_code ?? ""),
-    regionName: regionsByCode.get(code(row.region_code)) ?? String(row.region_code ?? ""),
-    updatedAt: String(row.updated_at ?? ""),
-  }));
-
-  return {
-    distributorCode: activeCode,
-    splitsSalesStock: weeklyDistributorSplitsSalesStock(activeCode),
-    distributors,
-    sales: rows.filter((r) => r.mapType === "sales"),
-    stock: rows.filter((r) => r.mapType === "stock"),
-    combined: rows.filter((r) => r.mapType === "combined"),
-    regions: [...regionsByCode.entries()]
-      .map(([rc, rn]) => ({ regionCode: rc, regionName: rn }))
-      .sort((a, b) => a.regionName.localeCompare(b.regionName) || a.regionCode.localeCompare(b.regionCode)),
-  };
-}
-
-/** Add or update rows in a distributor's branch map. */
-export async function upsertBranchMapRows(input: {
-  actorId: string;
-  distributorCode: string;
-  mapType: BranchMapType;
-  rows: { branchColumnName: string; regionCode: string }[];
-}): Promise<{ inserted: number; updated: number; skipped: number; errors: string[] }> {
-  const mappings: MappingInput[] = input.rows.map((r) => ({
-    rawColumnName: r.branchColumnName,
-    regionCode: r.regionCode,
-    distributorCode: input.distributorCode,
-    mapType: input.mapType,
-  }));
-  const result = await upsertWeeklyPosRegionMappings({ actorId: input.actorId, mappings });
-  return {
-    inserted: result.inserted,
-    updated: result.updated,
-    skipped: result.skipped,
-    errors: result.blockedRows.map((b) => b.reason),
-  };
-}
-
-/** Delete a single branch map row by its UUID. */
-export async function deleteBranchMapRow(id: string): Promise<void> {
-  if (!id) throw new SalesWorkflowError("invalid_id", "Row ID is required.", 400);
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("weekly_sales_pos_region_mappings").delete().eq("id", id);
-  if (error) throw new SalesWorkflowError("delete_failed", error.message, 500);
-}
-
 // ── write (shared by Excel import and row-by-row CRUD) ────────────────────────────────────────────
 
-export async function upsertWeeklyPosRegionMappings(input: {
+async function upsertWeeklyPosRegionMappings(input: {
   actorId: string;
   mappings: MappingInput[];
 }): Promise<WeeklyPosRegionMappingImportResult> {

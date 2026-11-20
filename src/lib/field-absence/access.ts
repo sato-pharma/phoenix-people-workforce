@@ -15,7 +15,7 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
-export const FIELD_ABSENCE_ROLES: readonly PhoenixRole[] = ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"];
+const FIELD_ABSENCE_ROLES: readonly PhoenixRole[] = ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"];
 
 /** The roles that read every line. */
 const COMPANY_ROLES: readonly PhoenixRole[] = ["Super Admin", "CEO", "SFE Manager"];

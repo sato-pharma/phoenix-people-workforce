@@ -75,7 +75,7 @@ export type WeeklyStockRequestFilters = {
 };
 
 /** Which filters apply to this viewer — a filter with one possible answer is hidden, not shown locked. */
-export type WeeklyStockFilterVisibility = {
+type WeeklyStockFilterVisibility = {
   line: boolean;
   region: boolean;
 };
@@ -122,16 +122,6 @@ export function parseWeeklyStockSearchParams(params: URLSearchParams): WeeklySto
     branchKeys: splitList(params.get("depots")),
     statuses: splitList(params.get("statuses")).filter((status): status is WeeklyStockStatus => STATUS_SET.has(status)),
   };
-}
-
-/** Page-component variant of the same contract. */
-export function parseWeeklyStockPageParams(params: { [key: string]: string | string[] | undefined }): WeeklyStockRequestFilters {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (Array.isArray(value)) search.set(key, value.join(","));
-    else if (typeof value === "string") search.set(key, value);
-  }
-  return parseWeeklyStockSearchParams(search);
 }
 
 async function loadAreaNames(): Promise<Map<string, string>> {
@@ -188,7 +178,7 @@ export const WEEKLY_STOCK_CACHE_SECONDS = 300;
  * every render). Stored gzipped and base64, as that cache stores its rows, so a 400 KB view is a
  * ~40 KB entry and the size checked here is the size Next measures.
  */
-export const WEEKLY_STOCK_CACHE_MAX_BYTES = 1_500_000;
+const WEEKLY_STOCK_CACHE_MAX_BYTES = 1_500_000;
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);

@@ -92,7 +92,7 @@ export type CandidateFolderSuggestionResult =
  * thirty rows. Optional on the result because only the refusals a recruiter can act on carry it —
  * the guard clauses ("Already filed.", "Candidate not found.") never reach a screen.
  */
-export type UnplacedCause =
+type UnplacedCause =
   | "degree"
   | "area_not_listed"
   | "no_area"

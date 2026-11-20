@@ -90,7 +90,7 @@ const ARABIC_H = 813;
 export type MilestoneGroupCardVariant = "trim" | "safe" | "bleed";
 
 /** One face on the picture. Everything is decided before it arrives here. */
-export type MilestoneGroupMember = {
+type MilestoneGroupMember = {
   /** The name as it prints, in full. Never truncated — the type shrinks instead. */
   displayName: string;
   /**

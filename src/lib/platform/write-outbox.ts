@@ -72,7 +72,7 @@ export const OUTBOX_RETRY_TIMEOUT_MS = 10_000;
 export const OUTBOX_FIRST_ATTEMPT_SPENT_SLACK_MS = 250;
 
 /** Rows per opportunistic drain. Small: this runs on the back of somebody's real request. */
-export const OUTBOX_DRAIN_BATCH = 5;
+const OUTBOX_DRAIN_BATCH = 5;
 
 /** At most one drain per process per this long, however much traffic there is. */
 export const OUTBOX_DRAIN_INTERVAL_MS = 30_000;

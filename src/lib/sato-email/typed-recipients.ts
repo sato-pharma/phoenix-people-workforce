@@ -19,7 +19,7 @@ export const SATO_EMAIL_MAX_TYPED_ADDRESSES = 200;
  * configured domains and the preview reports that verdict, so a hint that drifts can only ask for a
  * reason too early or too late — it can never let an outside address through unexplained.
  */
-export const SATO_EMAIL_COMPANY_DOMAIN = "satopharma.com";
+const SATO_EMAIL_COMPANY_DOMAIN = "satopharma.com";
 
 const ADDRESS = /^[^\s@<>()[\],;:"]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 

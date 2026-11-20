@@ -26,9 +26,9 @@ import {
 
 export const CALCULATOR_OPERATORS = ["+", "-", "×", "÷"] as const;
 
-export type CalculatorOperator = (typeof CALCULATOR_OPERATORS)[number];
+type CalculatorOperator = (typeof CALCULATOR_OPERATORS)[number];
 
-export type CalculatorHistoryEntry = {
+type CalculatorHistoryEntry = {
   /** Display text, already grouped — e.g. `1,200 × 3 =`. */
   expression: string;
   id: number;

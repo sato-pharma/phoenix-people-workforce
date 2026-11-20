@@ -48,10 +48,10 @@ export { HOUSE_DOCUMENT_STANDARD, HOUSE_XLSX_COLORS, toArgb };
  * PNG, NOT THE SVG that `house-identity.ts` points at. A browser renders the vector; ExcelJS accepts
  * png/jpeg/gif only and hands anything else through to a part Excel then silently repairs.
  */
-export const HOUSE_MARK_XLSX_PATH = path.join("public", "brand", "sato-pharma-logo-on-light.png");
+const HOUSE_MARK_XLSX_PATH = path.join("public", "brand", "sato-pharma-logo-on-light.png");
 
 /** The mark as base64, or null when the asset is missing — a workbook must still build without it. */
-export function readHouseMark(): string | null {
+function readHouseMark(): string | null {
   try {
     return readFileSync(path.join(process.cwd(), HOUSE_MARK_XLSX_PATH)).toString("base64");
   } catch {

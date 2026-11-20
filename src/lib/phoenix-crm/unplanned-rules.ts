@@ -33,9 +33,6 @@
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 
-/** What the rep picks on the first step of Add Visit, before he picks the doctor. */
-export type VisitTypeChoice = "planned" | "unplanned";
-
 /**
  * The two ways a visit can be off the plan (owner, 2026-09-29):
  *
@@ -115,10 +112,6 @@ export const UNPLANNED_DECISION_NOTE_MAX = 500;
 
 export function isUnplannedVisitStatus(value: unknown): value is UnplannedVisitStatus {
   return value === "admin_pending" || value === "manager_pending" || value === "sfe_pending" || value === "approved" || value === "refused";
-}
-
-export function isUnplannedVisitStage(value: unknown): value is UnplannedVisitStage {
-  return value === "manager" || value === "sfe";
 }
 
 /** Still waiting on somebody — so counting in nothing. */

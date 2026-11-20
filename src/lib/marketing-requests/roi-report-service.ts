@@ -886,7 +886,7 @@ function matchesNonRoiFilters(entry: MarketingRoiRequestIndexEntry, filters: Roi
   return entryMatchesRoiFilters(entry, filters);
 }
 
-export type ActualsRow = {
+type ActualsRow = {
   request_id: string;
   actual_value: number | string | null;
   actual_units: number | string | null;
@@ -1639,7 +1639,7 @@ export async function loadMarketingRoiExportDetail(
 const PERIOD_RE = /^\d{4}-\d{2}$/;
 
 /** Validate an optional YYYY-MM..YYYY-MM range; returns nulls (default window) if absent/invalid. */
-export function parseViewSalesRange(
+function parseViewSalesRange(
   fromInput: string | null | undefined,
   toInput: string | null | undefined,
 ): { from: string | null; to: string | null } {

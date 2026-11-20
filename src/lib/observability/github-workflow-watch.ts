@@ -28,9 +28,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 /** How long GitHub may answer badly before the watch calls itself blind. */
-export const GITHUB_WATCH_TRANSIENT_LIMIT_MS = 3 * HOUR_MS;
+const GITHUB_WATCH_TRANSIENT_LIMIT_MS = 3 * HOUR_MS;
 /** A fine-grained token warns from this many days out. */
-export const GITHUB_TOKEN_WARN_DAYS = 21;
+const GITHUB_TOKEN_WARN_DAYS = 21;
 
 export type GithubWorkflowWatch = {
   file: string;
@@ -70,7 +70,7 @@ export type GithubWorkflowRead =
   | { file: string; kind: "refused"; status: number }
   | { file: string; kind: "transient"; reason: string };
 
-export type GithubWorkflowOverdue = {
+type GithubWorkflowOverdue = {
   file: string;
   label: string;
   lastSuccessAt: string | null;

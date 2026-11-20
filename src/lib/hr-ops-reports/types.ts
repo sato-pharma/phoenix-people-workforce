@@ -42,7 +42,7 @@ export type HrOpsBridgeStatus = (typeof HR_OPS_BRIDGE_STATUSES)[number];
  * the field flag from the field-absence engine. A line with no flag is a clean day: it is shown,
  * carries no suggested days and needs no review.
  */
-export const HR_OPS_FLAGS = ["no_punch", "single_punch", "late", "early_leave", "no_field_activity"] as const;
+const HR_OPS_FLAGS = ["no_punch", "single_punch", "late", "early_leave", "no_field_activity"] as const;
 export type HrOpsFlag = (typeof HR_OPS_FLAGS)[number];
 
 export const HR_OPS_FLAG_LABELS: Record<HrOpsFlag, string> = {

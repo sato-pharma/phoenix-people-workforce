@@ -237,7 +237,7 @@ export function listReach(
   };
 }
 
-export function listedCount(reach: ListReach): number {
+function listedCount(reach: ListReach): number {
   return reach.classA.listed + reach.otherDoctors.listed + reach.am.listed + reach.pharmacies.listed;
 }
 
@@ -292,7 +292,7 @@ export const BRICK_READING_RULES = {
   coveredAt: 80,
 } as const;
 
-export type BrickWorkRow = {
+type BrickWorkRow = {
   brickId: string;
   brickName: string;
   sales: number;
@@ -316,7 +316,7 @@ export type BrickWork = {
   unplacedContacts: number;
 };
 
-export const NO_BRICK_ID = "(no brick)";
+const NO_BRICK_ID = "(no brick)";
 /**
  * What a brick the master has no name for is CALLED — never its code (owner, 2026-10-01: "NEVER SHOW
  * CODES ALWAYS SHOW NAMES", restating the standing rule). A brick id such as "B201-3" means nothing
@@ -504,7 +504,7 @@ export const DV_FOCUS_LABEL: Record<DvFocusStatus, string> = {
   rarely: "Rarely ridden",
 };
 
-export type DvFocusRep = {
+type DvFocusRep = {
   repHrId: string;
   name: string;
   /** Months of the period in which he had at least one field day. */

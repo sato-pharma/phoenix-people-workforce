@@ -11,7 +11,7 @@ import { MAX_SPELLABLE_AMOUNT } from "@/lib/hiring-pack/arabic-amount";
 import type { AwardChequeRow } from "./award-cheque";
 
 export const CHEQUE_MAX_PER_REQUEST = 30;
-export const CHEQUE_DEFAULT_PROGRAM = "Semester Achievers Award — S1 2026";
+const CHEQUE_DEFAULT_PROGRAM = "Semester Achievers Award — S1 2026";
 
 const LIMITS = {
   recipientName: 120,
@@ -43,7 +43,7 @@ export type ChequeInput = {
   signed: boolean;
 };
 
-export type ChequeFormat = "pdf" | "html";
+type ChequeFormat = "pdf" | "html";
 
 export type ParsedChequeRequest = {
   format: ChequeFormat;

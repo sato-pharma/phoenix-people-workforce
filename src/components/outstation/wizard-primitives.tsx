@@ -145,26 +145,3 @@ export function FieldValue({
 /*  Larger summary value (used in auto-calculated summary grid)       */
 /* ------------------------------------------------------------------ */
 
-export function SummaryValue({
-  accent = "border-l-orange-400",
-  label,
-  value,
-}: {
-  accent?: string;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className={`border-l-2 ${accent} px-3 py-3`}>
-      <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p
-        className="mt-1 break-words text-phx-lg font-bold text-slate-900"
-        title={value}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}

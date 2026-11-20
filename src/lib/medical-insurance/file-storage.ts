@@ -10,10 +10,10 @@ import { PRIVATE_FILE_CACHE_CONTROL_SECONDS } from "@/lib/uploads/private-file-c
  * read goes through a file route that resolves the path server-side from a row id, so no caller ever names
  * a storage object, and no signed link is ever handed to a browser.
  */
-export const MEDICAL_INSURANCE_BUCKET = "medical-insurance";
+const MEDICAL_INSURANCE_BUCKET = "medical-insurance";
 
 /** Matches `file_size_limit` on the bucket. Both exist so the failure is a message, not a 500. */
-export const MEDICAL_INSURANCE_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MEDICAL_INSURANCE_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   doc: "application/msword",
@@ -37,7 +37,7 @@ const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
  * and names a ZIP differently on Windows than anywhere else, so what it sent is not what decides. Null when
  * the extension is not one the bucket takes.
  */
-export function medicalInsuranceContentType(fileName: string): string | null {
+function medicalInsuranceContentType(fileName: string): string | null {
   const extension = fileName.split(".").pop()?.trim().toLowerCase() ?? "";
   return CONTENT_TYPE_BY_EXTENSION[extension] ?? null;
 }

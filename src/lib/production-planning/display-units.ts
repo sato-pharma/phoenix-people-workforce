@@ -73,7 +73,7 @@ export function fromBaseUnits(stored: string, material: DisplayScaledMaterial | 
  * علبة … الألف علبة اللي هي 3 شرايط", 2026-11-11), and twice that night the per-strip figure had to
  * be worked out by hand. A per-dose or per-sample line is not a fraction of a box, so it is not offered.
  */
-export const PER_THOUSAND_BOX_BASES = ["per_box", "per_strip", "per_packaging_set"] as const;
+const PER_THOUSAND_BOX_BASES = ["per_box", "per_strip", "per_packaging_set"] as const;
 
 export type PerThousandBoxBasis = (typeof PER_THOUSAND_BOX_BASES)[number];
 

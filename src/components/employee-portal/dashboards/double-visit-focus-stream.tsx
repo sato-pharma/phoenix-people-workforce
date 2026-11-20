@@ -16,7 +16,7 @@ import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
  * hands over a whole snapshot, and this resolves at once to `snapshot.dvFocus`. The read never
  * rejects, so the boundary needs no error fallback.
  */
-export function dvFocusOf(snapshot: PortalHomeSnapshot): Promise<DoubleVisitPortalFocus | null> {
+function dvFocusOf(snapshot: PortalHomeSnapshot): Promise<DoubleVisitPortalFocus | null> {
   if (snapshot.dvFocusCard) return snapshot.dvFocusCard;
   return Promise.resolve(snapshot.dvFocus);
 }

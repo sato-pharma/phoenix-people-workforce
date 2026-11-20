@@ -46,7 +46,7 @@ export type MedicalInsuranceMemberRow = {
   open: boolean;
 };
 
-export type MedicalInsuranceEmployeeOption = { hrId: string; name: string; jobTitle: string | null };
+type MedicalInsuranceEmployeeOption = { hrId: string; name: string; jobTitle: string | null };
 
 export type MedicalInsuranceDocumentKind = "communication_tool" | "form" | "policy" | "email";
 
@@ -65,7 +65,7 @@ export type MedicalInsuranceDocumentRow = {
   uploadedByName: string | null;
 };
 
-export type MedicalInsuranceCounts = {
+type MedicalInsuranceCounts = {
   covered: number;
   coveredEmployees: number;
   coveredFamily: number;

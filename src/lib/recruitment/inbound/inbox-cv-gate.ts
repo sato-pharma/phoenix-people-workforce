@@ -47,7 +47,7 @@ export type InboxCvGate = "permissive" | "strict";
  * general company address is where non-CV mail lives. Override per mailbox with `"cvGate"` in that
  * same config entry when the default is wrong.
  */
-export const PERMISSIVE_INBOX_LABELS: readonly string[] = ["careers"];
+const PERMISSIVE_INBOX_LABELS: readonly string[] = ["careers"];
 
 /** Narrows an arbitrary config value to a gate, or null when it says nothing usable. */
 export function parseInboxCvGate(raw: unknown): InboxCvGate | null {

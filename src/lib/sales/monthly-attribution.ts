@@ -11,7 +11,7 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // this via phx_monthly_attribution_reconcile; loadReconcile() surfaces it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type AttributionChannel = "indirect" | "direct" | "unmapped";
+type AttributionChannel = "indirect" | "direct" | "unmapped";
 
 /** One attributed (or unmapped) slice for a period, as returned by the DB RPC. */
 export type MonthlyAttributionRow = {
@@ -102,32 +102,12 @@ export async function loadMonthlyAttribution(period: string): Promise<MonthlyAtt
   return rows.map(mapRow);
 }
 
-/** Per-line attributed-vs-raw reconciliation for one period (diff should be 0). */
-export async function loadMonthlyAttributionReconcile(
-  period: string,
-): Promise<MonthlyAttributionReconcileRow[]> {
-  if (!isValidPeriod(period)) return [];
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("phx_monthly_attribution_reconcile", {
-    p_period: period,
-  });
-  if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
-    lineCode: str(row.line_code),
-    mappedValue: num(row.mapped_value),
-    unmappedValue: num(row.unmapped_value),
-    attributedValue: num(row.attributed_value),
-    rawValue: num(row.raw_value),
-    diff: num(row.diff),
-  }));
-}
-
 // ── Pure rollups (no IO) ──────────────────────────────────────────────────────
 // The DB returns product-grained rows; these fold them up for the org hierarchy.
 // Direct/unmapped rows have no rep/DM/area and are simply skipped by the person
 // and area rollups (they still belong to their line/region totals).
 
-export type AttributionTotal = { salesUnits: number; salesValue: number };
+type AttributionTotal = { salesUnits: number; salesValue: number };
 
 function addTotal(target: Map<string, AttributionTotal>, key: string, row: MonthlyAttributionRow): void {
   const current = target.get(key) ?? { salesUnits: 0, salesValue: 0 };
@@ -136,7 +116,7 @@ function addTotal(target: Map<string, AttributionTotal>, key: string, row: Month
   target.set(key, current);
 }
 
-export type RepAttribution = AttributionTotal & {
+type RepAttribution = AttributionTotal & {
   repHrId: string;
   lineCode: string | null;
   dmHrId: string | null;
@@ -159,7 +139,7 @@ export function rollupByRep(rows: MonthlyAttributionRow[]): RepAttribution[] {
   }));
 }
 
-export type RegionAttribution = AttributionTotal & { lineCode: string; regionCode: string };
+type RegionAttribution = AttributionTotal & { lineCode: string; regionCode: string };
 
 /** Sum sales per (line, region). Includes indirect + direct; skips unmapped. */
 export function rollupByRegion(rows: MonthlyAttributionRow[]): RegionAttribution[] {
@@ -178,12 +158,3 @@ export function rollupByRegion(rows: MonthlyAttributionRow[]): RegionAttribution
 
 export type LineAttribution = AttributionTotal & { lineCode: string };
 
-/** Sum sales per line across all mapped channels (indirect + direct). */
-export function rollupByLine(rows: MonthlyAttributionRow[]): LineAttribution[] {
-  const totals = new Map<string, AttributionTotal>();
-  for (const row of rows) {
-    if (!row.mapped || !row.lineCode) continue;
-    addTotal(totals, row.lineCode, row);
-  }
-  return [...totals.entries()].map(([lineCode, total]) => ({ lineCode, ...total }));
-}

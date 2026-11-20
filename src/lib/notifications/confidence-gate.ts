@@ -271,7 +271,7 @@ const FIRST_RUN_MAX_HEADCOUNT_FRACTION = 0.25;
 const NEVER_HOLD_MAX_AUDIENCE = 1;
 
 /** The audience the gate will judge: the caller's own count when supplied, else derived. */
-export function resolveAudienceSize(input: { audienceSize?: number; bcc?: string[] | null; cc?: string[] | null; to?: string[] | null }): number {
+function resolveAudienceSize(input: { audienceSize?: number; bcc?: string[] | null; cc?: string[] | null; to?: string[] | null }): number {
   return input.audienceSize ?? computeRealAudienceSize(input);
 }
 

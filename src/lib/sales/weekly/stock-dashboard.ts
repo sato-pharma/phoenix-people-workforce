@@ -26,7 +26,7 @@ export const WEEKLY_STOCK_COVER_OVER_WEEKS = 8;
 /** How many week-of-month slots the average weekly sales looks back over. */
 export const WEEKLY_STOCK_SALES_WINDOW_WEEKS = 4;
 /** A distributor whose latest stock upload is this many days older than the newest one is flagged stale. */
-export const WEEKLY_STOCK_STALE_AFTER_DAYS = 14;
+const WEEKLY_STOCK_STALE_AFTER_DAYS = 14;
 /** Filter code for depots that carry no area mapping. */
 export const WEEKLY_STOCK_UNMAPPED_AREA = "__unmapped__";
 export const WEEKLY_STOCK_UNMAPPED_AREA_LABEL = "Area not mapped";
@@ -168,7 +168,7 @@ const up = (value: string | null | undefined) => (value ?? "").trim().toUpperCas
 const round2 = (value: number) => Number(value.toFixed(2));
 
 /** Stable depot identity inside one distributor: its code, or its name when it has no code. */
-export function depotKey(row: { distributorCode: string; branchCode: string; branchName: string }): string {
+function depotKey(row: { distributorCode: string; branchCode: string; branchName: string }): string {
   return `${up(row.distributorCode)}|${up(row.branchCode) || up(row.branchName)}`;
 }
 
@@ -176,7 +176,7 @@ export function depotKey(row: { distributorCode: string; branchCode: string; bra
 export type WeeklyStockGroupCut = "depots" | "areas" | "regions" | "distributors";
 
 /** A cell's key in one grouping: exactly the `code` its group row carries. */
-export function weeklyStockGroupKey(
+function weeklyStockGroupKey(
   cell: Pick<WeeklyStockCell, "branchKey" | "areaCode" | "regionCode" | "regionName" | "distributorCode">,
   cut: WeeklyStockGroupCut,
 ): string {

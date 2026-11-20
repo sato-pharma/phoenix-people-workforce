@@ -76,13 +76,13 @@ export type FactAreaMove = {
 };
 
 /** Both fact-rollup halves for one line, as the single `phx_closing_drift_overview` read hands them back. */
-export type PublicationDriftOverview = {
+type PublicationDriftOverview = {
   cellDrift: PublicationCellDrift | null;
   areaMoves: FactAreaMove[];
 };
 
 /** One area that holds more, or less, than what was published. */
-export type PublicationAreaMove = {
+type PublicationAreaMove = {
   areaCode: string;
   cells: number;
   unitsDelta: number;
@@ -304,7 +304,7 @@ export function mergePublicationDrift(input: {
 }
 
 /** Every line with a live publication row for the period, as the publication spells it. */
-export async function loadPublishedLines(period: string): Promise<string[]> {
+async function loadPublishedLines(period: string): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("monthly_closing_publications")
     .select("line")
@@ -389,7 +389,7 @@ function rollUpAreaMoves(
  * {@link PublicationDriftReport.linesNotRead} so the script can name it and carry on, and
  * {@link loadPublicationDriftWithoutSplitLayer} lets it travel so the board renders amber.
  */
-export async function loadPublicationDriftOverview(
+async function loadPublicationDriftOverview(
   line: string,
   period: string,
 ): Promise<PublicationDriftOverview> {

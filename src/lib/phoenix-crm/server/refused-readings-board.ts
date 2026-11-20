@@ -47,7 +47,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 /** How far back the board reads. Two weeks: long enough to see a habit, short enough to be a worklist. */
-export const REFUSED_READINGS_WINDOW_DAYS = 14;
+const REFUSED_READINGS_WINDOW_DAYS = 14;
 /** The attempts the page prints in full. The by-rep summary still counts every row read. */
 const LATEST_LIMIT = 100;
 /** A `.in()` carrying several hundred ids comes back empty past some URL length — never read wider. */
@@ -83,7 +83,7 @@ export type RefusedAttemptRow = RefusedAttempt & {
 };
 
 /** The map's two labels, in the reader's words: where the phone was, and where the customer is saved. */
-export const TRY_POINT_LABEL = "Where the phone was";
+const TRY_POINT_LABEL = "Where the phone was";
 export const SAVED_PLACE_LABEL = "Customer's saved place";
 
 /** Small enough for a phone card, wide enough to show two points kilometres apart. */

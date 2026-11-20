@@ -61,7 +61,7 @@
  * DO NOT WIDEN THIS LIST on the reasoning that a regional manager also owns a region. He owns
  * several, and the check has no way to say which.
  */
-export const MANAGER_TITLE_PATTERNS = [
+const MANAGER_TITLE_PATTERNS = [
   "district sales manager",
   "district manager",
 ] as const;
@@ -73,7 +73,7 @@ export const MANAGER_TITLE_PATTERNS = [
  * hold, and must never be reported as a missing area row. Adding a real region here would silence
  * the very thing this module exists to catch, so it stays a single named exception.
  */
-export const REGIONS_WITHOUT_AN_AREA_ROW = new Set(["others"]);
+const REGIONS_WITHOUT_AN_AREA_ROW = new Set(["others"]);
 
 export type ManagerRow = {
   hrId: string;
@@ -166,7 +166,7 @@ export function indexRegionShapedAreas(areas: readonly AreaRow[]): Map<string, A
  * Returns findings rather than throwing: this runs inside the nightly re-stamp, and a geography
  * problem must never take down a job whose actual work is unrelated.
  */
-export function indexRegionTeams(
+function indexRegionTeams(
   teams: readonly TeamRow[],
   regionAreas: ReadonlyMap<string, AreaRow>,
 ): Map<string, TeamRow> {

@@ -307,7 +307,7 @@ export function describeLifecycleStage(input: {
  * this period range", and its honest warning only fires when `salesDataAsOf` is missing entirely,
  * so it never fires here. A reader is told the campaign failed. It has not started.
  */
-export function describeOutcome(row: MarketingRoiReportRow, salesDataAsOf: string | null): string {
+function describeOutcome(row: MarketingRoiReportRow, salesDataAsOf: string | null): string {
   if (row.resultStatus === "awaiting_data") {
     return `Too early to judge. The window runs to ${row.roiWindow?.split("→").pop()?.trim() ?? "an unknown month"}; validated sales reach ${salesDataAsOf ?? "no month at all"}.`;
   }

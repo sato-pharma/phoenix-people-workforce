@@ -60,7 +60,3 @@ export const INTEGRITY_SETTLE_PRESETS: ReadonlyArray<IntegritySettlePreset> = [
   },
 ];
 
-/** A preset by its id. Undefined for one that no longer exists — a kept link must not throw. */
-export function integritySettlePreset(id: string): IntegritySettlePreset | undefined {
-  return INTEGRITY_SETTLE_PRESETS.find((preset) => preset.id === id);
-}

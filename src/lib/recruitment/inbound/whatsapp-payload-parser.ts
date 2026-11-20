@@ -35,7 +35,7 @@ import { normalizePhone } from "@/lib/recruitment/candidate-matching";
 import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
 import type { InboundCvAttachment, InboundCvIntakeInput } from "@/lib/recruitment/inbound/cv-intake-service";
 
-export type ParsedWhatsAppDocument = {
+type ParsedWhatsAppDocument = {
   mediaId: string;
   mimeType: string;
   filename: string | null;
@@ -52,7 +52,7 @@ export type ParsedWhatsAppDocument = {
  * is another application entirely. A shared type would invite exactly the code that treats them
  * alike.
  */
-export type ParsedWhatsAppVideo = {
+type ParsedWhatsAppVideo = {
   mediaId: string;
   mimeType: string;
   /** Only a video attached as a document carries one; a `type: "video"` node has no filename. */

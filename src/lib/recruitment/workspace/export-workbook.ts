@@ -59,9 +59,9 @@ import {
  * equal, so they cannot drift.
  */
 export const EXPORT_NOT_ANSWERED = "Not answered";
-export const EXPORT_ADDED_BY_HR_SUFFIX = " (added by HR)";
+const EXPORT_ADDED_BY_HR_SUFFIX = " (added by HR)";
 /** The Filed-in cell for a person no reply has filed yet — the screen's own tab name. */
-export const EXPORT_NEEDS_PLACING = workspaceTabLabels.needs_placing;
+const EXPORT_NEEDS_PLACING = workspaceTabLabels.needs_placing;
 
 /**
  * The "Placed in" cell. Only a whole filing is a placement (a Medical Rep needs its area, a District
@@ -123,7 +123,7 @@ export function workspaceExportHeaders(answerColumns: readonly WorkspaceExportAn
 }
 
 /** "Medical Rep · Alexandria · Smouha" — one filing, the screen's own wording. */
-export function workspaceExportPlacementLabel(placement: Pick<WorkspacePlacement, "tab" | "regionName" | "areaName">): string {
+function workspaceExportPlacementLabel(placement: Pick<WorkspacePlacement, "tab" | "regionName" | "areaName">): string {
   const parts: string[] = [workspaceRoleTabLabels[placement.tab] ?? "Other"];
   if (placement.regionName) parts.push(placement.regionName);
   if (placement.areaName) parts.push(placement.areaName);
@@ -131,7 +131,7 @@ export function workspaceExportPlacementLabel(placement: Pick<WorkspacePlacement
 }
 
 /** "Rejected — Wrong degree", "Rejected — Other: moved abroad", "Rejected — Salary too high (archived)". */
-export function workspaceExportStatus(row: Pick<WorkspaceRow, "status" | "rejection" | "archivedAt">): string {
+function workspaceExportStatus(row: Pick<WorkspaceRow, "status" | "rejection" | "archivedAt">): string {
   const label = candidateStatusLabels[row.status as CandidateStatus] ?? "Unknown";
   let text = label;
   if (row.status === "rejected" && row.rejection) {
@@ -144,7 +144,7 @@ export function workspaceExportStatus(row: Pick<WorkspaceRow, "status" | "reject
 }
 
 /** One answer cell: the answer, "Not answered", or blank when this person was never asked it. */
-export function workspaceExportAnswerCell(row: Pick<WorkspaceRow, "answers">, key: string): string {
+function workspaceExportAnswerCell(row: Pick<WorkspaceRow, "answers">, key: string): string {
   const chip = row.answers.find((candidate) => candidate.key === key);
   if (!chip) return "";
   if (chip.value === null) return EXPORT_NOT_ANSWERED;

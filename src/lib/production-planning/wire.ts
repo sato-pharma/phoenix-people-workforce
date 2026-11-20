@@ -12,21 +12,21 @@
  * and it is why the service reads every numeric column with `select("qty::text")`.
  */
 
-export type WireLevel = "full" | "read" | "none";
-export type WireUnitKind = "mass" | "count";
+type WireLevel = "full" | "read" | "none";
+type WireUnitKind = "mass" | "count";
 export type WireSupplier = "sato" | "factory" | "shared_unsettled";
 export type WireBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit" | "per_box" | "per_strip";
 /**
  * The unit a product's geometry is counted in: `ml` for a syrup, `g` for a powder in sachets, `mg`
  * for a tablet (155 mg is not a whole gram, and the geometry columns are integers).
  */
-export type WireMeasureUnit = "ml" | "g" | "mg" | "mg_capsule";
+type WireMeasureUnit = "ml" | "g" | "mg" | "mg_capsule";
 export type WireRequestMode = "total_boxes" | "good_units" | "runs";
-export type WireCurrency = "USD" | "EGP";
+type WireCurrency = "USD" | "EGP";
 /** `actual`: the amount itself is read from recorded runs, so no loss is added on top of it. */
-export type WireOverageSource = "measured" | "material" | "default" | "actual";
-export type WireAmountSource = "formula" | "measured";
-export type WireFxSource = "manual" | "fetched" | "fallback" | "none";
+type WireOverageSource = "measured" | "material" | "default" | "actual";
+type WireAmountSource = "formula" | "measured";
+type WireFxSource = "manual" | "fetched" | "fallback" | "none";
 
 export type WireProduct = {
   id: string;
@@ -62,7 +62,7 @@ export type WireProduct = {
   notes: string | null;
 };
 
-export type WireLocation = {
+type WireLocation = {
   id: string;
   code: string;
   nameAr: string;
@@ -272,7 +272,7 @@ export type WirePlan = {
   };
 };
 
-export type WireSettings = {
+type WireSettings = {
   defaultOveragePct: string;
   reorderCoverRuns: string;
   alarmEnabled: boolean;
@@ -337,7 +337,7 @@ export type WireRun = {
   }[];
 };
 
-export type WireSavedPlan = {
+type WireSavedPlan = {
   id: string;
   productId: string;
   title: string;

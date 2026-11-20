@@ -45,7 +45,6 @@ import {
   value,
 } from "@/lib/hiring-pack/experience-certificate-en";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
-import { HOUSE_MARK_SRC } from "@/lib/hiring-pack/house-identity";
 import {
   premiumDocumentStylesheet,
   premiumMasthead,
@@ -60,9 +59,6 @@ import {
 } from "@/lib/hiring-pack/render-shared";
 import { resolveServicePeriod } from "@/lib/hiring-pack/service-period";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
-
-/** The version id, as the template registry knows it. Never renamed — a reprint resolves through it. */
-export const SALARY_LETTER_EN_ID = "salary-letter-en-v1";
 
 const SMALL_NUMBERS = [
   "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
@@ -125,7 +121,7 @@ export function amountInWordsEn(amount: number): string {
 }
 
 /** "EGP 12,600.00" — the figure as a bank reads it, with the currency named. */
-export function formatEgpAmount(amount: number): string {
+function formatEgpAmount(amount: number): string {
   return `EGP ${new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,
@@ -375,5 +371,3 @@ ${flowFieldLayer(fields, {
 </html>`;
 }
 
-/** The mark this page carries, so a test can assert the on-light file without parsing the HTML. */
-export const SALARY_LETTER_EN_MARK = HOUSE_MARK_SRC;

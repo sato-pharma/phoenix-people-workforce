@@ -7,7 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // (Super Admin edits; SFE Manager + CEO view). The '__GLOBAL__' row holds the defaults
 // (seeded 25% / 25%); other rows are per-product overrides (e.g. Ivyronc bonus 30%).
 
-export const DIRECT_ORDER_GLOBAL_CAP_KEY = "__GLOBAL__";
+const DIRECT_ORDER_GLOBAL_CAP_KEY = "__GLOBAL__";
 const DEFAULT_BONUS_CAP_PCT = 25;
 const DEFAULT_DISCOUNT_CAP_PCT = 25;
 

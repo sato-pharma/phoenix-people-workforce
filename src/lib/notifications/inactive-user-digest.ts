@@ -51,7 +51,7 @@ function describeLastSeen(user: InactiveUser): string {
  * "…" after five names, which is exactly the thing the owner's rules forbid. Names, never
  * HR codes. Cairo dates, never raw UTC.
  */
-export function buildInactiveUserDigestMessage(users: InactiveUser[]): string {
+function buildInactiveUserDigestMessage(users: InactiveUser[]): string {
   const neverSignedIn = users.filter((user) => !user.lastSeenIso);
   const lapsed = users.filter((user) => user.lastSeenIso);
   const lines: string[] = [

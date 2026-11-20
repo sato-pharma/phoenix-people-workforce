@@ -10,7 +10,7 @@ import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-impor
 // Pure — no database, no React — so a "use client" component can import it without dragging the
 // closing's Supabase loaders into the browser bundle.
 
-export type MonthlyClosingFilterOption = {
+type MonthlyClosingFilterOption = {
   code: string;
   label: string;
   regionCode?: string;

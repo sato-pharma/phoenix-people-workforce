@@ -47,9 +47,9 @@ import {
 import { crmTerritoryFrom } from "@/lib/crm/rep-name";
 
 /** `{ code, name }` — the shape both pickers render. */
-export type RepsPlansOption = { code: string; name: string };
+type RepsPlansOption = { code: string; name: string };
 
-export const REPS_PLANS_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const REPS_PLANS_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const MONTH_NAMES = [
   "January",
@@ -76,7 +76,7 @@ function monthBounds(monthKey: string): { from: string; to: string } {
   return { from: `${monthKey}-01`, to: `${monthKey}-${String(lastDay).padStart(2, "0")}` };
 }
 
-export function monthLabelOfKey(monthKey: string): string {
+function monthLabelOfKey(monthKey: string): string {
   const monthIndex = Number(monthKey.slice(5, 7)) - 1;
   return `${MONTH_NAMES[monthIndex] ?? monthKey} ${monthKey.slice(0, 4)}`;
 }
@@ -329,7 +329,7 @@ const round2 = (value: number | null): number | null => (value == null ? null : 
 const roundPct = (value: number | null): number | null => (value == null ? null : Math.round(value));
 
 /** One session as the table shows it — proved and reported kept apart. */
-export type RepsPlansSession = {
+type RepsPlansSession = {
   verified: number;
   unverified: number;
   campaign: number;
@@ -362,7 +362,7 @@ function toSession(slice: CallRateSlice): RepsPlansSession {
  * owner has not set a pharmacy call-rate standard yet (see PHARMACY_CALL_RATE_TARGET), so
  * `attainmentPct` stays null until he does rather than being computed against an invented number.
  */
-export type RepsPlansPharmacySession = Omit<RepsPlansSession, "target"> & { target: number | null };
+type RepsPlansPharmacySession = Omit<RepsPlansSession, "target"> & { target: number | null };
 
 function toPharmacySession(slice: PharmacyCallRateSlice): RepsPlansPharmacySession {
   return {
@@ -381,7 +381,7 @@ function toPharmacySession(slice: PharmacyCallRateSlice): RepsPlansPharmacySessi
  * One (line, region) a person covers, from the organogram. Re-exported under the board's own name
  * so the components have one import; the resolution lives in `org-placement.ts`.
  */
-export type RepsPlansTerritory = OrgCell;
+type RepsPlansTerritory = OrgCell;
 
 /**
  * Attainment against the target the rate is measured on, 0-100. 100% is the standard here, not a
@@ -655,7 +655,7 @@ export function toRepsPlansRow(
   };
 }
 
-export type RepsPlansTotals = {
+type RepsPlansTotals = {
   reps: number;
   workingDays: number;
   am: RepsPlansSession;

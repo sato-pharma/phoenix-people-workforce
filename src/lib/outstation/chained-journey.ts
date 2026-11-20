@@ -41,19 +41,19 @@ import type { JourneyStopEvidence } from "@/lib/outstation/journey-stop-rules";
 export const CHAINED_LEG_MINIMUM_KM = 40;
 
 /** More paid stop-to-stop drives than this on one Cairo day is flagged — three governorates in a day. */
-export const MAX_PAID_STOP_LEGS_PER_DAY = 2;
+const MAX_PAID_STOP_LEGS_PER_DAY = 2;
 
 /**
  * A stop photographed sooner after the previous photo than this share of Google's own drive time
  * was not reached by road. 0.5 leaves room for an empty road and an optimistic estimate.
  */
-export const IMPOSSIBLE_SPEED_RATIO = 0.5;
+const IMPOSSIBLE_SPEED_RATIO = 0.5;
 
 /** A stop photographed within this many minutes of the previous photo evidences no work there. */
-export const STOP_MINIMUM_MINUTES_AFTER_PREVIOUS = 10;
+const STOP_MINIMUM_MINUTES_AFTER_PREVIOUS = 10;
 
 /** A chained price more than this multiple of the single-destination price is worth a human look. */
-export const CHAIN_REVIEW_MULTIPLE = 2;
+const CHAIN_REVIEW_MULTIPLE = 2;
 
 /**
  * The most extra stops one trip may carry. Refused beyond this — a capture, not a claim, so the
@@ -124,7 +124,7 @@ export function adminAddedStopNotes(stops: OutstationJourneyStop[]): string[] {
     );
 }
 
-export type ChainedJourneyFlag =
+type ChainedJourneyFlag =
   | "chain_unpriceable"
   | "stop_outside_trip_dates"
   | "stop_out_of_order"
@@ -148,7 +148,7 @@ export type JourneyLegReason =
   /** The first or the last drive of such a trip — the claim's own tickets answer for those. */
   | "ticket_on_claim";
 
-export type JourneyLeg = {
+type JourneyLeg = {
   from: string;
   to: string;
   fromGovernorate: string | null;

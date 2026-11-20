@@ -20,7 +20,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * says so, rather than showing a short table that reads as a poor one.
  */
 
-export type ProbationSalesMonth =
+type ProbationSalesMonth =
   | { achievementPct: number | null; kind: "figure"; label: string; month: string; sales: number; target: number | null }
   | { kind: "no_figure"; label: string; month: string }
   | { kind: "not_published"; label: string; month: string };

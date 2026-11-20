@@ -55,7 +55,7 @@ import type { OutstationLoad } from "./outstation";
 import type { VisitsLoad } from "./visits";
 import type { ReviewWindow } from "../period";
 
-export type ReviewDirectoryEntry = {
+type ReviewDirectoryEntry = {
   hrId: string;
   name: string;
   jobTitle: string;

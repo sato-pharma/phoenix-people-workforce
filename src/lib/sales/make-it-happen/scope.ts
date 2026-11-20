@@ -37,7 +37,7 @@ export const MAKE_IT_HAPPEN_PORTAL_ROLES: ReadonlyArray<PhoenixRole> = [
 ];
 
 /** Admin-shell roles. Mirrored by the /sales/make-it-happen row in system-navigation.ts. */
-export const MAKE_IT_HAPPEN_ADMIN_ROLES: ReadonlyArray<PhoenixRole> = ["SFE Manager", "Super Admin"];
+const MAKE_IT_HAPPEN_ADMIN_ROLES: ReadonlyArray<PhoenixRole> = ["SFE Manager", "Super Admin"];
 
 const MAKE_IT_HAPPEN_ROLES = new Set<string>([...MAKE_IT_HAPPEN_PORTAL_ROLES, ...MAKE_IT_HAPPEN_ADMIN_ROLES]);
 

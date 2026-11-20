@@ -47,7 +47,7 @@ export type PersonnelProbation = {
   hireDate: string;
 };
 
-export type PersonnelDevice = {
+type PersonnelDevice = {
   assignmentId: string;
   assetTag: string;
   category: DeviceCategory;

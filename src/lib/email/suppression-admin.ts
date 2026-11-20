@@ -19,7 +19,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * A complaint or an unsubscribe is the person's own word, so it is refused.
  */
 
-export type EmailBlockReason = "hard_bounce" | "complaint" | "unsubscribe" | "manual";
+type EmailBlockReason = "hard_bounce" | "complaint" | "unsubscribe" | "manual";
 
 export type EmailBlockRow = {
   address: string;
@@ -32,7 +32,7 @@ export type EmailBlockRow = {
   reason: string;
 };
 
-export type NoWorkEmailPerson = { jobTitle: string | null; name: string };
+type NoWorkEmailPerson = { jobTitle: string | null; name: string };
 
 export type EmailBlockView = { blocked: EmailBlockRow[]; noWorkEmail: NoWorkEmailPerson[] };
 

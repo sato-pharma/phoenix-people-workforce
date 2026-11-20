@@ -133,7 +133,7 @@ export function chooseValidatedDates(
 }
 
 /** The brick id each contact's validated place was filed in — the SAME place `chooseValidatedPlacePoints` reads. */
-export function chooseValidatedPlaceBricks(
+function chooseValidatedPlaceBricks(
   customers: readonly KpiBrickCustomer[],
   places: readonly PlaceRow[],
 ): Map<number, string> {
@@ -149,7 +149,7 @@ export function chooseValidatedPlaceBricks(
  * The "where to find" of each contact: from a customer still on a list before a dropped one, then the
  * latest validated, then the lowest id so the answer never depends on read order.
  */
-export function chooseIntakeWhere(customers: readonly CustomerRow[]): Map<number, string> {
+function chooseIntakeWhere(customers: readonly CustomerRow[]): Map<number, string> {
   const held = new Map<number, CustomerRow>();
   const active = (row: CustomerRow) => String(row.status ?? "").trim().toLowerCase() !== "dropped";
   for (const row of customers) {

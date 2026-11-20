@@ -54,7 +54,7 @@ export type RankingsSearchParams = {
 export type RankingOption = { value: string; label: string };
 
 /** One person's two placings, for the pair of hero cards at the top of the page. */
-export type RankingFocus = {
+type RankingFocus = {
   entry: RankingEntry;
   company: { rank: number; outOf: number; outOfIsSeats: boolean; trend: number | null };
   line: { lineLabel: string; rank: number; outOf: number; outOfIsSeats: boolean; trend: number | null } | null;

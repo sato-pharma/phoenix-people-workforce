@@ -6,8 +6,6 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { collectEarlyBirdsInputs } from "@/lib/early-birds/collect";
 import { countWinsByHrIdKey } from "@/lib/early-birds/win-counts";
@@ -99,7 +97,7 @@ function mapWinnerRow(row: Record<string, unknown>, isNational: boolean): EarlyB
  * Confirmed winners, newest first. `managerHrIds` narrows to a district set; omit it for the
  * company-wide wall the CEO / SFE / Marketing see.
  */
-export async function listEarlyBirdsWinners(input: {
+async function listEarlyBirdsWinners(input: {
   managerHrIds?: readonly string[];
   periodKeys?: readonly string[];
   limit?: number;
@@ -301,10 +299,3 @@ export async function getLatestLineEarlyBirds(): Promise<EarlyBirdsWinnerRecord[
   }
 }
 
-/** Resolve a display name for a manager without a second directory round trip at the call site. */
-export async function resolveEarlyBirdsManagerName(managerHrId: string): Promise<string> {
-  const key = normalizeHrIdForAccess(managerHrId);
-  if (!key) return managerHrId;
-  const rows = await getEmployeeDirectoryRows().catch(() => []);
-  return rows.find((row) => normalizeHrIdForAccess(row.hrId) === key)?.displayName ?? managerHrId;
-}

@@ -126,11 +126,3 @@ export function androidManagementTokenProvider(
   };
 }
 
-/** Whether a credential is present at all — lets a page say "set this up" instead of throwing. */
-export function hasAndroidManagementCredential(
-  env: Record<string, string | undefined> = process.env,
-): boolean {
-  return Boolean(
-    env["ANDROID_MANAGEMENT_ACCESS_TOKEN"]?.trim() || env["ANDROID_MANAGEMENT_KEY"]?.trim(),
-  );
-}

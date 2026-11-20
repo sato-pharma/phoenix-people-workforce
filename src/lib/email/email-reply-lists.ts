@@ -84,7 +84,7 @@ export async function getReplyComposerListOptions(): Promise<{ lists: SatoEmailL
  * Everyone a list send reaches: the chips in To, Cc and Bcc plus every picked list, deduped by
  * address and cut into emails of 25. Whatever falls out of a list is reported, never dropped.
  */
-export async function resolveReplyBulkAudience(input: ComposerPayload): Promise<{
+async function resolveReplyBulkAudience(input: ComposerPayload): Promise<{
   listKeys: string[];
   plan: SatoEmailSendPlan;
   skipped: ReplyBulkSummary["skipped"];

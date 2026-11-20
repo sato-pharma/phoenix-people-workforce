@@ -23,7 +23,7 @@ export const INVOICE_KIND_WORDS: Record<MedicalInsuranceInvoiceKind, string> = {
   other: "Other",
 };
 
-export type ComparisonLine = {
+type ComparisonLine = {
   name: string;
   day: string;
   planned: boolean;

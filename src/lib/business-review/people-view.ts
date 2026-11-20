@@ -39,7 +39,7 @@ import type { ResolvedReviewFilter } from "./scope-filter";
 import type { ReviewPersonRow, ReviewRideTally } from "./sources/roles";
 
 /** Which cut of ONE list a view takes. */
-export type ReviewPeopleView =
+type ReviewPeopleView =
   | { kind: "all" }
   | { kind: "rep"; hrId: string }
   | { kind: "seats"; seatIds: ReadonlySet<string> }
@@ -76,7 +76,7 @@ export function peopleForReviewFilter(input: {
 }
 
 /** The cut a resolved filter takes of one line's list. */
-export function reviewPeopleView(input: {
+function reviewPeopleView(input: {
   scope: ReviewPortalScope;
   filter: ReviewPeopleFilter;
   line: ReviewLine;

@@ -75,23 +75,23 @@ export type RankPlaceCase = {
 };
 
 // ── The owner's gap model ───────────────────────────────────────────────────────────────────────
-export const WALK_KMH = 5;
-export const ROAD_FACTOR = 1.3;
+const WALK_KMH = 5;
+const ROAD_FACTOR = 1.3;
 export const WAIT_MINUTES = { min: 10, max: 30 } as const;
-export const VISIT_MINUTES = { min: 5, max: 10 } as const;
+const VISIT_MINUTES = { min: 5, max: 10 } as const;
 /** Longer than this between two saves is a break (lunch, a hospital wait, the trip home), never scored. */
-export const GAP_BREAK_MINUTES = 180;
+const GAP_BREAK_MINUTES = 180;
 /** A pharmacy save this close to a doctor visit is the same stop. */
-export const COMPANION_SAVE_MINUTES = 3;
+const COMPANION_SAVE_MINUTES = 3;
 /** A distance between two fixes means something only when both fixes are this tight. */
-export const GAP_FIX_MAX_METERS = 100;
+const GAP_FIX_MAX_METERS = 100;
 
 // ── The other four ──────────────────────────────────────────────────────────────────────────────
 /** Products per doctor visit for full marks. */
-export const PRODUCTS_FULL_MARKS = 3;
+const PRODUCTS_FULL_MARKS = 3;
 /** A fix this tight is full marks; this loose or worse is none. */
-export const GPS_FULL_METERS = 20;
-export const GPS_ZERO_METERS = 200;
+const GPS_FULL_METERS = 20;
+const GPS_ZERO_METERS = 200;
 /**
  * Android's "approximate location" snaps to a grid and repeats its coordinate, so the precision flags
  * mean nothing on such a fix. The line and the list are Phoenix CRM's OWN (`COARSE_ACCURACY_METERS`,
@@ -100,9 +100,9 @@ export const GPS_ZERO_METERS = 200;
  * Such a fix is marked down on GPS precision, never as dishonest.
  */
 /** Each flagged save costs this many times its share: one in five flagged scores zero. */
-export const INTEGRITY_PENALTY = 5;
+const INTEGRITY_PENALTY = 5;
 
-export type RankGapFacts = {
+type RankGapFacts = {
   /** Pairs of consecutive stops that could be judged. */
   pairs: number;
   /** Sum of their 0-100 scores. */
@@ -144,7 +144,7 @@ function median(values: readonly number[]): number | null {
 }
 
 /** Walking minutes between two points: the straight line times the road factor, at 5 km/h. */
-export function walkingMinutes(meters: number): number {
+function walkingMinutes(meters: number): number {
   return ((meters * ROAD_FACTOR) / 1000 / WALK_KMH) * 60;
 }
 

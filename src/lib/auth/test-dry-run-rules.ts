@@ -35,7 +35,7 @@ const LAST_MARK_KEY = Symbol.for("phoenix.testDryRun.lastMarkAt");
 type HeaderBag = { get(name: string): string | null };
 
 /** The signed session cookie names a test account (`TEST-…` login), or it does not. */
-export function sessionCookieIsTestAccount(cookieHeader: string | null | undefined): boolean {
+function sessionCookieIsTestAccount(cookieHeader: string | null | undefined): boolean {
   const payload = verifySessionToken(getCookieValue(cookieHeader, phoenixSessionCookieName));
   return Boolean(payload?.loginId && String(payload.loginId).toUpperCase().startsWith(TEST_ACCOUNT_LOGIN_PREFIX));
 }

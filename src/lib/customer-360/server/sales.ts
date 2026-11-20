@@ -34,7 +34,7 @@ function previousMonth(year: number, month: number): string {
 }
 
 /** The last month that has ended, in Cairo. */
-export function lastEndedMonth(): string {
+function lastEndedMonth(): string {
   const now = currentCairoDateParts();
   return previousMonth(now.year, now.month);
 }

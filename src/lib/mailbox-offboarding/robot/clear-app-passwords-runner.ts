@@ -35,7 +35,7 @@ import {
 /** The actor written on the register row, so an attestation is never anonymous. */
 export const APP_PASSWORD_CLEAR_ACTOR = "system:turbify-app-password-robot";
 
-export type AppPasswordClearOutcome = {
+type AppPasswordClearOutcome = {
   hrId: string;
   displayName: string;
   address: string;
@@ -89,7 +89,7 @@ function empty(dryRun: boolean, blocked: string | null = null): AppPasswordClear
 }
 
 /** A driver that walks the steps and touches nothing, for a dry run. */
-export function createDryRunAppPasswordClearDriver(): AppPasswordClearDriver {
+function createDryRunAppPasswordClearDriver(): AppPasswordClearDriver {
   return {
     async signIn() {},
     async resetAndCapture({ address }) { return { address, oneTimePassword: "dry-run" }; },

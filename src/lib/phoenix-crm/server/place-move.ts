@@ -33,7 +33,7 @@ type Row = Record<string, unknown>;
 
 /** The written reason a move needs — the database refuses anything shorter or longer. */
 export const PLACE_MOVE_REASON_MIN = 10;
-export const PLACE_MOVE_REASON_MAX = 500;
+const PLACE_MOVE_REASON_MAX = 500;
 
 /** Where the moved place goes: one of its own two readings, or coordinates from a map. */
 export type PlaceMoveTarget = "pin" | "photo" | "coordinates";
@@ -48,7 +48,7 @@ function record(raw: unknown): Row {
  * "30.0444, 31.2357" or two separate numbers — what a mover pastes from a map. Null when it is not a
  * usable point inside Egypt's field range (the same bounds every capture is held to).
  */
-export function parseMoveCoordinates(body: Row): { lat: number; lon: number } | null {
+function parseMoveCoordinates(body: Row): { lat: number; lon: number } | null {
   let lat: unknown = body.lat;
   let lon: unknown = body.lon;
   if (typeof body.coordinates === "string") {
@@ -185,7 +185,7 @@ export type SeatedInVenueResult = {
 };
 
 /** One hand-ticked list is never longer than this; the database repeats the ceiling. */
-export const SEAT_IN_VENUE_MAX_PLACES = 60;
+const SEAT_IN_VENUE_MAX_PLACES = 60;
 
 /**
  * The Super Admin moves standalone customers INTO a validated polyclinic (owner, 2026-10-10).

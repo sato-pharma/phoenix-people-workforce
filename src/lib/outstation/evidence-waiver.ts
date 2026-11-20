@@ -78,6 +78,3 @@ export function isOutstationTicketWaivedRole(role: string | null | undefined): b
   return isOutstationEvidenceWaivedRole(role);
 }
 
-/** The line shown wherever a waived request would otherwise be asked for a photo. */
-export const OUTSTATION_EVIDENCE_WAIVED_MESSAGE =
-  "Photo evidence is not required for this role, so this request is not held for one.";

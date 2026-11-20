@@ -156,13 +156,13 @@ export type HrPaperField = {
 };
 
 /** A grid of labelled boxes under its own heading. */
-export type HrPaperSection = {
+type HrPaperSection = {
   headingAr: string | null;
   fields: readonly HrPaperField[];
 };
 
 /** One row of a checklist — a document the desk ticks off. */
-export type HrPaperChecklistRow = {
+type HrPaperChecklistRow = {
   /** Printed as the serial. Kept as a string so the paper decides its own numbering. */
   number: string;
   labelAr: string;
@@ -176,7 +176,7 @@ export type HrPaperChecklistRow = {
  * Not a grid: a question is a sentence, and a sentence squeezed into a label column wraps into a
  * tower of three-word lines beside an empty box.
  */
-export type HrPaperOpenQuestions = {
+type HrPaperOpenQuestions = {
   headingAr: string;
   rows: readonly HrPaperChecklistRow[];
   /** How many ruled lines under each question. */
@@ -190,7 +190,7 @@ export type HrPaperOpenQuestions = {
  * never as anything Phoenix filled. There is no register of which certificates a person handed over,
  * and inventing one on a form somebody signs would assert that a document was seen when it was not.
  */
-export type HrPaperChecklist = {
+type HrPaperChecklist = {
   headingAr: string;
   /** The first column's header — what the rows are. */
   itemHeadingAr: string;
@@ -202,7 +202,7 @@ export type HrPaperChecklist = {
 };
 
 /** A table the employee fills in by hand — the dependants block on the service-file sheet. */
-export type HrPaperOpenTable = {
+type HrPaperOpenTable = {
   headingAr: string;
   columnsAr: readonly string[];
   /** How many blank rows to draw. Enough to be useful, few enough to fit the page. */
@@ -282,24 +282,6 @@ export const HR_PAPER_BLANK_RULE = "……………………";
 
 /** A wider rule, for a box that takes a sentence rather than a value. */
 export const HR_PAPER_BLANK_RULE_WIDE = "………………………………………………………………";
-
-/**
- * Substitute the blanks.
- *
- * An absent value becomes a dotted rule, never an empty string — the rule every paper in this module
- * follows, because a document that silently closes up around a missing value reads as complete and a
- * reader has no way to see that something was dropped.
- */
-export function fillHrPaperTokens(
-  template: string,
-  values: Partial<Record<HrPaperToken, string | null | undefined>>,
-): string {
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (whole, token: string) => {
-    const value = values[token as HrPaperToken];
-    const text = typeof value === "string" ? value.trim() : "";
-    return text.length > 0 ? text : HR_PAPER_BLANK_RULE;
-  });
-}
 
 /** Every string in a paper that can carry a token, so a caller can sweep the whole document. */
 export function hrPaperTemplateStrings(template: HrPaperTemplate): string[] {

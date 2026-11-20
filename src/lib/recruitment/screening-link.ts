@@ -196,7 +196,7 @@ export type ScreeningQueueNarrowing = {
 };
 
 /** The link's spelling of the "All" tab — the one status value that is not a status. */
-export const SCREENING_STATUS_ALL = "all";
+const SCREENING_STATUS_ALL = "all";
 
 /** Next.js hands a repeated query param through as an array; take the first and ignore the rest. */
 function firstParam(value: string | string[] | undefined): string | null {

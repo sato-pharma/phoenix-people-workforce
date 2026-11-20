@@ -29,7 +29,7 @@ export const CV_SEARCH_LIMIT = 200;
 /** The shortest useful query. One character matches nearly every CV and means nothing. */
 export const CV_SEARCH_MIN_LENGTH = 2;
 
-export type CvSearchHit = {
+type CvSearchHit = {
   candidateId: string;
   /** A slice of the text that was searched, so the screen can say WHY this candidate matched. */
   matchedOn: string;

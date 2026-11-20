@@ -271,7 +271,7 @@ export function resolveDirectOrderScopePredicate(input: {
  * telling anyone — the exact failure mode this file exists to prevent — so callers check this and
  * fall back to an RPC taking the array as a parameter instead.
  */
-export const DIRECT_ORDER_IN_CLAUSE_SAFE_LIMIT = 800;
+const DIRECT_ORDER_IN_CLAUSE_SAFE_LIMIT = 800;
 
 export function requesterCandidatesExceedUrlBudget(candidates: readonly string[]): boolean {
   return candidates.length > DIRECT_ORDER_IN_CLAUSE_SAFE_LIMIT;

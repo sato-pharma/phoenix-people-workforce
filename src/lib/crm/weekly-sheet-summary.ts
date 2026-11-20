@@ -45,12 +45,8 @@ export function weeklySheetAccountsWord(count: number): string {
   return counted(count, "account", "accounts");
 }
 
-export function weeklySheetDaysWord(count: number): string {
-  return counted(count, "day", "days");
-}
-
 /** The days in a full field week, Saturday to Wednesday. */
-export const WEEKLY_SHEET_FULL_WEEK_DAYS = 5;
+const WEEKLY_SHEET_FULL_WEEK_DAYS = 5;
 
 /** The one sentence that states the targets — screen and Excel — read off the rule's own constants. */
 export function weeklySheetTargetLine(): string {
@@ -90,7 +86,7 @@ export function weeklySheetNav(sheet: Pick<WeeklySheet, "cairoToday" | "weekStar
 
 // ── One figure against its target ────────────────────────────────────────────────────────────────
 
-export const WEEKLY_SHEET_VERDICTS = ["Met", "Below", "So far", "Not started", "No working day", "Seat is vacant"] as const;
+const WEEKLY_SHEET_VERDICTS = ["Met", "Below", "So far", "Not started", "No working day", "Seat is vacant"] as const;
 export type WeeklySheetVerdict = (typeof WEEKLY_SHEET_VERDICTS)[number];
 
 /**
@@ -172,7 +168,7 @@ export const WEEKLY_SHEET_ACCOUNT_STATE_LABEL: Record<WeeklySheetAccountState, s
   short: "Short of a speciality",
 };
 
-export const WEEKLY_SHEET_ACCOUNT_STATE_SWATCH: Record<WeeklySheetAccountState, string> = {
+const WEEKLY_SHEET_ACCOUNT_STATE_SWATCH: Record<WeeklySheetAccountState, string> = {
   met: "bg-emerald-600",
   no_doctors: "bg-slate-300",
   short: "bg-amber-500",
@@ -503,7 +499,7 @@ export function weeklySheetShowEmptyLine(show: WeeklySheetShow, position: Weekly
 }
 
 export const WEEKLY_SHEET_PATH = "/employee-portals/weekly-sheet";
-export const WEEKLY_SHEET_EXPORT_PATH = "/api/crm/weekly-sheet/export";
+const WEEKLY_SHEET_EXPORT_PATH = "/api/crm/weekly-sheet/export";
 
 /** The page for a week (null: the last full week) and a filter (every seat is left out of the address). */
 /** The Super Admin's twin in the admin shell, over the whole company (owner, 2026-11-11). */

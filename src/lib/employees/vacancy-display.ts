@@ -219,7 +219,7 @@ export async function loadVacancyPredecessors(
 /* ---------- where the seat is, when the vacancy row forgot ---------- */
 
 /** A seat's place on the organogram — the fallback for a vacancy row with no `area_id`. */
-export type VacancySeatPlace = {
+type VacancySeatPlace = {
   areaId: number | null;
   areaName: string | null;
   regionName: string | null;

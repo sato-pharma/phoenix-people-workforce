@@ -32,7 +32,7 @@ import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmPlanStatus, P
 
 // ── 1. Coverage on the review ───────────────────────────────────────────────────────────────────
 
-export const REVIEW_GRADES: readonly PhoenixCrmGrade[] = ["A", "B", "C"];
+const REVIEW_GRADES: readonly PhoenixCrmGrade[] = ["A", "B", "C"];
 const REVIEW_LISTS: readonly PhoenixCrmDoctorListType[] = ["AM", "PM"];
 
 /** A week of the month as the board holds it — the part a review counts. */
@@ -56,7 +56,7 @@ export type ReviewCustomer = {
   pending: boolean;
 };
 
-export type ReviewGradeRow = {
+type ReviewGradeRow = {
   grade: PhoenixCrmGrade;
   /** Validated customers of this list and grade. */
   customers: number;
@@ -74,7 +74,7 @@ export type ReviewGradeRow = {
 
 export type ReviewLeftOut = { customerId: string; name: string; grade: PhoenixCrmGrade | null };
 
-export type ReviewListCoverage = {
+type ReviewListCoverage = {
   listType: PhoenixCrmDoctorListType;
   /** Validated customers on this list. */
   validated: number;

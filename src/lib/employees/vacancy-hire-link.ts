@@ -44,7 +44,7 @@ export type VacancyHireSource = {
 };
 
 /** Marker param. Present => the form should open pre-filled for a seat. */
-export const VACANCY_HIRE_MARKER = "hireVacancy";
+const VACANCY_HIRE_MARKER = "hireVacancy";
 
 const PARAM_KEYS = {
   areaId: "vacancyArea",

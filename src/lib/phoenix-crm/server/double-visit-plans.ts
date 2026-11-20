@@ -62,7 +62,7 @@ function record(raw: unknown): Row {
 
 // ── Who reads, who writes ───────────────────────────────────────────────────────────────────────
 
-export type DoubleVisitPlanMode = "own" | "pick";
+type DoubleVisitPlanMode = "own" | "pick";
 
 /**
  * Whose plans the viewer reads: "own" — his own, as the district manager; "pick" — any district
@@ -74,7 +74,7 @@ export type DoubleVisitPlanReach = { mode: DoubleVisitPlanMode; canWrite: boolea
 const NOT_FOR_YOU = "Only the district manager, SFE and the Super Admin open a double visit plan.";
 
 /** The viewer plans his own double visits: app role District Manager, on a DM or acting DM seat. */
-export function isDoubleVisitPlanner(viewer: PhoenixCrmViewer): boolean {
+function isDoubleVisitPlanner(viewer: PhoenixCrmViewer): boolean {
   return viewer.role === DOUBLE_VISIT_PLANNER_ROLE && plannerSeats(viewer.org, viewer.hrId).length > 0;
 }
 

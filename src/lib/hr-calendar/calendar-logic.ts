@@ -20,7 +20,7 @@ import {
   FIRST_DAY_SPEC,
 } from "@/lib/milestones/periods";
 
-export const defaultHrWeeklyOffPolicy: HrWeeklyOffPolicy = {
+const defaultHrWeeklyOffPolicy: HrWeeklyOffPolicy = {
   friday: "full_day",
   saturday: "working",
   thursday: "working",
@@ -30,7 +30,7 @@ function pad(value: number) {
   return String(value).padStart(2, "0");
 }
 
-export function toHrCalendarDateInputValue(date: Date) {
+function toHrCalendarDateInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
@@ -149,15 +149,6 @@ export function buildHrCalendarDays(selectedMonth: number, selectedYear: number)
   return cells;
 }
 
-export function summarizeHrCalendarEvents(events: HrCalendarEvent[]) {
-  return {
-    anniversaries: events.filter((event) => event.eventType === "anniversary").length,
-    birthdays: events.filter((event) => event.eventType === "birthday").length,
-    newHires: events.filter((event) => event.eventType === "new_hire").length,
-    totalEvents: events.length,
-  };
-}
-
 function normalizedWeeklyOffPolicy(policy?: Partial<HrWeeklyOffPolicy> | null): HrWeeklyOffPolicy {
   return {
     friday: policy?.friday ?? defaultHrWeeklyOffPolicy.friday,
@@ -166,7 +157,7 @@ function normalizedWeeklyOffPolicy(policy?: Partial<HrWeeklyOffPolicy> | null): 
   };
 }
 
-export function getHrWeeklyOffMode(date: Date, policy?: Partial<HrWeeklyOffPolicy> | null): HrWeeklyOffMode {
+function getHrWeeklyOffMode(date: Date, policy?: Partial<HrWeeklyOffPolicy> | null): HrWeeklyOffMode {
   const normalized = normalizedWeeklyOffPolicy(policy);
   if (date.getDay() === 4) return normalized.thursday;
   if (date.getDay() === 5) return normalized.friday;
@@ -174,7 +165,7 @@ export function getHrWeeklyOffMode(date: Date, policy?: Partial<HrWeeklyOffPolic
   return "working";
 }
 
-export function getHrWorkingDayFraction(date: Date, holidays: string[] = [], policy?: Partial<HrWeeklyOffPolicy> | null) {
+function getHrWorkingDayFraction(date: Date, holidays: string[] = [], policy?: Partial<HrWeeklyOffPolicy> | null) {
   const dateKey = toHrCalendarDateInputValue(date);
   if (holidays.includes(dateKey)) return 0;
 

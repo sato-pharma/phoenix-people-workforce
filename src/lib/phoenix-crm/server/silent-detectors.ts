@@ -121,7 +121,7 @@ function narrowedFrom(rows: Row[], keep: (row: Row) => boolean): PagedRead<Row> 
  * settlement intact (the test is `settled_flags = flags`). 21 days covers a rep who works one week a
  * month in an outstation area and keeps every query small forever.
  */
-export const SILENT_SWEEP_DAYS = 21;
+const SILENT_SWEEP_DAYS = 21;
 
 /** The ceiling on each paged read. A bound on memory, never a bound on the field. */
 const SILENT_READ_MAX = 20_000;

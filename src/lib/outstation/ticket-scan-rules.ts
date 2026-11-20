@@ -137,7 +137,7 @@ export function anchorYear(day: string, near: string | null): string {
 }
 
 /** "Fri 23 Oct 2026" — the date as the employee reads it on the screen. */
-export function ticketDayLabel(day: string): string {
+function ticketDayLabel(day: string): string {
   const date = new Date(`${day}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return day;
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC", weekday: "short", year: "numeric" }).format(date);

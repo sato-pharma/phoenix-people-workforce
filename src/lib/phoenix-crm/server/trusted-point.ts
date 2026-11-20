@@ -124,7 +124,7 @@ async function loadCustomer(customerId: string): Promise<CustomerRow> {
 }
 
 /** Read every reading of where a rep stood with this customer; `mergeTrustedPointReadings` merges and de-duplicates them. */
-export async function gatherTrustedPointReadings(customer: Pick<CustomerRow, "id" | "isTest" | "contactIds">): Promise<TrustedPointGathered> {
+async function gatherTrustedPointReadings(customer: Pick<CustomerRow, "id" | "isTest" | "contactIds">): Promise<TrustedPointGathered> {
   const supabase = getSupabaseAdmin();
   const [visitsResult, placesResult, oldCheckins] = await Promise.all([
     supabase

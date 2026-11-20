@@ -16,7 +16,7 @@ export type EmailAdminDelivery = {
   updatedAt: string | null;
 };
 
-export type EmailAdminSummary = {
+type EmailAdminSummary = {
   failedCount: number;
   pendingCount: number;
   retryingCount: number;
