@@ -19,9 +19,9 @@ export function isDirectOrderSuperAdmin(access: Pick<AccessContext, "role" | "sc
 
 /** Who approved each rung already approved on an order. */
 export function approvedStepActors(
-  steps: ReadonlyArray<{ status: string; decidedByHrId: string | null }>,
+  steps: ReadonlyArray<{ status: string; decidedByHrId?: string | null }>,
 ): Array<string | null> {
-  return steps.filter((step) => step.status === "approved").map((step) => step.decidedByHrId);
+  return steps.filter((step) => step.status === "approved").map((step) => step.decidedByHrId ?? null);
 }
 
 /**
@@ -60,7 +60,7 @@ export async function assertPharmacyRulingStands(access: AccessContext, pharmacy
  */
 export async function assertOrderCarriedBySuperAdminStands(
   access: AccessContext,
-  input: { steps: ReadonlyArray<{ status: string; decidedByHrId: string | null }>; pharmacyId: string | null },
+  input: { steps: ReadonlyArray<{ status: string; decidedByHrId?: string | null }>; pharmacyId: string | null },
 ): Promise<void> {
   if (isDirectOrderSuperAdmin(access)) return;
   const actors: unknown[] = approvedStepActors(input.steps);
