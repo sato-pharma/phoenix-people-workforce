@@ -2392,6 +2392,7 @@ import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-healt
 import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
 import { runForeignKeyIndexesTests } from "./foreign-key-indexes.test.ts";
 import { runSchemaBaselineTests } from "./schema-baseline.test.ts";
+import { runDbAccessTestsTests } from "./db-access-tests.test.ts";
 import { runSupabaseFolderLayoutTests } from "./supabase-folder-layout.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
@@ -9147,6 +9148,10 @@ await runTest(
 await runTest(
   "the production schema baseline is normalised, committed and checked every night (REC-041: noise stripped, objects compared by name, unexplained drift is red)",
   runSchemaBaselineTests,
+);
+await runTest(
+  "the weekly pgTAP access tests read only a full pass as a pass, roll themselves back, match their plan, and run after the restore with an ACCESS alert",
+  runDbAccessTestsTests,
 );
 await runTest(
   "the supabase folder says what each file is (F-ENG-016, F-DB-013: only seed.sql at the root, one-off scripts in supabase/scripts, the edge function source present and outside the app typecheck)",
