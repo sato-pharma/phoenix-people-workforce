@@ -17,6 +17,7 @@ import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { customerKindText } from "@/lib/phoenix-crm/speciality-list";
 import { assertUnplannedVisitApprover, canDecideUnplannedVisit, canOverrideDecision, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { assertSuperAdminDecisionStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import type { OffPlanVisitRef } from "@/lib/phoenix-crm/server/offplan-day";
@@ -305,7 +306,7 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
       // Who took each step, and the version, answer a second press of the same decision with the
       // answer he already has (`isRepeatOfOwnUnplannedDecision`).
       "visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, clarification, is_test, " +
-        "manager_decided_by_hr_id, sfe_decided_by_hr_id, version, " +
+        "manager_decided_by_hr_id, sfe_decided_by_hr_id, version, admin_decided_by_hr_id, " +
         "customer:phoenix_crm_customers!customer_id(name), " +
         "visit:phoenix_crm_visits!visit_id(manager_hr_id, senior_hr_id, product_manager_hr_id, companions:phoenix_crm_visit_companions(hr_id, position))",
     )
@@ -348,6 +349,12 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
     if (stage === "manager" && reviewerWasOnTheVisit(viewer.hrId, companionHrIds(row))) {
       throw forbiddenError("You were on this visit, so SFE decides it rather than you.");
     }
+  }
+
+  // 🔴 A step the Super Admin approved — the manager's in his place, or a recorded visit — is never refused
+  // at a later step (owner, 2026-11-20: "the opposite of the system administrator opinion").
+  if (decision === "refuse") {
+    await assertSuperAdminDecisionStands(viewer.isSuperAdmin, [row.manager_decided_by_hr_id, row.admin_decided_by_hr_id]);
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_unplanned_visit", {

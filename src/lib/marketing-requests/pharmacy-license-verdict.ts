@@ -4,6 +4,7 @@ import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE } from "@/lib/marketing-requests/evidence-photo-storage";
 import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/service";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { assertSuperAdminDecisionStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { licenseVerdictColumns, parseLicenseVerdict } from "@/lib/venues/pharmacy-license-verdict-columns";
 
@@ -107,6 +108,21 @@ export async function recordMarketingPharmacyLicenseVerdict(
     // The DB constraint would refuse this anyway; failing here says why in words an approver can
     // act on, rather than surfacing a constraint name.
     throw validationError("Your HR id could not be resolved, so the check cannot be attributed.");
+  }
+
+  // 🔴 The licence verdict the Super Admin recorded is not turned round or cleared below him
+  // (owner, 2026-11-20). Recording the same answer again changes nothing and is allowed.
+  if (access.role !== "Super Admin") {
+    const { data: standing, error: standingError } = await supabase
+      .from("marketing_pharmacies")
+      .select("license_name_matches_sign, license_name_checked_by_hr_id")
+      .eq("id", pharmacyId)
+      .maybeSingle();
+    if (standingError) throw standingError;
+    const previous = (standing ?? {}) as { license_name_matches_sign?: boolean | null; license_name_checked_by_hr_id?: string | null };
+    if ((previous.license_name_matches_sign ?? null) !== matchesSign) {
+      await assertSuperAdminDecisionStands(false, [previous.license_name_checked_by_hr_id]);
+    }
   }
 
   const { error: updateError } = await supabase
