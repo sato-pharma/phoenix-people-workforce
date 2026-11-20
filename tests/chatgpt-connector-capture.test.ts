@@ -23,7 +23,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createAccessContext } from "@/lib/auth/permissions";
-import { captureOrigin, ffmpegArgs } from "@/lib/chatgpt-connector/browser/capture";
+import { captureOrigin, ffmpegArgs, VIDEO_RECORD_MS, videoPageBudgetMs } from "@/lib/chatgpt-connector/browser/capture";
 import {
   checkCapturePath,
   classifyCaptureRequest,
@@ -36,6 +36,7 @@ import {
 import { CAPTURE_VIEWER_URI, captureViewerHtml, IMAGE_META_KEY, VIDEO_META_KEY } from "@/lib/chatgpt-connector/browser/viewer";
 import { allConnectorTools, buildConnectorServer, runConnectorTool, toolsForRole } from "@/lib/chatgpt-connector/server";
 import { CONNECTOR_FILE_CONTENT_TYPES } from "@/lib/chatgpt-connector/files";
+import { recordVideoTool } from "@/lib/chatgpt-connector/tools/screens";
 import { defineTool, type ConnectorTool } from "@/lib/chatgpt-connector/types";
 
 const ORIGIN = "http://127.0.0.1:8080";
@@ -246,8 +247,41 @@ function storageAcceptsEveryKind() {
   assert.ok(allowed.includes("application/json"), "the background worker's JSON exports stay accepted");
 }
 
+/**
+ * A length the person names is the video's length. On 20 Nov 2026 the owner asked ChatGPT for "a
+ * 10-second video of /employees" and got 3.4 s: the tool had no length, and a page one and a half
+ * screens tall reached its bottom in one scroll step, which ended the recording.
+ */
+function videoLength() {
+  const seconds = recordVideoTool.input.seconds;
+  assert.ok(seconds, "the video tool takes a seconds option");
+  assert.equal(seconds.safeParse(10).success, true, "10 seconds is accepted");
+  assert.equal(seconds.safeParse(undefined).success, true, "the length stays optional");
+  for (const bad of [1, 17, 2.5]) assert.equal(seconds.safeParse(bad).success, false, `${bad} is refused`);
+  assert.match(recordVideoTool.description, /seconds/, "the description tells ChatGPT the length can be asked for");
+
+  // Asked for 10 s on one page: the whole 10 s goes to that page, past the 9 s cap of an unasked video.
+  assert.equal(videoPageBudgetMs({ targetMs: 10_000, recordedMs: 0, pagesLeft: 1 }), 10_000);
+  // Shared by the pages still to come, from what is left of the asked length.
+  assert.equal(videoPageBudgetMs({ targetMs: 12_000, recordedMs: 0, pagesLeft: 3 }), 4_000);
+  assert.equal(videoPageBudgetMs({ targetMs: 12_000, recordedMs: 5_000, pagesLeft: 2 }), 3_500);
+  // Never past the 16 s ceiling, and nothing once the asked length is used.
+  assert.equal(videoPageBudgetMs({ targetMs: 60_000, recordedMs: 0, pagesLeft: 1 }), VIDEO_RECORD_MS);
+  assert.equal(videoPageBudgetMs({ targetMs: 8_000, recordedMs: 9_000, pagesLeft: 1 }), 0);
+  // Not asked: unchanged, up to 9 s a page.
+  assert.equal(videoPageBudgetMs({ recordedMs: 0, pagesLeft: 1 }), 9_000);
+  assert.equal(videoPageBudgetMs({ recordedMs: 12_000, pagesLeft: 1 }), 4_000);
+
+  // The recorder holds a page at its bottom for its share when a length was asked.
+  const capture = readFileSync(path.join(process.cwd(), "src/lib/chatgpt-connector/browser/capture.ts"), "utf8");
+  assert.match(capture, /hold\(targetMs === undefined \? 900 : Math\.max\(0, pageEnd - Date\.now\(\)\), pageEnd\)/, "an asked length holds the page until its share is used");
+  const screens = readFileSync(path.join(process.cwd(), "src/lib/chatgpt-connector/tools/screens.ts"), "utf8");
+  assert.match(screens, /recordPages\(ctx, \{ paths, viewport: screen, routes, seconds: input\.seconds \}\)/, "the asked length reaches the recorder");
+}
+
 export async function runChatgptConnectorCaptureTests() {
   storageAcceptsEveryKind();
+  videoLength();
   requestFence();
   capturePath();
   encoderAndOrigin();

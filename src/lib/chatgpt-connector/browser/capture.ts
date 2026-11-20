@@ -46,6 +46,21 @@ const SETTLE_MS = 5_000;
 /** Recorded time across all pages, and the most for one page. */
 export const VIDEO_RECORD_MS = 16_000;
 const VIDEO_PAGE_MS = 9_000;
+/** The length a person may ask for, in whole seconds. Without one, each page is scrolled once and the video ends. */
+export const VIDEO_MIN_SECONDS = 2;
+export const VIDEO_MAX_SECONDS = VIDEO_RECORD_MS / 1000;
+
+/**
+ * How long the next page is recorded. Without an asked length: up to 9 s, until the page has been
+ * scrolled to the bottom. With one: what is left of it, shared evenly by the pages still to come, and
+ * the page is held at its bottom until its share is used, so a short page no longer ends the video early.
+ */
+export function videoPageBudgetMs(input: { targetMs?: number; recordedMs: number; pagesLeft: number }): number {
+  const left = Math.max(0, VIDEO_RECORD_MS - input.recordedMs);
+  if (input.targetMs === undefined) return Math.min(VIDEO_PAGE_MS, left);
+  const wanted = Math.max(0, Math.min(VIDEO_RECORD_MS, input.targetMs) - input.recordedMs);
+  return Math.min(left, Math.ceil(wanted / Math.max(1, input.pagesLeft)));
+}
 export const VIDEO_MAX_PAGES = 3;
 const VIDEO_MAX_FRAMES = 320;
 const FULL_PAGE_MAX_HEIGHT = 12_000;
@@ -267,8 +282,9 @@ export type VideoResult = {
 
 export async function recordPages(
   ctx: AccessContext,
-  input: { paths: string[]; viewport: CaptureViewport; routes: SideEffectRoutes },
+  input: { paths: string[]; viewport: CaptureViewport; routes: SideEffectRoutes; seconds?: number },
 ): Promise<VideoResult> {
+  const targetMs = input.seconds === undefined ? undefined : Math.min(VIDEO_RECORD_MS, Math.max(VIDEO_MIN_SECONDS, input.seconds) * 1000);
   const deadline = Date.now() + CAPTURE_DEADLINE_MS - 6_000; // leave room to encode and store
   return withChromiumSlot(async () => {
     checkDeadline(deadline - 8_000);
@@ -287,11 +303,11 @@ export async function recordPages(
       recordedMs += Date.now() - started;
     };
     try {
-      for (const path of input.paths) {
+      for (const [index, path] of input.paths.entries()) {
         if (Date.now() > deadline - 3_000 || recordedMs >= VIDEO_RECORD_MS) break;
         const { title, finalPath } = await goTo(opened.page, path, deadline);
         pages.push({ path, title, finalPath });
-        const pageBudget = Math.min(VIDEO_PAGE_MS, VIDEO_RECORD_MS - recordedMs);
+        const pageBudget = videoPageBudgetMs({ targetMs, recordedMs, pagesLeft: input.paths.length - index });
         const pageEnd = Date.now() + pageBudget;
         await hold(1_400, pageEnd);
         while (Date.now() < pageEnd - 800 && Date.now() < deadline) {
@@ -299,7 +315,8 @@ export async function recordPages(
           await hold(500, pageEnd);
           if (step?.atEnd) break;
         }
-        await hold(900, pageEnd);
+        // An asked length holds the page at its bottom until its share is used.
+        await hold(targetMs === undefined ? 900 : Math.max(0, pageEnd - Date.now()), pageEnd);
       }
       if (frames.length < 2) throw new ToolRefusal("The video came out empty. Try one page at a time.");
       const fps = Math.min(30, Math.max(2, frames.length / Math.max(0.5, recordedMs / 1000)));
