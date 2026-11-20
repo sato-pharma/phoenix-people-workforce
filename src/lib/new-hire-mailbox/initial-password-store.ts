@@ -29,7 +29,7 @@
  * are the protection — there is no policy quietly backing them up.
  */
 
-import { systemAdministratorRoles, type PhoenixRole } from "@/lib/auth/permissions";
+import { systemAdministratorRoles } from "@/lib/auth/permissions";
 import { openSecret, sealSecret } from "@/lib/security/secret-box";
 
 import { isUsableInitialPassword, explainUnusableInitialPassword } from "./robot/initial-password";
@@ -136,7 +136,3 @@ export function initialPasswordRecord(input: {
   };
 }
 
-/** Whether a role may see the password, for a caller that wants to render a reason rather than throw. */
-export function initialPasswordAudienceDescription(): string {
-  return (systemAdministratorRoles as readonly PhoenixRole[]).join(", ");
-}

@@ -42,7 +42,7 @@ export const VISIT_ROLLUP_EVENT_TYPE = "crm_visit_rollup";
 export const VISIT_ROLLUP_MAX_LINES = 15;
 
 /** One routine planned visit, reduced to the two things the rollup names: the rep and his territory. */
-export type RollupVisitFact = {
+type RollupVisitFact = {
   repName: string;
   territoryName: string;
 };

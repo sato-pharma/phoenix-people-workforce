@@ -58,7 +58,7 @@ type UploadPreview = {
 };
 
 /** Month | Quarter | Semester — the span one template download covers. */
-export const TEMPLATE_SCOPES = [
+const TEMPLATE_SCOPES = [
   { value: "month", label: "This month" },
   { value: "quarter", label: "This quarter (3 months)" },
   { value: "semester", label: "This semester (6 months)" },

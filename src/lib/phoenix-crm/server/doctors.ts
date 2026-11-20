@@ -89,7 +89,7 @@ export type DoctorDirectoryView = {
  * module has not opened. The Super Admin reads the lot (his own entries are always test entries, and
  * in test mode the directory follows him onto any territory).
  */
-export function directorySeats(viewer: PhoenixCrmViewer): OrgSeat[] {
+function directorySeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   if (!isDirectoryCompanyRole(viewer.role)) return viewer.scopeTerritories;
   if (viewer.isSuperAdmin) return viewer.org.territories;
   return viewer.org.territories.filter((seat) => Boolean(seat.lineCode && viewer.openLines.has(seat.lineCode)));

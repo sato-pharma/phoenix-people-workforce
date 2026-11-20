@@ -197,11 +197,11 @@ export function websiteApplyRoleKeys(): WebsiteApplyRoleKey[] {
 
 // ── The form schema (what the GET endpoint returns and the website renders) ────────────────────────
 
-export type WebsiteApplyFieldKind = "text" | "email" | "tel" | "file" | "select";
+type WebsiteApplyFieldKind = "text" | "email" | "tel" | "file" | "select";
 
-export type WebsiteApplyFieldOption = { value: string; title: string; description: string | null };
+type WebsiteApplyFieldOption = { value: string; title: string; description: string | null };
 
-export type WebsiteApplyField = {
+type WebsiteApplyField = {
   /** The form-data key the browser posts back under. Built-ins use their WhatsApp step name
    *  ("experience", "salary"); extras use `extra:<questionKey>` so the two namespaces never collide. */
   key: string;
@@ -249,9 +249,9 @@ export type WebsiteApplyForm = {
 
 // The applicant's own name is what a recruiter reads first, so it is generous; the CV usually
 // carries the authoritative version anyway (candidateIdentityFromCvFields).
-export const WEBSITE_APPLY_NAME_MAX = 120;
-export const WEBSITE_APPLY_EMAIL_MAX = 160;
-export const WEBSITE_APPLY_PHONE_MAX = 40;
+const WEBSITE_APPLY_NAME_MAX = 120;
+const WEBSITE_APPLY_EMAIL_MAX = 160;
+const WEBSITE_APPLY_PHONE_MAX = 40;
 
 // Which of the six built-ins the web form can render. Experience is a fixed tappable band and salary
 // is free text; background and region are fixed lists with a typed "Other" escape; area's options
@@ -543,7 +543,7 @@ export type WebsiteApplyRawAnswers = {
 /** The classification the bot's writeClassification + finishExtraQuestionLoop would record, derived
  *  from a valid submission. Every column is optional-by-presence, exactly as the WhatsApp path: an
  *  unanswered optional extra writes nothing, never a blank. */
-export type WebsiteApplyClassification = {
+type WebsiteApplyClassification = {
   jobTitle: string;
   /** Null when the role is not asked the experience band (the HR Section Head). */
   experienceLabel: string | null;

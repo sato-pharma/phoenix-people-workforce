@@ -47,8 +47,6 @@
  */
 export const LINK_STATUS_PRECEDENCE = ["admin_approved", "sfe_validated", "system_validated"] as const;
 
-export type LinkValidationStatus = (typeof LINK_STATUS_PRECEDENCE)[number];
-
 /** What a customer's link has to say for the request form and the server to judge it as a target. */
 export type CustomerTargetLink = {
   distributorCodeId: string | null;

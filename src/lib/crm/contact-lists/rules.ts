@@ -23,10 +23,10 @@ import { isOnOrAfterCrmCutover, type CrmCutoverSetting } from "@/lib/crm/cutover
 import { KNOWN_SP_SPECIALITIES, isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { startedWindowCovers, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 
-export const CONTACT_LIST_REASON_MAX = 1000;
+const CONTACT_LIST_REASON_MAX = 1000;
 export const CONTACT_LIST_NOTE_MAX = 500;
-export const CONTACT_LIST_NAME_MAX = 200;
-export const CONTACT_LIST_ADDRESS_MAX = 500;
+const CONTACT_LIST_NAME_MAX = 200;
+const CONTACT_LIST_ADDRESS_MAX = 500;
 
 export type ContactListAction = "add" | "remove" | "regrade";
 /** A pharmacy is not a contact: AM and PM lists only. */
@@ -38,7 +38,7 @@ export type ContactListDecision = "approved" | "rejected";
 export const CONTACT_LIST_SHIFTS: readonly ContactListShift[] = ["AM", "PM"];
 export const CONTACT_LIST_GRADES: readonly ContactListGrade[] = ["A", "B", "C"];
 
-export const CONTACT_LIST_NOT_IN_FORCE_MESSAGE =
+const CONTACT_LIST_NOT_IN_FORCE_MESSAGE =
   "Doctor lists still come from iReports360 until the CRM cutover date. Changes open on that day.";
 
 /**
@@ -49,7 +49,7 @@ export const CONTACT_LIST_NOT_IN_FORCE_MESSAGE =
  * copy said "his team" until 2026-10-06, and it reaches the screen as a conflict message — it was
  * unreachable only because the service refused first, which is the gate this change removed.
  */
-export const CONTACT_LIST_TEAM_NOT_STARTED_MESSAGE =
+const CONTACT_LIST_TEAM_NOT_STARTED_MESSAGE =
   "Doctor lists for this rep still come from iReports360 — their team has not started in Phoenix CRM yet.";
 
 export function parseContactListAction(value: unknown): ContactListAction | null {

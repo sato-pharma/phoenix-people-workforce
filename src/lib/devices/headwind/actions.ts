@@ -76,7 +76,7 @@ export type HeadwindActionId =
   | "SHUT_DOWN";
 
 /** Which side of the system carries the action. */
-export type HeadwindActionCarrier = "add-on" | "phoenix-app" | "impossible";
+type HeadwindActionCarrier = "add-on" | "phoenix-app" | "impossible";
 
 export type HeadwindActionDef = {
   id: HeadwindActionId;
@@ -107,7 +107,7 @@ export const PHOENIX_APP_PACKAGE = "com.satopharma.phoenixworkforce";
  * that reports "sent" and does nothing on the tablet — the exact failure this module exists to avoid.
  */
 export const PHOENIX_ALARM_INTENT = "com.satopharma.phoenixworkforce.DEVICE_ALARM";
-export const PHOENIX_MESSAGE_INTENT = "com.satopharma.phoenixworkforce.DEVICE_MESSAGE";
+const PHOENIX_MESSAGE_INTENT = "com.satopharma.phoenixworkforce.DEVICE_MESSAGE";
 
 /** Where the Phoenix add-on lives on our own Headwind box, if it is installed. */
 const ADDON_BASE = "/rest/plugins/phoenix-actions/private";

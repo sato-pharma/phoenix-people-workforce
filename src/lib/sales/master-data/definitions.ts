@@ -43,7 +43,7 @@ export type MasterColumn = {
   allowedValues?: readonly string[];
 };
 
-export type ParentRule = {
+type ParentRule = {
   parentMaster: MasterKey;
   /** Code column on THIS row validated against the parent (FK check). */
   codeColumn: string;
@@ -290,10 +290,6 @@ export function getMasterDefinition(master: string): MasterDefinition | null {
 
 export function editableColumns(def: MasterDefinition) {
   return def.columns.filter((column) => !column.locked);
-}
-
-export function lockedColumns(def: MasterDefinition) {
-  return def.columns.filter((column) => column.locked);
 }
 
 export function requiredColumns(def: MasterDefinition) {

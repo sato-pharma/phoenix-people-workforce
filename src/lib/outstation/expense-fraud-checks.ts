@@ -46,7 +46,7 @@ export const BRICK_WEAK_MATCH_KM = 10;
 
 export type FraudVerdict = "clean" | "review" | "unverifiable";
 
-export type FraudCheckId = "partner" | "location_vs_checkin" | "brick_scope" | "timing";
+type FraudCheckId = "partner" | "location_vs_checkin" | "brick_scope" | "timing";
 
 export type FraudCheckResult = {
   detail: string;
@@ -57,7 +57,7 @@ export type FraudCheckResult = {
 };
 
 /** One corroborating check-in, borrowed from whoever actually recorded it. */
-export type ClaimCheckin = {
+type ClaimCheckin = {
   address: string | null;
   /** Vendor wall-clock string. Midnight means "no real time", never 00:00. */
   at: string | null;

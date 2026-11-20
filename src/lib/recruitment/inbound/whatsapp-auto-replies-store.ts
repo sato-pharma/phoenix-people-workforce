@@ -27,7 +27,7 @@ const CACHE_TTL_MS = 30_000;
 let replyCache: { at: number; byKey: Map<string, string> } | null = null;
 
 /** Called after any write so the next send picks the new wording up immediately. */
-export function invalidateAutoReplyCache(): void {
+function invalidateAutoReplyCache(): void {
   replyCache = null;
 }
 
@@ -116,7 +116,7 @@ export async function saveAutoReply(input: {
 
 /** Back to the code default: the row is DROPPED, never overwritten with a copy of the default text
  *  that would then silently go stale the day that default is improved. */
-export async function resetAutoReply(input: { key: AutoReplyKey }): Promise<void> {
+async function resetAutoReply(input: { key: AutoReplyKey }): Promise<void> {
   const supabase = recruitmentDb();
   const { error } = await supabase.from(AUTO_REPLIES_TABLE).delete().eq("reply_key", input.key);
   if (error) throw error;

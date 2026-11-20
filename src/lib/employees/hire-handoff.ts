@@ -370,7 +370,7 @@ export function syncOutcomeFailure(outcome: { candidate?: unknown } | null | und
 }
 
 /** Whether a login provisioning message says the login is already there — which is DONE, not failed. */
-export function isLoginAlreadyThere(message: string | null | undefined): boolean {
+function isLoginAlreadyThere(message: string | null | undefined): boolean {
   return /already exists/i.test(String(message ?? ""));
 }
 

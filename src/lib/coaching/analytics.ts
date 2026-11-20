@@ -36,7 +36,7 @@ type ScoreBucket = {
   totalScore: number;
 };
 
-export type CoachingTrainingManagerComparisonFilters = {
+type CoachingTrainingManagerComparisonFilters = {
   areaId?: number | string | null;
   lineId?: number | string | null;
   medicalRepHrId?: string | null;
@@ -67,7 +67,7 @@ const coachingMonthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "A
  * The two zones that put a rep on the CEO's attention queue. One list, so the tile, the admin
  * command centre and this module cannot drift apart on what "red" means.
  */
-export const redPerformanceZones = new Set(["critical_red", "red_zone"]);
+const redPerformanceZones = new Set(["critical_red", "red_zone"]);
 
 export type CoachingReportAnalyticsSummary = {
   averageScore: number;

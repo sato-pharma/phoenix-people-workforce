@@ -301,7 +301,7 @@ export function ShareBar({ caption, segments }: { caption: string; segments: rea
  * the right. A hairline above it separates it from the group before — no fill, no box, the way a printed report
  * starts a new chapter of a table.
  */
-export function RegionHeading({ count, label, noun, right }: { count: number; label: string; noun: string; right?: React.ReactNode }) {
+function RegionHeading({ count, label, noun, right }: { count: number; label: string; noun: string; right?: React.ReactNode }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-slate-900 pb-1.5">
       <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900">
@@ -356,7 +356,7 @@ export function GroupedCardGrid<T>({
  * A rep's square monogram — the first letters of the first two words of the name. A flat block, never a circle (the
  * square-edge rule) and never a stand-in photo: a monogram is honest about being initials.
  */
-export function RepMonogram({ muted, name }: { muted?: boolean; name: string }) {
+function RepMonogram({ muted, name }: { muted?: boolean; name: string }) {
   return (
     <span
       aria-hidden

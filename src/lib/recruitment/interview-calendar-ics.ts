@@ -35,7 +35,7 @@ export function calendarFeedPath(token: string): string {
 }
 
 /** A feed token: 32 random bytes, URL-safe — a bearer secret, like a copy link. */
-export function newCalendarFeedToken(): string {
+function newCalendarFeedToken(): string {
   return randomBytes(32).toString("base64url");
 }
 

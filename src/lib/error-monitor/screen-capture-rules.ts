@@ -15,7 +15,7 @@
 
 import { isUuid } from "@/lib/http/uuid";
 
-export const SCREEN_KINDS = ["error_screen", "refused_request", "failed_request"] as const;
+const SCREEN_KINDS = ["error_screen", "refused_request", "failed_request"] as const;
 export type ScreenKind = (typeof SCREEN_KINDS)[number];
 
 export function isScreenKind(value: unknown): value is ScreenKind {
@@ -30,7 +30,7 @@ const HOUR_MS = 60 * 60 * 1000;
 /** How long after the refusal arrives the picture is taken, so the page has drawn it. */
 export const CAPTURE_DELAY_MS = 900;
 /** The words read off a refused response, as the browser keeps them. The server keeps up to 1,000. */
-export const CLIENT_MESSAGE_CAP = 500;
+const CLIENT_MESSAGE_CAP = 500;
 /** A refusal body bigger than this is not read for its words (it is not a refusal sentence). */
 export const MAX_REFUSAL_BODY_BYTES = 64 * 1024;
 
@@ -87,7 +87,7 @@ export function isSkippedScreenPath(apiPath: string | null | undefined): boolean
  * Does this path segment name a RECORD (an id, an HR id, a date, a token) rather than a route? A
  * route word with a digit in it (`ireports360`) is not one; `B-10`, `123`, a UUID or `2026-10-23` is.
  */
-export function isIdentifierPathSegment(segment: string): boolean {
+function isIdentifierPathSegment(segment: string): boolean {
   let value = segment;
   try {
     value = decodeURIComponent(segment);

@@ -37,7 +37,7 @@ export type OfferPayInput = {
   basicShare?: number;
 };
 
-export type OfferPayLine = {
+type OfferPayLine = {
   annual: number;
   monthly: number;
 };

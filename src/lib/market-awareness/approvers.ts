@@ -40,7 +40,7 @@ export type MarketAwarenessApproverRole = (typeof MARKET_AWARENESS_APPROVER_ROLE
  * counts answers.
  */
 export const MARKET_AWARENESS_APPROVER_DECISIONS = ["approve", "reject", "return"] as const;
-export type MarketAwarenessApproverDecision = (typeof MARKET_AWARENESS_APPROVER_DECISIONS)[number];
+type MarketAwarenessApproverDecision = (typeof MARKET_AWARENESS_APPROVER_DECISIONS)[number];
 
 /** The role name as it is spelled in `app_auth_users.role`, which is free text. */
 export const MARKETING_MANAGER_ROLE = "Marketing Manager";
@@ -76,7 +76,7 @@ export type MarketAwarenessApproverSlot = {
 };
 
 /** A slot as it is about to be written, before it has an id. */
-export type PlannedApproverSlot = {
+type PlannedApproverSlot = {
   approverRole: MarketAwarenessApproverRole;
   lineId: number | null;
   isPrimaryLine: boolean;
@@ -269,8 +269,3 @@ export function summarizeApproverProgress(
   return { approved, total: slots.length, waitingOn };
 }
 
-/** The label a screen or a notification uses for one slot. Human-readable, never a code. */
-export function describeSlot(slot: Pick<MarketAwarenessApproverSlot, "approverRole" | "lineName">): string {
-  if (slot.approverRole === "marketing_manager") return "Marketing Manager";
-  return slot.lineName ? `National Sales Manager — ${slot.lineName}` : "National Sales Manager";
-}

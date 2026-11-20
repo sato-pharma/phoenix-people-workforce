@@ -21,7 +21,6 @@
 // them the other's reading as their own, and the feature would be worse than nothing.
 
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
-import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 
@@ -468,27 +467,3 @@ export function unseenCandidateIds(
   return candidateIds.filter((id) => !views[id]);
 }
 
-/**
- * Drop view rows for candidates that no longer exist.
- *
- * Not wired to anything today — `on delete cascade` handles the normal path. It exists for the
- * bulk-delete case, where rows are removed with raw SQL that bypasses the ORM entirely.
- */
-export async function pruneViewsForDeletedCandidates(candidateIds: readonly string[]): Promise<number> {
-  if (candidateIds.length === 0) return 0;
-  const supabase = recruitmentDb();
-  let removed = 0;
-  for (const batch of chunkIds([...candidateIds])) {
-    const { data, error } = await supabase
-      .from("ats_candidate_views")
-      .delete()
-      .in("candidate_id", batch)
-      .select("candidate_id");
-    if (error) {
-      if (isMissingRelation(error)) return removed;
-      throw error;
-    }
-    removed += (data ?? []).length;
-  }
-  return removed;
-}

@@ -33,10 +33,10 @@ import {
   WhatsAppInboxInputError,
 } from "@/lib/whatsapp-inbox/store";
 
-export const INBOX_TEXT_MAX_LENGTH = 4096;
-export const INBOX_CAPTION_MAX_LENGTH = 1024;
+const INBOX_TEXT_MAX_LENGTH = 4096;
+const INBOX_CAPTION_MAX_LENGTH = 1024;
 
-export const WINDOW_CLOSED_MESSAGE =
+const WINDOW_CLOSED_MESSAGE =
   "More than 24 hours have passed since this person last wrote, so WhatsApp only allows an approved template now.";
 
 export class WhatsAppInboxSendError extends Error {
@@ -50,7 +50,7 @@ export class WhatsAppInboxSendError extends Error {
 }
 
 /** A refused send, in a sentence. Exported for the test. */
-export function sendFailureMessage(result: Extract<WhatsAppSendResult, { ok: false }>): { message: string; status: number } {
+function sendFailureMessage(result: Extract<WhatsAppSendResult, { ok: false }>): { message: string; status: number } {
   if (result.reason === "window_closed") return { message: WINDOW_CLOSED_MESSAGE, status: 409 };
   if (result.reason === "disabled") return { message: "WhatsApp is not connected on this server.", status: 503 };
   return { message: `WhatsApp did not send the message${result.detail ? `: ${result.detail}` : "."}`, status: 502 };

@@ -15,9 +15,9 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type TmRepRef = { hrId: string; name: string; line: string | null; count: number };
-export type TmMonthPoint = { month: string; sessions: number; reps: number };
-export type TmVerdict = "efficient" | "adequate" | "needs_improvement";
+type TmRepRef = { hrId: string; name: string; line: string | null; count: number };
+type TmMonthPoint = { month: string; sessions: number; reps: number };
+type TmVerdict = "efficient" | "adequate" | "needs_improvement";
 
 export type TrainingManagerAnalytics = {
   hasData: boolean;

@@ -17,7 +17,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * Postgres restarted four times. Account: `docs/observability.md`.
  */
 
-export const AUDIT_OUTBOX_TABLE = "audit_log_outbox";
+const AUDIT_OUTBOX_TABLE = "audit_log_outbox";
 export const AUDIT_INSERT_TIMEOUT_MS = OUTBOX_FIRST_ATTEMPT_TIMEOUT_MS;
 export const AUDIT_INSERT_RETRY_TIMEOUT_MS = OUTBOX_RETRY_TIMEOUT_MS;
 
@@ -70,7 +70,7 @@ export function readQueuedAuditLog(payload: unknown): QueuedAuditLog | null {
  * FAILS answers "no" on purpose: a duplicate audit row is readable and explicable, a missing one
  * is not.
  */
-export async function auditLogAlreadyLanded(input: AuditLogInput, attemptedAt: string): Promise<boolean> {
+async function auditLogAlreadyLanded(input: AuditLogInput, attemptedAt: string): Promise<boolean> {
   try {
     const since = new Date(new Date(attemptedAt).getTime() - LANDING_PROBE_SLACK_MS).toISOString();
     const supabase = getSupabaseAdmin({ requestTimeoutMs: AUDIT_INSERT_RETRY_TIMEOUT_MS });
@@ -91,7 +91,7 @@ export async function auditLogAlreadyLanded(input: AuditLogInput, attemptedAt: s
   }
 }
 
-export const auditLogQueue: OutboxQueue<QueuedAuditLog> = {
+const auditLogQueue: OutboxQueue<QueuedAuditLog> = {
   alreadyLanded: (queued) => auditLogAlreadyLanded(queued.input, queued.attemptedAt),
   land: async (queued, timeoutMs) => {
     const supabase = getSupabaseAdmin({ requestTimeoutMs: timeoutMs });
@@ -102,7 +102,7 @@ export const auditLogQueue: OutboxQueue<QueuedAuditLog> = {
   table: AUDIT_OUTBOX_TABLE,
 };
 
-export const maybeDrainAuditLogOutbox = makeOpportunisticDrain(auditLogQueue);
+const maybeDrainAuditLogOutbox = makeOpportunisticDrain(auditLogQueue);
 
 /** Write one audit row, surviving an outage. Returns the error that ended it, or null. */
 export function persistAuditLogThroughOutbox(input: AuditLogInput): Promise<unknown | null> {

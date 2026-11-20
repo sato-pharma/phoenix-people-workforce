@@ -11,7 +11,7 @@
 import { logError } from "@/lib/observability/log";
 import { aiChatJson, hasAiProvider } from "@/lib/sales/ai/provider";
 
-export type HeaderMismatchSuggestion = { expected: string; suggestedHeader: string | null; note?: string };
+type HeaderMismatchSuggestion = { expected: string; suggestedHeader: string | null; note?: string };
 export type HeaderMismatchExplanation = { aiUsed: boolean; summary: string; suggestions: HeaderMismatchSuggestion[] };
 
 export type HeaderMismatchInput = {

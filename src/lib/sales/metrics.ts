@@ -168,7 +168,7 @@ export function sumSalesMetricMoney<T extends Record<string, unknown>>(rows: T[]
   return roundCurrency(sumSalesMetricRows(rows, key));
 }
 
-export function aggregateSalesMetricRows<T extends Record<string, unknown>>(rows: T[], key: string) {
+function aggregateSalesMetricRows<T extends Record<string, unknown>>(rows: T[], key: string) {
   const map = new Map<string, T[]>();
   rows.forEach((row) => {
     const value = valueAsText(row[key]) || "Unassigned";
@@ -181,7 +181,7 @@ export function isActiveSalesImportBatch(batch: Pick<SalesBatch, "replacedByBatc
   return batch.status === "approved" && !batch.replacedByBatchId;
 }
 
-export function salesBatchSortValue(batch: Pick<SalesBatch, "approvedAt" | "createdAt" | "status" | "version">) {
+function salesBatchSortValue(batch: Pick<SalesBatch, "approvedAt" | "createdAt" | "status" | "version">) {
   const statusPriority: Record<string, number> = {
     approved: 3,
     validated: 2,

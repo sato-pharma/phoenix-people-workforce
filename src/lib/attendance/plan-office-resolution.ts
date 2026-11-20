@@ -29,7 +29,7 @@ import {
 import type { PlanSlot } from "@/lib/weekly-planning/plan-v1";
 
 /** Which plan a lookup entry came from. A Phoenix CRM manager week is a weekly plan. */
-export type PlanOfficeSourceKind = "weekly" | "monthly";
+type PlanOfficeSourceKind = "weekly" | "monthly";
 
 /** One approved plan entry on one date. */
 export type PlanOfficeEntry = {
@@ -41,7 +41,7 @@ export type PlanOfficeEntry = {
 };
 
 /** The plan form's meeting activities (`PLAN_ACTIVITY_TYPES`) that count as office beside an Office half. */
-export const PLAN_MEETING_ACTIVITY_TYPES: readonly string[] = ["Meeting", "Meeting with Team"];
+const PLAN_MEETING_ACTIVITY_TYPES: readonly string[] = ["Meeting", "Meeting with Team"];
 
 export function isPlanMeetingActivity(activityType: string | null | undefined): boolean {
   return PLAN_MEETING_ACTIVITY_TYPES.includes(String(activityType ?? "").trim());

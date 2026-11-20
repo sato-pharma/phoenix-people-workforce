@@ -37,13 +37,13 @@ type Row = Record<string, unknown>;
  * Adding a SECOND clinic deliberately restamps nothing: a visit already measured "far" from his first
  * clinic stays as it was judged, so a clinic added after the fact can never launder an earlier visit.
  */
-export type RestampScope = "unplaced" | "all";
+type RestampScope = "unplaced" | "all";
 
 /** A place as the measurement needs it: where it is, and when it was captured at the door. */
 export type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt: string };
 
 /** One visit as `visitsToHoldBeforePlace` reads it — the stored row, before this re-stamp touches it. */
-export type UnplacedVisit = {
+type UnplacedVisit = {
   id: string;
   lat: number | null;
   lon: number | null;

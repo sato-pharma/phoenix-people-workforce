@@ -30,7 +30,7 @@
 
 export { canOpenPvTrainingEvidence, PV_TRAINING_EVIDENCE_HR_IDS } from "@/lib/pv-training/access";
 
-export type PvTrainingAttendee = {
+type PvTrainingAttendee = {
   /** The name exactly as the sheet prints it — what the QPPV types. */
   readonly name: string;
   /** The title as the sheet prints it. */

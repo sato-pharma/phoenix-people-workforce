@@ -24,7 +24,7 @@ import {
 import { brickSwitchOffRefusal, historicalNameCandidates, parseBrickRelocation, type BrickRelocation } from "./brick-move-result";
 import { selectAllRows } from "./list";
 
-export type MasterImportBlockedRow = { key: string; reason: string; row: number };
+type MasterImportBlockedRow = { key: string; reason: string; row: number };
 
 export type MasterImportResult = {
   blockedRows: MasterImportBlockedRow[];

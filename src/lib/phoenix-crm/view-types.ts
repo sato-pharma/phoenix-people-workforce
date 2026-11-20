@@ -163,7 +163,6 @@ export type {
 } from "@/lib/phoenix-crm/server/manager-customers";
 export type { ManagerTodayCustomer, ManagerTodayOwnCustomer, ManagerTodayView } from "@/lib/phoenix-crm/server/manager-visits";
 export type {
-  ManagerReport as ManagerPlanReport,
   ManagerReportView as ManagerPlanReportView,
 } from "@/lib/phoenix-crm/server/manager-plan-report";
 export type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/server/manager-day-detail";

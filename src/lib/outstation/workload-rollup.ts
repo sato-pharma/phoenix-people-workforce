@@ -31,7 +31,7 @@
  * 2026-09-21): a pharmacy visit is in `pharmacies` only, never inside `am` or `pm` — the split comes
  * from visitCountBucket (src/lib/crm/visit-count-buckets.ts), never from the period alone.
  */
-export type WorkloadDayCount = { am: number; date: string; pharmacies: number; pm: number };
+type WorkloadDayCount = { am: number; date: string; pharmacies: number; pm: number };
 
 /** Per person (HR ID) → per date → who they were recorded out with that date. */
 export type PartnersByPersonDate = Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;

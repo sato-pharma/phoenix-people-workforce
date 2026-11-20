@@ -90,7 +90,7 @@ export const ROI_RESULT_TONE: Record<MarketingRoiResultStatus, string> = {
   on_track: "border-emerald-300 bg-emerald-50 text-emerald-800",
 };
 
-export const ROI_RESULT_SWATCH: Record<MarketingRoiResultStatus, string> = {
+const ROI_RESULT_SWATCH: Record<MarketingRoiResultStatus, string> = {
   awaiting_data: "bg-sky-400",
   behind: "bg-amber-500",
   no_data: "bg-slate-300",
@@ -125,7 +125,7 @@ export function roiRowDataWords(row: Pick<MarketingRoiReportRow, "dataCoverage">
 
 // ── The team, from the band ──────────────────────────────────────────────────────────────────────
 
-export function roiResultCounts(kpi: Pick<MarketingRoiKpiBand, "awaitingDataCount" | "behindCount" | "noDataCount" | "onTrackCount">): Record<MarketingRoiResultStatus, number> {
+function roiResultCounts(kpi: Pick<MarketingRoiKpiBand, "awaitingDataCount" | "behindCount" | "noDataCount" | "onTrackCount">): Record<MarketingRoiResultStatus, number> {
   return { awaiting_data: kpi.awaitingDataCount, behind: kpi.behindCount, no_data: kpi.noDataCount, on_track: kpi.onTrackCount };
 }
 
@@ -240,10 +240,10 @@ export type RoiSortKey =
   | "actualCoverageRatio"
   | "shortfall"
   | "resultStatus";
-export type RoiSortDirection = "asc" | "desc";
+type RoiSortDirection = "asc" | "desc";
 export type RoiSortState = { key: RoiSortKey; direction: RoiSortDirection };
 
-export const ROI_SORT_LABEL: Record<RoiSortKey, string> = {
+const ROI_SORT_LABEL: Record<RoiSortKey, string> = {
   actualCoverageRatio: "Actual coverage",
   actualSalesValue: "Actual sales",
   customerName: "Customer",
@@ -262,7 +262,7 @@ export const ROI_DEFAULT_SORT: RoiSortState = { direction: "desc", key: "shortfa
 
 const RESULT_WEIGHT: Record<MarketingRoiResultStatus, number> = { awaiting_data: 2, behind: 1, no_data: 3, on_track: 0 };
 
-export function roiSortValue(row: MarketingRoiReportRow, key: RoiSortKey): string | number | null {
+function roiSortValue(row: MarketingRoiReportRow, key: RoiSortKey): string | number | null {
   switch (key) {
     case "requestCode":
       return row.requestCode;

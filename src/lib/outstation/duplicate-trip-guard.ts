@@ -25,7 +25,7 @@
  */
 
 /** A claim's request id → how every screen names it. */
-export function outstationClaimRef(requestId: number | string) {
+function outstationClaimRef(requestId: number | string) {
   return `OUTSTATION-${requestId}`;
 }
 
@@ -59,7 +59,7 @@ const NON_TRAVEL_TYPES = new Set(["meeting", "other"]);
  * no area or city name, and the ten same-day pairs on production that went to DIFFERENT areas sit
  * 0.5 to 10 km apart.
  */
-export const SAME_PLACE_KM = 1;
+const SAME_PLACE_KM = 1;
 
 function day(value: string | null | undefined) {
   return String(value ?? "").slice(0, 10);
@@ -93,7 +93,7 @@ export function kmBetween(
  * Whether two trips go to the same destination. The area decides when both sides have one; the
  * city when either lacks an area; the captured points only when neither name is there to read.
  */
-export function sameTripDestination(a: DuplicateTripCandidate, b: DuplicateTripCandidate): boolean {
+function sameTripDestination(a: DuplicateTripCandidate, b: DuplicateTripCandidate): boolean {
   const areaA = placeKey(a.toArea);
   const areaB = placeKey(b.toArea);
   if (areaA && areaB) return areaA === areaB;

@@ -68,7 +68,7 @@ export function TaChip({
  * on FIGURES, where they are meanings set by the builder (waiting, a problem, good) — never themes.
  * Class strings are literals, because Tailwind cannot see a class built at runtime.
  */
-export const TA_TONE = {
+const TA_TONE = {
   diamond: "bg-orange-500",
   edge: "bg-[linear-gradient(90deg,#F97316_0%,#FB923C_38%,rgba(251,146,60,0.12)_100%)]",
   headerWash: "bg-[linear-gradient(135deg,#FFF7EF_0%,#FFFFFF_60%)]",

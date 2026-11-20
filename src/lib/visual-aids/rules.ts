@@ -21,10 +21,10 @@ export const VISUAL_AIDS_BUCKET = "visual-aids";
 export const VISUAL_AID_MAX_BYTES = 50 * 1024 * 1024;
 
 /** A page count beyond this is not a visual aid; matches the table's check. */
-export const VISUAL_AID_MAX_PAGES = 500;
+const VISUAL_AID_MAX_PAGES = 500;
 
-export const VISUAL_AID_TITLE_MAX = 160;
-export const VISUAL_AID_PRODUCT_MAX = 120;
+const VISUAL_AID_TITLE_MAX = 160;
+const VISUAL_AID_PRODUCT_MAX = 120;
 
 export type VisualAidMimeType = "application/pdf" | "image/jpeg" | "image/png";
 
@@ -47,7 +47,7 @@ export type VisualAidStatus = "active" | "retired";
 export const VISUAL_AID_LINES: readonly string[] = OFFICIAL_LINE_VALUES.filter((line) => !isHeadOfficeLine(line));
 
 /** Canonical spelling of a typed line, or null when it is not one of the visual-aid lines. */
-export function resolveVisualAidLine(value: string | null | undefined): string | null {
+function resolveVisualAidLine(value: string | null | undefined): string | null {
   const official = resolveOfficialLineValue(value);
   return official && VISUAL_AID_LINES.includes(official) ? official : null;
 }

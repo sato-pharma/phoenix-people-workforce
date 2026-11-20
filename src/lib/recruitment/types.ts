@@ -69,7 +69,6 @@ export const terminalApplicationStages = [
   "application_rejected",
   "application_withdrawn",
 ] as const;
-export type TerminalApplicationStage = (typeof terminalApplicationStages)[number];
 
 export const recruitmentActionKeys = [
   "req_open",

@@ -55,7 +55,7 @@ type LoginScopeOverrideColumns = Pick<
 // 🔴 A FAILED READ THROWS (technical audit, 2026-10-23, F-15). It used to answer null, and null means
 // "no override" — the role's own, wider rule. So a product-restricted viewer saw the whole line
 // whenever this read failed. An access read that cannot be made refuses; it never widens.
-export const loadLoginScopeOverrides = cache(async (loginId: string): Promise<LoginScopeOverrideColumns | null> => {
+const loadLoginScopeOverrides = cache(async (loginId: string): Promise<LoginScopeOverrideColumns | null> => {
   if (!loginId) return null;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -96,16 +96,6 @@ export async function resolveViewerAllowedLines(ctx: AccessContext): Promise<str
   if (!ctx.loginId) return null;
   const override = await getUserLineScopeOverride(ctx.loginId);
   return override;
-}
-
-/**
- * Resolve which product codes restrict this viewer's sales and marketing-request
- * visibility. Null = use line-based scope. Empty array = sees nothing. Non-empty
- * = only those codes are visible.
- */
-export async function resolveViewerAllowedProductCodes(ctx: AccessContext): Promise<string[] | null> {
-  if (!ctx.loginId) return null;
-  return getUserProductScopeOverride(ctx.loginId);
 }
 
 // ─── products ─────────────────────────────────────────────────────────────────

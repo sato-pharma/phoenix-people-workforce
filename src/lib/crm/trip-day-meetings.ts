@@ -23,7 +23,7 @@
 import { MEETING_TYPE, VENDOR_MEETING_TYPE } from "@/lib/crm/visit-types";
 
 /** Group Meeting — the vendor's own code, kept as its own activity in the visit-type filter. */
-export const GROUP_MEETING_VISIT_TYPE = -2;
+const GROUP_MEETING_VISIT_TYPE = -2;
 
 export const TRIP_DAY_MEETING_VISIT_TYPES: ReadonlySet<number> = new Set<number>([
   VENDOR_MEETING_TYPE,

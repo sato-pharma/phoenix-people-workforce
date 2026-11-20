@@ -24,7 +24,7 @@ import { parseLetterDate, isIsoDate } from "@/lib/offers/dates";
  * considered acceptance when he filled the data and submit"). A scanner can never accept an offer.
  */
 
-export type OfferAcceptPayload = { v: 1; o: string; exp: number };
+type OfferAcceptPayload = { v: 1; o: string; exp: number };
 
 /** How long after the offer's own "valid until" date the link keeps opening. */
 export const OFFER_ACCEPT_GRACE_DAYS = 14;

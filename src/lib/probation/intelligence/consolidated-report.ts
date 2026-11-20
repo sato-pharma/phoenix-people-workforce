@@ -10,7 +10,7 @@ import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { getProbationSalesEvidence, type ProbationSalesEvidence } from "./sales-evidence";
 
 import { getProbationConfig } from "./config";
-import { getProbationCaseByEmployee, mapProbationCaseRow } from "./cases";
+import { mapProbationCaseRow } from "./cases";
 import { getCaseAssessments, getSfeEvidencePreview } from "./assessments";
 import { listDevelopmentActionsByCase } from "./dev-actions";
 import { getCaseScore } from "./scoring-service";
@@ -240,13 +240,3 @@ export async function buildConsolidatedReport(
   };
 }
 
-/** Resolve a report by employee HR_ID (portal convenience). */
-export async function buildConsolidatedReportByEmployee(
-  access: AccessContext,
-  employeeHrId: string,
-  nowIso: string = new Date().toISOString(),
-): Promise<ConsolidatedReport | null> {
-  const probationCase = await getProbationCaseByEmployee(employeeHrId);
-  if (!probationCase) return null;
-  return buildConsolidatedReport(access, probationCase.id, nowIso);
-}

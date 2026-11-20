@@ -39,7 +39,7 @@ export type ZoomFetch = (input: string, init?: RequestInit) => Promise<Response>
 export const ZOOM_CALL_DEADLINE_MS = 15_000;
 const zoomDeadline = () => AbortSignal.timeout(ZOOM_CALL_DEADLINE_MS);
 
-export class ZoomRequestError extends Error {
+class ZoomRequestError extends Error {
   // NOT a TypeScript parameter property: the test runner strips types and cannot compile one.
   readonly status: number;
   /** Zoom's own error code, when it sent one (3001: no such meeting or not ended; 124: bad token). */
@@ -248,13 +248,13 @@ async function zoomGetJson(config: ZoomConfig, path: string, fallback: string, f
  * A meeting UUID in a path. Zoom's rule: a UUID that begins with "/" or holds "//" is encoded TWICE,
  * or the request lands on the wrong address and answers 404 for a meeting that exists.
  */
-export function zoomUuidPath(uuid: string): string {
+function zoomUuidPath(uuid: string): string {
   const once = encodeURIComponent(uuid);
   return uuid.startsWith("/") || uuid.includes("//") ? encodeURIComponent(once) : once;
 }
 
 /** "Not held yet / no such instance" — an empty answer, not a failure. */
-export function isNotHeldYet(error: unknown): boolean {
+function isNotHeldYet(error: unknown): boolean {
   return error instanceof ZoomRequestError && (error.status === 404 || error.code === 3001);
 }
 
@@ -306,7 +306,7 @@ export type ZoomAttendee = { name: string; email: string | null; joinedAt: strin
  * so a dropped connection and a rejoin read as two; they are summed here, earliest join to latest
  * leave. Keyed by e-mail when Zoom has one, else by the name shown in the meeting.
  */
-export function mergeZoomParticipants(rows: ReadonlyArray<Record<string, unknown>>): ZoomAttendee[] {
+function mergeZoomParticipants(rows: ReadonlyArray<Record<string, unknown>>): ZoomAttendee[] {
   const byPerson = new Map<string, ZoomAttendee>();
   for (const row of rows) {
     const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : "Unnamed participant";
@@ -370,7 +370,7 @@ function summaryText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export function readZoomSummary(body: Record<string, unknown>): ZoomMeetingSummary {
+function readZoomSummary(body: Record<string, unknown>): ZoomMeetingSummary {
   const details = Array.isArray(body.summary_details)
     ? (body.summary_details as Array<Record<string, unknown>>)
         .map((item) => ({ label: summaryText(item.label) ?? "", summary: summaryText(item.summary) ?? "" }))
@@ -410,7 +410,7 @@ export type ZoomPollQuestion = { name: string; type: "single" | "multiple" | "sh
  * The poll as Zoom wants it. A written answer makes it an "advanced poll" (poll_type 2); choice
  * questions alone are a plain poll (poll_type 1), which every account can run.
  */
-export function zoomPollBody(input: { title: string; questions: readonly ZoomPollQuestion[] }) {
+function zoomPollBody(input: { title: string; questions: readonly ZoomPollQuestion[] }) {
   const advanced = input.questions.some((question) => question.type === "short_answer");
   return {
     anonymous: false,
@@ -463,7 +463,7 @@ export async function deleteZoomPoll(config: ZoomConfig, meetingId: string, poll
 export type ZoomPollAnswer = { participant: string; email: string | null; question: string; answer: string; at: string | null };
 
 /** Every answer given, one row per person per question. Zoom joins a multiple choice with ";". */
-export function readZoomPollAnswers(body: Record<string, unknown>): ZoomPollAnswer[] {
+function readZoomPollAnswers(body: Record<string, unknown>): ZoomPollAnswer[] {
   const rows: ZoomPollAnswer[] = [];
   const people = Array.isArray(body.questions) ? (body.questions as Array<Record<string, unknown>>) : [];
   for (const person of people) {

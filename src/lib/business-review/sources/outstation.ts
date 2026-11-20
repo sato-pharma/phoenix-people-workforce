@@ -28,7 +28,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import type { ReviewWindow } from "../period";
 
-export type OutstationFact = {
+type OutstationFact = {
   period: string;
   hrId: string;
   /** Payable amount, counted unless the row is rejected. */

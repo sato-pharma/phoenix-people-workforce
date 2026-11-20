@@ -233,11 +233,6 @@ export function workQueuesFor(input: WorkQueueInput): ScreeningWorkQueue[] {
   return queues;
 }
 
-/** True when this candidate belongs in that pile. */
-export function isInWorkQueue(input: WorkQueueInput, queue: ScreeningWorkQueue): boolean {
-  return workQueuesFor(input).includes(queue);
-}
-
 export type WorkQueueCounts = Record<ScreeningWorkQueue, number>;
 
 /** An empty tally — every queue present at zero, so a rail never has to guard a missing key. */

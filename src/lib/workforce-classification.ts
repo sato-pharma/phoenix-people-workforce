@@ -57,7 +57,7 @@ export type SalesOwnershipRecord = Record<string, unknown> & {
   territory?: string | null;
 };
 
-export type SalesOwnershipVacancySignal = Record<string, unknown> & {
+type SalesOwnershipVacancySignal = Record<string, unknown> & {
   areaId?: number | null;
   areaName?: string | null;
   lineId?: number | null;
@@ -217,7 +217,7 @@ function isOthersText(value: unknown) {
   return text === "others" || text === "other" || text === "unassigned" || text === "others / unassigned";
 }
 
-export function isApprovedOthersSalesBucket(source: {
+function isApprovedOthersSalesBucket(source: {
   employeeHrId?: string | null;
   employeeLookupKey?: string | null;
   employeeName?: string | null;

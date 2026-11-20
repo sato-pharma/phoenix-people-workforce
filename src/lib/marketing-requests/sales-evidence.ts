@@ -26,13 +26,13 @@ import { isUuid } from "@/lib/http/uuid";
  */
 
 /** One month of the customer's history. */
-export type SalesEvidenceMonth = {
+type SalesEvidenceMonth = {
   period: string;
   qty: number;
   value: number;
 };
 
-export type SalesEvidenceBreakdown = {
+type SalesEvidenceBreakdown = {
   label: string;
   qty: number;
   value: number;

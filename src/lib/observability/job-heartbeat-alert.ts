@@ -42,7 +42,7 @@ function cairoDayKey(): string {
 }
 
 /** Pure message builder — no IO, so it is unit-testable without a database. */
-export function buildJobStrandedMessage(verdict: JobHeartbeatVerdict): string {
+function buildJobStrandedMessage(verdict: JobHeartbeatVerdict): string {
   const strandedCount = verdict.stranded.length;
   const lead =
     strandedCount > 0

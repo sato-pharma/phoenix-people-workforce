@@ -41,7 +41,7 @@ export const VISIT_ARCHIVE_TAB_REASONS: Readonly<Record<VisitArchiveTab, readonl
   far: ["far"],
 };
 
-export function parseVisitArchiveTab(value: string | null | undefined): VisitArchiveTab {
+function parseVisitArchiveTab(value: string | null | undefined): VisitArchiveTab {
   const text = String(value ?? "").trim();
   return (VISIT_ARCHIVE_TABS as readonly string[]).includes(text) ? (text as VisitArchiveTab) : "retired";
 }
@@ -61,7 +61,7 @@ export function visitArchivePointText(lat: number | null | undefined, lon: numbe
 /** Rows on one page of the list. */
 export const VISIT_ARCHIVE_PAGE_SIZE = 100;
 
-export function parseVisitArchiveReason(value: string | null | undefined): VisitArchiveReason | null {
+function parseVisitArchiveReason(value: string | null | undefined): VisitArchiveReason | null {
   const text = String(value ?? "").trim();
   return (VISIT_ARCHIVE_REASONS as readonly string[]).includes(text) ? (text as VisitArchiveReason) : null;
 }
@@ -153,13 +153,13 @@ export function decodeVisitArchiveCursor(value: string | null | undefined): Visi
 // ── The other filters ──────────────────────────────────────────────────────────────────────────────
 
 /** An HR id picked from the rep list. Anything else is dropped rather than sent to the database. */
-export function parseVisitArchiveRep(value: string | null | undefined): string | null {
+function parseVisitArchiveRep(value: string | null | undefined): string | null {
   const text = String(value ?? "").trim();
   return /^[A-Za-z0-9-]{1,24}$/.test(text) ? text : null;
 }
 
 /** A line code picked from the line list. */
-export function parseVisitArchiveLine(value: string | null | undefined): string | null {
+function parseVisitArchiveLine(value: string | null | undefined): string | null {
   const text = String(value ?? "").trim();
   return /^[A-Za-z0-9 _&().-]{1,40}$/.test(text) ? text : null;
 }

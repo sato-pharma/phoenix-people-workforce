@@ -39,7 +39,7 @@ export type TelegramTemplateButton = {
   url: string;
 };
 
-export type TelegramTemplateDefinition = {
+type TelegramTemplateDefinition = {
   allowedPlaceholders: string[];
   defaultMessage: string;
   defaultTitle: string;

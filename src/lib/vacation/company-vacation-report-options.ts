@@ -24,7 +24,7 @@ import {
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type CompanyVacationReportEmployeeOption = {
+type CompanyVacationReportEmployeeOption = {
   hrId: string;
   jobTitle: string | null;
   label: string;

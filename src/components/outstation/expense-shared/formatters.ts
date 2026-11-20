@@ -14,19 +14,9 @@ const EGP = new Intl.NumberFormat("en-US", {
   style: "currency",
 });
 
-const EGP_PRECISE = new Intl.NumberFormat("en-US", {
-  currency: "EGP",
-  maximumFractionDigits: 2,
-  style: "currency",
-});
-
 /** Whole-EGP currency. */
 export function egp(value: number | null | undefined): string {
   return EGP.format(Number.isFinite(value as number) ? (value as number) : 0);
-}
-
-export function egpPrecise(value: number | null | undefined): string {
-  return EGP_PRECISE.format(Number.isFinite(value as number) ? (value as number) : 0);
 }
 
 /** Compact EGP for chart axes / tight chips (e.g. "EGP 12.3k"). */
@@ -70,7 +60,7 @@ export function formatShortDate(value: string | null | undefined): string {
 const VALID_PRESETS: ExpenseDatePreset[] = ["all", "today", "7d", "30d", "90d", "month", "custom"];
 const VALID_SOURCES: ExpenseSource[] = ["historical", "live", "manual"];
 
-export const EXPENSE_DEFAULT_PRESET: ExpenseDatePreset = "all";
+const EXPENSE_DEFAULT_PRESET: ExpenseDatePreset = "all";
 
 export const EXPENSE_PRESET_LABELS: Record<ExpenseDatePreset, string> = {
   all: "All time",
@@ -93,7 +83,7 @@ export const EXPENSE_SOURCE_LABELS: Record<ExpenseSource, string> = {
  * URLSearchParams (data/export routes) and resolved Next searchParams records
  * (the server page) via a thin adapter.
  */
-export function parseExpenseFilters(get: (key: string) => string | null): ExpenseCommandFilters {
+function parseExpenseFilters(get: (key: string) => string | null): ExpenseCommandFilters {
   const presetRaw = get("preset");
   const preset = VALID_PRESETS.includes(presetRaw as ExpenseDatePreset)
     ? (presetRaw as ExpenseDatePreset)
@@ -135,7 +125,7 @@ export function parseExpenseFiltersFromRecord(
 }
 
 /** Encode filters to URLSearchParams (omitting empties + the default preset). */
-export function expenseFiltersToParams(filters: ExpenseCommandFilters): URLSearchParams {
+function expenseFiltersToParams(filters: ExpenseCommandFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.preset && filters.preset !== EXPENSE_DEFAULT_PRESET) params.set("preset", filters.preset);
   if (filters.preset === "custom") {

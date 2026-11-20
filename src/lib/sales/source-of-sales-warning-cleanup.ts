@@ -41,7 +41,7 @@ export type SourceOfSalesWarningCategory =
   | "product_name"
   | "region";
 
-export type SourceOfSalesWarningGroup = {
+type SourceOfSalesWarningGroup = {
   category: SourceOfSalesWarningCategory;
   count: number;
   distributorCode: string;

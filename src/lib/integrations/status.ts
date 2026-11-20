@@ -32,7 +32,7 @@ export type IntegrationHealthCell =
   /** The source could not be read just now. */
   | { kind: "unavailable"; why: string };
 
-export type IntegrationHealth = { lastSuccess: IntegrationHealthCell; lastFailure: IntegrationHealthCell };
+type IntegrationHealth = { lastSuccess: IntegrationHealthCell; lastFailure: IntegrationHealthCell };
 
 export type IntegrationRow = {
   id: string;

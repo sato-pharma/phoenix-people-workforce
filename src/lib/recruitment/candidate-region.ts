@@ -390,12 +390,6 @@ export function candidateRegionForGovernorate(raw: string | null | undefined): C
   return null;
 }
 
-/** Human-readable region name for a governorate, for display next to the value itself. */
-export function candidateRegionLabelForGovernorate(raw: string | null | undefined): string | null {
-  const code = candidateRegionForGovernorate(raw);
-  return code ? candidateRegionLabels[code] : null;
-}
-
 /** What a screen calls someone whose address is outside Egypt, so it never reads as a blank. */
 export const foreignRegionLabel = "Outside Egypt";
 

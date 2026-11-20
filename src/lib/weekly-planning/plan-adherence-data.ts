@@ -132,7 +132,7 @@ async function loadRosterNames(hrIds: readonly string[]): Promise<Map<string, st
  * has already happened happened. A manager who genuinely went out with a rep who has since resigned
  * kept his plan, and hiding that visit would score him as `no_trace` for turning up.
  */
-export async function loadPlanAdherenceEvidence(
+async function loadPlanAdherenceEvidence(
   ownerHrId: string | null | undefined,
   partnerHrIds: readonly string[],
   dateFrom: string,

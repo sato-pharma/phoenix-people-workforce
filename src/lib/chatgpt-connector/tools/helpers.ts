@@ -9,7 +9,7 @@ import { hrIdsMatch } from "@/lib/hr-id";
 import { ToolRefusal } from "@/lib/chatgpt-connector/types";
 
 /** The most rows any tool hands back in `data`, unless the tool says otherwise. */
-export const DEFAULT_ROW_CAP = 200;
+const DEFAULT_ROW_CAP = 200;
 
 const MONTH_NAMES = [
   "January",

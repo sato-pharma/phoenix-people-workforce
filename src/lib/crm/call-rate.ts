@@ -368,7 +368,7 @@ export type CallRateSlice = CallRateSliceOf<number>;
 export type PharmacyCallRateSlice = CallRateSliceOf<number | null>;
 
 /** A day a rep exceeded the campaign limit. */
-export type CampaignOverLimitDay = {
+type CampaignOverLimitDay = {
   day: string;
   campaignCalls: number;
   /** Verified visits the same day — zero here is the strongest version of the signal. */

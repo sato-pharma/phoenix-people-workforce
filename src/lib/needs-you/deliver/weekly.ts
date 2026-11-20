@@ -40,8 +40,8 @@ import { NEEDS_YOU_VENDORS_NOT_READ_LINE } from "../vendor-accounts-rules";
 
 import { NEEDS_YOU_BOARD_PATH } from "./daily";
 
-export const NEEDS_YOU_WEEKLY_JOB = "needs-you-weekly-email";
-export const NEEDS_YOU_WEEKLY_EVENT = "needs_you_weekly_digest";
+const NEEDS_YOU_WEEKLY_JOB = "needs-you-weekly-email";
+const NEEDS_YOU_WEEKLY_EVENT = "needs_you_weekly_digest";
 
 /**
  * Sunday — the start of the Egyptian work week, and the day the retired weekly system health digest

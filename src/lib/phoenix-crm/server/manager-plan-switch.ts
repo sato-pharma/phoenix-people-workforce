@@ -33,8 +33,6 @@ import { loadLiveTeamSeatIdsForDisplay } from "@/lib/phoenix-crm/server/live-tea
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export const DM_PLANS_IN_PHOENIX_CRM = "Forbidden: your week is planned in Phoenix CRM now. Open Phoenix CRM, then Plan.";
-
 /**
  * ⚠️ SINCE 14 NOV 2026 THE LEGACY FORM IS CLOSED TO EVERYONE (DR-02, weekly-planning/legacy-closed.ts), and
  * the no-weekly-plan deduction finds his week in Phoenix CRM too, so nobody files both any more. This rule

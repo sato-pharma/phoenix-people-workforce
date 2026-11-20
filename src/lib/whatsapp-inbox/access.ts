@@ -8,8 +8,6 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 
-export const WHATSAPP_INBOX_PATH = "/recruitment/whatsapp-inbox";
-
 export function canUseWhatsAppInbox(access: Pick<AccessContext, "role" | "source"> | null | undefined): boolean {
   if (!access || access.source === "guest") return false;
   return access.role === "Super Admin" || access.role === "HR Resourcing";

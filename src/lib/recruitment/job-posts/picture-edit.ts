@@ -50,7 +50,7 @@ export function layerEdits(baked: Record<string, string>, typed: Record<string, 
 }
 
 /** The draft rows the picture's lines stand for: the picture prints only rows with words, in order. */
-export function printedRows(lines: JobPostLine[]): number[] {
+function printedRows(lines: JobPostLine[]): number[] {
   return lines.flatMap((l, i) => (l.lead.trim() || l.rest.trim() ? [i] : []));
 }
 

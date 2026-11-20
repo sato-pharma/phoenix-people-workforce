@@ -20,10 +20,10 @@
 // Messages Phoenix itself sends are NOT read from here: Meta does not echo Cloud API sends. They are
 // recorded at the moment of sending (store.ts, recordInboxOutbound).
 
-export type InboxDirection = "inbound" | "outbound";
-export type InboxOrigin = "contact" | "phoenix" | "handset";
+type InboxDirection = "inbound" | "outbound";
+type InboxOrigin = "contact" | "phoenix" | "handset";
 
-export type InboxMedia = {
+type InboxMedia = {
   id: string;
   mimeType: string | null;
   fileName: string | null;
@@ -105,7 +105,7 @@ export function unixSecondsToIso(value: unknown): string | null {
  * structure — a location, a contact card, a reaction — a plain sentence describing it, so the chat
  * list never shows a type code.
  */
-export function describeMessageNode(node: Record<string, unknown>): {
+function describeMessageNode(node: Record<string, unknown>): {
   messageType: string;
   body: string | null;
   media: InboxMedia | null;

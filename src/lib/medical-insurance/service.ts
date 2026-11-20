@@ -53,7 +53,7 @@ import type {
 } from "./view";
 
 /** A refusal the person can act on: the route answers it with its own message, as a 400. */
-export class MedicalInsuranceInputError extends Error {}
+class MedicalInsuranceInputError extends Error {}
 
 const POLICY_COLUMNS = "id, insurer, policy_number, proposal_code, starts_on, ends_on, rate_card";
 const MEMBER_COLUMNS =

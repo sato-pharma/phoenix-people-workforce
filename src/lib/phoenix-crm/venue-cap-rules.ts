@@ -30,7 +30,7 @@ export const VENUE_CAP_MAX = 20;
 
 export const VENUE_CAP_OUT_OF_RANGE_TEXT = "Write a whole number above the company number, 20 at most.";
 
-export const VENUE_CAP_ACTIONS = ["lift", "unlift", "end_partial", "raise", "standard"] as const;
+const VENUE_CAP_ACTIONS = ["lift", "unlift", "end_partial", "raise", "standard"] as const;
 
 export type VenueCapAction = (typeof VENUE_CAP_ACTIONS)[number];
 

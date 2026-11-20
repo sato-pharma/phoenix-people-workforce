@@ -32,9 +32,9 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { COMPANY_MOST, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 
 /** What the Super Admin sends to change who was on the visit. Null on the wire when he left it alone. */
-export type VisitEditWho = { choice: VisitCompanyChoice; picked: string[] };
+type VisitEditWho = { choice: VisitCompanyChoice; picked: string[] };
 
-export type VisitEditEntry = {
+type VisitEditEntry = {
   visitId: string;
   /** Null: who was on the visit is left exactly as the rep recorded it. */
   who: VisitEditWho | null;

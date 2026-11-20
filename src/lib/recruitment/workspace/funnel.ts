@@ -10,17 +10,8 @@
 import { workspaceRoleTabs, NEEDS_PLACING, type WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceCounts, WorkspaceFunnel } from "@/lib/recruitment/workspace/types";
 
-export const funnelStages = ["received", "shortlisted", "sent_to_manager", "interviewed", "offered", "hired"] as const;
+const funnelStages = ["received", "shortlisted", "sent_to_manager", "interviewed", "offered", "hired"] as const;
 export type FunnelStage = (typeof funnelStages)[number];
-
-export const funnelStageLabels: Record<FunnelStage, string> = {
-  hired: "Hired",
-  interviewed: "Interviewed",
-  offered: "Offered",
-  received: "Received",
-  sent_to_manager: "Sent to manager",
-  shortlisted: "Shortlisted",
-};
 
 function count(raw: unknown): number {
   const value = typeof raw === "number" ? raw : Number(raw);
@@ -31,7 +22,7 @@ function record(raw: unknown): Record<string, unknown> {
   return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
 }
 
-export function emptyWorkspaceFunnel(): WorkspaceFunnel {
+function emptyWorkspaceFunnel(): WorkspaceFunnel {
   return { hired: 0, interviewed: 0, offered: 0, received: 0, sent_to_manager: 0, shortlisted: 0 };
 }
 

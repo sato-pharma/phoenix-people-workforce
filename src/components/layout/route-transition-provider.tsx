@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { ActivityTracker } from "@/components/activity/activity-tracker";
@@ -23,7 +14,7 @@ import {
   routeStallRetry,
 } from "@/lib/navigation/route-stall";
 
-export const ROUTE_TRANSITION_EVENT = "phoenix:route-transition";
+const ROUTE_TRANSITION_EVENT = "phoenix:route-transition";
 
 type RouteTransitionContextValue = {
   pending: boolean;
@@ -52,10 +43,6 @@ function isModifiedClick(event: MouseEvent | ReactMouseEvent) {
 export function announceRouteTransition(href?: string) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(ROUTE_TRANSITION_EVENT, { detail: { href } }));
-}
-
-export function useRouteTransition() {
-  return useContext(RouteTransitionContext);
 }
 
 export function RouteTransitionProvider({ children }: { children: ReactNode }) {

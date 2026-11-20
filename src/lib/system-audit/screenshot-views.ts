@@ -52,13 +52,13 @@ const SCREEN_KIND_LABELS: Record<string, string> = {
   failed_request: "Request failed",
 };
 
-export function screenshotKindLabel(viewed: Pick<ViewedScreenshot, "source" | "screenKind">): string {
+function screenshotKindLabel(viewed: Pick<ViewedScreenshot, "source" | "screenKind">): string {
   if (viewed.source === "crash") return "Crash";
   return SCREEN_KIND_LABELS[viewed.screenKind ?? ""] ?? "Screen";
 }
 
 /** The person in words: their name, else their HR ID, else their login, else "an unknown person". */
-export function screenshotSubject(viewed: Pick<ViewedScreenshot, "hrId" | "loginId" | "isTest">, name: string | null): string {
+function screenshotSubject(viewed: Pick<ViewedScreenshot, "hrId" | "loginId" | "isTest">, name: string | null): string {
   const who = name?.trim() || viewed.hrId || (viewed.loginId ? `login ${viewed.loginId}` : "an unknown person");
   return viewed.isTest ? `${who} (test account)` : who;
 }

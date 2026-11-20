@@ -14,7 +14,7 @@
 import { buildVisitReportDashboard, countVisitReportFilled, visitReportDays } from "@/lib/phoenix-crm/visit-report-dashboard";
 import type { VisitReportField, VisitReportRow, VisitReportView } from "@/lib/phoenix-crm/visit-report-fields";
 
-export type VisitReportPlannedFilter = "planned" | "unplanned";
+type VisitReportPlannedFilter = "planned" | "unplanned";
 
 export type VisitReportFilter = {
   /** Who visited, by name, exactly as the rows carry it — ANY person on the visit, not only the one it is credited to. */

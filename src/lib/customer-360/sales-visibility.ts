@@ -35,7 +35,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
 
 /** The line name the confidential money is reported under. */
-export const HEAD_OFFICE_LINE = "Head Office";
+const HEAD_OFFICE_LINE = "Head Office";
 
 export type CustomerSalesRollupRow = {
   readonly officialLine: string | null;
@@ -46,7 +46,7 @@ export type CustomerSalesRollupRow = {
   readonly valueRestricted: number | null;
 };
 
-export type CustomerSalesLineTotal = {
+type CustomerSalesLineTotal = {
   readonly confidential: boolean;
   readonly line: string;
   readonly units: number;

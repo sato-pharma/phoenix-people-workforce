@@ -128,7 +128,7 @@ export async function resolveAuArea(areaName: string | null | undefined): Promis
 }
 
 /** The AU area behind a code, or null when the code is not an active area. */
-export async function auAreaByCode(areaCode: string | null | undefined): Promise<AuArea | null> {
+async function auAreaByCode(areaCode: string | null | undefined): Promise<AuArea | null> {
   const code = typeof areaCode === "string" ? areaCode.trim() : "";
   if (!code) return null;
   const { byCode } = await loadAuAreas();

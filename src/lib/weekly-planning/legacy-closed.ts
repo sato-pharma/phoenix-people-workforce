@@ -18,9 +18,6 @@
 /** True since DR-02. Every legacy write function checks it first (`assertLegacyPlansOpen`, service.ts). */
 export const LEGACY_PLANS_CLOSED = true;
 
-/** The day the legacy form closed (Cairo). */
-export const LEGACY_PLANS_CLOSED_ON = "2026-11-14";
-
 /** What a refused write says. Plain words, and where to go instead. */
 export const LEGACY_PLANS_CLOSED_MESSAGE =
   "This Plans tab is history now. Weekly plans are made, sent and approved in Phoenix CRM: open Phoenix CRM, then Plan.";

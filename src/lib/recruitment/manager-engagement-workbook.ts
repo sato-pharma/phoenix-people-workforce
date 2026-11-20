@@ -75,7 +75,7 @@ const DATE_FMT = "dd mmm yyyy";
  * CV a manager read on paper months ago still reads as not-opened. Kept in step with the amber band
  * the screen shows above the same table.
  */
-export const ENGAGEMENT_READING_NOTE =
+const ENGAGEMENT_READING_NOTE =
   "“Received” is every CV in the manager’s My Candidates folder — the ones in their areas plus " +
   "anything sent straight to them — not only what was hand-pushed. A CV counts as “Opened” once they " +
   "open it in the app. Nothing recorded an open before tracking began, so a CV that arrived before then " +

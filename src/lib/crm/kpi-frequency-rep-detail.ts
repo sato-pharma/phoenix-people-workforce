@@ -172,7 +172,7 @@ export function kpiRepFrequencySummary(detail: Pick<KpiCoverageDetail, "covered"
 export const KPI_SHORT_DEPTHS = ["one", "two", "three-plus", "never"] as const;
 export type KpiShortDepth = (typeof KPI_SHORT_DEPTHS)[number];
 
-export const KPI_SHORT_DEPTH_LABEL: Record<KpiShortDepth, string> = {
+const KPI_SHORT_DEPTH_LABEL: Record<KpiShortDepth, string> = {
   one: "1 visit short",
   two: "2 visits short",
   "three-plus": "3 or more short",
@@ -320,7 +320,7 @@ function finishGroup(group: KpiFrequencyGroup): KpiFrequencyGroup {
  * the most owed visits leads, then the larger, then alphabetically. Every doctor is in exactly one group, so
  * the groups add up to the summary.
  */
-export function kpiFrequencyGroups(
+function kpiFrequencyGroups(
   rows: readonly KpiFrequencyRow[],
   keyOf: (doctor: KpiCoverageDoctor) => string,
   order?: readonly string[],

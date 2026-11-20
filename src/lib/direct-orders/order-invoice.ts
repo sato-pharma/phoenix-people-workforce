@@ -44,7 +44,7 @@ import { normalizeVenueType, venueRequiresDistributorCode } from "@/lib/venues/v
 const ORDER_INVOICE_SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 /** The reason a claim filed from an order's invoice carries. The reviewer reads it on the desk. */
-export const DIRECT_ORDER_INVOICE_CLAIM_REASON = "Filed with the distributor invoice attached to the direct order.";
+const DIRECT_ORDER_INVOICE_CLAIM_REASON = "Filed with the distributor invoice attached to the direct order.";
 
 /** Same row shape as service.ts's private insertEvent, canonical actor id included. */
 async function insertOrderEvent(input: {

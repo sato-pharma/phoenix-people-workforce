@@ -28,7 +28,7 @@ function addHours(iso: string, hours: number): string {
 }
 
 /** Anchor the SLA clock at the start (midnight) of the DV field day. */
-export function slaAnchorFromDvDate(dvDate: string): string {
+function slaAnchorFromDvDate(dvDate: string): string {
   // dvDate is a YYYY-MM-DD date-only; anchor at UTC midnight of that day.
   return new Date(`${dvDate}T00:00:00.000Z`).toISOString();
 }

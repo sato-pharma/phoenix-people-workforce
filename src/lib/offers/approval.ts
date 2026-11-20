@@ -30,10 +30,10 @@ import {
   type SystemNotificationChannel,
 } from "@/lib/notifications/system";
 
-export const OFFER_APPROVAL_MODULE = "offers" as const;
-export const OFFER_APPROVAL_REQUESTED_EVENT = "offer_approval_requested" as const;
-export const OFFER_APPROVAL_RETURNED_EVENT = "offer_approval_returned" as const;
-export const OFFER_APPROVAL_APPROVED_EVENT = "offer_approval_approved" as const;
+const OFFER_APPROVAL_MODULE = "offers" as const;
+const OFFER_APPROVAL_REQUESTED_EVENT = "offer_approval_requested" as const;
+const OFFER_APPROVAL_RETURNED_EVENT = "offer_approval_returned" as const;
+const OFFER_APPROVAL_APPROVED_EVENT = "offer_approval_approved" as const;
 
 /** The role that approves: the Super Admin seat, which is the HR Manager. */
 export const OFFER_APPROVER_ROLE = "Super Admin" as const;
@@ -67,11 +67,11 @@ function money(value: number): string {
 
 type OfferNoticeFields = Pick<OfferRecord, "candidateName" | "id" | "reference" | "startDate" | "title" | "totalMonthly">;
 
-export function offerApprovalRequestTitle(offer: Pick<OfferRecord, "candidateName">): string {
+function offerApprovalRequestTitle(offer: Pick<OfferRecord, "candidateName">): string {
   return `Job offer awaiting your approval: ${stated(offer.candidateName)}`;
 }
 
-export function offerApprovalRequestMessage(offer: OfferNoticeFields): string {
+function offerApprovalRequestMessage(offer: OfferNoticeFields): string {
   return `${stated(offer.candidateName)} — ${stated(offer.title)}, ${money(offer.totalMonthly)} a month, starting ${stated(offer.startDate)}. Nothing has been sent to the candidate. Open Job Offers to edit it, approve and send it, or reject it.`;
 }
 

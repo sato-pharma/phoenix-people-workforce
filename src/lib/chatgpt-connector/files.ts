@@ -107,7 +107,7 @@ function linkAnswer(file: StoredConnectorFile, what: string) {
   };
 }
 
-export const makeSheetTool = defineTool({
+const makeSheetTool = defineTool({
   name: "phoenix_make_sheet",
   title: "Make an Excel sheet",
   description:
@@ -228,7 +228,7 @@ ${sections}
 </body></html>`;
 }
 
-export const makePdfTool = defineTool({
+const makePdfTool = defineTool({
   name: "phoenix_make_pdf",
   title: "Make a PDF",
   description:

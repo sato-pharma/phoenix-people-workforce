@@ -28,7 +28,7 @@ import type { AttendanceFlexPolicyGroupDbRow } from "@/lib/attendance/policy-gro
 import { formatAttendanceWorkingWeekdays } from "@/lib/attendance/work-schedule";
 
 /** Which engine settles this policy — the two differ enough to need different examples. */
-export type AttendancePolicyModel = "flexible" | "grace";
+type AttendancePolicyModel = "flexible" | "grace";
 
 /**
  * A rule row as this file needs it: the union of what BOTH engines demand.
@@ -40,7 +40,7 @@ export type AttendancePolicyModel = "flexible" | "grace";
  */
 export type PolicyExplainerRuleRow = AttendancePolicyRuleRow & AttendancePolicyRuleSelectionInput;
 
-export type PolicyExplainerRow = {
+type PolicyExplainerRow = {
   clockIn: string;
   clockOut: string;
   /** Deduction text, e.g. "None", "1/4 day". */
@@ -54,7 +54,7 @@ export type PolicyExplainerRow = {
   worked: string;
 };
 
-export type PolicyExplainerBracket = {
+type PolicyExplainerBracket = {
   deduction: string;
   /** e.g. "16-30 min" or "46 min or more". */
   range: string;

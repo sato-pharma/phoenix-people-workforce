@@ -19,7 +19,7 @@ export function isFieldWorkforceFriday(dateIso: string) {
   return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 5;
 }
 
-export function isFieldWorkforceSaturday(dateIso: string) {
+function isFieldWorkforceSaturday(dateIso: string) {
   if (!isIsoDate(dateIso)) return false;
   return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 6;
 }

@@ -68,7 +68,7 @@ export const HEARTBEAT_GAP_MS = 60_000;
  */
 export const HEARTBEAT_GATHER_MS = 3_000;
 
-export const PULSE_ENDPOINT = "/api/auth/pulse";
+const PULSE_ENDPOINT = "/api/auth/pulse";
 
 /** The notices half of a pulse, in the shape the bell already reads. */
 export interface PulseNotices {

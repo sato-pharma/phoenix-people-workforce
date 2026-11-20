@@ -39,7 +39,7 @@ import type { SystemAuditFamily, SystemAuditStatus } from "@/lib/system-audit/ty
  */
 
 export const VERIFIER_ACTOR = "system:verifier";
-export const QUIET_DAYS = 7;
+const QUIET_DAYS = 7;
 export const MIN_PAGE_VIEWS = 3;
 export const MIN_CLEAN_NIGHTS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;

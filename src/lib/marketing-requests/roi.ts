@@ -4,7 +4,7 @@ import type {
   MarketingRoiStatus,
 } from "@/lib/marketing-requests/types";
 
-export const marketingRoiMultiplier = 10;
+const marketingRoiMultiplier = 10;
 
 function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);

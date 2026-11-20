@@ -34,7 +34,7 @@ import {
 // The class lives in auth.ts so the sign-in can throw it; every importer keeps reading it from here.
 export { HeadwindRequestError, isHeadwindTimeout };
 
-export function headwindApiBase(env: NodeJS.ProcessEnv = process.env): string {
+function headwindApiBase(env: NodeJS.ProcessEnv = process.env): string {
   return headwindAuthConfig(env).baseUrl;
 }
 
@@ -139,7 +139,7 @@ function withDeadline(init: RequestInit): AbortSignal {
  * transport sentence below says the opposite, and on a remote action it would invite a second press
  * of a button that has already worked. So a timeout says what is actually known.
  */
-export function headwindTimeoutMessage(init: RequestInit, env: NodeJS.ProcessEnv): string {
+function headwindTimeoutMessage(init: RequestInit, env: NodeJS.ProcessEnv): string {
   const base = env.HEADWIND_MDM_BASE_URL?.trim() || "the configured Headwind address";
   const seconds = Math.round(headwindTimeoutFor(init) / 1000);
   const method = String(init.method ?? "GET").toUpperCase();

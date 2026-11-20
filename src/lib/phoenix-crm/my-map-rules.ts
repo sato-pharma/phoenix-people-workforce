@@ -144,13 +144,13 @@ export const MY_MAP_CUSTOMER_KEYS = [
   "places",
 ] as const;
 
-export function readListType(value: unknown): PhoenixCrmListType {
+function readListType(value: unknown): PhoenixCrmListType {
   if (value === "AM") return "AM";
   if (value === "Pharmacy") return "Pharmacy";
   return "PM";
 }
 
-export function readGrade(value: unknown): PhoenixCrmGrade | null {
+function readGrade(value: unknown): PhoenixCrmGrade | null {
   const grade = String(value ?? "").trim().toUpperCase();
   return grade === "A" || grade === "B" || grade === "C" ? grade : null;
 }

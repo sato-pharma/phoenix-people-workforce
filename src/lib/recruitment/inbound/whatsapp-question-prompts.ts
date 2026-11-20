@@ -134,7 +134,7 @@ export type PromptOverride = {
 export type PromptOverrides = ReadonlyMap<string, PromptOverride>;
 
 /** One tappable answer as the admin sees it on the screen. */
-export type BuiltInPromptOption = {
+type BuiltInPromptOption = {
   /** The code the tap sends back. Shown to the admin, never editable. */
   value: string;
   /** The title the applicant reads today, from the code. */
@@ -323,19 +323,6 @@ function answerPool(step: BuiltInPromptKey, menu: ClassifyMenu): readonly Classi
 /** True for a key this table is allowed to hold. Guards a stale or hand-written key on the way in. */
 export function isBuiltInPromptKey(value: string): value is BuiltInPromptKey {
   return (builtInPromptKeys as readonly string[]).includes(value);
-}
-
-/** The empty override — what every question starts on, and what a failed read falls back to. */
-export function emptyPromptOverride(): PromptOverride {
-  return {
-    appliesToRoleFamilies: undefined,
-    body: null,
-    buttonLabel: null,
-    hiddenOptions: [],
-    optionLabels: {},
-    optionOrder: [],
-    sectionTitle: null,
-  };
 }
 
 /**

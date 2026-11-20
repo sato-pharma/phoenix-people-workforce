@@ -5,7 +5,7 @@
 import { getDriveAccessToken } from "@/lib/recruitment/drive-storage";
 
 export const CODE_BACKUP_FOLDER = "phoenix-code-backup";
-export const CODE_BACKUP_MAX_AGE_HOURS = 36;
+const CODE_BACKUP_MAX_AGE_HOURS = 36;
 // Measured on the 26 Oct bundles: 453 MB. A file under this is missing most of what it should hold.
 export const CODE_BACKUP_MIN_BYTES = 100 * 1024 * 1024;
 

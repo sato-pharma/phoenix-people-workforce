@@ -215,7 +215,7 @@ type HeaderMap = { col: Map<string, number>; headerRow: number };
 
 // All header names this profile expects, normalized via the shared header key. Shared by buildHeaderMap
 // (skip banner/title rows) and pickBestSheet (choose the right worksheet).
-export function knownHeaderKeys(profile?: DistributorProfile): Set<string> {
+function knownHeaderKeys(profile?: DistributorProfile): Set<string> {
   const known = new Set<string>();
   for (const name of [
     ...(profile?.productColumns ?? []),

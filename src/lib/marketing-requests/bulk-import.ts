@@ -59,7 +59,7 @@ export type BulkUploadRow = {
   rowIndex: number;
 };
 
-export type BulkImportPreviewRow = BulkUploadRow & {
+type BulkImportPreviewRow = BulkUploadRow & {
   resolvedCustomerId: string | null;
   resolvedProducts: Array<{
     productId: number | null;
@@ -96,7 +96,7 @@ export type BulkImportPreview = {
   };
 };
 
-export type BulkImportResultRow = {
+type BulkImportResultRow = {
   rowIndex: number;
   requestCode: string;
   requesterHrId: string;

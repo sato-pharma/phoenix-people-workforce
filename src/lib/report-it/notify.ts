@@ -39,8 +39,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * failure is logged, never thrown to the person who filed the report.
  */
 
-export const REPORT_IT_NEW_REPORT_EVENT = "report_it_new_report";
-export const REPORT_IT_NOTIFICATION_MODULE = "report_it";
+const REPORT_IT_NEW_REPORT_EVENT = "report_it_new_report";
+const REPORT_IT_NOTIFICATION_MODULE = "report_it";
 /** The desk the owner follows open reports on. A portal-mode viewer is sent on to her own desk. */
 export const REPORT_IT_DESK_PATH = "/admin/report-it";
 
@@ -59,7 +59,7 @@ export type ReportItOwner = {
 
 export type NewReportEmail = { html: string; subject: string; text: string };
 
-export function reportItDeskUrl(): string {
+function reportItDeskUrl(): string {
   const base = (process.env.NOTIFICATION_DASHBOARD_URL || process.env.NEXT_PUBLIC_APP_URL || systemDeployment.productionUrl)
     .replace(/\/+$/, "");
   return `${base}${REPORT_IT_DESK_PATH}`;
@@ -119,7 +119,7 @@ export function buildNewReportEmail(input: { deskUrl: string; reportNumber: stri
 }
 
 /** The in-app notice — the same three facts, no patient data. */
-export function buildNewReportInAppNotice(facts: NewReportNoticeFacts): Omit<CreateSystemNotificationInput, "recipientHrId" | "recipientUserId"> {
+function buildNewReportInAppNotice(facts: NewReportNoticeFacts): Omit<CreateSystemNotificationInput, "recipientHrId" | "recipientUserId"> {
   return {
     actionUrl: REPORT_IT_DESK_PATH,
     category: "general",

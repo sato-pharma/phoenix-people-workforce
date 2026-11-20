@@ -11,7 +11,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 
-export type HrMetric = {
+type HrMetric = {
   key: string;
   label: string;
   value: number | null;

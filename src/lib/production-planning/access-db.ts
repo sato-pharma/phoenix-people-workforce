@@ -30,7 +30,7 @@ const GRANT_COLUMNS = "hr_id, level";
  * locking everybody out of a planner because one small table was unavailable. It can never widen
  * access by failing, because an empty list grants nobody anything.
  */
-export async function loadProductionPlanningGrants(): Promise<ProductionPlanningGrant[]> {
+async function loadProductionPlanningGrants(): Promise<ProductionPlanningGrant[]> {
   const { data, error } = await getSupabaseAdmin().from(GRANTS_TABLE).select(GRANT_COLUMNS);
   if (error || !data) return [];
   const grants: ProductionPlanningGrant[] = [];
@@ -63,12 +63,3 @@ export async function resolveProductionPlanningLevel(
   return withGrants === "none" ? withoutGrants : withGrants;
 }
 
-/** The level without touching the database — for a page shell that only needs to decide a redirect. */
-export function resolveProductionPlanningLevelFromMatrix(
-  context: Pick<AccessContext, "hrId" | "loginId" | "role">,
-): ProductionPlanningLevel {
-  return productionPlanningLevel(context, {
-    roleActions: permissionMatrix[context.role]?.production_planning ?? null,
-    grants: null,
-  });
-}

@@ -42,7 +42,7 @@ export function milestoneStatuses(hireDate: string | null, today: string): Miles
 
 // ── DV-Day progress rollup (P7-T03) ──────────────────────────────────────────
 
-export type RoleProgress = {
+type RoleProgress = {
   role: ProbationEvaluatorRole;
   required: number;
   validated: number; // DV-Days validated (task exists) for this role

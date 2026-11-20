@@ -7,7 +7,7 @@
 export const REMINDER_COLORS = ["ink", "ember", "orange", "amber", "slate"] as const;
 export type ReminderColor = (typeof REMINDER_COLORS)[number];
 
-export type ReminderStatus = "open" | "done";
+type ReminderStatus = "open" | "done";
 
 export const REMINDER_TITLE_MAX = 200;
 export const REMINDER_BODY_MAX = 4000;
@@ -51,7 +51,7 @@ export type TeamMember = {
   name: string;
 };
 
-export type ReminderViewerInfo = {
+type ReminderViewerInfo = {
   hrId: string;
   /** The HR Manager's oversight: sees every item, whatever its sharing. */
   isOverseer: boolean;

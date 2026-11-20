@@ -39,7 +39,7 @@ export class HeadwindLocationError extends Error {
   }
 }
 
-export type HeadwindLocationSource = "check-in" | "plugin";
+type HeadwindLocationSource = "check-in" | "plugin";
 
 export type HeadwindLocationFix = {
   latitude: number;
@@ -55,7 +55,7 @@ export type HeadwindLocationFix = {
 };
 
 /** How long a tablet is given to check in after being woken, before the position is read back. */
-export const HEADWIND_LOCATE_WAIT_MS = 6000;
+const HEADWIND_LOCATE_WAIT_MS = 6000;
 
 /** How many history rows one read asks for. The server returns them newest first (see below). */
 export const HEADWIND_HISTORY_PAGE_SIZE = 200;
@@ -64,7 +64,7 @@ export const HEADWIND_HISTORY_PAGE_SIZE = 200;
  * The first launcher that attaches its position to its check-in. Measured on the fleet, 9 Nov 2026:
  * PHX-TAB-0007 on 6.39 sent none for 17 days; on 6.48 it sent a fix within seconds of starting.
  */
-export const HEADWIND_LOCATION_LAUNCHER = "6.45";
+const HEADWIND_LOCATION_LAUNCHER = "6.45";
 
 /**
  * One row of the history plugin's reply.
@@ -329,7 +329,7 @@ export async function getHeadwindLocationHistory(
  * is off; there are records but none with a position; or there is nothing at all. Only the last is
  * "nothing recorded", and even that never means "did not move".
  */
-export function historyNote(facts: {
+function historyNote(facts: {
   collection: HeadwindLocationCollection;
   pluginError: string | null;
   pluginFixes: number;

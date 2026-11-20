@@ -39,7 +39,7 @@ import type { DurableEmailFollowUp } from "@/lib/notifications/durable-email-fol
  * This module holds no database code, so the payload rules are testable on their own.
  */
 
-export const DIRECT_EMAIL_PAYLOAD_KIND = "direct_email" as const;
+const DIRECT_EMAIL_PAYLOAD_KIND = "direct_email" as const;
 
 /**
  * A dispatcher a stored message is handed to, by NAME — a function cannot be stored, so the send

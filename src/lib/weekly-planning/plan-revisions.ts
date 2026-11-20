@@ -12,9 +12,9 @@
 import type { EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 
 /** The two statuses in which a plan IS the plan of record for its period. */
-export const PLAN_OF_RECORD_STATUSES = ["final_approved", "hr_acknowledged"] as const satisfies readonly EmployeePlanStatus[];
+const PLAN_OF_RECORD_STATUSES = ["final_approved", "hr_acknowledged"] as const satisfies readonly EmployeePlanStatus[];
 
-export function isPlanOfRecordStatus(status: string | null | undefined): boolean {
+function isPlanOfRecordStatus(status: string | null | undefined): boolean {
   return (PLAN_OF_RECORD_STATUSES as readonly string[]).includes(String(status ?? ""));
 }
 

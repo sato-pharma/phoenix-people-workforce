@@ -39,7 +39,7 @@ export type DocumentSlot = {
 };
 
 /** The bullet character the owner's own templates are written with. */
-export const DOCUMENT_BULLET = "\u2022";
+const DOCUMENT_BULLET = "\u2022";
 
 /**
  * The pure half: given the slots and the ids that company templates file under, which names does a
@@ -79,7 +79,7 @@ type CustomTemplateRow = { files_under_document_id: string | null };
  * Returns `[]` — never throws — when the read fails. Every caller treats an empty list as "I do not
  * know what to ask for", which is a refused send, not a message with an empty bullet list in it.
  */
-export async function listCandidateSuppliedDocumentNames(): Promise<string[]> {
+async function listCandidateSuppliedDocumentNames(): Promise<string[]> {
   try {
     const supabase = getSupabaseAdmin();
 

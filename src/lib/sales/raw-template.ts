@@ -36,7 +36,7 @@ export function rawTemplateHeaders(profile: DistributorProfile): string[] {
 }
 
 // Pure-ish workbook builder (no I/O beyond ExcelJS in-memory) so it can be unit-tested.
-export function buildRawTemplateWorkbook(input: {
+function buildRawTemplateWorkbook(input: {
   distributorCode: string;
   distributorName: string;
   headers: string[];

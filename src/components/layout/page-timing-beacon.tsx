@@ -18,7 +18,7 @@ import { PAGE_TIMING_SOFT_BATCH_LIMIT, deviceClassOf, isPageDataRequest, type Pa
 // taps are queued and sent in one beacon of up to PAGE_TIMING_SOFT_BATCH_LIMIT, or when the tab hides —
 // a tap never costs a request of its own.
 
-export const PAGE_TIMING_ENDPOINT = "/api/telemetry/page-timing";
+const PAGE_TIMING_ENDPOINT = "/api/telemetry/page-timing";
 
 type SoftNavigation = { ms: number; path: string };
 const softQueue: SoftNavigation[] = [];

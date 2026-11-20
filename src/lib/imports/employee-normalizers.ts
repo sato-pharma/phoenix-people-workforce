@@ -114,7 +114,7 @@ export function parseImportBooleanFlag(value: string | null): boolean | null {
   return null;
 }
 
-export function normalizeOrganizationName(value: unknown) {
+function normalizeOrganizationName(value: unknown) {
   const rawValue = normalizeTextValue(value);
 
   if (!rawValue) {
@@ -304,7 +304,7 @@ export function normalizeNumberValue(value: unknown) {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-export function createCode(value: string | null) {
+function createCode(value: string | null) {
   if (!value) {
     return null;
   }
@@ -319,6 +319,3 @@ export function createCode(value: string | null) {
     .slice(0, 120);
 }
 
-export function createScopedCode(...parts: Array<string | null>) {
-  return createCode(parts.filter(Boolean).join("_"));
-}

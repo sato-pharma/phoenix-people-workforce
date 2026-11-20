@@ -54,7 +54,7 @@ export type ApplicationCandidate = Pick<
 /** One labelled field. An empty `value` is an empty line to write on, never a dash and never a guess. */
 export type FormCell = { label: string; value: string; note: string | null };
 
-export type EducationRow = { course: string; university: string; year: string; grade: string };
+type EducationRow = { course: string; university: string; year: string; grade: string };
 
 export type EmploymentRow = { company: string; position: string; start: string; end: string };
 

@@ -70,7 +70,7 @@ export function adminDeleteTargetOfManagerDayVisit(cardId: string): { kind: Admi
   return null;
 }
 
-export type AdminDeleteInput = { kind: AdminDeleteKind; id: string };
+type AdminDeleteInput = { kind: AdminDeleteKind; id: string };
 export type AdminDeleteParse = { ok: true; value: AdminDeleteInput } | { ok: false; error: string };
 
 export function parseAdminDelete(raw: unknown): AdminDeleteParse {

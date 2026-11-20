@@ -72,7 +72,7 @@ export type JobPostContent = {
  */
 export type JobPostAssets = { fontRegular: string; fontBold: string; logo: string; logoOnDark: string; logoOnBlue: string; arabic: string };
 
-export const JOB_POST_TEMPLATE_KEYS = ["executive", "split", "editorial", "bold-blue", "night-blueprint", "brand-brief"] as const;
+const JOB_POST_TEMPLATE_KEYS = ["executive", "split", "editorial", "bold-blue", "night-blueprint", "brand-brief"] as const;
 export type JobPostTemplateKey = (typeof JOB_POST_TEMPLATE_KEYS)[number];
 
 export const JOB_POST_TEMPLATES: ReadonlyArray<{ key: JobPostTemplateKey; name: string; description: string }> = [
@@ -101,7 +101,7 @@ export function escapeHtml(value: string): string {
 }
 
 /** 01159888247 → "011 5988 8247", the way every approved post prints it. Anything else passes through. */
-export function formatPostNumber(raw: string): string {
+function formatPostNumber(raw: string): string {
   const digits = String(raw).replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("01")) return `${digits.slice(0, 3)} ${digits.slice(3, 7)} ${digits.slice(7)}`;
   return String(raw).trim();
@@ -126,7 +126,7 @@ function headlineLines(headline: string | null): string[] {
  * One line of a list: the bold lead, then the rest. A rest that opens with punctuation joins the lead
  * directly ("Own HR systems, workforce data…"); anything else gets a space ("Cairo-based / able…").
  */
-export function lineHtml(line: JobPostLine): string {
+function lineHtml(line: JobPostLine): string {
   const lead = escapeHtml(line.lead.trim());
   const rest = line.rest.trim();
   if (!rest) return `<b>${lead}</b>`;
@@ -282,9 +282,9 @@ function blocks(blue: number[] = [3]): string {
 }
 
 /** The smallest the list text may shrink to (as a share of its normal size) before a post is too long. */
-export const JOB_POST_TEXT_FLOOR = 0.6;
+const JOB_POST_TEXT_FLOOR = 0.6;
 /** The smallest a title may shrink to, in px, before it is too long for its box. */
-export const JOB_POST_TITLE_FLOOR_PX = 24;
+const JOB_POST_TITLE_FLOOR_PX = 24;
 
 /**
  * The layout pass, run in the page once Montserrat has loaded (an unloaded face measures at the

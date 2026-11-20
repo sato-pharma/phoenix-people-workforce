@@ -138,7 +138,7 @@ export function replaceBottomNavHref(
 }
 
 /** Every row of every section, flattened, each carrying the title of the section it lives in. */
-export function flattenSections(sections: readonly PortalChromeSection[]): PortalChromeRow[] {
+function flattenSections(sections: readonly PortalChromeSection[]): PortalChromeRow[] {
   return sections.flatMap((section) =>
     section.items.map((item) => ({ href: item.href, label: item.label, navBadge: item.navBadge, section: section.title })),
   );

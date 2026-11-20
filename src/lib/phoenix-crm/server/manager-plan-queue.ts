@@ -49,7 +49,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-export type ManagerQueueStage = "first" | "second" | "edit" | "removal" | "single_visit_day";
+type ManagerQueueStage = "first" | "second" | "edit" | "removal" | "single_visit_day";
 
 export type ManagerQueueItem = {
   /** The plan id, the ask id or the own-list customer id: the Hub's detail page resolves every one. */

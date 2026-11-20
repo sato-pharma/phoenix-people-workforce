@@ -319,7 +319,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/print", key: "print", label: "Print" },
 ];
 
-export const OTHER_MODULE: ActivityModule = { key: "other", label: "Other" };
+const OTHER_MODULE: ActivityModule = { key: "other", label: "Other" };
 
 /**
  * First segments that are an AREA rather than a module, so a derived name takes

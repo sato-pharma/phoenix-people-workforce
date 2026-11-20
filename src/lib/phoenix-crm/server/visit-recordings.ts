@@ -156,7 +156,7 @@ export async function requestRecordingSlot(viewer: PhoenixCrmViewer, raw: unknow
 
 // ── The claim a save makes ─────────────────────────────────────────────────────────────────────
 
-export type RecordingClaim = { path: string; seconds: number };
+type RecordingClaim = { path: string; seconds: number };
 
 /** The recording the save body carries, shaped; null when it carries none. */
 export function readRecordingClaim(raw: unknown): RecordingClaim | null {

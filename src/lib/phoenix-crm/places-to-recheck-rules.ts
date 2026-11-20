@@ -32,7 +32,7 @@ import {
 } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { distanceMeters } from "@/lib/phoenix-crm/geo";
 
-export type RecheckReason = "readings_apart" | "refused_one_spot" | "never_inside";
+type RecheckReason = "readings_apart" | "refused_one_spot" | "never_inside";
 
 /** An active place as the list reads it. */
 export type RecheckPlace = {

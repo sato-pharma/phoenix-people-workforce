@@ -33,12 +33,6 @@ export function coverageTier(visitsThisMonth: number, target: number | null): Co
   return 2;
 }
 
-export const COVERAGE_TIER_LABEL: Record<CoverageTier, string> = {
-  0: "Not visited this month",
-  1: "Behind its grade",
-  2: "On its grade",
-};
-
 export type CoverageCustomer = {
   listType: PhoenixCrmDoctorListType;
   grade: PhoenixCrmGrade | null;

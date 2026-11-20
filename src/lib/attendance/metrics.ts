@@ -12,7 +12,7 @@ import {
   requiredMinutesForHalfDayVacation,
 } from "@/lib/attendance/flexible-hours.ts";
 
-export const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
+const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
 
 // "unmapped" means nobody knows who this device user is. "non_employee" means somebody DOES -
 // a driver, guard or cleaner enrolled on the reader who is not on payroll. Both carry a null
@@ -401,14 +401,14 @@ export function summarizeFingerprintDeductionQuantities(
   };
 }
 
-export function rankAttendancePolicyTarget(targetType: string | null | undefined) {
+function rankAttendancePolicyTarget(targetType: string | null | undefined) {
   if (targetType === "employee_hr_id") return 3;
   if (targetType === "job_title") return 2;
   if (targetType === "default") return 1;
   return 0;
 }
 
-export function attendancePolicyMatchesEmployee(
+function attendancePolicyMatchesEmployee(
   policy: Pick<AttendancePolicySelectionInput, "target_type" | "target_value">,
   employee: AttendancePolicyEmployeeInput,
 ) {

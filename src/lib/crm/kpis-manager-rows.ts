@@ -51,7 +51,7 @@ export const KPI_MANAGER_LEVEL_LABEL: Record<KpiManagerLevel, string> = {
 };
 
 /** The level a job title names. Both vocabularies (app role and HR title) say the same word. */
-export function kpiManagerLevelOf(jobTitle: string | null | undefined): KpiManagerLevel {
+function kpiManagerLevelOf(jobTitle: string | null | undefined): KpiManagerLevel {
   const title = (jobTitle ?? "").trim().toLowerCase();
   if (/\bnational\b/.test(title)) return "national";
   if (/\bregional\b/.test(title)) return "regional";

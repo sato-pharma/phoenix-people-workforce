@@ -36,7 +36,7 @@ export type PlanExceptionType = (typeof PLAN_EXCEPTION_TYPES)[number]["key"];
 
 const EXCEPTION_KEYS = new Set<string>(PLAN_EXCEPTION_TYPES.map((type) => type.key));
 
-export const PLAN_NOTE_MAX = 300;
+const PLAN_NOTE_MAX = 300;
 export const PLAN_DECISION_NOTE_MAX = 500;
 /** A request-body field that is a uuid, checked by the one uuid test Phoenix keeps (@/lib/http/uuid). */
 export function isUuid(value: unknown): value is string {

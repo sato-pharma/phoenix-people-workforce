@@ -20,7 +20,7 @@ import { useSyncExternalStore } from "react";
 import { crmGet, messageOf } from "@/components/phoenix-crm/api";
 import type { IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
 
-export const DECK_CASES_PATH = "/api/admin/phoenix-crm/integrity/cases";
+const DECK_CASES_PATH = "/api/admin/phoenix-crm/integrity/cases";
 
 export type DeckCasesState = {
   /** Which review the lists belong to — a new review starts from nothing. */

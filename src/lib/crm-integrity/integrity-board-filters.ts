@@ -36,9 +36,9 @@ export type IntegrityPhoto = "all" | "kept" | "none";
 export type IntegrityDistanceBand = "all" | "identical" | "nearby" | "apart" | "far";
 
 /** Metres: the upper edge of `nearby`, about a building and its forecourt. */
-export const NEARBY_METRES = 100;
+const NEARBY_METRES = 100;
 /** Metres: the upper edge of `apart` — still inside one town. */
-export const APART_METRES = 1_000;
+const APART_METRES = 1_000;
 
 export type IntegrityFilters = {
   rep: string;
@@ -284,9 +284,6 @@ const KEYS = {
   filedTo: "fto",
   text: "q",
 } as const satisfies Record<keyof IntegrityFilters, string>;
-
-/** Every query key this board owns — what a caller clears before writing a fresh view. */
-export const INTEGRITY_FILTER_KEYS: ReadonlyArray<string> = Object.values(KEYS);
 
 type ParamBag = URLSearchParams | Record<string, string | string[] | undefined>;
 

@@ -148,25 +148,6 @@ function scaleWord(count: number, forms: CountedNoun, construct = false): string
   return `${spellGroup(count, true)} ${forms.singular}`;
 }
 
-/** Spell a whole number of pounds. Exported for the tests; callers want `spellEgyptianAmount`. */
-export function spellArabicInteger(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return "";
-  const whole = Math.floor(value);
-  if (whole === 0) return "صفر";
-  if (whole > MAX_SPELLABLE_AMOUNT) return "";
-
-  const millions = Math.floor(whole / 1_000_000);
-  const thousands = Math.floor((whole % 1_000_000) / 1000);
-  const rest = whole % 1000;
-  const parts: string[] = [];
-
-  if (millions > 0) parts.push(scaleWord(millions, MILLION));
-  if (thousands > 0) parts.push(scaleWord(thousands, THOUSAND));
-  if (rest > 0) parts.push(spellGroup(rest));
-
-  return parts.join(" و");
-}
-
 /**
  * A whole number followed by the thing it counts — "اثنا عشر ألفاً وسبعمائة وخمسون جنيهاً مصرياً".
  *

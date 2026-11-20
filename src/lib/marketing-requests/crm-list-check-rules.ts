@@ -28,14 +28,14 @@ export type ListCheckListType = "AM" | "PM";
 export type CrmListSource = "picked" | "typed" | "checked";
 
 /** The owner's own number: within it, two photos stand at the same place. */
-export const SAME_PLACE_METRES = CRM_LIST_SAME_PLACE_METRES;
+const SAME_PLACE_METRES = CRM_LIST_SAME_PLACE_METRES;
 
 /**
  * How close a DIFFERENT name must stand to be worth a person's look. His 500 m is for a name that already
  * agrees. In a city almost every customer has some other doctor within 500 m: measured 2026-11-03, that
  * reading sent 15 unrelated names to the queue and hid the real questions in it.
  */
-export const DIFFERENT_NAME_SAME_PLACE_METRES = 100;
+const DIFFERENT_NAME_SAME_PLACE_METRES = 100;
 
 /** Readable states, in the order every screen lists them. */
 export const LIST_CHECK_STATE_LABELS: Record<ListCheckState, string> = {
@@ -66,7 +66,7 @@ export function looksLikeNursery(name: string | null | undefined): boolean {
 }
 
 /** At most one letter added, removed or changed. Early-outs keep it cheap over a whole area's list. */
-export function withinOneLetter(left: string, right: string): boolean {
+function withinOneLetter(left: string, right: string): boolean {
   if (left === right) return true;
   if (Math.abs(left.length - right.length) > 1) return false;
   let at = 0;
@@ -211,7 +211,7 @@ export type ListCheckVerdict = {
 };
 
 /** The source a stored row really has. A row saved by code older than the column still tells by its status. */
-export function effectiveListSource(row: { crmListSource: CrmListSource | null; crmListStatus: string | null }): CrmListSource | null {
+function effectiveListSource(row: { crmListSource: CrmListSource | null; crmListStatus: string | null }): CrmListSource | null {
   if (row.crmListSource) return row.crmListSource;
   if (row.crmListStatus === "on_list") return "picked";
   if (row.crmListStatus === "not_on_list") return "typed";
@@ -223,7 +223,7 @@ function metresTo(point: ListCheckPoint, other: ListCheckPoint): number {
 }
 
 /** The doctor's place nearest the customer's: the one the two photos should be compared at. */
-export function nearestListCheckPlace(point: ListCheckPoint | null, places: readonly ListCheckPlace[]): { metres: number; place: ListCheckPlace } | null {
+function nearestListCheckPlace(point: ListCheckPoint | null, places: readonly ListCheckPlace[]): { metres: number; place: ListCheckPlace } | null {
   if (!point) return null;
   let best: { metres: number; place: ListCheckPlace } | null = null;
   for (const place of places) {

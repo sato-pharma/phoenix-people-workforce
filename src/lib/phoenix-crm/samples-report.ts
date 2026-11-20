@@ -46,7 +46,7 @@ export type SampleItemTotal = {
 export type SamplesTerritory = { seatId: string; territoryName: string; lineName: string | null; repName: string | null };
 
 /** Visits, AM and PM apart: the one thing this report adds up across different items. */
-export type SamplesVisitCounts = { am: number; pm: number };
+type SamplesVisitCounts = { am: number; pm: number };
 
 export type SamplesTerritoryRow = SamplesTerritory & {
   /** Visits that left anything at all, AM and PM apart. */

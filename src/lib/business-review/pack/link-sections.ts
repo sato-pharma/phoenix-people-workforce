@@ -105,7 +105,7 @@ export function pharmacyCell(split: VisitCountSplit, fromVisits?: VisitCountSpli
 }
 
 /** Said under a table that carries a blank or a qualified Pharmacies cell — the outstation export's rule. */
-export const PHARMACY_PACK_NOTE =
+const PHARMACY_PACK_NOTE =
   `A blank Pharmacies figure (— on the page) is ${PHARMACIES_NOT_RECORDED_IN_PHOENIX}, never 0: ` +
   `${PHOENIX_LOGS_NO_PHARMACY_VISIT}, a pharmacy there is feedback on a doctor's visit. Beside Phoenix CRM ` +
   `visits the figure counts the iReports360 visits only ${PHARMACIES_IREPORTS360_ONLY}.`;

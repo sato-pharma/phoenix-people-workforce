@@ -165,11 +165,11 @@ export async function addVenueTimetable(viewer: PhoenixCrmViewer, raw: unknown):
 // ── A timetable the door got no answer about, read again at night ───────────────────────────────
 
 /** Photographs read again in one night, how long the pass may keep starting them, and each read's wait. */
-export const LOST_TIMETABLE_REREAD_LIMIT = 200;
-export const LOST_TIMETABLE_REREAD_BUDGET_MS = 60_000;
-export const LOST_TIMETABLE_REREAD_TIMEOUT_MS = 30_000;
+const LOST_TIMETABLE_REREAD_LIMIT = 200;
+const LOST_TIMETABLE_REREAD_BUDGET_MS = 60_000;
+const LOST_TIMETABLE_REREAD_TIMEOUT_MS = 30_000;
 /** Rows the backlog read takes at a time, and how many such pages one night walks looking for work. */
-export const LOST_TIMETABLE_BACKLOG_PAGE = 500;
+const LOST_TIMETABLE_BACKLOG_PAGE = 500;
 export const LOST_TIMETABLE_BACKLOG_MAX_PAGES = 10;
 
 export type LostTimetableRereadResult = {

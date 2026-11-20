@@ -50,7 +50,7 @@ export type CalendarCandidateIdentity = {
  * thing that decides what a human is shown when it does — so the widening belongs here rather than
  * in a `!` at the call site.
  */
-export type ResolvedCalendarCandidate = { id: string; fullName: string | null };
+type ResolvedCalendarCandidate = { id: string; fullName: string | null };
 
 export type CalendarCandidateResolution = {
   candidateId: string;

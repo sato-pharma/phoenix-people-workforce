@@ -7,7 +7,7 @@ export type ActionHubModule =
   | "contract_renewal"
   | "weekly_plan";
 
-export type ActionHubUrgency = "high" | "normal" | "low";
+type ActionHubUrgency = "high" | "normal" | "low";
 
 // ── Per-module detail payloads ────────────────────────────────────────────────
 
@@ -142,7 +142,7 @@ export type WeeklyPlanDetail = {
   reviewHref: string;
 };
 
-export type ActionHubDetail =
+type ActionHubDetail =
   | LeaveDetail
   | ResignationDetail
   | ExcuseDetail
@@ -242,11 +242,6 @@ export type MyRequestItem = {
   href: string | null;
   lines: Array<{ label: string; value: string }>;
   decisionNote: string | null;
-};
-
-export type MyRequestsData = {
-  generatedAt: string;
-  items: MyRequestItem[];
 };
 
 export const MY_REQUEST_MODULE_LABELS: Record<MyRequestModule, string> = {

@@ -333,7 +333,7 @@ export function startedWindowCovers(
 
 // ── The starts ─────────────────────────────────────────────────────────────────────────────────────
 
-export type PhoenixTeamStartedBy = "owner_ruling" | "super_admin";
+type PhoenixTeamStartedBy = "owner_ruling" | "super_admin";
 
 export type PhoenixTeamStart = {
   id: string;
@@ -409,7 +409,7 @@ export function comingSaturday(cairoToday: string): string {
 }
 
 /** How many Saturdays past the coming one the pickers offer. */
-export const TEAM_START_WEEKS_AHEAD = 12;
+const TEAM_START_WEEKS_AHEAD = 12;
 
 /** Every Saturday from `from` (a Saturday) through `TEAM_START_WEEKS_AHEAD` weeks past the coming one. */
 function saturdaysFrom(from: string, cairoToday: string): string[] {
@@ -508,7 +508,7 @@ export function teamStartRefusal(message: string | null | undefined): string | n
 
 // ── The panel ──────────────────────────────────────────────────────────────────────────────────────
 
-export type PhoenixTeamState = "not_started" | "starts" | "running" | "stopping" | "stopped";
+type PhoenixTeamState = "not_started" | "starts" | "running" | "stopping" | "stopped";
 
 /** The first real plan sent on a team with no start (`phoenix_crm_team_start_notices`). */
 export type PhoenixTeamFirstPlan = { repName: string | null; weekStart: string };

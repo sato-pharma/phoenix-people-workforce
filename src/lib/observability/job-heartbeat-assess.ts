@@ -24,7 +24,7 @@ export type JobHeartbeatRow = {
   lastDetail: string | null;
 };
 
-export type JobHeartbeatProblemKind = "stranded" | "failing" | "misdeclared";
+type JobHeartbeatProblemKind = "stranded" | "failing" | "misdeclared";
 
 export type JobHeartbeatProblem = {
   slug: string;
@@ -115,7 +115,7 @@ function parseTimestamp(value: string | null): number | null {
 }
 
 /** "3 hours 12 minutes", for a human reading a Telegram message at 4am. */
-export function describeDuration(ms: number): string {
+function describeDuration(ms: number): string {
   const totalMinutes = Math.max(0, Math.round(ms / 60_000));
   const days = Math.floor(totalMinutes / (60 * 24));
   const hours = Math.floor((totalMinutes % (60 * 24)) / 60);

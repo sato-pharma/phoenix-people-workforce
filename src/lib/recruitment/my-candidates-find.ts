@@ -110,7 +110,7 @@ export function candidateMatchesTokens(candidate: Candidate, tokens: readonly st
 }
 
 /** Whether a candidate belongs in the chosen quick view. `awaiting` is the caller's own answer to "is this waiting on him". */
-export function candidateInView(
+function candidateInView(
   candidate: Candidate,
   awaiting: boolean,
   find: Pick<MyCandidatesFind, "claims" | "leavingIds" | "unseenIds" | "view" | "viewerHrId">,

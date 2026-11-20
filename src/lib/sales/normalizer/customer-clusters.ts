@@ -19,7 +19,7 @@ export type ClusterUnknown = {
   count?: number;
 };
 
-export type SuggestedBrick = { brickId: string; distanceKm: number | null };
+type SuggestedBrick = { brickId: string; distanceKm: number | null };
 
 export type CustomerCluster = {
   key: string;

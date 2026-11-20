@@ -19,7 +19,7 @@ export const PAGE_TIMING_MAX_NAMES = 600;
 export const PAGE_TIMING_RATE_LIMIT = 60;
 export const PAGE_TIMING_RATE_WINDOW_MS = 60_000;
 /** Anything above two minutes is a sleeping tab, not a page load. */
-export const PAGE_TIMING_MAX_MS = 120_000;
+const PAGE_TIMING_MAX_MS = 120_000;
 /** Taps one beacon may carry. The browser sends a batch at this many, or when the tab hides. */
 export const PAGE_TIMING_SOFT_BATCH_LIMIT = 10;
 
@@ -128,7 +128,6 @@ export type PageTimingDevice = "high" | "low" | "unknown";
  * All in milliseconds.
  */
 export type PageTimingMetric = "fcp" | "first_data" | "interactive" | "lcp" | "soft" | "ttfb";
-export const PAGE_TIMING_METRICS: readonly PageTimingMetric[] = ["ttfb", "fcp", "lcp", "interactive", "first_data", "soft"];
 
 export type PageTimingReport = {
   device: PageTimingDevice;
@@ -182,7 +181,7 @@ function milliseconds(value: unknown): number | null {
 }
 
 /** The device class as the body spelt it; anything else is `unknown`, never a guess. */
-export function pageTimingDevice(value: unknown): PageTimingDevice {
+function pageTimingDevice(value: unknown): PageTimingDevice {
   return value === "low" || value === "high" ? value : "unknown";
 }
 

@@ -31,7 +31,7 @@ export type ReconciliationDomain = (typeof reconciliationDomains)[number];
  * medium   — a figure that misleads without directly moving money.
  */
 export const reconciliationSeverities = ["critical", "high", "medium"] as const;
-export type ReconciliationSeverity = (typeof reconciliationSeverities)[number];
+type ReconciliationSeverity = (typeof reconciliationSeverities)[number];
 
 /**
  * What this check is expected to report against production TODAY.
@@ -45,7 +45,7 @@ export type ReconciliationSeverity = (typeof reconciliationSeverities)[number];
 export type ReconciliationExpectation = "holds" | "known-open";
 
 /** One side of a comparison, with where it came from stated in words a non-engineer can act on. */
-export type ReconciliationSide = {
+type ReconciliationSide = {
   /** The service call or query that produced `value` — named precisely enough to re-run by hand. */
   source: string;
   /**

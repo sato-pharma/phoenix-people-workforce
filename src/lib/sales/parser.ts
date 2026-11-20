@@ -11,9 +11,9 @@ import {
 import { parseSalesRow } from "@/lib/sales/validation";
 import type { SalesImportPayload } from "@/lib/sales/types";
 
-export type UploadSchemaType = "closing_sheet" | "flat_sheet" | "unsupported";
+type UploadSchemaType = "closing_sheet" | "flat_sheet" | "unsupported";
 
-export type ParsedUploadRows = {
+type ParsedUploadRows = {
   headers: string[];
   rows: Record<string, unknown>[];
   schemaType: UploadSchemaType;
@@ -178,7 +178,7 @@ export function extractFlatSheetRows(sheet: ExcelJS.Worksheet) {
   return { headers: rawHeaders, rows };
 }
 
-export function extractClosingSheetRows(sheet: ExcelJS.Worksheet) {
+function extractClosingSheetRows(sheet: ExcelJS.Worksheet) {
   const maxColumn = Math.max(sheet.getRow(1).cellCount, sheet.getRow(2).cellCount);
   const blocks: ClosingBlock[] = [];
 
@@ -310,7 +310,7 @@ async function rowsFromWorkbook(file: File) {
   return extractClosingSheetRows(sheet);
 }
 
-export async function readUploadRows(file: File): Promise<ParsedUploadRows> {
+async function readUploadRows(file: File): Promise<ParsedUploadRows> {
   const { headers, rows } = await rowsFromWorkbook(file);
   const schemaType = detectSchemaType(headers);
 

@@ -27,7 +27,7 @@ import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver
 import { isOutstationNoHoldRole } from "@/lib/outstation/nsm-no-hold";
 import { OUTSTATION_UNDECIDED_STATUSES, isOutstationClaimUndecided } from "@/lib/outstation/undecided-claim";
 
-export type JourneyStopTicketRule = "none" | "optional" | "required";
+type JourneyStopTicketRule = "none" | "optional" | "required";
 
 export type JourneyStopRule = {
   /** A live photo is taken with the location. */

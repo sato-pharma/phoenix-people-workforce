@@ -227,7 +227,7 @@ function seatTierRank(seatTier: string | null): number {
 }
 
 /** The manager's seat as it was AT THE MOMENT OF A SEND, frozen onto the candidate row. */
-export type NotifiedManagerContext = {
+type NotifiedManagerContext = {
   name: string;
   jobTitle: string | null;
   areaName: string | null;
@@ -405,7 +405,7 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
  * did: an unresolvable manager must degrade to "we do not know their seat", never to a thrown
  * request that loses the send.
  */
-export async function notifiedManagerContext(hrId: string): Promise<NotifiedManagerContext> {
+async function notifiedManagerContext(hrId: string): Promise<NotifiedManagerContext> {
   try {
     const { data } = await getSupabaseAdmin()
       .from("employees")

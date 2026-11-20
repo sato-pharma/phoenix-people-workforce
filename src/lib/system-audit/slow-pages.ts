@@ -13,8 +13,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PageTimingDevice, PageTimingKind, PageTimingMetric } from "@/lib/observability/page-timing-intake";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
-export const SLOW_PAGES_WINDOW_DAYS = 7;
-export const SLOW_PAGES_SUMMARY_RPC = "phx_page_timings_summary";
+const SLOW_PAGES_WINDOW_DAYS = 7;
+const SLOW_PAGES_SUMMARY_RPC = "phx_page_timings_summary";
 
 export type PageTimingSummaryRow = {
   count: number;

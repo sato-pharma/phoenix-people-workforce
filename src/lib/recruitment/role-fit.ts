@@ -43,9 +43,9 @@ import type { CandidateScreeningFacts } from "@/lib/recruitment/candidate-screen
  */
 export const roleFitStates = ["met", "partial", "missing", "unknown"] as const;
 
-export type RoleFitState = (typeof roleFitStates)[number];
+type RoleFitState = (typeof roleFitStates)[number];
 
-export type RoleFitDimension = {
+type RoleFitDimension = {
   /** Stable key, for React and for tests. */
   key: string;
   label: string;

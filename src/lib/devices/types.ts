@@ -135,32 +135,6 @@ export type CompanyDevice = {
   isHeldByLeaver: boolean;
 };
 
-/** One closed or open custody event, for the device's own history. */
-export type DeviceAssignment = {
-  id: string;
-  deviceId: string;
-  employeeHrId: string;
-  employeeName: string;
-  jobTitle: string | null;
-  declarationNo: string | null;
-  handoverPlace: string | null;
-  issuedOn: string;
-  issuedBy: string | null;
-  issuedByName: string | null;
-  /** Per-item values as signed for at THIS handover, keyed by template item number. */
-  itemValuesEgp: Record<string, number> | null;
-  agreedValueEgp: number | null;
-  status: AssignmentStatus;
-  returnedOn: string | null;
-  returnedBy: string | null;
-  returnedByName: string | null;
-  returnCondition: ReturnCondition | null;
-  shortfallNote: string | null;
-  settlementEgp: number | null;
-  reason: string | null;
-  note: string | null;
-};
-
 export type DeviceRegisterStats = {
   total: number;
   inStock: number;

@@ -51,7 +51,7 @@ import {
 export const GAPI_LOADER_URL = "https://apis.google.com/js/api.js";
 
 /** The origin the iframe is served from — needed by the page's own CSP, so it is named once here. */
-export const MANAGED_PLAY_IFRAME_ORIGIN = "https://play.google.com";
+const MANAGED_PLAY_IFRAME_ORIGIN = "https://play.google.com";
 
 /** The iframe endpoint. `search` is the path for every page, not only the search one. */
 export const MANAGED_PLAY_IFRAME_URL = `${MANAGED_PLAY_IFRAME_ORIGIN}/work/embedded/search`;
@@ -87,7 +87,7 @@ const IFRAME_FEATURES: readonly ManagedPlayIframeFeature[] = [
  * open the iframe ON — they are reached from inside it. Passing one as the homepage is accepted by
  * the URL and produces a blank frame.
  */
-export type ManagedPlayIframeHomepage = Extract<
+type ManagedPlayIframeHomepage = Extract<
   ManagedPlayIframeFeature,
   "PLAY_SEARCH" | "PRIVATE_APPS" | "WEB_APPS" | "STORE_BUILDER"
 >;
@@ -99,11 +99,11 @@ const IFRAME_HOMEPAGES: readonly ManagedPlayIframeHomepage[] = [
   "STORE_BUILDER",
 ];
 
-export function isManagedPlayIframeFeature(value: string): value is ManagedPlayIframeFeature {
+function isManagedPlayIframeFeature(value: string): value is ManagedPlayIframeFeature {
   return (IFRAME_FEATURES as readonly string[]).includes(value);
 }
 
-export function isManagedPlayIframeHomepage(value: string): value is ManagedPlayIframeHomepage {
+function isManagedPlayIframeHomepage(value: string): value is ManagedPlayIframeHomepage {
   return (IFRAME_HOMEPAGES as readonly string[]).includes(value);
 }
 

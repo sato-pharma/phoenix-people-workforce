@@ -9,11 +9,11 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { ProbationEvaluatorRole } from "./types";
 
-export type ProbationRoleRequirements = Record<ProbationEvaluatorRole, number>;
+type ProbationRoleRequirements = Record<ProbationEvaluatorRole, number>;
 
-export type ProbationRoleWeights = Record<ProbationEvaluatorRole | "sfe" | "hr", number>;
+type ProbationRoleWeights = Record<ProbationEvaluatorRole | "sfe" | "hr", number>;
 
-export type ProbationScoringScale = { min: number; max: number };
+type ProbationScoringScale = { min: number; max: number };
 
 export type ProbationSlaPolicy = {
   /** Feedback becomes due this many hours after a validated DV-Day is imported. */
@@ -76,11 +76,6 @@ export const DEFAULT_PROBATION_CONFIG: ProbationConfig = {
   updatedBy: null,
   updatedAt: null,
 };
-
-/** Total required DV-Days across all roles (derived, never hard-coded elsewhere). */
-export function totalRequiredDvDays(config: ProbationConfig = DEFAULT_PROBATION_CONFIG): number {
-  return Object.values(config.requirements).reduce((sum, n) => sum + (Number(n) || 0), 0);
-}
 
 type ProbationConfigRow = {
   requirements: unknown;

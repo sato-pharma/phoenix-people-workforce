@@ -8,7 +8,7 @@ import { foldCustomerNameText, stripEntityPrefixTokens } from "@/lib/sales/norma
 // Const config, not a table: the chain landscape is ~6 brands and changes rarely; a table would
 // add a migration + admin UI for a handful of rows.
 
-export type PharmacyChain = {
+type PharmacyChain = {
   key: string;
   label: string;
   // Patterns are matched against the NORMALIZED name (normalizeCustomerNameKey output), as
@@ -16,7 +16,7 @@ export type PharmacyChain = {
   patterns: string[];
 };
 
-export const PHARMACY_CHAINS: PharmacyChain[] = [
+const PHARMACY_CHAINS: PharmacyChain[] = [
   { key: "elezaby", label: "El Ezaby", patterns: ["العزبي", "عزبي", "el ezaby", "al ezaby", "elezaby", "ezaby"] },
   { key: "19011", label: "19011", patterns: ["19011"] },
   { key: "seif", label: "Seif", patterns: ["سيف", "seif"] },

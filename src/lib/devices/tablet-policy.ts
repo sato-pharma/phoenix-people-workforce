@@ -81,12 +81,12 @@ export type OwnerApp = {
   installType: OwnerAppInstallType;
 };
 
-export type PermissionGrant = {
+type PermissionGrant = {
   permission: string;
   policy: "GRANT" | "DENY" | "PROMPT";
 };
 
-export type TabletPolicyApplication = {
+type TabletPolicyApplication = {
   packageName: string;
   installType: string;
   permissionGrants?: PermissionGrant[];

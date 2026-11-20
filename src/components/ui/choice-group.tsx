@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 
-export type ChoiceGroupOption<TValue extends string> = {
+type ChoiceGroupOption<TValue extends string> = {
   label: string;
   value: TValue;
 };

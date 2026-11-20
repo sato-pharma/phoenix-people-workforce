@@ -209,7 +209,7 @@ function isIntegritySubjectKind(value: unknown): value is IntegritySubjectKind {
  */
 const SFE_SOURCES: IntegritySource[] = ["photo"];
 
-export type IntegrityBoardFlag = PhoenixCrmIntegrityFlag | PhoenixCrmPhotoFlag;
+type IntegrityBoardFlag = PhoenixCrmIntegrityFlag | PhoenixCrmPhotoFlag;
 
 /**
  * One point this case has — a pin, a photograph's own fix, the place on the list.
@@ -224,7 +224,7 @@ export type IntegrityBoardFlag = PhoenixCrmIntegrityFlag | PhoenixCrmPhotoFlag;
  * `label` is what the reader sees beside the marker, in plain words. `atIso` is when that reading
  * was taken, when the row records it; null is UNKNOWN and never a zero.
  */
-export type CaseReading = {
+type CaseReading = {
   label: string;
   lat: number;
   lon: number;
@@ -239,7 +239,7 @@ export type CaseReading = {
  * NAME and never an HR id (the owner's standing rule); null when the row names nobody, which is what
  * an automated pass leaves behind.
  */
-export type CaseEvent = {
+type CaseEvent = {
   atIso: string;
   what: string;
   byName: string | null;
@@ -284,7 +284,7 @@ const EVENT_LABELS: Record<string, string> = {
   visit_locations_restamped: "The visits were re-stamped against the place",
 };
 
-export function integrityEventLabel(eventType: string): string {
+function integrityEventLabel(eventType: string): string {
   return EVENT_LABELS[eventType] ?? eventType.replace(/_/g, " ");
 }
 

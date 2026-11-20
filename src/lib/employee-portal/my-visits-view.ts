@@ -21,10 +21,10 @@ import type {
 /** Rows on one page of any tab. */
 export const MY_VISITS_PAGE_SIZE = 25;
 
-export const MY_VISITS_TABS = ["visits", "double", "checkins", "team"] as const;
+const MY_VISITS_TABS = ["visits", "double", "checkins", "team"] as const;
 export type MyVisitsTab = (typeof MY_VISITS_TABS)[number];
 
-export type MyVisitsCounts = { visits: number; double: number; checkins: number; team: number };
+type MyVisitsCounts = { visits: number; double: number; checkins: number; team: number };
 
 type Paging = { page: number; totalPages: number; totalRows: number };
 

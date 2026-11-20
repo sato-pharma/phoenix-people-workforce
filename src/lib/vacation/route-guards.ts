@@ -2,8 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
-export const vacationUploadMaxBytes = 20 * 1024 * 1024;
-export const vacationExportMaxRows = 5000;
+const vacationUploadMaxBytes = 20 * 1024 * 1024;
 
 export function rejectOversizedVacationUploadRequest(request: Request) {
   const contentLength = Number(request.headers.get("content-length") ?? 0);

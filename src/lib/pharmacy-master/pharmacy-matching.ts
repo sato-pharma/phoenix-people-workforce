@@ -145,7 +145,7 @@ export type PharmacyMatchCandidateGroup = {
 
 const GPS_MATCH_RADIUS_METERS = 50;
 
-export const PHARMACY_MATCH_WARNING: Record<Exclude<PharmacyMatchConfidence, "high">, string> = {
+const PHARMACY_MATCH_WARNING: Record<Exclude<PharmacyMatchConfidence, "high">, string> = {
   low: "Weak match — only shown because it may still be useful; verify carefully before treating this as the same pharmacy.",
   medium: "Moderate similarity — needs human review; common names can produce false positives.",
 };

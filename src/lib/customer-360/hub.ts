@@ -242,19 +242,19 @@ export type HubRequest = {
 };
 
 /** One approved order on a trusted venue tied to the hub. Head Office orders are never kept. */
-export type HubDirectOrderEntry = { line: HubLineCode; month: string | null; value: number };
+type HubDirectOrderEntry = { line: HubLineCode; month: string | null; value: number };
 
 /**
  * The trusted venues tied to a hub and their approved orders on the three lines. The order count, the
  * value and the months are counted per view (`report.ts`), through each line's closed months — the
  * same months every other figure on the page reads.
  */
-export type HubDirectOrders = {
+type HubDirectOrders = {
   venues: number;
   entries: HubDirectOrderEntry[];
 };
 
-export type NotLinkedNote = { reason: string };
+type NotLinkedNote = { reason: string };
 
 export type Hub = {
   id: string;

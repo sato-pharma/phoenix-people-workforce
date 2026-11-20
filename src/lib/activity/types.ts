@@ -64,7 +64,7 @@ export type ActivityAnomaly = {
   occurredAt: string;
 };
 
-export type ActivityKpis = {
+type ActivityKpis = {
   activeUsers: number;
   onlineNow: number;
   sessions: number;
@@ -138,7 +138,7 @@ export type ExcludedAccount = {
   pageViews: number;
 };
 
-export type TimelineEvent = {
+type TimelineEvent = {
   atIso: string;
   moduleLabel: string;
   path: string;
@@ -183,7 +183,7 @@ export type LoginCalendar = {
  * one forty-minute block. Collapsing them would hide the switching that the
  * journey exists to show.
  */
-export type ModuleVisit = {
+type ModuleVisit = {
   moduleLabel: string;
   startedAtIso: string;
   endedAtIso: string;

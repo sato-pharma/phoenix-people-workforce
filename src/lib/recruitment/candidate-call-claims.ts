@@ -44,10 +44,6 @@ import { managerLabel } from "@/lib/recruitment/person-labels";
 export const candidateCallActions = ["will_call", "skipped"] as const;
 export type CandidateCallAction = (typeof candidateCallActions)[number];
 
-export function isCandidateCallAction(value: unknown): value is CandidateCallAction {
-  return typeof value === "string" && (candidateCallActions as readonly string[]).includes(value);
-}
-
 /**
  * What the manager's card asks the server to do.
  *
@@ -168,7 +164,7 @@ export function redactDistrictBoardsContact<
  * raw code where the owner's rule is a human-readable name, in the one place on the screen whose
  * whole job is to say WHO. Words instead, so the sentence still scans and still says what it knows.
  */
-export function callClaimHolderLabel(claim: CandidateCallClaim): string {
+function callClaimHolderLabel(claim: CandidateCallClaim): string {
   return managerLabel(claim.managerName);
 }
 
@@ -187,7 +183,7 @@ export function callClaimNotice(
 }
 
 /** What the API answers when a second manager presses "I will call" on a CV already taken. */
-export function callClaimTakenMessage(claim: CandidateCallClaim): string {
+function callClaimTakenMessage(claim: CandidateCallClaim): string {
   return `${callClaimHolderLabel(claim)} has already said they will call this candidate.`;
 }
 

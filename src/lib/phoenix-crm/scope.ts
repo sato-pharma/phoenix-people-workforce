@@ -260,9 +260,9 @@ export function territoriesUnderManager(
 export const MOST_ON_A_VISIT = 12;
 
 /** One person on a visit besides the rep: the management line, or the product side (product, group product, training). */
-export type ParticipantCompanion = { hrId: string; side: "manager" | "product" };
+type ParticipantCompanion = { hrId: string; side: "manager" | "product" };
 
-export type VisitParticipants = {
+type VisitParticipants = {
   repHrId: string | null;
   managerHrId: string | null;
   seniorHrId: string | null;
@@ -276,11 +276,11 @@ export type VisitParticipants = {
   companions: ParticipantCompanion[];
 };
 
-export const COMPANIONS_UNREADABLE = "Choose who was on the visit. Reload the page.";
-export const CHAIN_NEEDS_TWO = "A chain visit has the manager and at least one more person. Choose who else was on the visit.";
-export const DOUBLE_HAS_ONE = "A double visit has one person with the rep. Choose Chain visit for more.";
-export const CHOOSE_PRODUCT_SIDE = "Choose the product manager who was on the visit from your line's product managers.";
-export const CHOOSE_SENIOR_ABOVE = "Choose the manager who was on the visit: a manager above the one you chose.";
+const COMPANIONS_UNREADABLE = "Choose who was on the visit. Reload the page.";
+const CHAIN_NEEDS_TWO = "A chain visit has the manager and at least one more person. Choose who else was on the visit.";
+const DOUBLE_HAS_ONE = "A double visit has one person with the rep. Choose Chain visit for more.";
+const CHOOSE_PRODUCT_SIDE = "Choose the product manager who was on the visit from your line's product managers.";
+const CHOOSE_SENIOR_ABOVE = "Choose the manager who was on the visit: a manager above the one you chose.";
 
 /** The companions as the form sent them, each person once; null when one cannot be read. */
 function readCompanions(raw: ReadonlyArray<{ hrId: string; side: string }> | undefined): ParticipantCompanion[] | null {

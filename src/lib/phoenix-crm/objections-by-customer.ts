@@ -47,7 +47,7 @@ export type ObjectionVisit = {
 };
 
 /** One visit behind a count: the day, the list, the products discussed and the rep's own words. */
-export type ObjectionVisitLine = {
+type ObjectionVisitLine = {
   visitDate: string;
   listType: "AM" | "PM";
   products: string[];
@@ -62,7 +62,7 @@ export type CustomerObjection = HeardTally & {
   visits: ObjectionVisitLine[];
 };
 
-export type ObjectingCustomer = {
+type ObjectingCustomer = {
   key: string;
   customerName: string;
   speciality: string | null;
@@ -70,7 +70,7 @@ export type ObjectingCustomer = {
   objections: CustomerObjection[];
 };
 
-export type RepObjections = {
+type RepObjections = {
   key: string;
   repName: string;
   /** The territories these visits were made on, by name. */

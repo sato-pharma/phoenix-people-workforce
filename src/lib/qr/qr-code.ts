@@ -44,8 +44,8 @@ export type EncodeQrOptions = {
   mask?: number;
 };
 
-export const QR_MIN_VERSION = 1;
-export const QR_MAX_VERSION = 40;
+const QR_MIN_VERSION = 1;
+const QR_MAX_VERSION = 40;
 
 /** The four modules of light margin the standard requires around a symbol. */
 export const QR_QUIET_ZONE = 4;
@@ -116,7 +116,7 @@ export function qrErrorCorrectionLayout(
 }
 
 /** 8-bit data codewords a symbol of this version and level holds, before error correction. */
-export function qrDataCodewords(version: number, level: QrErrorCorrection): number {
+function qrDataCodewords(version: number, level: QrErrorCorrection): number {
   const { blocks, eccPerBlock } = qrErrorCorrectionLayout(version, level);
   return Math.floor(qrRawDataModules(version) / 8) - eccPerBlock * blocks;
 }
@@ -457,7 +457,7 @@ function drawCodewords(canvas: Canvas, codewords: readonly number[]): void {
 }
 
 /** The eight mask conditions of §7.8.2, `x` the column and `y` the row. */
-export function qrMaskApplies(mask: number, x: number, y: number): boolean {
+function qrMaskApplies(mask: number, x: number, y: number): boolean {
   switch (mask) {
     case 0:
       return (x + y) % 2 === 0;

@@ -27,7 +27,7 @@ export type CrmPerson = { hrId: string; name: string };
  * "only N people submitted"). */
 export const EARLY_BIRD_LIMIT = 10;
 
-export type CrmEarlyBird = {
+type CrmEarlyBird = {
   hrId: string;
   name: string;
   role: "Med Rep" | "DSM";

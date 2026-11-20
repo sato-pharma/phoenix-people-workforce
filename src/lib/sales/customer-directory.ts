@@ -71,7 +71,7 @@ export type CustomerDirectoryFilters = {
   toPeriod?: string | null;
 };
 
-export type CustomerDirectoryOption = {
+type CustomerDirectoryOption = {
   areaCode?: string;
   code: string;
   label: string;

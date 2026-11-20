@@ -43,7 +43,7 @@ export function isForecastExportFormat(value: unknown): value is ForecastExportF
   return value === "xlsx" || value === "pdf";
 }
 
-export type ForecastExportLine = FilteredLine & {
+type ForecastExportLine = FilteredLine & {
   /** Whole-line figures — a filter narrows the rows shown, never the line's own totals. */
   forecastValue: number;
   achievement: number | null;
@@ -73,7 +73,7 @@ export type ForecastExportModel = {
   bricks: Record<string, ForecastBrick[]>;
 };
 
-export type ForecastBrick = {
+type ForecastBrick = {
   name: string;
   units: number;
   value: number;
@@ -240,7 +240,7 @@ export const DISTRICT_MANAGERS_TAB = "District Managers";
 export const MEDICAL_REPS_TAB = "Medical Reps";
 export const BRICKS_TAB = "Bricks";
 
-export type BrickTabRow = {
+type BrickTabRow = {
   brick: string;
   product: string;
   units: number;
@@ -250,7 +250,7 @@ export type BrickTabRow = {
   area: string;
   region: string;
 };
-export type BrickRepBlock = {
+type BrickRepBlock = {
   name: string;
   lineName: string;
   bricks: number;
@@ -313,8 +313,8 @@ export function groupBricksByDistrict(model: Pick<ForecastExportModel, "lines" |
   return tabs.sort(byNameLast(NO_DISTRICT_MANAGER));
 }
 
-export type BrickArea = { name: string; value: number; bricks: number; reps: string[]; districtManagers: string[]; rows: BrickTabRow[] };
-export type BrickRegion = { name: string; value: number; bricks: number; areas: BrickArea[] };
+type BrickArea = { name: string; value: number; bricks: number; reps: string[]; districtManagers: string[]; rows: BrickTabRow[] };
+type BrickRegion = { name: string; value: number; bricks: number; areas: BrickArea[] };
 export type BrickLineRegions = { lineName: string; value: number; regions: BrickRegion[] };
 
 const countBricks = (rows: readonly BrickTabRow[]) => new Set(rows.map((row) => `${row.area}|${row.brick}`)).size;
@@ -376,7 +376,7 @@ export function groupBricksByRegion(model: Pick<ForecastExportModel, "lines" | "
 
 export const PRODUCT_DETAIL_TAB = "By region, rep and product";
 
-export type ProductDetailRow = {
+type ProductDetailRow = {
   product: string;
   units: number;
   value: number;
@@ -384,8 +384,8 @@ export type ProductDetailRow = {
   /** The areas of this region the rep sells this product in, by name. */
   areas: string[];
 };
-export type ProductDetailRep = { name: string; districtManager: string; value: number; rows: ProductDetailRow[] };
-export type ProductDetailRegion = { name: string; value: number; reps: ProductDetailRep[] };
+type ProductDetailRep = { name: string; districtManager: string; value: number; rows: ProductDetailRow[] };
+type ProductDetailRegion = { name: string; value: number; reps: ProductDetailRep[] };
 export type ProductDetailLine = { lineName: string; value: number; regions: ProductDetailRegion[] };
 
 export function groupProductsByRegionAndRep(model: Pick<ForecastExportModel, "lines" | "bricks">): ProductDetailLine[] {

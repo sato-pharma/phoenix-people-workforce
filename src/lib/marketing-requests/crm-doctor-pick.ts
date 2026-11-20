@@ -23,7 +23,7 @@
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 
 /** The roles that choose from every area in the company — none of them holds a team of reps. */
-export const CRM_DOCTOR_COMPANY_ROLES: ReadonlySet<string> = new Set([
+const CRM_DOCTOR_COMPANY_ROLES: ReadonlySet<string> = new Set([
   "Super Admin",
   "CEO",
   "SFE Manager",
@@ -42,7 +42,7 @@ export function crmDoctorAreaIsFixed(role: string): boolean {
   return role === "Medical Rep";
 }
 
-export type CrmListStatus = "on_list" | "not_on_list";
+type CrmListStatus = "on_list" | "not_on_list";
 
 /** What every approval step prints beside a customer whose name was typed by hand. */
 export const NOT_ON_CRM_LIST_FLAG =
@@ -141,7 +141,7 @@ export const UNPICKED_CRM_DOCTOR: ResolvedCrmDoctorPick = Object.freeze({
 });
 
 /** One area holds several rep seats (one per line and more); they share this key. */
-export function crmAreaKeyOf(seat: Pick<OrgSeat, "areaCode" | "areaName" | "seatId">): string {
+function crmAreaKeyOf(seat: Pick<OrgSeat, "areaCode" | "areaName" | "seatId">): string {
   return seat.areaCode ?? seat.areaName ?? seat.seatId;
 }
 

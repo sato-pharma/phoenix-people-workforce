@@ -52,7 +52,7 @@ export type SalesChannel = "distributor" | "wholesaler" | "direct";
 export const SALES_CHANNELS: readonly SalesChannel[] = ["distributor", "wholesaler", "direct"];
 
 /** One contributor and what proportion of the whole it carried. `share` is 0–100. */
-export type ContributorShare = {
+type ContributorShare = {
   key: string;
   label: string;
   value: number;
