@@ -21,7 +21,7 @@ export const maxDuration = 60;
  * of benefits (owner, 2026-11-21). It shows amounts, never the split's percentages.
  *
  * 🔴 It carries amounts, so it is held to medical_insurance_invoices (Super Admin only), asserted here before
- * anything is read. It sends nothing: the Super Admin downloads it and hands it on.
+ * anything is read. This route only builds the PDF; emailing the statement is POST /cost-letter/send.
  */
 export async function GET(request: Request) {
   try {

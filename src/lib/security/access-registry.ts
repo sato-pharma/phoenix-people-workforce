@@ -771,6 +771,8 @@ export const accessRegistry = [
   // The insurer's EDI file for the people ticked on the page. POST so the list rides in the body; it builds a file and changes nothing.
   sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/movement-file", permission: { resource: "medical_insurance", action: "export" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/cost-letter", permission: { resource: "medical_insurance_invoices", action: "read" } }),
+  // Emails each chosen employee their own statement, in the body of the house letter, to their work email.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/cost-letter/send", permission: { resource: "medical_insurance_invoices", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/members", permission: { resource: "medical_insurance", action: "create" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["PATCH"], pattern: "/api/medical-insurance/members/:id", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/exceptions", permission: { resource: "medical_insurance", action: "update" } }),

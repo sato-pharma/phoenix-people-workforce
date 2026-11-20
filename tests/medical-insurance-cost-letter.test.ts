@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
 import { buildCostLetter, costLetterFileName, renderCostLetterHtml } from "../src/lib/medical-insurance/cost-letter.ts";
+import { renderCostLetterEmail, sendCostLetterEmails } from "../src/lib/medical-insurance/cost-letter-email.ts";
+import type { SendPhoenixEmailInput } from "../src/lib/email/send-phoenix-email.ts";
 import { costLetterRows, type MonthlySplitPerson, type MonthlySplitRow } from "../src/lib/medical-insurance/monthly-split.ts";
 
 // Owner, 21 Nov 2026: a PDF per employee showing his grade, what he pays each month, his family beside him with
@@ -99,10 +101,70 @@ function testThePickerListsEmployeesByName() {
   assert.deepEqual(costLetterRows([a, stray, b]).map((row) => row.key), ["b", "a"]);
 }
 
+/** The email IS the statement: every figure in its body, the table of benefits, no attachment, never the split. */
+function testTheEmailCarriesTheWholeStatement() {
+  const email = renderCostLetterEmail(buildCostLetter(familyRow(), POLICY), "21 November 2026");
+  assert.equal(email.subject, "Your Medical Cover Statement · Grade B");
+  for (const shown of ["EGP 385.17", "EGP 985.40", "EGP 495.25", "EGP 1,480.65", "EGP 1,865.82", "Test Spouse Name", "Test Child Name", "Cover from 1 December 2026", "Policy 50048950", "Dear Test,", "Grade B at a glance", "Table of Benefits · Grade B", "Shared room", "Medical Cover Statement"]) {
+    assert.ok(email.html.includes(shown), `the email shows ${shown}`);
+  }
+  assert.match(email.html, /dir="rtl" lang="ar"/, "the signed Arabic is beneath each benefit");
+  for (const forbidden of [/30\s*%/, /70\s*%/, /company (pays|carries|share)/i, /minimum/i, /\bshare of\b/i]) {
+    assert.doesNotMatch(email.html, forbidden, `the email never says ${forbidden}`);
+    assert.doesNotMatch(email.text, forbidden, `the plain-text part never says ${forbidden}`);
+  }
+  assert.ok(email.text.includes("EGP 1,865.82"), "the plain-text part carries the total too");
+}
+
+/** One email per employee, to their own work email alone; no email, no price or no cover is reported, never sent. */
+async function testTheSendGoesToEachEmployeeAlone() {
+  const sent: SendPhoenixEmailInput[] = [];
+  const base = { ...familyRow(), hrId: "HR-A", key: "a" };
+  const noEmail = { ...familyRow(), employee: person({ memberId: "m-none", name: "No Email Person" }), hrId: "HR-B", key: "b" };
+  const unpriced = { ...familyRow(), employee: person({ memberId: "m-short", name: "Short Person" }), family: [person({ memberId: "m-x", memberType: "spouse", monthly: null, name: "No Birth Date", unpricedReason: "no date of birth" })], hrId: "HR-C", key: "c" };
+  const refused = { ...familyRow(), employee: person({ memberId: "m-refused", name: "Refused Person" }), hrId: "HR-D", key: "d" };
+  const outcomes = await sendCostLetterEmails({
+    from: "Sato Pharma <hrbp@send.example.test>",
+    memberIds: ["m-employee", "m-employee", "m-none", "m-short", "m-refused", "m-gone"],
+    minute: 1,
+    policy: POLICY,
+    preparedOn: "21 November 2026",
+    replyTo: "reply@example.test",
+    rows: [base, noEmail, unpriced, refused],
+    send: async (input) => {
+      sent.push(input);
+      return input.to[0] === "refused@example.test" ? { reason: "suppressed", skipped: true } : { id: "x" };
+    },
+    workEmails: new Map([["HR-A", " Test.Employee@Example.test "], ["HR-B", null], ["HR-C", "short@example.test"], ["HR-D", "refused@example.test"]]),
+  });
+  assert.deepEqual(
+    outcomes.map((outcome) => [outcome.name, outcome.status]),
+    [["Test Employee Name", "sent"], ["No Email Person", "not_sent"], ["Short Person", "not_sent"], ["Refused Person", "not_sent"], ["This person", "not_sent"]],
+    "a repeated id is one email, and every person is accounted for",
+  );
+  assert.match(outcomes[1].reason ?? "", /No work email/);
+  assert.match(outcomes[2].reason ?? "", /No Birth Date cannot be priced yet/);
+  assert.equal(outcomes[3].reason, "suppressed");
+  assert.match(outcomes[4].reason ?? "", /Not covered on the policy today/);
+  assert.equal(sent.length, 2, "only the two priced people with a work email reached the sender");
+  for (const input of sent) {
+    assert.equal(input.to.length, 1, "one recipient, the employee");
+    assert.equal(input.cc, undefined, "no copy");
+    assert.equal(input.bcc, undefined, "no blind copy");
+    assert.equal(input.attachments, undefined, "no attachment: the statement is the body");
+    assert.equal(input.externalRecipients, undefined, "a work email on the Employee Master is never declared external");
+  }
+  assert.deepEqual(sent[0].to, ["test.employee@example.test"]);
+  assert.equal(sent[0].origin?.recipientHrId, "HR-A");
+  assert.match(sent[0].html, /EGP 1,865\.82/);
+}
+
 export async function runMedicalInsuranceCostLetterTests() {
   testTheLinesAreTheCostTabsFigures();
   testThePaperNeverShowsTheSplit();
   testAnEmployeeAlone();
   testAShortFigureIsRefused();
   testThePickerListsEmployeesByName();
+  testTheEmailCarriesTheWholeStatement();
+  await testTheSendGoesToEachEmployeeAlone();
 }

@@ -42,6 +42,7 @@ import {
 } from "./file-storage";
 import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
 import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
+import { COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
 import { buildMonthlySplit } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import type {
@@ -451,6 +452,56 @@ export async function getMedicalInsuranceCostLetter(memberId: string): Promise<C
     if (error instanceof CostLetterError) throw new MedicalInsuranceInputError(error.message);
     throw error;
   }
+}
+
+/**
+ * Emails each chosen employee their own Medical Cover Statement — the statement itself as the body of the
+ * house letter, no attachment (owner, 2026-11-21) — to their work email on the Employee Master, one email
+ * each. Answers what happened to every person; a person who could not be sent to is named with the reason.
+ */
+export async function sendMedicalInsuranceCostLetters(access: AccessContext, body: unknown): Promise<CostLetterEmailOutcome[]> {
+  const raw = (body as { members?: unknown } | null)?.members;
+  const memberIds = Array.isArray(raw) ? [...new Set(raw.map((id) => String(id ?? "").trim()).filter(Boolean))] : [];
+  if (memberIds.length === 0) throw new MedicalInsuranceInputError("Choose at least one employee.");
+  if (memberIds.length > COST_LETTER_EMAIL_BATCH) throw new MedicalInsuranceInputError(`Send at most ${COST_LETTER_EMAIL_BATCH} statements at a time.`);
+
+  const [{ emailNotificationsEnabled }, { sendPhoenixEmail }, { systemEmail }, { satoEmailFrom }, { writeAuditLog }] = await Promise.all([
+    import("@/lib/notifications/email"),
+    import("@/lib/email/send-phoenix-email"),
+    import("@/config/system-settings"),
+    import("@/lib/sato-email/service"),
+    import("@/lib/admin/audit"),
+  ]);
+  if (!emailNotificationsEnabled()) throw new MedicalInsuranceInputError("Email sending is switched off in Phoenix, so nothing was sent.");
+
+  const asOf = todayInCairo();
+  const policy = await requirePolicy(asOf);
+  const state = await loadState(policy, asOf);
+  const split = buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard });
+  const preparedOn = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
+
+  const outcomes = await sendCostLetterEmails({
+    from: satoEmailFrom(systemEmail.satoComposerFromEmail),
+    memberIds,
+    minute: Math.floor(Date.now() / 60_000),
+    policy: { endsOn: policy.endsOn, insurer: policy.insurer, policyNumber: policy.policyNumber, startsOn: policy.startsOn },
+    preparedOn,
+    replyTo: systemEmail.satoComposerReplyToEmail,
+    rows: split.rows,
+    send: sendPhoenixEmail,
+    workEmails: new Map([...state.employeeRows].map(([hrId, row]) => [hrId, row.workEmail])),
+  });
+
+  for (const outcome of outcomes.filter((candidate) => candidate.status === "sent")) {
+    // The email has already gone, so a missed audit row is logged by writeAuditLog, never thrown back as "not sent".
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: outcome.memberId,
+      entityType: "medical_insurance_export",
+      summary: `Emailed the Medical Cover Statement to ${outcome.name} at ${outcome.email}`,
+    });
+  }
+  return outcomes;
 }
 
 // ── Cleaning what a person typed ───────────────────────────────────────────────────────────────

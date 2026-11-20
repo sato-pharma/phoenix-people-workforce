@@ -17,7 +17,8 @@
 // paper is made (`CostLetterError`).
 //
 // 🔴 SUPER ADMIN ONLY, like every amount on this module: the route asserts medical_insurance_invoices
-// before it reads anything. It sends nothing; he downloads it and passes it on himself.
+// before it reads anything. The PDF is downloaded; the same statement is emailed as the body of the house letter by
+// cost-letter-email.ts, to the employee's own work email alone.
 //
 // Rendered by Chromium in the HR premium identity (SATO-DIS-2026-01), a company paper footed for Sato
 // Pharma alone (`PREMIUM_COMPANY_DOCUMENT_BRAND`), like the payslip.
