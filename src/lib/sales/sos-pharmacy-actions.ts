@@ -58,6 +58,18 @@ export type BrickUniverseEntry = { brickId: string; brickName: string; areaCode:
 
 /** How many closings before the latest the stopped / dropping / new rules look back over. */
 export const LOOKBACK_CLOSINGS = 3;
+/**
+ * The longest look-back a viewer may pick ("compare with the N months before", owner 2026-11-20:
+ * "an option of filtration of duration"). The default stays LOOKBACK_CLOSINGS.
+ */
+export const MAX_LOOKBACK_CLOSINGS = 6;
+
+/** A requested look-back, held to 1..MAX_LOOKBACK_CLOSINGS; anything unreadable is the default. */
+export function clampLookback(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return LOOKBACK_CLOSINGS;
+  return Math.min(MAX_LOOKBACK_CLOSINGS, Math.max(1, Math.trunc(parsed)));
+}
 /** Latest at or below this fraction of the look-back average is "dropping" (30%+ below). */
 const DROPPING_RATIO = 0.7;
 /** A product is "core" to the viewer's book when at least this share of active pharmacies buy it. */
@@ -144,7 +156,7 @@ export type PharmacyActionsResult = {
   latestPeriod: string | null;
   /** The look-back closings actually available, newest first. */
   priorPeriods: string[];
-  /** False when fewer than LOOKBACK_CLOSINGS earlier closings are published — "new" is then soft. */
+  /** False when fewer earlier closings are published than the look-back asked for — "new" is then soft. */
   historyComplete: boolean;
   counts: {
     activePharmacies: number;
@@ -258,7 +270,7 @@ function areaNameOf(row: PharmacyActionRow): string {
 
 /**
  * Build every action list from published closings, NEWEST FIRST. `periods[0]` is the latest closing;
- * the next LOOKBACK_CLOSINGS are the look-back. Anything further back is ignored.
+ * the next `lookback` (default LOOKBACK_CLOSINGS) are the look-back. Anything further back is ignored.
  */
 export function buildPharmacyActions(input: {
   periods: readonly PeriodRows[];
@@ -274,7 +286,10 @@ export function buildPharmacyActions(input: {
    */
   listLimit?: number;
   includeHistory?: boolean;
+  /** How many closings before the latest to compare with; held by clampLookback. */
+  lookback?: number;
 }): PharmacyActionsResult {
+  const lookback = input.lookback == null ? LOOKBACK_CLOSINGS : clampLookback(input.lookback);
   const listLimit = input.listLimit ?? ACTION_LIST_LIMIT;
   const masterAreaName = (areaCode: string): string => text(input.areaNames?.get(upper(areaCode)));
   // A name is real only when it is not the code written again; an empty or code-only name falls back
@@ -287,7 +302,7 @@ export function buildPharmacyActions(input: {
   const ordered = [...input.periods]
     .filter((entry) => /^\d{4}-\d{2}$/.test(text(entry.period)))
     .sort((left, right) => right.period.localeCompare(left.period))
-    .slice(0, LOOKBACK_CLOSINGS + 1);
+    .slice(0, lookback + 1);
   const latestPeriod = ordered[0]?.period ?? null;
   const priorPeriods = ordered.slice(1).map((entry) => entry.period);
   const windowPeriods = ordered.map((entry) => entry.period);
@@ -539,7 +554,7 @@ export function buildPharmacyActions(input: {
   return {
     latestPeriod,
     priorPeriods,
-    historyComplete: priorPeriods.length >= LOOKBACK_CLOSINGS,
+    historyComplete: priorPeriods.length >= lookback,
     counts: {
       activePharmacies: active.length,
       stopped: stopped.length,

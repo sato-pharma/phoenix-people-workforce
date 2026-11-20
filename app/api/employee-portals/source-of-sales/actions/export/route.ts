@@ -6,6 +6,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { closingDetailDistributorName, loadDistributorNameIndex } from "@/lib/sales/closing-details-distributor-names";
 import { loadAreaSeatAssignments } from "@/lib/sales/closing-performance-review";
 import { canReadPharmacyActions } from "@/lib/sales/portal-sos-dashboard";
+import { readChannel } from "@/lib/sales/sos-pharmacy-actions-filter";
 import { loadPortalPharmacyActions } from "@/lib/sales/sos-pharmacy-actions-loader";
 import {
   buildPharmacyActionsWorkbook,
@@ -23,7 +24,8 @@ export const maxDuration = 60;
 // Scope is resolved from the SESSION exactly as the screen's feed resolves it — the same loader, built
 // uncapped — so the sheet can never hold a pharmacy the screen would not show. Query: `line` (the
 // viewer's pick, refused outside his scope), `period` (a published closing to read as of) and `area`
-// (one area code, the screen's area pick).
+// (one area code, the screen's area pick), `months` (compare with 1-6 closings before), and the
+// advanced filters `brick` (by name), `channel` (direct | distributor) and `q` (name, address, brick).
 
 export async function GET(request: Request) {
   try {
@@ -36,10 +38,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const requestedLine = searchParams.get("line")?.trim() || null;
     const endPeriod = searchParams.get("period")?.trim() || null;
+    // "Compare with the N months before" — held to 1..6 by the loader; absent = 3, as always.
+    const lookback = searchParams.get("months")?.trim() || null;
     const areaCode = searchParams.get("area")?.trim().toUpperCase() || null;
+    // The screen's advanced filters — they only narrow the lists the session's scope produced.
+    const brickName = searchParams.get("brick")?.trim().slice(0, 120) || null;
+    const channel = readChannel(searchParams.get("channel"));
+    const search = searchParams.get("q")?.trim().slice(0, 120) || null;
 
     const [data, seats, distributorNames] = await Promise.all([
-      loadPortalPharmacyActions({ access, requestedLine, endPeriod, forExport: true }),
+      loadPortalPharmacyActions({ access, requestedLine, endPeriod, lookback, forExport: true }),
       loadAreaSeatAssignments(),
       loadDistributorNameIndex(),
     ]);
@@ -68,7 +76,7 @@ export async function GET(request: Request) {
       line: data.line,
       actions: data.actions,
       peopleByArea,
-      areaCode: pickedArea,
+      filter: { areaCode: pickedArea, brickName, channel, search },
       // The closing's own naming rule: a masked distributor (El Qema) is blank unless the viewer may see it.
       distributorNameOf: (code) => closingDetailDistributorName(code, distributorNames, access),
     });

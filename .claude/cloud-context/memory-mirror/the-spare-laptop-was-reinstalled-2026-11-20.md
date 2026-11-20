@@ -1,11 +1,11 @@
 ---
 name: the-spare-laptop-was-reinstalled-2026-11-20
-description: "20 Nov 2026 the owner reinstalled Windows on the spare laptop; a one-paste bootstrap plus the self-removing 'Phoenix Spare Rebuild' task rebuild it — the host key, maybe the user name, and everything on C: are new"
+description: "20 Nov 2026 the spare laptop went to UBUNTU SERVER 26.04 (user phoenix, systemd phoenix-dev, ~/phoenix); the Windows reinstall of that morning below is history — every spare script is bash now"
 metadata:
   node_type: memory
   type: project
   originSessionId: 13be9376-17b9-44e2-82bc-bc64a093c5df
-  modified: 2026-11-20T11:04:05.594Z
+  modified: 2026-11-20T15:36:50.403Z
 ---
 
 Owner, 20 Nov 2026 ~11:15 Cairo: "the spare laptop Windows was down, so I reinstalled its Windows ... I hate manual work. Automate." Everything on its C: is gone (OpenSSH, Node, Git, pnpm, the "Phoenix Dev Server" and "Phoenix Spare Browser Guard" tasks); D:\Phoenix may have survived if D: is its own partition.

@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 
 import {
   buildPharmacyActions,
+  clampLookback,
   classifyRowKind,
+  LOOKBACK_CLOSINGS,
+  MAX_LOOKBACK_CLOSINGS,
   findSharedCustomerKeys,
   type PeriodRows,
   type PharmacyActionRow,
@@ -15,6 +18,15 @@ import {
   seatLineKey,
   truncatedPercent,
 } from "../src/lib/sales/sos-pharmacy-actions-workbook.ts";
+import {
+  brickOptionsOf,
+  filterBricks,
+  filterPharmacyItems,
+  foldSearchText,
+  hasListFilter,
+  listFilterWords,
+  readChannel,
+} from "../src/lib/sales/sos-pharmacy-actions-filter.ts";
 
 // The portal Source of Sales pharmacy action lists. Every rule here is the owner's own pick
 // (2026-09-14): STOPPED = bought in any of the 3 closings before the latest and nothing in the
@@ -51,6 +63,73 @@ function periods(byPeriod: Record<string, PharmacyActionRow[]>): PeriodRows[] {
 }
 
 export function runSosPharmacyActionsTests() {
+  // ── DURATION: "compare with the N months before" (owner, 2026-11-20) ──────────────────────────
+  // One month back is exactly his "did not buy in October, bought in September": a pharmacy that
+  // bought only two months back is NOT stopped against one month, and IS against three.
+  {
+    const byPeriod = {
+      [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
+      [P1]: [row({ clientCode: "KEEP", salesValue: 50 }), row({ clientCode: "SEPT", salesValue: 80 })],
+      [P2]: [row({ clientCode: "KEEP", salesValue: 50 }), row({ clientCode: "AUG", salesValue: 70 })],
+      [P3]: [row({ clientCode: "KEEP", salesValue: 50 })],
+    };
+    const one = buildPharmacyActions({ periods: periods(byPeriod), lookback: 1 });
+    assert.deepEqual(one.priorPeriods, [P1], "one month back compares with the month before only");
+    assert.deepEqual(one.stopped.map((item) => item.name), ["Pharmacy SEPT"], "bought in the month before, nothing now");
+    assert.equal(one.historyComplete, true, "one month asked, one month there");
+    const three = buildPharmacyActions({ periods: periods(byPeriod) });
+    assert.deepEqual(three.priorPeriods, [P1, P2, P3], "the default stays three");
+    assert.deepEqual(three.stopped.map((item) => item.name).sort(), ["Pharmacy AUG", "Pharmacy SEPT"]);
+    const six = buildPharmacyActions({ periods: periods(byPeriod), lookback: 6 });
+    assert.equal(six.priorPeriods.length, 3, "a longer look-back reads only what is published");
+    assert.equal(six.historyComplete, false, "and says the history is short");
+    assert.equal(clampLookback(undefined), LOOKBACK_CLOSINGS);
+    assert.equal(clampLookback("nonsense"), LOOKBACK_CLOSINGS);
+    assert.equal(clampLookback("0"), 1);
+    assert.equal(clampLookback(99), MAX_LOOKBACK_CLOSINGS);
+    assert.equal(clampLookback("2"), 2);
+  }
+
+  // ── ADVANCED FILTERS: brick, bought through, search — they only narrow ──────────────────────
+  {
+    const byPeriod = {
+      [LATEST]: [row({ clientCode: "KEEP", salesValue: 50 })],
+      [P1]: [
+        row({ clientCode: "A", salesValue: 80, clientName: "صيدلية الأمل", clientAddress: "شارع النصر", brickName: "Shubra" }),
+        row({ clientCode: "B", salesValue: 60, brickName: "Shubra", isDirect: true }),
+        row({ clientCode: "C", salesValue: 40, brickName: "Maadi", areaCode: "CA2", sheetAreaCode: "CA2", areaName: "Cairo 2", sheetAreaName: "Cairo 2" }),
+      ],
+    };
+    const result = buildPharmacyActions({ periods: periods(byPeriod), lookback: 1, listLimit: Number.POSITIVE_INFINITY });
+    const names = (items: { name: string }[]) => items.map((item) => item.name).sort();
+    assert.equal(result.stopped.length, 3);
+    assert.equal(hasListFilter({}), false);
+    assert.equal(hasListFilter({ areaCode: "CA1" }), false, "the area pick is the screen's scope switch, not an advanced filter");
+    assert.equal(hasListFilter({ search: "  " }), false);
+    assert.equal(hasListFilter({ brickName: "Shubra" }), true);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { brickName: "shubra" })), ["Pharmacy B", "صيدلية الأمل"], "brick by name, case folded");
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { channel: "direct" })), ["Pharmacy B"]);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { channel: "distributor" })), ["Pharmacy C", "صيدلية الأمل"]);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { areaCode: "ca2" })), ["Pharmacy C"]);
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { search: "صيدليه الامل" })), ["صيدلية الأمل"], "Arabic letter forms fold: ة/ه and أ/ا");
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { search: "النصر" })), ["صيدلية الأمل"], "search reads the address");
+    assert.deepEqual(names(filterPharmacyItems(result.stopped, { search: "maadi" })), ["Pharmacy C"], "search reads the brick");
+    assert.deepEqual(filterPharmacyItems(result.stopped, { brickName: "Shubra", channel: "direct", search: "pharmacy" }).length, 1, "filters combine");
+    assert.equal(foldSearchText("  أحمد   إبراهيم  "), "احمد ابراهيم");
+    assert.equal(readChannel("direct"), "direct");
+    assert.equal(readChannel("DROP TABLE"), null, "an unknown channel is no filter, never an error");
+
+    const bricks = [
+      { brickId: "B7", brickName: "Shubra", areaCode: "CA1", areaName: "Cairo 1" },
+      { brickId: "B8", brickName: "Maadi", areaCode: "CA2", areaName: "Cairo 2" },
+    ];
+    assert.deepEqual(filterBricks(bricks, { search: "maa" }).map((entry) => entry.brickId), ["B8"]);
+    assert.deepEqual(filterBricks(bricks, { channel: "direct" }), [], "an untapped brick has no channel to match");
+    assert.deepEqual(brickOptionsOf([result.stopped, bricks]), ["Maadi", "Shubra"], "each brick once, A to Z");
+    assert.equal(listFilterWords({ brickName: "Shubra", channel: "direct", search: "amal" }), "brick Shubra · direct orders only · matching “amal”");
+    assert.equal(listFilterWords({}), "");
+  }
+
   // ── THE SHEET DOWNLOAD (owner, 2026-11-20): uncapped, each pharmacy's month-by-month history ──
   // "Did not buy in October, bought in September" is a filter on the sheet's month columns, so the
   // history must carry a 0 for a month with no purchase, newest first, and the cap must not apply.

@@ -41,6 +41,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const requestedLine = searchParams.get("line")?.trim() || null;
     const endPeriod = searchParams.get("period")?.trim() || null;
+    // "Compare with the N months before" — held to 1..6 by the loader; absent = 3, as always.
+    const lookback = searchParams.get("months")?.trim() || null;
 
     // STARTED BESIDE THE CLOSING READS (2026-10-01, "slow to transfer between page and page"). For a
     // Medical Rep the loader knows the strip's line and areas before it reads a single closing row, and
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
       access,
       requestedLine,
       endPeriod,
+      lookback,
       onPaceInputsKnown: (inputs) => {
         early.push({ key: paceInputsKey(inputs), pace: loadPortalMonthPace({ access, ...inputs }).catch(() => null) });
       },

@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { addPhoenixTableSheet, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 import type { PharmacyActionItem, PharmacyActionsResult } from "@/lib/sales/sos-pharmacy-actions";
+import { filterPharmacyItems, listFilterWords, type PharmacyListFilter } from "@/lib/sales/sos-pharmacy-actions-filter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE PHARMACY ACTIONS SHEET — the download behind "Where my sales come from".
@@ -117,8 +118,8 @@ export async function buildPharmacyActionsWorkbook(input: {
   line: string | null;
   actions: PharmacyActionsResult;
   peopleByArea: ReadonlyMap<string, AreaPeople>;
-  /** One area code, when the viewer picked one on the screen; null = every area in scope. */
-  areaCode?: string | null;
+  /** The screen's area pick and advanced filters; nothing set = every pharmacy in scope. */
+  filter?: PharmacyListFilter;
   distributorNameOf?: (code: string) => string;
 }): Promise<ExcelJS.Buffer> {
   const { actions, line } = input;
@@ -128,14 +129,18 @@ export async function buildPharmacyActionsWorkbook(input: {
 
   const periods = [actions.latestPeriod, ...actions.priorPeriods].filter((period): period is string => Boolean(period));
   const earlier = actions.priorPeriods.length;
-  const pickedArea = input.areaCode ? input.areaCode.toUpperCase() : null;
-  const inArea = (items: PharmacyActionItem[]) => (pickedArea ? items.filter((item) => item.areaCode.toUpperCase() === pickedArea) : items);
+  const filter = input.filter ?? {};
+  const pickedArea = filter.areaCode ? filter.areaCode.toUpperCase() : null;
+  const inArea = (items: PharmacyActionItem[]) => filterPharmacyItems(items, filter);
   const areaName = pickedArea ? actions.areas.find((area) => area.code.toUpperCase() === pickedArea)?.name ?? pickedArea : null;
 
   const earlierWords = earlier === 0
     ? "no earlier closing"
-    : `${periodLabel(actions.priorPeriods[actions.priorPeriods.length - 1])} to ${periodLabel(actions.priorPeriods[0])}`;
-  const scopeWords = `${line ?? "Sales"}${areaName ? ` · ${areaName}` : ""} · read as of the ${periodLabel(actions.latestPeriod)} closing, compared with ${earlierWords}`;
+    : earlier === 1
+      ? periodLabel(actions.priorPeriods[0])
+      : `${periodLabel(actions.priorPeriods[actions.priorPeriods.length - 1])} to ${periodLabel(actions.priorPeriods[0])}`;
+  const filterWords = listFilterWords(filter);
+  const scopeWords = `${line ?? "Sales"}${areaName ? ` · ${areaName}` : ""}${filterWords ? ` · ${filterWords}` : ""} · read as of the ${periodLabel(actions.latestPeriod)} closing, compared with ${earlierWords}`;
 
   const lists: { key: PharmacyActionSheetKey; sheet: string; title: string; rule: string }[] = [
     {
@@ -154,7 +159,7 @@ export async function buildPharmacyActionsWorkbook(input: {
       key: "newPharmacies",
       sheet: "New buyers",
       title: "New buyers",
-      rule: `Bought in ${periodLabel(actions.latestPeriod)} and in none of ${earlierWords}`,
+      rule: `Bought in ${periodLabel(actions.latestPeriod)} and ${earlier === 1 ? "not in" : "in none of"} ${earlierWords}`,
     },
   ];
 

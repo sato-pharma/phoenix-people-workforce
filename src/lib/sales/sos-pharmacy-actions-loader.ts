@@ -29,7 +29,7 @@ import { pickPortalClosingLine, resolvePortalClosingScope } from "@/lib/sales/mo
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
   buildPharmacyActions,
-  LOOKBACK_CLOSINGS,
+  clampLookback,
   type BrickUniverseEntry,
   type PharmacyActionsResult,
 } from "@/lib/sales/sos-pharmacy-actions";
@@ -91,6 +91,8 @@ export async function loadPortalPharmacyActions(input: {
    * it is a one-off read and several times the size of the screen's payload.
    */
   forExport?: boolean;
+  /** How many closings before the end month to compare with (1..6, default 3). */
+  lookback?: number | string | null;
 }): Promise<PortalPharmacyActionsPayload> {
   const { access } = input;
   // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a rep's territory is
@@ -148,10 +150,11 @@ export async function loadPortalPharmacyActions(input: {
   }
 
   const publishedPeriods = publishedByLine.get(choice.line) ?? [];
+  const lookback = clampLookback(input.lookback);
   const endPeriod = input.endPeriod && publishedPeriods.includes(input.endPeriod) ? input.endPeriod : null;
   const periods = publishedPeriods
     .filter((period) => !endPeriod || period <= endPeriod)
-    .slice(0, LOOKBACK_CLOSINGS + 1);
+    .slice(0, lookback + 1);
   if (periods.length === 0) return base(`No ${choice.line} closing has been published yet.`, areaCodes);
 
   const cacheKey = `${viewerKey(access)}|${choice.line}|${periods.join(",")}`;
@@ -235,6 +238,7 @@ export async function loadPortalPharmacyActions(input: {
     periods: periodRows,
     brickUniverse,
     areaNames,
+    lookback,
     ...(input.forExport ? { listLimit: Number.POSITIVE_INFINITY, includeHistory: true } : {}),
   });
   const payload: PortalPharmacyActionsPayload = {
