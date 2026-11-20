@@ -6,7 +6,10 @@
  * Owner, 20 Nov 2026: "with every precaution against fake locations and fraud". Each refusal below is one trick:
  *   - a fake-location app feeding the phone a point (Android marks the fix, and the app looks for one switched on);
  *   - a rooted phone or an emulator, which can lie about anything;
- *   - a location from Wi-Fi or the network instead of the satellites, or a fix older than a minute;
+ *   - a location from Wi-Fi or the network instead of the satellites, or a fix older than ten minutes — inside a
+ *     polyclinic the satellites rarely reach, so the rep takes the position at the door and the camera holds it
+ *     while they walk in (owner, 20 Nov 2026: "they capture inside buildings, inside polyclinics"); its age is
+ *     shown to the Super Admin beside the photo;
  *   - the phone's clock moved in Settings: the time that counts is the satellites', and when the phone last saw
  *     Phoenix's own clock the two must agree — a disagreement of minutes is a spoofed satellite signal;
  *   - an old photo kept for later: a seal is used within `SEAL_MAX_AGE_HOURS`.
@@ -20,8 +23,10 @@ import { FIELD_CAMERA_PACKAGE } from "@/lib/phoenix-crm/field-camera/seal-format
 export const SEAL_MAX_AGE_HOURS = 72;
 /** At least this many satellites in the fix — a fake signal or a fix from memory rarely names four. */
 export const SEAL_MIN_SATELLITES = 4;
-/** The location may be at most this old when the shutter is pressed. */
-export const SEAL_MAX_FIX_AGE_MS = 60_000;
+/** The location may be at most this old when the shutter is pressed: the position taken at a building's door, held inside. */
+export const SEAL_MAX_FIX_AGE_MS = 10 * 60_000;
+/** A position older than this at the shutter was carried in from the door, and the Super Admin is told so. */
+export const SEAL_DOOR_FIX_NOTE_MS = 60_000;
 /** The satellites' time and Phoenix's clock (when the phone last saw it) may differ by this much at most. */
 export const SEAL_MAX_NETWORK_GAP_SECONDS = 600;
 /** The phone's own clock off the satellites' by more than this is reported (the satellites' time is used). */
@@ -141,7 +146,7 @@ export function sealPayloadProblems(payload: SealPayload, nowMs: number = Date.n
   if (payload.satellitesUsed < SEAL_MIN_SATELLITES) {
     problems.push(`The location was fixed from ${payload.satellitesUsed} satellites; at least ${SEAL_MIN_SATELLITES} are needed.`);
   }
-  if (payload.fixAgeMs < 0 || payload.fixAgeMs > SEAL_MAX_FIX_AGE_MS) problems.push("The location was more than a minute old when the photo was taken.");
+  if (payload.fixAgeMs < 0 || payload.fixAgeMs > SEAL_MAX_FIX_AGE_MS) problems.push("The location was more than 10 minutes old when the photo was taken.");
   const reading = adminPhotoReadingProblem({ lat: payload.lat, lon: payload.lon, accuracyMeters: payload.accuracyMeters });
   if (reading) problems.push(reading);
 
@@ -167,6 +172,11 @@ export function sealPayloadWarnings(payload: SealPayload): string[] {
     warnings.push(`The phone's own clock was ${minutes(clockGap)} off the satellites' time. The satellites' time is the one used.`);
   }
   if (!payload.networkTimeUtc) warnings.push("The phone had not seen Phoenix's clock since it was last switched on, so only the satellites' time was checked.");
+  if (payload.fixAgeMs > SEAL_DOOR_FIX_NOTE_MS) {
+    warnings.push(
+      `The position was taken ${minutes(payload.fixAgeMs / 1000)} before the photo, at the building's door, then held inside. Check the photo is of this place.`,
+    );
+  }
   if (payload.developerOptions) warnings.push("Developer options are switched on in the phone.");
   if (payload.adb) warnings.push("USB debugging was switched on in the phone.");
   return warnings;

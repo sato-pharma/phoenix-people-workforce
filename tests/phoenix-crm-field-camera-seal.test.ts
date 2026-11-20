@@ -157,7 +157,11 @@ function payloadRulesBehave(): void {
   assert.match(problems({ timeSource: "phone" })[0], /satellites/);
   assert.match(problems({ satellitesUsed: 3 })[0], /at least 4/);
   assert.deepEqual(problems({ satellitesUsed: 4 }), []);
-  assert.match(problems({ fixAgeMs: 61_000 })[0], /more than a minute old/);
+  // Inside a polyclinic the position is taken at the door and held: up to ten minutes stands, one more refuses.
+  assert.deepEqual(problems({ fixAgeMs: 61_000 }), []);
+  assert.deepEqual(problems({ fixAgeMs: 600_000 }), []);
+  assert.match(problems({ fixAgeMs: 600_001 })[0], /more than 10 minutes old/);
+  assert.match(problems({ fixAgeMs: -1 })[0], /more than 10 minutes old/);
   assert.ok(problems({ accuracyMeters: 400 }).length > 0, "a reading rougher than the validated place's line refuses");
   assert.ok(problems({ lat: 0, lon: 0 }).length > 0, "0,0 refuses");
   assert.match(problems({ takenAtUtc: new Date(now + 10 * 60_000).toISOString() })[0], /later than now/);
@@ -172,6 +176,11 @@ function payloadRulesBehave(): void {
   const warnings = sealPayloadWarnings(payloadOf({ phoneClockUtc: "2026-11-20T09:50:00.000Z", networkTimeUtc: null, developerOptions: true, adb: true }));
   assert.equal(warnings.length, 4);
   assert.match(warnings.join(" "), /clock was 10 minutes off/);
+  // A position carried in from the door is never silent: the Super Admin reads its age beside the photo.
+  assert.deepEqual(sealPayloadWarnings(payloadOf({ fixAgeMs: 60_000 })), []);
+  const door = sealPayloadWarnings(payloadOf({ fixAgeMs: 240_000 }));
+  assert.equal(door.length, 1);
+  assert.match(door[0], /taken 4 minutes before the photo, at the building's door/);
 }
 
 function wiringHolds(): void {
