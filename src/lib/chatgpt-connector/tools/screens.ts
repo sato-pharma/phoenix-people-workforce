@@ -40,7 +40,7 @@ const pagePath = z
   .string()
   .min(1)
   .max(400)
-  .describe("The page's address inside Phoenix, starting with /, for example /admin/employees or /employee-portal. Not a full web address.");
+  .describe("The page's address inside Phoenix, starting with /, for example /employees or /employee-portals. Not a full web address.");
 
 function browserBusy(error: unknown): never {
   if (error instanceof ToolRefusal) throw error;

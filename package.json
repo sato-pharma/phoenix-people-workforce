@@ -208,6 +208,7 @@
     "dotenv": "^18.0.10",
     "eslint": "^9",
     "eslint-config-next": "16.4.4",
+    "jscpd": "5.4.3",
     "playwright": "1.65.0",
     "supabase": "^2.120.0",
     "tailwindcss": "^4",

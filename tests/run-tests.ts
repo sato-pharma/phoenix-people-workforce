@@ -2392,6 +2392,7 @@ import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-healt
 import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
 import { runForeignKeyIndexesTests } from "./foreign-key-indexes.test.ts";
 import { runSchemaBaselineTests } from "./schema-baseline.test.ts";
+import { runDbAccessTestsTests } from "./db-access-tests.test.ts";
 import { runSupabaseFolderLayoutTests } from "./supabase-folder-layout.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
@@ -2637,6 +2638,7 @@ import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.te
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runVulnScanTests } from "./vuln-scan.test.ts";
+import { runCiDuplicatesReportTests } from "./ci-duplicates-report.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
@@ -9149,6 +9151,10 @@ await runTest(
   runSchemaBaselineTests,
 );
 await runTest(
+  "the weekly pgTAP access tests read only a full pass as a pass, roll themselves back, match their plan, and run after the restore with an ACCESS alert",
+  runDbAccessTestsTests,
+);
+await runTest(
   "the supabase folder says what each file is (F-ENG-016, F-DB-013: only seed.sql at the root, one-off scripts in supabase/scripts, the edge function source present and outside the app typecheck)",
   runSupabaseFolderLayoutTests,
 );
@@ -10174,6 +10180,13 @@ await runTest(
   + "across chunks, a transitive finding points at an override rather than a manifest bump (Dependabot is direct-only "
   + "and can never fix one), and the REAL lockfile is asserted to parse with a plausible scoped count",
   runVulnScanTests,
+);
+await runTest(
+  "the pull request copy-paste report names only the blocks THIS PR copied (jscpd's isNew against the base ref, "
+  + "never the ~1,000 already on main), cannot call a PR clean below its coverage floor or on a report it does not "
+  + "understand, pins each warning to a repo-relative file within GitHub's ten-per-step cap, and runs in ci.yml's "
+  + "static job on every event (no event condition), continue-on-error with its own timeout, so it can never redden a required check",
+  runCiDuplicatesReportTests,
 );
 await runTest(
   "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
