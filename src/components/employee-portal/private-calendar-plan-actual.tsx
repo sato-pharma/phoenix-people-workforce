@@ -6,11 +6,12 @@
 // enough for three columns and the same cards below that — never a horizontal scroll. Square edges, plain ink: the ✓ is green text, the ✗ red text, and "Not on the plan" slate, never a fill.
 
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_INK, LandingTitle } from "@/components/employee-portal/landing-kit";
 import { DAY_PLAN_ACTUAL_NOT_ON_PLAN, type DayPlanActualRow } from "@/lib/private-calendar/plan-actual";
 import { cn } from "@/lib/utils";
 
 const TH_CLASS =
-  "border-b border-slate-200 border-t-2 border-t-slate-900 bg-slate-50 px-3 py-2.5 align-bottom text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
+  "border-b border-slate-200 px-3 py-2.5 align-bottom text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 const MARK_CLASS: Record<DayPlanActualRow["match"], string> = {
   match: "text-emerald-700",
@@ -25,19 +26,19 @@ function markText(row: DayPlanActualRow): string {
 }
 
 function HalfText({ half }: { half: DayPlanActualRow["half"] }) {
-  return <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{half}</p>;
+  return <p className={`text-phx-xs font-bold uppercase tracking-[0.1em] ${LANDING_INK}`}>{half}</p>;
 }
 
 function PlanCell({ row }: { row: DayPlanActualRow }) {
   const plan = row.plan;
-  if (!plan) return <p className="text-sm font-semibold text-slate-400">—</p>;
+  if (!plan) return <p className="text-phx-md font-semibold text-slate-500">—</p>;
   const withLine = plan.withName && !plan.label.toLowerCase().includes(plan.withName.toLowerCase()) ? `With ${plan.withName}` : null;
   return (
     <div className="grid min-w-0 gap-0.5">
-      <p className="break-words text-sm font-bold text-slate-900">{plan.label}</p>
-      {withLine ? <p className="break-words text-sm font-semibold text-slate-700">{withLine}</p> : null}
-      {plan.place ? <p className="break-words text-xs font-semibold text-slate-500">{plan.place}</p> : null}
-      {plan.signedOffBy ? <p className="break-words text-xs font-medium text-slate-500">Signed off by {plan.signedOffBy}</p> : null}
+      <p className={`break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{plan.label}</p>
+      {withLine ? <p className="break-words text-phx-md font-semibold text-slate-700" dir="auto">{withLine}</p> : null}
+      {plan.place ? <p className="break-words text-phx-sm font-semibold text-slate-500" dir="auto">{plan.place}</p> : null}
+      {plan.signedOffBy ? <p className="break-words text-phx-sm font-medium text-slate-500">Signed off by {plan.signedOffBy}</p> : null}
     </div>
   );
 }
@@ -46,9 +47,9 @@ function ActualCell({ row }: { row: DayPlanActualRow }) {
   return (
     <div className="grid min-w-0 gap-0.5">
       {row.actual.map((line) => (
-        <p className="break-words text-sm font-semibold text-slate-800" key={line}>{line}</p>
+        <p className="break-words text-phx-md font-semibold text-slate-800" dir="auto" key={line}>{line}</p>
       ))}
-      <p className={cn("break-words text-xs font-black", MARK_CLASS[row.match])}>{markText(row)}</p>
+      <p className={cn("break-words text-phx-sm font-bold", MARK_CLASS[row.match])}>{markText(row)}</p>
     </div>
   );
 }
@@ -60,11 +61,11 @@ function PlanActualCards({ className, rows }: { className: string; rows: readonl
         <article className={`grid min-w-0 gap-2 border border-slate-200 bg-white px-3 py-3 ${adminSoftDepthClassName}`} key={row.key}>
           <HalfText half={row.half} />
           <div className="grid min-w-0 gap-1">
-            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Plan</p>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Plan</p>
             <PlanCell row={row} />
           </div>
-          <div className="grid min-w-0 gap-1 border-t border-slate-100 pt-2">
-            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Actual</p>
+          <div className="grid min-w-0 gap-1 border-t border-slate-200 pt-2">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Actual</p>
             <ActualCell row={row} />
           </div>
         </article>
@@ -77,13 +78,13 @@ export function DayPlanActualTable({ rows }: { rows: readonly DayPlanActualRow[]
   if (rows.length === 0) return null;
   return (
     <section className="@container grid min-w-0 gap-2" data-testid="private-calendar-plan-actual">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Plan | Actual</p>
+      <LandingTitle as="h3">Plan | Actual</LandingTitle>
 
       <PlanActualCards className="md:hidden" rows={rows} />
 
       <div className="hidden min-w-0 md:block">
         <div className="hidden min-w-0 @min-[560px]:block">
-          <table className="w-full table-fixed border-collapse text-left text-sm">
+          <table className="w-full table-fixed border-collapse text-left text-phx-md">
             <colgroup>
               <col style={{ width: "16%" }} />
               <col style={{ width: "42%" }} />
@@ -97,11 +98,11 @@ export function DayPlanActualTable({ rows }: { rows: readonly DayPlanActualRow[]
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
-                <tr className={cn("align-top", index % 2 === 0 ? "bg-white" : "bg-slate-50/60")} key={row.key}>
-                  <td className="border-b border-slate-100 px-3 py-3 align-top"><HalfText half={row.half} /></td>
-                  <td className="border-b border-slate-100 px-3 py-3 align-top"><PlanCell row={row} /></td>
-                  <td className="border-b border-slate-100 px-3 py-3 align-top"><ActualCell row={row} /></td>
+              {rows.map((row) => (
+                <tr className="bg-white align-top" key={row.key}>
+                  <td className="border-b border-slate-200 px-3 py-3 align-top"><HalfText half={row.half} /></td>
+                  <td className="border-b border-slate-200 px-3 py-3 align-top"><PlanCell row={row} /></td>
+                  <td className="border-b border-slate-200 px-3 py-3 align-top"><ActualCell row={row} /></td>
                 </tr>
               ))}
             </tbody>

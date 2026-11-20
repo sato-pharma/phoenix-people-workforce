@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { CountUpNumber } from "@/components/ui/count-up";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { MovePlanPeriod } from "@/components/employee-portal/move-plan-period";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -100,12 +101,29 @@ import type {
   VisitDetailInput,
 } from "@/lib/weekly-planning/service";
 import {
+  phxButtonAddBlockClassName,
+  phxCheckInputClassName,
   phxFieldClassName,
+  phxLabelClassName,
+  phxLabelTextClassName,
+  phxRequiredMarkClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
-import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LANDING_ROW_LINK,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 
 type PlansWorkspaceProps = {
   access: AccessContext;
@@ -365,7 +383,7 @@ function activityAccent(
   if (isMarketingDoubleVisit(value, activityTitle)) return { bar: "bg-violet-700", dot: "bg-violet-700" };
   switch (value) {
     case "Field":
-      return { bar: "bg-orange-500", dot: "bg-orange-500" };
+      return { bar: "bg-[#08111f]", dot: "bg-[#08111f]" };
     case "Double Visit":
       return { bar: "bg-violet-500", dot: "bg-violet-500" };
     case "Training":
@@ -391,11 +409,39 @@ function activityAccent(
   }
 }
 
-// AM / PM / Full-day pill styling.
+// AM / PM / Full-day: small coloured capitals, never a filled pill (the landing kit's status rule).
 function slotPillClass(slot: PlanSlot): string {
-  if (slot === "am") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (slot === "pm") return "border-indigo-200 bg-indigo-50 text-indigo-700";
-  return "border-slate-200 bg-slate-100 text-slate-600";
+  if (slot === "am") return "text-amber-700";
+  if (slot === "pm") return "text-indigo-700";
+  return "text-slate-500";
+}
+
+/** The slot word's shape — the colour comes from slotPillClass. */
+const slotWordClassName = "inline-flex items-center whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums";
+
+/**
+ * A condition line on the plan page — a missing day, a sync note, a capped list — drawn the
+ * landing kit's way: a white sheet with a 4px coloured rail at the left instead of a tinted box,
+ * the words in slate and wrapping.
+ */
+function PlanNotice({
+  children,
+  icon = true,
+  tone,
+}: {
+  children: React.ReactNode;
+  icon?: boolean;
+  tone: "amber" | "red" | "sky" | "violet";
+}) {
+  const rail = { amber: "bg-amber-500", red: "bg-rose-600", sky: "bg-sky-500", violet: "bg-violet-500" }[tone];
+  const ink = { amber: "text-amber-700", red: "text-rose-700", sky: "text-sky-700", violet: "text-violet-700" }[tone];
+  return (
+    <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${rail}`} />
+      {icon ? <TriangleAlert aria-hidden="true" className={`mt-0.5 h-4 w-4 shrink-0 ${ink}`} /> : null}
+      <div className="min-w-0 flex-1 break-words text-phx-sm font-semibold leading-snug text-slate-700">{children}</div>
+    </div>
+  );
 }
 
 const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
@@ -418,10 +464,10 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
 function PlanActivityLegend({ showMarketingDoubleVisit = false }: { showMarketingDoubleVisit?: boolean }) {
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
-      <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
+      <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Legend</span>
       {LEGEND_ACTIVITIES.map((type) => (
         <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600" key={type}>
-          <span className={`inline-block h-2 w-2 rounded-full ${activityAccent(type).dot}`} aria-hidden="true" />
+          <span className={`inline-block h-2 w-2 shrink-0 ${activityAccent(type).dot}`} aria-hidden="true" />
           {activityLabel(type)}
         </span>
       ))}
@@ -429,18 +475,18 @@ function PlanActivityLegend({ showMarketingDoubleVisit = false }: { showMarketin
           isCoachingActivity) so it can't live in the LEGEND_ACTIVITIES array above —
           mirrors how planningActivityOptions appends it after its own filtered map. */}
       <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600">
-        <span className={`inline-block h-2 w-2 rounded-full ${activityAccent("Other", "Coaching").dot}`} aria-hidden="true" />
+        <span className={`inline-block h-2 w-2 shrink-0 ${activityAccent("Other", "Coaching").dot}`} aria-hidden="true" />
         Coaching
       </span>
       {showMarketingDoubleVisit ? (
         <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600">
-          <span className={`inline-block h-2 w-2 rounded-full ${activityAccent("Other", MARKETING_DOUBLE_VISIT_TITLE).dot}`} aria-hidden="true" />
+          <span className={`inline-block h-2 w-2 shrink-0 ${activityAccent("Other", MARKETING_DOUBLE_VISIT_TITLE).dot}`} aria-hidden="true" />
           {MARKETING_DOUBLE_VISIT_TITLE}
         </span>
       ) : null}
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
-        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase ${slotPillClass("am")}`}>AM</span>
-        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase ${slotPillClass("pm")}`}>PM</span>
+        <span className={`${slotWordClassName} ${slotPillClass("am")}`}>AM</span>
+        <span className={`${slotWordClassName} ${slotPillClass("pm")}`}>PM</span>
       </span>
     </div>
   );
@@ -498,13 +544,13 @@ export function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDec
   if (decisions.length === 0) return null;
   return (
     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Decision History</p>
       <ol className="space-y-2">
         {decisions.map((d) => (
-          <li className="group flex items-start gap-2.5 rounded-sm transition-colors duration-150 hover:bg-orange-50/60" key={d.id}>
-            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-orange-400 ring-4 ring-transparent transition-colors duration-150 group-hover:bg-orange-500 group-hover:ring-orange-100" />
-            <div className="min-w-0">
-              <p className="text-xs font-black text-slate-800">
+          <li className="flex items-start gap-2.5" key={d.id}>
+            <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 bg-[#08111f]" />
+            <div className="min-w-0 break-words">
+              <p className="text-xs font-bold text-[#08111f]">
                 {employeePlanActionLabel(d.action)}
                 {/* The decider's NAME (else the role they acted in) — never their HR id, which is a code. */}
                 {decisionActorLabel(d) ? (
@@ -937,10 +983,33 @@ function planCanEdit(plan: EmployeePlan | null) {
   );
 }
 
+/** A plan status as coloured text on white — the landing kit's status rule (no filled pill). */
+export function statusInk(status: EmployeePlanStatus) {
+  if (status.includes("rejected")) return "text-rose-700";
+  if (status.includes("returned")) return "text-amber-700";
+  if (status === "details_requested") return "text-amber-700";
+  if (status === "final_approved" || status === "hr_acknowledged") return "text-emerald-700";
+  if (status === "submitted" || status === "edit_requested" || status === "manager_approved") return "text-sky-700";
+  return "text-slate-500";
+}
+
+/** The same status as a 4px rail colour, for a record's left edge. */
+export function statusRail(status: EmployeePlanStatus) {
+  if (status.includes("rejected")) return "bg-rose-500";
+  if (status.includes("returned")) return "bg-amber-500";
+  if (status === "details_requested") return "bg-amber-500";
+  if (status === "final_approved" || status === "hr_acknowledged") return "bg-emerald-500";
+  if (status === "submitted" || status === "edit_requested" || status === "manager_approved") return "bg-sky-500";
+  return "bg-slate-300";
+}
+
+/** The status word's shape — small tracked capitals; the colour comes from statusInk. */
+export const planStatusWordClassName = "whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em]";
+
 export function statusTone(status: EmployeePlanStatus) {
   if (status.includes("rejected")) return "border-red-200 bg-red-50 text-red-700";
   if (status.includes("returned")) return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "details_requested") return "border-orange-300 bg-orange-50 text-orange-700";
+  if (status === "details_requested") return "border-amber-300 bg-amber-50 text-amber-800";
   if (status === "final_approved" || status === "hr_acknowledged")
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "submitted" || status === "edit_requested" || status === "manager_approved")
@@ -1115,7 +1184,7 @@ function friendlyError(message: string): string {
 function OffWindowBadge() {
   return (
     <span
-      className="inline-flex items-center gap-1 border border-amber-300 bg-amber-50 px-2 py-1 text-phx-xs font-black text-amber-700"
+      className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-amber-700"
       title="Filed for a week that had already started or passed — flagged for review, not blocked."
     >
       <TriangleAlert className="h-3 w-3" />
@@ -1156,7 +1225,7 @@ function PlanPeriodControl({
     return (
       <div className="w-full min-w-0 space-y-1.5 sm:w-72">
         <label
-          className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500"
+          className={`block ${phxLabelTextClassName}`}
           htmlFor={`${idPrefix}-plan-week`}
         >
           Plan week
@@ -1181,7 +1250,7 @@ function PlanPeriodControl({
           })}
         </SearchableSelect>
         {!chosen ? (
-          <p className="text-xs font-bold text-orange-600">
+          <p className="text-xs font-bold text-amber-700">
             Pick the plan week — it is not chosen for you.
           </p>
         ) : null}
@@ -1192,7 +1261,7 @@ function PlanPeriodControl({
   return (
     <div className="w-full min-w-0 space-y-1.5 sm:w-72">
       <label
-        className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500"
+        className={`block ${phxLabelTextClassName}`}
         htmlFor={`${idPrefix}-plan-month`}
       >
         Plan month
@@ -2075,31 +2144,26 @@ export function PlansWorkspace({
     : submitValidationIssues[0] ?? null;
 
   const schemaBanner = !workspace.schemaReady ? (
-    <div className="border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-      Planning database migration is not applied yet.
-    </div>
+    <PlanNotice tone="amber">Planning database migration is not applied yet.</PlanNotice>
   ) : null;
 
   // Mobile-first stacked banner naming exactly which day-slots still block
   // submit. Chips never wrap their own text (whitespace-nowrap); the chip row
   // wraps as layout so there is no horizontal scroll.
   const incompleteBanner = canEdit && incompleteDays.length > 0 ? (
-    <div className="border border-amber-300 bg-amber-50 p-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <TriangleAlert className="h-4 w-4 shrink-0 text-amber-600" />
-        <p className="min-w-0 text-sm font-black text-amber-800">{incompleteDaysHeading(allowHalfDays)}</p>
-      </div>
+    <PlanNotice tone="amber">
+      <p className={`min-w-0 break-words font-bold ${LANDING_INK}`}>{incompleteDaysHeading(allowHalfDays)}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {incompleteDays.map((label) => (
           <span
             key={label}
-            className="inline-flex items-center whitespace-nowrap rounded-sm border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-800"
+            className="inline-flex items-center whitespace-nowrap border border-slate-200 px-2 py-0.5 text-phx-xs font-bold tabular-nums text-amber-700"
           >
             {label}
           </span>
         ))}
       </div>
-    </div>
+    </PlanNotice>
   ) : null;
 
   // Subtle confirmation that approved leave / weekly plans were auto-pulled in.
@@ -2111,29 +2175,30 @@ export function PlansWorkspace({
     : 0;
   const syncEligible = !selectedPlan || (plan ? planSyncEditableStatuses.has(plan.status) : false);
   const syncedBanner = syncEligible && (lockedSyncCount > 0 || weeklySyncCount > 0) ? (
-    <div className="flex flex-wrap items-center gap-2 border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs font-bold text-sky-800">
-      <ShieldCheck className="h-4 w-4 shrink-0 text-sky-600" />
-      <span className="whitespace-nowrap">Auto-synced into this plan:</span>
-      {lockedSyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-sm font-black uppercase text-white">
-          {lockedSyncCount} approved leave
-        </span>
-      ) : null}
-      {weeklySyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-sm font-black uppercase text-white">
-          {weeklySyncCount} from weekly plan
-        </span>
-      ) : null}
-    </div>
+    <PlanNotice icon={false} tone="sky">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-700" />
+        <span>Auto-synced into this plan:</span>
+        {lockedSyncCount > 0 ? (
+          <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-sky-700">
+            {lockedSyncCount} approved leave
+          </span>
+        ) : null}
+        {weeklySyncCount > 0 ? (
+          <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-sky-700">
+            {weeklySyncCount} from weekly plan
+          </span>
+        ) : null}
+      </div>
+    </PlanNotice>
   ) : null;
 
   const cappedResultsBanner = workspace.hasMorePlans ? (
-    <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+    <PlanNotice tone="amber">
       <span>
         Showing the latest {workspace.loadedPlanCount} of at least {workspace.planLimit} plans. Older records may be hidden; use export or narrow the review period before making audit decisions.
       </span>
-    </div>
+    </PlanNotice>
   ) : null;
 
   const untouchedCount = useMemo(() => rows.filter(isUntouchedRow).length, [rows]);
@@ -2154,7 +2219,7 @@ export function PlansWorkspace({
         <div className="flex flex-wrap items-center gap-2">
           {previousWeeklyPlan && !selectedPlan && activeKind === "weekly" ? (
             <button
-              className="inline-flex items-center gap-1.5 rounded-sm border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-wide text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+              className={landingActionClassName("solid")}
               disabled={isPending}
               onClick={copyPreviousWeek}
               type="button"
@@ -2164,15 +2229,15 @@ export function PlansWorkspace({
             </button>
           ) : null}
           {untouchedCount > 0 ? (
-            <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-bold text-slate-500 ${adminChipDepthClassName}`}>
+            <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
               {untouchedCount} day{untouchedCount === 1 ? "" : "s"} still empty
             </span>
           ) : null}
           {draftSavedAt && !selectedPlan ? (
             <>
-              <p className="text-phx-xs text-slate-400">Draft saved {draftSavedAt}</p>
+              <p className="text-phx-xs tabular-nums text-slate-500">Draft saved {draftSavedAt}</p>
               <button
-                className="text-phx-xs font-bold text-red-500 underline hover:text-red-700"
+                className={`text-phx-xs font-bold text-rose-700 underline transition-colors hover:text-rose-800 motion-reduce:transition-none ${LANDING_FOCUS}`}
                 onClick={discardDraft}
                 type="button"
               >
@@ -2183,20 +2248,19 @@ export function PlansWorkspace({
         </div>
       ) : null}
       {nationalVacationWarnings.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2">
-          <TriangleAlert className="h-4 w-4 shrink-0 text-amber-600" />
-          <span className="whitespace-nowrap text-xs font-bold text-amber-800">
-            Not on the official holiday calendar — double-check:
-          </span>
-          {nationalVacationWarnings.map((label) => (
-            <span
-              className="inline-flex items-center whitespace-nowrap rounded-sm border border-amber-300 bg-white px-2 py-0.5 text-phx-xs font-bold text-amber-800"
-              key={label}
-            >
-              {label}
-            </span>
-          ))}
-        </div>
+        <PlanNotice tone="amber">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>Not on the official holiday calendar — double-check:</span>
+            {nationalVacationWarnings.map((label) => (
+              <span
+                className="inline-flex items-center whitespace-nowrap border border-slate-200 px-2 py-0.5 text-phx-xs font-bold tabular-nums text-amber-700"
+                key={label}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        </PlanNotice>
       ) : null}
       <PlanActivityLegend showMarketingDoubleVisit={workspace.canPlanMarketingDoubleVisit} />
     </div>
@@ -2238,22 +2302,19 @@ export function PlansWorkspace({
         {editorToolbar}
 
         {/* Compact header */}
-        <div className="border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="whitespace-nowrap text-lg font-black text-slate-900">{compactHeaderTitle}</h2>
-              <p className="mt-0.5 text-xs font-semibold text-slate-500">
-                {formatDate(period.periodStartDate)} – {formatDate(period.periodEndDate)} · {period.periodKey}
-              </p>
-            </div>
-            <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-phx-xs font-black shadow-sm ${statusTone(plan?.status ?? "draft")}`}
-            >
+        <LandingPanel
+          right={
+            <span className={`${planStatusWordClassName} ${statusInk(plan?.status ?? "draft")}`}>
               {statusLabels[plan?.status ?? "draft"]}
             </span>
-          </div>
-
-          <div className="mt-3">
+          }
+          title={compactHeaderTitle}
+        >
+          <div className="space-y-3 px-3 py-3">
+          <p className="break-words text-xs font-semibold tabular-nums text-slate-500">
+            {formatDate(period.periodStartDate)} – {formatDate(period.periodEndDate)} · {period.periodKey}
+          </p>
+          <div>
             <ChoiceGroup
               aria-label="Plan type"
               className="grid-cols-2"
@@ -2280,45 +2341,46 @@ export function PlansWorkspace({
             />
             {periodLocked && workspace.canSubmitPlans ? (
               <button
-                className={`inline-flex h-10 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 active:bg-slate-50 ${adminChipDepthClassName}`}
+                className={landingActionClassName("outline", "w-full")}
                 onClick={() => startNewPlan(activeKind)}
                 type="button"
               >
-                <Plus className="h-4 w-4" />
+                <Plus aria-hidden="true" className="h-4 w-4" />
                 New plan
               </button>
             ) : null}
             <div className="grid grid-cols-2 gap-2">
               <Link
                 aria-label="Open calendar"
-                className="inline-flex h-11 items-center justify-center gap-1.5 border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 active:bg-orange-100"
+                className={landingActionClassName("solid", "col-span-2 w-full")}
                 href={calendarHref}
               >
-                <CalendarDays className="h-4 w-4" />
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
                 Calendar
               </Link>
               <button
-                className={`inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50 ${adminChipDepthClassName}`}
+                className={landingActionClassName("outline", "w-full")}
                 onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=xlsx")}
                 type="button"
               >
-                <Download className="h-4 w-4" />
+                <Download aria-hidden="true" className="h-4 w-4" />
                 XLSX
               </button>
               <button
-                className={`inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50 ${adminChipDepthClassName}`}
+                className={landingActionClassName("outline", "w-full")}
                 onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=pdf")}
                 type="button"
               >
-                <Download className="h-4 w-4" />
+                <Download aria-hidden="true" className="h-4 w-4" />
                 PDF
               </button>
             </div>
           </div>
-        </div>
+          </div>
+        </LandingPanel>
 
         {/* Info chips */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid grid-cols-1 gap-px border border-slate-200 bg-slate-200 min-[360px]:grid-cols-2 ${adminSoftDepthClassName}`}>
           <InfoChip
             label="HR ID"
             value={workspace.currentEmployee?.hrId ?? access.hrId ?? "Unknown"}
@@ -2328,13 +2390,15 @@ export function PlansWorkspace({
             value={workspace.canSubmitPlans ? "Can submit" : "Review only"}
           />
           <InfoChip
+            className="min-[360px]:col-span-2"
             label="Manager"
             value={workspace.currentEmployee?.managerName ?? "Not assigned"}
           />
         </div>
 
-        {/* Mini KPIs */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* Mini KPIs — the page's headline figures, on its one navy board */}
+        <LandingNavyBoard label={headerLabel}>
+        <div className="grid grid-cols-3 gap-px">
           <Kpi label="Drafts" value={workspace.summary.drafts} />
           <Kpi label="Pending" value={workspace.summary.managerPending + workspace.summary.ceoPending} />
           <Kpi label="Approved" value={workspace.summary.finalApproved} />
@@ -2351,32 +2415,18 @@ export function PlansWorkspace({
             </div>
           ) : null}
         </div>
+        </LandingNavyBoard>
 
         {messageBanner}
 
         {plan ? <WorkflowTimeline status={plan.status} /> : null}
         {plan ? <PlanConversationThread key={plan.id} planId={plan.id} /> : null}
 
-        {validationWarning ? (
-          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{validationWarning}</span>
-          </div>
-        ) : null}
+        {validationWarning ? <PlanNotice tone="amber">{validationWarning}</PlanNotice> : null}
 
-        {firstConflictWarning ? (
-          <div className="flex items-start gap-2 border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{firstConflictWarning}</span>
-          </div>
-        ) : null}
+        {firstConflictWarning ? <PlanNotice tone="red">{firstConflictWarning}</PlanNotice> : null}
 
-        {noPlanRows ? (
-          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Add at least one planning day before saving or submitting.</span>
-          </div>
-        ) : null}
+        {noPlanRows ? <PlanNotice tone="amber">Add at least one planning day before saving or submitting.</PlanNotice> : null}
 
         {/* Day cards */}
         <div className="space-y-2.5">
@@ -2393,7 +2443,7 @@ export function PlansWorkspace({
           ))}
           {canEdit ? (
             <button
-              className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 bg-orange-50/40 py-3 text-sm font-bold text-orange-600 active:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`flex min-h-11 w-full items-center justify-center gap-1.5 border border-dashed border-slate-300 bg-white text-phx-xs font-bold uppercase tracking-[0.08em] text-[#08111f] transition-colors hover:border-[#08111f] active:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
               disabled={!hasFreePlanDay}
               onClick={addRow}
               type="button"
@@ -2464,12 +2514,12 @@ export function PlansWorkspace({
       {mounted && workspace.canSubmitPlans
         ? createPortal(
             <div
-              className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 shadow-[0_-12px_28px_rgba(15,23,42,0.10)] backdrop-blur md:hidden"
+              className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white px-4 pb-3 pt-3 md:hidden"
               style={{ bottom: actionBarBottom }}
             >
               {isOwnPlan && plan?.status === "edit_requested" ? (
-                <span className="flex flex-1 items-center justify-center gap-1.5 border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
-                  <Clock className="h-4 w-4 shrink-0" />
+                <span className="flex flex-1 items-center justify-center gap-1.5 border border-slate-200 px-3 py-2 text-phx-xs font-bold uppercase tracking-[0.08em] text-sky-700">
+                  <Clock aria-hidden="true" className="h-4 w-4 shrink-0" />
                   Edit request pending
                 </span>
               ) : isOwnPlan && plan?.status === "submitted" ? (
@@ -2545,21 +2595,20 @@ export function PlansWorkspace({
         {/* Context tiles */}
         <div className="grid gap-3 sm:grid-cols-2">
           <ContextTile
-            accent="orange"
             label="Eligibility"
             sub={workspace.currentEmployee?.jobTitle ?? access.role ?? ""}
             value={workspace.canSubmitPlans ? "Can submit plans" : "Review access only"}
           />
           <ContextTile
-            accent="slate"
             label="Direct manager"
             sub={workspace.currentEmployee?.managerHrId ?? "Manager HR ID missing"}
             value={workspace.currentEmployee?.managerName ?? "Not assigned"}
           />
         </div>
 
-        {/* KPI row */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {/* KPI row — the page's headline figures, on its one navy board */}
+        <LandingNavyBoard label={headerLabel}>
+        <div className="grid grid-cols-2 gap-px sm:grid-cols-4 lg:grid-cols-7">
           <Kpi label="Drafts" value={workspace.summary.drafts} />
           <Kpi label="Mgr pending" value={workspace.summary.managerPending} />
           <Kpi label="CEO pending" value={workspace.summary.ceoPending} />
@@ -2568,44 +2617,38 @@ export function PlansWorkspace({
           <Kpi label="Returned" tone="amber" value={workspace.summary.returned} />
           <Kpi label="Rejected" tone="red" value={workspace.summary.rejected} />
         </div>
+        </LandingNavyBoard>
 
         {/* Kind toggle + date picker */}
-        <div className="overflow-hidden rounded-sm border border-slate-200/90 bg-white/95 shadow-[0_24px_62px_rgba(15,23,42,0.10)] ring-1 ring-white/80">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-500">{headerLabel}</p>
-              <h2 className="mt-1 text-base font-black text-slate-800">
-                {onAdminSurface
-                  ? activeKind === "weekly"
-                    ? "Weekly review queue"
-                    : "Monthly review queue"
-                  : activeKind === "weekly"
-                    ? "Weekly plan table"
-                    : "Monthly plan table"}
-              </h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">
-                {formatDate(period.periodStartDate)} to {formatDate(period.periodEndDate)} - {period.periodKey}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-sm border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-orange-700">
-                {dayGroups.length} selected day{dayGroups.length === 1 ? "" : "s"}
-              </span>
-              {activeKind === "monthly" ? (
-                  <span className={`rounded-sm border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600 ${adminSoftDepthClassName}`}>
-                  {workingDayCount} working days default
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 bg-white px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className={`inline-flex w-full rounded-sm border border-slate-200 bg-slate-50 p-1 sm:w-auto ${adminSoftDepthClassName}`}>
+        <LandingPanel
+          right={
+            <LandingMeta
+              items={[
+                `${formatDate(period.periodStartDate)} to ${formatDate(period.periodEndDate)} - ${period.periodKey}`,
+                `${dayGroups.length} selected day${dayGroups.length === 1 ? "" : "s"}`,
+                activeKind === "monthly" ? `${workingDayCount} working days default` : null,
+              ]}
+            />
+          }
+          title={
+            onAdminSurface
+              ? activeKind === "weekly"
+                ? "Weekly review queue"
+                : "Monthly review queue"
+              : activeKind === "weekly"
+                ? "Weekly plan table"
+                : "Monthly plan table"
+          }
+        >
+          <div className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="inline-flex w-full border border-slate-200 p-0.5 sm:w-auto">
               {(["weekly", "monthly"] as const).map((kind) => (
                 <button
-                  className={`min-h-10 flex-1 rounded-sm px-4 text-sm font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${
+                  aria-pressed={activeKind === kind}
+                  className={`min-h-10 flex-1 px-4 text-phx-xs font-bold uppercase tracking-[0.08em] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none sm:flex-none ${LANDING_FOCUS} ${
                     activeKind === kind
-                      ? "bg-slate-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.20)]"
-                      : "text-slate-700 hover:bg-white hover:text-slate-900"
+                      ? "bg-[#08111f] text-white"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-[#08111f]"
                   }`}
                   disabled={periodLocked || isPending || !workspace.canSubmitPlans}
                   key={kind}
@@ -2628,86 +2671,66 @@ export function PlansWorkspace({
                 workweek={workweek}
               />
               {!needsWeekPick ? (
-                <span className="inline-flex h-10 items-center rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm">
+                <span className={`inline-flex h-10 items-center border border-slate-200 px-3 text-sm font-bold tabular-nums ${LANDING_INK}`}>
                   {period.periodKey}
                 </span>
               ) : null}
               {periodLocked && workspace.canSubmitPlans ? (
                 <button
-                  className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                  className={landingActionClassName("outline", "sm:min-h-10")}
                   onClick={() => startNewPlan(activeKind)}
                   type="button"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus aria-hidden="true" className="h-4 w-4" />
                   New plan
                 </button>
               ) : null}
               <Link
                 aria-label="Open calendar"
-                className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-3 text-sm font-black text-orange-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-100"
+                className={landingActionClassName("solid", "sm:min-h-10")}
                 href={calendarHref}
               >
-                <CalendarDays className="h-4 w-4" />
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
                 Calendar
               </Link>
             </div>
           </div>
-        </div>
+        </LandingPanel>
 
         {messageBanner}
 
         {plan ? <WorkflowTimeline status={plan.status} /> : null}
         {plan ? <PlanConversationThread key={plan.id} planId={plan.id} /> : null}
 
-        {validationWarning ? (
-          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{validationWarning}</span>
-          </div>
-        ) : null}
+        {validationWarning ? <PlanNotice tone="amber">{validationWarning}</PlanNotice> : null}
 
-        {noPlanRows ? (
-          <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>Add at least one planning day before saving or submitting.</span>
-          </div>
-        ) : null}
+        {noPlanRows ? <PlanNotice tone="amber">Add at least one planning day before saving or submitting.</PlanNotice> : null}
 
         {/* Full-width plan table */}
         <div className="min-w-0 space-y-5">
-          <section className="min-w-0 overflow-hidden rounded-sm border border-slate-200/90 bg-white shadow-[0_28px_72px_rgba(15,23,42,0.13)] ring-1 ring-white/80">
-            <div className="employee-portal-command-grid border-b border-slate-800 bg-[#08111f] px-4 py-4 text-white sm:px-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0">
-                  <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-orange-400">Planning table</p>
-                  <h3 className="mt-1 text-lg font-black leading-tight tracking-tight">
-                    {activeKind === "weekly" ? "Weekly activities" : "Monthly activities"}
-                  </h3>
-                  <p className="mt-1 text-sm font-semibold text-slate-300">
-                    Build each day with activity, geography, medical rep context, and notes.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
+          <LandingPanel
+            right={
+                <div className="flex flex-wrap justify-end gap-2">
                   <button
-                    className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
+                    className={landingActionClassName("outline")}
                     onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=xlsx")}
                     type="button"
                   >
-                    <Download className="h-3.5 w-3.5" />
+                    <Download aria-hidden="true" className="h-3.5 w-3.5" />
                     Export XLSX
                   </button>
                   <button
-                    className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
+                    className={landingActionClassName("outline")}
                     onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=pdf")}
                     type="button"
                   >
-                    <Download className="h-3.5 w-3.5" />
+                    <Download aria-hidden="true" className="h-3.5 w-3.5" />
                     Export PDF
                   </button>
                   {plan ? (
                     <>
                       <button
-                        className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
+                        className={landingActionClassName("outline")}
                         onClick={() =>
                           downloadFromApiRoute(
                             `/api/weekly-plans/export?format=xlsx&planId=${encodeURIComponent(plan.id)}`,
@@ -2715,11 +2738,11 @@ export function PlansWorkspace({
                         }
                         type="button"
                       >
-                        <Download className="h-3.5 w-3.5" />
+                        <Download aria-hidden="true" className="h-3.5 w-3.5" />
                         Selected XLSX
                       </button>
                       <button
-                        className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
+                        className={landingActionClassName("outline")}
                         onClick={() =>
                           downloadFromApiRoute(
                             `/api/weekly-plans/export?format=pdf&planId=${encodeURIComponent(plan.id)}`,
@@ -2727,44 +2750,37 @@ export function PlansWorkspace({
                         }
                         type="button"
                       >
-                        <Download className="h-3.5 w-3.5" />
+                        <Download aria-hidden="true" className="h-3.5 w-3.5" />
                         Selected PDF
                       </button>
                     </>
                   ) : null}
                 </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/90 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+            }
+            title={activeKind === "weekly" ? "Weekly activities" : "Monthly activities"}
+          >
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap gap-2">
                 <button
-                  className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={landingActionClassName("outline")}
                   disabled={!canEdit || !hasFreePlanDay}
                   onClick={addRow}
                   type="button"
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                   Add day
                 </button>
                 <button
-                  className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={landingActionClassName("outline")}
                   disabled={!canEdit}
                   onClick={() => resetRows(activeKind, anchorDate)}
                   type="button"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
                   Reset working days
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
-                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50">
-                  Rows: {rows.length}
-                </span>
-                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50">
-                  Period days: {periodDays.length}
-                </span>
-              </div>
+              <LandingMeta items={[`Rows: ${rows.length}`, `Period days: ${periodDays.length}`]} />
             </div>
 
             {/* Fits the screen with no horizontal scroll (AGENTS.md §4): Date and Actions hold fixed
@@ -2781,7 +2797,7 @@ export function PlansWorkspace({
                   <col className="w-[5.5rem]" />
                 </colgroup>
                 <thead className="sticky top-0 z-10 bg-slate-50">
-                  <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                  <tr className="border-b border-slate-200 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-4 py-3">Date</th>
                     <th className="px-3 py-3">Activity</th>
                     <th className="px-3 py-3">Region / Area</th>
@@ -2791,7 +2807,7 @@ export function PlansWorkspace({
                     <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-200">
                   {dayGroups.map((group, groupIndex) => {
                     const groupWarnings = group.rows.flatMap((row) =>
                       validateDraftRow(row, workspace.medicalRepOptions, workspace.marketingDoubleVisitPartners),
@@ -2805,13 +2821,13 @@ export function PlansWorkspace({
                     );
                     const hasReturnNotes = group.rows.some((row) => row.returnNotes?.length);
                     const groupLocked = group.rows.some((row) => row.locked);
-                    const rowTone = hasReturnNotes
-                      ? "bg-amber-50/70"
+                    const rowTone = groupIndex % 2 === 0 ? "bg-white" : "bg-slate-50/45";
+                    // A day's state is a 3px rail on its date cell, never a tinted row.
+                    const dayRail = hasReturnNotes
+                      ? "border-l-amber-500"
                       : groupLocked
-                        ? "bg-violet-50/40"
-                        : groupIndex % 2 === 0
-                          ? "bg-white"
-                          : "bg-slate-50/45";
+                        ? "border-l-violet-500"
+                        : "border-l-transparent";
 
                     return (
                       <Fragment key={group.activityDate}>
@@ -2824,44 +2840,44 @@ export function PlansWorkspace({
                           const locked = Boolean(row.locked);
 
                           return (
-                            <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`} key={row.key}>
+                            <tr className={`align-middle transition-colors hover:bg-slate-50 motion-reduce:transition-none ${rowTone}`} key={row.key}>
                               {slotIndex === 0 ? (
-                                <td className="px-4 py-3 align-top" rowSpan={group.rows.length}>
+                                <td className={`border-l-[3px] px-4 py-3 align-top ${dayRail}`} rowSpan={group.rows.length}>
                                   <time
                                     className="flex flex-wrap items-center gap-x-3 gap-y-2"
                                     dateTime={group.activityDate}
                                     title={group.activityDate}
                                   >
-                                    <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-orange-50">
-                                      <span className="text-phx-sm font-black uppercase tracking-wide text-orange-500">
+                                    <span className={`flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+                                      <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                                         {formatDayName(group.activityDate)}
                                       </span>
-                                      <span className="mt-0.5 text-xl font-black leading-none text-slate-950">
+                                      <span className={`mt-0.5 text-[22px] font-bold leading-none tabular-nums ${LANDING_INK}`}>
                                         {formatDayNumber(group.activityDate)}
                                       </span>
-                                      <span className="mt-1 text-phx-sm font-black uppercase tracking-wide text-slate-500">
+                                      <span className="mt-1 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                                         {formatMonthYear(group.activityDate)}
                                       </span>
                                     </span>
                                     <div className="min-w-0">
-                                      <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">
+                                      <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                                         Plan day
                                       </p>
-                                      <p className="mt-1 text-sm font-black text-slate-900">Day {groupIndex + 1}</p>
+                                      <p className={`mt-1 text-sm font-bold tabular-nums ${LANDING_INK}`}>Day {groupIndex + 1}</p>
                                     </div>
                                   </time>
                                   <div
                                     aria-label="Day mode"
-                                    className={`mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}
+                                    className="mt-3 grid grid-cols-2 border border-slate-200 p-0.5"
                                     role="group"
                                   >
                                     {(allowHalfDays ? (["full", "split", "am", "pm"] as const) : (["full", "split"] as const)).map((mode) => (
                                       <button
                                         aria-pressed={shownDayMode(group, allowHalfDays) === mode}
-                                        className={`h-8 px-2 text-phx-xs font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                                        className={`h-8 px-2 text-phx-xs font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none ${LANDING_FOCUS} ${
                                           shownDayMode(group, allowHalfDays) === mode
-                                            ? "bg-slate-950 text-white"
-                                            : "text-slate-600 hover:bg-white"
+                                            ? "bg-[#08111f] text-white"
+                                            : "text-slate-600 hover:bg-slate-50"
                                         }`}
                                         disabled={!canEdit || groupLocked}
                                         key={mode}
@@ -2873,7 +2889,7 @@ export function PlansWorkspace({
                                     ))}
                                   </div>
                                   <div className="mt-3 min-w-0 space-y-2">
-                                    <label className="block text-phx-xs font-black uppercase tracking-[0.14em] text-orange-600">
+                                    <label className={`block ${phxLabelTextClassName}`}>
                                       Notes
                                       <input
                                         className={`${tableInputClass} mt-1 normal-case tracking-normal`}
@@ -2905,7 +2921,7 @@ export function PlansWorkspace({
                                       </div>
                                     ))}
                                     {hasReturnNotes ? (
-                                      <div className="space-y-1 break-words border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
+                                      <div className="space-y-1 break-words border-l-[3px] border-amber-500 pl-2 text-xs font-semibold text-slate-700">
                                         {group.rows.flatMap((row) => row.returnNotes ?? []).map((note) => (
                                           <p key={note.id}>
                                             {note.actorRole ?? "Reviewer"}: {note.note}
@@ -2917,19 +2933,17 @@ export function PlansWorkspace({
                                 </td>
                               ) : null}
                               <td className="px-3 py-3">
-                                <div className="mb-1 flex items-center gap-1.5">
+                                <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                   <span className={`inline-block h-2 w-2 shrink-0 ${activityAccent(row.activityType, row.activityTitle).dot}`} aria-hidden="true" />
                                   <span
-                                    className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                                    className={`${slotWordClassName} ${slotPillClass(row.slot)}`}
                                   >
                                     {slotLabel(row)}
                                   </span>
                                   {row.sourceLabel ? (
                                     <span
-                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide ${
-                                        locked
-                                          ? "border-violet-300 bg-violet-50 text-violet-700"
-                                          : "border-sky-300 bg-sky-50 text-sky-700"
+                                      className={`inline-flex min-w-0 items-center gap-1 break-words text-phx-xs font-bold uppercase tracking-[0.08em] ${
+                                        locked ? "text-violet-700" : "text-sky-700"
                                       }`}
                                     >
                                       {locked ? <ShieldCheck className="h-2.5 w-2.5" /> : null}
@@ -3083,7 +3097,7 @@ export function PlansWorkspace({
                                 ) : (
                                   <button
                                     aria-label={`Remove ${formatDate(row.activityDate)} ${slotLabel(row)}`}
-                                    className={`inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+                                    className={`inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-rose-300 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none ${LANDING_FOCUS} ${adminControlDepthClassName}`}
                                     disabled={!canEdit || rows.length <= 1}
                                     onClick={() => deleteRow(row.key)}
                                     type="button"
@@ -3103,19 +3117,20 @@ export function PlansWorkspace({
             </div>
 
             {/* Footer actions */}
-            <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
-                <span className={`rounded-sm border px-2.5 py-1.5 shadow-sm ${statusTone(plan?.status ?? "draft")}`}>
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className={`${planStatusWordClassName} ${statusInk(plan?.status ?? "draft")}`}>
                   {statusLabels[plan?.status ?? "draft"]}
                 </span>
-                <span className="rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 shadow-sm">
+                <span aria-hidden="true" className="text-slate-300">·</span>
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                   {workspace.canSubmitPlans ? "Creator access" : "Review access only"}
                 </span>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 {isOwnPlan && plan?.status === "edit_requested" ? (
-                  <span className="inline-flex items-center gap-1.5 border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700">
-                    <Clock className="h-4 w-4" />
+                  <span className="inline-flex items-center gap-1.5 border border-slate-200 px-3 py-2 text-phx-xs font-bold uppercase tracking-[0.08em] text-sky-700">
+                    <Clock aria-hidden="true" className="h-4 w-4" />
                     Edit request pending manager approval
                   </span>
                 ) : null}
@@ -3156,7 +3171,7 @@ export function PlansWorkspace({
                 </Button>
               </div>
             </div>
-          </section>
+          </LandingPanel>
 
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
             <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
@@ -3246,41 +3261,42 @@ function timelineReachedIndex(status: EmployeePlanStatus): number {
 function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
   const reached = timelineReachedIndex(status);
   const alt = status.includes("rejected")
-    ? { cls: "border-red-200 bg-red-50 text-red-700", icon: XCircle, text: statusLabels[status] }
+    ? { cls: "border-l-rose-500 text-rose-700", icon: XCircle, text: statusLabels[status] }
     : status.includes("returned")
-      ? { cls: "border-amber-200 bg-amber-50 text-amber-700", icon: RotateCcw, text: `${statusLabels[status]} — needs edits` }
+      ? { cls: "border-l-amber-500 text-amber-700", icon: RotateCcw, text: `${statusLabels[status]} — needs edits` }
       : status === "cancelled"
-        ? { cls: "border-slate-200 bg-slate-50 text-slate-600", icon: X, text: "Cancelled" }
+        ? { cls: "border-l-slate-400 text-slate-600", icon: X, text: "Cancelled" }
         : null;
 
   return (
-    <div className="border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-1 overflow-x-auto">
+    <div className={`border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      {/* Wraps onto a second line on a narrow phone — never a sideways scroll (fits-the-screen rule). */}
+      <ol className="flex flex-wrap items-center gap-x-1 gap-y-1.5">
         {TIMELINE_STEPS.map((step, index) => {
           const done = index <= reached && !alt;
           const current = index === reached && !alt;
           const Icon = step.icon;
           const tone = current
-            ? "border-orange-300 bg-orange-50 text-orange-700"
+            ? `border-b-2 border-[#08111f] ${LANDING_INK}`
             : done
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-slate-200 bg-white text-slate-400";
+              ? "border-b-2 border-transparent text-emerald-700"
+              : "border-b-2 border-transparent text-slate-400";
           return (
-            <div className="flex shrink-0 items-center" key={step.label}>
-              <div className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${tone}`}>
-                <Icon className="h-3.5 w-3.5" />
-                <span className="text-phx-xs font-black">{step.label}</span>
-              </div>
+            <li aria-current={current ? "step" : undefined} className="flex items-center" key={step.label}>
+              <span className={`flex items-center gap-1.5 pb-0.5 ${tone}`}>
+                <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em]">{step.label}</span>
+              </span>
               {index < TIMELINE_STEPS.length - 1 ? (
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+                <ChevronRight aria-hidden="true" className="ml-1 h-3.5 w-3.5 shrink-0 text-slate-300" />
               ) : null}
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ol>
       {alt ? (
-        <div className={`mt-2 flex items-center gap-1.5 border px-2.5 py-1.5 text-xs font-bold ${alt.cls}`}>
-          <alt.icon className="h-3.5 w-3.5" />
+        <div className={`mt-2 flex items-center gap-1.5 border-l-[3px] pl-2 text-phx-xs font-bold uppercase tracking-[0.08em] ${alt.cls}`}>
+          <alt.icon aria-hidden="true" className="h-3.5 w-3.5" />
           {alt.text}
         </div>
       ) : null}
@@ -3288,11 +3304,11 @@ function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
   );
 }
 
-function InfoChip({ label, value }: { label: string; value: string }) {
+function InfoChip({ className, label, value }: { className?: string; label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_28px_rgba(15,23,42,0.07)]">
-      <span className="block text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
-      <span className="mt-0.5 block whitespace-nowrap text-xs font-black text-slate-700">{value}</span>
+    <div className={cn("min-w-0 bg-white px-3 py-2", className)}>
+      <span className="block text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+      <span className={`mt-0.5 block break-words text-xs font-bold ${LANDING_INK}`} dir="auto">{value}</span>
     </div>
   );
 }
@@ -3328,57 +3344,55 @@ function MobileDayCard({
   const accent = activityAccent(row.activityType, row.activityTitle);
   return (
     <button
-      className={`relative block w-full overflow-hidden border bg-white p-3 pl-4 text-left shadow-sm transition-colors hover:border-slate-300 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)] active:bg-slate-50 ${
-        locked ? "border-violet-300 bg-violet-50/40" : hasReturnNotes ? "border-amber-300" : "border-slate-200"
-      }`}
+      className={`relative block w-full overflow-hidden border border-slate-200 bg-white p-3 pl-4 text-left transition-colors hover:bg-slate-50 active:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS} ${adminSoftDepthClassName}`}
       onClick={onOpen}
       type="button"
     >
-      <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`} aria-hidden="true" />
+      <span className={`absolute inset-y-0 left-0 w-1 ${accent.bar}`} aria-hidden="true" />
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-11 w-12 flex-col items-center justify-center border border-slate-200 bg-slate-900">
-            <span className="text-phx-sm font-black uppercase leading-none text-orange-400">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-11 w-12 shrink-0 flex-col items-center justify-center border border-slate-200">
+            <span className="text-phx-xs font-bold uppercase leading-none tracking-[0.08em] text-slate-500">
               {formatDayName(row.activityDate)}
             </span>
-            <span className="mt-0.5 text-sm font-black leading-none text-white">
+            <span className={`mt-0.5 text-sm font-bold leading-none tabular-nums ${LANDING_INK}`}>
               {formatDate(row.activityDate).split(" ")[0]}
             </span>
           </div>
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 whitespace-nowrap text-sm font-black text-slate-900">
-              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${accent.dot}`} aria-hidden="true" />
+            <p className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 break-words text-sm font-bold ${LANDING_INK}`}>
+              <span className={`inline-block h-2 w-2 shrink-0 ${accent.dot}`} aria-hidden="true" />
               {rule.label}
               <span
-                className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                className={`${slotWordClassName} ${slotPillClass(row.slot)}`}
               >
                 {slotLabel(row)}
               </span>
             </p>
-            <p className="mt-0.5 whitespace-nowrap text-xs font-semibold text-slate-500">{geographySummary}</p>
+            <p className="mt-0.5 break-words text-xs font-semibold text-slate-500" dir="auto">{geographySummary}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
           {row.sourceLabel ? (
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-phx-xs font-black uppercase ${
-                locked ? "bg-violet-500 text-white" : "bg-sky-500 text-white"
+              className={`text-right text-phx-xs font-bold uppercase tracking-[0.08em] ${
+                locked ? "text-violet-700" : "text-sky-700"
               }`}
             >
               {row.sourceLabel}
             </span>
           ) : null}
           {hasReturnNotes ? (
-            <span className="rounded-full bg-phx-warn px-1.5 py-0.5 text-phx-xs font-black uppercase text-white">
+            <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-amber-700">
               Feedback
             </span>
           ) : null}
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+          <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-300" />
         </div>
       </div>
 
       {rule.requiresRep || rule.showPartner || dayNote || conflictWarning ? (
-        <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+        <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
           {rule.showPartner ? (
             row.attendees ? (
               <p className="text-xs font-semibold text-violet-700">
@@ -3417,12 +3431,12 @@ function MobileDayCard({
               })()
             : null}
           {dayNote ? (
-            <p className="whitespace-nowrap text-xs text-slate-500">{dayNote}</p>
+            <p className="break-words text-xs text-slate-500" dir="auto">{dayNote}</p>
           ) : null}
           {conflictWarning ? (
-            <p className="flex items-start gap-1 text-xs font-bold text-red-700">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{conflictWarning}</span>
+            <p className="flex items-start gap-1 text-xs font-bold text-rose-700">
+              <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 break-words">{conflictWarning}</span>
             </p>
           ) : null}
         </div>
@@ -3484,7 +3498,7 @@ function RowEditSheet({
       <style dangerouslySetInnerHTML={{ __html: planSheetMotionStyle }} />
       <button
         aria-label="Close editor"
-        className="absolute inset-0 animate-[plan-sheet-backdrop-in_200ms_ease-out_both] bg-slate-900/40 backdrop-blur-sm"
+        className="absolute inset-0 animate-[plan-sheet-backdrop-in_200ms_ease-out_both] bg-[#08111f]/50 motion-reduce:animate-none"
         onClick={onClose}
         type="button"
       />
@@ -3493,40 +3507,40 @@ function RowEditSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Edit day"
-        className="absolute inset-x-0 bottom-0 max-h-[88vh] animate-[plan-sheet-slide-up_280ms_cubic-bezier(0.22,1,0.36,1)_both] overflow-y-auto border-t border-slate-200 bg-white shadow-2xl"
+        className="absolute inset-x-0 bottom-0 max-h-[88vh] animate-[plan-sheet-slide-up_280ms_cubic-bezier(0.22,1,0.36,1)_both] overflow-y-auto border-t border-slate-200 bg-white motion-reduce:animate-none"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
-        <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
-          <div>
-            <p className="text-phx-xs font-black uppercase tracking-[0.08em] text-orange-500">
-              {formatDayName(row.activityDate)}
-            </p>
-            <p className="text-sm font-black text-slate-900">Edit · {formatDate(row.activityDate)}</p>
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <LandingTitle>{`Edit · ${formatDate(row.activityDate)}`}</LandingTitle>
+            <LandingMeta items={[formatDayName(row.activityDate)]} />
           </div>
           <button
             aria-label="Close"
-            className="rounded-full p-1.5 text-slate-400 active:bg-slate-100"
+            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
             onClick={onClose}
             type="button"
           >
-            <X className="h-5 w-5" />
+            <X aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
 
         <div className="space-y-3 px-4 py-4">
           {locked ? (
-            <div className="flex items-center gap-2 border border-violet-300 bg-violet-50 px-3 py-2">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-violet-600" />
-              <p className="text-xs font-bold text-violet-800">
-                {lockedLabel ?? "Locked"} — read-only. This day comes from an approved request.
-              </p>
-            </div>
+            <PlanNotice icon={false} tone="violet">
+              <span className="flex items-start gap-2">
+                <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
+                <span className="min-w-0">
+                  {lockedLabel ?? "Locked"} — read-only. This day comes from an approved request.
+                </span>
+              </span>
+            </PlanNotice>
           ) : null}
           {/* Not a <Field>: that wraps its caption and control in a <label>, and a tap on the caption is
               forwarded to the first button inside it - "Full day" - which collapsed a split day to one
               row. The group is already named by its own aria-label. */}
           <div>
-            <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+            <span className={phxLabelClassName}>
               Day Mode
             </span>
             <ChoiceGroup
@@ -3684,31 +3698,21 @@ function RowEditSheet({
             />
           </Field>
 
-          {rowWarnings.length > 0 ? (
-            <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 p-2.5 text-xs font-bold text-amber-800">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{rowWarnings[0]}</span>
-            </div>
-          ) : null}
+          {rowWarnings.length > 0 ? <PlanNotice tone="amber">{rowWarnings[0]}</PlanNotice> : null}
 
-          {conflictWarning ? (
-            <div className="flex items-start gap-2 border border-red-200 bg-red-50 p-2.5 text-xs font-bold text-red-800">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{conflictWarning}</span>
-            </div>
-          ) : null}
+          {conflictWarning ? <PlanNotice tone="red">{conflictWarning}</PlanNotice> : null}
 
           {row.returnNotes?.length ? (
-            <div className="space-y-1 border border-amber-200 bg-amber-50 p-3">
-              <p className="text-phx-xs font-black uppercase tracking-[0.08em] text-amber-700">
+            <PlanNotice icon={false} tone="amber">
+              <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-amber-700">
                 Reviewer feedback
               </p>
               {row.returnNotes.map((note) => (
-                <p className="text-xs font-semibold text-amber-900" key={note.id}>
+                <p className="mt-1 text-xs font-semibold text-slate-700" key={note.id}>
                   {note.actorRole ?? "Reviewer"}: {note.note}
                 </p>
               ))}
-            </div>
+            </PlanNotice>
           ) : null}
 
           <div className="flex gap-2 pt-1">
@@ -3735,7 +3739,7 @@ function RowEditSheet({
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+      <span className={phxLabelClassName}>
         {label}
       </span>
       {children}
@@ -3752,13 +3756,13 @@ function DisabledFieldText({
 }) {
   const textClass = {
     amber: "text-amber-700 font-bold",
-    slate: "text-slate-400 font-semibold",
+    slate: "text-slate-500 font-semibold",
     violet: "text-violet-700 font-semibold",
   }[tone];
   return (
     // min-h, not h, and wrapping text: in a fitted table cell a long status ("Double Visit - <rep
     // name>") must wrap onto a second line, never run out of the cell and force a horizontal scroll.
-    <div className={`flex min-h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 py-1 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100 ${adminControlDepthClassName}`}>
+    <div className={`flex min-h-10 min-w-0 items-center border border-slate-200 bg-slate-50 px-3 py-1 ${adminControlDepthClassName}`}>
       <span className={`min-w-0 break-words text-xs ${textClass}`}>{children}</span>
     </div>
   );
@@ -3772,34 +3776,28 @@ function DisabledFieldText({
 function StatedFieldText({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
     <div
-      className="flex h-10 min-w-0 items-center border border-orange-200 bg-orange-50/60 px-3"
+      className={`flex min-h-10 min-w-0 items-center border border-slate-200 bg-white px-3 ${adminControlDepthClassName}`}
       title={hint}
     >
-      <span className="text-sm font-semibold text-slate-800">{children}</span>
+      <span className={`min-w-0 break-words text-sm font-semibold ${LANDING_INK}`}>{children}</span>
     </div>
   );
 }
 
 function ContextTile({
-  accent,
   label,
   sub,
   value,
 }: {
-  accent: "orange" | "slate";
   label: string;
   sub: string;
   value: string;
 }) {
-  const accentCls =
-    accent === "orange"
-      ? "border-l-orange-500 bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] hover:border-l-orange-600 hover:shadow-[0_20px_46px_rgba(249,115,22,0.14)]"
-      : "border-l-slate-500 bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] hover:border-l-slate-700 hover:shadow-[0_20px_46px_rgba(15,23,42,0.12)]";
   return (
-    <div className={`rounded-sm border border-slate-200 border-l-4 p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] transition duration-150 ${accentCls}`}>
-      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-2 text-base font-black text-slate-900">{value}</p>
-      {sub ? <p className="mt-0.5 text-sm text-slate-600">{sub}</p> : null}
+    <div className={`min-w-0 border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+      <p className={`mt-1.5 break-words text-base font-bold ${LANDING_INK}`} dir="auto">{value}</p>
+      {sub ? <p className="mt-0.5 break-words text-sm text-slate-500" dir="auto">{sub}</p> : null}
     </div>
   );
 }
@@ -3813,18 +3811,19 @@ function Kpi({
   tone?: "amber" | "red" | "sky" | "slate";
   value: number;
 }) {
-  const toneClass = {
-    amber: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:shadow-[0_14px_32px_rgba(217,119,6,0.14)]",
-    red: "border-red-200 bg-red-50 text-red-800 hover:border-red-300 hover:shadow-[0_14px_32px_rgba(220,38,38,0.14)]",
-    sky: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300 hover:shadow-[0_14px_32px_rgba(2,132,199,0.14)]",
-    slate: "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:shadow-[0_14px_32px_rgba(15,23,42,0.10)]",
-  }[tone];
+  // A tile on the page's navy board. A toned figure is coloured only when it is above zero, so a
+  // "Rejected 0" reads as calm white rather than as an alarm.
+  const figureTone = value > 0
+    ? { amber: "text-amber-300", red: "text-rose-300", sky: "text-sky-300", slate: undefined }[tone]
+    : undefined;
   return (
-    <div className={`rounded-sm border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.06)] transition duration-150 ${toneClass}`}>
-      <p className="text-phx-sm font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
-      <p className="mt-1 text-xl font-black">
-        <CountUpNumber durationSeconds={0.5} value={value} />
-      </p>
+    <div className={`min-w-0 px-3 py-2.5 ${LANDING_NAVY_TILE}`}>
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/45">{label}</p>
+      <div className="mt-1.5">
+        <LandingFigure onNavy size="md" tone={figureTone}>
+          <CountUpNumber durationSeconds={0.5} value={value} />
+        </LandingFigure>
+      </div>
     </div>
   );
 }
@@ -3929,24 +3928,27 @@ function VisitDetailsModal({
   );
 
   const modal = (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#08111f]/50 sm:items-center">
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-label="Fill visit details"
-        className="w-full max-w-xl overflow-hidden bg-white shadow-2xl sm:rounded-none"
+        className={`w-full max-w-xl overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
-          <div>
-            <h2 className="text-sm font-black uppercase tracking-wide text-white">Fill Visit Details</h2>
-            <p className="text-phx-xs text-slate-400">
-              {planHeadingLabel(plan.planKind, plan.periodStartDate, plan.periodEndDate)} — required by your manager
-            </p>
+        {/* Header — the title alone; which plan it is sits beside it as small capitals. */}
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <LandingTitle>Fill Visit Details</LandingTitle>
+            <LandingMeta items={[planHeadingLabel(plan.planKind, plan.periodStartDate, plan.periodEndDate)]} />
           </div>
-          <button aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white" type="button">
-            <X className="h-5 w-5" />
+          <button
+            aria-label="Close"
+            onClick={onClose}
+            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 transition-colors hover:bg-slate-50 hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
+            type="button"
+          >
+            <X aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
 
@@ -3956,32 +3958,32 @@ function VisitDetailsModal({
             <p className="text-sm text-slate-500">No Single Visit days found in this plan.</p>
           )}
           {fieldItems.map((item) => (
-            <div key={item.id} className="border border-orange-200 bg-orange-50/30">
-              <div className="flex items-center gap-2 border-b border-orange-200 bg-orange-100/60 px-3 py-2">
-                <span className="h-3 w-1 bg-orange-500" />
-                <p className="text-xs font-black text-slate-800">
+            <div key={item.id} className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+              <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
+                <span aria-hidden="true" className="h-3 w-1 shrink-0 bg-[#08111f]" />
+                <p className={`text-xs font-bold tabular-nums ${LANDING_INK}`}>
                   {formatDate(item.activityDate)} — Single Visit
                 </p>
               </div>
-              <div className="space-y-3 p-3">
+              <div className="divide-y divide-slate-200 px-3">
                 {(entries[item.id] ?? []).map((entry, idx) => (
-                  <div key={entry.key} className={`border border-slate-200 bg-white p-3 space-y-2 ${adminPanelDepthClassName}`}>
+                  <div key={entry.key} className="space-y-2 py-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Visit {idx + 1}</p>
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Visit {idx + 1}</p>
                       {(entries[item.id] ?? []).length > 1 && (
                         <button
                           onClick={() => removeEntry(item.id, entry.key)}
-                          className="text-phx-sm font-bold text-red-500 hover:text-red-700"
+                          className={`text-phx-xs font-bold uppercase tracking-[0.08em] text-rose-700 transition-colors hover:text-rose-800 motion-reduce:transition-none ${LANDING_FOCUS}`}
                           type="button"
                         >
                           Remove
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="col-span-2">
-                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
-                          Dr. Name <span className="text-red-500">*</span>
+                    <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+                      <div className="min-[360px]:col-span-2">
+                        <label className={phxLabelClassName}>
+                          Dr. Name <span className={phxRequiredMarkClassName}>*</span>
                         </label>
                         <input
                           className={tableInputClass}
@@ -3991,8 +3993,8 @@ function VisitDetailsModal({
                         />
                       </div>
                       <div>
-                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
-                          Speciality <span className="text-red-500">*</span>
+                        <label className={phxLabelClassName}>
+                          Speciality <span className={phxRequiredMarkClassName}>*</span>
                         </label>
                         <select
                           className={tableSelectClass}
@@ -4006,8 +4008,8 @@ function VisitDetailsModal({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
-                          Address <span className="text-red-500">*</span>
+                        <label className={phxLabelClassName}>
+                          Address <span className={phxRequiredMarkClassName}>*</span>
                         </label>
                         <input
                           className={tableInputClass}
@@ -4016,8 +4018,8 @@ function VisitDetailsModal({
                           value={entry.address}
                         />
                       </div>
-                      <div className="col-span-2">
-                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                      <div className="min-[360px]:col-span-2">
+                        <label className={phxLabelClassName}>
                           Objective of Visit
                         </label>
                         <input
@@ -4030,22 +4032,24 @@ function VisitDetailsModal({
                     </div>
                   </div>
                 ))}
-                <button
-                  onClick={() => addEntry(item.id)}
-                  className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 py-2 text-phx-xs font-bold text-orange-600 hover:border-orange-400 hover:bg-orange-50"
-                  type="button"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add another visit
-                </button>
+                <div className="py-3">
+                  <button
+                    onClick={() => addEntry(item.id)}
+                    className={phxButtonAddBlockClassName}
+                    type="button"
+                  >
+                    <Plus aria-hidden="true" className="h-3.5 w-3.5" /> Add another visit
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
           <button
-            className="text-xs font-bold text-slate-500 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500 transition-colors hover:text-[#08111f] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
             disabled={isSubmitting}
             onClick={onClose}
             type="button"
@@ -4081,36 +4085,36 @@ function QueueCard({
 }) {
   if (plans.length === 0) return null;
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <div className="flex items-center gap-2.5 bg-slate-900 px-4 py-3">
-        <span aria-hidden className="h-4 w-1 bg-gradient-to-b from-orange-400 to-orange-600" />
-        <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
-        {readOnly ? (
-          <span title="Read-only — decided by HR, not you">
-            <Eye aria-label="View only" className="h-3.5 w-3.5 text-white/60" />
-          </span>
-        ) : null}
-      </div>
-      <div className="max-h-[360px] space-y-2 overflow-y-auto p-3">
+    <LandingPanel
+      right={
+        <>
+          <LandingMeta items={[String(plans.length)]} />
+          {readOnly ? (
+            <span title="Read-only — decided by HR, not you">
+              <Eye aria-label="View only" className="h-3.5 w-3.5 text-slate-500" />
+            </span>
+          ) : null}
+        </>
+      }
+      title={title}
+    >
+      <div className="max-h-[360px] divide-y divide-slate-200 overflow-y-auto">
         {plans.map((p) => (
-          <div
-            className="border border-slate-200 p-3 transition-colors duration-150 hover:border-orange-200 hover:bg-orange-50/40"
-            key={p.id}
-          >
-            <button className="w-full text-left" onClick={() => onOpen(p)} type="button">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-black text-slate-900">
+          <div className="flex min-w-0 gap-3 px-3 py-3 sm:px-4" key={p.id}>
+            <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${statusRail(p.status)}`} />
+            <div className="min-w-0 flex-1">
+            <button className={`-mx-1 block w-[calc(100%+0.5rem)] px-1 text-left ${LANDING_ROW_LINK}`} onClick={() => onOpen(p)} type="button">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                <p className={`min-w-0 break-words text-sm font-bold ${LANDING_INK}`} dir="auto">
                   {showEmployeeName ? `${p.employeeDisplayName || p.employeeName} — ` : ""}
                   {planHeadingLabel(p.planKind, p.periodStartDate, p.periodEndDate)}
                 </p>
-                <span
-                  className={`rounded-full border px-2 py-1 text-phx-xs font-black ${statusTone(p.status)}`}
-                >
+                <span className={`${planStatusWordClassName} ${statusInk(p.status)}`}>
                   {statusLabels[p.status]}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <p className="text-xs font-semibold text-slate-500">Revision {p.revision}</p>
+                <p className="text-xs font-semibold tabular-nums text-slate-500">Revision {p.revision}</p>
                 {p.offWindowFlagged ? <OffWindowBadge /> : null}
                 {/* His own plans carry their score here, so he sees it on the plan itself rather
                     than only after opening the approvals hub. Absent on other people's plans —
@@ -4122,18 +4126,19 @@ function QueueCard({
             <PlanDecisionTimeline decisions={p.decisions} />
             {p.status === "details_requested" && (
               <button
-                className="mt-2 flex w-full items-center justify-center gap-1.5 border border-orange-300 bg-orange-50 py-1.5 text-phx-xs font-bold text-orange-700 hover:border-orange-400 hover:bg-orange-100"
+                className={landingActionClassName("solid", "mt-2 w-full")}
                 onClick={() => onFillDetails(p)}
                 type="button"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                 Fill Visit Details
               </button>
             )}
+            </div>
           </div>
         ))}
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -4187,39 +4192,40 @@ function ReviewCard({
 
   if (plans.length === 0) return null;
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <div className="flex items-center justify-between gap-2.5 bg-slate-900 px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <span aria-hidden className="h-4 w-1 bg-orange-500" />
-          <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
-        </div>
-        {type === "manager" ? (
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              checked={allSelected}
-              className="h-4 w-4 accent-orange-500"
-              onChange={toggleAll}
-              type="checkbox"
-            />
-            <span className="text-xs font-semibold text-white/70">All</span>
-          </label>
-        ) : null}
-      </div>
-      <div className="space-y-3 p-3">
+    <LandingPanel
+      right={
+        <>
+          <LandingMeta items={[String(plans.length)]} />
+          {type === "manager" ? (
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                checked={allSelected}
+                className={phxCheckInputClassName}
+                onChange={toggleAll}
+                type="checkbox"
+              />
+              <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">All</span>
+            </label>
+          ) : null}
+        </>
+      }
+      title={title}
+    >
+      {/* Each record carries its own bottom rule (the virtualised list wraps every row in its own
+          box, so a divide-y on this wrapper would not reach them); -mb-px lays the last rule on the
+          panel frame instead of doubling it. */}
+      <div className="-mb-px">
         <VirtualList
           estimateSize={200}
           items={plans}
           renderItem={(p) => {
           const comment = planCommentFor(comments, p.id);
           return (
-            <div
-              className="rounded-sm border border-slate-200 p-3 shadow-sm transition-colors duration-150 hover:border-slate-300 focus-within:border-orange-300 focus-within:bg-orange-50/20"
-              key={p.id}
-            >
+            <div className="border-b border-slate-200 px-3 py-3 sm:px-4" key={p.id}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-black text-slate-900">{p.employeeDisplayName || p.employeeName}</p>
-                  <p className="text-xs font-semibold text-slate-500">
+                  <p className={`break-words font-bold ${LANDING_INK}`} dir="auto">{p.employeeDisplayName || p.employeeName}</p>
+                  <p className="break-words text-xs font-semibold text-slate-500">
                     {planHeadingLabel(p.planKind, p.periodStartDate, p.periodEndDate)} — {statusLabels[p.status]}
                   </p>
                   {p.offWindowFlagged ? (
@@ -4231,7 +4237,7 @@ function ReviewCard({
                 {type === "manager" ? (
                   <input
                     checked={selectedIds.has(p.id)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-orange-500"
+                    className={cn(phxCheckInputClassName, "mt-1")}
                     onChange={() => toggleOne(p.id)}
                     type="checkbox"
                   />
@@ -4253,7 +4259,7 @@ function ReviewCard({
                 <div className={`mt-3 max-h-44 space-y-2 overflow-y-auto border border-slate-200 bg-slate-50 p-2 ${adminRecessedDepthClassName}`}>
                   {p.items.map((item) => (
                     <label className="block" key={item.id}>
-                      <span className="block text-xs font-black text-slate-600">
+                      <span className="block break-words text-xs font-bold text-slate-600">
                         {formatDate(item.activityDate)} · {planRowPartLabel(item)} — {item.activityTitle}
                       </span>
                       <input
@@ -4281,76 +4287,82 @@ function ReviewCard({
               <div className="mt-3 flex flex-wrap gap-2">
                 {type === "edit_request" ? (
                   <>
-                    <Button disabled={isPending} onClick={() => onDecision(p.id, "approve")}>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    <button className={approvalActionClassName("approve")} disabled={isPending} onClick={() => onDecision(p.id, "approve")} type="button">
+                      <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
                       Approve Edit
-                    </Button>
-                    <Button
+                    </button>
+                    <button
+                      className={approvalActionClassName("reject")}
                       disabled={isPending}
                       onClick={() => onDecision(p.id, "reject")}
-                      variant="destructive"
+                      type="button"
                     >
-                      <XCircle className="mr-2 h-4 w-4" />
+                      <XCircle aria-hidden="true" className="h-4 w-4" />
                       Reject
-                    </Button>
+                    </button>
                   </>
                 ) : null}
                 {type === "manager" ? (
                   <>
-                    <Button disabled={isPending} onClick={() => onDecision(p.id, "manager_approve")}>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    <button className={approvalActionClassName("approve")} disabled={isPending} onClick={() => onDecision(p.id, "manager_approve")} type="button">
+                      <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
                       Approve
-                    </Button>
+                    </button>
                     {p.items.some((i) => i.activityType === "Field") && onRequestDetails && (
-                      <Button
+                      <button
+                        className={approvalActionClassName("neutral")}
                         disabled={isPending}
                         onClick={() => onRequestDetails(p)}
-                        variant="secondary"
+                        type="button"
                       >
-                        <FileText className="mr-2 h-4 w-4" />
+                        <FileText aria-hidden="true" className="h-4 w-4" />
                         Request Visit Details
-                      </Button>
+                      </button>
                     )}
-                    <Button
+                    <button
+                      className={approvalActionClassName("return")}
                       disabled={isPending || comment.trim().length === 0}
                       onClick={() => onDecision(p.id, "manager_return")}
-                      variant="secondary"
+                      type="button"
                     >
-                      <RotateCcw className="mr-2 h-4 w-4" />
+                      <RotateCcw aria-hidden="true" className="h-4 w-4" />
                       Return
-                    </Button>
-                    <Button
+                    </button>
+                    <button
+                      className={approvalActionClassName("reject")}
                       disabled={isPending || comment.trim().length === 0}
                       onClick={() => onDecision(p.id, "manager_reject")}
-                      variant="destructive"
+                      type="button"
                     >
-                      <XCircle className="mr-2 h-4 w-4" />
+                      <XCircle aria-hidden="true" className="h-4 w-4" />
                       Reject
-                    </Button>
+                    </button>
                   </>
                 ) : null}
                 {type === "ceo" ? (
                   <>
-                    <Button disabled={isPending} onClick={() => onDecision(p.id, "ceo_approve")}>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    <button className={approvalActionClassName("approve")} disabled={isPending} onClick={() => onDecision(p.id, "ceo_approve")} type="button">
+                      <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
                       Approve
-                    </Button>
-                    <Button
+                    </button>
+                    <button
+                      className={approvalActionClassName("return")}
                       disabled={isPending || comment.trim().length === 0}
                       onClick={() => onDecision(p.id, "ceo_return")}
-                      variant="secondary"
+                      type="button"
                     >
-                      <RotateCcw className="mr-2 h-4 w-4" />
+                      <RotateCcw aria-hidden="true" className="h-4 w-4" />
                       Return
-                    </Button>
-                    <Button
+                    </button>
+                    <button
+                      className={approvalActionClassName("reject")}
                       disabled={isPending || comment.trim().length === 0}
                       onClick={() => onDecision(p.id, "ceo_reject")}
-                      variant="destructive"
+                      type="button"
                     >
-                      <XCircle className="mr-2 h-4 w-4" />
+                      <XCircle aria-hidden="true" className="h-4 w-4" />
                       Reject
-                    </Button>
+                    </button>
                   </>
                 ) : null}
                 {/* Acknowledgement is recorded automatically the moment a plan reaches
@@ -4361,19 +4373,20 @@ function ReviewCard({
                     it: a plan the automatic step could not acknowledge, still at final_approved. */}
                 {type === "hr" ? (
                   p.status === "hr_acknowledged" ? (
-                    <span className="inline-flex items-center gap-2 px-1 text-sm font-black text-emerald-700">
-                      <BadgeCheck className="h-4 w-4" />
+                    <span className="inline-flex items-center gap-2 px-1 text-phx-xs font-bold uppercase tracking-[0.08em] text-emerald-700">
+                      <BadgeCheck aria-hidden="true" className="h-4 w-4" />
                       Acknowledged
                     </span>
                   ) : (
-                    <Button
+                    <button
+                      className={approvalActionClassName("acknowledge")}
                       disabled={isPending}
                       onClick={() => onDecision(p.id, "hr_acknowledge")}
-                      variant="secondary"
+                      type="button"
                     >
-                      <CircleAlert className="mr-2 h-4 w-4" />
+                      <CircleAlert aria-hidden="true" className="h-4 w-4" />
                       Acknowledge
-                    </Button>
+                    </button>
                   )
                 ) : null}
               </div>
@@ -4384,11 +4397,12 @@ function ReviewCard({
       </div>
       {/* F1 — Sticky bulk approve bar for manager type */}
       {type === "manager" && selectedIds.size > 0 && onBulkApprove ? (
-        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-orange-200 bg-orange-50 px-4 py-3">
-          <span className="text-sm font-black text-orange-800">
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3">
+          <span className={`text-sm font-bold tabular-nums ${LANDING_INK}`}>
             {selectedIds.size} plan{selectedIds.size > 1 ? "s" : ""} selected
           </span>
-          <Button
+          <button
+            className={approvalActionClassName("approve")}
             disabled={isPending}
             onClick={() => {
               const ids = Array.from(selectedIds);
@@ -4400,12 +4414,13 @@ function ReviewCard({
                 }),
               );
             }}
+            type="button"
           >
-            <CheckCircle2 className="mr-2 h-4 w-4" />
+            <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
             Approve selected ({selectedIds.size})
-          </Button>
+          </button>
         </div>
       ) : null}
-    </div>
+    </LandingPanel>
   );
 }
