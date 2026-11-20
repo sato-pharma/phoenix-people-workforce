@@ -53,6 +53,29 @@ export function runDockerfileReproducibleTests(): void {
     );
   }
 
+  // ── 1b. …and something moves that digest ───────────────────────────────────────────────────────────
+  // A digest pin never moves on its own, so without a Dependabot docker entry the base image froze on the day
+  // it was pinned and no Node or Alpine security fix reached production (security tools review, 20 Nov 2026).
+  const dependabot = stripHashComments(readFileSync(".github/dependabot.yml", "utf8"));
+  const dockerBlock = dependabot.split(/^ {2}- package-ecosystem:/m).find((block) => block.trimStart().startsWith("docker"));
+  assert.ok(
+    dockerBlock,
+    "🔴 .github/dependabot.yml has no `docker` ecosystem, so nothing proposes a new digest for the pinned base images " +
+      "and Node and Alpine security fixes never reach production",
+  );
+  for (const directory of ["/", "/infra/code-backup"]) {
+    assert.match(
+      dockerBlock,
+      new RegExp(`^\\s+- ${directory.replace(/\//g, "\\/")}\\s*$`, "m"),
+      `Dependabot's docker entry must watch ${directory}, whose base image is pinned by digest`,
+    );
+  }
+  assert.match(
+    dockerBlock,
+    /update-types: \["version-update:semver-major", "version-update:semver-minor"\]/,
+    "Dependabot's docker entry moves only the digest of the same tag — a Node or Alpine version change stays a deliberate upgrade",
+  );
+
   // ── 2. The runtime extras come from the committed lockfile, never a floating install ──────────────────
   assert.match(
     dockerfile,

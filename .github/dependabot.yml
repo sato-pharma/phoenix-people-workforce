@@ -87,3 +87,26 @@ updates:
     open-pull-requests-limit: 2 # lowered from 3 — same Actions-cost reason as the npm limit above
     labels:
       - dependencies
+
+  # The two base images pinned by digest: the website's (node:24-alpine) and the nightly backup's (alpine:3.21).
+  # A digest never moves on its own, so before this entry Node and Alpine security fixes (OpenSSL, musl, Node
+  # patches) never reached production unless someone moved the digest by hand — nothing ever did. Here
+  # Dependabot proposes the CURRENT digest of the SAME tag, and nothing else: majors and minors are ignored
+  # because node 24 → 25 and alpine 3.21 → 3.22 are deliberate upgrades (the backup needs Alpine's PostgreSQL 17
+  # client). Monthly with one PR at a time, because every PR costs a full CI run. The PR keeps the
+  # public.ecr.aws mirror and the tag@sha256 form that tests/railway-deploy-config.test.ts and
+  # tests/dockerfile-reproducible.test.ts require; the latter also pins this entry.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /infra/code-backup
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
