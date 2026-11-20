@@ -115,25 +115,34 @@ The owner's rulings of 20 November 2026: *"Phoenix will not reject anything … 
 maker."* Every photo the camera syncs becomes one `phoenix_crm_camera_items` row, keyed by the seal's visit id so a
 resend is the same item, and the phone hears one answer: received. The rep's screens say "sent" and nothing else.
 
-**What records at once** (`cameraArrival` in `src/lib/phoenix-crm/camera-item-rules.ts`): the seal holds in full; the
-photo was taken on the same Phoenix day it arrived (the day ends at 02:00 Cairo); it carries a location; its time is
-confirmed; and the rep has fewer than the daily limit recorded that day (3 by default, the Super Admin's Daily limit
-tab, 1 to 20, in `phoenix_crm_settings.camera_daily_cap`). Anything else **waits**, with every reason at once — the
-fourth item, the next day, a failed seal, no location, a time not confirmed, a new customer. Over 36 hours old it goes
-to the archive. A visit rule Phoenix would apply to a typed visit makes the item wait rather than refuse it.
+**Nothing records itself** (owner, 21 November 2026: *"EVERY VISIT GOES TO CAMERA REVIEWS EVERY VISIT"*, *"EVERY
+VISIT GOES TO MANUAL REVIEW FIRST"*). Every item **waits** for the Super Admin, with every check beside it
+(`cameraArrival` in `src/lib/phoenix-crm/camera-item-rules.ts`): a failed seal, the next day (the Phoenix day ends at
+02:00 Cairo), no location, a time not confirmed, a new customer, a name photo to check, and a visit over the day's
+allowance. One with no reason reads "Every check passed". Over 36 hours old it goes to the archive. Until 20 November an
+item that passed every check under the daily limit was recorded at once; those rows stay in Recorded.
+
+**The day's allowance** (owner, 21 November 2026: *"U ARE ALLOWED 3 A DAYS IF MORE NEEDED WE NEED APPROVAL FROM
+MANAGERS VIA EMAIL AND SYSTEM ADMIN WILL UPDATE IT FOR THIS DAY ONLY"*). Approve records at most the daily limit of
+camera visits for one rep's Phoenix day (3 by default, the Daily limit tab, 1 to 20, in
+`phoenix_crm_settings.camera_daily_cap`); the next one is refused with the count. Once the manager's approval is in by
+email, he raises that one rep's one day on the visit itself, writing the approval beside it
+(`phoenix_crm_camera_day_allowances`, one row per rep, day and test world; service role only). The rep is never told.
 
 **The time** is Phoenix's own anchor when the seal carries one, else the satellites inside a seal that holds, else
 "time not confirmed". **The location** is the closest good fix within ten minutes of the shutter; the page shows the
 gap, the rep sees no numbers.
 
-**Name photos and business cards.** A name photo goes through the photo reader: a clear reading validates, anything
-else waits. A business card always waits, and counts only beside a location inside the polyclinic. A customer whose
+**Name photos and business cards.** A name photo goes through the photo reader, and its verdict is written beside the
+item; an unclear one is flagged "Name photo to check". A business card is always flagged, and counts only beside a
+location inside the polyclinic. A customer whose
 name photo waits is not refused a third visit, and a building with no timetable is never refused for one.
 
 **The page** — `/admin/field-crm/camera-reviews`, the Super Admin's alone (`canEnterMissedRecords`), never the SFE. Tabs:
 Waiting, Recorded, Archive, Daily limit. Each row shows the photo, the rep, the time taken and the time it arrived, every
 check, and the seal in red when it failed. **Approve** records the visit through his *Record a missed visit* door, in his
-name; **Reject** on a recorded item takes it back whole. Routes: `camera-reviews/decide` and `camera-reviews/cap`, both at
+name, up to the rep's allowance for that day; **Reject** on an item recorded at once before 21 November takes it back
+whole. Routes: `camera-reviews/decide`, `camera-reviews/cap` and `camera-reviews/day-allowance`, all at
 `phoenix_crm` `update` behind `assertSameOriginMutation`.
 
 **The update button.** `scripts/phoenix-camera-publish-release.ts` uploads a signed APK under `releases/` in the same
