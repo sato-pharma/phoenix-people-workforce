@@ -104,9 +104,13 @@ VIDEOS". He chose the live data connector over the masked staging inspector. Two
 - **`phoenix_screenshot_page`** takes `{ path, viewport?, fullPage? }`. `path` is a page inside
   Phoenix, starting with `/`. The screen is desktop 1440, tablet 768 or mobile 390. A full-page capture
   stops at 12,000 pixels.
-- **`phoenix_record_video`** takes `{ paths[1..3], viewport? }`. It opens each page and scrolls it to the
-  bottom, for about 16 seconds of video in all. ffmpeg joins the frames into an MP4 (libx264), or a WebM
-  when libx264 is missing.
+- **`phoenix_record_video`** takes `{ paths[1..3], viewport?, seconds? }`. It opens each page and scrolls it
+  to the bottom, for about 16 seconds of video at most. `seconds` (2 to 16) is the length the person asked
+  for, shared evenly by the pages; each page is held at its bottom until its share is used. Without it,
+  each page is scrolled once and the video ends, so a short page gives a video of about 3 seconds (the
+  owner's first "10-second video" of `/employees` came out 3.4 s, 20 Nov 2026). When slow pages leave too
+  little time, the answer says it came out shorter than asked. ffmpeg joins the frames into an MP4
+  (libx264), or a WebM when libx264 is missing.
 
 **How a capture runs.** Chromium is the same browser the offer-letter PDFs use (`withChromiumSlot`). It
 opens the page on this server's own loopback address: `http://127.0.0.1:$PORT`, or
