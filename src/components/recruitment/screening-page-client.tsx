@@ -14,8 +14,11 @@
 // having already lives in CandidateScreeningSession and a second copy of it would be a second thing
 // to keep true.
 
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useOptimistic, useTransition } from "react";
 import { Loader2, X } from "lucide-react";
 
+import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import {
   candidateRegionCodes,
   candidateRegionLabels,
@@ -27,15 +30,36 @@ import {
   type ScreeningRatingFilter,
 } from "@/lib/recruitment/candidate-rating";
 import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
+import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
+import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
 // Pure, and its whole import chain is — see the header of screening-filter.ts. These two fold an
 // area or source the way the counts are keyed, so the bar looks a count up the same way it was
 // tallied rather than by the spelling it happens to be displaying.
 import { screeningAreaKey, screeningSourceKey } from "@/lib/recruitment/screening-filter";
 import type { ScreeningFilterCounts } from "@/lib/recruitment/screening-filter-counts";
-import { SCREENING_UNKNOWN, screeningReceivedFilterLabels, screeningReceivedFilters, type ScreeningHrefOptions, type ScreeningNotifiedFilter, type ScreeningReceivedFilter, type ScreeningRegionFilter, type ScreeningRoleFilter, type ScreeningSeenFilter } from "@/lib/recruitment/screening-link";
+// Type-only, and it has to stay that way: hiring-manager-notify reaches the service-role client, so
+// a value import would drag it into this "use client" bundle and fail the build outright.
+import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
+import {
+  SCREENING_UNKNOWN,
+  screeningHref,
+  screeningReceivedFilterLabels,
+  screeningReceivedFilters,
+  mergeNarrowing,
+  screeningShellPoolHref,
+  type ScreeningHrefOptions,
+  type ScreeningNotifiedFilter,
+  type ScreeningReceivedFilter,
+  type ScreeningRegionFilter,
+  type ScreeningRoleFilter,
+  type ScreeningSeenFilter,
+} from "@/lib/recruitment/screening-link";
 import { adminChipDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
+import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
+// Type-only for the same reason: vacancy-options reads the service-role client.
+import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
 /**
  * The four-way, in the words a screener would use rather than the words the URL uses.
@@ -58,6 +82,199 @@ const notifiedFilterLabels: Record<ScreeningNotifiedFilter, string> = {
   sent: "Already sent to a manager",
   unsent: "Not sent to a manager yet",
 };
+
+export function ScreeningPageClient({
+  area,
+  areaOptions,
+  candidates,
+  filterCounts,
+  hiringManagers,
+  initialViews,
+  notified,
+  openVacancies,
+  poolHref,
+  positionSuggestions,
+  rating,
+  received,
+  region,
+  role,
+  seen,
+  source,
+  sourceOptions,
+  status,
+  totalCount,
+}: {
+  /** The area this link narrowed to, or `unknown` for applicants who never named one. */
+  area: string | null;
+  /** The areas applicants in this pool have actually named — the only ones worth offering. */
+  areaOptions: string[];
+  candidates: Candidate[];
+  /**
+   * How many CVs each filter option would return — see ScreeningFilterBar.
+   *
+   * Required rather than defaulted, deliberately. The bar has TWO homes (this screen and the
+   * workstation) and the note in `goTo` below records what that already cost once: "a fix to one is
+   * half a fix", caught only because the types made the second caller declare itself. A default of
+   * empty counts would have hidden this call site and rendered every option as a disabled "(0)".
+   */
+  filterCounts: ScreeningFilterCounts;
+  /** The managers a CV can be pushed to without leaving the queue. Loaded server-side by the page. */
+  hiringManagers: HiringManagerOption[];
+  initialViews: CandidateViewMap;
+  /** Whether this link narrowed to CVs already pushed to a manager, or never pushed to one. */
+  notified: ScreeningNotifiedFilter;
+  /** The open seats a CV can be sent FOR. Same server load, same gate as the managers. */
+  openVacancies: VacancyOption[];
+  /** Titles and areas already used on a send, offered beside the free-typed fields. */
+  positionSuggestions: { jobTitles: string[]; areas: string[] };
+  /**
+   * Where "back to the pool" goes. Passed in rather than hard-coded because this page exists in
+   * both shells — the admin one at /recruitment and the portal twin at /employee-portals/recruitment
+   * built for the retired Talent Acquisition seat — and sending a portal user to the admin route
+   * would bounce them straight back out through the (admin) group's redirect. HR Advisory, the
+   * current recruiting seat, is admin-shell, so that portal twin is orphaned in practice — see
+   * tests/recruitment-hub-portal-coverage.test.ts (ORPHANED_PORTAL_MIRRORS).
+   */
+  poolHref: string;
+  /** The star this link narrowed to, as "that many OR MORE" — or `unrated`. Null means any. */
+  rating: ScreeningRatingFilter | null;
+  /** How long ago this link narrowed the CV to have arrived — null means any time. */
+  received: ScreeningReceivedFilter | null;
+  /** The region this link narrowed to: a company region, `foreign`, or `unknown`. */
+  region: ScreeningRegionFilter | null;
+  /** The role family this link narrowed to, or `unknown` for candidates with no title on file. */
+  role: ScreeningRoleFilter | null;
+  /** Whether this link narrowed to what the viewer has, or has not, already opened. */
+  seen: ScreeningSeenFilter;
+  /** The source channel this link narrowed to, verbatim — e.g. `WhatsApp`. */
+  source: string | null;
+  /** The source labels this pool actually has — the only ones worth offering. */
+  sourceOptions: string[];
+  /** The status this link narrowed to, e.g. `new` — null means every status. */
+  status: CandidateStatus | null;
+  /** The pool size before this link's narrowing, so "42 of 434" can be said instead of just "42". */
+  totalCount: number;
+}) {
+  const router = useRouter();
+  // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
+  // Every push below goes through this, never through the server's own poolHref.
+  const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
+
+  const handleClose = useCallback(
+    (decidedCount: number) => {
+      // Refresh only when something actually changed, matching the overlay's behaviour: leaving
+      // after reading a few costs nothing, and a needless refresh of a 434-row pool is a visible
+      // stall on the way out.
+      if (decidedCount > 0) router.refresh();
+      router.push(shellPoolHref);
+    },
+    [router, shellPoolHref],
+  );
+
+  // Changing the narrowing is a NEW link, not a live filter — same address-bar mechanism as the
+  // "unseen=1" link the pool already offers, just reachable without leaving this page. That is what
+  // makes "the New Medical Rep CVs in Tanta I have not read" a thing you can bookmark rather than a
+  // thing you rebuild every morning. Landing here directly (the HR job workbook sends people
+  // straight to /recruitment/screening, no filter) used to mean the only way to narrow the queue
+  // was going back to the pool, filtering there, and pressing "Screen" again.
+  // ── THE SAME ROUND TRIP, AND THE SAME BUG ─────────────────────────────────────────
+  // This screen draws the same bar as the workstation and pushes the same URLs, so it had the same
+  // defect for the same reason: a `<select>` controlled by the server’s last answer, and an answer
+  // that takes seconds. See the long note in workstation-page-client.tsx. The types caught that this
+  // second caller existed — a reminder that the bar has two homes and a fix to one is half a fix.
+  const shownNarrowing = { area, notified, rating, received, region, role, seen, source, status };
+  const [shown, showImmediately] = useOptimistic(
+    shownNarrowing,
+    (current, picked: ScreeningHrefOptions) => mergeNarrowing(current, picked),
+  );
+  const [pending, startTransition] = useTransition();
+
+  const goTo = useCallback(
+    (next: ScreeningHrefOptions) => {
+      const href = screeningHref(shellPoolHref, {
+        area: next.area !== undefined ? next.area : area,
+        notified: next.notified !== undefined ? next.notified : notified,
+        rating: next.rating !== undefined ? next.rating : rating,
+        received: next.received !== undefined ? next.received : received,
+        region: next.region !== undefined ? next.region : region,
+        role: next.role !== undefined ? next.role : role,
+        seen: next.seen !== undefined ? next.seen : seen,
+        source: next.source !== undefined ? next.source : source,
+        status: next.status !== undefined ? next.status : status,
+      });
+      // One transition around both, or React drops the optimistic value on the next render.
+      startTransition(() => {
+        showImmediately(next);
+        router.push(href);
+      });
+    },
+    [
+      area,
+      notified,
+      rating,
+      received,
+      region,
+      role,
+      router,
+      seen,
+      shellPoolHref,
+      showImmediately,
+      source,
+      status,
+    ],
+  );
+
+  return (
+    <ScreeningPageFrame>
+      <ScreeningFilterBar
+        area={shown.area}
+        areaOptions={areaOptions}
+        filterCounts={filterCounts}
+        notified={shown.notified}
+        onChange={goTo}
+        onClear={() =>
+          goTo({
+            area: null,
+            notified: "any",
+            rating: null,
+            received: null,
+            region: null,
+            role: null,
+            seen: "any",
+            source: null,
+          })
+        }
+        pending={pending}
+        queueCount={candidates.length}
+        rating={shown.rating}
+        received={shown.received}
+        region={shown.region}
+        role={shown.role}
+        seen={shown.seen}
+        source={shown.source}
+        sourceOptions={sourceOptions}
+        totalCount={totalCount}
+      />
+      <CandidateScreeningSession
+        candidates={candidates}
+        hiringManagers={hiringManagers}
+        // Forces a fresh mount whenever the narrowing changes. The session's own state — which
+        // candidate you're on, what has been read this sitting — is deliberately computed ONCE on
+        // mount from its props (see the comments in candidate-screening-session.tsx on why the queue
+        // is "a snapshot, not a live view"); without a key tied to the narrowing, pushing a new
+        // filter here would hand the same mounted session a shorter `candidates` array while its
+        // index and caches still pointed at the old one. Every filter has to be in the key: one
+        // left out is one that silently reuses the previous queue's position.
+        initialViews={initialViews}
+        key={`${status ?? "all"}:${seen}:${notified}:${role ?? "all"}:${region ?? "all"}:${area ?? "all"}:${received ?? "all"}:${source ?? "all"}`}
+        onClose={handleClose}
+        openVacancies={openVacancies}
+        positionSuggestions={positionSuggestions}
+        variant="page"
+      />
+    </ScreeningPageFrame>
+  );
+}
 
 // Matches the candidate pool's own toolbar — label above, small caps, the same select box. The two
 // are the same job on two screens, and the owner's standing rule is that a new surface in a module
