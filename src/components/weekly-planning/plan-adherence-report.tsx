@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { CalendarCheck, CalendarClock, CircleSlash, Target, UserCheck, UserMinus, UserX } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LandingBar, LandingFigure, LandingMeta, LandingRow, LandingTitle } from "@/components/employee-portal/landing-kit";
 import {
   planAdherenceTone,
   planAdherenceVerdictLabel,
@@ -9,6 +11,7 @@ import {
   type PlanAdherenceScore,
   type PlanAdherenceVerdict,
 } from "@/lib/weekly-planning/plan-adherence";
+import { planPeriodShortLabel } from "@/lib/weekly-planning/plan-labels";
 
 // The screen behind the score. Pure render (no client hooks) — usable directly inside the
 // server-rendered plan detail page, exactly as plan-summary.tsx is.
@@ -111,11 +114,27 @@ export function PlanAdherenceBadge({
 }
 
 /**
+ * The period a landing score belongs to, in words — "Week of 18 Oct", "Aug 2026" — never the stored
+ * key ("2026-W42"), which the plan module keeps off every card title (plan-labels.ts). The key's own
+ * shape says which kind it is; a key nothing can read falls back to itself, never to a blank.
+ */
+function landingPeriodLabel(periodKey: string): string {
+  return planPeriodShortLabel({ periodKey, planKind: /^\d{4}-W\d{2}$/.test(periodKey) ? "weekly" : "monthly" });
+}
+
+/**
  * The overview-dashboard card. One click reaches the plan that produced the number.
  *
  * The whole card is the link, not a "view details" affordance tucked in a corner — the owner's ask
  * was that pressing the score takes you to where the mismatch is, and a score you cannot press is
  * the thing he was replacing.
+ *
+ * So it wears the landing's white panel (landing-kit.tsx, owner's 2026-11-20 redesign) on the link
+ * itself rather than inside the kit's LandingPanel: that is a <section>, and the call to action at
+ * the foot would then be a link inside a link. The foot is a span drawn as the kit's outline button,
+ * filling navy while the card is hovered. The figure stays navy and the attainment bar carries the
+ * tone, the same scale as every other percentage on the landing. Nothing here is cut: the period,
+ * the count and the call to action all wrap on a 280px phone rather than clip or ellipsise.
  */
 export function PlanAdherenceDashboardCard({
   adherence,
@@ -131,46 +150,56 @@ export function PlanAdherenceDashboardCard({
   const latest = adherence.latest;
   if (!latest) return null;
 
-  const headline = latest.measurable ? `${latest.scorePct}%` : "Not measured";
-  const sub = latest.measurable
-    ? `${latest.periodKey} · ${latest.kept} of ${latest.checkable} kept`
-    : `${latest.periodKey} · nothing in it the CRM can check`;
-
   return (
     <Link
       href={planDetailHref(planBaseHref, latest.planId)}
-      className="group relative block overflow-hidden border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-orange-300 hover:bg-orange-50/40 sm:px-5 sm:py-5"
+      className={`group block min-w-0 border border-slate-200 bg-white transition-colors hover:border-[#08111f] ${adminSoftDepthClassName}`}
     >
-      <span className="absolute inset-x-0 top-0 h-[3px] bg-[#f47b20]" />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
-            <Target className="h-3.5 w-3.5" />
-          </span>
-          <p className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
-            My plan score
-          </p>
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+        <LandingTitle>My plan score</LandingTitle>
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <LandingMeta items={[landingPeriodLabel(latest.periodKey)]} />
         </div>
-        {adherence.averagePct != null ? (
-          <p className="whitespace-nowrap text-phx-xs font-bold text-slate-500 tabular-nums">
-            {adherence.averagePct}% across {adherence.measuredPeriods} period{adherence.measuredPeriods === 1 ? "" : "s"}
-          </p>
-        ) : null}
+      </header>
+
+      <div className="px-3 py-3 sm:px-4">
+        {latest.measurable ? (
+          <>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <LandingFigure unit="%">{latest.scorePct}</LandingFigure>
+              <span className="break-words text-phx-sm font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
+                {latest.kept} of {latest.checkable} kept
+              </span>
+            </div>
+            <div className="mt-3">
+              <LandingBar pct={latest.scorePct ?? 0} />
+            </div>
+          </>
+        ) : (
+          // Never a 0%: a plan the CRM cannot check has no score, and says why in its own words.
+          <>
+            <LandingFigure size="md" tone="text-slate-500">
+              Not measured
+            </LandingFigure>
+            <p className="mt-2 break-words text-phx-sm leading-snug text-slate-600">Nothing in it the CRM can check</p>
+          </>
+        )}
       </div>
-      <p
-        className={`mt-3 break-words text-xl font-black leading-tight tabular-nums sm:text-2xl ${
-          latest.measurable ? planAdherenceTone(latest.scorePct) : "text-slate-400"
-        }`}
-      >
-        {headline}
-      </p>
-      {/* whitespace-nowrap, never `truncate`: Tailwind's truncate IS an ellipsis, and text is never
-          ellipsised in this product. The longest this line gets is
-          "2026-W34 · nothing in it the CRM can check", which fits the card at 375px. */}
-      <p className="whitespace-nowrap text-phx-xs font-medium text-slate-500">{sub}</p>
-      <p className="mt-1 whitespace-nowrap text-phx-xs font-bold text-orange-600 group-hover:text-orange-700">
-        See where the plan and the CRM disagree →
-      </p>
+
+      {adherence.averagePct != null ? (
+        <div className="border-t border-slate-200">
+          <LandingRow
+            label={`Average across ${adherence.measuredPeriods} period${adherence.measuredPeriods === 1 ? "" : "s"}`}
+            value={`${adherence.averagePct}%`}
+          />
+        </div>
+      ) : null}
+
+      <div className="border-t border-slate-200 px-3 py-2.5 sm:px-4">
+        <span className="inline-flex min-h-10 w-full items-center justify-center border border-[#08111f] px-3 text-center text-phx-xs font-bold uppercase tracking-[0.08em] text-[#08111f] transition-colors group-hover:bg-[#08111f] group-hover:text-white sm:min-h-8 sm:w-auto">
+          See where the plan and the CRM disagree
+        </span>
+      </div>
     </Link>
   );
 }

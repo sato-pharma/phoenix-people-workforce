@@ -40,9 +40,11 @@ function Shell({ children, frame }: { children: ReactNode; frame: MyMapCardFrame
   if (frame === "rep") {
     return (
       <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-        <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-          <MapIcon aria-hidden className="h-3.5 w-3.5 text-slate-500" />
-          <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">My map</h2>
+        <header className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
+          <h2 className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]">
+            <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
+            My map
+          </h2>
         </header>
         {children}
       </section>
@@ -72,10 +74,27 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+/**
+ * A one-line fact — label on the left, value on the right (owner, 2026-11-20, the rep landing's
+ * redesign): stacked as three full stat blocks, "None" three times over ran the card ~150px taller
+ * on a phone than the facts it carried.
+ */
+function Row({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="flex min-w-0 items-baseline justify-between gap-3 bg-white px-4 py-2.5">
+      <div className="min-w-0">
+        <p className="break-words text-phx-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
+        {sub ? <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-400">{sub}</p> : null}
+      </div>
+      <p className="max-w-[60%] break-words text-right text-phx-md font-bold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
 function OpenLink() {
   return (
     <Link
-      className="inline-flex items-center gap-1.5 rounded-none bg-slate-900 px-3 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-slate-800"
+      className="inline-flex items-center gap-1.5 rounded-none bg-[#08111f] px-3 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-slate-800"
       href="/employee-portals/my-map"
       prefetch={false}
     >
@@ -205,9 +224,9 @@ export function MyMapSnapshotView({
               <Stat label="PM" sub={plural(counts.places.PM, "pin", "pins")} value={countText(counts.customers.PM)} />
               <Stat label="Pharmacies" sub={plural(counts.places.Pharmacy, "pin", "pins")} value={countText(counts.customers.Pharmacy)} />
             </div>
-            <Stat label="New this week" sub="Validated in the last 7 days" value={myMapPerListText(counts.newThisWeek)} />
-            <Stat label="Not visited this month" value={myMapPerListText(counts.notVisited)} />
-            {snapshot.planRead ? <Stat label="In today's plan" value={myMapPerListText(counts.plannedToday)} /> : null}
+            <Row label="New this week" sub="Validated in the last 7 days" value={myMapPerListText(counts.newThisWeek)} />
+            <Row label="Not visited this month" value={myMapPerListText(counts.notVisited)} />
+            {snapshot.planRead ? <Row label="In today's plan" value={myMapPerListText(counts.plannedToday)} /> : null}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-3">
               <p className="min-w-0 break-words text-phx-xs font-medium text-slate-500">
                 {someWithoutPin

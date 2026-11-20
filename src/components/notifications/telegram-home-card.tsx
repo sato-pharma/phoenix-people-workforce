@@ -7,6 +7,11 @@
  * This is the card. It sits beside the push card and wears its look, draws nothing until the server has
  * said this person is asked, and is never a step: nothing waits on it.
  *
+ * THE LOOK (owner, 2026-11-20 landing redesign): the landing kit's white panel, not an orange block.
+ * The tick title says where the person stands, one line under it in the body says what Telegram gives
+ * them, and the buttons are the kit's navy outline and solid shapes. Close sits in the header's right
+ * slot. Orange is only the tick.
+ *
  * Its button goes into the EXISTING connect flow, through the one client helper every screen uses
  * (telegram-connect.ts): a one-time link into the Phoenix bot, where the person presses START. The link
  * is also drawn as a plain link, because a phone may refuse a tab opened after a network wait, and a
@@ -20,6 +25,7 @@
 import { useEffect, useState } from "react";
 import { Send, X } from "lucide-react";
 
+import { LandingPanel, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { readHomeNotificationSettings } from "@/components/notifications/home-notification-settings";
 import { readTelegramConnectionStatus, requestTelegramConnectLink } from "@/components/notifications/telegram-connect";
 import { useHydrated } from "@/hooks/use-hydrated";
@@ -36,6 +42,11 @@ type CardState =
   /** Reading the settings again after the person says it is done. */
   | "confirming"
   | "connected";
+
+/**
+ * The kit's button shape (LandingCta) for an action that is a button, not a link — the kit draws its
+ * call to action as a <Link>. Same frame, same type, 40px on a phone.
+ */
 
 /** Writes the answer. Best effort: at worst this person sees the card once more on a later visit. */
 function recordAnswer() {
@@ -118,66 +129,66 @@ export function TelegramHomeCard() {
 
   const finishing = state === "finishing" || state === "confirming";
   const busy = state === "opening" || state === "confirming";
-  const plainButton = "shrink-0 border border-orange-200 bg-white px-3 py-1.5 text-xs font-bold text-orange-700 disabled:opacity-60";
-  const mainButton = "inline-flex items-center gap-1.5 border border-orange-600 bg-orange-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60";
 
   return (
-    <div className="flex flex-col gap-3 border border-orange-200 bg-orange-50 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-      <div className="flex min-w-0 items-start gap-3">
-        <Send aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-        <div className="min-w-0">
-          <p className="break-words text-sm font-bold text-slate-900">
-            {state === "connected" ? "Telegram is connected." : finishing ? "Finish in Telegram" : "Get Phoenix messages on Telegram?"}
-          </p>
-          <p className="mt-0.5 break-words text-xs font-medium text-slate-600">
+    <LandingPanel
+      right={
+        state === "connected" ? null : (
+          // 40px on a phone, where a thumb has to hit it; pulled into the header's padding so the
+          // header stays the height of every other panel's on the landing.
+          <button
+            aria-label="Close"
+            className="-my-1.5 inline-flex h-10 w-10 shrink-0 items-center justify-center border border-slate-300 text-slate-500 transition hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-60 sm:h-8 sm:w-8"
+            disabled={busy}
+            onClick={close}
+            type="button"
+          >
+            <X aria-hidden="true" className="h-4 w-4" />
+          </button>
+        )
+      }
+      title={state === "connected" ? "Telegram is connected" : finishing ? "Finish in Telegram" : "Get Phoenix messages on Telegram?"}
+    >
+      <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4">
+        <div aria-live="polite" className="min-w-0">
+          <p className="break-words text-phx-sm leading-snug text-slate-600">
             {state === "connected"
               ? "Approvals, reminders and updates will reach you there. Manage this anytime in Profile → Notification Settings."
               : finishing
                 ? "Press START in the Phoenix bot, then come back here."
                 : "Approvals, reminders and updates reach your phone the moment they happen."}
           </p>
-          {problem ? <p className="mt-1 break-words text-xs font-semibold text-rose-700">{problem}</p> : null}
+          {problem ? <p className="mt-1.5 break-words text-phx-sm font-semibold text-rose-700">{problem}</p> : null}
         </div>
-      </div>
-      {state === "connected" ? (
-        <button className={`${plainButton} self-start sm:self-center`} onClick={() => setState("hidden")} type="button">
-          Got it
-        </button>
-      ) : (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 self-start sm:shrink-0 sm:self-center">
-          {finishing ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+          {state === "connected" ? (
+            <button className={landingActionClassName("outline")} onClick={() => setState("hidden")} type="button">
+              Got it
+            </button>
+          ) : finishing ? (
             <>
               {link ? (
-                <a className={mainButton} href={link} rel="noopener noreferrer" target="_blank">
+                <a className={landingActionClassName("solid")} href={link} rel="noopener noreferrer" target="_blank">
                   <Send aria-hidden="true" className="h-3.5 w-3.5" />
                   Open Telegram
                 </a>
               ) : null}
-              <button className={plainButton} disabled={busy} onClick={() => void checkAgain()} type="button">
+              <button className={landingActionClassName("outline")} disabled={busy} onClick={() => void checkAgain()} type="button">
                 {state === "confirming" ? "Checking" : "I pressed START"}
               </button>
               {/* A link lives 15 minutes and is used once: a fresh one, through the same flow. */}
-              <button className={plainButton} disabled={busy} onClick={() => void connect()} type="button">
+              <button className={landingActionClassName("outline")} disabled={busy} onClick={() => void connect()} type="button">
                 New link
               </button>
             </>
           ) : (
-            <button className={mainButton} disabled={busy} onClick={() => void connect()} type="button">
+            <button className={landingActionClassName("solid")} disabled={busy} onClick={() => void connect()} type="button">
               <Send aria-hidden="true" className="h-3.5 w-3.5" />
               {state === "opening" ? "Opening Telegram" : "Connect Telegram"}
             </button>
           )}
-          <button
-            aria-label="Close"
-            className="inline-flex items-center justify-center border border-slate-300 bg-white p-3 text-slate-500 hover:text-slate-700 disabled:opacity-60 md:p-2.5"
-            disabled={busy}
-            onClick={close}
-            type="button"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
         </div>
-      )}
-    </div>
+      </div>
+    </LandingPanel>
   );
 }

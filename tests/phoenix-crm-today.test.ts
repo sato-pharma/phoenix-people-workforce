@@ -420,8 +420,12 @@ export function runPhoenixCrmTodayTests(): void {
       // and is unchanged: BOTH copies must wear it, so a pass that lights one and forgets the
       // other still fails here.
       ["the panel shell", 'className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}'],
-      ["the panel title", 'className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600"'],
-      ["the header chip", "border px-1.5 py-px text-phx-sm font-bold uppercase tracking-[0.06em] tabular-nums"],
+      // The title and header were redrawn with the whole landing on 2026-11-20 (white header, navy
+      // title, the short orange tick before it) — in both files at once, which is this loop's job.
+      ["the panel title", 'className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]"'],
+      ["the title tick", '<span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />'],
+      // The chip lost its fill on 2026-11-20 (a hairline frame and a tone, no wash), in both files.
+      ["the header chip", "border px-1.5 py-px text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums"],
       ["the row rail", 'className={`w-1 self-stretch'],
     ] as const) {
       assert.ok(panel.includes(shape), `the panel must wear the overview's own ${what}: ${shape}`);
@@ -437,7 +441,7 @@ export function runPhoenixCrmTodayTests(): void {
     // The panel's string is DERIVED from the overview's here rather than written out, so this is
     // still the drift guard the loop above is: change the header in portal-command-center.tsx and
     // this goes red until the panel follows.
-    const centreHeader = 'className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2"';
+    const centreHeader = 'className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5"';
     assert.ok(centre.includes(centreHeader), "the overview must still be the source of the panel header");
     assert.ok(
       panel.includes(centreHeader.replace("flex items-center", "flex flex-wrap items-center")),

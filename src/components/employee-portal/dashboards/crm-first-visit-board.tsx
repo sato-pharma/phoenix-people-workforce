@@ -1,13 +1,15 @@
-import { AlarmClock, AlertTriangle, CheckCircle2, Clock, Sunrise } from "lucide-react";
-
-import { SectionHead } from "@/components/employee-portal/portal-command-center";
+import { LandingFigure, LandingMeta, LandingPanel, LandingRailLine } from "@/components/employee-portal/landing-kit";
 import { EARLY_BIRD_LIMIT, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // Shared "who has submitted their first CRM visit today" board. Extracted from the NSM command
 // center so the National (line-scoped) and Regional (region-scoped) dashboards render one
 // identical widget — the data is roster-driven (see nsm-crm-compliance.ts), so the only difference
 // between the two is which roster the caller passes in.
+//
+// Drawn in the landing language (owner, 2026-11-20: "EVERY SINGLE COMPONENT TO BE PREMIUM GODMODE
+// POLISHED"): a white panel with the tick title, the two counts as figures, the early birds as ruled
+// rows rather than chips carrying chips, and every state as one line beside a coloured rail — the
+// rail of the rep's Needs you rows — so a quiet morning, a fetch failure and an all-clear never look alike.
 
 function cairoTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-GB", {
@@ -32,9 +34,9 @@ function vendorLocalTime(iso: string | null): string {
   });
 }
 
-// The visit time's provenance, stated on every chip: a GPS check-in is real on-site presence, a
+// The visit time's provenance, stated on every row: a GPS check-in is real on-site presence, a
 // save time is rep-controlled paperwork, and "no time" is a submitted visit the vendor sent no
-// clock for. All three rank together, so the badge is what keeps them comparable.
+// clock for. All three rank together, so the label is what keeps them comparable.
 export type EarlyBirdSource = NsmCrmComplianceData["earlyBirds"][number]["source"];
 
 /** Exported so the fortnightly Early Birds board labels provenance identically. A competition where
@@ -58,19 +60,36 @@ export const SOURCE_BADGE: Record<EarlyBirdSource, { label: string; className: s
   },
 };
 
-function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: string }>; tone: "danger" | "muted" }) {
-  const cls =
-    tone === "danger"
-      ? "border-rose-200 bg-rose-50 text-rose-700"
-      : "border-slate-200 bg-slate-50 text-slate-600";
+/**
+ * The same provenance on this board, as INK under the time rather than a filled badge inside a
+ * chip — the board's rows carry no badge on a badge. Same words as SOURCE_BADGE, same three colours.
+ */
+const SOURCE_INK: Record<EarlyBirdSource, string> = {
+  gps_checkin: "text-emerald-700",
+  save_time: "text-slate-500",
+  none: "text-amber-700",
+};
+
+/** One line of state beside a coloured rail. The rail says what kind of line it is before the words do. */
+/** A small capital label inside the panel's body: quieter than the panel title, never a second tick. */
+function BodyLabel({ children, tone = "text-slate-500" }: { children: React.ReactNode; tone?: string }) {
+  return <h3 className={`min-w-0 break-words text-phx-xs font-black uppercase tracking-[0.12em] ${tone}`}>{children}</h3>;
+}
+
+/** The names still missing, as flat outlined tags that wrap a row at a time inside a phone's width. */
+function PersonTags({ people }: { people: Array<{ hrId: string; name: string }> }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <ul className="mt-1.5 flex flex-wrap gap-1.5">
       {people.map((p) => (
-        <span key={p.hrId || p.name} dir="auto" className={`max-w-full break-words border px-2 py-1 text-phx-xs font-semibold ${cls}`}>
+        <li
+          className="max-w-full break-words border border-rose-200 px-2 py-1 text-phx-sm font-semibold leading-snug text-rose-800"
+          dir="auto"
+          key={p.hrId || p.name}
+        >
           {p.name}
-        </span>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -110,58 +129,43 @@ export function CrmFirstVisitBoard({
   const rosterSize = (crm?.reps.total ?? 0) + (crm?.dsms.total ?? 0);
 
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead
-        title="CRM First Visit"
-        right={
-          <span className="flex min-w-0 items-center gap-2">
-            <span
-              className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-widest text-slate-400"
-              title={crm?.lastSyncAt ? `Newest visit mirrored at ${cairoTime(crm.lastSyncAt)}` : undefined}
-            >
-              {syncLabel}
-            </span>
-            {action}
+    <LandingPanel
+      right={
+        <>
+          <span
+            className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500"
+            title={crm?.lastSyncAt ? `Newest visit mirrored at ${cairoTime(crm.lastSyncAt)}` : undefined}
+          >
+            {syncLabel}
           </span>
-        }
-      />
+          {action}
+        </>
+      }
+      title="CRM First Visit"
+    >
       {crm?.error ? (
-        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-          <p className="text-sm text-slate-500">
-            CRM data is temporarily unavailable — this is a fetch issue, not a compliance gap. Try again shortly.
-          </p>
-        </div>
+        <LandingRailLine rail="bg-amber-400">
+          CRM data is temporarily unavailable — this is a fetch issue, not a compliance gap. Try again shortly.
+        </LandingRailLine>
       ) : rosterSize === 0 ? (
-        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-          <p className="text-sm text-slate-500">
-            Nobody is attached to your team right now, so there is nothing to check here. This is a
-            roster problem rather than a compliance result — no rep has been marked as missing.
-          </p>
-        </div>
+        <LandingRailLine rail="bg-amber-400">
+          Nobody is attached to your team right now, so there is nothing to check here. This is a roster problem rather
+          than a compliance result — no rep has been marked as missing.
+        </LandingRailLine>
       ) : !crm || (!crm.synced && !crm.polled) ? (
         // Reached only when today's check could not be read: since iReports360 was retired (6 November
         // 2026) getNsmCrmCompliance marks every day checked, so a quiet morning reaches the red state below.
-        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
-          <Clock className="h-4 w-4 shrink-0 text-slate-400" />
-          <p className="text-sm text-slate-500">
-            Today&apos;s visits could not be read yet. Reload the page in a minute.
-          </p>
-        </div>
+        <LandingRailLine rail="bg-slate-300">Today&apos;s visits could not be read yet. Reload the page in a minute.</LandingRailLine>
       ) : !crm.synced ? (
         // Polled but empty. Blaming the sync for a compliance fact is what the old copy did — this
         // says plainly that we looked and nobody has started.
-        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
-          <AlarmClock className="h-4 w-4 shrink-0 text-rose-500" />
-          <p className="text-sm text-slate-500">
-            {checkedAt ? `Checked ${cairoTime(checkedAt)} — ` : ""}nobody on your roster has submitted a visit yet today.
-          </p>
-        </div>
+        <LandingRailLine rail="bg-rose-500">
+          {checkedAt ? `Checked ${cairoTime(checkedAt)} — ` : ""}nobody on your roster has submitted a visit yet today.
+        </LandingRailLine>
       ) : (
-        <div className="space-y-px bg-slate-200">
-          {/* Submitted counts */}
-          <div className="grid grid-cols-2 gap-px bg-slate-200">
+        <>
+          {/* Submitted counts: two figures, one hairline between them. */}
+          <div className="grid grid-cols-2 divide-x divide-slate-200 border-b border-slate-200">
             {[
               { label: "Reps submitted", submitted: crm.reps.submitted, total: crm.reps.total },
               // "Managers", not "DSMs": a line's tier holds its Regional Manager too (owner, 2026-10-20).
@@ -169,104 +173,106 @@ export function CrmFirstVisitBoard({
             ].map((s) => {
               const complete = s.total > 0 && s.submitted >= s.total;
               return (
-                <div key={s.label} className="min-w-0 bg-white px-4 py-3">
-                  <p className={`text-xl font-black tabular-nums ${complete ? "text-emerald-600" : "text-slate-900"}`}>
-                    {s.submitted}
-                    <span className="text-sm font-bold text-slate-400">/{s.total}</span>
+                <div className="min-w-0 px-3 py-3 sm:px-4" key={s.label}>
+                  <p className="break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-500">
+                    {s.label}
                   </p>
-                  <p className="mt-0.5 break-words text-phx-xs font-semibold uppercase leading-snug tracking-widest text-slate-400">{s.label}</p>
+                  <div className="mt-2">
+                    <LandingFigure size="md" tone={complete ? "text-emerald-700" : undefined} unit={`/${s.total}`}>
+                      {s.submitted}
+                    </LandingFigure>
+                  </div>
                 </div>
               );
             })}
           </div>
 
           {/* Early birds */}
-          <div className="bg-white px-4 py-3 sm:px-5">
-            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <Sunrise className="h-4 w-4 shrink-0 text-emerald-600" />
-              <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-500">Early birds</p>
+          <div className="border-b border-slate-200">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-3 pb-1 pt-3 sm:px-4">
+              <BodyLabel>Early birds</BodyLabel>
               {crm.earlyBirds.length > 0 && (
-                // State what the list contains out loud: N chips on their own cannot be told apart
+                // State what the list contains out loud: N rows on their own cannot be told apart
                 // from "only N people submitted today".
-                <span className="ml-auto break-words text-phx-xs font-semibold uppercase tracking-widest text-slate-400">
-                  {rankHint}
+                <span className="ml-auto">
+                  <LandingMeta items={[rankHint]} />
                 </span>
               )}
             </div>
             {crm.earlyBirds.length === 0 ? (
-              <p className="text-sm text-slate-500">No visits submitted yet today.</p>
+              <p className="px-3 pb-3 pt-1 text-phx-sm text-slate-500 sm:px-4">No visits submitted yet today.</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
+              <ol>
                 {crm.earlyBirds.map((b, i) => {
                   const badge = SOURCE_BADGE[b.source];
                   return (
-                    <span
+                    <li
+                      className="flex min-w-0 items-baseline gap-3 border-t border-slate-200 px-3 py-2.5 first:border-t-0 sm:px-4"
                       key={b.hrId || b.name}
-                      className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 break-words border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-semibold text-emerald-700"
                     >
-                      <span className="font-black text-emerald-600">{i + 1}</span>
-                      {b.name}
-                      <span className="border border-emerald-200 bg-white px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide text-emerald-700/80">
-                        {b.visitType}
-                      </span>
-                      {showAccount && (
-                        // The account that first record was captured at. Arabic names are common
-                        // here, so the chip carries dir="auto" and never truncates — a long name
-                        // makes a wider chip that wraps to the next row as a whole.
-                        <span dir="auto" className="font-normal text-emerald-700/90">
-                          {b.account ?? "—"}
+                      <span className="w-5 shrink-0 text-right text-phx-sm font-bold tabular-nums text-slate-400">{i + 1}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-phx-md font-bold leading-snug text-[#08111f]" dir="auto">
+                          {b.name}
                         </span>
-                      )}
-                      <span className="font-normal tabular-nums text-emerald-600/70">{vendorLocalTime(b.at)}</span>
-                      <span
-                        className={`px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide ${badge.className}`}
-                        title={badge.title}
-                      >
-                        {badge.label}
+                        <span className="mt-0.5 block break-words text-phx-xs leading-snug text-slate-500">
+                          <span className="font-bold uppercase tracking-[0.08em]">{b.visitType}</span>
+                          {showAccount && (
+                            // The account that first record was captured at. Arabic names are common
+                            // here, so it carries dir="auto" and never truncates — a long name wraps
+                            // inside its own row.
+                            <>
+                              <span aria-hidden="true" className="text-slate-300">
+                                {" · "}
+                              </span>
+                              <span dir="auto">{b.account ?? "—"}</span>
+                            </>
+                          )}
+                        </span>
                       </span>
-                    </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-phx-md font-bold tabular-nums text-[#08111f]">{vendorLocalTime(b.at)}</span>
+                        <span
+                          className={`block text-phx-xs font-bold uppercase tracking-[0.08em] ${SOURCE_INK[b.source]}`}
+                          title={badge.title}
+                        >
+                          {badge.label}
+                        </span>
+                      </span>
+                    </li>
                   );
                 })}
-              </div>
+              </ol>
             )}
           </div>
 
           {/* Not-yet-submitted alarm */}
-          <div className="bg-white px-4 py-3 sm:px-5">
-            {crm.reps.missing.length === 0 && crm.dsms.missing.length === 0 ? (
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                <p className="text-sm font-medium text-emerald-700">{allClearMessage}</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <AlarmClock className="h-4 w-4 shrink-0 text-rose-600" />
-                  <p className="text-phx-xs font-bold uppercase tracking-widest text-rose-600">
-                    {crm.reps.missing.length + crm.dsms.missing.length} not yet submitted
-                  </p>
-                </div>
+          {crm.reps.missing.length === 0 && crm.dsms.missing.length === 0 ? (
+            <LandingRailLine rail="bg-emerald-500">
+              <span className="font-semibold text-emerald-800">{allClearMessage}</span>
+            </LandingRailLine>
+          ) : (
+            <div className="flex min-w-0 gap-3 px-3 py-3 sm:px-4">
+              <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+              <div className="min-w-0 flex-1 space-y-3">
+                <BodyLabel tone="text-rose-700">{crm.reps.missing.length + crm.dsms.missing.length} not yet submitted</BodyLabel>
                 {crm.dsms.missing.length > 0 && (
                   <div>
-                    <p className="mb-1.5 flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-400">
-                      <AlertTriangle className="h-3 w-3 text-rose-500" /> Managers ({crm.dsms.missing.length})
-                    </p>
-                    <PersonChips people={crm.dsms.missing} tone="danger" />
+                    <BodyLabel>Managers ({crm.dsms.missing.length})</BodyLabel>
+                    <PersonTags people={crm.dsms.missing} />
                   </div>
                 )}
                 {crm.reps.missing.length > 0 && (
                   <div>
-                    <p className="mb-1.5 flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-400">
-                      <AlertTriangle className="h-3 w-3 text-rose-500" /> Med reps ({crm.reps.missing.length})
-                    </p>
-                    <PersonChips people={crm.reps.missing} tone="danger" />
+                    <BodyLabel>Med reps ({crm.reps.missing.length})</BodyLabel>
+                    <PersonTags people={crm.reps.missing} />
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </>
       )}
-    </div>
+    </LandingPanel>
   );
 }
