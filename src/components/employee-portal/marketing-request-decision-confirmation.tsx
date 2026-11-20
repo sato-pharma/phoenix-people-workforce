@@ -15,7 +15,7 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
-import { formatStableCurrency } from "@/lib/format/stable-currency";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { cn } from "@/lib/utils";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
@@ -71,7 +71,7 @@ function fallbackLabel(decision: MarketingRequestDecision) {
 }
 
 function egp(value: number) {
-  return `EGP ${formatStableCurrency(Math.round(Number.isFinite(value) ? value : 0), "en-US", { maximumFractionDigits: 0 })}`;
+  return `EGP ${stableCurrencyFormatter("en-US", { maximumFractionDigits: 0 }).format(Math.round(Number.isFinite(value) ? value : 0))}`;
 }
 
 function initials(name: string) {

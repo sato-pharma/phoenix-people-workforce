@@ -24,7 +24,7 @@ import type {
 } from "@/lib/marketing-requests/types";
 import { forecastRoiStatusLabel, marketingRequestStatusLabel } from "@/lib/marketing-requests/roi-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
-import { formatStableCurrency } from "@/lib/format/stable-currency";
+import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const PAGE_SIZE = 25;
@@ -86,7 +86,7 @@ function trackingText(row: MarketingAllRequestsRow) {
 }
 
 function egp(value: number) {
-  return `EGP ${formatStableCurrency(Math.round(value), "en-US", { maximumFractionDigits: 0 })}`;
+  return `EGP ${stableCurrencyFormatter("en-US", { maximumFractionDigits: 0 }).format(Math.round(value))}`;
 }
 
 function cairoDate(value: string | null) {
