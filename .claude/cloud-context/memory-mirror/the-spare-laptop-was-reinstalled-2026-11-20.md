@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 13be9376-17b9-44e2-82bc-bc64a093c5df
-  modified: 2026-11-20T15:37:09.935Z
+  modified: 2026-11-20T15:48:54.874Z
 ---
 
 ## 🔴 NOW: Ubuntu Server (owner, 20 Nov ~13:50 "put Ubuntu Server on the spare, keep D to G and sato pharma")
@@ -14,6 +14,7 @@ metadata:
 - 🔴 **Wi-Fi trap:** after `sudo wifi-join` wpa_supplicant connected but networkd showed `Network File: n/a (unmanaged)` for a while — it came right later (`10-netplan-wlo1.network`, routable). The prompt `[sudo: authenticate] Password:` is sudo-rs (Ubuntu 26.04) asking the SPARE's password, not the Wi-Fi's. Password file: `~/.claude/scripts/spare-linux-password.txt` (never print it). `phoenix` has passwordless sudo (`/etc/sudoers.d/90-phoenix`); SSH is key-only.
 - Layout: checkout `~/phoenix/phoenix-workforce` on ext4 (cloned from the D: copy, shallow, refs/spare/*), `.env.local` production; systemd `phoenix-dev.service` runs `~/phoenix/dev-server-run.sh` (source `~/.claude/scripts/spare-dev-server-run.sh`; warm-up from `~/phoenix/warm-routes.txt`, log `~/phoenix/warm.log`, `Restart=always` backing off to 10 min, Nice -5); timer `phoenix-dev-nightly` 04:00 Cairo runs `~/phoenix/nightly-restart.sh`. Stop on purpose: `sudo systemctl stop phoenix-dev`. kdump (512 MB reserve) and cloud-init purged. Node 24.22.3 (nodejs.org tarball, /usr/local), pnpm 11.13.1, first install 5 min.
 - Main laptop: `spare.ps1` now runs BASH (base64 → temp file, stdin /dev/null); `spare-test.ps1` custom commands are bash, flock lock, `~/phoenix/runs/<id>`, node_modules symlink; `spare-follow-production.ps1` same logic over bash; Windows copies `*.bak-20261120-windows`. `spare-bootstrap/rebuild/speedup/browser-guard/laptop-ssh-setup.ps1` start with a WINDOWS-ONLY-RETIRED throw. known_hosts anchors replaced (old: `known_hosts.bak-20261120-linux`); `spare-user.txt` = phoenix. The browser guard has no Linux port.
+- Proven 20 Nov 17:38–17:48: a restart came back on its own in 55 s (Wi-Fi, drives, phoenix-dev, warm-up 6 pages 68 s, 3,570 MB available, 7,628 MB total once the crash-dump reserve went), localhost:3000 answered 200 through the tunnel; the full suite via spare-test.ps1 ran 3146 of 3147 + 1 skipped (CV worker), 0 red, 8 min. The stick's `autoinstall.yaml` was renamed `.off` so booting it can never wipe a disk again.
 - The PR 649 preview folder survives at `/mnt/chaos/Phoenix/preview-649` — its session's Monday script assumed Windows.
 
 ## History: the Windows reinstall that morning
