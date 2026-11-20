@@ -29,10 +29,7 @@
 
 
 ## Inbox — new notes land here
-- [Home Wi-Fi hops between router and extender](home-wifi-hops-between-router-and-extender.md) — "DNS broken / GitHub slow" at home was the laptop switching networks every ~2 min; read WLAN events 8001/8003 first
-- 🔴 [No validation without a photo unless he says](no-validation-without-a-photo-unless-he-says.md) — "support them" never means the trusted point; 70 done that way were undone 20 Nov
-- [Spare laptop reinstalled, 20 Nov](the-spare-laptop-was-reinstalled-2026-11-20.md) — one-paste bootstrap page + self-removing "Phoenix Spare Rebuild" task; new host key and user name come from its banner
-- [Owner's rejected approvals restored, 20 Nov](omar-approvals-restored-2026-11-20.md) — 76 Place checks validations back to approved; pre-image schema phoenix_crm_backup_20261120
+- [Supabase MCP declines a write holding DDL](supabase-mcp-declines-a-write-that-holds-ddl.md) — "SQL execution was declined" was a temp table; one CTE statement ran
 
 
 
