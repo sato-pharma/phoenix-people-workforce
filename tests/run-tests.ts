@@ -2586,6 +2586,7 @@ import { runPortalNavChromeBehaviourTests } from "./portal-nav-chrome-behaviour.
 import { runTrainingManagerNoPlanInterviewTabsTests } from "./training-manager-no-plan-interview-tabs.test.ts";
 import { runPortalGodmodeChromeTests } from "./portal-godmode-chrome.test.ts";
 import { runPortalBottomNavGodmodeTests } from "./portal-bottom-nav-godmode.test.ts";
+import { runPortalFitsALargeTextPhoneTests } from "./portal-fits-a-large-text-phone.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
@@ -9947,6 +9948,10 @@ await runTest(
 await runTest(
   "portal bottom nav godmode (one shared quick-action list whose hrefs stay out of the layout, and the Home tab speaking for every queue with no tab of its own)",
   runPortalBottomNavGodmodeTests,
+);
+await runTest(
+  "the employee portal fits a small Android phone on Large text (one + on a phone, identity row never clipped, KPI tiles stack, ring aside wraps, policy tables and milestone badges fit)",
+  runPortalFitsALargeTextPhoneTests,
 );
 await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",

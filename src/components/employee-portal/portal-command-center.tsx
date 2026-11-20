@@ -240,16 +240,25 @@ function IntelField({
   className?: string;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-1 bg-white px-3 py-3 sm:px-7 sm:py-4 ${className}`}>
+    // `min-w-min`, not `min-w-0`: a cell never shrinks below its own words. With `min-w-0` the
+    // last cell (basis 0) was squeezed to nothing on a small Android phone on Large text (~280px
+    // CSS wide) and "REPORTS TO / Osama Mohamed" ran out past the screen edge, clipped. Now each
+    // cell keeps its unbroken label and its longest word, and the values wrap inside their cells.
+    <div className={`flex min-w-min flex-col gap-1 bg-white px-2 py-3 min-[360px]:px-3 sm:px-7 sm:py-4 ${className}`}>
+      {/* The LABEL never breaks — "REPORTS / TO" on two lines beside one-line "LINE" and "JOINED" is
+          the irregular row he saw on his phone. The tracking eases to 0.12em on a phone so the
+          three labels fit a 360px Android row in Roboto and an iPhone's Helvetica Neue; under 360px
+          the icon steps aside to keep all three on the one line. The VALUE below still wraps inside
+          its cell, so nothing is ever cut. */}
       <div className="flex items-center gap-1.5">
-        <Icon className="h-3 w-3 shrink-0 text-orange-600" />
-        <span className="text-phx-xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
+        <Icon className="hidden h-3 w-3 shrink-0 text-orange-600 min-[360px]:block" />
+        <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400 sm:tracking-[0.18em]">{label}</span>
       </div>
       {/* Wraps rather than clips. The old value carried `whitespace-nowrap` inside an
           `overflow-hidden` band, which is the blindness the golden rule names: a long manager name
           was cut off with `main` still measuring a clean 375/375, because clipped content never
           reaches scrollWidth. Wrapping is the permitted answer; the ellipsis ban is untouched. */}
-      <span className="text-sm font-black text-slate-900 sm:text-base">{value}</span>
+      <span className="text-sm font-black leading-snug text-slate-900 [overflow-wrap:break-word] sm:text-base">{value}</span>
     </div>
   );
 }
@@ -985,10 +994,14 @@ function RepTile({
       <div aria-hidden="true" className={`h-0.5 w-full ${rail ?? "bg-slate-300"}`} />
       {/* A container, so what fits in the tile is decided by the TILE's width, not the window's. */}
       <div className="@container flex flex-1 flex-col p-3">
-        <div className="flex items-baseline gap-2">
+        {/* The period STACKS under the label in a narrow tile and sits beside it from 13rem up. Side by
+            side in a phone's two-column grid it needed ~190px in a 140px tile: on an iPhone (Helvetica
+            Neue) and Android (Roboto) — both wider than the Aptos this was sized against — "OCT 2026"
+            was cut at the tile edge and "CALL RATE" broke onto two lines while its neighbours did not. */}
+        <div className="flex flex-col gap-0.5 @[13rem]:flex-row @[13rem]:items-baseline @[13rem]:gap-2">
           <span className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
           {meta && (
-            <span className="ml-auto whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
+            <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400 @[13rem]:ml-auto">{meta}</span>
           )}
         </div>
         <div className="mt-2">{children}</div>
@@ -1400,7 +1413,9 @@ function MedicalRepCommandCenter({
                 Suspense renders no element of its own, so the four tiles stay direct items of this grid
                 whether they are still loading or filled. */}
             <div className="@container">
-              <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4 group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
+              {/* ONE column under 18rem. A small Android phone on Large text lays the page out at
+                  ~280px, where two tiles get ~100px each and "ACHIEVEMENT" alone fills it. */}
+              <div className="grid grid-cols-1 gap-2 @[18rem]:grid-cols-2 @3xl:grid-cols-4 @[18rem]:group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
                 <Suspense fallback={<RepTileLoading label="Achievement" />}>
                   <RepAchievementCard kpiMonth={kpiMonth} sales={cards.sales} />
                 </Suspense>

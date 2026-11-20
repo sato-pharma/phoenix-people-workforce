@@ -30,7 +30,7 @@ html, body { overflow-x: clip; }
    gets the two corner glows layered over the same grid; plans-workspace.tsx, which reuses the
    bare -grid class, keeps its plain grid untouched. Owner-approved premium look, 2026-09-21:
    a warm orange wash from the top-right and a cool blue depth from the bottom-left, both very
-   low alpha over the #08111f navy, so the title and description stay first to the eye. */
+   low alpha over the #08111f navy, so the title stays first to the eye. */
 .employee-portal-command-header.employee-portal-command-grid {
   background-image:
     radial-gradient(120% 150% at 88% -35%, rgba(249,115,22,0.16), transparent 44%),
@@ -91,9 +91,9 @@ type EmployeePortalPageShellProps = {
   badge?: string;
   children: ReactNode;
   /**
-   * The sentence under the title. OPTIONAL, and an empty one renders NOTHING — not an empty
-   * paragraph, which would leave the `mt-2` gap behind and read as a broken header. KPIs is the
-   * first page to want the bare title (owner, 2026-09-04); every other page still passes one.
+   * NOT RENDERED. Every portal header is the badge and the title, nothing under them (owner,
+   * 2026-11-20: "REMOVE ALL THESE TEXTS UNDER HEADERS", "ALL HEADERS"). The 160-odd pages that still
+   * pass a sentence keep compiling; the shell simply never draws it. Never bring the paragraph back.
    */
   description?: string;
   descriptionClassName?: string;
@@ -118,8 +118,6 @@ type EmployeePortalPageShellProps = {
 export function EmployeePortalPageShell({
   badge,
   children,
-  description,
-  descriptionClassName,
   disableErrorBoundary = false,
   errorBoundaryTitle,
   hero,
@@ -152,11 +150,6 @@ export function EmployeePortalPageShell({
               <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl">
                 {title}
               </h1>
-              {description ? (
-                <p className={`mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300 ${descriptionClassName ?? ""}`}>
-                  {description}
-                </p>
-              ) : null}
             </div>
           </div>
         </section>

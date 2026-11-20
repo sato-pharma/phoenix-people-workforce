@@ -1393,9 +1393,6 @@ export function PersonalExpenseWorkloadDashboard({
             EXPENSES
           </p>
           <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Expense Dashboard</h1>
-          <p className="mt-1.5 max-w-2xl text-sm text-slate-300">
-            Track trips, expenses, approvals, and workload across your visible expense scope.
-          </p>
         </section>
       )}
 

@@ -80,7 +80,6 @@ import {
   adminInsetPanelClassName,
   adminPanelClassName,
   adminSoftPanelClassName,
-  pageHeaderDescriptionClassName,
   pageHeaderKickerClassName,
   pageHeaderRuleClassName,
   pageHeaderTitleClassName,
@@ -485,7 +484,6 @@ export function ProductionPlanningHeader() {
           <span aria-hidden="true" className={S.dir === "rtl" ? RTL_HEADER_RAIL : LTR_HEADER_RAIL} />
           <p className={pageHeaderKickerClassName}>{t.moduleKicker}</p>
           <h1 className={pageHeaderTitleClassName}>{t.moduleTitle}</h1>
-          <p className={`${pageHeaderDescriptionClassName} break-words`}>{t.moduleSubtitle}</p>
         </div>
         <ProductionPlanningLanguageToggle />
       </div>
