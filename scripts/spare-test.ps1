@@ -132,6 +132,15 @@ while (-not `$lock) {
   catch { if (-not `$waited) { 'spare laptop: another test run is going - waiting for it'; `$waited = `$true }; if ((Get-Date) -gt `$deadline) { 'gave up after 60 minutes waiting for the spare'; exit 5 }; Start-Sleep 10 }
 }
 try {
+  # Wait for 2 GB free before starting (owner, 2026-11-20, group 1): the spare also runs the dev server, which died
+  # out of memory at 12:46 that day, and a suite beside it on an 8 GB laptop is how that happens. 20 minutes, then
+  # nothing is tested (exit 5), never a run that starts short of memory.
+  `$ramDeadline = (Get-Date).AddMinutes(20); `$ramSaid = `$false
+  while (((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024) -lt 2048) {
+    if (-not `$ramSaid) { "spare laptop: under 2 GB free - waiting for memory before the tests start"; `$ramSaid = `$true }
+    if ((Get-Date) -gt `$ramDeadline) { 'gave up after 20 minutes waiting for 2 GB free on the spare - nothing was tested'; exit 5 }
+    Start-Sleep 15
+  }
   # Holding the lock, nobody else is running: clear any folder a dropped run left behind.
   Get-ChildItem D:\Phoenix\runs -Directory -ErrorAction SilentlyContinue | ForEach-Object { Remove-Run `$_.FullName }
   if (Test-Path D:\Phoenix\test-run) { Remove-Run 'D:\Phoenix\test-run' }
