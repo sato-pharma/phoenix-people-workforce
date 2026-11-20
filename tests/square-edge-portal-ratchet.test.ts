@@ -75,8 +75,9 @@ import { stripComments } from "./support/comment-strip.ts";
  * so the ground won was still giveable. The warn branch is not a nag; it is the only
  * moment the count is known to have dropped, and ignoring it silently re-opens the gap.
  * 156 -> 153 on 2026-10-19, the Recruitment premium sweep.
+ * 153 -> 94 on 2026-11-20, the employee portal redesign onto the landing kit (square, flat panels).
  */
-const BASELINE = 153;
+const BASELINE = 94;
 
 const ROOTS = ["app", "src/components"];
 
