@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import { buildCostLetter, costLetterFileName, renderCostLetterHtml } from "../src/lib/medical-insurance/cost-letter.ts";
-import { renderCostLetterEmail, sendCostLetterEmails } from "../src/lib/medical-insurance/cost-letter-email.ts";
+import { cleanCostLetterCc, renderCostLetterEmail, sendCostLetterEmails } from "../src/lib/medical-insurance/cost-letter-email.ts";
 import type { SendPhoenixEmailInput } from "../src/lib/email/send-phoenix-email.ts";
 import { costLetterRows, type MonthlySplitPerson, type MonthlySplitRow } from "../src/lib/medical-insurance/monthly-split.ts";
 
@@ -116,7 +116,7 @@ function testTheEmailCarriesTheWholeStatement() {
   assert.ok(email.text.includes("EGP 1,865.82"), "the plain-text part carries the total too");
 }
 
-/** One email per employee, to their own work email alone; no email, no price or no cover is reported, never sent. */
+/** By default (no CC chosen): one email per employee, to their own work email alone; no email, no price or no cover is reported, never sent. */
 async function testTheSendGoesToEachEmployeeAlone() {
   const sent: SendPhoenixEmailInput[] = [];
   const base = { ...familyRow(), hrId: "HR-A", key: "a" };
@@ -124,7 +124,10 @@ async function testTheSendGoesToEachEmployeeAlone() {
   const unpriced = { ...familyRow(), employee: person({ memberId: "m-short", name: "Short Person" }), family: [person({ memberId: "m-x", memberType: "spouse", monthly: null, name: "No Birth Date", unpricedReason: "no date of birth" })], hrId: "HR-C", key: "c" };
   const refused = { ...familyRow(), employee: person({ memberId: "m-refused", name: "Refused Person" }), hrId: "HR-D", key: "d" };
   const outcomes = await sendCostLetterEmails({
+    cc: [],
+    ccManager: false,
     from: "Sato Pharma <hrbp@send.example.test>",
+    managers: new Map([["HR-A", "HR-M"]]),
     memberIds: ["m-employee", "m-employee", "m-none", "m-short", "m-refused", "m-gone"],
     minute: 1,
     policy: POLICY,
@@ -135,7 +138,7 @@ async function testTheSendGoesToEachEmployeeAlone() {
       sent.push(input);
       return input.to[0] === "refused@example.test" ? { reason: "suppressed", skipped: true } : { id: "x" };
     },
-    workEmails: new Map([["HR-A", " Test.Employee@Example.test "], ["HR-B", null], ["HR-C", "short@example.test"], ["HR-D", "refused@example.test"]]),
+    workEmails: new Map([["HR-A", " Test.Employee@Example.test "], ["HR-B", null], ["HR-C", "short@example.test"], ["HR-D", "refused@example.test"], ["HR-M", "manager@example.test"]]),
   });
   assert.deepEqual(
     outcomes.map((outcome) => [outcome.name, outcome.status]),
@@ -159,6 +162,75 @@ async function testTheSendGoesToEachEmployeeAlone() {
   assert.match(sent[0].html, /EGP 1,865\.82/);
 }
 
+/**
+ * THE CC (owner, 2026-11-21: "Both", "Visible CC"): the tick copies each employee's OWN direct manager, the box
+ * copies the typed addresses on every email, all as a visible CC. Only the typed ones are declared external;
+ * the employee is never copied on their own email; a missing manager is said, never silently skipped.
+ */
+async function testTheCcCopiesTheManagerAndTheTypedAddresses() {
+  const sent: SendPhoenixEmailInput[] = [];
+  const withManager = { ...familyRow(), hrId: "HR-A", key: "a" };
+  const noManager = { ...familyRow(), employee: person({ memberId: "m-alone", name: "No Manager Person" }), hrId: "HR-B", key: "b" };
+  const managerNoEmail = { ...familyRow(), employee: person({ memberId: "m-mute", name: "Mute Manager Person" }), hrId: "HR-C", key: "c" };
+  const typed = cleanCostLetterCc(" Payroll@Example.test, audit@example.test;payroll@example.test test.employee@example.test ");
+  assert.deepEqual(typed, ["payroll@example.test", "audit@example.test", "test.employee@example.test"], "the box is cleaned: lower-cased, split on commas, semicolons and spaces, no repeats");
+  const outcomes = await sendCostLetterEmails({
+    cc: typed,
+    ccManager: true,
+    from: "Sato Pharma <hrbp@send.example.test>",
+    managers: new Map([["HR-A", "HR-M"], ["HR-B", null], ["HR-C", "HR-N"]]),
+    memberIds: ["m-employee", "m-alone", "m-mute"],
+    minute: 1,
+    policy: POLICY,
+    preparedOn: "21 November 2026",
+    replyTo: "reply@example.test",
+    rows: [withManager, noManager, managerNoEmail],
+    send: async (input) => {
+      sent.push(input);
+      return { id: "x" };
+    },
+    workEmails: new Map([["HR-A", "test.employee@example.test"], ["HR-B", "alone@example.test"], ["HR-C", "mute@example.test"], ["HR-M", "Manager@Example.test"], ["HR-N", null]]),
+  });
+  assert.equal(sent.length, 3);
+  assert.deepEqual(sent[0].to, ["test.employee@example.test"]);
+  assert.deepEqual(sent[0].cc, ["manager@example.test", "payroll@example.test", "audit@example.test"], "the manager first, then the typed addresses, never the employee on their own email");
+  assert.deepEqual(sent[0].externalRecipients, ["payroll@example.test", "audit@example.test"], "only what was typed is declared external");
+  assert.equal(sent[0].bcc, undefined, "a visible copy, never a blind one");
+  assert.equal(outcomes[0].note, null);
+  assert.deepEqual(outcomes[0].cc, ["manager@example.test", "payroll@example.test", "audit@example.test"]);
+  assert.deepEqual(sent[1].cc, ["payroll@example.test", "audit@example.test", "test.employee@example.test"]);
+  assert.match(outcomes[1].note ?? "", /No direct manager/, "a missing manager is said");
+  assert.match(outcomes[2].note ?? "", /manager has no work email/, "a manager with no work email is said");
+  assert.equal(outcomes.every((outcome) => outcome.status === "sent"), true);
+  assert.notEqual(sent[0].idempotencyKey, (await sendWithoutCc()).idempotencyKey, "a send with a copy is a different email from one without");
+  assert.throws(() => cleanCostLetterCc("payroll@example.test, not-an-address"), /not-an-address is not an email address/);
+  assert.throws(() => cleanCostLetterCc(Array.from({ length: 11 }, (_, index) => `p${index}@example.test`)), /CC at most 10/);
+  assert.deepEqual(cleanCostLetterCc(undefined), [], "no box, no copy");
+}
+
+async function sendWithoutCc(): Promise<SendPhoenixEmailInput> {
+  const captured: SendPhoenixEmailInput[] = [];
+  await sendCostLetterEmails({
+    cc: [],
+    ccManager: false,
+    from: "Sato Pharma <hrbp@send.example.test>",
+    managers: new Map(),
+    memberIds: ["m-employee"],
+    minute: 1,
+    policy: POLICY,
+    preparedOn: "21 November 2026",
+    replyTo: "reply@example.test",
+    rows: [{ ...familyRow(), hrId: "HR-A", key: "a" }],
+    send: async (input) => {
+      captured.push(input);
+      return { id: "x" };
+    },
+    workEmails: new Map([["HR-A", "test.employee@example.test"]]),
+  });
+  assert.equal(captured.length, 1);
+  return captured[0];
+}
+
 export async function runMedicalInsuranceCostLetterTests() {
   testTheLinesAreTheCostTabsFigures();
   testThePaperNeverShowsTheSplit();
@@ -167,4 +239,5 @@ export async function runMedicalInsuranceCostLetterTests() {
   testThePickerListsEmployeesByName();
   testTheEmailCarriesTheWholeStatement();
   await testTheSendGoesToEachEmployeeAlone();
+  await testTheCcCopiesTheManagerAndTheTypedAddresses();
 }

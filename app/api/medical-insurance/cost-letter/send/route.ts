@@ -11,9 +11,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * POST /api/medical-insurance/cost-letter/send { members: [register row ids] } — emails each chosen employee
+ * POST /api/medical-insurance/cost-letter/send { members: [register row ids], ccManager?: boolean, cc?: [addresses] } — emails each chosen employee
  * their own Medical Cover Statement, the statement itself in the body of the house letter with no attachment,
  * to their work email on the Employee Master (owner, 2026-11-21). Up to 20 a press; the screen batches more.
+ * `ccManager` copies each employee's own direct manager; `cc` copies up to 10 typed addresses on every email.
  *
  * 🔴 It carries amounts, so it is held to medical_insurance_invoices (Super Admin only), asserted before
  * anything is read, and it is a same-origin mutation. It answers what happened to every person.
