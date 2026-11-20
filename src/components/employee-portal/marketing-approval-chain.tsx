@@ -53,13 +53,18 @@ export function formatDateTime(value: string | null) {
   });
 }
 
+/**
+ * The rung's state, carried by the colour of its rail and nothing else — never a filled pill
+ * (the landing kit): emerald approved, amber waiting, rose rejected, slate not reached. A returned
+ * rung is back with its requester, so it waits in amber too. Whole literals, so Tailwind ships them.
+ */
 export const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
-  approved: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  current: "border-orange-300 bg-orange-50 text-orange-900",
-  pending: "border-slate-200 bg-slate-50 text-slate-500",
-  rejected: "border-rose-200 bg-rose-50 text-rose-800",
-  returned: "border-amber-200 bg-amber-50 text-amber-900",
-  skipped: "border-slate-200 bg-slate-50 text-slate-400",
+  approved: "border-l-emerald-500",
+  current: "border-l-amber-400",
+  pending: "border-l-slate-300",
+  rejected: "border-l-rose-500",
+  returned: "border-l-amber-500",
+  skipped: "border-l-slate-200",
 };
 
 export const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
@@ -79,6 +84,8 @@ export const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
  *
  * `title` exists because the same list answers two different questions: on a pending row it is the
  * approvals SO FAR, on a decided row it is the complete record.
+ *
+ * One clean vertical rail: a navy step label, a slate date, the state in the rail's colour.
  */
 export function ApprovalHistory({
   requestCode,
@@ -95,27 +102,27 @@ export function ApprovalHistory({
 }) {
   if (rungs.length === 0) return null;
   return (
-    <div className="border-b border-slate-100 px-4 py-3">
-      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
-      <ol className="mt-2 space-y-1.5">
+    <div className="border-b border-slate-200 px-4 py-3">
+      <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{title}</p>
+      <ol className="mt-2 space-y-2">
         {rungs.map((rung) => {
           const decidedAt = formatDateTime(rung.decisionAt);
           return (
             <li
-              className={`rounded-sm border px-2.5 py-1.5 ${RUNG_TONE[rung.status]}`}
+              className={`min-w-0 border-l-[3px] py-0.5 pl-3 ${RUNG_TONE[rung.status]}`}
               key={`${rung.sequence}-${rung.stepName}`}
             >
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-phx-xs font-black">
+                <span className={`break-words text-phx-sm font-bold ${rung.status === "skipped" ? "text-slate-500" : "text-[#08111f]"}`}>
                   {rung.sequence}. {rung.stepName}
                 </span>
-                <span className="text-phx-xs font-bold">{RUNG_VERB[rung.status]}</span>
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">{RUNG_VERB[rung.status]}</span>
                 {rung.approverName ? (
-                  <span className="text-phx-xs font-medium">by {rung.approverName}</span>
+                  <span className="break-words text-phx-xs font-medium text-slate-600" dir="auto">by {rung.approverName}</span>
                 ) : null}
-                {decidedAt ? <span className="text-phx-sm font-semibold opacity-80">{decidedAt}</span> : null}
+                {decidedAt ? <span className="text-phx-xs font-medium tabular-nums text-slate-500">{decidedAt}</span> : null}
                 {rung.isMine ? (
-                  <span className="rounded-sm bg-slate-900 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] text-white">
+                  <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-[#08111f]">
                     Yours
                   </span>
                 ) : null}
@@ -123,16 +130,17 @@ export function ApprovalHistory({
               {/* Full note, never truncated — the reason for a decision is the whole point of showing it. */}
               {rung.decisionNote ? (
                 <p
-                  className={`mt-1 text-phx-xs leading-snug ${
+                  className={`mt-1 break-words text-phx-xs leading-snug ${
                     isMarketingAdminOverrideNote({ requestCode, stepName: rung.stepName })
                       ? MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES
-                      : "font-medium"
+                      : "font-medium text-slate-700"
                   }`}
+                  dir="auto"
                 >
                   &ldquo;{rung.decisionNote}&rdquo;
                 </p>
               ) : rung.status === "approved" ? (
-                <p className="mt-1 text-phx-sm font-medium italic opacity-70">No comment left</p>
+                <p className="mt-1 text-phx-xs font-medium italic text-slate-500">No comment left</p>
               ) : null}
             </li>
           );

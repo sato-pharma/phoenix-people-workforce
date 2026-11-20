@@ -6,19 +6,15 @@ import {
   AlertTriangle,
   Camera,
   CheckCircle2,
-  ClipboardCheck,
-  Clock,
   History,
   MapPin,
   Paperclip,
   Plus,
   RefreshCcw,
   Save,
-  ShieldCheck,
   ShieldX,
   Store,
   Trash2,
-  UserCheck,
   WifiOff,
 } from "lucide-react";
 
@@ -29,11 +25,20 @@ import {
   readEvidenceLocationStamp,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingTick,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { PortalRecordFields } from "@/components/employee-portal/portal-primitives";
 import { humanizeCode } from "@/lib/format/code-label";
 import { NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -112,7 +117,12 @@ import {
 import { CODELESS_VENUES_GO_TO_DIRECT_ORDERS } from "@/lib/marketing-requests/coded-venues-only";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
-import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonAddBlockClassName,
+  phxButtonPrimaryClassName,
+  phxLabelClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { isOwnedByViewer, normalizeOwnerHrId } from "@/lib/browser-storage/owner-scoped";
 import { adminChipDepthClassName, adminControlDepthClassName, adminPanelDepthClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -810,13 +820,101 @@ function Field({
 }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </span>
+      <span className={phxLabelClassName}>{label}</span>
       {children}
     </label>
   );
 }
+
+/**
+ * The tone a state line carries on its rail — the landing kit's language: the colour sits on a 4px
+ * bar at the left and the words stay slate, so a notice reads as a fact on the page rather than a
+ * tinted box shouting over it. `rose` is the one tone whose words turn rose too: it is reserved for
+ * the line that must not be missed (an offline visit that can no longer be sent).
+ */
+type RailTone = "amber" | "emerald" | "rose" | "slate";
+
+const RAIL_FILL: Record<RailTone, string> = {
+  amber: "bg-amber-400",
+  emerald: "bg-emerald-500",
+  rose: "bg-rose-500",
+  slate: "bg-slate-300",
+};
+
+/** One state line inside a panel: the rail, then the words, wrapping. */
+function RailNote({
+  children,
+  className,
+  tone,
+}: {
+  children: ReactNode;
+  className?: string;
+  tone: RailTone;
+}) {
+  return (
+    <div className={cn("flex min-w-0 gap-3", className)}>
+      <span aria-hidden="true" className={cn("w-1 shrink-0 self-stretch", RAIL_FILL[tone])} />
+      <div
+        className={cn(
+          "min-w-0 flex-1 break-words text-phx-sm font-semibold leading-snug",
+          tone === "rose" ? "text-rose-700" : "text-slate-700",
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A page-level notice (offline, a recovered draft, a lost visit, the save result): a white sheet on
+ * the kit's material with the tone on its rail, and the one action it offers on the right.
+ */
+function PageNotice({
+  action,
+  children,
+  tone,
+}: {
+  action?: ReactNode;
+  children: ReactNode;
+  tone: RailTone;
+}) {
+  return (
+    <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      <RailNote className="min-w-[12rem] flex-1" tone={tone}>
+        {children}
+      </RailNote>
+      {action}
+    </div>
+  );
+}
+
+/** A state in small coloured capitals — the kit's replacement for a filled pill. */
+const STATE_TEXT_CLASS = "text-phx-xs font-bold uppercase tracking-[0.08em]";
+
+/** The title row of a panel whose frame this file keeps in place: tick, navy capitals, meta on the right. */
+function PanelHeader({ meta, title }: { meta?: readonly (string | null | undefined)[]; title: ReactNode }) {
+  return (
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+      <LandingTitle>{title}</LandingTitle>
+      {meta ? (
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <LandingMeta items={meta} />
+        </div>
+      ) : null}
+    </header>
+  );
+}
+
+/**
+ * The choice-button shape (a tab, a pharmacy source, a venue type): the chosen one is solid night
+ * navy, the others a white hairline control that turns navy under the pointer. Orange is never the
+ * selected state — on the kit it is only the title tick.
+ */
+const CHOICE_BASE_CLASS = `min-w-0 break-words rounded-none border font-bold leading-tight transition-colors motion-reduce:transition-none ${LANDING_FOCUS}`;
+const CHOICE_ON_CLASS = "border-[#08111f] bg-[#08111f] text-white";
+/** Square icon button (remove, refresh): a white hairline control, rose under the pointer when it removes. */
+const ICON_BUTTON_CLASS = `flex shrink-0 items-center justify-center rounded-none transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none ${LANDING_FOCUS}`;
 
 function ReadOnlyCaptureValue({
   multiline,
@@ -894,43 +992,47 @@ const VALIDATION_STATUS_LABEL: Record<MarketingValidationStatus, string> = {
   system_validated: "System validated",
 };
 
+/**
+ * One headline count on the page's navy board. The state is the tile's 2px rail and the figure's
+ * own tone — green the evidence gate, blue a person's decision, amber waiting, rose refused — on the
+ * board's one-step-lighter ground. No icon square: flat colour only.
+ */
 function MetricCard({
   accent,
   className,
-  icon: Icon,
   label,
   value,
 }: {
   accent: "green" | "amber" | "blue" | "red";
   className?: string;
-  icon: typeof CheckCircle2;
   label: string;
   value: number;
 }) {
-  const accentStyles = {
-    green: "border-l-emerald-500 bg-gradient-to-r from-emerald-50/60 to-white",
-    amber: "border-l-amber-500 bg-gradient-to-r from-amber-50/60 to-white",
-    blue: "border-l-sky-500 bg-gradient-to-r from-sky-50/60 to-white",
-    red: "border-l-rose-500 bg-gradient-to-r from-rose-50/60 to-white",
+  const railStyles = {
+    green: "border-l-emerald-400",
+    amber: "border-l-amber-400",
+    blue: "border-l-sky-400",
+    red: "border-l-rose-400",
   };
-  const iconStyles = {
-    green: "text-emerald-600",
-    amber: "text-amber-600",
-    blue: "text-sky-600",
-    red: "text-rose-600",
+  const figureTone = {
+    green: "text-emerald-300",
+    amber: "text-amber-300",
+    blue: "text-sky-300",
+    red: "text-rose-300",
   };
 
   return (
-    <div className={`min-w-0 rounded-none border border-slate-200 border-l-[3px] px-3.5 py-3 ${accentStyles[accent]} ${className ?? ""}`}>
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon className={`h-3.5 w-3.5 shrink-0 ${iconStyles[accent]}`} />
-        {/* Wraps, never runs past the card: "SYSTEM VALIDATED" in tracked capitals is wider than
-            a card on a narrow row. */}
-        <p className="min-w-0 break-words text-phx-sm font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
-          {label}
-        </p>
+    <div className={cn("min-w-0 border-l-2 px-3 py-2.5", LANDING_NAVY_TILE, railStyles[accent], className)}>
+      {/* Wraps, never runs past the tile: "SYSTEM VALIDATED" in tracked capitals is wider than
+          a tile on a narrow row. */}
+      <p className="min-w-0 break-words text-phx-xs font-bold uppercase leading-tight tracking-[0.1em] text-white/60">
+        {label}
+      </p>
+      <div className="mt-2">
+        <LandingFigure onNavy size="md" tone={value > 0 ? figureTone[accent] : undefined}>
+          {value}
+        </LandingFigure>
       </div>
-      <p className="mt-1.5 text-phx-xl font-black leading-none text-slate-900">{value}</p>
     </div>
   );
 }
@@ -958,12 +1060,12 @@ function PharmacySourceTab({
   // Venue" needs ~120px — it used to be cut off mid-word at every width under ~400px.
   return (
     <button
-      className={`min-h-10 break-words rounded-none px-3 py-1.5 text-phx-sm font-bold leading-tight transition md:min-h-9 ${
+      className={`${CHOICE_BASE_CLASS} min-h-10 px-3 py-1.5 text-phx-sm md:min-h-9 ${
         active
-          ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
+          ? CHOICE_ON_CLASS
           : disabled
-            ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
-            : `border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`
+            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+            : `border border-slate-200 bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f] ${adminControlDepthClassName}`
       }`}
       disabled={disabled}
       onClick={onClick}
@@ -997,7 +1099,7 @@ function ReusablePharmacyPicker({
 
   if (options.length === 0) {
     return (
-      <div className={`rounded-none border border-slate-200 bg-white px-3.5 py-3 text-phx-sm font-semibold text-slate-500 ${adminSoftDepthClassName}`}>
+      <div className={`break-words rounded-none border border-slate-200 bg-white px-3.5 py-3 text-phx-sm leading-snug text-slate-500 ${adminSoftDepthClassName}`}>
         No validated pharmacies yet. Validate one on the other tab and it will be here next time —
         for you and for your colleagues in the same area.
       </div>
@@ -1031,11 +1133,11 @@ function ReusablePharmacyPicker({
       </Field>
 
       {selected ? (
-        <div className="min-w-0 space-y-2.5 rounded-none border border-orange-200 bg-orange-50/40 px-3.5 py-3">
+        <div className={`min-w-0 space-y-2.5 rounded-none border border-slate-200 bg-white border-l-2 border-l-[#08111f] px-3.5 py-3 ${adminSoftDepthClassName}`}>
           {/* Wraps — it used to be one nowrap line scrolling sideways inside a ~220px box on a
               phone. Where "never cut off" and "never scroll sideways" collide, wrapping wins. */}
           <div className="min-w-0 space-y-2">
-            <p className="break-words text-phx-md font-black text-slate-900">
+            <p className={`break-words text-phx-md font-black ${LANDING_INK}`}>
               {selected.displayName || selected.pharmacyCode}
             </p>
             <PortalRecordFields
@@ -1055,7 +1157,7 @@ function ReusablePharmacyPicker({
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
               Vendor codes that will be attached
             </p>
             {/*
@@ -1108,10 +1210,10 @@ function TabButton({
   return (
     <button
       aria-pressed={active}
-      className={`min-h-10 min-w-0 break-words rounded-none px-2 py-1.5 text-phx-md font-bold leading-tight transition sm:px-4 md:min-h-9 ${
+      className={`${CHOICE_BASE_CLASS} min-h-10 px-2 py-1.5 text-phx-md sm:px-4 md:min-h-9 ${
         active
-          ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
-          : `border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 ${adminControlDepthClassName}`
+          ? CHOICE_ON_CLASS
+          : `border border-slate-200 bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f] ${adminControlDepthClassName}`
       }`}
       onClick={onClick}
       type="button"
@@ -1123,15 +1225,16 @@ function TabButton({
 
 function StatusBadge({ status }: { status: MarketingValidationStatus }) {
   const variant = statusVariant(status);
+  // Coloured capitals, never a filled pill (the landing kit): the tone is the word's own colour.
   const styles = {
-    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    warning: "border-amber-200 bg-amber-50 text-amber-700",
-    danger: "border-rose-200 bg-rose-50 text-rose-700",
-    neutral: "border-slate-200 bg-slate-50 text-slate-600",
+    success: "text-emerald-700",
+    warning: "text-amber-700",
+    danger: "text-rose-700",
+    neutral: "text-slate-500",
   };
 
   return (
-    <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${styles[variant]}`}>
+    <span className={`${STATE_TEXT_CLASS} ${styles[variant]}`}>
       {VALIDATION_STATUS_LABEL[status] ?? "Unknown"}
     </span>
   );
@@ -1139,11 +1242,7 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
 
 /** Marks a customer a Super Admin validated at the desk, so it is never mistaken for a field capture. */
 function AdminValidatedBadge() {
-  return (
-    <span className="inline-flex items-center rounded-none border border-sky-200 bg-sky-50 px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-sky-700">
-      Admin validated
-    </span>
-  );
+  return <span className={`${STATE_TEXT_CLASS} text-sky-700`}>Admin validated</span>;
 }
 
 /**
@@ -1154,11 +1253,7 @@ function AdminValidatedBadge() {
  * and its ROI will read zero. The request form asks for a written reason before accepting the code.
  */
 function UntrackedCodeBadge() {
-  return (
-    <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-amber-700">
-      Sales not trackable
-    </span>
-  );
+  return <span className={`${STATE_TEXT_CLASS} text-amber-700`}>Sales not trackable</span>;
 }
 
 /**
@@ -1244,15 +1339,19 @@ function PharmacyLicensePanel({
 
   return (
     <div
-      className={`rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}
+      className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}
     >
-      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
+      <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">
         Pharmacy Licence · رخصة الصيدلية (optional)
       </p>
-      <p className="mt-1 text-phx-xs font-semibold text-slate-500" dir="auto">
-        {note ??
-          "Attach it if you have it — the reviewer checks the trade name on the licence against the name on the shop sign."}
-      </p>
+      {/* The default explainer under this title is gone (owner, 2026-11-20: no text under any
+          header). The one line that stays is a state, not a description: shown only when no
+          distributor code was typed, it says the licence does not stand in for one. */}
+      {note ? (
+        <RailNote className="mt-2" tone="amber">
+          <span dir="auto">{note}</span>
+        </RailNote>
+      ) : null}
       <input
         accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
         capture="environment"
@@ -1269,38 +1368,40 @@ function PharmacyLicensePanel({
         type="file"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Button
-          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
+        <button
+          className={landingActionClassName("outline", CAPTURE_BUTTON_SIZE)}
           onClick={() => cameraRef.current?.click()}
           type="button"
         >
           <Camera className="h-3.5 w-3.5" />
           Photograph
-        </Button>
-        <Button
-          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
+        </button>
+        <button
+          className={landingActionClassName("outline", CAPTURE_BUTTON_SIZE)}
           onClick={() => fileRef.current?.click()}
           type="button"
         >
           <Paperclip className="h-3.5 w-3.5" />
           Choose file
-        </Button>
-        <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
+        </button>
+        <span className="text-phx-xs font-medium text-slate-500">JPEG, PNG or PDF · up to 5 MB</span>
       </div>
       {license ? (
-        <div className="mt-2 rounded-none border border-emerald-200 bg-emerald-50 px-3 py-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 break-all text-phx-sm font-bold leading-snug text-emerald-900" dir="auto">
-              {license.fileName}
-            </span>
-            <button
-              className="shrink-0 text-phx-xs font-bold text-orange-600"
-              onClick={clear}
-              type="button"
-            >
-              Remove
-            </button>
-          </div>
+        <div className="mt-2.5">
+          <RailNote tone="emerald">
+            <div className="flex items-center justify-between gap-2">
+              <span className={`min-w-0 break-all text-phx-sm font-bold leading-snug ${LANDING_INK}`} dir="auto">
+                {license.fileName}
+              </span>
+              <button
+                className={`shrink-0 text-phx-xs font-bold uppercase tracking-[0.08em] underline-offset-2 transition-colors hover:underline motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`}
+                onClick={clear}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          </RailNote>
           {/* A PDF shows its name only — an inline preview needs a viewer, and the reviewer opens it
               on the desk anyway. An image is shown, so a rep who photographed the wrong page finds
               out here rather than after the record is written. */}
@@ -1336,10 +1437,10 @@ function CapturePanel({
   const hasPhoto = Boolean(capture.photoName && capture.photoCapturedAt);
 
   return (
-    <div className={`rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}>
+    <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-phx-md font-bold text-slate-800">{label}</p>
+          <p className={`break-words text-phx-md font-bold ${LANDING_INK}`}>{label}</p>
           {/* Address and territory, one per line. The coordinate pair stays on the photo and in
               the record — on screen it only ever answered a question nobody asked. */}
           {hasLocation && capture.locationLines.length > 0 ? (
@@ -1355,31 +1456,32 @@ function CapturePanel({
           )}
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button
-            className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50`}
+          <button
+            className={landingActionClassName("outline", cn(CAPTURE_BUTTON_SIZE, "disabled:cursor-not-allowed"))}
             disabled={isCapturing}
             onClick={onCaptureLocation}
             type="button"
           >
             {isCapturing ? <LoadingSpinner /> : <MapPin className="h-3.5 w-3.5" />}
             GPS
-          </Button>
-          <Button
-            className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
+          </button>
+          <button
+            className={landingActionClassName("outline", cn(CAPTURE_BUTTON_SIZE, "disabled:cursor-not-allowed"))}
             disabled={!hasLocation}
             onClick={onOpenCamera}
             type="button"
           >
             <Camera className="h-3.5 w-3.5" />
             Photo
-          </Button>
+          </button>
         </div>
       </div>
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+      {/* The two states as coloured capitals (the kit's state text), not filled pills. */}
+      <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
+        <span className={`${STATE_TEXT_CLASS} ${hasLocation ? "text-emerald-700" : "text-amber-700"}`}>
           {hasLocation ? "Location captured" : "Location required"}
         </span>
-        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`${STATE_TEXT_CLASS} ${hasPhoto ? "text-emerald-700" : "text-amber-700"}`}>
           {hasPhoto ? "Live photo captured" : "Live photo required"}
         </span>
       </div>
@@ -1512,10 +1614,10 @@ function PlaceSearchPanel({
   }
 
   return (
-    <div className="rounded-none border border-sky-200 bg-sky-50/60 p-3">
+    <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
       <div className="flex items-center gap-2">
-        <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
-        <p className="text-phx-md font-bold text-slate-800">{label}</p>
+        <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+        <p className={`min-w-0 break-words text-phx-md font-bold ${LANDING_INK}`}>{label}</p>
       </div>
       {hasLocation && capture.locationLines.length > 0 ? (
         <div className="mt-0.5 space-y-0.5 text-phx-sm font-medium text-slate-500">
@@ -1539,10 +1641,10 @@ function PlaceSearchPanel({
           value={query}
         />
         {suggestions.length > 0 ? (
-          <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-none border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]">
+          <div className={`absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
             {suggestions.map((suggestion) => (
               <button
-                className="flex min-h-10 w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-orange-50"
+                className={`flex min-h-10 w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
                 disabled={isResolving}
                 key={suggestion.placeId}
                 onClick={() => void choosePlace(suggestion)}
@@ -1558,14 +1660,8 @@ function PlaceSearchPanel({
         ) : null}
       </div>
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        <span
-          className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${
-            hasLocation
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-amber-200 bg-amber-50 text-amber-700"
-          }`}
-        >
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className={`${STATE_TEXT_CLASS} ${hasLocation ? "text-emerald-700" : "text-amber-700"}`}>
           {hasLocation ? "Location pinned from map" : "Location required"}
         </span>
         {isSearching || isResolving ? <LoadingSpinner /> : null}
@@ -1606,27 +1702,26 @@ function ValidatedPharmaciesModal({
       className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/70 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm"
       role="dialog"
     >
-      <div className="max-h-[88dvh] w-full max-w-3xl overflow-hidden rounded-none border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+      <div className={`max-h-[88dvh] w-full max-w-3xl overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`} ref={focusTrapRef}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">Linked venues</p>
-            <h3 className="mt-1 break-words text-lg font-black text-slate-900">{group.customerName}</h3>
+            <p className="flex items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
+              <LandingTick />
+              Linked venues
+            </p>
+            <h3 className={`mt-1 break-words text-lg font-black ${LANDING_INK}`} dir="auto">{group.customerName}</h3>
           </div>
-          <Button
-            className={`h-10 shrink-0 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8 ${adminControlDepthClassName}`}
-            onClick={onClose}
-            type="button"
-          >
+          <button className={landingActionClassName("outline")} onClick={onClose} type="button">
             Close
-          </Button>
+          </button>
         </div>
         <div className="max-h-[65dvh] overflow-y-auto p-4">
           {/* Phone card view — below `md` (768px) */}
           <div className="block md:hidden">
             <div className="space-y-3">
               {pharmacies.map((pharmacy) => (
-                <div className={`rounded-none border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`} key={pharmacy.id}>
-                  <p className="text-phx-md font-bold text-slate-900">{pharmacy.name}</p>
+                <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`} key={pharmacy.id}>
+                  <p className={`break-words text-phx-md font-bold ${LANDING_INK}`}>{pharmacy.name}</p>
                   {/* 🔴 NEUTRAL INK ON PURPOSE. The warning below it is amber because it asks the
                       human to doubt something; this asks him to doubt nothing. A verdict here is
                       permanent and uncorrectable, so a line that LOOKED like evidence would be
@@ -1638,10 +1733,10 @@ function ValidatedPharmaciesModal({
                     </p>
                   ) : null}
                   {pharmacy.suspectedWholesaler ? (
-                    <p className="mt-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-sm font-semibold text-amber-800">
+                    <RailNote className="mt-2" tone="amber">
                       {pharmacy.suspectedWholesalerNote ??
                         "This name could be a wholesaler rather than a pharmacy — check the storefront photo and the licence before validating it."}
-                    </p>
+                    </RailNote>
                   ) : null}
                   <div className="mt-2 space-y-1 text-phx-sm">
                     <div className="flex justify-between gap-2">
@@ -1656,7 +1751,7 @@ function ValidatedPharmaciesModal({
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {pharmacy.vendorCodes.map((line) => (
                       <span
-                        className={`min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700 ${adminSoftDepthClassName}`}
+                        className={`min-w-0 break-words border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700 ${adminChipDepthClassName}`}
                         key={line.id}
                       >
                         {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1670,7 +1765,7 @@ function ValidatedPharmaciesModal({
           {/* Desktop and tablet table view — `md` (768px) and up. Fixed columns, so a long venue
               name or a row of vendor codes wraps inside its cell instead of widening the table. */}
           <div className="hidden md:block">
-            <div className="overflow-hidden rounded-none border border-slate-200">
+            <div className="overflow-hidden border border-slate-200">
               <table className="w-full table-fixed border-collapse text-left">
                 <colgroup>
                   <col style={{ width: "34%" }} />
@@ -1678,18 +1773,18 @@ function ValidatedPharmaciesModal({
                   <col style={{ width: "18%" }} />
                   <col style={{ width: "30%" }} />
                 </colgroup>
-                <thead className="bg-slate-50 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+                <thead className="border-b border-slate-200 bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                   <tr>
-                    <th className="border-r border-slate-100 px-3 py-2.5">Venue</th>
-                    <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
-                    <th className="border-r border-slate-100 px-3 py-2.5">Governorate</th>
+                    <th className="px-3 py-2.5">Venue</th>
+                    <th className="px-3 py-2.5">Area</th>
+                    <th className="px-3 py-2.5">Governorate</th>
                     <th className="px-3 py-2.5">Vendor Codes</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white text-phx-md">
                   {pharmacies.map((pharmacy) => (
                     <tr className="border-t border-slate-100" key={pharmacy.id}>
-                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">
+                      <td className={`break-words px-3 py-2.5 font-bold ${LANDING_INK}`}>
                         {pharmacy.name}
                         {/* Neutral ink, for the reason the phone card gives: the amber note below
                             asks the human to doubt something, this asks him to doubt nothing. */}
@@ -1699,19 +1794,22 @@ function ValidatedPharmaciesModal({
                           </span>
                         ) : null}
                         {pharmacy.suspectedWholesaler ? (
-                          <span className="mt-1 block border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-semibold text-amber-800">
-                            {pharmacy.suspectedWholesalerNote ??
-                              "Could be a wholesaler — check the photo and licence before validating."}
+                          <span className="mt-1.5 flex min-w-0 gap-2 text-phx-xs font-semibold text-slate-700">
+                            <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${RAIL_FILL.amber}`} />
+                            <span className="min-w-0 break-words">
+                              {pharmacy.suspectedWholesalerNote ??
+                                "Could be a wholesaler — check the photo and licence before validating."}
+                            </span>
                           </span>
                         ) : null}
                       </td>
-                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "—"}</td>
-                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "—"}</td>
+                      <td className="break-words px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "—"}</td>
+                      <td className="break-words px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "—"}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex flex-wrap gap-1.5">
                           {pharmacy.vendorCodes.map((line) => (
                             <span
-                              className={`min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600 ${adminSoftDepthClassName}`}
+                              className={`min-w-0 break-words border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600 ${adminChipDepthClassName}`}
                               key={line.id}
                             >
                               {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1929,9 +2027,9 @@ function LiveCameraModal({
       role="dialog"
     >
       <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
-        <div className="w-full max-w-xl rounded-none border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
-          <div className="border-b border-slate-100 px-5 py-3">
-            <p className="text-phx-md font-bold text-slate-900">Live timestamped photo</p>
+        <div className={`w-full max-w-xl border border-slate-200 bg-white ${adminPanelDepthClassName}`} ref={focusTrapRef}>
+          <div className="border-b border-slate-200 px-5 py-3">
+            <LandingTitle>Live timestamped photo</LandingTitle>
             <p className="mt-0.5 text-phx-sm font-medium text-slate-500">{message}</p>
             {hasLocationStamp ? (
               <p className="mt-1.5 break-words text-phx-xs font-semibold text-slate-600">{capture.address}</p>
@@ -1955,18 +2053,14 @@ function LiveCameraModal({
               ref={videoRef}
             />
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 bg-slate-50 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:pb-3">
-            <Button
-              className={`${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 ${adminControlDepthClassName}`}
-              onClick={onClose}
-              type="button"
-            >
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:pb-3">
+            <button className={landingActionClassName("outline", CAPTURE_BUTTON_SIZE)} onClick={onClose} type="button">
               Cancel
-            </Button>
+            </button>
             {pendingPhoto ? (
               <>
-                <Button
-                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50`}
+                <button
+                  className={landingActionClassName("outline", CAPTURE_BUTTON_SIZE)}
                   onClick={() => {
                     setPendingPhoto(null);
                     setMessage("Camera ready");
@@ -1974,35 +2068,35 @@ function LiveCameraModal({
                   type="button"
                 >
                   Re-take
-                </Button>
-                <Button
-                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600`}
+                </button>
+                <button
+                  className={landingActionClassName("solid", CAPTURE_BUTTON_SIZE)}
                   onClick={confirmPhoto}
                   type="button"
                 >
                   Confirm Photo
-                </Button>
+                </button>
               </>
             ) : (
               <>
-                <Button
-                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50`}
+                <button
+                  className={landingActionClassName("outline", cn(CAPTURE_BUTTON_SIZE, "disabled:cursor-not-allowed"))}
                   disabled={isStarting}
                   onClick={startCamera}
                   type="button"
                 >
                   {isStarting ? <LoadingSpinner /> : <Camera className="h-3.5 w-3.5" />}
                   {cameraReady ? "Restart" : "Start Camera"}
-                </Button>
-                <Button
-                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600`}
+                </button>
+                <button
+                  className={landingActionClassName("solid", cn(CAPTURE_BUTTON_SIZE, "disabled:cursor-not-allowed"))}
                   disabled={!cameraReady || !hasLocationStamp}
                   onClick={captureFrame}
                   type="button"
                 >
                   <Camera className="h-3.5 w-3.5" />
                   Capture
-                </Button>
+                </button>
               </>
             )}
           </div>
@@ -2015,22 +2109,24 @@ function LiveCameraModal({
 
 /* --------------------------------------------------------------------- Skeleton Loader --------------------------------------------------------------------- */
 
+/** A summary tile while the board loads: the same navy tile and rail as `MetricCard`, its words as bars. */
 function MetricSkeleton({ className }: { className?: string }) {
   return (
-    <div className={`animate-pulse rounded-none border border-slate-200 border-l-[3px] border-l-slate-300 px-3.5 py-3 ${className ?? ""}`}>
-      <div className="h-3 w-24 rounded-none bg-slate-200" />
-      <div className="mt-3 h-6 w-12 rounded-none bg-slate-200" />
+    <div className={cn("min-w-0 animate-pulse border-l-2 border-l-white/15 px-3 py-2.5 motion-reduce:animate-none", LANDING_NAVY_TILE, className)}>
+      <div className="h-3 w-24 bg-white/10" />
+      <div className="mt-3 h-6 w-12 bg-white/10" />
     </div>
   );
 }
 
+/** Rows while a list loads: hairline-ruled lines on the panel itself, not boxes inside it. */
 function TableSkeleton() {
   return (
-    <div className="space-y-2 p-4">
+    <div className="divide-y divide-slate-100 px-3 sm:px-4">
       {[1, 2, 3].map((i) => (
-        <div className="animate-pulse rounded-none border border-slate-100 bg-slate-50 p-3" key={i}>
-          <div className="h-4 w-3/4 rounded-none bg-slate-200" />
-          <div className="mt-2 h-3 w-1/2 rounded-none bg-slate-200" />
+        <div className="py-3" key={i}>
+          <div className="employee-portal-skeleton h-4 w-3/4" />
+          <div className="employee-portal-skeleton mt-2 h-3 w-1/2" />
         </div>
       ))}
     </div>
@@ -3067,58 +3163,61 @@ export function MarketingValidationWorkspace() {
     <div className="space-y-4" dir="auto">
       {/* --------- Offline Indicator --------- */}
       {hasMounted && (!isOnline || queueLength > 0) && (
-        <div className="flex items-center gap-2 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2 text-phx-sm font-semibold text-amber-800">
-          <WifiOff className="h-3.5 w-3.5 shrink-0" />
-          {!isOnline
-            ? "You are offline. Submissions will be queued and synced automatically."
-            : `Syncing ${queueLength} queued submission${queueLength > 1 ? "s" : ""}...`}
-        </div>
+        <PageNotice tone="amber">
+          <span className="flex min-w-0 items-start gap-2">
+            <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+            {!isOnline
+              ? "You are offline. Submissions will be queued and synced automatically."
+              : `Syncing ${queueLength} queued submission${queueLength > 1 ? "s" : ""}...`}
+          </span>
+        </PageNotice>
       )}
 
       {/* --------- Recovered Draft --------- */}
       {hasMounted && draftNotice ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">
+        <PageNotice
+          action={
+            <button className={landingActionClassName("outline")} onClick={discardRecoveredDraft} type="button">
+              Discard
+            </button>
+          }
+          tone="amber"
+        >
           <span className="flex min-w-0 items-start gap-2">
-            <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
             {draftNotice}
           </span>
-          <button
-            className="shrink-0 rounded-none border border-amber-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-amber-800 hover:bg-amber-100"
-            onClick={discardRecoveredDraft}
-            type="button"
-          >
-            Discard
-          </button>
-        </div>
+        </PageNotice>
       ) : null}
 
       {/* --------- Offline Submissions That Can No Longer Be Sent --------- */}
       {hasMounted && unsendableNotice ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-red-200 bg-red-50 px-3.5 py-2.5 text-phx-md font-semibold text-red-800">
+        <PageNotice
+          action={
+            <button className={landingActionClassName("outline")} onClick={dismissExpired} type="button">
+              Dismiss
+            </button>
+          }
+          tone="rose"
+        >
           <span className="flex min-w-0 items-start gap-2">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {unsendableNotice}
           </span>
-          <button
-            className="shrink-0 rounded-none border border-red-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-red-800 hover:bg-red-100"
-            onClick={dismissExpired}
-            type="button"
-          >
-            Dismiss
-          </button>
-        </div>
+        </PageNotice>
       ) : null}
 
       {/* --------- Summary Metrics --------- */}
-      {/* Five cards: 2 · 3 · 5 across. The fifth spans the whole row on a phone rather than sitting
-          alone at half width, and the refresh button has its own header row — beside the grid it
-          took width the labels needed. */}
-      <div className="rounded-none border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-        <div className="mb-2.5 flex items-center justify-between gap-3">
-          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Validation summary</p>
+      {/* The page's one navy board (the landing kit): its five headline counts. Five tiles: 2 · 3 · 5
+          across. The fifth spans the whole row on a phone rather than sitting alone at half width,
+          and the refresh button sits in the board's own header row — beside the grid it took width
+          the labels needed. */}
+      <LandingNavyBoard
+        label="Validation summary"
+        right={
           <button
             aria-label="Refresh data"
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 md:h-9 md:w-9 ${adminControlDepthClassName}`}
+            className={`${ICON_BUTTON_CLASS} h-10 w-10 border border-white/20 text-white/70 hover:bg-white/10 hover:text-white md:h-9 md:w-9`}
             onClick={() => {
               setIsLoading(true);
               setMessage(null);
@@ -3129,7 +3228,8 @@ export function MarketingValidationWorkspace() {
           >
             {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-3.5 w-3.5" />}
           </button>
-        </div>
+        }
+      >
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {isLoading ? (
             <>
@@ -3141,46 +3241,46 @@ export function MarketingValidationWorkspace() {
             </>
           ) : (
             <>
-              <MetricCard accent="green" icon={CheckCircle2} label="System Validated" value={workspace.summary.system_validated} />
-              <MetricCard accent="blue" icon={UserCheck} label="SFE Validated" value={workspace.summary.sfe_validated} />
+              <MetricCard accent="green" label="System Validated" value={workspace.summary.system_validated} />
+              <MetricCard accent="blue" label="SFE Validated" value={workspace.summary.sfe_validated} />
               {/* Blue like SFE: both are a person's decision. Green stays the evidence gate alone. */}
-              <MetricCard accent="blue" icon={ShieldCheck} label="Admin Approved" value={workspace.summary.admin_approved} />
-              <MetricCard accent="amber" icon={Clock} label="Pending" value={workspace.summary.pending} />
-              <MetricCard accent="red" className="col-span-2 sm:col-span-1" icon={ShieldX} label="Rejected" value={workspace.summary.rejected} />
+              <MetricCard accent="blue" label="Admin Approved" value={workspace.summary.admin_approved} />
+              <MetricCard accent="amber" label="Pending" value={workspace.summary.pending} />
+              <MetricCard accent="red" className="col-span-2 sm:col-span-1" label="Rejected" value={workspace.summary.rejected} />
             </>
           )}
         </div>
-        {/* Mini summary bar */}
+        {/* Mini summary bar — flat colour on the navy. */}
         {!isLoading && (totalValidated + workspace.summary.pending + workspace.summary.rejected) > 0 && (
-          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-none bg-slate-100">
+          <div className="mt-2.5 flex h-2 w-full overflow-hidden bg-white/10">
             {totalValidated > 0 && (
               <div
-                className="bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+                className="bg-emerald-400 transition-[width] duration-500 motion-reduce:transition-none"
                 style={{ width: `${(totalValidated / (totalValidated + workspace.summary.pending + workspace.summary.rejected)) * 100}%` }}
               />
             )}
             {workspace.summary.pending > 0 && (
               <div
-                className="bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+                className="bg-amber-400 transition-[width] duration-500 motion-reduce:transition-none"
                 style={{ width: `${(workspace.summary.pending / (totalValidated + workspace.summary.pending + workspace.summary.rejected)) * 100}%` }}
               />
             )}
             {workspace.summary.rejected > 0 && (
               <div
-                className="bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
+                className="bg-rose-400 transition-[width] duration-500 motion-reduce:transition-none"
                 style={{ width: `${(workspace.summary.rejected / (totalValidated + workspace.summary.pending + workspace.summary.rejected)) * 100}%` }}
               />
             )}
           </div>
         )}
-      </div>
+      </LandingNavyBoard>
 
       {/* --------- Tab Buttons --------- */}
       {/* An equal-width grid, so the tabs share the row at every width instead of each label
           breaking onto three lines below ~500px. A phone reads the short labels; from `sm` up the
           full ones. */}
       <div
-        className={`grid gap-2 rounded-none border border-slate-200 bg-white p-1.5 ${adminChipDepthClassName} ${
+        className={`grid gap-2 border border-slate-200 bg-white p-1.5 ${adminChipDepthClassName} ${
           pendingGroups.length > 0 ? "grid-cols-3" : "grid-cols-2"
         }`}
       >
@@ -3202,41 +3302,22 @@ export function MarketingValidationWorkspace() {
 
       {/* --------- Alert Messages --------- */}
       {message ? (
-        <div className={`rounded-none border px-3.5 py-2.5 text-phx-md font-semibold ${messageState?.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-          {message}
-        </div>
+        <PageNotice tone={messageState?.tone === "success" ? "emerald" : "amber"}>{message}</PageNotice>
       ) : null}
 
       {/* --------- Validation Form Tab --------- */}
       {effectiveTab === "validation" ? (
-        <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-sm">
+        <section className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           <form aria-busy={isSaving} onSubmit={submitValidation}>
-            <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/40 to-white px-4 py-4 sm:px-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-                  <ClipboardCheck className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">
-                    Customer Validation
-                  </p>
-                  <h2 className="text-lg font-black tracking-tight text-slate-900">
-                    Customer and pharmacy evidence
-                  </h2>
-                </div>
-              </div>
-            </div>
+            <PanelHeader meta={["Customer Validation"]} title="Customer and pharmacy evidence" />
 
             {/* --------- Super Admin: validate on behalf of an employee --------- */}
             {workspace.canValidateOnBehalf ? (
-              <div className="border-b border-slate-100 bg-sky-50/50 px-4 py-4 sm:px-5">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-none bg-white text-sky-600 ring-1 ring-sky-100">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-sky-700">Super Admin</p>
-                    <p className="text-phx-md font-bold text-slate-800">Validate on behalf of an employee</p>
+              <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <LandingTitle as="h3">Validate on behalf of an employee</LandingTitle>
+                  <div className="ml-auto">
+                    <LandingMeta items={["Super Admin"]} />
                   </div>
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-6">
@@ -3254,8 +3335,8 @@ export function MarketingValidationWorkspace() {
                   </div>
                   <div className="md:col-span-3">
                     <Field label="What this does">
-                      <div className={`flex min-h-10 items-center rounded-none border border-slate-200 bg-white px-3.5 py-2 ${adminSoftDepthClassName}`}>
-                        <p className="text-phx-sm font-semibold text-slate-600">
+                      <div className={`flex min-h-10 items-center border border-slate-200 bg-slate-50 px-3.5 py-2 ${adminRecessedDepthClassName}`}>
+                        <p className="min-w-0 break-words text-phx-sm font-semibold text-slate-600">
                           {onBehalfEmployee
                             ? `Customer is owned by ${onBehalfEmployee.name} and appears in their marketing request list.`
                             : "Pick an employee to search the location on a map instead of capturing GPS."}
@@ -3265,13 +3346,9 @@ export function MarketingValidationWorkspace() {
                   </div>
                 </div>
                 {isDeskMode ? (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center rounded-none border border-sky-200 bg-white px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-sky-700">
-                      Desk mode — map search, no live photo
-                    </span>
-                    <span className={`inline-flex items-center rounded-none border border-slate-200 bg-white px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-slate-600 ${adminChipDepthClassName}`}>
-                      Saved as admin validated
-                    </span>
+                  <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
+                    <span className={`${STATE_TEXT_CLASS} text-sky-700`}>Desk mode — map search, no live photo</span>
+                    <span className={`${STATE_TEXT_CLASS} text-slate-500`}>Saved as admin validated</span>
                   </div>
                 ) : null}
               </div>
@@ -3280,22 +3357,20 @@ export function MarketingValidationWorkspace() {
             <div className="space-y-4 p-4 sm:p-5">
               {customers.map((customer, customerIndex) => (
                 <div
-                  className={`overflow-hidden rounded-none border border-slate-200 bg-white ${adminSoftDepthClassName}`}
+                  className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}
                   key={customer.key}
                 >
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-3 py-2.5 sm:px-4">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2.5 sm:px-4">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-none bg-white text-orange-600 ring-1 ring-orange-100">
-                        <UserCheck className="h-3.5 w-3.5" />
-                      </div>
-                      <p className="min-w-0 text-phx-md font-bold text-slate-800">
+                      <LandingTick />
+                      <p className={`min-w-0 break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">
                         Customer {customerIndex + 1}
                         {customer.name.trim() ? ` — ${customer.name.trim()}` : ""}
                       </p>
                     </div>
                     <button
                       aria-label="Remove customer"
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7 ${adminControlDepthClassName}`}
+                      className={`${ICON_BUTTON_CLASS} h-10 w-10 border border-slate-200 bg-white text-slate-400 hover:border-rose-200 hover:text-rose-600 sm:h-7 sm:w-7 ${adminControlDepthClassName}`}
                       disabled={customers.length === 1}
                       onClick={() =>
                         setCustomers((current) =>
@@ -3313,13 +3388,12 @@ export function MarketingValidationWorkspace() {
                       and locked because the server updates the capture columns alone — an editable
                       field the save would ignore is worse than no field at all. */}
                   {customer.existingCustomerId ? (
-                    <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 sm:px-4">
-                      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                      <p className="min-w-0 text-phx-sm font-bold text-amber-800">
+                    <div className="border-b border-slate-200 px-3 py-2.5 sm:px-4">
+                      <RailNote tone="amber">
                         {customer.customerComplete
                           ? "This customer's own photo and location are already complete — capture the venue below. Name and type are locked"
                           : "Completing a customer already on record — name and type are locked"}
-                      </p>
+                      </RailNote>
                     </div>
                   ) : null}
 
@@ -3524,15 +3598,14 @@ export function MarketingValidationWorkspace() {
                         rule, wrapping wins (the old "never wrap" rule is superseded; it used to
                         scroll sideways inside its own `overflow-x-auto` box below ~400px). */}
                     <div className="min-w-0 md:col-span-6">
-                      <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        {/* The sentence that sat under this title is gone (owner, 2026-11-20: no text
+                            under any header); the two venue tabs below already say the same. */}
                         <div className="min-w-0 break-words">
-                          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">Venue Validation</p>
-                          <p className="mt-0.5 text-phx-sm font-medium text-slate-500">
-                            Capture a new venue, or attach one you already validated.
-                          </p>
+                          <LandingTitle as="h3">Venue Validation</LandingTitle>
                         </div>
-                        <Button
-                          className={`h-10 shrink-0 gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8 ${adminControlDepthClassName}`}
+                        <button
+                          className={landingActionClassName("outline")}
                           onClick={() =>
                             updateCustomer(customer.key, {
                               pharmacies: [...customer.pharmacies, newPharmacyLine(defaultDistributorId)],
@@ -3542,7 +3615,7 @@ export function MarketingValidationWorkspace() {
                         >
                           <Plus className="h-3.5 w-3.5" />
                           Add Venue
-                        </Button>
+                        </button>
                       </div>
                     </div>
 
@@ -3556,17 +3629,15 @@ export function MarketingValidationWorkspace() {
                         unbreakable value can ever size the track past the screen again. */}
                     {customer.pharmacies.map((pharmacy, index) => (
                       <div className="min-w-0 md:col-span-6" key={pharmacy.key}>
-                        <div className={`rounded-none border border-slate-200 bg-slate-50/50 p-3 sm:p-4 ${adminPanelDepthClassName}`}>
+                        <div className={`border border-slate-200 bg-slate-50 p-3 sm:p-4 ${adminSoftDepthClassName}`}>
                           <div className="mb-3 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-none bg-white text-orange-600 ring-1 ring-orange-100">
-                                <Store className="h-3.5 w-3.5" />
-                              </div>
-                              <p className="text-phx-md font-bold text-slate-800">Venue {index + 1}</p>
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <Store aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                              <p className={`min-w-0 text-phx-md font-bold ${LANDING_INK}`}>Venue {index + 1}</p>
                             </div>
                             <button
                               aria-label="Remove venue"
-                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7 ${adminControlDepthClassName}`}
+                              className={`${ICON_BUTTON_CLASS} h-10 w-10 border border-slate-200 bg-white text-slate-400 hover:border-rose-200 hover:text-rose-600 sm:h-7 sm:w-7 ${adminControlDepthClassName}`}
                               disabled={customer.pharmacies.length === 1}
                               onClick={() =>
                                 updateCustomer(customer.key, {
@@ -3620,14 +3691,14 @@ export function MarketingValidationWorkspace() {
                               pharmacy.existingPharmacyId,
                               isDeskMode,
                             ) ? (
-                              <div className="space-y-2 rounded-none border border-amber-200 bg-amber-50/60 p-3">
-                                <p className="text-phx-xs font-bold text-amber-800">
+                              <div className="space-y-2.5">
+                                <RailNote tone="amber">
                                   This shop has no complete field proof on file. If you are standing in front of it,
                                   capture its GPS and live sign photo now and the record is completed for everyone.
                                   {customer.customerComplete
                                     ? " Required here — this customer is only waiting on this shop."
                                     : " Optional — you can attach it without this."}
-                                </p>
+                                </RailNote>
                                 <CapturePanel
                                   capture={pharmacy.capture}
                                   isCapturing={captureTarget === `${customer.key}::${pharmacy.key}`}
@@ -3719,17 +3790,18 @@ export function MarketingValidationWorkspace() {
                             </div>
                             <div className="md:col-span-6">
                               <div className="space-y-2.5">
-                                {/* Same box and same padding in both states — only the border and
-                                    fill change, so answering the question does not shift the row
-                                    under the rep's thumb. */}
+                                {/* Same box and same padding in both states — only the rail's colour
+                                    changes, so answering the question does not shift the row under
+                                    the rep's thumb. Unanswered, an amber rail marks the one question
+                                    still open; answered, the rail goes transparent. */}
                                 <div
                                   className={
                                     venueTypeIsAnswered(pharmacy.venueType)
-                                      ? "rounded-none border border-transparent p-2"
-                                      : "rounded-none border border-orange-300 bg-orange-50/60 p-2"
+                                      ? "border-l-4 border-l-transparent py-1 pl-3"
+                                      : "border-l-4 border-l-amber-400 py-1 pl-3"
                                   }
                                 >
-                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                                  <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">
                                     What is this? *
                                   </p>
                                   <div className="mt-1.5 flex items-center gap-2">
@@ -3737,12 +3809,12 @@ export function MarketingValidationWorkspace() {
                                         Marketing (owner, 2026-10-21), so its answer is shown but disabled — the
                                         sentence below says where it goes instead. */}
                                     {VENUE_TYPES.map((venueType) => (
-                                      <Button
+                                      <button
                                         aria-pressed={pharmacy.venueType === venueType}
                                         className={
                                           pharmacy.venueType === venueType
-                                            ? `${CAPTURE_BUTTON_SIZE} rounded-none border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700`
-                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${adminControlDepthClassName}`
+                                            ? `${CAPTURE_BUTTON_SIZE} ${CHOICE_BASE_CLASS} ${CHOICE_ON_CLASS} px-2.5 text-phx-xs`
+                                            : `${CAPTURE_BUTTON_SIZE} ${CHOICE_BASE_CLASS} border-slate-200 bg-white px-2.5 text-phx-xs text-slate-600 hover:border-[#08111f] hover:text-[#08111f] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-200 disabled:hover:text-slate-600 disabled:shadow-none ${adminControlDepthClassName}`
                                         }
                                         disabled={!venueRequiresDistributorCode(venueType)}
                                         key={venueType}
@@ -3750,17 +3822,17 @@ export function MarketingValidationWorkspace() {
                                         type="button"
                                       >
                                         {venueTypeLabel(venueType)}
-                                      </Button>
+                                      </button>
                                     ))}
                                   </div>
                                   {/* Unanswered says so; a nursery (only reachable from an old draft) is refused
                                       in the shared sentence; a pharmacy is told only where codeless venues go. */}
                                   {!venueTypeIsAnswered(pharmacy.venueType) ? (
-                                    <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
+                                    <p className="mt-1.5 text-phx-xs font-bold text-amber-700">
                                       {VENUE_TYPE_UNANSWERED_MESSAGE}
                                     </p>
                                   ) : venueRequiresDistributorCode(pharmacy.venueType) ? null : (
-                                    <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
+                                    <p className="mt-1.5 text-phx-xs font-bold text-amber-700">
                                       A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor code, so it
                                       cannot be validated here.
                                     </p>
@@ -3774,11 +3846,11 @@ export function MarketingValidationWorkspace() {
                                       : "hidden"
                                   }
                                 >
-                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
+                                  <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">
                                     Vendor Codes
                                   </p>
-                                  <Button
-                                    className={`h-10 gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 sm:h-7 ${adminControlDepthClassName}`}
+                                  <button
+                                    className={landingActionClassName("outline")}
                                     onClick={() =>
                                       updatePharmacy(customer.key, pharmacy.key, {
                                         vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
@@ -3788,7 +3860,7 @@ export function MarketingValidationWorkspace() {
                                   >
                                     <Plus className="h-3 w-3" />
                                     Add
-                                  </Button>
+                                  </button>
                                 </div>
                                 {!choiceRequiresDistributorCode(pharmacy.venueType) ? null : pharmacy.vendorCodes.map((line) => {
                                   const codeCheck = codeChecks[line.key];
@@ -3828,7 +3900,7 @@ export function MarketingValidationWorkspace() {
                                       />
                                       <button
                                         aria-label="Remove vendor"
-                                        className={`flex h-10 w-full items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 ${adminControlDepthClassName}`}
+                                        className={`${ICON_BUTTON_CLASS} h-10 w-full border border-slate-200 bg-white text-slate-400 hover:border-rose-200 hover:text-rose-600 ${adminControlDepthClassName}`}
                                         disabled={pharmacy.vendorCodes.length === 1}
                                         onClick={() =>
                                           updatePharmacy(customer.key, pharmacy.key, {
@@ -3853,10 +3925,10 @@ export function MarketingValidationWorkspace() {
                                         being checked: each row describes the CODE's registered
                                         place, never his. */}
                                     {(codeSuggestions[line.key] ?? []).length > 0 ? (
-                                      <div className={`mt-1.5 max-h-48 overflow-y-auto rounded-none border border-slate-200 bg-white ${adminRecessedDepthClassName}`}>
+                                      <div className={`mt-1.5 max-h-48 overflow-y-auto border border-slate-200 bg-white ${adminRecessedDepthClassName}`}>
                                         {(codeSuggestions[line.key] ?? []).map((suggestion) => (
                                           <button
-                                            className="flex w-full items-start justify-between gap-2 border-b border-slate-100 px-2.5 py-2 text-left last:border-b-0 hover:bg-orange-50"
+                                            className={`flex w-full items-start justify-between gap-2 border-b border-slate-100 px-2.5 py-2 text-left transition-colors last:border-b-0 hover:bg-slate-50 motion-reduce:transition-none ${LANDING_FOCUS}`}
                                             key={suggestion.code}
                                             onClick={() => {
                                               updateVendorCode(customer.key, pharmacy.key, line.key, {
@@ -3869,8 +3941,8 @@ export function MarketingValidationWorkspace() {
                                             }}
                                             type="button"
                                           >
-                                            <span className="min-w-0">
-                                              <span className="block text-phx-sm font-bold text-slate-900">
+                                            <span className="min-w-0 break-words">
+                                              <span className={`block text-phx-sm font-bold ${LANDING_INK}`}>
                                                 {suggestion.code}
                                                 {suggestion.name ? ` · ${suggestion.name}` : ""}
                                               </span>
@@ -3956,27 +4028,26 @@ export function MarketingValidationWorkspace() {
                 </div>
               ))}
 
-              <Button
-                className="h-10 w-full gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50/40 text-phx-md font-bold text-orange-700 hover:bg-orange-50"
+              <button
+                className={cn(phxButtonAddBlockClassName, "min-h-10", LANDING_FOCUS)}
                 onClick={() => setCustomers((current) => [...current, newCustomerLine(defaultDistributorId, defaultCrmAreaSeatId)])}
                 type="button"
               >
                 <Plus className="h-4 w-4" />
                 Add Another Customer
-              </Button>
+              </button>
 
               {duplicateCustomerName ? (
-                <div className="rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-sm font-semibold text-amber-800">
+                <RailNote tone="amber">
                   “{duplicateCustomerName}” is entered twice. Each customer must appear once per submission.
-                </div>
+                </RailNote>
               ) : null}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-              <div className="flex min-w-0 items-center gap-2 text-phx-md font-bold text-slate-700">
-                <ShieldCheck className="h-4 w-4 shrink-0 text-orange-500" />
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <div className={`flex min-w-0 items-center gap-2 text-phx-md font-bold ${LANDING_INK}`}>
                 {/* Wraps: one nowrap line (~290px) was cut off by the form card's edge at 360px. */}
-                <span className="min-w-0 break-words">
+                <span className="min-w-0 break-words tabular-nums">
                   {customers.length} customer{customers.length === 1 ? "" : "s"} · {totalPharmacyCount} venue{totalPharmacyCount === 1 ? "" : "s"} ready
                 </span>
               </div>
@@ -3984,34 +4055,30 @@ export function MarketingValidationWorkspace() {
                 {!duplicateCustomerName && missingRequirement ? (
                   <p className="text-phx-sm font-semibold text-amber-700">{missingRequirement}</p>
                 ) : null}
-                <Button
-                  className="h-10 w-full gap-2 rounded-none bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600 sm:w-auto"
+                <button
+                  className={cn(phxButtonPrimaryClassName, "min-h-10 w-full justify-center sm:w-auto", LANDING_FOCUS)}
                   disabled={!canSave}
                   type="submit"
                 >
                   {isSaving ? <LoadingSpinner className="text-white" /> : <Save className="h-3.5 w-3.5" />}
                   Save Validation
-                </Button>
+                </button>
               </div>
             </div>
           </form>
-        </Card>
+        </section>
       ) : effectiveTab === "pending" ? (
         /* --------- Not Usable Yet Tab --------- */
-        <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
-              <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Captured but not in your request list</h2>
-            </div>
-            <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700">
-              {pendingGroups.length} customers
-            </span>
-          </div>
+        <section className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            meta={["Not Usable Yet", `${pendingGroups.length} customers`]}
+            title="Captured but not in your request list"
+          />
 
-          <div className="mt-3 flex items-start gap-2 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-            <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
+          {/* Kept, unlike a description under a header: it is the tab's state, and it changes with
+              the hold — the one instruction a rep needs before touching any row. */}
+          <div className="px-3 pt-3 sm:px-4">
+            <RailNote tone="amber">
               {/* The old wording said “add the missing photo and location” unconditionally. For a
                   governorate hold that is the WRONG advice and the wrong reason: the photo and the
                   pin are already there, retaking them lands on the identical hold, and the question
@@ -4019,24 +4086,24 @@ export function MarketingValidationWorkspace() {
               {hasGovernorateHold(pendingGroups.flatMap((group) => group.rows))
                 ? "Saved, but not yet usable in marketing requests. Check the distributor code is the right one for that shop, then ask a Super Admin or the CEO to release it."
                 : "Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and location, or ask a Super Admin to release it."}
-            </p>
+            </RailNote>
           </div>
 
           {isLoading ? (
             <TableSkeleton />
           ) : (
-            <>
+            <div className="p-3 sm:p-4">
               {/* Phone card view — below `md` (768px) */}
-              <div className="mt-4 block md:hidden">
+              <div className="block md:hidden">
                 <div className="space-y-2">
                   {pendingGroups.map((group) => {
                     const customer = group.rows[0]?.customer;
                     const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                     return (
-                      <div className="rounded-none border border-amber-200 bg-white p-3" key={group.key}>
+                      <div className={`border border-slate-200 bg-white border-l-4 border-l-amber-400 p-3 ${adminSoftDepthClassName}`} key={group.key}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="break-words text-phx-md font-bold text-slate-900">{group.customerName}</p>
+                            <p className={`break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{group.customerName}</p>
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                               <StatusBadge status={group.status} />
@@ -4044,7 +4111,7 @@ export function MarketingValidationWorkspace() {
                           </div>
                           <button
                             aria-label={`${pharmaciesForCustomer.length} venues linked to ${group.customerName}`}
-                            className="flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
+                            className={landingActionClassName("outline", "h-10 min-w-10 px-2 tabular-nums")}
                             onClick={() => setSelectedValidatedCustomerKey(group.key)}
                             type="button"
                           >
@@ -4064,7 +4131,7 @@ export function MarketingValidationWorkspace() {
                         </div>
                         {pendingHasCapturableGap(group.rows) ? (
                           <button
-                            className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-none border border-orange-300 bg-orange-600 px-2 text-phx-sm font-bold text-white transition hover:bg-orange-700"
+                            className={landingActionClassName("solid", "mt-2.5 h-10 w-full whitespace-nowrap")}
                             onClick={() => startCompletingCustomer(group)}
                             type="button"
                           >
@@ -4079,8 +4146,8 @@ export function MarketingValidationWorkspace() {
               </div>
 
               {/* Desktop and tablet table view — `md` (768px) and up */}
-              <div className="mt-4 hidden md:block">
-                <div className="overflow-hidden rounded-none border border-slate-200">
+              <div className="hidden md:block">
+                <div className="overflow-hidden border border-slate-200">
                   <table className="w-full table-fixed border-collapse text-left">
                     <colgroup>
                       <col className="w-[28%]" />
@@ -4089,12 +4156,12 @@ export function MarketingValidationWorkspace() {
                       <col className="w-[10%]" />
                       <col className="w-[20%]" />
                     </colgroup>
-                    <thead className="bg-slate-50 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+                    <thead className="border-b border-slate-200 bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                       <tr>
-                        <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
-                        <th className="border-r border-slate-100 px-3 py-2.5">Blocked By</th>
-                        <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
-                        <th className="border-r border-slate-100 px-3 py-2.5 text-center">Venues</th>
+                        <th className="px-3 py-2.5">Customer</th>
+                        <th className="px-3 py-2.5">Blocked By</th>
+                        <th className="px-3 py-2.5">Area</th>
+                        <th className="px-3 py-2.5 text-center">Venues</th>
                         <th className="px-3 py-2.5 text-center">Action</th>
                       </tr>
                     </thead>
@@ -4104,24 +4171,24 @@ export function MarketingValidationWorkspace() {
                         const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                         return (
                           <tr className="border-t border-slate-100" key={group.key}>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5">
+                            <td className="break-words px-3 py-2.5">
                               <div className="min-w-0">
-                                <p className="font-bold text-slate-900">{group.customerName}</p>
+                                <p className={`font-bold ${LANDING_INK}`} dir="auto">{group.customerName}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                   <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
                                 </div>
                               </div>
                             </td>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-amber-700">
+                            <td className="break-words px-3 py-2.5 font-semibold text-amber-700">
                               {pendingBlockLabel(group.rows)}
                             </td>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                            <td className="break-words px-3 py-2.5 font-medium text-slate-700">
                               {customer?.extractedAreaName || customer?.regionName || "—"}
                             </td>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5 text-center">
+                            <td className="break-words px-3 py-2.5 text-center">
                               <button
-                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
+                                className={landingActionClassName("outline", "min-w-8 px-2 tabular-nums")}
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
                                 type="button"
                               >
@@ -4134,7 +4201,7 @@ export function MarketingValidationWorkspace() {
                             <td className="px-3 py-2.5 text-center">
                               {pendingHasCapturableGap(group.rows) ? (
                                 <button
-                                  className="inline-flex min-h-7 items-center justify-center gap-1.5 rounded-none border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
+                                  className={landingActionClassName("solid", "px-2.5")}
                                   onClick={() => startCompletingCustomer(group)}
                                   type="button"
                                 >
@@ -4142,7 +4209,7 @@ export function MarketingValidationWorkspace() {
                                   Capture Evidence
                                 </button>
                               ) : (
-                                <span className="text-phx-sm font-medium text-slate-400">Awaiting release</span>
+                                <span className="text-phx-sm font-medium text-slate-500">Awaiting release</span>
                               )}
                             </td>
                           </tr>
@@ -4152,28 +4219,23 @@ export function MarketingValidationWorkspace() {
                   </table>
                 </div>
               </div>
-            </>
+            </div>
           )}
-        </Card>
+        </section>
       ) : (
         /* --------- Validated Customers Tab --------- */
-        <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">Validated Customers</p>
-              <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Ready customer list</h2>
-            </div>
-            <span className="inline-flex items-center rounded-none border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700">
-              {validatedGroups.length} customers
-            </span>
-          </div>
+        <section className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <PanelHeader
+            meta={["Validated Customers", `${validatedGroups.length} customers`]}
+            title="Ready customer list"
+          />
 
           {isLoading ? (
             <TableSkeleton />
           ) : (
-            <>
+            <div className="p-3 sm:p-4">
               {/* Phone card view — below `md` (768px) */}
-              <div className="mt-4 block md:hidden">
+              <div className="block md:hidden">
                 {validatedGroups.length === 0 ? (
                   <p className="py-6 text-center text-phx-md font-medium text-slate-500">No validated customers yet.</p>
                 ) : (
@@ -4182,10 +4244,10 @@ export function MarketingValidationWorkspace() {
                       const customer = group.rows[0]?.customer;
                       const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                       return (
-                        <div className={`rounded-none border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`} key={group.key}>
+                        <div className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`} key={group.key}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="break-words text-phx-md font-bold text-slate-900">{group.customerName}</p>
+                              <p className={`break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{group.customerName}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-2">
                                 <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
@@ -4196,7 +4258,7 @@ export function MarketingValidationWorkspace() {
                             </div>
                             <button
                               aria-label={`${pharmaciesForCustomer.length} venues linked to ${group.customerName}`}
-                            className="flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
+                              className={landingActionClassName("outline", "h-10 min-w-10 px-2 tabular-nums")}
                               onClick={() => setSelectedValidatedCustomerKey(group.key)}
                               type="button"
                             >
@@ -4222,8 +4284,8 @@ export function MarketingValidationWorkspace() {
               </div>
 
               {/* Desktop and tablet table view — `md` (768px) and up */}
-              <div className="mt-4 hidden md:block">
-                <div className="overflow-hidden rounded-none border border-slate-200">
+              <div className="hidden md:block">
+                <div className="overflow-hidden border border-slate-200">
                   <table className="w-full table-fixed border-collapse text-left">
                     <colgroup>
                       <col className="w-[40%]" />
@@ -4231,11 +4293,11 @@ export function MarketingValidationWorkspace() {
                       <col className="w-[25%]" />
                       <col className="w-[10%]" />
                     </colgroup>
-                    <thead className="bg-slate-50 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+                    <thead className="border-b border-slate-200 bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                       <tr>
-                        <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
-                        <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
-                        <th className="border-r border-slate-100 px-3 py-2.5">Governorate</th>
+                        <th className="px-3 py-2.5">Customer</th>
+                        <th className="px-3 py-2.5">Area</th>
+                        <th className="px-3 py-2.5">Governorate</th>
                         <th className="px-3 py-2.5 text-center">Venues</th>
                       </tr>
                     </thead>
@@ -4245,9 +4307,9 @@ export function MarketingValidationWorkspace() {
                         const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                         return (
                           <tr className="border-t border-slate-100" key={group.key}>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5">
+                            <td className="break-words px-3 py-2.5">
                               <div className="min-w-0">
-                                <p className="font-bold text-slate-900">{group.customerName}</p>
+                                <p className={`font-bold ${LANDING_INK}`} dir="auto">{group.customerName}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                   <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
@@ -4257,15 +4319,15 @@ export function MarketingValidationWorkspace() {
                                 </div>
                               </div>
                             </td>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                            <td className="break-words px-3 py-2.5 font-medium text-slate-700">
                               {customer?.extractedAreaName || customer?.regionName || "—"}
                             </td>
-                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                            <td className="break-words px-3 py-2.5 font-medium text-slate-700">
                               {customer?.extractedGovernorateName || "—"}
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button
-                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
+                                className={landingActionClassName("outline", "min-w-8 px-2 tabular-nums")}
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
                                 type="button"
                               >
@@ -4286,9 +4348,9 @@ export function MarketingValidationWorkspace() {
                   </table>
                 </div>
               </div>
-            </>
+            </div>
           )}
-        </Card>
+        </section>
       )}
 
       {/* --------- Modals --------- */}

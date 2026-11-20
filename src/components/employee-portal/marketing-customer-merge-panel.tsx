@@ -3,15 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { Merge } from "lucide-react";
 
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingMeta,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { PortalSection } from "@/components/employee-portal/portal-primitives";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { CheckTile, FormError, FormField, FormGrid } from "@/components/ui/form-kit";
+import { phxButtonPrimaryClassName } from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { humanizeCode } from "@/lib/format/code-label";
+import { cn } from "@/lib/utils";
 import {
   customerMergeRefusal,
   evidenceCanCarry,
@@ -42,7 +47,20 @@ function optionLabel(customer: MarketingCustomerMergeOption): string {
   return `${customer.name} · ${customer.code} · ${customer.areaName ?? "no area"}`;
 }
 
-function Side({ customer, heading }: { customer: MarketingCustomerMergeOption; heading: string }) {
+/**
+ * One side of the comparison: a column of the hairline pair, never a card on the panel. The heading
+ * carries the side's tone in coloured small capitals — emerald for the row that stays, rose for the
+ * one that is retired.
+ */
+function Side({
+  customer,
+  heading,
+  tone,
+}: {
+  customer: MarketingCustomerMergeOption;
+  heading: string;
+  tone: "text-emerald-700" | "text-rose-700";
+}) {
   const facts: Array<[string, string]> = [
     ["Code", customer.code],
     ["Kind", humanizeCode(customer.customerType)],
@@ -57,14 +75,14 @@ function Side({ customer, heading }: { customer: MarketingCustomerMergeOption; h
     ["Live transfer", customer.liveTransfer ? "Yes" : "No"],
   ];
   return (
-    <div className={`min-w-0 border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
-      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{heading}</p>
-      <p className="mt-1 break-words text-sm font-black text-slate-950">{customer.name}</p>
-      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+    <div className="min-w-0 bg-white px-3 py-3 sm:px-4">
+      <p className={`text-phx-xs font-bold uppercase tracking-[0.1em] ${tone}`}>{heading}</p>
+      <p className={`mt-1 break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{customer.name}</p>
+      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-phx-xs">
         {facts.map(([label, value]) => (
           <div className="contents" key={label}>
-            <dt className="font-semibold text-slate-500">{label}</dt>
-            <dd className="break-words font-bold text-slate-900">{value}</dd>
+            <dt className="font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
+            <dd className={`min-w-0 break-words font-semibold tabular-nums ${LANDING_INK}`} dir="auto">{value}</dd>
           </div>
         ))}
       </dl>
@@ -159,31 +177,26 @@ export function MarketingCustomerMergePanel({ onMerged }: { onMerged: () => void
 
   return (
     <PortalSection
-      actions={customers ? <Badge variant="neutral">{`${customers.length} customers`}</Badge> : null}
-      description="Fold a duplicate customer into the row that stays. Requests, contacts, pharmacy links and transfers move; costs and dates do not change. Only the same line, kind and area can merge."
+      actions={customers ? <LandingMeta items={[`${customers.length} customers`]} /> : null}
       eyebrow="Customer Database"
       title="Merge duplicate customers"
     >
-      <div className="grid gap-4 p-4 sm:p-5">
+      <div className="@container grid gap-4 px-3 py-4 sm:px-4">
         {groups.length > 0 ? (
           <div className="grid gap-2">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Same name, check</p>
-            <p className="text-xs font-semibold text-slate-600">
-              Sharing a name does not make two rows one customer. Compare them before you merge.
-            </p>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Same name, check</p>
             <div className="flex flex-wrap gap-2">
               {groups.map((group) => (
-                <Button
-                  className="h-auto max-w-full whitespace-normal break-words py-1 text-left"
+                <button
+                  className={landingActionClassName("outline", "h-auto max-w-full whitespace-normal break-words py-1 text-left normal-case tracking-normal")}
+                  dir="auto"
                   disabled={isMerging}
                   key={group[0].id}
                   onClick={() => pick(group[0].id, group[1].id)}
-                  size="sm"
                   type="button"
-                  variant="outline"
                 >
                   {`${group[0].name} (${group.length})`}
-                </Button>
+                </button>
               ))}
             </div>
           </div>
@@ -223,9 +236,9 @@ export function MarketingCustomerMergePanel({ onMerged }: { onMerged: () => void
         </FormGrid>
 
         {survivor && retired ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            <Side customer={survivor} heading="Stays" />
-            <Side customer={retired} heading="Retired" />
+          <div className="grid divide-y divide-slate-200 border border-slate-200 @2xl:grid-cols-2 @2xl:divide-x @2xl:divide-y-0">
+            <Side customer={survivor} heading="Stays" tone="text-emerald-700" />
+            <Side customer={retired} heading="Retired" tone="text-rose-700" />
           </div>
         ) : null}
 
@@ -251,22 +264,30 @@ export function MarketingCustomerMergePanel({ onMerged }: { onMerged: () => void
         <FormError>{error}</FormError>
 
         {outcome ? (
-          <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
+          <div className="flex min-w-0 gap-3" role="status">
+            <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-emerald-500" />
+            <p className="min-w-0 break-words text-phx-sm font-semibold leading-6 text-emerald-900">
             {`Merged. Moved ${outcome.requestsMoved} request(s), ${outcome.contactsMoved} contact(s), ${outcome.linksMoved} pharmacy link(s) and ${outcome.transfersMoved} transfer(s). `}
             {outcome.linksLeftOnRetired > 0 ? `${outcome.linksLeftOnRetired} link(s) were already on the customer that stays, so the retired copies were switched off. ` : ""}
             {outcome.linksStatusCarried > 0 ? `${outcome.linksStatusCarried} link(s) took the retired row's higher validation. ` : ""}
             {outcome.validationCarried ? `Validation carried: ${humanizeCode(outcome.validationCarried)}. ` : ""}
             {outcome.evidenceCarried ? "Field evidence carried. " : ""}
+            </p>
           </div>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button className="gap-2" disabled={!canMerge} onClick={() => void submit()} type="button">
-            {isMerging ? <LoadingSpinner /> : <Merge className="h-4 w-4" />}
+          <button
+            className={cn(phxButtonPrimaryClassName, "gap-2 motion-reduce:transition-none", LANDING_FOCUS)}
+            disabled={!canMerge}
+            onClick={() => void submit()}
+            type="button"
+          >
+            {isMerging ? <LoadingSpinner /> : <Merge aria-hidden="true" className="h-4 w-4" />}
             Merge customers
-          </Button>
+          </button>
           {customers === null && !error ? (
-            <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-500">
+            <span className="inline-flex items-center gap-2 text-phx-xs font-bold text-slate-500">
               <LoadingSpinner /> Loading customers...
             </span>
           ) : null}

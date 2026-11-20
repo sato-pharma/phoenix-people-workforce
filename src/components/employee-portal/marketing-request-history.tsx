@@ -14,7 +14,6 @@ import {
   RefreshCcw,
   Search,
   Undo2,
-  Wallet,
   XCircle,
 } from "lucide-react";
 
@@ -25,36 +24,45 @@ import {
   formatDateTime,
 } from "@/components/employee-portal/marketing-approval-chain";
 import {
+  LANDING_INK,
+  LandingEmpty,
+  LandingMeta,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
+import {
   PortalDesktopTable,
-  PortalMetricCard,
   PortalPagination,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { cn } from "@/lib/utils";
 import type {
   MarketingApproverHistoryOutcome,
   MarketingApproverHistoryRow,
   MarketingApproverHistoryWorkspace,
 } from "@/lib/marketing-requests/service";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Outcome presentation ------------------------------------------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-/** The label itself comes from the server (MARKETING_HISTORY_OUTCOME_LABEL) — this is only tone. */
-const OUTCOME_VARIANT: Record<MarketingApproverHistoryOutcome, "neutral" | "success" | "warning" | "danger"> = {
-  approved: "success",
-  archived: "neutral",
-  awaiting_next_stage: "warning",
-  cancelled: "danger",
-  closed: "neutral",
-  in_flight: "warning",
-  rejected: "danger",
-  returned: "warning",
+/**
+ * The label itself comes from the server (MARKETING_HISTORY_OUTCOME_LABEL) — this is only tone: the
+ * outcome's words in its own colour, never a filled pill (the landing kit). Whole literals, so
+ * Tailwind ships every one of them.
+ */
+const OUTCOME_TEXT: Record<MarketingApproverHistoryOutcome, string> = {
+  approved: "text-emerald-700",
+  archived: "text-slate-500",
+  awaiting_next_stage: "text-amber-700",
+  cancelled: "text-rose-700",
+  closed: "text-slate-500",
+  in_flight: "text-amber-700",
+  rejected: "text-rose-700",
+  returned: "text-amber-700",
 };
 
 const OUTCOME_ICON: Record<MarketingApproverHistoryOutcome, typeof CheckCircle2> = {
@@ -68,16 +76,60 @@ const OUTCOME_ICON: Record<MarketingApproverHistoryOutcome, typeof CheckCircle2>
   returned: Undo2,
 };
 
-const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
-  approved: "from-white via-emerald-50/40 to-white",
-  archived: "from-white via-slate-50 to-white",
-  awaiting_next_stage: "from-white via-orange-50/30 to-white",
-  cancelled: "from-white via-rose-50/40 to-white",
-  closed: "from-white via-slate-50 to-white",
-  in_flight: "from-white via-orange-50/30 to-white",
-  rejected: "from-white via-rose-50/40 to-white",
-  returned: "from-white via-amber-50/40 to-white",
+/** The phone row's left rail, in the outcome's colour — the gradient header it replaced is gone. */
+const OUTCOME_RAIL: Record<MarketingApproverHistoryOutcome, string> = {
+  approved: "border-l-emerald-500",
+  archived: "border-l-slate-300",
+  awaiting_next_stage: "border-l-amber-400",
+  cancelled: "border-l-rose-500",
+  closed: "border-l-slate-300",
+  in_flight: "border-l-amber-400",
+  rejected: "border-l-rose-500",
+  returned: "border-l-amber-500",
 };
+
+/** A state in small coloured capitals — the kit's replacement for a filled pill. */
+const STATE_TEXT_CLASS = "text-phx-xs font-bold uppercase tracking-[0.08em]";
+
+/** The small-capital label above a figure or a line of the record. */
+const FACT_LABEL_CLASS = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+
+/** The outcome in coloured capitals with its icon — on the phone row and in the table alike. */
+function OutcomeMark({ row }: { row: MarketingApproverHistoryRow }) {
+  const Icon = OUTCOME_ICON[row.outcome];
+  return (
+    <span className={cn("inline-flex items-start gap-1 break-words", STATE_TEXT_CLASS, OUTCOME_TEXT[row.outcome])}>
+      <Icon aria-hidden="true" className="mt-px h-3 w-3 shrink-0" />
+      <span className="min-w-0">{row.outcomeLabel}</span>
+    </span>
+  );
+}
+
+/**
+ * One figure of the strip: a small-capital label, the number in its tone, and the line that says
+ * what it counts. Cells sit on hairlines inside the header panel — never a tile on a tile.
+ */
+function HistoryFigure({
+  label,
+  note,
+  tone = LANDING_INK,
+  value,
+}: {
+  label: string;
+  note: string;
+  tone?: string;
+  value: number | string;
+}) {
+  return (
+    <div className="min-w-0 border-b border-r border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+      <p className={cn("break-words", FACT_LABEL_CLASS)}>{label}</p>
+      <p className={cn("mt-1 break-words text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums", tone)}>
+        {value}
+      </p>
+      <p className="mt-1 break-words text-phx-xs font-medium leading-snug text-slate-500">{note}</p>
+    </div>
+  );
+}
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Shared decision detail (identical on the mobile card and the desktop expansion) --------------------------------------------------------- */
@@ -93,7 +145,7 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
   const myDecidedAt = formatDateTime(row.myDecision?.at ?? null);
 
   return (
-    <div className="divide-y divide-slate-100">
+    <div className="divide-y divide-slate-200">
       {/* ------ The response itself: who ended it, when, and in their own words -----------------
           This is the answer the tab is opened for. It sits ABOVE the full chain because the last
           word is what anyone is looking for, and the chain below is the supporting record. */}
@@ -101,47 +153,48 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
           the panel keeps only what the row cannot: the decision's own words. */}
       {inTable && !row.waitingFor && row.finalStepName ? (
         <div className="px-4 py-3">
-          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Decision comment</p>
+          <p className={FACT_LABEL_CLASS}>Decision comment</p>
           {row.finalDecisionNote ? (
-            <p className="mt-1.5 border-l-2 border-slate-200 py-1 pl-2.5 text-phx-sm font-medium leading-snug text-slate-700">
+            <p className="mt-1.5 break-words border-l-2 border-slate-300 py-1 pl-2.5 text-phx-sm font-medium leading-snug text-slate-700" dir="auto">
               &ldquo;{row.finalDecisionNote}&rdquo;
             </p>
           ) : (
-            <p className="mt-1 text-phx-xs font-medium italic text-slate-400">No comment left with the decision</p>
+            <p className="mt-1 text-phx-xs font-medium italic text-slate-500">No comment left with the decision</p>
           )}
         </div>
       ) : inTable && row.waitingFor ? null : (
       <div className="px-4 py-3">
-        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+        <p className={FACT_LABEL_CLASS}>
           {row.waitingFor ? "Where it is now" : "Final response"}
         </p>
         {row.waitingFor ? (
           // Not finished, and said so: the request is past this viewer's rung and waiting on the next
           // stage. It is never worded as an approval of the whole request.
-          <p className="mt-1 text-phx-sm font-bold text-slate-800">
+          <p className={`mt-1 break-words text-phx-sm font-bold ${LANDING_INK}`}>
             Waiting for {row.waitingFor.stepName}
             {row.waitingFor.approverName ? ` · ${row.waitingFor.approverName}` : ""}
           </p>
         ) : row.finalStepName ? (
           <>
-            <p className="mt-1 text-phx-sm font-bold text-slate-800">
+            <p className={`mt-1 break-words text-phx-sm font-bold ${LANDING_INK}`}>
               {row.outcomeLabel} at {row.finalStepName}
               {row.finalApproverName ? ` by ${row.finalApproverName}` : ""}
               {decidedAt ? ` · ${decidedAt}` : ""}
             </p>
-            {/* Never truncated. A rejection reason that is cut off is a rejection nobody can act on. */}
+            {/* Never truncated. A rejection reason that is cut off is a rejection nobody can act on.
+                A left-rail quote, never a tinted box. */}
             {row.finalDecisionNote ? (
-              <p className={`mt-1.5 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-phx-sm font-medium leading-snug text-slate-700 ${adminSoftDepthClassName}`}>
+              <p className="mt-1.5 break-words border-l-2 border-slate-300 py-1 pl-2.5 text-phx-sm font-medium leading-snug text-slate-700" dir="auto">
                 &ldquo;{row.finalDecisionNote}&rdquo;
               </p>
             ) : (
-              <p className="mt-1 text-phx-xs font-medium italic text-slate-400">No comment left with the decision</p>
+              <p className="mt-1 text-phx-xs font-medium italic text-slate-500">No comment left with the decision</p>
             )}
           </>
         ) : (
           // Not an invented outcome: a request can carry a final status with no decided rung behind
           // it (a legacy import, or a status set outside the chain). Saying so beats guessing.
-          <p className="mt-1 text-phx-sm font-bold text-slate-800">
+          <p className={`mt-1 break-words text-phx-sm font-bold ${LANDING_INK}`}>
             {row.outcomeLabel}
             {decidedAt ? ` · ${decidedAt}` : ""} — no decision was recorded on the approval chain.
           </p>
@@ -149,64 +202,67 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
       </div>
       )}
 
-      {/* ------ What THIS viewer did, when they were part of it ----------------------------------- */}
+      {/* ------ What THIS viewer did, when they were part of it — a navy rail, never a tinted band ---- */}
       {row.myDecision ? (
-        <div className="bg-slate-900/[0.03] px-4 py-2.5">
-          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Your decision</p>
-          <p className="mt-0.5 text-phx-sm font-bold text-slate-800">
-            {row.myDecision.stepName}
-            {myDecidedAt ? ` · ${myDecidedAt}` : ""}
-          </p>
-          {row.myDecision.note ? (
-            <p className="mt-1 text-phx-xs font-medium leading-snug text-slate-600">
-              &ldquo;{row.myDecision.note}&rdquo;
+        <div className="flex min-w-0 gap-3 px-4 py-2.5">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-[#08111f]" />
+          <div className="min-w-0">
+            <p className={FACT_LABEL_CLASS}>Your decision</p>
+            <p className={`mt-0.5 break-words text-phx-sm font-bold ${LANDING_INK}`}>
+              {row.myDecision.stepName}
+              {myDecidedAt ? ` · ${myDecidedAt}` : ""}
             </p>
-          ) : null}
+            {row.myDecision.note ? (
+              <p className="mt-1 break-words text-phx-xs font-medium leading-snug text-slate-600" dir="auto">
+                &ldquo;{row.myDecision.note}&rdquo;
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : row.isMyRequest ? (
-        <div className="bg-sky-50/60 px-4 py-2 text-phx-xs font-semibold text-sky-800">
-          You raised this request — this is the answer it came back with.
+        <div className="flex min-w-0 gap-3 px-4 py-2.5">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-sky-500" />
+          <p className="min-w-0 break-words text-phx-xs font-semibold text-slate-700">
+            You raised this request — this is the answer it came back with.
+          </p>
         </div>
       ) : row.viaOversight ? (
-        <div className="px-4 py-2 text-phx-xs font-medium text-slate-400">
+        <div className="px-4 py-2 text-phx-xs font-medium text-slate-500">
           You held no step on this request — shown because you can see the whole company queue.
         </div>
       ) : null}
 
       <ApprovalHistory requestCode={row.requestCode} rungs={row.approvalHistory} title="Full approval trail" />
 
-      <div className={`grid gap-3 px-4 py-3 ${inTable ? "sm:grid-cols-2" : "sm:grid-cols-4"}`}>
+      <div className={`grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3 ${inTable ? "" : "sm:grid-cols-4"}`}>
         {inTable ? null : (
-          <div className="flex flex-col">
-            <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
-            <span className="text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</span>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className={FACT_LABEL_CLASS}>Estimated Cost</span>
+            <span className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{egp(row.estimatedCost)}</span>
           </div>
         )}
-        <div className="flex flex-col">
-          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Pay Date</span>
-          <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
-            <CalendarDays className="h-3 w-3 text-slate-400" />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={FACT_LABEL_CLASS}>Pay Date</span>
+          <span className={`flex items-center gap-1 break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
+            <CalendarDays aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-400" />
             {formatDate(row.payDate)}
           </span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Submitted</span>
-          <span className="text-phx-md font-bold text-slate-700">{formatDate(row.submittedAt)}</span>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={FACT_LABEL_CLASS}>Submitted</span>
+          <span className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{formatDate(row.submittedAt)}</span>
         </div>
         {inTable ? null : (
-          <div className="flex flex-col">
-            <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">{row.waitingFor ? "You approved" : "Decided"}</span>
-            <span className="text-phx-md font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className={FACT_LABEL_CLASS}>{row.waitingFor ? "You approved" : "Decided"}</span>
+            <span className={`break-words text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{formatDate(row.decidedAt)}</span>
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 bg-slate-50/50 px-4 py-3">
-        <Link
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-          href={`/marketing-requests/${row.id}`}
-        >
-          <Eye className="h-3.5 w-3.5" />
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+        <Link className={landingActionClassName("outline")} href={`/marketing-requests/${row.id}`}>
+          <Eye aria-hidden="true" className="h-3.5 w-3.5" />
           Open the full record
         </Link>
       </div>
@@ -219,15 +275,13 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
-  const Icon = OUTCOME_ICON[row.outcome];
-
+  // A flat row inside the list's own panel — never a shadowed card on a card — with the outcome
+  // carried by its left rail.
   return (
-    <Card className="rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-      <div
-        className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${OUTCOME_ACCENT[row.outcome]}`}
-      >
+    <article className={`min-w-0 border-b border-l-[3px] border-b-slate-200 bg-white last:border-b-0 ${OUTCOME_RAIL[row.outcome]}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
+          <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{row.requestCode}</p>
           {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
               second line" and only the first half is the owner's rule — AGENTS.md §4 says that where
               the no-ellipsis rule meets the no-horizontal-scroll rule, WRAPPING WINS. The measurement
@@ -238,18 +292,15 @@ function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
           <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
             {row.requestTitle}
           </h3>
-          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500" dir="auto">
             Customer: {row.customerName} · {row.requesterRole}
           </p>
         </div>
-        <Badge className="shrink-0" variant={OUTCOME_VARIANT[row.outcome]}>
-          <Icon className="mr-1 h-3 w-3" />
-          {row.outcomeLabel}
-        </Badge>
+        <OutcomeMark row={row} />
       </div>
 
       <HistoryDecisionDetail row={row} />
-    </Card>
+    </article>
   );
 }
 
@@ -268,7 +319,6 @@ function HistoryTableRow({
   onToggle: () => void;
   row: MarketingApproverHistoryRow;
 }) {
-  const Icon = OUTCOME_ICON[row.outcome];
   const Chevron = isOpen ? ChevronDown : ChevronRight;
   const detailId = `history-detail-${row.id}`;
   // The final word, in one scannable line. It wraps inside its column, so a long approver name
@@ -282,34 +332,31 @@ function HistoryTableRow({
   return (
     <>
       <tr
-        className="cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/30"
+        className={`cursor-pointer border-b border-slate-200 align-top transition-colors hover:bg-slate-50 motion-reduce:transition-none ${isOpen ? "bg-slate-50" : ""}`}
         onClick={onToggle}
       >
-        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-500">{row.requestCode}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-500">{row.requestCode}</td>
         <td className="px-3 py-2.5">
-          <span className="block break-words text-phx-md font-black text-slate-950">{row.requestTitle}</span>
-          <span className="block break-words text-phx-xs font-medium text-slate-500">Customer: {row.customerName}</span>
+          <span className={`block break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{row.requestTitle}</span>
+          <span className="block break-words text-phx-xs font-medium text-slate-500" dir="auto">Customer: {row.customerName}</span>
         </td>
         <td className="min-w-0 break-words px-3 py-2.5">
-          <Badge variant={OUTCOME_VARIANT[row.outcome]}>
-            <Icon className="mr-1 h-3 w-3" />
-            {row.outcomeLabel}
-          </Badge>
+          <OutcomeMark row={row} />
         </td>
-        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">{finalResponse}</td>
-        <td className="min-w-0 break-words px-3 py-2.5 text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</td>
-        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">{formatDate(row.decidedAt)}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-semibold text-slate-700">{finalResponse}</td>
+        <td className={`min-w-0 break-words px-3 py-2.5 text-phx-md font-bold tabular-nums ${LANDING_INK}`}>{egp(row.estimatedCost)}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-semibold tabular-nums text-slate-700">{formatDate(row.decidedAt)}</td>
         <td className="min-w-0 break-words px-3 py-2.5 text-right">
           <button
             {...rowDetailToggleProps(detailId, isOpen)}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className={landingActionClassName("outline", "whitespace-nowrap")}
             onClick={(event) => {
               event.stopPropagation();
               onToggle();
             }}
             type="button"
           >
-            <Chevron className="h-3.5 w-3.5" />
+            <Chevron aria-hidden="true" className="h-3.5 w-3.5" />
             {isOpen ? "Hide trail" : "Full trail"}
           </button>
         </td>
@@ -329,10 +376,11 @@ function HistoryTableRow({
 
 function HistorySkeleton() {
   return (
-    <div className={`animate-pulse space-y-2 rounded-sm border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
-      <div className="h-3 w-40 rounded-sm bg-slate-200" />
-      <div className="h-2.5 w-56 rounded-sm bg-slate-100" />
-      <div className="h-2.5 w-32 rounded-sm bg-slate-100" />
+    <div aria-busy="true" className={`space-y-2 border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
+      <span className="sr-only">Loading</span>
+      <div aria-hidden="true" className="employee-portal-skeleton h-3 w-40" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-2.5 w-56" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-2.5 w-32" />
     </div>
   );
 }
@@ -349,7 +397,7 @@ const HISTORY_PAGE_SIZE = 25;
  * Loads lazily — this component is only mounted once the tab is actually opened, so the default
  * "In approval" view costs exactly what it did before.
  *
- * Built to the same identity as the live "In approval" tab it sits beside: a metric strip that
+ * Built to the same identity as the live "In approval" tab it sits beside: a figure strip that
  * answers "how much was decided, and how did it land" before a single row is read; a scannable
  * desktop TABLE with the full approval trail one click away; the rich card only below `md`, where
  * the owner rule is cards, never a table; and the list windowed so a long history is paged, not a
@@ -458,167 +506,159 @@ export function MarketingRequestHistory() {
     });
   }, []);
 
+  const hasRows = !isLoading && rows.length > 0;
+
   return (
     <div className="space-y-3" dir="auto">
-      {/* ------ Header + Refresh ------------------------------------------------------------------ */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-100 text-slate-600 ring-1 ring-slate-200">
-            <History className="h-3.5 w-3.5" />
-          </div>
-          <div>
-            <h2 className="text-phx-lg font-black tracking-tight text-slate-950">
-              {scope === "company" ? "Every request already decided" : "Requests you took part in"}
-            </h2>
-            <p className="text-phx-xs font-medium text-slate-400">
-              {isLoading
-                ? "Loading…"
-                : `${visibleRows.length} of ${rows.length} request${rows.length === 1 ? "" : "s"}`}
-            </p>
-          </div>
-        </div>
-        <button
-          aria-label="Refresh history"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
-          onClick={() => {
-            setIsLoading(true);
-            setError(null);
-            void loadHistory();
-          }}
-          title="Refresh history"
-          type="button"
-        >
-          {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-
-      {/* ------ Error ---------------------------------------------------------------------------- */}
-      {error ? (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
-          <span className="min-w-0 break-words">{error}</span>
-        </div>
-      ) : null}
-
-      {/* ------ How this history landed, at a glance ---------------------------------------------
-          A card only when it has something to count — an empty category padded onto the strip
-          reads as a gap in the data rather than as a zero worth showing (owner rule: never pad). */}
-      {!isLoading && rows.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <PortalMetricCard
-            accent="slate"
-            icon={History}
-            label="Decided"
-            note="Approved, rejected or returned"
-            value={rows.length - summary.waiting}
-          />
-          {summary.waiting > 0 ? (
-            <PortalMetricCard
-              accent="orange"
-              icon={Hourglass}
-              label="Waiting"
-              note="You approved; the next stage has not answered"
-              value={summary.waiting}
+      {/* ------ Header, figures and filters: ONE white panel ---------------------------------------
+          The title with its count and Refresh on the right; under it, the figure strip on hairlines
+          (a cell only when it has something to count — an empty category padded onto the strip
+          reads as a gap in the data rather than as a zero worth showing; owner rule: never pad);
+          then search and the outcome filter. */}
+      <section className={`@container min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5 sm:px-4">
+          <LandingTitle>{scope === "company" ? "Every request already decided" : "Requests you took part in"}</LandingTitle>
+          <div className="flex min-w-0 items-center gap-3">
+            <LandingMeta
+              items={[
+                isLoading ? "Loading…" : `${visibleRows.length} of ${rows.length} request${rows.length === 1 ? "" : "s"}`,
+              ]}
             />
-          ) : null}
-          {summary.approved > 0 ? (
-            <PortalMetricCard
-              accent="emerald"
-              icon={CheckCircle2}
-              label="Approved"
-              note="Cleared the whole chain"
-              value={summary.approved}
-            />
-          ) : null}
-          {summary.returned > 0 ? (
-            <PortalMetricCard
-              accent="amber"
-              icon={Undo2}
-              label="Returned"
-              note="Sent back for a change"
-              value={summary.returned}
-            />
-          ) : null}
-          {summary.rejected > 0 ? (
-            <PortalMetricCard
-              accent="rose"
-              icon={XCircle}
-              label="Rejected"
-              note="Turned down on the chain"
-              value={summary.rejected}
-            />
-          ) : null}
-          {summary.value > 0 ? (
-            <PortalMetricCard
-              accent="orange"
-              icon={Wallet}
-              label="Value decided"
-              note="Estimated cost across this history"
-              value={egp(summary.value)}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* ------ Search + outcome filter ------------------------------------------------------------ */}
-      {!isLoading && rows.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 shadow-sm sm:max-w-xs">
-            <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-            {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
-            <input
-              className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-phx-md"
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(0);
-              }}
-              placeholder="Search code, customer, requester"
-              type="search"
-              value={search}
-            />
-          </label>
-          <div className="flex flex-wrap items-center gap-1.5">
             <button
-              aria-pressed={outcomeFilter === "all"}
-              className={`min-h-9 rounded-sm border px-3 text-phx-sm font-bold transition ${
-                outcomeFilter === "all"
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
+              aria-label="Refresh history"
+              className={landingActionClassName("outline", "h-auto min-h-10 w-10 bg-white px-0 sm:min-h-10")}
               onClick={() => {
-                setOutcomeFilter("all");
-                setPage(0);
+                setIsLoading(true);
+                setError(null);
+                void loadHistory();
               }}
+              title="Refresh history"
               type="button"
             >
-              All ({rows.length})
+              {isLoading ? (
+                <LoadingSpinner className="h-3.5 w-3.5 text-current" />
+              ) : (
+                <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" />
+              )}
             </button>
-            {outcomeChips.map((chip) => (
+          </div>
+        </header>
+
+        {hasRows ? (
+          <div className="overflow-hidden border-t border-slate-200">
+            <div className="-mb-px -mr-px grid grid-cols-2 @2xl:grid-cols-3">
+              <HistoryFigure
+                label="Decided"
+                note="Approved, rejected or returned"
+                value={rows.length - summary.waiting}
+              />
+              {summary.waiting > 0 ? (
+                <HistoryFigure
+                  label="Waiting"
+                  note="You approved; the next stage has not answered"
+                  tone="text-amber-700"
+                  value={summary.waiting}
+                />
+              ) : null}
+              {summary.approved > 0 ? (
+                <HistoryFigure
+                  label="Approved"
+                  note="Cleared the whole chain"
+                  tone="text-emerald-700"
+                  value={summary.approved}
+                />
+              ) : null}
+              {summary.returned > 0 ? (
+                <HistoryFigure
+                  label="Returned"
+                  note="Sent back for a change"
+                  tone="text-amber-700"
+                  value={summary.returned}
+                />
+              ) : null}
+              {summary.rejected > 0 ? (
+                <HistoryFigure
+                  label="Rejected"
+                  note="Turned down on the chain"
+                  tone="text-rose-700"
+                  value={summary.rejected}
+                />
+              ) : null}
+              {summary.value > 0 ? (
+                <HistoryFigure
+                  label="Value decided"
+                  note="Estimated cost across this history"
+                  value={egp(summary.value)}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ------ Search + outcome filter ---------------------------------------------------------- */}
+        {hasRows ? (
+          <div className="flex flex-col gap-2 border-t border-slate-200 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-4">
+            <label className={`flex min-w-0 flex-1 items-center gap-2 border border-slate-300 bg-white px-3 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/20 sm:max-w-xs ${adminChipDepthClassName}`}>
+              <Search aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
+              <input
+                className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-phx-md"
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(0);
+                }}
+                placeholder="Search code, customer, requester"
+                type="search"
+                value={search}
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
-                aria-pressed={outcomeFilter === chip.outcome}
-                className={`min-h-9 rounded-sm border px-3 text-phx-sm font-bold transition ${
-                  outcomeFilter === chip.outcome
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-                key={chip.outcome}
+                aria-pressed={outcomeFilter === "all"}
+                className={landingActionClassName(outcomeFilter === "all" ? "solid" : "outline")}
                 onClick={() => {
-                  setOutcomeFilter(chip.outcome);
+                  setOutcomeFilter("all");
                   setPage(0);
                 }}
                 type="button"
               >
-                {chip.label} ({chip.count})
+                All ({rows.length})
               </button>
-            ))}
+              {outcomeChips.map((chip) => (
+                <button
+                  aria-pressed={outcomeFilter === chip.outcome}
+                  className={landingActionClassName(outcomeFilter === chip.outcome ? "solid" : "outline")}
+                  key={chip.outcome}
+                  onClick={() => {
+                    setOutcomeFilter(chip.outcome);
+                    setPage(0);
+                  }}
+                  type="button"
+                >
+                  {chip.label} ({chip.count})
+                </button>
+              ))}
+            </div>
           </div>
+        ) : null}
+      </section>
+
+      {/* ------ Error: a rose rail line, never a tinted box ---------------------------------------- */}
+      {error ? (
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`} role="alert">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+          <p className="min-w-0 break-words text-phx-sm font-semibold text-rose-800">{error}</p>
         </div>
       ) : null}
 
-      {/* ------ The cap, said out loud rather than hidden ------------------------------------------ */}
+      {/* ------ The cap, said out loud rather than hidden — an amber rail line ---------------------- */}
       {truncated ? (
-        <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
-          Showing the most recently decided requests only. Older ones are in the full marketing
-          request register.
+        <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-400" />
+          <p className="min-w-0 break-words text-phx-sm font-semibold text-slate-700">
+            Showing the most recently decided requests only. Older ones are in the full marketing
+            request register.
+          </p>
         </div>
       ) : null}
 
@@ -629,29 +669,22 @@ export function MarketingRequestHistory() {
           <HistorySkeleton />
         </div>
       ) : rows.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
-            <History className="h-4 w-4" />
-          </div>
-          <p className="text-phx-base font-black text-slate-800">Nothing has been decided yet</p>
-          <p className="max-w-sm text-phx-sm font-medium text-slate-500">
+        <section className={`min-w-0 border border-slate-200 bg-white px-4 py-8 ${adminSoftDepthClassName}`}>
+          <p className={`break-words text-phx-base font-bold ${LANDING_INK}`}>Nothing has been decided yet</p>
+          <p className="mt-1 max-w-prose break-words text-phx-sm font-medium text-slate-500">
             {scope === "company"
               ? "No marketing request has been approved, rejected or returned so far."
               : "Once a request you raised — or one you are an approver on — is answered, it moves here with the full decision trail."}
           </p>
-        </Card>
+        </section>
       ) : visibleRows.length === 0 ? (
-        <Card className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <p className="text-phx-md font-bold text-slate-700">No request matches this filter.</p>
-        </Card>
+        <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+          <LandingEmpty>No request matches this filter.</LandingEmpty>
+        </section>
       ) : (
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+        <section className={`min-w-0 overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
           <PortalResponsiveDataList
-            empty={
-              <p className="px-4 py-8 text-center text-phx-md font-bold text-slate-500">
-                No request matches this filter.
-              </p>
-            }
+            empty={<LandingEmpty>No request matches this filter.</LandingEmpty>}
             getKey={(row) => `history-${row.id}`}
             items={[...pagedRows]}
             renderCard={(row) => <HistoryMobileCard row={row} />}
@@ -670,11 +703,11 @@ export function MarketingRequestHistory() {
                 }
               >
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
+                  <tr className="border-b border-slate-200">
                     {["Request", "Activity · Requester", "Outcome", "Final response", "Value", "Decided", ""].map(
                       (heading, index) => (
                         <th
-                          className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500"
+                          className="px-3 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500"
                           key={`${heading}-${index}`}
                           scope="col"
                         >
@@ -702,7 +735,7 @@ export function MarketingRequestHistory() {
               label={`Showing ${safePage * HISTORY_PAGE_SIZE + 1}–${safePage * HISTORY_PAGE_SIZE + pagedRows.length} of ${visibleRows.length}`}
             >
               <button
-                className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+                className={landingActionClassName("outline", "disabled:opacity-40")}
                 disabled={safePage === 0}
                 onClick={() => setPage(Math.max(0, safePage - 1))}
                 type="button"
@@ -710,7 +743,7 @@ export function MarketingRequestHistory() {
                 Previous
               </button>
               <button
-                className={`min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 disabled:shadow-none ${adminControlDepthClassName}`}
+                className={landingActionClassName("outline", "disabled:opacity-40")}
                 disabled={safePage >= pageCount - 1}
                 onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
                 type="button"
@@ -719,7 +752,7 @@ export function MarketingRequestHistory() {
               </button>
             </PortalPagination>
           ) : null}
-        </Card>
+        </section>
       )}
     </div>
   );
