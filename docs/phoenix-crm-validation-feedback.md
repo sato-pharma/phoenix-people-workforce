@@ -884,7 +884,31 @@ Nobody but a Super Admin may reject it. What the SFE Manager or the system appro
 
 **Where it is enforced.**
 
-- Database, migration `20261116230741_phoenix_crm_super_admin_approval_is_final.sql`: `phoenix_crm_is_super_admin(text)` is the one test. `phoenix_crm_decide_validation_review` and `phoenix_crm_decide_shared_place` raise `phoenix_crm:approved_by_super_admin` for anyone else, which the service maps to a 403 with the sentence "The administrator approved this, so only the administrator can take it back." `phoenix_crm_super_admin_hr_ids()` returns the same list, built on the same test, for the screen.
+- Database, migration `20261116230741_phoenix_crm_super_admin_approval_is_final.sql`: `phoenix_crm_is_super_admin(text)` is the one test. `phoenix_crm_decide_validation_review` and `phoenix_crm_decide_shared_place` raise `phoenix_crm:approved_by_super_admin` for anyone else, which the service maps to a 403 with the sentence "This is the system administrator's decision. You have no right to override it." (the wording of 20 November 2026; until then it read "The administrator approved this, so only the administrator can take it back.") `phoenix_crm_super_admin_hr_ids()` returns the same list, built on the same test, for the screen.
 - Service: `refuseValidatedPlace` reads the review's status and approver and refuses BEFORE its upsert. After the upsert, the database could no longer see the approval (only a place he created).
 - Screens: the buildings board, the validated places (and the review deck, which reuses its Refuse button), the reviews queue and the customers seated in a polyclinic show the sentence instead of Reject or Refuse; bulk reject and bulk refuse skip locked rows. The rows carry `lockedBySuperAdmin`, which is computed only for a viewer who is not a Super Admin.
 - Shared logic: `src/lib/phoenix-crm/super-admin-approval-rules.ts` (the sentence and the pure check) and `src/lib/phoenix-crm/server/super-admin-approval.ts` (the list, which throws on a failed read rather than answering an empty set).
+
+## Nothing the Super Admin did is undone below him (2026-11-20)
+
+The owner, 20 November 2026: *"anything done by the system administrator in the system, any manual validation, any approval, anything done by the system administrator in the system, the SFE can never return it back. And whenever he try to do anything that return back or it is the opposite of the system administrator opinion, it clearly to him that this is the system administrator decision and you have no right to overcome it."*
+
+**The sentence.** Every refusal reads *"This is the system administrator's decision. You have no right to override it."* (`SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT`), a 403 the screens print as written. The 16 November reject lock above now uses the same sentence.
+
+**What is refused, for anybody who is not a Super Admin** (each checked in the service before its write, `src/lib/phoenix-crm/server/super-admin-approval.ts`):
+
+| The act | Refused when |
+| --- | --- |
+| Moving a validated place (`movePlace`), removing one (`retirePlace`) | the place was created or photographed by a Super Admin, or the newest event that decided its point (`PLACE_STANDING_EVENTS`: added, moved, restored, seated, updated, validation approved) is his |
+| Dropping a customer off a list (`sfeDropFromList`), moving him to another rep (`moveCustomerToSeat`), bringing him back from the Archive (`sfeBringBack`) | the newest event that decided where he stands (`LIST_STANDING_EVENTS`: validated, validation approved, restored, moved in or out, dropped, archived, request decided, place or building restored) is a Super Admin's |
+| Refusing a list request, an off-plan or recorded visit, or a request to edit a sent week at a later step | a Super Admin approved an earlier step (`manager_decided_by_hr_id` or `admin_decided_by_hr_id`) — approving it is still allowed |
+| Returning a week or a month (`transitionPlan`, `decideMonthlyPlan`) | the plan is approved and was approved by a Super Admin, or as the Administrator (`decided_by_role = 'administrator'`) |
+| Answering a marketing doctor-list check the other way (`decideMarketingListCheck`) | a Super Admin gave the answer it has — giving the same answer again is allowed |
+
+**What deliberately does not lock.** His bulk loads and housekeeping never freeze a list: on production on 20 November 2026, 3,413 `customer_pending` rows, 528 `customer_loaded`, 453 merges and 772 re-measures carry his id. His rejection of a photo does not lock the customer either: it sends the customer back to be captured, and says nothing about whether he belongs on the list. A rep's own drop request, decided by his district manager and SFE, is unchanged.
+
+**Already the Super Admin's alone, so nothing to lock:** Place checks decisions, taking a rejection back, seating in a polyclinic, trusted points, admin photos, integrity cases, held full names, Rep Exceptions and Polyclinic Caps, team start and stop, missed records and visit edits.
+
+**Not covered by this change:** New Hire Accounts (a resend by the SFE Manager replaces a setup link the Super Admin sent; it decides nothing), the Doctor Coverage visit norms (a setting both may change, last save wins), and the SFE Manager's grants outside Phoenix CRM (attendance, leave, weekly sales, weekly plans, contact lists, sales import, employee profile), which were not traced row by row.
+
+Pinned by `tests/phoenix-crm-super-admin-approval-is-final.test.ts` (`checkEverySfeUndo`): each guard was removed in turn and the test failed naming it.

@@ -98,6 +98,7 @@ import {
   type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { assertApprovedPlanStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { ensureReferenceCustomersForView, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -975,7 +976,7 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
 
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_monthly_plans")
-    .select("id, seat_id, month_start, status, is_test, submitted_by_hr_id")
+    .select("id, seat_id, month_start, status, is_test, submitted_by_hr_id, decided_by_hr_id, decided_by_role")
     .eq("id", monthlyPlanId)
     .maybeSingle();
   throwIfError(error);
@@ -998,6 +999,8 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
     actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";
+    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
+    await assertApprovedPlanStands(viewer, headerRow);
     if (monthEndOf(monthStart) < today) throw conflictError("This month is over, so its plan can no longer be returned. Reload the page.");
     if (!note) throw validationError("Write a note for the rep on what to change.");
   }
