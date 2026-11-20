@@ -17,8 +17,16 @@
  * server on the same port exactly as before.
  *
  * Two limits keep the wait from becoming the out-of-memory crash it exists to avoid:
- *   - past 92% of the cap it restarts at once, whatever is in flight (V8 dies near 100%);
- *   - after 90 s of waiting it restarts anyway, for a page that never goes quiet (a poller).
+ *   - past 86% of the cap it restarts at once, whatever is in flight (V8 dies near 100%);
+ *   - after 20 s of waiting it restarts anyway, for a page that never goes quiet (a poller).
+ *
+ * WHY 86% AND 20 s, NOT 92% AND 90 s (2026-11-20). The spare laptop's dev server died out of memory
+ * (exit 134, "Ineffective mark-compacts near heap limit", heap 3,974 of 4,096 MB) while this hook was
+ * still waiting on three open requests. Those requests were page COMPILES, and a compile grows the heap
+ * while it is open, so waiting for it is waiting for the crash. Near the limit V8 spends its time in
+ * back-to-back garbage collections, so the 2 s check rarely runs and the heap passed 92% between two
+ * checks. 86% leaves about 600 MB of room on a 4 GB cap. A streamed page finishes in seconds, so 20 s
+ * still covers the 419 case this file exists for.
  *
  * Only ever active inside the dev server's own process (start-server.js), only when the launcher
  * asked for it (PHOENIX_DEV_GRACEFUL_RESTART=1), never in production. Pinned by
@@ -31,9 +39,9 @@ import v8 from "node:v8";
 /** Next's own trigger (getMemoryRestartStats, next/dist/server/lib/utils.js): 80% of the heap limit. */
 export const RESTART_AT = 0.8;
 /** Past this, waiting risks the very out-of-memory crash the restart is for. */
-export const HARD_STOP_AT = 0.92;
+export const HARD_STOP_AT = 0.86;
 /** The longest a restart waits for the server to go quiet. */
-export const MAX_WAIT_MS = 90_000;
+export const MAX_WAIT_MS = 20_000;
 /** Next's RESTART_EXIT_CODE: `next dev` respawns the server when its child exits with it. */
 export const NEXT_RESTART_EXIT_CODE = 77;
 
