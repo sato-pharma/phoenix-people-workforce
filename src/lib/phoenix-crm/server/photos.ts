@@ -173,7 +173,12 @@ export async function uploadPhotoForSlot(input: PhotoSlotInput, imageDataUrl: un
   return putPhotoInSlot(await issuePhotoSlot(input), bytes);
 }
 
-function decodeJpegDataUrl(value: unknown): Buffer {
+/** The same upload for bytes already decoded (and judged) by the caller — a Phoenix Camera file keeps its seal. */
+export async function uploadPhotoBytesForSlot(input: PhotoSlotInput, bytes: Buffer): Promise<{ path: string; issuedAt: string }> {
+  return putPhotoInSlot(await issuePhotoSlot(input), bytes);
+}
+
+export function decodeJpegDataUrl(value: unknown): Buffer {
   const match = DATA_URL_PATTERN.exec(String(value ?? "").replace(/\s+/g, ""));
   if (!match) throw validationError("The photo could not be read. Take it again.");
   const bytes = Buffer.from(match[1], "base64");

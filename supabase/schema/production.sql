@@ -66121,9 +66121,13 @@ CREATE TABLE public.phoenix_crm_admin_photo_validations (
     place_id uuid,
     closed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rep_source text DEFAULT 'live'::text NOT NULL,
+    seal_id text,
+    seal_report jsonb,
     CONSTRAINT phoenix_crm_admin_photo_validations_captured CHECK (((status <> ALL (ARRAY['captured'::text, 'validated'::text])) OR (rep_lat IS NOT NULL))),
     CONSTRAINT phoenix_crm_admin_photo_validations_closed CHECK (((status = ANY (ARRAY['validated'::text, 'cancelled'::text])) = (closed_at IS NOT NULL))),
     CONSTRAINT phoenix_crm_admin_photo_validations_reading CHECK ((((rep_captured_at IS NULL) = (rep_lat IS NULL)) AND ((rep_lat IS NULL) = (rep_lon IS NULL)) AND ((rep_lat IS NULL) = (rep_hr_id IS NULL)))),
+    CONSTRAINT phoenix_crm_admin_photo_validations_seal CHECK (((rep_source = ANY (ARRAY['live'::text, 'sealed_photo'::text])) AND ((rep_source = 'sealed_photo'::text) = (seal_id IS NOT NULL)) AND ((seal_id IS NULL) = (seal_report IS NULL)) AND ((rep_source = 'live'::text) OR (rep_lat IS NOT NULL)))),
     CONSTRAINT phoenix_crm_admin_photo_validations_status CHECK ((status = ANY (ARRAY['watching'::text, 'captured'::text, 'validated'::text, 'cancelled'::text]))),
     CONSTRAINT phoenix_crm_admin_photo_validations_validated CHECK (((status = 'validated'::text) = (place_id IS NOT NULL)))
 );
@@ -66135,6 +66139,24 @@ ALTER TABLE public.phoenix_crm_admin_photo_validations OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.phoenix_crm_admin_photo_validations IS 'The Super Admin validates a customer for a rep with a photo he uploads; the location is the rep''s own live reading taken while the watch is on (owner, 2026-11-20).';
+
+--
+-- Name: COLUMN phoenix_crm_admin_photo_validations.rep_source; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_admin_photo_validations.rep_source IS '''live'': the rep sent the reading from the List while the watch was on; ''sealed_photo'': the reading came inside a photo sealed by the Phoenix Camera app (owner, 2026-11-20).';
+
+--
+-- Name: COLUMN phoenix_crm_admin_photo_validations.seal_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_admin_photo_validations.seal_id IS 'SHA-256 of the Phoenix Camera seal''s signature — one seal validates one customer.';
+
+--
+-- Name: COLUMN phoenix_crm_admin_photo_validations.seal_report; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_admin_photo_validations.seal_report IS 'What the Phoenix Camera seal said and what Phoenix checked: time, satellites, phone model, the phone key''s fingerprint, the warnings shown. No photo, no key.';
 
 --
 -- Name: phoenix_crm_behaviour_integrity; Type: TABLE; Schema: public; Owner: postgres
@@ -84941,6 +84963,12 @@ CREATE INDEX phoenix_crm_admin_deletions_when_idx ON public.phoenix_crm_admin_de
 --
 
 CREATE UNIQUE INDEX phoenix_crm_admin_photo_validations_open_idx ON public.phoenix_crm_admin_photo_validations USING btree (customer_id) WHERE (status = ANY (ARRAY['watching'::text, 'captured'::text]));
+
+--
+-- Name: phoenix_crm_admin_photo_validations_seal_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX phoenix_crm_admin_photo_validations_seal_idx ON public.phoenix_crm_admin_photo_validations USING btree (seal_id) WHERE ((seal_id IS NOT NULL) AND (status <> 'cancelled'::text));
 
 --
 -- Name: phoenix_crm_admin_photo_validations_seat_idx; Type: INDEX; Schema: public; Owner: postgres
