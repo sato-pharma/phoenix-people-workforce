@@ -57,6 +57,7 @@ import { runPhoenixInspectRouteFenceTests } from "./phoenix-inspect-route-fence.
 import { runPhoenixInspectMeasureTests } from "./phoenix-inspect-measure.test.ts";
 import { runPhoenixInspectMcpHttpTests } from "./phoenix-inspect-mcp-http.test.ts";
 import { runChatgptConnectorOAuthTests } from "./chatgpt-connector-oauth.test.ts";
+import { runChatgptConnectorCaptureTests } from "./chatgpt-connector-capture.test.ts";
 import { runChatgptConnectorToolsTests } from "./chatgpt-connector-tools.test.ts";
 import { runPhoenixInspectAuthorizationServerTests } from "./phoenix-inspect-authorization-server.test.ts";
 import { runSystemAuditApiPageMapTests } from "./system-audit-api-page-map.test.ts";
@@ -2391,6 +2392,7 @@ import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-healt
 import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
 import { runForeignKeyIndexesTests } from "./foreign-key-indexes.test.ts";
 import { runSchemaBaselineTests } from "./schema-baseline.test.ts";
+import { runDbAccessTestsTests } from "./db-access-tests.test.ts";
 import { runSupabaseFolderLayoutTests } from "./supabase-folder-layout.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
@@ -3482,6 +3484,7 @@ await runTest("the visual explorer reads every colour the browser computes (rgb,
 await runTest("the visual explorer's remote MCP door admits only the owner's token for this resource, refuses a foreign origin or host, production and oversized bodies, and sends only masked images within the byte cap", runPhoenixInspectMcpHttpTests);
 await runTest("the ChatGPT connector registers only ChatGPT return addresses, needs PKCE, spends a code once, revokes a token family on a refresh replay or a changed account, refuses another address, audits every call without the answer and builds PDFs in the ink rule", runChatgptConnectorOAuthTests);
 await runTest("the ChatGPT connector tools read as the signed-in seat: names match in English and Arabic, sales come from the published closing by value, and the raw table reader is the owner's alone and refuses secrets", runChatgptConnectorToolsTests);
+await runTest("the ChatGPT connector's screenshot and video tools open only Phoenix pages, send GET and HEAD alone through a fence that fails closed, never open a page that writes when rendered, and show the picture as an image block and the video in _meta, never as text", runChatgptConnectorCaptureTests);
 await runTest("the visual explorer's built-in sign-in registers only ChatGPT, checks the owner through Google, binds codes to PKCE, rotates refresh tokens and revokes on replay, stops every token at the kill switch, and holds one page per call under a hard time limit", runPhoenixInspectAuthorizationServerTests);
 await runTest("every API route maps to the sidebar page that calls it, or is listed as having no screen", runSystemAuditApiPageMapTests);
 await runTest("system audit columns 10 and 11 count over the period, so a filter never turns SHARED into UNIQUE", runSystemAuditPeriodCountsTests);
@@ -9146,6 +9149,10 @@ await runTest(
 await runTest(
   "the production schema baseline is normalised, committed and checked every night (REC-041: noise stripped, objects compared by name, unexplained drift is red)",
   runSchemaBaselineTests,
+);
+await runTest(
+  "the weekly pgTAP access tests read only a full pass as a pass, roll themselves back, match their plan, and run after the restore with an ACCESS alert",
+  runDbAccessTestsTests,
 );
 await runTest(
   "the supabase folder says what each file is (F-ENG-016, F-DB-013: only seed.sql at the root, one-off scripts in supabase/scripts, the edge function source present and outside the app typecheck)",

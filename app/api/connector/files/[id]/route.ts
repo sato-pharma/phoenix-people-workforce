@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { JOB_EXPORTS_BUCKET } from "@/lib/background-jobs/service";
+import { CONNECTOR_FILE_CONTENT_TYPES, type ConnectorFileKind } from "@/lib/chatgpt-connector/files";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -55,11 +56,14 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const fileName = String(row.file_name);
   const asciiName = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "'");
+  const kind = String(row.kind) as ConnectorFileKind;
+  // A screenshot or a video opens in the browser tab to be looked at; a sheet or a PDF downloads.
+  const media = kind === "png" || kind === "mp4" || kind === "webm";
   return new Response(blob, {
     headers: {
       "Cache-Control": "private, no-store",
-      "Content-Type": row.kind === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      "Content-Type": CONNECTOR_FILE_CONTENT_TYPES[kind] ?? "application/octet-stream",
+      "Content-Disposition": `${media ? "inline" : "attachment"}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       "X-Content-Type-Options": "nosniff",
     },
   });

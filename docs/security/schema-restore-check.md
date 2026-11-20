@@ -69,6 +69,53 @@ container:
 | Any object missing, added or different after the restore | **red** |
 | The check could not run (wrong major, a database that is not fresh, the prelude failed, a timeout) | **red**: nothing measured is never a pass |
 
+## The access tests
+
+Added 20 Nov 2026. Once the restore has passed, the same job runs `node scripts/db-access-tests.mjs`, which
+runs `supabase/tests/database/access.test.sql` with **pgTAP** (the Postgres testing extension, 1.3.3 on
+the image) inside the database that was just rebuilt. That database holds production's own tables,
+grants, row policies and functions, and none of its data, so it is the right place to ask the one
+question our other tests cannot: **does the database itself refuse the read?** Our other tests check that a
+permission is written correctly; these sign in as made-up people and count the rows that come back.
+
+**What it checks (46 tests):**
+
+1. **Salaries.** Two Medical Reps, a resigned rep, two District Managers, Finance, the CEO, the Super
+   Admin, an HR Operations seat and a signed-in user with no access profile each read `salary_records`.
+   A rep sees only their own pay row, a manager only their own team's, the resigned rep's row only by
+   the payroll and company-wide seats, and the user with no profile sees nothing.
+2. **Compensation.** The same people read `employee_compensation`, with the same answers.
+3. **Employee records and access profiles.** Who reads which `employees` and `user_access_profiles` rows.
+4. **The role helpers every policy calls** (`private.phx_current_role()` and the `current_access_*`
+   functions) return the right role and scope for each person.
+5. **Writes from the browser are refused**, even signed in as the Super Admin: the browser role holds no
+   write privilege anywhere (error 42501).
+6. **The anonymous browser key reads nothing.**
+7. **Whole-database rules**, asked of Postgres's permission engine rather than of the grant text: the
+   anonymous role can read no table or view and run no function, the signed-in role can write nothing,
+   every table it can read has row security on, every view it can read runs as the caller, and it may run
+   exactly the 11 owner-rights functions listed in the file.
+
+**It changes nothing.** The made-up people are written inside one transaction with triggers and foreign
+keys switched off for that transaction only, and the file ends in `rollback`. The script refuses any
+database that is not on this machine (`assertScratchUrl`), as the restore does.
+
+**The verdict.** `readTap` (`scripts/lib/db-access-tests.mjs`) passes a run only when the plan line was
+printed, it plans at least one test, every planned test printed `ok` and none printed `not ok`. A run
+that stopped part way, printed nothing or printed more than it planned is red. A red run sends the same
+Telegram alert as a failed restore, titled **DATABASE ACCESS TESTS FAILED**, with the first failing test.
+
+**When one fails.** Read which test failed on the run's page. Either a migration changed who can see
+what on purpose, and the test's expected count is updated in the same pull request as that migration, or
+it did not mean to, and the migration is the defect. Never loosen a test to make it pass.
+
+**Adding a test.** Add the `select is(…)` (or `ok`, `throws_ok`, `set_eq`) line and raise
+`plan(N)` by one. `tests/db-access-tests.test.ts` counts the assertions against the plan, so a test
+added without raising it fails CI on the pull request, not on a Monday morning.
+
+**Cost.** It reuses the restore job's database and containers: no new job, no new schedule, and a few
+seconds on the weekly run.
+
 ## After a real rebuild
 
 Run the prelude, then the file, exactly as the check does. Then:
@@ -94,8 +141,8 @@ differing objects. A dispatch with `test_alert` ticked sends a self-test alert a
 
 - **Weekly, Mondays 04:30 UTC (06:30 Cairo).** The file changes when a migration is applied and the
   baseline refreshed, a few times a week, so a weekly rebuild is enough.
-- **On a push to `main` that changes the check itself** (the workflow or `scripts/schema-baseline.mjs` and
-  its library). Production's workflow watch (`phoenix-github-workflow-watch`) reads each scheduled check's
+- **On a push to `main` that changes the check itself** (the workflow, `scripts/schema-baseline.mjs` and
+  its library, `scripts/db-access-tests.mjs` and its library, or `supabase/tests/database/`). Production's workflow watch (`phoenix-github-workflow-watch`) reads each scheduled check's
   last success on `main` and alerts once a day while there is none. So merging the check also records its
   first success, instead of raising "no success on record" every morning until the first Monday.
 - **By hand:** `gh workflow run schema-restore-check.yml`.
@@ -143,3 +190,6 @@ stack that already holds the application's schemas is refused as not fresh, so r
 - `.github/workflows/schema-restore-check.yml`: the weekly job and its alarm.
 - `tests/schema-baseline.test.ts`: pins the helpers, the committed file's roles, the image's major and the
   workflow's wiring.
+- `supabase/tests/database/access.test.sql`: the pgTAP access tests.
+- `scripts/db-access-tests.mjs` and `scripts/lib/db-access-tests.mjs`: runs them and reads the verdict.
+- `tests/db-access-tests.test.ts`: pins the verdict, the plan count and the workflow wiring.
