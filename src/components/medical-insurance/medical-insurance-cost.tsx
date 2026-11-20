@@ -242,7 +242,7 @@ function OpeningPanel({ view }: { view: MedicalInsuranceMoneyView }) {
 
   return (
     <AdminTableShell
-      description="Everyone on the policy from its first day, laid out as the policy's schedule is: per plan and age band, each band's premium the rate times its people. Ages are taken on the policy's first day."
+      description="Everyone on the policy from its first day, laid out as the policy's schedule is: per plan and age band, each band's premium the rate times its people, before the 1.55% tax. Ages are the insurer's: 2026 less the year of birth."
       title="The opening bill"
     >
       <div className="hidden md:block">
@@ -613,7 +613,7 @@ function RecordBillPanel() {
 
   return (
     <AdminTableShell
-      description="Type the bill's figures as Libano-Suisse printed them. It is compared with what the plan says it should be: an opening bill with the opening statement, additions and deletions with the joiners and leavers inside its dates. It pays nothing and writes nothing to payroll."
+      description="Type the bill's figures as Libano-Suisse printed them. It is compared with what the plan says it should be: an opening bill or premium instalment with its share of the opening statement (the year's premium and tax are paid quarterly, the first bill also carrying the cards and the issue fee), additions and deletions with the joiners and leavers inside its dates. It pays nothing and writes nothing to payroll."
       title="Record a bill"
     >
       <div className="space-y-3 p-4">
@@ -687,7 +687,10 @@ function InvoicePanel({ defaultOpen, invoice }: { defaultOpen: boolean; invoice:
       <Tiles
         tiles={[
           { label: "They billed", value: egpWords(comparison.billed) },
-          { label: "The plan says", value: comparison.expected === null ? "Not compared" : egpWords(comparison.expected) },
+          {
+            label: comparison.instalment ? `The plan says (instalment ${comparison.instalment.number} of ${comparison.instalment.of})` : "The plan says",
+            value: comparison.expected === null ? "Not compared" : egpWords(comparison.expected),
+          },
           { label: "Difference", value: comparison.difference === null ? "Not compared" : signed(comparison.difference) },
         ]}
       />
