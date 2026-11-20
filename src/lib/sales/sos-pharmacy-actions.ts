@@ -58,6 +58,18 @@ export type BrickUniverseEntry = { brickId: string; brickName: string; areaCode:
 
 /** How many closings before the latest the stopped / dropping / new rules look back over. */
 export const LOOKBACK_CLOSINGS = 3;
+/**
+ * The longest look-back a viewer may pick ("compare with the N months before", owner 2026-11-20:
+ * "an option of filtration of duration"). The default stays LOOKBACK_CLOSINGS.
+ */
+export const MAX_LOOKBACK_CLOSINGS = 6;
+
+/** A requested look-back, held to 1..MAX_LOOKBACK_CLOSINGS; anything unreadable is the default. */
+export function clampLookback(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return LOOKBACK_CLOSINGS;
+  return Math.min(MAX_LOOKBACK_CLOSINGS, Math.max(1, Math.trunc(parsed)));
+}
 /** Latest at or below this fraction of the look-back average is "dropping" (30%+ below). */
 const DROPPING_RATIO = 0.7;
 /** A product is "core" to the viewer's book when at least this share of active pharmacies buy it. */
@@ -93,6 +105,19 @@ export type PharmacyActionItem = {
   closingsBought: number;
   /** Share of the viewer's pharmacy value in the latest closing. Set on the top list only. */
   share: number | null;
+  /**
+   * EGP in each loaded closing, NEWEST FIRST — a month with no purchase is a 0. Set only when the
+   * caller asks for it (the sheet download); the screen never carries it.
+   */
+  history?: { period: string; value: number }[];
+  /** Every product this pharmacy bought across the loaded closings, by name. Sheet download only. */
+  productsBought?: string[];
+  /**
+   * Boxes and EGP of EACH product in each loaded closing, NEWEST FIRST, 0 for a month it bought none.
+   * Sheet download only. 🔴 Boxes are per product and are never added across products (two products,
+   * or two strengths of one, are not one count) — only EGP sums across them.
+   */
+  productHistory?: { productName: string; months: { period: string; units: number; value: number }[] }[];
 };
 
 export type CrossSellItem = PharmacyActionItem & {
@@ -137,7 +162,7 @@ export type PharmacyActionsResult = {
   latestPeriod: string | null;
   /** The look-back closings actually available, newest first. */
   priorPeriods: string[];
-  /** False when fewer than LOOKBACK_CLOSINGS earlier closings are published — "new" is then soft. */
+  /** False when fewer earlier closings are published than the look-back asked for — "new" is then soft. */
   historyComplete: boolean;
   counts: {
     activePharmacies: number;
@@ -240,6 +265,8 @@ type PharmacyAggregate = {
   identityValue: number;
   valueByPeriod: Map<string, number>;
   productsByPeriod: Map<string, Set<string>>;
+  /** product code → period → [boxes, EGP]. Filled only when the history is asked for. */
+  byProductPeriod: Map<string, Map<string, [number, number]>>;
 };
 
 function areaNameOf(row: PharmacyActionRow): string {
@@ -251,7 +278,7 @@ function areaNameOf(row: PharmacyActionRow): string {
 
 /**
  * Build every action list from published closings, NEWEST FIRST. `periods[0]` is the latest closing;
- * the next LOOKBACK_CLOSINGS are the look-back. Anything further back is ignored.
+ * the next `lookback` (default LOOKBACK_CLOSINGS) are the look-back. Anything further back is ignored.
  */
 export function buildPharmacyActions(input: {
   periods: readonly PeriodRows[];
@@ -261,7 +288,17 @@ export function buildPharmacyActions(input: {
    * bare code (D12, GZ1, UE2) in the area picker and on its list row; the master's name stands in.
    */
   areaNames?: ReadonlyMap<string, string>;
+  /**
+   * The sheet download asks for every pharmacy (no list cap) and each one's month-by-month history.
+   * Omitted, the result is exactly what the screen has always read.
+   */
+  listLimit?: number;
+  includeHistory?: boolean;
+  /** How many closings before the latest to compare with; held by clampLookback. */
+  lookback?: number;
 }): PharmacyActionsResult {
+  const lookback = input.lookback == null ? LOOKBACK_CLOSINGS : clampLookback(input.lookback);
+  const listLimit = input.listLimit ?? ACTION_LIST_LIMIT;
   const masterAreaName = (areaCode: string): string => text(input.areaNames?.get(upper(areaCode)));
   // A name is real only when it is not the code written again; an empty or code-only name falls back
   // to the master, and to the code itself only when the master has nothing either.
@@ -273,7 +310,7 @@ export function buildPharmacyActions(input: {
   const ordered = [...input.periods]
     .filter((entry) => /^\d{4}-\d{2}$/.test(text(entry.period)))
     .sort((left, right) => right.period.localeCompare(left.period))
-    .slice(0, LOOKBACK_CLOSINGS + 1);
+    .slice(0, lookback + 1);
   const latestPeriod = ordered[0]?.period ?? null;
   const priorPeriods = ordered.slice(1).map((entry) => entry.period);
   const windowPeriods = ordered.map((entry) => entry.period);
@@ -327,6 +364,7 @@ export function buildPharmacyActions(input: {
         identityValue: value,
         valueByPeriod: new Map(),
         productsByPeriod: new Map(),
+        byProductPeriod: new Map(),
       };
       // Identity follows the newest month, and inside it the biggest row: a renamed pharmacy shows its
       // current name, and a pharmacy that moved area shows where it buys now.
@@ -347,6 +385,16 @@ export function buildPharmacyActions(input: {
         const bought = aggregate.productsByPeriod.get(period) ?? new Set<string>();
         bought.add(code);
         aggregate.productsByPeriod.set(period, bought);
+        if (!productNames.has(code)) productNames.set(code, text(row.productName) || code);
+      }
+      if (input.includeHistory && text(row.productCode)) {
+        const code = upper(row.productCode);
+        const months = aggregate.byProductPeriod.get(code) ?? new Map<string, [number, number]>();
+        const cell = months.get(period) ?? [0, 0];
+        cell[0] += money(row.effectiveUnits);
+        cell[1] += value;
+        months.set(period, cell);
+        aggregate.byProductPeriod.set(code, months);
         if (!productNames.has(code)) productNames.set(code, text(row.productName) || code);
       }
       pharmacies.set(key, aggregate);
@@ -372,6 +420,26 @@ export function buildPharmacyActions(input: {
       lastBoughtPeriod: boughtIn[0] ?? null,
       closingsBought: boughtIn.length,
       share: null,
+      ...(input.includeHistory
+        ? {
+            history: windowPeriods.map((period) => ({ period, value: round2(aggregate.valueByPeriod.get(period) ?? 0) })),
+            productsBought: [
+              ...new Set(windowPeriods.flatMap((period) => [...(aggregate.productsByPeriod.get(period) ?? [])])),
+            ]
+              .map((code) => productNames.get(code) ?? code)
+              .sort((left, right) => left.localeCompare(right)),
+            productHistory: [...aggregate.byProductPeriod]
+              .map(([code, months]) => ({
+                productName: productNames.get(code) ?? code,
+                months: windowPeriods.map((period) => {
+                  const cell = months.get(period);
+                  return { period, units: round2(cell?.[0] ?? 0), value: round2(cell?.[1] ?? 0) };
+                }),
+              }))
+              .filter((product) => product.months.some((month) => Math.abs(month.units) > EPSILON || Math.abs(month.value) > EPSILON))
+              .sort((left, right) => left.productName.localeCompare(right.productName)),
+          }
+        : {}),
     };
   };
 
@@ -500,22 +568,22 @@ export function buildPharmacyActions(input: {
         wholesalerShares: round2(other?.wholesalerShares ?? 0),
         noCustomerCode: round2(other?.noCustomerCode ?? 0),
       },
-      stopped: areaStopped.slice(0, ACTION_LIST_LIMIT),
-      dropping: areaDropping.slice(0, ACTION_LIST_LIMIT),
-      newPharmacies: areaNew.slice(0, ACTION_LIST_LIMIT),
+      stopped: areaStopped.slice(0, listLimit),
+      dropping: areaDropping.slice(0, listLimit),
+      newPharmacies: areaNew.slice(0, listLimit),
       top: areaActive
         .map((item) => ({ ...item, share: pharmacyValue > EPSILON ? item.latestValue / pharmacyValue : null }))
         .sort((left, right) => right.latestValue - left.latestValue)
         .slice(0, TOP_PHARMACY_LIMIT),
-      crossSell: areaCrossSell.slice(0, ACTION_LIST_LIMIT),
-      untappedBricks: areaUntappedBricks.slice(0, ACTION_LIST_LIMIT),
+      crossSell: areaCrossSell.slice(0, listLimit),
+      untappedBricks: areaUntappedBricks.slice(0, listLimit),
     };
   }
 
   return {
     latestPeriod,
     priorPeriods,
-    historyComplete: priorPeriods.length >= LOOKBACK_CLOSINGS,
+    historyComplete: priorPeriods.length >= lookback,
     counts: {
       activePharmacies: active.length,
       stopped: stopped.length,
@@ -537,12 +605,12 @@ export function buildPharmacyActions(input: {
       noCustomerCode: round2(latestTotals.noCustomerCode),
     },
     coreProducts,
-    stopped: stopped.slice(0, ACTION_LIST_LIMIT),
-    dropping: dropping.slice(0, ACTION_LIST_LIMIT),
-    newPharmacies: newPharmacies.slice(0, ACTION_LIST_LIMIT),
+    stopped: stopped.slice(0, listLimit),
+    dropping: dropping.slice(0, listLimit),
+    newPharmacies: newPharmacies.slice(0, listLimit),
     top,
-    crossSell: crossSell.slice(0, ACTION_LIST_LIMIT),
-    untappedBricks: untappedBricks.slice(0, ACTION_LIST_LIMIT),
+    crossSell: crossSell.slice(0, listLimit),
+    untappedBricks: untappedBricks.slice(0, listLimit),
     areas: [...areas].map(([code, name]) => ({ code, name })).sort((left, right) => left.name.localeCompare(right.name)),
     byArea,
   };
