@@ -5,7 +5,8 @@
  * The connector has already re-read that person's account live (identity.ts) before any tool runs, so
  * this mints nothing a website sign-in would not: the same `app_sessions` row and the same signed
  * `phoenix_session` cookie, for the same login, role and `session_version`. What differs:
- *   - It lives five minutes at most (idle and absolute), never the role's usual twelve hours.
+ *   - It lives five minutes at most (idle and absolute), never the role's usual twelve hours — a film's
+ *     render (films/render.ts) asks for its own length, capped at one hour.
  *   - It is marked by its user agent, "Phoenix ChatGPT connector capture", so the sessions list says
  *     what it was.
  *   - It is ALWAYS revoked afterwards (`revoked_reason` 'chatgpt_connector_capture'), success or not.
@@ -25,12 +26,15 @@ import { readLiveAccount } from "../identity";
 import { ToolRefusal } from "../types";
 
 export const CAPTURE_SESSION_SECONDS = 300;
+/** A film's render holds its session longer — its whole length plus page loads — never past an hour. */
+export const FILM_SESSION_MAX_SECONDS = 3_600;
 export const CAPTURE_SESSION_USER_AGENT = "Phoenix ChatGPT connector capture";
 export const CAPTURE_SESSION_REVOKE_REASON = "chatgpt_connector_capture";
 
 export type CaptureSession = { cookieName: string; cookieValue: string; sessionId: string };
 
-export async function mintCaptureSession(ctx: AccessContext): Promise<CaptureSession> {
+export async function mintCaptureSession(ctx: AccessContext, seconds: number = CAPTURE_SESSION_SECONDS): Promise<CaptureSession> {
+  const lifetime = Math.max(60, Math.min(FILM_SESSION_MAX_SECONDS, Math.round(seconds)));
   if (!ctx.loginId) throw new ToolRefusal("Sign in to Phoenix again.");
   const account = await readLiveAccount(ctx.loginId);
   if (!account || account.is_active === false || String(account.role) !== String(ctx.role)) {
@@ -41,9 +45,9 @@ export async function mintCaptureSession(ctx: AccessContext): Promise<CaptureSes
   const role = ctx.role as PhoenixRole;
   const hrId = (account.hr_id as string | null) ?? ctx.hrId ?? null;
   await createAppSession({
-    absoluteTimeoutSeconds: CAPTURE_SESSION_SECONDS,
+    absoluteTimeoutSeconds: lifetime,
     hrId,
-    idleTimeoutSeconds: CAPTURE_SESSION_SECONDS,
+    idleTimeoutSeconds: lifetime,
     ip: null,
     loginId: String(account.login_id),
     role,
@@ -56,7 +60,7 @@ export async function mintCaptureSession(ctx: AccessContext): Promise<CaptureSes
   const cookieValue = createSessionToken({
     hrId,
     loginId: String(account.login_id),
-    maxAgeSeconds: CAPTURE_SESSION_SECONDS,
+    maxAgeSeconds: lifetime,
     role,
     sessionId,
     sessionVersion,
