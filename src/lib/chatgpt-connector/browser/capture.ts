@@ -132,7 +132,7 @@ const PAGE_STUBS = `(() => {
 })();`;
 
 /** Scrolls whatever actually scrolls (the window, or the admin shell's own pane) by one step. */
-const SCROLL_STEP = (fraction: number) => `(() => {
+export const SCROLL_STEP = (fraction: number) => `(() => {
   const candidates = [document.scrollingElement, ...document.querySelectorAll("main, [data-scroll-root], div")];
   let target = null;
   for (const el of candidates) {
@@ -147,9 +147,18 @@ const SCROLL_STEP = (fraction: number) => `(() => {
   return { atEnd: target.scrollTop + target.clientHeight >= target.scrollHeight - 4 };
 })()`;
 
-type OpenedBrowser = { page: CapturePage; stopped: () => number; finish: () => Promise<void> };
+export type OpenedBrowser = { page: CapturePage; stopped: () => number; finish: () => Promise<void> };
+export type { CapturePage };
 
-async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, routes: SideEffectRoutes): Promise<OpenedBrowser> {
+/** A film (films/render.ts) holds its session for its own length and adds its masking script to every page. */
+export type OpenPageOptions = { sessionSeconds?: number; initScripts?: string[] };
+
+export async function openSignedInPage(
+  ctx: AccessContext,
+  viewport: CaptureViewport,
+  routes: SideEffectRoutes,
+  options: OpenPageOptions = {},
+): Promise<OpenedBrowser> {
   const puppeteer = await loadPuppeteer();
   const origin = captureOrigin();
   const policy: FencePolicy = { origin, sameAppOrigins: sameAppOrigins(), routes };
@@ -161,7 +170,7 @@ async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, r
     await revokeCaptureSession(session);
   };
   try {
-    session = await mintCaptureSession(ctx);
+    session = await mintCaptureSession(ctx, options.sessionSeconds);
     const executablePath = resolveChromiumPath();
     browser = (await puppeteer.launch({
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--hide-scrollbars"],
@@ -185,6 +194,7 @@ async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, r
     await page.setViewport({ ...shape });
     if (shape.isMobile) await page.setUserAgent(MOBILE_USER_AGENT);
     await page.evaluateOnNewDocument(PAGE_STUBS);
+    for (const script of options.initScripts ?? []) await page.evaluateOnNewDocument(script);
     await page.setRequestInterception(true);
     page.on("request", ((request: CaptureRequest) => {
       const decision = classifyCaptureRequest({ method: request.method(), url: request.url(), headers: request.headers() }, policy);
@@ -213,7 +223,7 @@ async function openSignedInPage(ctx: AccessContext, viewport: CaptureViewport, r
   }
 }
 
-async function goTo(page: CapturePage, path: string, deadline: number): Promise<{ title: string; finalPath: string }> {
+export async function goTo(page: CapturePage, path: string, deadline: number): Promise<{ title: string; finalPath: string }> {
   const origin = captureOrigin();
   const budget = Math.max(2_000, Math.min(PAGE_LOAD_MS, deadline - Date.now() - 4_000));
   try {
@@ -333,7 +343,7 @@ export function ffmpegPath(env: Record<string, string | undefined> = process.env
   return (env.PHOENIX_FFMPEG_PATH ?? "").trim() || "ffmpeg";
 }
 
-function run(command: string, args: string[], stdin?: Buffer[], timeoutMs = 20_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
+export function run(command: string, args: string[], stdin?: Buffer[], timeoutMs = 20_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let stdout = "";

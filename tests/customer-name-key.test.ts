@@ -121,6 +121,7 @@ function alefFoldingFiles(): string[] {
 
 /** Files that fold Arabic for something that is not a customer's name — what each one folds. */
 const NOT_A_CUSTOMER_NAME: Readonly<Record<string, string>> = {
+  "src/lib/chatgpt-connector/films/page-script.ts": "a person's name on screen, swapped for a made-up one in a film",
   "src/lib/crm/account-doctor-notes.ts": "a doctor's note text",
   "src/lib/crm/campaign-contact-match.ts": "a contact PERSON's name (identityNameKey builds on it)",
   "src/lib/crm/campaign-note.ts": "a campaign note's words",
