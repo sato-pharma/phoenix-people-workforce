@@ -315,6 +315,9 @@ const nextConfig: NextConfig = {
       // needs to fetch it over HTTP, and a real signature on a guessable public URL is worth
       // avoiding. Server-read only, which means it ships only if it is traced — hence this line.
       "./assets/brand/*.png",
+      // Libano-Suisse's own Additions and Deletions workbook, filled by the medical insurance movement file
+      // (src/lib/medical-insurance/libano-movement-sheet.ts). Server-read only, so it ships only if traced.
+      "./assets/medical-insurance/*.xlsx",
       // The business-card design and its two Montserrat faces (src/lib/business-cards/render-pdf.ts).
       // Same reasoning as the signature: the owner's card artwork is read by the server, never served.
       "./assets/business-cards/*.pdf",

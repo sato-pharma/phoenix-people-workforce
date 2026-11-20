@@ -50,6 +50,8 @@ Phoenix Workforce/
 *.csv
 *.bas
 !Source of sales area database.xlsx
+# The insurer's own Additions and Deletions workbook, emptied of every person; the export fills a copy of it.
+!assets/medical-insurance/libano-additions-deletions.xlsx
 !.env.*.example
 
 # xlsx/ is the working-data folder. Around 104 of its files are in no commit, branch or
