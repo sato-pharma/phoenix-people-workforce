@@ -13,9 +13,15 @@
  * asks again every `ADMIN_PHOTO_POLL_SECONDS` and stops the moment one arrives. The customer's page offers it only
  * where `view.canPlaceOnTrustedPoint` (the same Super Admin gate), this screen refuses to draw for anyone else, and
  * the server refuses everyone but the Super Admin (server/admin-photo.ts). Golden rule #1: none of it is the rep's.
+ *
+ * A PHOENIX CAMERA FILE (owner, 20 Nov 2026: the separate camera app for a clinic with no network) is sent as it is
+ * — never shrunk, because re-drawing it would break its seal — and the server judges the seal and takes the
+ * location from it: no watch, no rep pressing anything. The rep sends it as a WhatsApp Document so it arrives whole.
  */
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+
+import { hasSealTrailer } from "@/lib/phoenix-crm/field-camera/seal-format";
 
 import { crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { customerMetaText } from "@/components/phoenix-crm/labels";
@@ -70,6 +76,20 @@ async function photoAsJpeg(file: File): Promise<string> {
   }
 }
 
+type ChosenPhoto = { dataUrl: string; previewUrl: string; sealed: boolean };
+
+/** A Phoenix Camera file, byte for byte, as a JPEG data URL; null when it carries no seal. */
+async function sealedPhotoAsDataUrl(file: File): Promise<string | null> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!hasSealTrailer(bytes)) return null;
+  if (bytes.length > PHOTO_MAX_BYTES) throw new Error("This Phoenix Camera photo is larger than Phoenix accepts. Ask the rep to take it again.");
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return `data:image/jpeg;base64,${btoa(binary)}`;
+}
+
 export function AdminPhotoScreen(
   props: ListScreenBase & {
     customerId: string;
@@ -97,7 +117,7 @@ function AdminPhotoForm({
 }) {
   const customer = view.customers.find((entry) => entry.customerId === customerId) ?? null;
   const resource = useCrmGet<AdminPhotoState>(crmUrl(ADMIN_PHOTO_URL, { customerId }), "state");
-  const [photo, setPhoto] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<ChosenPhoto | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -119,7 +139,13 @@ function AdminPhotoForm({
     if (!file) return;
     setProblem(null);
     try {
-      setPhoto(await photoAsJpeg(file));
+      const sealed = await sealedPhotoAsDataUrl(file);
+      if (sealed) {
+        setPhoto({ dataUrl: sealed, previewUrl: sealed, sealed: true });
+      } else {
+        const shrunk = await photoAsJpeg(file);
+        setPhoto({ dataUrl: shrunk, previewUrl: shrunk, sealed: false });
+      }
     } catch (error) {
       setProblem(messageOf(error));
     }
@@ -163,10 +189,19 @@ function AdminPhotoForm({
   }
 
   const reading = watch?.reading ?? null;
+  const seal = reading?.seal ?? null;
   const facts = reading
     ? [
-        { label: "Captured by", value: reading.repName },
-        { label: "Captured at", value: reading.capturedAtText },
+        ...(seal
+          ? [
+              { label: "Location from", value: "The Phoenix Camera seal (satellites)" },
+              { label: "Photo taken", value: seal.takenAtText },
+              { label: "Satellites", value: seal.satellites },
+              { label: "Phone", value: `${seal.phone} · key ${seal.phoneKey}` },
+            ]
+          : []),
+        { label: seal ? "Sealed by" : "Captured by", value: reading.repName },
+        ...(seal ? [] : [{ label: "Captured at", value: reading.capturedAtText }]),
         { label: "Accuracy", value: reading.accuracyMeters === null ? "Not given" : `within ${formatDistance(reading.accuracyMeters)}` },
         { label: "Point", value: `${reading.lat.toFixed(6)}, ${reading.lon.toFixed(6)}` },
         { label: "Brick", value: reading.location.brickName ?? "No Phoenix brick near this point" },
@@ -188,6 +223,11 @@ function AdminPhotoForm({
           and presses Capture location standing at the clinic. Their live location arrives here with its brick and area, and Validate saves
           the place as your photo and their location. Nothing is validated without both.
         </CrmNote>
+        <CrmNote className="mt-2" tone="info">
+          A photo from the Phoenix Camera app carries its own sealed location and time. Phoenix checks the seal and takes the location from
+          it, so the rep does not need to press anything. The rep sends it to you on WhatsApp as a Document, not as a photo, so the seal
+          arrives whole.
+        </CrmNote>
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100">
@@ -200,10 +240,10 @@ function AdminPhotoForm({
         ) : !watch ? (
           <div className="grid min-w-0 gap-3">
             <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">1 · The photo</p>
-            <input accept="image/*" className="hidden" onChange={(event) => void choose(event)} ref={fileInput} type="file" />
+            <input accept="image/*,.jpg,.jpeg" className="hidden" onChange={(event) => void choose(event)} ref={fileInput} type="file" />
             {photo ? (
               // eslint-disable-next-line @next/next/no-img-element -- a local preview of the file just chosen, never a stored photo
-              <img alt="The photo you chose" className="max-h-72 w-full border border-slate-200 bg-slate-50 object-contain" src={photo} />
+              <img alt="The photo you chose" className="max-h-72 w-full border border-slate-200 bg-slate-50 object-contain" src={photo.previewUrl} />
             ) : (
               <p className="break-words text-sm font-medium leading-6 text-slate-600">Choose the photo of the clinic or its signboard.</p>
             )}
@@ -212,11 +252,14 @@ function AdminPhotoForm({
                 {photo ? "Choose another photo" : "Choose the photo"}
               </CrmButton>
               {photo ? (
-                <CrmButton busy={busy === "arm"} onClick={() => void step("arm", { customerId, imageDataUrl: photo })} variant="primary">
-                  Watch the rep
+                <CrmButton busy={busy === "arm"} onClick={() => void step("arm", { customerId, imageDataUrl: photo.dataUrl })} variant="primary">
+                  {photo.sealed ? "Check the seal and use its location" : "Watch the rep"}
                 </CrmButton>
               ) : null}
             </div>
+            {photo?.sealed ? (
+              <CrmNote tone="info">This photo carries a Phoenix Camera seal. Its location and time are checked when you press the button.</CrmNote>
+            ) : null}
             <p className="break-words text-xs font-semibold leading-5 text-slate-500">
               The watch stays on for {ADMIN_PHOTO_WATCH_MINUTES} minutes. Only a location within 250 m of accuracy is accepted from the rep.
             </p>
@@ -226,16 +269,31 @@ function AdminPhotoForm({
             <div className="flex min-w-0 items-start gap-3">
               <CrmPhotoThumb alt="Your uploaded photo" path={watch.photoPath} />
               <div className="grid min-w-0 gap-1">
-                <p className="break-words text-sm font-black text-slate-950">Your photo is uploaded</p>
+                <p className="break-words text-sm font-black text-slate-950">{seal ? "The sealed photo is uploaded" : "Your photo is uploaded"}</p>
                 <p className="break-words text-xs font-semibold leading-5 text-slate-500">
-                  Watch pressed {watch.armedAtText} · {watch.open ? `on until ${watch.watchUntilText}` : `ended ${watch.watchUntilText}`}
+                  {seal
+                    ? `Seal checked ${watch.armedAtText}`
+                    : `Watch pressed ${watch.armedAtText} · ${watch.open ? `on until ${watch.watchUntilText}` : `ended ${watch.watchUntilText}`}`}
                 </p>
               </div>
             </div>
             {reading ? (
               <>
-                <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">The rep&apos;s location</p>
+                <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+                  {seal ? "The sealed location" : "The rep’s location"}
+                </p>
                 <CrmFacts facts={facts} />
+                {seal && seal.warnings.length > 0 ? (
+                  <CrmNote tone="warn">
+                    <span className="grid gap-1">
+                      {seal.warnings.map((warning) => (
+                        <span className="block break-words" key={warning}>
+                          {warning}
+                        </span>
+                      ))}
+                    </span>
+                  </CrmNote>
+                ) : null}
               </>
             ) : watch.open ? (
               <CrmLoading label="Watching the rep — waiting for their location" />
@@ -248,7 +306,7 @@ function AdminPhotoForm({
                   Validate
                 </CrmButton>
               ) : null}
-              {reading || !watch.open ? (
+              {!seal && (reading || !watch.open) ? (
                 <CrmButton busy={busy === "rewatch"} disabled={Boolean(busy) && busy !== "rewatch"} onClick={() => void step("rewatch", { validationId: watch.validationId })}>
                   {reading ? "Ask for the location again" : "Watch again"}
                 </CrmButton>
