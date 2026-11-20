@@ -22,6 +22,9 @@ metadata:
 - Spare side: user `phxpreview` (no sudo, own pnpm store seeded from phoenix's), folder `/home/phxpreview/app` = `git archive <live commit>` + the PR's diff as one patch, log `/home/phxpreview/preview.log`; unit `phoenix-preview` (`Conflicts=phoenix-dev`, `RuntimeMaxSec` via `/run/systemd/system/phoenix-preview.service.d/time.conf`, `ExecStopPost` starts phoenix-dev unless `/run/phoenix-preview-switching`); run script `/usr/local/lib/phoenix-preview/run.sh` (source `spare-preview-run.sh`; setup `spare-preview-setup.sh`, re-run automatically when the source changes). `spare-follow-production.ps1` and `nightly-restart.sh` leave a running preview alone.
 - Proven 20 Nov 18:20–18:25 on PR 663: setup + first install 97 s, ready in 2 min 8 s, served as phxpreview, Command Center rendered (132/155); `stop` → live answered in 32 s; a `RuntimeMaxSec=5` dummy ran its ExecStopPost 5 s in. Skill note: PR 672.
 
+## Maps on localhost stay EMPTY - owner's choice (20 Nov ~19:00: "Leave maps as they are")
+- `RefererNotAllowedMapError` on localhost:3000 is expected. Production's `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` (ends `eosY`) lives in a Google account his Chrome is not signed into. The "Phoenix Maps Browser Key" (ends `RL1E`, project phoenix-workforce-498619) already allows localhost:3000 AND production, but that project has NO BILLING (`BillingNotEnabledMapError`), so switching to it would blank every production map. Never switch keys and never raise this again unless he does.
+
 ## History: the Windows reinstall that morning
 Owner, 20 Nov 2026 ~11:15 Cairo: "the spare laptop Windows was down, so I reinstalled its Windows ... I hate manual work. Automate." Everything on its C: is gone (OpenSSH, Node, Git, pnpm, the "Phoenix Dev Server" and "Phoenix Spare Browser Guard" tasks); D:\Phoenix may have survived if D: is its own partition.
 
