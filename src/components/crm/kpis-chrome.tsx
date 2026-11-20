@@ -35,6 +35,8 @@
 
 import Link from "next/link";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LANDING_INK, LANDING_NAVY_TILE, LandingTitle } from "@/components/employee-portal/landing-kit";
 import { KPI_BAND_SHORT, type KpiBand } from "@/lib/crm/kpis-filters";
 import { utcDate } from "@/lib/format/cairo-datetime";
 
@@ -51,42 +53,53 @@ import { utcDate } from "@/lib/format/cairo-datetime";
  * Every part of this board is flat colour: no gradient, no glow, no drop shadow, no inset track. The
  * 2026-09-08 "depth" pass gave the meters, tiles, medals and section bars two-stop gradients and
  * two-layer shadows; the premium pass of 9 Nov 2026 took them off again, because that finish is the
- * one the owner retired. `bar` fills a meter and caps a tile, `chip` frames a band, `text` prints a
- * figure and `dot` is the same tone as a pip. The square-edge golden rule is untouched: not one
- * class here rounds an edge.
+ * one the owner retired. `bar` fills a meter and caps a tile, `chip` is the band as a coloured word
+ * on a 2px rail (the landing kit's status rule, never a filled pill), `text` prints a figure and
+ * `dot` is the same tone as a pip. `onNavyText` / `onNavyBar` are the same tones on the page's one
+ * night-navy board. The square-edge golden rule is untouched: not one class here rounds an edge.
  */
-type Tone = { bar: string; chip: string; text: string; dot: string };
+type Tone = { bar: string; chip: string; text: string; dot: string; onNavyText: string; onNavyBar: string };
 
 const TONES: Record<KpiBand, Tone> = {
   elite: {
     bar: "bg-emerald-500",
-    chip: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    chip: "border-l-2 border-l-emerald-500 pl-1.5 text-emerald-700",
     text: "text-emerald-700",
     dot: "bg-emerald-500",
+    onNavyText: "text-emerald-300",
+    onNavyBar: "bg-emerald-400",
   },
   strong: {
     bar: "bg-sky-500",
-    chip: "border-sky-200 bg-sky-50 text-sky-800",
+    chip: "border-l-2 border-l-sky-500 pl-1.5 text-sky-700",
     text: "text-sky-700",
     dot: "bg-sky-500",
+    onNavyText: "text-sky-300",
+    onNavyBar: "bg-sky-400",
   },
   steady: {
     bar: "bg-amber-500",
-    chip: "border-amber-200 bg-amber-50 text-amber-900",
+    chip: "border-l-2 border-l-amber-500 pl-1.5 text-amber-700",
     text: "text-amber-700",
     dot: "bg-amber-500",
+    onNavyText: "text-amber-300",
+    onNavyBar: "bg-amber-400",
   },
   behind: {
     bar: "bg-rose-500",
-    chip: "border-rose-200 bg-rose-50 text-rose-800",
+    chip: "border-l-2 border-l-rose-500 pl-1.5 text-rose-700",
     text: "text-rose-700",
     dot: "bg-rose-500",
+    onNavyText: "text-rose-300",
+    onNavyBar: "bg-rose-400",
   },
   noplan: {
     bar: "bg-slate-300",
-    chip: "border-slate-200 bg-slate-50 text-slate-600",
+    chip: "border-l-2 border-l-slate-300 pl-1.5 text-slate-500",
     text: "text-slate-500",
     dot: "bg-slate-400",
+    onNavyText: "text-white/60",
+    onNavyBar: "bg-white/40",
   },
 };
 
@@ -106,42 +119,56 @@ const FLAT = "shadow-none";
 
 // ── Shared class strings ──────────────────────────────────────────────────────────────────────
 
-export const PANEL = "border border-slate-200 bg-white";
+/**
+ * The page's outer sheet: the landing kit's white panel — a hairline and the platform's soft depth
+ * token. Only the OUTER frame takes the depth; a card inside it stays a flat hairline, so there is
+ * never a shadowed card on a card.
+ */
+export const PANEL = `border border-slate-200 bg-white ${adminSoftDepthClassName}`;
 // One step larger BELOW `sm` only (11px on a phone, 10px from 640px up). Every table on this board
 // renders from `md`, where the `sm:` size applies, so the measured desktop tables
 // (tests/kpis-board-tables-fit.test.ts) are unchanged; only the phone cards and captions grow.
 export const CAPTION = "text-phx-md text-slate-500 sm:text-phx-sm";
-export const TH = "px-3 py-2.5 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
+/** A white small-capital table head (the landing kit's): slate capitals on white, a hairline under the row. */
+export const TH = "px-3 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+/** The row every `<thead>` on these boards wears: white, one hairline under it. */
+export const THEAD = "border-b border-slate-200 bg-white";
 export const TD = "px-3 py-3 align-top text-sm text-slate-700";
-export const NUM = "px-3 py-3 align-top text-sm font-semibold tabular-nums text-slate-900";
+/** A figure cell: navy, tabular. */
+export const NUM = `px-3 py-3 align-top text-sm font-semibold tabular-nums ${LANDING_INK}`;
+/** A link inside a row or a caption: navy ink, an underline that darkens on hover, the orange keyboard ring. */
+export const ROW_LINK = `underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`;
+/** A small outline action inside a row or a card: the landing kit's navy frame at row size. */
+export const ROW_ACTION = `inline-flex min-h-8 items-center gap-1 border border-[#08111f] bg-white px-2 py-1 text-phx-xs font-bold uppercase tracking-[0.08em] ${LANDING_INK} transition-colors hover:bg-[#08111f] hover:text-white motion-reduce:transition-none ${LANDING_FOCUS}`;
+/** A situation flag beside a name: a quiet coloured word on a 2px slate rail, never a filled pill. */
+export const FLAG = "inline-block border-l-2 border-l-slate-300 pl-1.5 text-phx-xs font-semibold leading-4 text-slate-600";
 
 // ── Section frame ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A titled block with the slate-900 header bar.
+ * A titled block: the landing kit's panel head — the orange tick, then the title in navy small
+ * capitals on white, a hairline under it.
  *
- * Copied from reps-list-chrome.tsx rather than reinvented — same module, same header bar, same
- * orange accent. A second spelling of this bar is the "one-off look" the owner's rule forbids. Flat:
- * slate-900 with a 3px orange rule on the left, as the Reps List's bar is.
+ * A HEADER IS A TITLE (owner, 2026-11-20: "DELETE ANY TEXT UNDER ANY HEADER"), so `description` is
+ * no longer drawn. The prop stays so no caller has to change at once; what a section needs to say
+ * goes in its rows.
  */
 export function KpiSection({
   action,
   children,
-  description,
   title,
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
+  /** No longer drawn — a header is a title. Kept so existing callers still compile. */
   description?: string;
   title: string;
 }) {
   return (
     <div className="border-b border-slate-200 bg-white last:border-b-0">
-      <div className="relative flex flex-wrap items-start justify-between gap-3 overflow-hidden border-b border-slate-200 bg-slate-900 px-4 py-3 pl-5 sm:px-5 sm:pl-6">
-        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-orange-500" />
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 px-3 py-2.5 sm:px-4">
         <div className="min-w-0 flex-1">
-          <h2 className="text-phx-md font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-phx-sm leading-4 text-slate-400">{description}</p> : null}
+          <LandingTitle>{title}</LandingTitle>
         </div>
         {action ? <div className="min-w-0">{action}</div> : null}
       </div>
@@ -159,25 +186,29 @@ export function KpiSection({
  * legitimately exceed its target, and a bar that overflowed its track would render as a full bar
  * for 101% and for 400% alike, which is the one reading a manager must not get.
  */
-export function KpiMeter({ band, value }: { band: KpiBand; value: number | null }) {
+export function KpiMeter({ band, onNavy = false, value }: { band: KpiBand; onNavy?: boolean; value: number | null }) {
   const fill = value == null ? 0 : Math.max(0, Math.min(100, value));
   return (
-    // Flat: a slate track and one tone of fill. Height stays h-1.5 — the row rhythm the four tables
-    // and the mobile card were measured against does not move.
-    <div aria-hidden className="relative mt-1.5 h-1.5 w-full overflow-hidden bg-slate-100">
-      <div className={`h-full ${toneOf(band).bar}`} style={{ width: `${fill}%` }} />
+    // Flat: a slate track and one tone of fill (a dim white track on the navy board). Height stays
+    // h-1.5 — the row rhythm the four tables and the mobile card were measured against does not move.
+    <div aria-hidden className={`relative mt-1.5 h-1.5 w-full overflow-hidden ${onNavy ? "bg-white/10" : "bg-slate-100"}`}>
+      <div className={`h-full ${onNavy ? toneOf(band).onNavyBar : toneOf(band).bar}`} style={{ width: `${fill}%` }} />
     </div>
   );
 }
 
-/** A band as a small chip. Short label — this sits inside a table cell. */
-export function KpiBandChip({ band }: { band: KpiBand }) {
+/**
+ * A band as a coloured small-capital word on a 2px rail of its own tone — the landing kit's status
+ * rule, never a filled pill. Short label — this sits inside a table cell.
+ */
+export function KpiBandChip({ band, onNavy = false }: { band: KpiBand; onNavy?: boolean }) {
   const tone = toneOf(band);
   return (
     <span
-      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
+      className={`inline-flex items-center text-phx-xs font-bold uppercase tracking-[0.1em] ${
+        onNavy ? `border-l-2 border-l-white/30 pl-1.5 ${tone.onNavyText}` : tone.chip
+      }`}
     >
-      <span aria-hidden className={`h-1.5 w-1.5 ${tone.dot}`} />
       {KPI_BAND_SHORT[band]}
     </span>
   );
@@ -197,29 +228,34 @@ export function KpiTile({
   band,
   caption,
   label,
+  onNavy = false,
   progress,
   value,
 }: {
   band?: KpiBand;
   caption?: string;
   label: string;
+  /**
+   * The tile stands on the page's one navy board of key figures: a navy-tile ground, white capitals,
+   * the band's light tone for the figure. Off the board it is a flat hairline card on white.
+   */
+  onNavy?: boolean;
   progress?: number | null;
   value: string;
 }) {
   const tone = band ? toneOf(band) : null;
-  // The top rule: the band's own tone when the tile scores something, quiet slate when it does not
-  // (the reps count and the untargeted pharmacy rate), so a neutral tile never wears a colour that
-  // would read as a band it does not have.
-  const cap = tone ? tone.bar : "bg-slate-300";
+  // The figure takes the band's own tone when the tile scores something, and stays neutral when it
+  // does not (the reps count and the untargeted pharmacy rate), so a neutral tile never wears a
+  // colour that would read as a band it does not have.
+  const figure = onNavy ? (tone ? tone.onNavyText : "text-white") : tone ? tone.text : LANDING_INK;
   return (
-    <div className={`relative overflow-hidden border border-slate-200 bg-white px-4 pb-3.5 pt-4 ${FLAT}`}>
-      <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${cap}`} />
-      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400 sm:text-phx-xs">{label}</p>
-      <p className={`mt-1 text-[1.7rem] font-black leading-none tabular-nums ${tone ? tone.text : "text-slate-900"}`}>
-        {value}
-      </p>
-      {progress != null && band ? <KpiMeter band={band} value={progress} /> : null}
-      {caption ? <p className={`mt-1.5 leading-4 ${CAPTION}`}>{caption}</p> : null}
+    <div className={onNavy ? `min-w-0 px-3 pb-3 pt-2.5 ${LANDING_NAVY_TILE}` : `min-w-0 border border-slate-200 bg-white px-3 pb-3 pt-2.5 ${FLAT}`}>
+      <p className={`break-words text-phx-xs font-bold uppercase tracking-[0.1em] ${onNavy ? "text-white/60" : "text-slate-500"}`}>{label}</p>
+      <p className={`mt-1.5 break-words text-[28px] font-bold leading-none tracking-[-0.02em] tabular-nums ${figure}`}>{value}</p>
+      {progress != null && band ? <KpiMeter band={band} onNavy={onNavy} value={progress} /> : null}
+      {caption ? (
+        <p className={onNavy ? "mt-1.5 break-words text-phx-xs font-semibold leading-4 text-white/45" : `mt-1.5 leading-4 ${CAPTION}`}>{caption}</p>
+      ) : null}
     </div>
   );
 }
@@ -229,23 +265,23 @@ export function KpiTile({
 /**
  * Gold, silver and bronze for the first three; a plain number after that.
  *
- * A DISC rather than an emoji medal. Emoji render at wildly different sizes across Windows, iOS and
+ * A SQUARE rather than an emoji medal. Emoji render at wildly different sizes across Windows, iOS and
  * Android and would break the row's vertical rhythm on exactly the phones the field force uses.
  */
 export function KpiRank({ rank }: { rank: number }) {
-  // Gold, silver and bronze for the podium three, each one flat tone with a rule of its own. A plain
-  // number after that carries no medal.
+  // Gold, silver and bronze for the podium three: a hairline square in the medal's tone with the
+  // number in the same tone — never a filled disc. A plain number after that carries no medal.
   const style =
     rank === 1
-      ? "border-amber-400 bg-amber-200 text-amber-900"
+      ? "border-amber-500 text-amber-700"
       : rank === 2
-        ? "border-slate-300 bg-slate-100 text-slate-700"
+        ? "border-slate-400 text-slate-600"
         : rank === 3
-          ? "border-orange-300 bg-orange-200 text-orange-900"
-          : "border-transparent bg-transparent text-slate-400";
+          ? "border-[#9a5b2e] text-[#7c4a24]"
+          : "border-transparent text-slate-400";
   return (
     <span
-      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center border text-phx-xs font-black tabular-nums ${style}`}
+      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center border bg-white text-phx-xs font-black tabular-nums ${style}`}
     >
       {rank}
     </span>
@@ -266,13 +302,13 @@ export type PodiumEntry = { repName: string; value: number; caption: string };
  */
 export function KpiPodiumCard({
   entries,
-  hint,
   suffix = "%",
   title,
   wide = false,
 }: {
   entries: readonly PodiumEntry[];
-  hint: string;
+  /** No longer drawn — a card's header is its title alone. Kept so existing callers still compile. */
+  hint?: string;
   /**
    * Appended after `entry.value`, default "%" for the four attainment-percentage boards. Pharmacy
    * has no target to be a percentage OF (see PHARMACY_CALL_RATE_TARGET) and ranks on the raw rate
@@ -289,11 +325,11 @@ export function KpiPodiumCard({
   wide?: boolean;
 }) {
   return (
-    <div className={`relative overflow-hidden border border-slate-200 bg-white ${FLAT}`}>
-      <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-orange-500" />
-      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-600 sm:text-phx-xs">{title}</p>
-        <p className="mt-0.5 text-phx-sm leading-4 text-slate-400 sm:text-phx-xs">{hint}</p>
+    // Flat: a hairline card inside the page's panel (never a shadowed card on a card), its header the
+    // landing kit's tick title on white.
+    <div className={`min-w-0 border border-slate-200 bg-white ${FLAT}`}>
+      <div className="border-b border-slate-200 px-3 py-2.5">
+        <LandingTitle as="h3">{title}</LandingTitle>
       </div>
       {entries.length === 0 ? (
         <p className="px-3 py-3 text-phx-sm text-slate-500">
@@ -303,25 +339,23 @@ export function KpiPodiumCard({
         <ol
           className={
             wide
-              ? "divide-y divide-slate-100 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-y-0"
-              : "divide-y divide-slate-100"
+              ? "divide-y divide-slate-200 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+              : "divide-y divide-slate-200"
           }
         >
           {entries.map((entry, index) => (
             <li
-              className={`flex items-start gap-2 px-3 py-2 transition-colors hover:bg-slate-50 ${
-                index === 0 ? "bg-amber-50/40" : ""
-              }`}
+              className="flex items-start gap-2 px-3 py-2 transition-colors hover:bg-slate-50 motion-reduce:transition-none"
               key={`${entry.repName}-${index}`}
             >
               <KpiRank rank={index + 1} />
               <span className="min-w-0 flex-1">
-                <span className="block text-phx-md font-bold leading-4 text-slate-900" dir="auto">
+                <span className={`block break-words text-phx-md font-bold leading-4 ${LANDING_INK}`} dir="auto">
                   {entry.repName}
                 </span>
                 <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{entry.caption}</span>
               </span>
-              <span className="shrink-0 text-base font-black tabular-nums text-slate-900">
+              <span className={`shrink-0 text-base font-bold tabular-nums ${LANDING_INK}`}>
                 {entry.value}
                 {suffix}
               </span>
@@ -369,8 +403,8 @@ export function KpiSortableTh({
       <Link
         className={
           active
-            ? "inline-flex flex-wrap items-baseline gap-1 text-orange-600 underline decoration-orange-300 underline-offset-2"
-            : "inline-flex flex-wrap items-baseline gap-1 transition-colors hover:text-slate-900"
+            ? `inline-flex flex-wrap items-baseline gap-1 ${LANDING_INK} underline decoration-[#08111f] decoration-2 underline-offset-4 ${LANDING_FOCUS}`
+            : `inline-flex flex-wrap items-baseline gap-1 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`
         }
         href={href}
       >
@@ -414,7 +448,7 @@ export function KpiRepName({
     <span className="flex items-start gap-2">
       {rank != null ? <KpiRank rank={rank} /> : null}
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold leading-5 text-slate-900" dir="auto">
+        <span className={`block break-words font-semibold leading-5 ${LANDING_INK}`} dir="auto">
           {name || "Unnamed rep"}
         </span>
         {/* Phone-only step up; from `sm` (and so in every desktop table) it is the measured 9px. */}
@@ -436,7 +470,7 @@ export function KpiRepName({
 export function KpiEmptyState({ action, message, title }: { action?: React.ReactNode; message: string; title: string }) {
   return (
     <div className="px-5 py-8 text-center">
-      <p className="text-sm font-bold text-slate-800">{title}</p>
+      <p className={`text-sm font-bold ${LANDING_INK}`}>{title}</p>
       <p className={`mx-auto mt-1 max-w-md leading-5 ${CAPTION}`}>{message}</p>
       {action ? <div className="mt-3">{action}</div> : null}
     </div>

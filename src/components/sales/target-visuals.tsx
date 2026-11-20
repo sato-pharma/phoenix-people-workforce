@@ -1,9 +1,17 @@
 "use client";
 
-import { useId } from "react";
+import { createContext, useContext } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingNavyBoard,
+  LandingTick,
+} from "@/components/employee-portal/landing-kit";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,12 +28,12 @@ import { cn } from "@/lib/utils";
 // anywhere. That rule governs the DEFAULT `surface="sales"` band and every admin render, which stay
 // byte-identical.
 //
-// THE PORTAL PREMIUM (owner, 2026-09-21 — "full big premium polish"): the `surface="portal"` render
-// is the one owner-approved exception. Grounded in the same Phoenix tokens, it earns depth from
-// LAYERED SHADOWS, a SUBTLE white→slate card gradient, a gradient orange accent rail and a GLOWING
-// achievement ring (AchievementRing `premium`). The square-edge golden rule still holds — no rounded
-// corners, no horizontal scroll. Do NOT bring this surface "into line" with the 2026-09-14 rule: it
-// was shown to the owner and approved.
+// THE PORTAL RENDER (owner, 2026-11-20 — "EVERY SINGLE COMPONENT TO BE PREMIUM POLISHED"): the
+// `surface="portal"` render is built from the portal's landing kit (`landing-kit.tsx`). The page's
+// headline figures stand on ONE night-navy board, every other card is a white sheet on a hairline
+// with the platform's soft depth token and the orange tick before its title, chosen chips are navy,
+// and the achievement ring is flat. It replaced the 2026-09-21 gradient cards, orange rails and
+// glowing ring: the kit is flat colour only. Square edges and no horizontal scroll, as ever.
 //
 // The rules encoded here that are NOT free to change:
 //   • A null achievement is NEUTRAL, never red. An area with no target loaded has not
@@ -43,36 +51,55 @@ export const TARGET_COLOR = "#38BDF8";
 
 // ── Surface tokens — use these instead of re-inventing a card ────────────────
 
-/** A white card: thin border, a soft two-layer shadow, square edges. */
-export const SURFACE_CLASS =
-  "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.05)]";
-/** Table header row. */
+/** A white card: the hairline and the platform's soft depth token, square edges. */
+export const SURFACE_CLASS = `border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+/**
+ * Table header row: white small capitals over a hairline. The type size and tracking are the ones the
+ * column widths in tests/sales-target-tables-fit-the-screen.test.ts were measured with.
+ */
 export const TABLE_HEAD_CLASS =
-  "border-b border-slate-200 bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
-/** Table body row. */
-export const TABLE_ROW_CLASS = "border-b border-slate-100 transition-colors last:border-0 hover:bg-orange-50/40";
+  "border-b border-slate-200 bg-white text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+/** Table body row: a hairline under it and a quiet slate wash on hover. */
+export const TABLE_ROW_CLASS =
+  "border-b border-slate-200 transition-colors last:border-0 hover:bg-slate-50 motion-reduce:transition-none";
 /** Chart tooltip box. */
-export const CHART_TOOLTIP_CLASS =
-  "border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.10)]";
+export const CHART_TOOLTIP_CLASS = `border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 ${adminSoftDepthClassName}`;
 /** Small uppercase label above a figure. */
-export const LABEL_CLASS = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
+export const LABEL_CLASS = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 /**
- * A selectable chip or tab: solid orange when selected, quiet white otherwise.
+ * A selectable chip or tab.
  *
- * `surface="portal"` makes it a 40px tap target below lg — at `py-1` the chip is about 26px, under a
- * phone's tap floor — and lets it drop back to its own height from lg. The default ("sales") returns
- * exactly the class string it always has, so every admin-shell chip is unchanged.
+ * `surface="portal"` is the landing kit's chip: solid night navy when chosen, a white chip on a
+ * hairline otherwise that takes a navy frame on hover, the kit's orange keyboard outline, and a 40px
+ * tap target below lg — at `py-1` the chip is about 26px, under a phone's tap floor — dropping back to
+ * its own height from lg. The default ("sales") returns exactly the class string it always has, so
+ * every admin-shell chip is unchanged.
  */
 export function chipClass(selected: boolean, surface: "sales" | "portal" = "sales"): string {
+  if (surface === "portal") {
+    return cn(
+      "min-h-10 border px-3 py-1 text-xs font-bold transition-colors motion-reduce:transition-none lg:min-h-0",
+      LANDING_FOCUS,
+      selected
+        ? "border-[#08111f] bg-[#08111f] text-white"
+        : "border-slate-200 bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f]",
+    );
+  }
   return cn(
     "border px-3 py-1 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
-    surface === "portal" && "min-h-10 lg:min-h-0",
     selected
       ? "border-orange-500 bg-orange-500 text-white shadow-[0_2px_8px_rgba(249,115,22,0.25)]"
       : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
   );
 }
+
+/**
+ * Where a band's figures are standing: on white, or on the portal's one night-navy board. The portal
+ * CommandBand sets "navy" around its `stats`, so a BandStat or GrowthPill handed in by any page
+ * re-inks itself for the board without the page knowing.
+ */
+const BandGround = createContext<"light" | "navy">("light");
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -138,25 +165,30 @@ export function growthTone(value: number | null): string {
   return "text-slate-500";
 }
 
+/** The same growth scale on the navy board, where the 600s read too dark. */
+function growthToneOnNavy(value: number | null): string {
+  if (value == null || value === 0) return "text-white/55";
+  return value > 0 ? "text-emerald-300" : "text-rose-300";
+}
+
 // ── Primitives ───────────────────────────────────────────────────────────────
 
+/**
+ * The growth figure: its arrow and its signed percentage in the growth colour — coloured words, never
+ * a filled pill. The box keeps the padding its width was measured with
+ * (tests/sales-target-tables-fit-the-screen.test.ts).
+ */
 export function GrowthPill({ value }: { value: number | null }) {
+  const ground = useContext(BandGround);
   const Icon = value == null ? Minus : value > 0 ? ArrowUpRight : value < 0 ? ArrowDownRight : Minus;
-  const surface =
-    value == null || value === 0
-      ? "bg-slate-50 ring-slate-200"
-      : value > 0
-        ? "bg-emerald-50 ring-emerald-100"
-        : "bg-red-50 ring-red-100";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5 text-xs font-bold ring-1 ring-inset",
-        surface,
-        growthTone(value),
+        "inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5 text-xs font-bold tabular-nums",
+        ground === "navy" ? growthToneOnNavy(value) : growthTone(value),
       )}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       {formatSignedPct(value)}
     </span>
   );
@@ -181,54 +213,32 @@ export function AchievementRing({
   stroke?: number;
   label?: string;
   /**
-   * The employee-portal premium ring: a same-hue gradient stroke, a round cap and a soft glow in
-   * the ring's OWN achievement colour (owner-approved 2026-09-21). `false` is the flat admin ring,
-   * unchanged. Both keep the null-is-neutral and arc-capped-at-100% rules identically.
+   * The employee-portal ring. It used to carry a gradient stroke, a round cap and a glow (2026-09-21);
+   * the landing kit is flat colour only (owner, 2026-11-20), so the portal ring is the flat ring on
+   * the kit's hairline track. Both keep the null-is-neutral and arc-capped-at-100% rules identically.
    */
   premium?: boolean;
 }) {
-  // Unique per instance — a page draws several rings and must not share one gradient/filter id.
-  // useId returns colon-bearing ids; strip them so the SVG url(#…) reference is always valid.
-  const uid = useId().replace(/:/g, "");
-  const gradientId = `ring-grad-${uid}`;
-  const glowId = `ring-glow-${uid}`;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   // Cap the ARC at 100% so an over-achiever cannot wrap the circle, while the printed
   // number below stays uncapped and truthful.
   const fraction = value == null ? 0 : Math.max(0, Math.min(1, value));
   const color = achievementHex(value);
-  const arcPremium = premium && value != null;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden>
-        {arcPremium ? (
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor={color} stopOpacity="0.7" />
-              <stop offset="1" stopColor={color} />
-            </linearGradient>
-            <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation={Math.max(1.6, stroke / 5)} result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-        ) : null}
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={premium ? "#EEF2F7" : "#F1F5F9"} strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={premium ? "#E2E8F0" : "#F1F5F9"} strokeWidth={stroke} />
         {value != null ? (
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke={arcPremium ? `url(#${gradientId})` : color}
+            stroke={color}
             strokeWidth={stroke}
-            strokeLinecap={arcPremium ? "round" : "butt"}
+            strokeLinecap="butt"
             strokeDasharray={`${circumference * fraction} ${circumference}`}
-            filter={arcPremium ? `url(#${glowId})` : undefined}
           />
         ) : null}
       </svg>
@@ -238,8 +248,9 @@ export function AchievementRing({
         </span>
         {label ? (
           <span
-            className="mt-0.5 whitespace-nowrap font-bold uppercase tracking-[0.14em] text-slate-500"
-            style={{ fontSize: Math.max(8, size / 15) }}
+            className="mt-0.5 whitespace-nowrap font-bold uppercase tracking-[0.1em] text-slate-500"
+            // 11px is the type floor; "ACHIEVEMENT" at 11px is ~92px inside a 132px ring's 106px hole.
+            style={{ fontSize: Math.max(11, size / 15) }}
           >
             {label}
           </span>
@@ -372,22 +383,23 @@ export function SectionCard({
 }
 
 /**
- * SectionCard's employee-portal header. Declared AFTER SectionCard on purpose: the pinning tests
- * read the first card header in this file, and that stays the measured admin one. This header keeps
- * every rule those tests hold — it wraps, its actions are never `shrink-0`, its title never nowraps.
+ * SectionCard's employee-portal header — the landing kit's panel head: the orange tick and the title
+ * in navy small capitals, the actions on the right, no icon square. Declared AFTER SectionCard on
+ * purpose: the pinning tests read the first card header in this file, and that stays the measured
+ * admin one. This header keeps every rule those tests hold — it wraps, its actions are never
+ * `shrink-0`, its title never nowraps. The subtitle keeps its `phx-header-note` marker, which the
+ * portal shell hides (owner, 2026-11-20: no sentence under any header).
  */
-function PortalSectionCard({ title, subtitle, icon: Icon, children, actions, className }: SectionCardProps) {
+function PortalSectionCard({ title, subtitle, children, actions, className }: SectionCardProps) {
   return (
-    <section className={cn("flex flex-col", SURFACE_CLASS, className)}>
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-slate-100 bg-white px-4 py-4 sm:px-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
-            <Icon className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="break-words text-lg font-black leading-tight tracking-tight text-slate-950 sm:text-xl">{title}</h2>
-            {subtitle ? <p className="phx-header-note mt-1 break-words text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
-          </div>
+    <section className={cn("flex min-w-0 flex-col", SURFACE_CLASS, className)}>
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+        <div className="min-w-0">
+          <h2 className={cn("flex min-w-0 items-center gap-2 break-words text-phx-xs font-black uppercase tracking-[0.12em]", LANDING_INK)}>
+            <LandingTick />
+            <span className="min-w-0">{title}</span>
+          </h2>
+          {subtitle ? <p className="phx-header-note mt-1 break-words text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
         </div>
         {actions ? <div className="max-w-full">{actions}</div> : null}
       </header>
@@ -441,40 +453,34 @@ export function CommandBand({
 }) {
   if (surface === "portal") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         {subtitle ? <p className="phx-header-note text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
         {stats ? (
-          // Flex-wrap, never a fixed grid, and crucially NO `min-w-0`: a headline money value carries
-          // `whitespace-nowrap`, so its own min-content is the card's floor — the card can never be
-          // squeezed narrower than the number, which would clip it. `flex-1 basis-[13rem]` lets each
-          // card grow to fill the row and share width evenly, and when the numbers no longer fit side
-          // by side the cards wrap to the next line instead of overflowing the page (the fits-the-
-          // screen golden rule). This mirrors the light band's own content-sized `flex flex-wrap`.
+          // The page's ONE night-navy board, holding its headline figures (the landing kit's rule).
+          // Each BandStat inside reads the "navy" ground and draws itself as a board tile.
           //
-          // Premium (owner, 2026-09-21): each card earns depth from a subtle white→slate gradient, a
-          // gradient orange accent rail on its left edge, a two-layer shadow and a small hover lift.
-          // Square edges throughout — the fit logic above is untouched.
-          //
-          // And NO `overflow-hidden` on the cards: it makes each card a scroll container, whose
-          // minimum flex width drops to 0, so the nowrap figure stopped setting the floor and the
-          // cards packed at their 13rem basis and CUT the money — "EGP 1,234,567" on a 768px tablet,
-          // "EGP 486,000" on Make It Happen at 1280px. Nothing inside a card needs clipping.
-          <div className="flex flex-wrap gap-3.5 [&>div]:relative [&>div]:flex-1 [&>div]:basis-[13rem] [&>div]:border [&>div]:border-slate-200/80 [&>div]:border-l-[3px] [&>div]:border-l-orange-500 [&>div]:bg-gradient-to-b [&>div]:from-white [&>div]:to-slate-50/70 [&>div]:px-4 [&>div]:py-3.5 [&>div]:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.06)] [&>div]:transition-transform [&>div]:duration-200 hover:[&>div]:-translate-y-0.5">
-            {stats}
-          </div>
+          // Flex-wrap, never a fixed grid, and crucially NO `min-w-0` on the tiles: a headline money
+          // value carries `whitespace-nowrap`, so its own min-content is the tile's floor — the tile
+          // can never be squeezed narrower than the number, which would clip it. `flex-1
+          // basis-[13rem]` (on BandStat's tile) lets each tile grow to fill the row and share width
+          // evenly, and when the numbers no longer fit side by side the tiles wrap to the next line
+          // instead of overflowing the page (the fits-the-screen golden rule). And NO
+          // `overflow-hidden`: it makes each tile a scroll container whose minimum flex width drops
+          // to 0, which CUT the money ("EGP 1,234,567" on a 768px tablet, "EGP 486,000" on Make It
+          // Happen at 1280px).
+          <BandGround.Provider value="navy">
+            <LandingNavyBoard label={title}>
+              <div className="flex flex-wrap gap-2">{stats}</div>
+            </LandingNavyBoard>
+          </BandGround.Provider>
         ) : null}
         {ring || aside || footer ? (
-          <section className="relative overflow-hidden border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_20px_48px_rgba(15,23,42,0.08)]">
-            {/* Premium orange accent rail — echoes the navy hero's orange top rule. */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-orange-500 via-orange-400 to-transparent"
-            />
+          <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
             {footer ? (
-              <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-white/60 px-4 py-3">{footer}</div>
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 px-3 py-2.5 sm:px-4">{footer}</div>
             ) : null}
             {ring || aside ? (
-              <div className="flex flex-wrap items-center gap-6 px-5 py-5">
+              <div className="flex flex-wrap items-center gap-6 px-4 py-4 sm:px-5">
                 {ring}
                 {/* `basis-[8rem]` and NO `min-w-0`: the aside's nowrap figure is its own floor, so when
                     ring + aside no longer fit side by side the aside WRAPS under the ring. With
@@ -534,6 +540,29 @@ export function BandStat({
   /** "white" is the default ink (kept as the name so existing callers need no change). */
   tone?: "white" | "sky" | "amber";
 }) {
+  const ground = useContext(BandGround);
+  if (ground === "navy") {
+    // A tile on the portal's navy board: the label in dim white capitals, the figure white (sky and
+    // amber in their light shades), its tone on a 2px rail down the tile's left edge.
+    return (
+      <div className={cn("relative flex-1 basis-[13rem] border border-white/[0.08] py-3 pl-3.5 pr-3", LANDING_NAVY_TILE)}>
+        <span
+          aria-hidden="true"
+          className={cn("absolute inset-y-0 left-0 w-0.5", tone === "sky" ? "bg-sky-400" : tone === "amber" ? "bg-amber-400" : "bg-white/30")}
+        />
+        <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-white/65">{label}</p>
+        <p
+          className={cn(
+            "mt-1.5 whitespace-nowrap text-[26px] font-bold leading-none tracking-[-0.02em] tabular-nums",
+            tone === "sky" ? "text-sky-300" : tone === "amber" ? "text-amber-300" : "text-white",
+          )}
+        >
+          {value}
+        </p>
+        {note ? <p className="mt-1.5 break-words text-phx-xs font-medium leading-snug text-white/55">{note}</p> : null}
+      </div>
+    );
+  }
   return (
     <div>
       <p className={LABEL_CLASS}>{label}</p>
@@ -567,7 +596,7 @@ export function BandChoice({
 }) {
   return (
     <>
-      <span className="mr-1 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+      <span className="mr-1 whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
         {label}
       </span>
       {options.map((option) => (

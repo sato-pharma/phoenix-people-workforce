@@ -6,24 +6,34 @@
 // module's screens opened on a bare grey `<h1>`, three different pill palettes were in use, and every
 // screen drew its own panel header, empty state and filter tray. This file is the one spelling of each.
 //
-// EVERYTHING HERE IS BUILT FROM THE HOUSE TOKENS, never a new look of its own:
-//   • the header is `AdminPageHero` — the slim title with the accent rail, NEVER the thick dark banner
-//     the owner had stripped from every page on 2026-09-03;
-//   • the KPI tiles are `AdminStatCard` in its compact size;
-//   • a panel's dark header band is `adminPanelHeaderClassName`, its lift `adminPanelDepthClassName`;
+// 2026-11-20 — THE KIT NOW SPEAKS THE PORTAL LANDING'S LANGUAGE (owner: "EVERY SINGLE COMPONENT TO BE
+// PREMIUM POLISHED"; `src/components/employee-portal/landing-kit.tsx`). Every screen still builds from
+// THIS file, so the move happened here once rather than on forty screens:
+//   • a panel is the landing's white sheet — the orange tick and a navy small-capital title, the count
+//     a plain navy figure beside it, the actions in the header's right slot — never a dark band;
+//   • the KPI strip is the page's ONE night-navy board of headline figures;
+//   • a status is coloured small capitals behind a thin rail, never a filled tinted pill;
+//   • the tab bar is the landing's underline tab and WRAPS rather than scrolls;
+//   • nothing sits under a header (owner, 2026-11-20: "DELETE ANY TEXT UNDER ANY HEADER") — the
+//     `description` props stay in the types so no caller breaks, and are no longer drawn;
+//   • the header is still `AdminPageHero` — the slim title with the accent rail, NEVER the thick dark
+//     banner the owner had stripped from every page on 2026-09-03, never a bare `<h1>`;
 //   • corners are square everywhere (the square-edge golden rule), so nothing here names a radius;
 //   • text wraps, never truncates, and no grid here can push the page sideways.
 
 import type { ReactNode } from "react";
-import { CircleDashed, UserRoundSearch } from "lucide-react";
+import { UserRoundSearch } from "lucide-react";
 
+import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { AdminPageHero } from "@/components/admin/admin-design-system";
 import {
-  adminChipDepthClassName,
-  adminPanelDepthClassName,
-  adminPanelHeaderClassName,
-  adminRecessedDepthClassName,
-} from "@/components/admin/admin-design-tokens";
-import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingFigure,
+  LandingNavyBoard,
+  LandingPanel,
+} from "@/components/employee-portal/landing-kit";
 import { cn } from "@/lib/utils";
 
 /** The module's eyebrow, so every screen announces which product it belongs to in the same words. */
@@ -32,11 +42,13 @@ export const RECRUITMENT_EYEBROW = "Recruitment";
 /**
  * The page header every recruitment screen opens with. `AdminPageHero` underneath, so it is the slim
  * house header with the accent rail — the module's identity is the eyebrow and the icon, never a banner.
+ * The sentence it used to print under the title is gone (owner, 2026-11-20): the prop stays so no page
+ * breaks, the hero is handed an empty note, and its note line is hidden.
  */
 export function RecruitmentPageHeader({
   actions,
   badges,
-  description,
+  description: _description,
   eyebrow = RECRUITMENT_EYEBROW,
   icon,
   title,
@@ -52,7 +64,8 @@ export function RecruitmentPageHeader({
     <AdminPageHero
       actions={actions}
       badges={badges}
-      description={description}
+      className="[&_.phx-header-note]:hidden"
+      description=""
       eyebrow={eyebrow}
       icon={icon ?? <UserRoundSearch aria-hidden="true" className="h-3.5 w-3.5" />}
       title={title}
@@ -69,34 +82,63 @@ export type RecruitmentKpi = {
   value: ReactNode;
 };
 
+/** The swatch beside a tile's label: the tone's meaning on navy. Orange is the default and means nothing. */
+const KPI_SWATCH: Record<NonNullable<RecruitmentKpi["tone"]>, string> = {
+  blue: "bg-sky-400",
+  emerald: "bg-emerald-400",
+  orange: "bg-white/40",
+  rose: "bg-rose-400",
+  violet: "bg-violet-400",
+};
+
 /**
- * A row of KPI tiles. Two across on a phone, three on a tablet, up to six on a wide screen; the grid
- * never forces a width, so it cannot scroll sideways.
+ * The page's headline figures, on the landing's ONE night-navy board. Two across on a phone, three on
+ * a tablet, up to six on a wide screen; the tiles are cut by a 1px seam and the grid never forces a
+ * width, so it cannot scroll sideways. `label` names the board for a screen reader and in its header.
  */
-export function RecruitmentKpiStrip({ className, items }: { className?: string; items: readonly RecruitmentKpi[] }) {
+export function RecruitmentKpiStrip({
+  className,
+  items,
+  label = "Key figures",
+}: {
+  className?: string;
+  items: readonly RecruitmentKpi[];
+  label?: string;
+}) {
   if (items.length === 0) return null;
   const wide = items.length >= 6 ? "xl:grid-cols-6" : items.length === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4";
   return (
-    <div className={cn("grid grid-cols-2 gap-3 md:grid-cols-3", wide, className)}>
-      {items.map((item) => (
-        <AdminStatCard
-          description={item.description}
-          icon={item.icon}
-          key={item.label}
-          label={item.label}
-          size="compact"
-          tone={item.tone ?? "orange"}
-          value={item.value}
-        />
-      ))}
-    </div>
+    <LandingNavyBoard className={className} label={label}>
+      <div className={cn("grid grid-cols-2 gap-px md:grid-cols-3", wide)}>
+        {items.map((item) => (
+          <div className={cn("min-w-0 px-3 py-2.5", LANDING_NAVY_TILE)} key={item.label}>
+            <p className="flex min-w-0 items-center gap-1.5">
+              <span aria-hidden="true" className={cn("h-2.5 w-2.5 shrink-0", KPI_SWATCH[item.tone ?? "orange"])} />
+              <span className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/60">
+                {item.label}
+              </span>
+            </p>
+            <div className="mt-1.5">
+              <LandingFigure onNavy size="md">
+                {item.value}
+              </LandingFigure>
+            </div>
+            {item.description ? (
+              <p className="mt-1 break-words text-phx-xs font-semibold leading-snug text-white/45">{item.description}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </LandingNavyBoard>
   );
 }
 
 /**
- * A page-level panel: a dark header band naming what it holds, then its body on white, lifted off the
- * page by the house panel shadow. `count` prints beside the title as a chip ("24"), `actions` sit on
- * the band's right and wrap under the title on a narrow screen.
+ * A page-level panel: the landing's white sheet. Its header is the orange tick and the title in navy
+ * small capitals, `count` a plain navy figure beside it ("24"), and `actions` in the header's right
+ * slot, dropping under the title on a narrow screen rather than squeezing it. `icon` and
+ * `description` are kept in the props so no caller breaks; neither is drawn — no tinted icon, and no
+ * sentence under a header (owner, 2026-11-20).
  */
 export function RecruitmentPanel({
   actions,
@@ -104,8 +146,8 @@ export function RecruitmentPanel({
   children,
   className,
   count,
-  description,
-  icon,
+  description: _description,
+  icon: _icon,
   title,
 }: {
   actions?: ReactNode;
@@ -118,45 +160,42 @@ export function RecruitmentPanel({
   title: ReactNode;
 }) {
   return (
-    <section className={cn(`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`, className)}>
-      <header
-        className={cn(
-          "flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3 text-white sm:px-5",
-          adminPanelHeaderClassName,
-        )}
-      >
-        <div className="min-w-0 grow basis-64">
-          <div className="flex flex-wrap items-center gap-2">
-            {icon ? <span className="text-orange-300">{icon}</span> : null}
-            <h2 className="break-words text-sm font-black uppercase tracking-[0.12em] text-white">{title}</h2>
-            {count !== undefined && count !== null ? (
-              <span className="border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-phx-xs font-black tabular-nums text-orange-100">
-                {count}
-              </span>
-            ) : null}
-          </div>
-          {description ? <p className="mt-1 break-words text-xs leading-5 text-slate-300">{description}</p> : null}
-        </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-      </header>
-      <div className={cn("min-w-0", bodyClassName)}>{children}</div>
-    </section>
+    <LandingPanel
+      bodyClassName={cn("min-w-0", bodyClassName)}
+      className={className}
+      right={actions ? <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div> : undefined}
+      title={
+        <>
+          {title}
+          {count !== undefined && count !== null ? (
+            <span className="ml-2 tabular-nums text-slate-500">{count}</span>
+          ) : null}
+        </>
+      }
+    >
+      {children}
+    </LandingPanel>
   );
 }
 
 /**
  * The tray filters and toolbars sit in: recessed, because it sits below the page rather than on it,
- * with its controls wrapping onto as many lines as they need.
+ * with its controls wrapping onto as many lines as they need. Flat slate, a hairline, an inner shadow
+ * — never a drop shadow, which would float it off the panel it is cut into.
  */
-export const recruitmentToolbarClassName = `flex flex-wrap items-end gap-3 border border-slate-200 bg-slate-50/80 px-3 py-3 sm:px-4 ${adminRecessedDepthClassName}`;
+export const recruitmentToolbarClassName = `flex flex-wrap items-end gap-3 border border-slate-200 bg-slate-50 px-3 py-3 sm:px-4 ${adminRecessedDepthClassName}`;
 
 /** The same tray, stacked: lines of controls one under another (the workspace's filter bar). */
-export const recruitmentStackedToolbarClassName = `space-y-3 border border-slate-200 bg-slate-50/80 px-3 py-3 sm:px-4 ${adminRecessedDepthClassName}`;
+export const recruitmentStackedToolbarClassName = `space-y-3 border border-slate-200 bg-slate-50 px-3 py-3 sm:px-4 ${adminRecessedDepthClassName}`;
 
-/** Nothing to show — said in words, with the module's own mark, never a blank box or a bare "0". */
+/**
+ * Nothing to show — one calm statement on a slate rail, read left to right like every other line on
+ * the page; never a blank box, a bare "0", or a tinted icon square floating in the middle. `icon` is
+ * kept in the props so no caller breaks.
+ */
 export function RecruitmentEmptyState({
   action,
-  icon,
+  icon: _icon,
   message,
   title,
 }: {
@@ -166,23 +205,20 @@ export function RecruitmentEmptyState({
   title: ReactNode;
 }) {
   return (
-    <div className="px-4 py-10 text-center sm:px-6">
-      <div
-        className={cn(
-          "mx-auto flex h-12 w-12 items-center justify-center border border-orange-200 bg-gradient-to-b from-orange-50 to-white text-orange-600",
-          adminChipDepthClassName,
-        )}
-      >
-        {icon ?? <CircleDashed aria-hidden="true" className="h-5 w-5" />}
+    <div className="px-3 py-5 sm:px-4">
+      <div className="flex min-w-0 gap-3">
+        <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-slate-300" />
+        <div className="min-w-0">
+          <p className={cn("break-words text-sm font-bold", LANDING_INK)}>{title}</p>
+          <div className="mt-1 max-w-xl break-words text-phx-sm leading-snug text-slate-500">{message}</div>
+          {action ? <div className="mt-3 flex flex-wrap gap-2">{action}</div> : null}
+        </div>
       </div>
-      <p className="mt-4 text-base font-black tracking-tight text-slate-950">{title}</p>
-      <div className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">{message}</div>
-      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
 }
 
-/** One tab in a `RecruitmentTabBar`. `count` prints as a chip after the label; `null` prints nothing. */
+/** One tab in a `RecruitmentTabBar`. `count` prints as a figure after the label; `null` prints nothing. */
 export type RecruitmentTab<K extends string> = {
   count?: number | null;
   icon?: ReactNode;
@@ -191,8 +227,9 @@ export type RecruitmentTab<K extends string> = {
 };
 
 /**
- * The module's tab bar: one recessed tray of square segments, the chosen one lifted onto white with an
- * orange underline. The segments wrap onto a second line on a phone rather than scroll sideways.
+ * The module's tab bar — the landing's tab: small navy capitals on a 2px navy underline when chosen,
+ * the count a plain figure beside the words, never a filled chip. The tabs WRAP onto a second row on a
+ * phone rather than scroll sideways (the fits-the-screen rule).
  */
 export function RecruitmentTabBar<K extends string>({
   label,
@@ -206,22 +243,16 @@ export function RecruitmentTabBar<K extends string>({
   value: K;
 }) {
   return (
-    <div
-      aria-label={label}
-      className={cn("flex flex-wrap gap-1 border border-slate-200 bg-slate-100/80 p-1", adminRecessedDepthClassName)}
-      role="tablist"
-    >
+    <div aria-label={label} className="flex min-w-0 flex-wrap gap-x-1 border-b border-slate-200" role="tablist">
       {tabs.map((tab) => {
         const selected = tab.key === value;
         return (
           <button
             aria-selected={selected}
             className={cn(
-              "relative inline-flex min-h-9 grow items-center justify-center gap-2 px-3 py-1.5 text-sm font-bold transition-colors sm:grow-0 sm:px-4",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-1",
-              selected
-                ? cn("bg-white text-slate-950", adminChipDepthClassName)
-                : "text-slate-600 hover:bg-white/70 hover:text-slate-900",
+              "-mb-px inline-flex min-h-10 items-center gap-2 border-b-2 px-3 pb-2 pt-1 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:px-4",
+              LANDING_FOCUS,
+              selected ? cn("border-[#08111f]", LANDING_INK) : "border-transparent text-slate-500 hover:text-[#08111f]",
             )}
             key={tab.key}
             onClick={() => onChange(tab.key)}
@@ -229,22 +260,14 @@ export function RecruitmentTabBar<K extends string>({
             type="button"
           >
             {tab.icon ? (
-              <span aria-hidden="true" className={selected ? "text-orange-600" : "text-slate-400"}>
+              <span aria-hidden="true" className={selected ? LANDING_INK : "text-slate-400"}>
                 {tab.icon}
               </span>
             ) : null}
-            <span>{tab.label}</span>
+            <span className="break-words">{tab.label}</span>
             {tab.count !== undefined && tab.count !== null ? (
-              <span
-                className={cn(
-                  "border px-1.5 text-phx-xs font-black tabular-nums",
-                  selected ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white/80 text-slate-500",
-                )}
-              >
-                {tab.count}
-              </span>
+              <span className={cn("tabular-nums", selected ? LANDING_INK : "text-slate-400")}>{tab.count}</span>
             ) : null}
-            {selected ? <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-0.5 bg-orange-500" /> : null}
           </button>
         );
       })}
@@ -252,28 +275,39 @@ export function RecruitmentTabBar<K extends string>({
   );
 }
 
-/** The six pill colours every recruitment screen uses, one spelling — a stage, a status, a channel. */
+/** The six status colours every recruitment screen uses, one spelling — a stage, a status, a channel. */
 export type RecruitmentPillTone = "orange" | "emerald" | "amber" | "rose" | "sky" | "slate";
 
+/** The tone's ink: the 700s on white, so a coloured word still clears contrast at 11px. */
 export const recruitmentPillToneClassName: Record<RecruitmentPillTone, string> = {
-  amber: "border-amber-200 bg-amber-50 text-amber-800",
-  emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  orange: "border-orange-200 bg-orange-50 text-orange-800",
-  rose: "border-rose-200 bg-rose-50 text-rose-800",
-  sky: "border-sky-200 bg-sky-50 text-sky-800",
-  slate: "border-slate-200 bg-slate-50 text-slate-700",
+  amber: "text-amber-700",
+  emerald: "text-emerald-700",
+  orange: "text-orange-700",
+  rose: "text-rose-700",
+  sky: "text-sky-700",
+  slate: "text-slate-600",
 };
 
-/** A status or stage pill: hairline, tinted ground, small capitals, a contact shadow so it reads as a chip. */
+/** The tone's rail: the thin bar before the word that carries the colour where a fill used to. */
+export const recruitmentPillRailClassName: Record<RecruitmentPillTone, string> = {
+  amber: "bg-amber-500",
+  emerald: "bg-emerald-500",
+  orange: "bg-orange-500",
+  rose: "bg-rose-500",
+  sky: "bg-sky-500",
+  slate: "bg-slate-400",
+};
+
+/** A status or stage: coloured small capitals behind a 2px rail — never a filled pill, never a badge on a badge. */
 export function RecruitmentPill({ children, tone }: { children: ReactNode; tone: RecruitmentPillTone }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-xs font-bold uppercase tracking-[0.06em]",
+        "inline-flex min-w-0 items-center gap-1.5 break-words text-phx-xs font-bold uppercase tracking-[0.08em]",
         recruitmentPillToneClassName[tone],
-        adminChipDepthClassName,
       )}
     >
+      <span aria-hidden="true" className={cn("h-3 w-0.5 shrink-0", recruitmentPillRailClassName[tone])} />
       {children}
     </span>
   );

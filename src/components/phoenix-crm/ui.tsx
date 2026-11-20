@@ -3,28 +3,44 @@
 /**
  * Phoenix CRM — the module's own building blocks.
  *
- * Every Phoenix CRM screen draws with these and nothing else, so the owner's identity file, when it
- * arrives, restyles the whole module here in one place. Today they wear the employee portal's look
- * (white panels, slate lines, orange accent, black uppercase labels), with two house rules built in:
+ * Every Phoenix CRM screen draws with these and nothing else, so the whole module is restyled here in
+ * one place. Since 2026-11-20 they wear the portal's LANDING KIT (`employee-portal/landing-kit.tsx`):
+ * white panels on a hairline with the platform's soft depth token, the orange tick and navy small
+ * capitals for a title, status as a coloured small-capital word on a thin rail instead of a filled
+ * pill, navy figures in tabular numerals, and navy buttons (orange is never a fill behind words). The
+ * header sentence a screen passes as `description` carries `phx-header-note`, which the portal shell
+ * does not draw (owner, 2026-11-20: "DELETE ANY TEXT UNDER ANY HEADER") and the admin shell keeps.
+ * Two house rules are built in:
  * no rounded corners anywhere (`rounded-none` is written out, because a phone's native input and
  * select draw their own), and nothing that scrolls sideways — rows wrap, choices wrap, tables are
  * fixed-width with named columns and turn into cards below the `md` breakpoint.
  */
 
 import type { ButtonHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
-import { ArrowLeft, ChevronDown, CircleDashed, LoaderCircle, Search } from "lucide-react";
+import { ArrowLeft, ChevronDown, LoaderCircle, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { approvalActionToneClassName } from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS, LANDING_INK, LandingTick, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { countText, type Tone } from "@/components/phoenix-crm/format";
 import { useInsideCrmStepForm, useUntitledCrmBlocks } from "@/components/phoenix-crm/step-form";
 import { useCrmComboBoxes } from "@/components/phoenix-crm/surface";
 import {
+  phxCheckInputClassName,
   phxFieldClassName,
+  phxFieldMessageClassName,
+  phxHintClassName,
+  phxLabelTextClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 
-export const crmPanelClassName = "rounded-none border border-slate-200/90 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.07)]";
+/** The landing kit's white sheet: a hairline and the platform's soft depth token, square. */
+export const crmPanelClassName = `rounded-none border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
+/** The small capitals every label, column head and quiet heading is set in. */
+export const crmLabelClassName = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 export const crmInputClassName =
   `${phxFieldClassName} min-w-0`;
@@ -55,13 +71,21 @@ export function CrmPanel({
   return (
     <section className={cn(framed ? undefined : crmPanelClassName, "min-w-0", className)}>
       {hasHeader ? (
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
-          <div className="min-w-0">
-            {eyebrow ? <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">{eyebrow}</p> : null}
-            {title ? <h2 className="mt-1 break-words text-lg font-black tracking-tight text-slate-950 sm:text-xl">{title}</h2> : null}
-            {description ? <div className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">{description}</div> : null}
+        // The landing panel's header: the eyebrow (the area) in slate capitals over the title, the
+        // title behind the orange tick in navy capitals, the actions on the right. It WRAPS, so a long
+        // title drops its actions to a second line on a 280px phone rather than squeezing either.
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+          <div className="min-w-0 flex-1">
+            {title && eyebrow ? <p className={cn("mb-1 break-words", crmLabelClassName)}>{eyebrow}</p> : null}
+            {title || eyebrow ? (
+              <h2 className={cn("flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em]", LANDING_INK)}>
+                <LandingTick />
+                <span className="min-w-0">{title ?? eyebrow}</span>
+              </h2>
+            ) : null}
+            {description ? <div className="phx-header-note mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</div> : null}
           </div>
-          {actions ? <div className="flex min-w-0 flex-wrap gap-2 sm:justify-end">{actions}</div> : null}
+          {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">{actions}</div> : null}
         </div>
       ) : null}
       {children}
@@ -87,7 +111,7 @@ export function CrmBlock({
     <div className={cn("min-w-0 px-4 py-4 sm:px-5", className)}>
       {shownTitle || actions ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          {shownTitle ? <h3 className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{shownTitle}</h3> : <span />}
+          {shownTitle ? <h3 className={cn("break-words", crmLabelClassName)}>{shownTitle}</h3> : <span />}
           {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
         </div>
       ) : null}
@@ -96,12 +120,16 @@ export function CrmBlock({
   );
 }
 
+/**
+ * A note is the landing kit's rail line: a white sheet on a hairline, its tone on a 4px rail at the left
+ * and in the title's small capitals — never a tinted box. The words stay slate and wrap.
+ */
 const NOTE_TONES = {
-  bad: "border-rose-200 bg-rose-50 text-rose-800",
-  good: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  info: "border-sky-200 bg-sky-50 text-sky-900",
-  neutral: "border-slate-200 bg-slate-50 text-slate-700",
-  warn: "border-amber-200 bg-amber-50 text-amber-900",
+  bad: { rail: "bg-rose-500", title: "text-rose-700" },
+  good: { rail: "bg-emerald-500", title: "text-emerald-700" },
+  info: { rail: "bg-sky-500", title: "text-sky-700" },
+  neutral: { rail: "bg-slate-300", title: LANDING_INK },
+  warn: { rail: "bg-amber-500", title: "text-amber-700" },
 } as const;
 
 export type NoteTone = keyof typeof NOTE_TONES;
@@ -118,19 +146,31 @@ export function CrmNote({
   tone?: NoteTone;
 }) {
   return (
-    <div className={cn("rounded-none border px-3.5 py-3 text-sm leading-6", NOTE_TONES[tone], className)} role={tone === "bad" ? "alert" : undefined}>
-      {title ? <p className="font-black">{title}</p> : null}
-      {children ? <div className={cn("break-words font-medium", title ? "mt-0.5" : undefined)}>{children}</div> : null}
+    <div
+      className={cn("flex min-w-0 gap-3 rounded-none border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-700", className)}
+      role={tone === "bad" ? "alert" : undefined}
+    >
+      <span aria-hidden="true" className={cn("w-1 shrink-0 self-stretch", NOTE_TONES[tone].rail)} />
+      <div className="min-w-0 flex-1">
+        {title ? <p className={cn("break-words text-phx-xs font-bold uppercase leading-5 tracking-[0.1em]", NOTE_TONES[tone].title)}>{title}</p> : null}
+        {children ? <div className={cn("break-words", title ? "mt-0.5" : undefined)}>{children}</div> : null}
+      </div>
     </div>
   );
 }
 
+/**
+ * The kit's action shape (`landingActionClassName`): navy solid for the one primary action, a navy
+ * frame for the rest, small tracked capitals, the orange focus outline. `success` and `danger` are a
+ * decision's two halves, so they take the approvals hub's own approve and reject colours
+ * (`approval-action-kit.tsx`) — one look for every decision in the platform.
+ */
 const BUTTON_VARIANTS = {
-  danger: "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50",
-  ghost: "border border-transparent bg-transparent text-slate-600 hover:bg-slate-100",
-  primary: "border border-orange-600 bg-orange-600 text-white hover:bg-orange-700",
-  secondary: "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
-  success: "border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700",
+  danger: approvalActionToneClassName.reject,
+  ghost: "border border-transparent bg-transparent text-slate-600 hover:bg-slate-50 hover:text-[#08111f]",
+  primary: landingActionClassName("solid"),
+  secondary: landingActionClassName("outline"),
+  success: approvalActionToneClassName.approve,
 } as const;
 
 export type CrmButtonVariant = keyof typeof BUTTON_VARIANTS;
@@ -154,10 +194,13 @@ export function CrmButton({
       {...rest}
       aria-busy={busy || undefined}
       className={cn(
-        "inline-flex min-w-0 items-center justify-center gap-2 rounded-none text-center font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-        // A small button is still a thumb's target on a phone (40px); it tightens to 36px from `md` up.
-        size === "sm" ? "min-h-10 px-3 py-1.5 text-xs md:min-h-9" : "min-h-11 px-4 py-2 text-sm",
         BUTTON_VARIANTS[variant],
+        // `shrink` undoes the kit's `shrink-0`: a long label in a narrow row wraps inside its button.
+        "inline-flex min-w-0 shrink items-center justify-center gap-2 rounded-none text-center font-bold uppercase tracking-[0.08em] transition disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none",
+        LANDING_FOCUS,
+        // A small button is still a thumb's target on a phone (40px); it tightens to 36px from `md` up.
+        // The medium one keeps the 44px floor at every width (the kit's own 32px from `sm` is undone).
+        size === "sm" ? "min-h-10 px-3 py-1.5 text-phx-xs sm:min-h-10 md:min-h-9" : "min-h-11 px-4 py-2 text-phx-sm sm:min-h-11",
         className,
       )}
       disabled={disabled || busy}
@@ -186,23 +229,28 @@ export function CrmField({
 }) {
   return (
     <div className={cn("grid min-w-0 gap-1.5", className)}>
-      <label className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={htmlFor}>
+      <label className={phxLabelTextClassName} htmlFor={htmlFor}>
         {label}
       </label>
       {children}
-      {hint ? <p className="text-xs font-medium leading-5 text-slate-500">{hint}</p> : null}
-      {error ? <p className="text-xs font-bold leading-5 text-rose-700">{error}</p> : null}
+      {hint ? <p className={cn(phxHintClassName, "mt-0 break-words text-slate-500")}>{hint}</p> : null}
+      {error ? <p className={cn(phxFieldMessageClassName, "mt-0 break-words")}>{error}</p> : null}
     </div>
   );
 }
 
+/**
+ * A status is a coloured small-capital WORD on a thin rail, never a filled pill (the landing kit's
+ * rule). `orange` keeps its name for the callers, but orange is the title tick's alone now, so the
+ * word it marks is set in navy — the "this one is yours" emphasis, not an alarm.
+ */
 const PILL_TONES = {
-  bad: "border-rose-200 bg-rose-50 text-rose-700",
-  good: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  info: "border-sky-200 bg-sky-50 text-sky-700",
-  neutral: "border-slate-200 bg-slate-50 text-slate-600",
-  orange: "border-orange-200 bg-orange-50 text-orange-700",
-  warn: "border-amber-200 bg-amber-50 text-amber-800",
+  bad: { rail: "bg-rose-500", text: "text-rose-700" },
+  good: { rail: "bg-emerald-500", text: "text-emerald-700" },
+  info: { rail: "bg-sky-500", text: "text-sky-700" },
+  neutral: { rail: "bg-slate-300", text: "text-slate-500" },
+  orange: { rail: "bg-[#08111f]", text: LANDING_INK },
+  warn: { rail: "bg-amber-500", text: "text-amber-700" },
 } as const;
 
 export type PillTone = keyof typeof PILL_TONES;
@@ -211,11 +259,12 @@ export function CrmPill({ children, className, tone = "neutral" }: { children: R
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-none border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em]",
-        PILL_TONES[tone],
+        "inline-flex max-w-full items-center gap-1.5 rounded-none text-phx-xs font-bold uppercase leading-4 tracking-[0.08em]",
+        PILL_TONES[tone].text,
         className,
       )}
     >
+      <span aria-hidden="true" className={cn("h-3 w-0.5 shrink-0", PILL_TONES[tone].rail)} />
       {children}
     </span>
   );
@@ -223,13 +272,11 @@ export function CrmPill({ children, className, tone = "neutral" }: { children: R
 
 export function CrmEmpty({ action, message, title }: { action?: ReactNode; message?: ReactNode; title: ReactNode }) {
   return (
-    <div className="px-4 py-10 text-center sm:px-6">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-none border border-orange-100 bg-orange-50 text-orange-600">
-        <CircleDashed aria-hidden className="h-5 w-5" />
-      </div>
-      <p className="mt-4 text-base font-black text-slate-950">{title}</p>
-      {message ? <div className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-slate-500">{message}</div> : null}
-      {action ? <div className="mt-4 flex flex-wrap justify-center gap-2">{action}</div> : null}
+    // The kit's empty line: one calm statement, no icon in a tinted square.
+    <div className="px-4 py-6 sm:px-5">
+      <p className={cn("break-words text-sm font-bold", LANDING_INK)}>{title}</p>
+      {message ? <div className="mt-1 max-w-2xl break-words text-sm leading-6 text-slate-500">{message}</div> : null}
+      {action ? <div className="mt-3 flex flex-wrap gap-2">{action}</div> : null}
     </div>
   );
 }
@@ -238,9 +285,9 @@ export function CrmLoading({ label = "Loading" }: { label?: string }) {
   return (
     <div aria-busy="true" aria-live="polite" className="grid gap-2 px-4 py-5 sm:px-5">
       <span className="sr-only">{label}</span>
-      <div className="h-4 w-2/5 animate-pulse rounded-none bg-slate-100" />
-      <div className="h-4 w-4/5 animate-pulse rounded-none bg-slate-100" />
-      <div className="h-4 w-3/5 animate-pulse rounded-none bg-slate-100" />
+      <div aria-hidden="true" className="h-4 w-2/5 animate-pulse rounded-none bg-slate-100 motion-reduce:animate-none" />
+      <div aria-hidden="true" className="h-4 w-4/5 animate-pulse rounded-none bg-slate-100 motion-reduce:animate-none" />
+      <div aria-hidden="true" className="h-4 w-3/5 animate-pulse rounded-none bg-slate-100 motion-reduce:animate-none" />
     </div>
   );
 }
@@ -297,28 +344,29 @@ export function CrmSaveError({
   );
 }
 
+/** A toned figure carries its tone on a 2px rail as well; a neutral one is a plain hairline cell. */
 const STAT_BARS: Record<Tone, string> = {
-  bad: "border-l-rose-500",
-  good: "border-l-emerald-500",
-  neutral: "border-l-slate-300",
-  warn: "border-l-amber-500",
+  bad: "border-l-2 border-l-rose-500",
+  good: "border-l-2 border-l-emerald-500",
+  neutral: "",
+  warn: "border-l-2 border-l-amber-500",
 };
 
 const STAT_VALUES: Record<Tone, string> = {
   bad: "text-rose-700",
   good: "text-emerald-700",
-  neutral: "text-slate-950",
+  neutral: LANDING_INK,
   warn: "text-amber-700",
 };
 
 export function CrmStat({ label, note, tone = "neutral", value }: { label: ReactNode; note?: ReactNode; tone?: Tone; value: ReactNode }) {
   return (
-    <div className={cn("min-w-0 rounded-none border border-l-[3px] border-slate-200/80 bg-white px-3.5 py-3", STAT_BARS[tone])}>
-      <p className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+    <div className={cn("min-w-0 rounded-none border border-slate-200 bg-white px-3 py-2.5", STAT_BARS[tone])}>
+      <p className={cn("break-words", crmLabelClassName)}>{label}</p>
       {/* `leading-tight`, not `leading-none`: a value such as "3 AM · 12 PM" wraps on a phone, and its
           two lines must not touch. */}
-      <p className={cn("mt-2 break-words text-2xl font-black leading-tight", STAT_VALUES[tone])}>{value}</p>
-      {note ? <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500">{note}</p> : null}
+      <p className={cn("mt-1.5 break-words text-[22px] font-bold leading-tight tracking-[-0.02em] tabular-nums", STAT_VALUES[tone])}>{value}</p>
+      {note ? <p className="mt-1 break-words text-xs leading-5 text-slate-500">{note}</p> : null}
     </div>
   );
 }
@@ -392,8 +440,12 @@ export function CrmChoice<T extends string>({
           <button
             aria-checked={selected}
             className={cn(
-              "min-h-11 min-w-0 rounded-none border px-3 py-2 text-left text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-              selected ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+              "min-h-11 min-w-0 rounded-none border px-3 py-2 text-left text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none",
+              LANDING_FOCUS,
+              // The chosen option's colours stay as they are: tests/phoenix-crm-plan-board.test.ts pins
+              // the full day's emerald rail and "orange still wins where he stands" beside them, and
+              // that test pins the plan day panel too, which is not this module's restyle to make.
+              selected ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-[#08111f]",
               // Full: a 3px emerald rail with the colour blooming off it and fading away, never a
               // flat fill — and the orange of the option he is on still wins.
               option.tone === "good" &&
@@ -519,7 +571,7 @@ export function CrmSearchField({
 export function CrmShowMore({ left, onMore, page }: { left: number; onMore: () => void; page: number }) {
   if (left <= 0) return null;
   return (
-    <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+    <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
       <CrmButton onClick={onMore} size="sm">
         {left <= page ? (left === 1 ? "Show the last one" : `Show the last ${countText(left)}`) : `Show ${countText(page)} more of the ${countText(left)} left`}
       </CrmButton>
@@ -543,7 +595,7 @@ export function CrmCheck({
     <label className={cn("flex min-w-0 cursor-pointer items-start gap-2.5 text-sm font-semibold leading-6 text-slate-700", disabled && "cursor-not-allowed opacity-60")}>
       <input
         checked={checked}
-        className="mt-1 h-4 w-4 shrink-0 rounded-none accent-orange-600"
+        className={cn(phxCheckInputClassName, "mt-1 rounded-none")}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
@@ -558,12 +610,15 @@ export function CrmBackBar({ backLabel = "Back", onBack, title }: { backLabel?: 
   // Inside the step form, Back sits in the form's own foot and the step's heading names the screen.
   if (useInsideCrmStepForm()) return null;
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 sm:px-4">
       <CrmButton onClick={onBack} size="sm" variant="ghost">
         <ArrowLeft aria-hidden className="h-4 w-4" />
         {backLabel}
       </CrmButton>
-      <h2 className="min-w-0 break-words text-base font-black text-slate-950">{title}</h2>
+      <h2 className={cn("flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em]", LANDING_INK)}>
+        <LandingTick />
+        <span className="min-w-0">{title}</span>
+      </h2>
     </div>
   );
 }
@@ -590,8 +645,8 @@ export function CrmCard({
     <article className={cn("min-w-0 border-l-[3px] bg-white px-4 py-3.5", accent, className)}>
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="break-words text-sm font-black text-slate-950">{title}</h3>
-          {meta ? <div className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500">{meta}</div> : null}
+          <h3 className={cn("break-words text-sm font-bold", LANDING_INK)}>{title}</h3>
+          {meta ? <div className="mt-1 break-words text-xs leading-5 text-slate-500">{meta}</div> : null}
         </div>
         {/* 🔴 THE PILLS TAKE THEIR OWN LINE ON A PHONE (owner, 2026-09-30, of a card whose name read
             one character per line). The title is `flex-1 min-w-0`, so it may shrink to nothing,
@@ -610,11 +665,13 @@ export function CrmCard({
 /** Label/value pairs inside a card. */
 export function CrmFacts({ facts }: { facts: ReadonlyArray<{ label: ReactNode; value: ReactNode }> }) {
   return (
-    <dl className="grid grid-cols-2 gap-2">
+    // Hairline cells, two a row: the container draws the top and left of the frame, each cell its own
+    // right and bottom, so no tinted box sits on the card.
+    <dl className="grid grid-cols-2 border-l border-t border-slate-200">
       {facts.map((fact, index) => (
-        <div className="min-w-0 rounded-none border border-slate-100 bg-slate-50 px-2.5 py-2" key={index}>
-          <dt className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{fact.label}</dt>
-          <dd className="mt-0.5 min-w-0 break-words text-xs font-bold text-slate-800">{fact.value}</dd>
+        <div className="min-w-0 rounded-none border-b border-r border-slate-200 px-2.5 py-2" key={index}>
+          <dt className={cn("break-words", crmLabelClassName)}>{fact.label}</dt>
+          <dd className={cn("mt-0.5 min-w-0 break-words text-xs font-bold tabular-nums", LANDING_INK)}>{fact.value}</dd>
         </div>
       ))}
     </dl>
@@ -652,11 +709,11 @@ export function CrmTable({
 }
 
 export const crmThClassName =
-  "border-b border-slate-200 bg-slate-50 px-3 py-2.5 align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
+  "border-b border-slate-200 px-3 py-2.5 align-bottom text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
-export const crmTdClassName = "border-b border-slate-100 px-3 py-2.5 align-top break-words text-sm font-semibold text-slate-700";
+export const crmTdClassName = "border-b border-slate-200 px-3 py-2.5 align-top break-words text-sm text-slate-700";
 
 /** Cards below `md`, the table from `md` up — the rows are drawn once per layout. */
 export function CrmCardsOnPhone({ children }: { children: ReactNode }) {
-  return <div className="divide-y divide-slate-100 md:hidden">{children}</div>;
+  return <div className="divide-y divide-slate-200 md:hidden">{children}</div>;
 }
