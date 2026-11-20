@@ -57,7 +57,8 @@ cmd /c exit $red
 }
 $ErrorActionPreference = 'Continue'   # PS 5.1 turns any git warning on stderr into a fatal error under 'Stop'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
-$spare = 'TransferUser@' + "$(& "$PSScriptRoot\spare-address.ps1" | Select-Object -Last 1)".Trim()   # found, never written here (2026-11-14)
+$spareUser = "$(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'spare-user.txt') -ErrorAction SilentlyContinue | Select-Object -First 1)".Trim(); if (-not $spareUser) { $spareUser = 'TransferUser' }   # the spare's user, written by spare-rebuild.ps1 (2026-11-20)
+$spare = "$spareUser@" +"$(& "$PSScriptRoot\spare-address.ps1" | Select-Object -Last 1)".Trim()   # found, never written here (2026-11-14)
 $sshExe = "$env:SystemRoot\System32\OpenSSH\ssh.exe"; $scpExe = "$env:SystemRoot\System32\OpenSSH\scp.exe"   # Windows OpenSSH even when called from Git Bash
 $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=ERROR', '-i', $key)
 $id = '{0}-{1}' -f (Get-Date -Format 'MMdd-HHmmss'), $PID

@@ -20,6 +20,7 @@ function SpareAddress {
   $a = "$(& "$PSScriptRoot\spare-address.ps1" | Select-Object -Last 1)".Trim()
   if ($LASTEXITCODE -eq 0 -and $a) { return $a }
 }
+$spareUser = "$(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'spare-user.txt') -ErrorAction SilentlyContinue | Select-Object -First 1)".Trim(); if (-not $spareUser) { $spareUser = 'TransferUser' }   # the spare's user, written by spare-rebuild.ps1 (2026-11-20)
 Log 'tunnel loop started'
 $down = $false
 while ($true) {
@@ -33,7 +34,7 @@ while ($true) {
   }
   if ($down) { Log "spare answering again at $addr; reconnecting"; $down = $false }
   & ssh -N -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 `
-    -o ExitOnForwardFailure=yes -o LogLevel=ERROR -i $key -L 127.0.0.1:3000:127.0.0.1:3000 "TransferUser@$addr"
+    -o ExitOnForwardFailure=yes -o LogLevel=ERROR -i $key -L 127.0.0.1:3000:127.0.0.1:3000 "$spareUser@$addr"
   Log "ssh ended (exit $LASTEXITCODE); reconnecting in 15 s"
   Start-Sleep 15
 }

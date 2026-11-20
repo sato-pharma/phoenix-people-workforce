@@ -20,5 +20,6 @@ $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
 # The address is never written here (owner, 2026-11-14): the router moves the spare, and spare-address.ps1
 # finds it again by its host key. When it is not found, this is the last known address and ssh fails as before.
 $addr = "$(& "$PSScriptRoot\spare-address.ps1" | Select-Object -Last 1)".Trim()
-& "$env:SystemRoot\System32\OpenSSH\ssh.exe" -o BatchMode=yes -o ConnectTimeout=$ConnectTimeout -o LogLevel=ERROR -i $key "TransferUser@$addr" "powershell -NoProfile -NonInteractive -OutputFormat Text -ExecutionPolicy Bypass -EncodedCommand $b64"
+$spareUser = "$(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'spare-user.txt') -ErrorAction SilentlyContinue | Select-Object -First 1)".Trim(); if (-not $spareUser) { $spareUser = 'TransferUser' }   # the spare's user, written by spare-rebuild.ps1 (2026-11-20)
+& "$env:SystemRoot\System32\OpenSSH\ssh.exe" -o BatchMode=yes -o ConnectTimeout=$ConnectTimeout -o LogLevel=ERROR -i $key "$spareUser@$addr" "powershell -NoProfile -NonInteractive -OutputFormat Text -ExecutionPolicy Bypass -EncodedCommand $b64"
 exit $LASTEXITCODE

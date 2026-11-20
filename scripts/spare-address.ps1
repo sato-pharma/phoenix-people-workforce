@@ -32,7 +32,8 @@
 #>
 $ErrorActionPreference = 'Continue'
 $alias = 'phoenix-spare'
-$user = 'TransferUser'
+$spareUser = "$(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'spare-user.txt') -ErrorAction SilentlyContinue | Select-Object -First 1)".Trim(); if (-not $spareUser) { $spareUser = 'TransferUser' }   # the spare's user, written by spare-rebuild.ps1 (2026-11-20)
+$user = $spareUser
 $cacheFile = Join-Path $PSScriptRoot 'spare-address.txt'
 $log = Join-Path $env:USERPROFILE '.claude\logs\spare-address.log'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'

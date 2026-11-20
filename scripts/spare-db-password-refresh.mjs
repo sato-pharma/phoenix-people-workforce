@@ -134,9 +134,13 @@ const finder = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-E
 const addr = (finder.stdout || "").trim().split(/\r?\n/).pop()?.trim();
 if (finder.status !== 0 || !addr) { log(`spare not reachable (last known ${addr || "?"}) - will retry`); process.exit(3); }
 
+// The spare's user, written by spare-rebuild.ps1 after the 2026-11-20 reinstall; the old name when the file is absent.
+function spareUser() {
+  try { return fs.readFileSync(path.join(HOME, ".claude", "scripts", "spare-user.txt"), "utf8").trim() || "TransferUser"; } catch { return "TransferUser"; }
+}
 const ssh = spawnSync(
   path.join(process.env.SystemRoot || "C:\\Windows", "System32", "OpenSSH", "ssh.exe"),
-  ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "LogLevel=ERROR", "-i", path.join(HOME, ".ssh", "phoenix_spare_ed25519"), `TransferUser@${addr}`, "node --input-type=module -"],
+  ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "LogLevel=ERROR", "-i", path.join(HOME, ".ssh", "phoenix_spare_ed25519"), `${spareUser()}@${addr}`, "node --input-type=module -"],
   { input: spareScript({ password, envFile: SPARE_ENV, repoDir: SPARE_REPO }), encoding: "utf8", timeout: 120_000 },
 );
 const out = `${ssh.stdout || ""}${ssh.stderr || ""}`.replace(/postgres(ql)?:\/\/\S+/g, "<url>").trim();
