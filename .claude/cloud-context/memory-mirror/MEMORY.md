@@ -29,7 +29,7 @@
 
 
 ## Inbox — new notes land here
-- [Speak a reply only when he asks](arabic-replies-are-read-aloud-in-an-egyptian-voice.md) — NEVER automatic; arm ~/.claude/speak/next-<session id> when he asks; Arabic in Egyptian (Gemini), English natural
+- [Phoenix Camera stays its own app](phoenix-camera-stays-its-own-app.md) — owner 2026-11-20: never fold the camera into the CRM app.
 
 
 

@@ -11,9 +11,10 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = one Phoenix Camera visit, synced when the phone has network again: the sealed photo validates a customer
-// with no place, and the visit is saved dated by the seal's offline clock. A resend of the same visit is the same
-// visit. The app's alone (a bearer token, no session cookie); a browser is answered 404.
+// POST = one Phoenix Camera item (a visit, a validation or a new customer), sent when the phone has network again.
+// Recorded at once when every rule allows it, otherwise kept for the Super Admin's camera page; the phone is told
+// "received" either way (server/camera-items.ts). A resend of the same item is the same item. The app's alone (a
+// bearer token, no session cookie); a browser is answered 404.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const result = await syncFieldCameraVisit(viewer, body, captureClientOf(request.headers));
-    return NextResponse.json({ result, success: true });
+    return NextResponse.json({ result, status: result.status, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not record the visit.");
   }

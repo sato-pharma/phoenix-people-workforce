@@ -151,6 +151,7 @@ const PINNED = [
   "scripts/normalize-employee-photos.ts",
   "scripts/outstation/build-train-fares.mjs",
   "scripts/phase19-fixture-cleanup-smoke.ts",
+  "scripts/phoenix-camera-publish-release.ts",
   "scripts/phoenix-inspect/make-persona-secrets.mjs",
   "scripts/phoenix-inspect/mcp-http.mjs",
   "scripts/phoenix-inspect/mcp-server.mjs",
