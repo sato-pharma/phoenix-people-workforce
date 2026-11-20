@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowUpRight, CircleDashed } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { ArrowUpRight } from "lucide-react";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LandingTick, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 
 /* ------------------------------------------------------------------ */
@@ -19,33 +20,6 @@ const portalGlobalStyles = `
    creating that container. Same reasoning as .admin-shell in globals.css.
    NOTE: this block is inside a JS template literal - no backticks below this line. */
 html, body { overflow-x: clip; }
-.employee-portal-command-grid {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
-  background-size: 28px 28px;
-}
-/* The command hero's premium depth. A compound selector (both classes) outranks the plain
-   .employee-portal-command-grid above, so ONLY the shell hero — which carries both classes —
-   gets the two corner glows layered over the same grid; plans-workspace.tsx, which reuses the
-   bare -grid class, keeps its plain grid untouched. Owner-approved premium look, 2026-09-21:
-   a warm orange wash from the top-right and a cool blue depth from the bottom-left, both very
-   low alpha over the #08111f navy, so the title stays first to the eye. */
-.employee-portal-command-header.employee-portal-command-grid {
-  background-image:
-    radial-gradient(120% 150% at 88% -35%, rgba(249,115,22,0.16), transparent 44%),
-    radial-gradient(95% 130% at 0% 132%, rgba(20,130,194,0.12), transparent 52%),
-    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 28px 28px, 28px 28px;
-}
-.employee-portal-command-header::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-top: 3px solid #f97316;
-  pointer-events: none;
-}
 .employee-portal-page-frame {
   min-width: 0;
 }
@@ -138,21 +112,24 @@ export function EmployeePortalPageShell({
       {/* Portal-wide print + prefers-reduced-motion stylesheet (one inject per page) */}
       <style dangerouslySetInnerHTML={{ __html: portalGlobalStyles }} />
       {hero ?? (
-        <section className="employee-portal-command-header employee-portal-command-grid relative overflow-hidden rounded-sm border border-slate-800 bg-[#08111f] px-4 py-4 text-white shadow-[0_24px_70px_rgba(8,17,31,0.20)] sm:px-5 sm:py-5 lg:px-6">
-          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.18em] text-orange-200">
-                  <span aria-hidden className="h-1 w-1 bg-orange-400 shadow-[0_0_6px_rgba(249,115,22,0.9)]" />
-                  {badge ?? "Employee Portal"}
-                </span>
-              </div>
-              <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl">
-                {title}
-              </h1>
-            </div>
-          </div>
-        </section>
+        // THE PAGE TITLE BAND (owner, 2026-11-20: every portal page redesigned onto the landing's
+        // language). It used to be a navy block with a grid texture, two corner glows and a glowing
+        // orange badge. On a phone that navy block sat straight under the night-navy top bar, so
+        // every page opened on two stacked dark slabs, and navy on every page left the one board a
+        // page keeps for its headline figures nothing to stand out against. The title now stands
+        // on the page itself: the small-capital section name after the orange tick, the title in
+        // navy, and one hairline under it. Flat, square, and it wraps instead of clipping.
+        // A div, not a <header>: the portal's print rule hides every header element, and the title
+        // is the one thing a printed page must keep.
+        <div className="employee-portal-page-header min-w-0 border-b border-slate-200 pb-3 pt-0.5">
+          <p className="flex min-w-0 items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+            <LandingTick />
+            <span className="min-w-0 break-words">{badge ?? "Employee Portal"}</span>
+          </p>
+          <h1 className="mt-1.5 max-w-4xl break-words text-[22px] font-bold leading-tight tracking-[-0.015em] text-[#08111f] sm:text-[28px]">
+            {title}
+          </h1>
+        </div>
       )}
       <div className="space-y-5 lg:space-y-6">{body}</div>
     </div>
@@ -164,8 +141,9 @@ export function EmployeePortalActionBar({
 }: {
   actions: ReactNode;
 }) {
+  // A flat white strip with a hairline: no glass, no ring, no floating shadow.
   return (
-    <div className="mb-4 flex max-w-full flex-col items-stretch gap-2 overflow-hidden rounded border border-white/80 bg-white/90 px-3 py-2.5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70 backdrop-blur sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className={`mb-4 flex max-w-full flex-col items-stretch gap-2 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName} sm:flex-row sm:flex-wrap sm:items-center sm:justify-between`}>
       {actions}
     </div>
   );
@@ -178,13 +156,12 @@ export function EmployeePortalActionLink({
   href: string;
   label: string;
 }) {
+  // The landing kit's one action shape: a navy frame that fills navy on hover. The label wraps on a
+  // narrow phone rather than pushing the bar wider than the screen.
   return (
-    <Link
-      className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded border border-slate-200/80 bg-white px-4 py-1.5 text-phx-xs font-bold tracking-wide text-slate-600 shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-orange-300/80 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50/60 hover:text-orange-700 hover:shadow-[0_8px_20px_rgba(249,115,22,0.12)]"
-      href={href}
-    >
-      <span className="min-w-0 whitespace-nowrap">{label}</span>
-      <ArrowUpRight className="h-3.5 w-3.5" />
+    <Link className={landingActionClassName("outline", "min-w-0")} href={href}>
+      <span className="min-w-0 break-words">{label}</span>
+      <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
     </Link>
   );
 }
@@ -198,14 +175,19 @@ export function EmployeePortalEmptyState({
   message: string;
   title: string;
 }) {
+  // A refusal or a failure explains itself on a white sheet: the title after the orange tick, the
+  // reason in slate on a 4px rail. No tinted icon square, no floating shadow.
   return (
-    <Card className="rounded border border-slate-200 bg-white p-8 text-center shadow-[0_18px_46px_rgba(15,23,42,0.07)]">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-        <CircleDashed className="h-5 w-5" />
+    <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <div className="flex min-w-0 items-center gap-2 border-b border-slate-200 px-4 py-3">
+        <LandingTick />
+        <p className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.12em] text-[#08111f]">{title}</p>
       </div>
-      <p className="mt-4 text-lg font-semibold text-slate-900">{title}</p>
-      <p className="mt-2 text-sm text-slate-600">{message}</p>
-      {children ? <div className="mt-4">{children}</div> : null}
-    </Card>
+      <div className="flex min-w-0 gap-3 px-4 py-4">
+        <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-slate-300" />
+        <p className="min-w-0 break-words text-sm leading-6 text-slate-600">{message}</p>
+      </div>
+      {children ? <div className="border-t border-slate-200 px-4 py-3">{children}</div> : null}
+    </section>
   );
 }

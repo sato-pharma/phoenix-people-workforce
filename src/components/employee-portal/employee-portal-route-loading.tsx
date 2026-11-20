@@ -2,15 +2,17 @@
 
 import { usePathname } from "next/navigation";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+
 /**
  * Where the loading screen is showing decides its header, so the placeholder matches the page
  * about to replace it:
  *
  *   - the portal LANDING (`/employee-portals`) has no page header at all — the identity band is
  *     its first thing — so the skeleton draws none;
- *   - every other portal page opens under the navy command header, so the skeleton draws a navy
- *     block in its place instead of the white glass one it used to, which flashed a look no
- *     portal page has;
+ *   - every other portal page opens under the shell's title band (the orange tick, the small
+ *     section name, the navy title and a hairline under them, since 2026-11-20), so the skeleton
+ *     draws that band's two bars and its hairline, and its cards are the landing kit's white sheets;
  *   - anything else (the admin shell's leave-management route renders this too) keeps the
  *     original glass header, byte for byte.
  */
@@ -28,6 +30,14 @@ export function EmployeePortalRouteLoading() {
   const pathname = usePathname() ?? "";
   const portal = isPortalPath(pathname);
   const landing = pathname === "/employee-portals";
+  // Inside the portal a placeholder card is the landing kit's white sheet; the admin route that
+  // borrows this screen keeps its glass cards.
+  const card = portal
+    ? `border border-slate-200 bg-white p-5 ${adminSoftDepthClassName}`
+    : "rounded border border-white/80 bg-white/82 p-5 shadow-[0_16px_38px_rgba(15,23,42,0.07)] backdrop-blur-xl";
+  const wideCard = portal
+    ? `border border-slate-200 bg-white p-5 sm:p-6 ${adminSoftDepthClassName}`
+    : "rounded border border-white/80 bg-white/82 p-5 shadow-[0_16px_42px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-6";
 
   return (
     <div aria-live="polite" className="employee-portal-route-loading space-y-6" role="status">
@@ -51,20 +61,21 @@ export function EmployeePortalRouteLoading() {
           </div>
         </section>
       ) : landing ? null : (
-        // The same frame as EmployeePortalPageShell's command header: navy, square, one badge,
-        // and a title, no description line (owner, 2026-11-20) — as SHARES of the width, never fixed pixels.
-        <section className="rounded-sm border border-slate-800 bg-[#08111f] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
-          <div className="h-5 w-full max-w-[8rem] animate-pulse bg-white/10" />
-          <div className="mt-3 h-8 w-full max-w-[20rem] animate-pulse bg-white/15" />
-        </section>
+        // The same band as EmployeePortalPageShell's title: the tick and the section name, then the
+        // title, then one hairline, and no description line (owner, 2026-11-20) — as SHARES of the
+        // width, never fixed pixels.
+        <div className="border-b border-slate-200 pb-3 pt-0.5">
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
+            <div className="employee-portal-skeleton h-3 w-full max-w-[7rem]" />
+          </div>
+          <div className="employee-portal-skeleton mt-2.5 h-7 w-full max-w-[20rem]" />
+        </div>
       )}
 
       <section className="grid gap-4 md:grid-cols-3">
         {[0, 1, 2].map((item) => (
-          <div
-            className="rounded border border-white/80 bg-white/82 p-5 shadow-[0_16px_38px_rgba(15,23,42,0.07)] backdrop-blur-xl"
-            key={item}
-          >
+          <div className={card} key={item}>
             <div className="mb-5 flex items-center justify-between">
               <div className="employee-portal-skeleton h-10 w-10 rounded" />
               <div className="employee-portal-skeleton h-5 w-16 rounded" />
@@ -77,7 +88,7 @@ export function EmployeePortalRouteLoading() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-        <div className="rounded border border-white/80 bg-white/82 p-5 shadow-[0_16px_42px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-6">
+        <div className={wideCard}>
           {/* FITS THE SCREEN. These two bars used to be FIXED widths (w-44 and w-64) beside a
               w-24 block in a row that could not wrap, giving the card a 394px min-content. Its
               grid column is auto-sized, so at 375px the column grew to 394 and the whole portal
@@ -94,7 +105,7 @@ export function EmployeePortalRouteLoading() {
           <div className="employee-portal-skeleton h-[260px] rounded" />
         </div>
 
-        <div className="rounded border border-white/80 bg-white/82 p-5 shadow-[0_16px_42px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-6">
+        <div className={wideCard}>
           <div className="employee-portal-skeleton h-5 w-36 rounded" />
           <div className="mt-6 space-y-4">
             {[0, 1, 2, 3].map((item) => (

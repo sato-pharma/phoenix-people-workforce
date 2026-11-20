@@ -9,9 +9,17 @@ import { join } from "node:path";
 // enforcing a superseded one is worse than no test.
 //
 // 🔴 THE DEFECT THIS EXISTS TO STOP CAME BACK TWICE, SO IT IS PINNED RATHER THAN REMEMBERED.
-// `EmployeePortalPageShell` ALREADY renders the dark navy command header — badge, title,
-// description. A page inside it that draws its own dark banner stacks two dark blocks and reads as
-// broken. The first assertion below is that one.
+// `EmployeePortalPageShell` renders the page's one header. Until 2026-11-20 that header was a dark
+// navy block, and a page inside it that drew its own dark banner stacked two dark blocks and read as
+// broken. Since 2026-11-20 the shell's header is the landing kit's light title band (the orange tick,
+// the section name, the navy title, a hairline), and a dark banner here would now be the page's own
+// navy slab under it — the kit keeps navy for at most ONE headline board a page, and the spotlight
+// has none. Either way the page draws no banner of its own; the first assertion below is that one.
+//
+// The spotlight is a document identity (its sheet is exempt from the ink rule by his ruling of
+// 2026-09-12) and was left alone by the 2026-11-20 portal redesign, so its card vocabulary below is
+// pinned on its own. It is no longer cross-checked against the shell's empty state and action link,
+// which moved to the landing kit that day.
 
 const root = process.cwd();
 const shell = readFileSync(join(root, "src/components/employee-portal/enterprise-shell.tsx"), "utf8");
@@ -21,8 +29,8 @@ const page = readFileSync(join(root, "app/employee-portals/spotlight/page.tsx"),
 export function runSpotlightPortalLookTests(): void {
   // ── 1. THE SHELL OWNS THE HEADER — the page must not draw a second one ────────────────────────
   assert.ok(
-    shell.includes("bg-[#08111f]"),
-    "The portal shell no longer paints its own command header; re-derive what a page may draw.",
+    shell.includes("employee-portal-page-header") && /<h1[\s>]/.test(shell),
+    "The portal shell no longer draws its own title band and <h1>; re-derive what a page may draw.",
   );
   assert.ok(
     page.includes("EmployeePortalPageShell"),
@@ -34,8 +42,8 @@ export function runSpotlightPortalLookTests(): void {
   for (const banner of ["bg-slate-900", "bg-[#08111f]", "bg-slate-950"]) {
     assert.ok(
       !workspace.includes(banner),
-      `The workspace paints a dark banner (${banner}) under the shell's own navy header — two stacked`
-        + " dark blocks is exactly the defect this page has already shipped twice. The shell owns the header.",
+      `The workspace paints a dark banner (${banner}) under the shell's own header — a second header`
+        + " block is exactly the defect this page has already shipped twice. The shell owns the header.",
     );
   }
   assert.ok(
@@ -43,21 +51,15 @@ export function runSpotlightPortalLookTests(): void {
     "The shell renders the page's only <h1>; sections inside it use <h2>.",
   );
 
-  // ── 2. The portal's own card vocabulary, taken from enterprise-shell ──────────────────────────
-  const portalCardShadow = "shadow-[0_18px_46px_rgba(15,23,42,0.07)]";
+  // ── 2. The spotlight's own card vocabulary, as approved on 2026-09-30 ────────────────────────
+  const spotlightCardShadow = "shadow-[0_18px_46px_rgba(15,23,42,0.07)]";
   assert.ok(
-    shell.includes(portalCardShadow),
-    "The portal's card shadow moved; take the new one from enterprise-shell.tsx and re-pin both sides.",
-  );
-  assert.ok(
-    workspace.includes(`rounded border border-slate-200 bg-white ${portalCardShadow}`),
-    "Spotlight cards must be the portal's card: rounded, slate-200 border, white, the portal shadow.",
+    workspace.includes(`rounded border border-slate-200 bg-white ${spotlightCardShadow}`),
+    "Spotlight cards keep the look he approved: slate-200 border, white, the card shadow.",
   );
 
-  // The portal's hover-lift, as EmployeePortalActionLink does it.
-  const lift = "hover:-translate-y-px";
-  assert.ok(shell.includes(lift), "The portal's hover lift moved; re-pin from enterprise-shell.tsx.");
-  assert.ok(workspace.includes(lift), "Buttons should lift on hover the way the portal's own links do.");
+  // The hover lift its buttons were given on 2026-09-30.
+  assert.ok(workspace.includes("hover:-translate-y-px"), "The spotlight's buttons keep their hover lift.");
 
   // Orange is the single accent, on the portal's own micro-label scale.
   assert.ok(
