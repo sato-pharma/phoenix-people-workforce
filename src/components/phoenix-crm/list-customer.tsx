@@ -422,9 +422,11 @@ export function CustomerScreen({
             customer's page, never a list row; the rep never sees it (golden rule #1). */}
         {view.canPlaceOnTrustedPoint && customer.listType !== "Pharmacy" && (active || pending) && !checking && customer.places.length === 0 ? (
           <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
-            <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · trusted point</p>
+            <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · validate for the rep</p>
             <div className="grid gap-2 sm:flex sm:flex-wrap">
               <CrmButton onClick={() => onOpen({ name: "trusted-point", customerId: customer.customerId })}>Validate on a trusted point</CrmButton>
+              {/* His uploaded photo plus the rep's own live location (owner, 2026-11-20, server/admin-photo.ts). */}
+              <CrmButton onClick={() => onOpen({ name: "admin-photo", customerId: customer.customerId })}>Validate with my photo</CrmButton>
             </div>
           </div>
         ) : null}

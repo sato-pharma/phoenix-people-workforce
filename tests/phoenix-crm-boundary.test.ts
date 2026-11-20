@@ -183,6 +183,14 @@ const ROUTE_GATES: RouteGate[] = [
   // Admin alone — `update` at the route, `canPlaceOnTrustedPoint` (= canDecideSharedPlaces) in the service.
   get("list/places/trusted-point", "update"),
   post("list/places/trusted-point", "update"),
+  // Validating a customer with a photo the Super Admin uploads while the rep captures the location (owner,
+  // 2026-11-20): his half is `update` at the route and `canValidateWithAdminPhoto` (= canDecideSharedPlaces) in
+  // the service; the rep's half is `create` at the route and `territoryForValidation` in the service, the same
+  // gate as a validation at the door.
+  get("list/places/admin-photo", "update"),
+  post("list/places/admin-photo", "update"),
+  get("list/places/admin-photo/ask", "create"),
+  post("list/places/admin-photo/ask", "create"),
   // The Master List's confirm / not confirmed / clear and its chosen photo (owner, 2026-10-26: "my click
   // and automatic"): the Super Admin alone — `update` at the route, `saveMasterDecision` refuses everyone
   // else in the service. It writes only the decisions table; no rep's place moves.
@@ -1163,6 +1171,11 @@ const LATER_MIGRATIONS = [
   // The visit tally on every screen that shows a rep's weekly plan (owner, 19 Nov 2026): one NEW read-only function,
   // phoenix_crm_customer_visit_tally, over phoenix_crm_countable_visits_with_history. It replaces nothing.
   "supabase/migrations/20261119152938_phoenix_crm_customer_visit_tally.sql",
+  // The Super Admin validates for a rep with a photo he uploads, the location being the rep's own live reading
+  // taken while his watch is on (owner, 20 Nov 2026): one NEW table, phoenix_crm_admin_photo_validations, one
+  // nullable column and a widened timings CHECK on phoenix_crm_places, and one NEW function,
+  // phoenix_crm_validate_with_admin_photo. It replaces nothing.
+  "supabase/migrations/20261120125729_phoenix_crm_admin_photo_validations.sql",
 ];
 
 /**
