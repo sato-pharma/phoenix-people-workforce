@@ -52,6 +52,9 @@ export type FieldCameraPackCustomer = {
   lastProducts: string[];
 };
 
+/** Somebody the rep may name on "Who was on the visit", exactly as the main account's form offers them. */
+export type FieldCameraPackPerson = { hrId: string; name: string; side: "manager" | "product" };
+
 export type FieldCameraPack = {
   seatId: string;
   hrId: string;
@@ -59,6 +62,8 @@ export type FieldCameraPack = {
   /** The visit day the pack was read for (until 02:00 the day that just ended). */
   visitDay: string;
   products: string[];
+  /** The territory's managers, nearest first, then the line's product managers. */
+  people: FieldCameraPackPerson[];
   customers: FieldCameraPackCustomer[];
 };
 
@@ -80,6 +85,10 @@ export async function loadFieldCameraPack(viewer: PhoenixCrmViewer, raw: { seatI
     repName: nameOf(names, viewer.hrId, viewer.hrId),
     visitDay: viewer.visitDay,
     products: form.products,
+    people: [
+      ...form.managers.map((person) => ({ hrId: person.hrId, name: person.name, side: "manager" as const })),
+      ...form.productManagers.map((person) => ({ hrId: person.hrId, name: person.name, side: "product" as const })),
+    ],
     customers: form.customers
       .filter((customer) => !customer.outside)
       .map((customer) => ({

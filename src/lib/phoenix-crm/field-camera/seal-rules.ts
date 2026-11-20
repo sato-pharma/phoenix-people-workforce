@@ -18,6 +18,7 @@
  * The warnings are shown to the Super Admin and decide nothing.
  */
 
+import { isUuid } from "@/lib/http/uuid";
 import { adminPhotoReadingProblem } from "@/lib/phoenix-crm/admin-photo-rules";
 import { FIELD_CAMERA_PACKAGE } from "@/lib/phoenix-crm/field-camera/seal-format";
 
@@ -95,20 +96,19 @@ export type SealVisit = {
   offline: { anchorId: string; elapsedMs: number; bootId: string | null } | null;
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The visit block, null when the seal carries none, or a string naming why it cannot be read. */
 function parseSealVisit(raw: unknown): SealVisit | null | string {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== "object" || Array.isArray(raw)) return "The seal's visit cannot be read.";
   const v = raw as Record<string, unknown>;
-  if (!isText(v.seatId, 64) || !isText(v.customerId, 36) || !UUID_PATTERN.test(v.customerId) || !isText(v.visitId, 36) || !UUID_PATTERN.test(v.visitId)) {
+  if (!isText(v.seatId, 64) || !isText(v.customerId, 36) || !isUuid(v.customerId) || !isText(v.visitId, 36) || !isUuid(v.visitId)) {
     return "The seal's visit cannot be read.";
   }
   let offline: SealVisit["offline"] = null;
   if (v.offline !== undefined && v.offline !== null) {
     const o = v.offline as Record<string, unknown>;
-    if (typeof o !== "object" || !isText(o.anchorId, 36) || !UUID_PATTERN.test(o.anchorId) || !isNumber(o.elapsedMs) || o.elapsedMs < 0) {
+    if (typeof o !== "object" || !isText(o.anchorId, 36) || !isUuid(o.anchorId) || !isNumber(o.elapsedMs) || o.elapsedMs < 0) {
       return "The seal's offline clock cannot be read.";
     }
     const bootId = typeof o.bootId === "string" && o.bootId.trim() ? o.bootId.trim().slice(0, 120) : null;
