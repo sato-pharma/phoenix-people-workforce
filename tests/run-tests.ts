@@ -2878,6 +2878,7 @@ import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts
 import { runSqlColumnHintTests } from "./sql-column-hint.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runMergeChecksGuardTests } from "./merge-checks-guard.test.ts";
+import { runMigrationMergeGateTests } from "./migration-merge-gate.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runRollupMemberGuardTests } from "./rollup-member-guard.test.ts";
 import { runTestsParseGuardTests } from "./tests-parse-guard.test.ts";
@@ -11234,6 +11235,11 @@ await runTest(
 await runTest(
   "bash-guard C21 refuses a `gh pr merge` whose checks are RED, STILL RUNNING or NOT REPORTED on the PR head commit (2026-11-04: on the free plan GitHub answers 403 on branch protection and no longer refuses a red merge itself, measured that day on PR 18 red and PR 20 running): the required names come from live protection, else AGENTS.md §2's declaration (validate, checks), so a red non-required `mobile` still merges; a skipped required check is red; the newest re-run wins; another repository with no readable protection is held to nothing failing and nothing running, and one with no CI merges; an unreadable read FAILS CLOSED; PHX_RED_MERGE_OK=1 in both spellings stands it down while C10's PHX_MERGE_OK does not; and gh pr view/checks, a git merge, help and a commit message that quotes the command stay allowed",
   runMergeChecksGuardTests,
+);
+
+await runTest(
+  "bash-guard C22 refuses a `gh pr merge` of a Phoenix PR carrying a supabase/migrations file that production does not have (21 Nov 2026: four 19 Nov money functions merged on staging only, and seven outstation approvals failed with PGRST202 two days later): a file passes when production's ledger records it by the drift check's own three-way match or the PR head's ACKNOWLEDGED_EXCEPTIONS names it; a removed file, a file outside the folder, a PR with no migration and another repository are not judged; the ledger read pages past 1,000 rows and refuses a URL that is not production's ref, an HTTP error, an empty ledger and missing credentials; an unreadable file list or ledger FAILS CLOSED; and PHX_MIGRATION_MERGE_OK=1 inline or in the environment stands it down while C21's word does not",
+  runMigrationMergeGateTests,
 );
 
 await runTest(

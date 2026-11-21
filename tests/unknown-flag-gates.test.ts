@@ -143,6 +143,7 @@ const PINNED = [
   "scripts/measure-production-planning-fit.mjs",
   "scripts/memory-index-reachability.mjs",
   "scripts/merge-duplicate-cv-candidates.ts",
+  "scripts/migration-merge-gate.mjs",
   "scripts/module-memory/build.mjs",
   "scripts/module-memory/fold.mjs",
   "scripts/module-memory/proof.mjs",
