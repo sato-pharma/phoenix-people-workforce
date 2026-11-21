@@ -443,6 +443,19 @@ export async function runEmailProviderFailoverTests() {
         "exactly two calls: the one Resend account, then the one Brevo account",
       );
       assert.deepEqual(requests.at(-1)?.body?.sender, { email: "phoenix@send.satopharma.com", name: "Phoenix Workforce" });
+
+      // THE NAME A READER SEES IS THE MESSAGE'S OWN (owner, 20 Nov 2026: "fix the naming of the pumped
+      // emails"). A CEO letter and a Sato composer letter that overflow to Brevo borrow ONLY Brevo's
+      // verified address; until then the full `Phoenix Workforce <…>` override replaced their name too.
+      for (const own of ["Anwar Gaweesh, Chief Executive Officer <ceo@send.satopharma.com>", "Sato Pharma HR <hrbp@send.satopharma.com>"]) {
+        requests.length = 0;
+        await sendPreparedEmailWithFailover({ ...sampleEmail, from: own, module: null });
+        assert.deepEqual(
+          requests.at(-1)?.body?.sender,
+          { email: "phoenix@send.satopharma.com", name: own.slice(0, own.indexOf(" <")) },
+          `Brevo keeps the letter's own name (${own})`,
+        );
+      }
     } finally {
       globalThis.fetch = realFetch;
       for (const name of names) {
@@ -453,6 +466,7 @@ export async function runEmailProviderFailoverTests() {
 
     assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", ""), "Phoenix HR <hr@send.satopharma.com>");
     assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "hr@send2.satopharma.com"), "Phoenix HR <hr@send2.satopharma.com>");
-    assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "Other <x@y.com>"), "Other <x@y.com>");
+    assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "Other <x@y.com>"), "Phoenix HR <x@y.com>", "a full override lends its address, never its name");
+    assert.equal(applySenderOverride("hr@send.satopharma.com", "Other <x@y.com>"), "Other <x@y.com>", "a message with no name of its own takes the override's");
   }
 }
