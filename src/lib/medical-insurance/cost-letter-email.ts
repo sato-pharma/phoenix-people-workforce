@@ -12,8 +12,14 @@
 // cannot be priced to the piastre is not sent (`CostLetterError` becomes that person's "not sent" line).
 //
 // 🔴 ONE PERSON, ONE EMAIL, TO THAT PERSON'S OWN WORK EMAIL ON THE EMPLOYEE MASTER. Never a family member,
-// never a CC, never a fan-out: each statement names one employee's money and reaches that employee alone.
-// Someone with no work email on file is reported, never guessed at. Every automated email is also mirrored
+// never a fan-out: each statement names one employee's money and is addressed to that employee alone.
+// Someone with no work email on file is reported, never guessed at.
+//
+// THE CC IS THE SUPER ADMIN'S CHOICE, MADE ON EVERY SEND (owner, 2026-11-21: "add a CC option", then "Both",
+// "Visible CC"). Two parts, both off unless he sets them on the confirm panel: a tick that copies EACH
+// employee's own direct manager (the Employee Master's manager, never anyone else's), and a box of extra
+// addresses that go on every email in that send. A visible CC, never BCC. The addresses he typed are declared
+// as intended outside recipients, because he typed them; the manager's comes from the Employee Master. Every automated email is also mirrored
 // to the owner's Telegram by sendPhoenixEmail itself; nothing here turns that off.
 //
 // PURE apart from the `send` it is handed, so the tests drive it with a fake and nothing real is sent.
@@ -139,8 +145,12 @@ export type CostLetterEmailOutcome = {
   memberId: string;
   name: string;
   email: string | null;
+  /** Who was copied on this employee's email. */
+  cc: string[];
   status: "sent" | "not_sent";
   reason: string | null;
+  /** Something the Super Admin should know about a SENT email, e.g. the manager could not be copied. */
+  note: string | null;
 };
 
 export type CostLetterEmailInput = {
@@ -149,6 +159,12 @@ export type CostLetterEmailInput = {
   policy: CostLetterPolicy;
   /** Work email by HR id, from the Employee Master. */
   workEmails: ReadonlyMap<string, string | null>;
+  /** Direct manager's HR id by employee HR id, from the Employee Master. */
+  managers: ReadonlyMap<string, string | null>;
+  /** Copy each employee's own direct manager. */
+  ccManager: boolean;
+  /** Extra addresses copied on every email in this send, already cleaned by `cleanCostLetterCc`. */
+  cc: readonly string[];
   preparedOn: string;
   from: string;
   replyTo: string;
@@ -158,6 +174,21 @@ export type CostLetterEmailInput = {
 };
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** At most this many extra addresses in the CC box. */
+export const COST_LETTER_CC_MAX = 10;
+
+/** The CC box, cleaned: lower-cased, no repeats, every one a real address; a bad one is refused by name. */
+export function cleanCostLetterCc(raw: unknown): string[] {
+  const parts = (Array.isArray(raw) ? raw.map((item) => String(item ?? "")) : String(raw ?? "").split(/[\s,;]+/))
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+  const unique = [...new Set(parts)];
+  const bad = unique.filter((address) => !EMAIL_SHAPE.test(address));
+  if (bad.length > 0) throw new CostLetterError(`${bad.join(", ")} ${bad.length === 1 ? "is not an email address" : "are not email addresses"}, so nothing was sent.`);
+  if (unique.length > COST_LETTER_CC_MAX) throw new CostLetterError(`CC at most ${COST_LETTER_CC_MAX} addresses.`);
+  return unique;
+}
 
 /** Sends each chosen employee their own statement, one email each, and says what happened to every one. */
 export async function sendCostLetterEmails(input: CostLetterEmailInput): Promise<CostLetterEmailOutcome[]> {
@@ -170,13 +201,13 @@ export async function sendCostLetterEmails(input: CostLetterEmailInput): Promise
 
     const row = input.rows.find((candidate) => candidate.employee?.memberId === memberId);
     if (!row?.employee) {
-      outcomes.push({ email: null, memberId, name: "This person", reason: "Not covered on the policy today, so there is no monthly cost to send.", status: "not_sent" });
+      outcomes.push({ cc: [], email: null, memberId, name: "This person", note: null, reason: "Not covered on the policy today, so there is no monthly cost to send.", status: "not_sent" });
       continue;
     }
     const name = row.employee.name;
     const email = (row.hrId ? input.workEmails.get(row.hrId) ?? "" : "").trim().toLowerCase();
     if (!EMAIL_SHAPE.test(email)) {
-      outcomes.push({ email: null, memberId, name, reason: "No work email on the Employee Master.", status: "not_sent" });
+      outcomes.push({ cc: [], email: null, memberId, name, note: null, reason: "No work email on the Employee Master.", status: "not_sent" });
       continue;
     }
 
@@ -185,14 +216,27 @@ export async function sendCostLetterEmails(input: CostLetterEmailInput): Promise
       letter = buildCostLetter(row, input.policy);
     } catch (error) {
       if (!(error instanceof CostLetterError)) throw error;
-      outcomes.push({ email, memberId, name, reason: error.message, status: "not_sent" });
+      outcomes.push({ cc: [], email, memberId, name, note: null, reason: error.message, status: "not_sent" });
       continue;
     }
 
+    // The manager first, then the typed addresses; never the employee himself twice.
+    let note: string | null = null;
+    const managerHrId = input.ccManager && row.hrId ? input.managers.get(row.hrId) ?? null : null;
+    const managerEmail = managerHrId ? (input.workEmails.get(managerHrId) ?? "").trim().toLowerCase() : "";
+    if (input.ccManager && !EMAIL_SHAPE.test(managerEmail)) {
+      note = managerHrId ? "Their manager has no work email on the Employee Master, so the manager was not copied." : "No direct manager on the Employee Master, so no manager was copied.";
+    }
+    const cc = [...new Set([...(EMAIL_SHAPE.test(managerEmail) ? [managerEmail] : []), ...input.cc])].filter((address) => address !== email);
+    const typed = input.cc.filter((address) => cc.includes(address) && address !== managerEmail);
+
     const rendered = renderCostLetterEmail(letter, input.preparedOn);
-    const key = createHash("sha256").update(`${memberId}|${email}|${Math.round(letter.total * 100)}|${input.minute}`).digest("hex").slice(0, 40);
+    const key = createHash("sha256").update(`${memberId}|${email}|${cc.join(",")}|${Math.round(letter.total * 100)}|${input.minute}`).digest("hex").slice(0, 40);
     try {
       const result = await input.send({
+        ...(cc.length > 0 ? { cc } : {}),
+        // Only what the Super Admin typed himself; the employee and the manager come from the Employee Master.
+        ...(typed.length > 0 ? { externalRecipients: typed } : {}),
         from: input.from,
         html: rendered.html,
         idempotencyKey: `${COST_LETTER_EMAIL_EVENT}:${key}`,
@@ -203,9 +247,9 @@ export async function sendCostLetterEmails(input: CostLetterEmailInput): Promise
         text: rendered.text,
         to: [email],
       });
-      outcomes.push(result.skipped ? { email, memberId, name, reason: result.reason, status: "not_sent" } : { email, memberId, name, reason: null, status: "sent" });
+      outcomes.push(result.skipped ? { cc, email, memberId, name, note: null, reason: result.reason, status: "not_sent" } : { cc, email, memberId, name, note, reason: null, status: "sent" });
     } catch (error) {
-      outcomes.push({ email, memberId, name, reason: (error instanceof Error ? error.message : String(error)).slice(0, 300), status: "not_sent" });
+      outcomes.push({ cc, email, memberId, name, note: null, reason: (error instanceof Error ? error.message : String(error)).slice(0, 300), status: "not_sent" });
     }
   }
   return outcomes;
