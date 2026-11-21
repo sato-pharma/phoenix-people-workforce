@@ -2648,6 +2648,26 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // phoenix_crm_camera_day_allowances_service_role, grants to postgres and service_role only (none to anon,
   // authenticated or PUBLIC), 0 rows. Re-applying is a no-op (`if not exists` / `drop policy if exists` + create).
   "20261121012152_phoenix_crm_camera_day_allowances.sql",
+  // The next four were merged on 19 Nov 2026 (#590, #603, #608, #623) and reached STAGING through staging-migrate on
+  // the merge (ledger rows under their own versions there), but were NEVER applied to PRODUCTION — the 48h grace
+  // window hid them from the daily drift check. From each deploy the live code called a function production did not
+  // have: every outstation approval refused with "database error PGRST202" and changed nothing (seven in one batch
+  // on 21 Nov, all left `submitted`), a held claim's release refused the same way, and Cancel run, Reopen Part 2 and a
+  // Part 2 confirm carrying a late trip would have refused too. Applied 2026-11-21 about 22:10 Cairo through
+  // scripts/apply-sql-file.mjs, in file order, the standing route: supabase-production's apply_migration answered
+  // {"status":"declined"} (the bodies contain `delete`). That route writes NO ledger row on production. Read back on
+  // ozucdzovmcqvepbozvqf (project name Phoenix HR) straight after, md5(prosrc) equal to each file's body as-is LF and
+  // equal to staging's (cifwmndunmlxjhyjugxa): phx_cancel_automated_payroll_run efb8d213900ce6ad16e29d7a00ba558c,
+  // phx_reopen_automated_payroll_part2 dc45fe35a00ea072cac2836f9dae22b2, phx_accept_outstation_claim_for_payroll
+  // 0e4bd1e6461c42a5aa38552da072622d (the 20261119143529 body, which supersedes 20261119132423's),
+  // phx_reserve_late_expenses f133506c0c767085bc3bebb48d781a60; each executable by service_role, not by anon or
+  // authenticated. After `notify pgrst, 'reload schema'`, /rest/v1/rpc/phx_accept_outstation_claim_for_payroll with
+  // request id -1 answered P0001 outstation_claim_changed (the function's own refusal, nothing written) where it had
+  // answered PGRST202. Re-applying any of them is a no-op (`create or replace`, same signature, same grants).
+  "20261119120941_automated_payroll_cancel_and_reopen_part2_atomically.sql",
+  "20261119132423_outstation_accept_claim_for_payroll_atomically.sql",
+  "20261119143529_outstation_release_claim_to_payroll_atomically.sql",
+  "20261119163918_late_expense_reservations_replace_atomically.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

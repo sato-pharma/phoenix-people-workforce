@@ -21544,6 +21544,166 @@ $$;
 ALTER FUNCTION public.phoenix_crm_withdraw_request(p jsonb) OWNER TO postgres;
 
 --
+-- Name: phx_accept_outstation_claim_for_payroll(bigint, timestamp with time zone, text, text, timestamp with time zone, uuid, jsonb, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_request public.outstation_expense_requests%rowtype;
+  v_report_id uuid := p_report_id;
+  v_expenses jsonb := '[]'::jsonb;
+begin
+  if p_status is null then
+    -- A RELEASE (releaseOutstationRequestToPayrollIfReady): the claim was accepted earlier and its evidence has now
+    -- landed. It is left exactly as it is — no column and no updated_at moves — but it is locked and pinned to the
+    -- version that was read, and it must still read accepted, so a claim rejected or changed in between is never
+    -- pushed.
+    select * into v_request
+      from public.outstation_expense_requests
+     where id = p_request_id
+       and updated_at = p_expected_updated_at
+       and status like 'accepted%'
+       for update;
+  else
+    -- An APPROVAL: the claim first, pinned to the version the reviewer approved.
+    update public.outstation_expense_requests
+       set approval_reason = coalesce(p_approval_reason, ''),
+           calculation_status = p_status,
+           status = p_status,
+           updated_at = p_updated_at
+     where id = p_request_id
+       and updated_at = p_expected_updated_at
+    returning * into v_request;
+  end if;
+
+  -- A claim that moved (or, for a release, no longer reads accepted) refuses before anything else is written.
+  if not found then
+    raise exception 'outstation_claim_changed: the claim changed after it was read, so nothing was written'
+      using errcode = 'P0001';
+  end if;
+
+  if p_expense_rows is not null and jsonb_array_length(p_expense_rows) > 0 then
+    -- The trip's own report when it already has one: a re-push reuses it, as the payroll save does. Read here, under
+    -- the claim's lock, so two releases landing together share one report row instead of leaving an empty second one.
+    if v_report_id is null then
+      select e.report_id into v_report_id
+        from public.outstation_expenses e
+       where e.trip_id in (select incoming ->> 'trip_id' from jsonb_array_elements(p_expense_rows) as incoming)
+         and e.report_id is not null
+       limit 1;
+    end if;
+
+    if v_report_id is not null then
+      update public.outstation_expense_reports
+         set approved_rows = (p_report ->> 'approved_rows')::integer,
+             file_name = p_report ->> 'file_name',
+             row_count = (p_report ->> 'row_count')::integer,
+             total_expenses = (p_report ->> 'total_expenses')::numeric,
+             trip_date_from = (p_report ->> 'trip_date_from')::date,
+             trip_date_to = (p_report ->> 'trip_date_to')::date,
+             updated_at = (p_report ->> 'updated_at')::timestamptz
+       where id = v_report_id;
+    else
+      insert into public.outstation_expense_reports
+        (approved_rows, file_name, row_count, total_expenses, trip_date_from, trip_date_to, updated_at)
+      values (
+        (p_report ->> 'approved_rows')::integer,
+        p_report ->> 'file_name',
+        (p_report ->> 'row_count')::integer,
+        (p_report ->> 'total_expenses')::numeric,
+        (p_report ->> 'trip_date_from')::date,
+        (p_report ->> 'trip_date_to')::date,
+        (p_report ->> 'updated_at')::timestamptz
+      )
+      returning id into v_report_id;
+    end if;
+
+    -- The rows exactly as the app planned them; the report id is the one above. Upserted on trip_id, as the
+    -- payroll save upserts them, so a second push of the same trip can never become a second row (REC-035).
+    with incoming as (
+      select * from jsonb_populate_recordset(null::public.outstation_expenses, p_expense_rows)
+    ),
+    written as (
+      insert into public.outstation_expenses (
+        allowance, am_workload, approved_amount, approved_at, approved_by, description, hr_id, expense_date,
+        from_location, hr_approved, hr_comment, hr_notes, hr_status, km, location, meeting_amount, other_amount,
+        payout_month, payout_year, pharmacy_workload, pm_workload, request_type, report_id, source_file_name,
+        source_row, specialist, status, to_date, to_location, total, transportation_type, travel_cost, trip_id,
+        trip_type, updated_at
+      )
+      select
+        allowance, am_workload, approved_amount, approved_at, approved_by, description, hr_id, expense_date,
+        from_location, hr_approved, hr_comment, hr_notes, hr_status, km, location, meeting_amount, other_amount,
+        payout_month, payout_year, pharmacy_workload, pm_workload, request_type, v_report_id, source_file_name,
+        source_row, specialist, status, to_date, to_location, total, transportation_type, travel_cost, trip_id,
+        trip_type, updated_at
+      from incoming
+      on conflict (trip_id) do update set
+        allowance = excluded.allowance,
+        am_workload = excluded.am_workload,
+        approved_amount = excluded.approved_amount,
+        approved_at = excluded.approved_at,
+        approved_by = excluded.approved_by,
+        description = excluded.description,
+        hr_id = excluded.hr_id,
+        expense_date = excluded.expense_date,
+        from_location = excluded.from_location,
+        hr_approved = excluded.hr_approved,
+        hr_comment = excluded.hr_comment,
+        hr_notes = excluded.hr_notes,
+        hr_status = excluded.hr_status,
+        km = excluded.km,
+        location = excluded.location,
+        meeting_amount = excluded.meeting_amount,
+        other_amount = excluded.other_amount,
+        payout_month = excluded.payout_month,
+        payout_year = excluded.payout_year,
+        pharmacy_workload = excluded.pharmacy_workload,
+        pm_workload = excluded.pm_workload,
+        request_type = excluded.request_type,
+        report_id = excluded.report_id,
+        source_file_name = excluded.source_file_name,
+        source_row = excluded.source_row,
+        specialist = excluded.specialist,
+        status = excluded.status,
+        to_date = excluded.to_date,
+        to_location = excluded.to_location,
+        total = excluded.total,
+        transportation_type = excluded.transportation_type,
+        travel_cost = excluded.travel_cost,
+        trip_type = excluded.trip_type,
+        updated_at = excluded.updated_at
+      returning *
+    )
+    select coalesce(jsonb_agg(to_jsonb(written)), '[]'::jsonb) into v_expenses from written;
+  end if;
+
+  insert into public.audit_logs (actor_login_id, entity_id, entity_type, new_values, old_values, summary)
+  select
+    coalesce(audit ->> 'actor_login_id', 'system'),
+    audit ->> 'entity_id',
+    audit ->> 'entity_type',
+    nullif(audit -> 'new_values', 'null'::jsonb),
+    nullif(audit -> 'old_values', 'null'::jsonb),
+    audit ->> 'summary'
+  from jsonb_array_elements(coalesce(p_audits, '[]'::jsonb)) as audit;
+
+  return jsonb_build_object('request', to_jsonb(v_request), 'report_id', v_report_id, 'expenses', v_expenses);
+end;
+$$;
+
+ALTER FUNCTION public.phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb) IS 'Approves an outstation expense claim, or releases an accepted one into payroll (p_status null), in one transaction: the claim (pinned to the version that was read; a release leaves it unchanged and requires it accepted), its payroll report and outstation_expenses row as the app planned them, and the audit rows (REC-038, 19 Nov 2026).';
+
+--
 -- Name: monthly_closing_drift_acknowledgements; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -24947,6 +25107,80 @@ CREATE FUNCTION public.phx_brick_move_period_net_status(p_since_days integer DEF
 $$;
 
 ALTER FUNCTION public.phx_brick_move_period_net_status(p_since_days integer) OWNER TO postgres;
+
+--
+-- Name: phx_cancel_automated_payroll_run(uuid, uuid, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb DEFAULT NULL::jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_run public.automated_payroll_runs%rowtype;
+  v_released integer := 0;
+  v_discarded integer := 0;
+  v_detail jsonb;
+begin
+  -- The phase write first, conditioned on the claim this cancel holds and on the run still being open: a
+  -- lost claim refuses before a single row is touched.
+  update public.automated_payroll_runs
+     set phase = 'cancelled',
+         updated_at = now(),
+         transition_token = null,
+         transition_action = null,
+         transition_started_at = null
+   where id = p_run_id
+     and phase in ('part1', 'part2', 'ready')
+     and transition_token = p_transition_token
+  returning * into v_run;
+
+  if not found then
+    raise exception 'automated_payroll_transition_claim_lost: [transition-claim-lost] the run was not cancelled'
+      using errcode = 'P0001';
+  end if;
+
+  if p_override_detail is not null then
+    insert into public.automated_payroll_audit (run_id, actor_hr_id, action, step_key, detail)
+    values (p_run_id, p_actor_hr_id, 'undo_after_download_overridden', null, p_override_detail);
+  end if;
+
+  delete from public.automated_payroll_carried_expenses
+   where run_id = p_run_id;
+
+  update public.automated_payroll_carry_forward
+     set applied_run_id = null,
+         applied_at = null,
+         updated_at = now()
+   where applied_run_id = p_run_id;
+  get diagnostics v_released = row_count;
+
+  delete from public.automated_payroll_carry_forward
+   where source_run_id = p_run_id
+     and applied_run_id is null;
+  get diagnostics v_discarded = row_count;
+
+  v_detail := jsonb_build_object('carryForwardReleased', v_released, 'carryForwardDiscarded', v_discarded);
+  if p_override_detail is not null then
+    v_detail := v_detail || jsonb_build_object(
+      'cancelledAfterBankFileDownload', true,
+      'overrideReason', p_override_detail ->> 'reason'
+    );
+  end if;
+  insert into public.automated_payroll_audit (run_id, actor_hr_id, action, step_key, detail)
+  values (p_run_id, p_actor_hr_id, 'run_cancelled', null, v_detail);
+
+  return jsonb_build_object('run', to_jsonb(v_run), 'released', v_released, 'discarded', v_discarded);
+end;
+$$;
+
+ALTER FUNCTION public.phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) IS 'Cancels an Automated Payroll run in one transaction under the cancel claim: the override record when one was given, the run''s reserved late trips and carry-forward ledger released, the run_cancelled audit row, and the phase (REC-038, 19 Nov 2026).';
 
 --
 -- Name: phx_cancel_marketing_request(uuid, text, text, timestamp with time zone, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
@@ -40797,6 +41031,80 @@ ALTER FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transi
 COMMENT ON FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) IS 'Reopens Part 1 of an Automated Payroll run in one transaction under the reopen claim: clears what confirming Part 1 stamped on every draft row, withdraws the run''s held-salary reservations, and moves the run back to part1 (payroll audit 2026-11-14, finding 3).';
 
 --
+-- Name: phx_reopen_automated_payroll_part2(uuid, uuid, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb DEFAULT NULL::jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_run public.automated_payroll_runs%rowtype;
+  v_released integer := 0;
+  v_discarded integer := 0;
+  v_detail jsonb;
+begin
+  update public.automated_payroll_runs
+     set phase = 'part2',
+         part2_confirmed_at = null,
+         part2_confirmed_by = null,
+         updated_at = now(),
+         transition_token = null,
+         transition_action = null,
+         transition_started_at = null
+   where id = p_run_id
+     and phase = 'ready'
+     and transition_token = p_transition_token
+  returning * into v_run;
+
+  if not found then
+    raise exception 'automated_payroll_transition_claim_lost: [transition-claim-lost] Part 2 was not reopened'
+      using errcode = 'P0001';
+  end if;
+
+  if p_override_detail is not null then
+    insert into public.automated_payroll_audit (run_id, actor_hr_id, action, step_key, detail)
+    values (p_run_id, p_actor_hr_id, 'undo_after_download_overridden', null, p_override_detail);
+  end if;
+
+  delete from public.automated_payroll_carried_expenses
+   where run_id = p_run_id;
+
+  update public.automated_payroll_carry_forward
+     set applied_run_id = null,
+         applied_at = null,
+         updated_at = now()
+   where applied_run_id = p_run_id;
+  get diagnostics v_released = row_count;
+
+  delete from public.automated_payroll_carry_forward
+   where source_run_id = p_run_id
+     and applied_run_id is null;
+  get diagnostics v_discarded = row_count;
+
+  v_detail := jsonb_build_object('carryForwardReleased', v_released, 'carryForwardDiscarded', v_discarded);
+  if p_override_detail is not null then
+    v_detail := v_detail || jsonb_build_object(
+      'reopenedAfterBankFileDownload', true,
+      'overrideReason', p_override_detail ->> 'reason'
+    );
+  end if;
+  insert into public.automated_payroll_audit (run_id, actor_hr_id, action, step_key, detail)
+  values (p_run_id, p_actor_hr_id, 'part2_unconfirmed', null, v_detail);
+
+  return jsonb_build_object('run', to_jsonb(v_run), 'released', v_released, 'discarded', v_discarded);
+end;
+$$;
+
+ALTER FUNCTION public.phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) IS 'Reopens Part 2 of an Automated Payroll run in one transaction under the reopen claim: the override record when one was given, the run''s reserved late trips and carry-forward ledger released, the part2_unconfirmed audit row, and the phase back to part2 (REC-038, 19 Nov 2026).';
+
+--
 -- Name: phx_reopen_rejected_marketing_request(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -41423,6 +41731,42 @@ end;
 $$;
 
 ALTER FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb) OWNER TO postgres;
+
+--
+-- Name: phx_reserve_late_expenses(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]) RETURNS integer
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_reserved integer := 0;
+begin
+  -- The run's earlier reservations are replaced, never added to: a confirm records exactly the trips it carries.
+  delete from public.automated_payroll_carried_expenses
+   where run_id = p_run_id;
+
+  -- One row per trip; expense_id is the primary key, so a trip another run holds refuses here (23505) and the delete
+  -- above is undone with it.
+  if coalesce(array_length(p_expense_ids, 1), 0) > 0 then
+    insert into public.automated_payroll_carried_expenses (expense_id, run_id)
+    select distinct trip_id, p_run_id
+      from unnest(p_expense_ids) as trip_id;
+    get diagnostics v_reserved = row_count;
+  end if;
+
+  return v_reserved;
+end;
+$$;
+
+ALTER FUNCTION public.phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]) IS 'Replaces a payroll run''s late-trip reservations (automated_payroll_carried_expenses) with the trips its Part 2 confirm records, in one transaction: a failed insert keeps the earlier reservations (REC-038, 19 Nov 2026).';
 
 --
 -- Name: phx_reserve_offer_employee_hr_id(uuid); Type: FUNCTION; Schema: public; Owner: postgres
@@ -64527,9 +64871,11 @@ CREATE TABLE public.medical_insurance_members (
     updated_by_hr_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    contact_email text,
     CONSTRAINT medical_insurance_members_category_check CHECK ((category = ANY (ARRAY['A'::text, 'B'::text, 'C'::text]))),
     CONSTRAINT medical_insurance_members_check CHECK (((coverage_ends_on IS NULL) OR (coverage_ends_on >= coverage_starts_on))),
     CONSTRAINT medical_insurance_members_check1 CHECK (((member_type = 'employee'::text) = (principal_member_id IS NULL))),
+    CONSTRAINT medical_insurance_members_contact_email_shape CHECK (((contact_email IS NULL) OR ((contact_email = lower(btrim(contact_email))) AND (contact_email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'::text)))),
     CONSTRAINT medical_insurance_members_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['M'::text, 'F'::text])))),
     CONSTRAINT medical_insurance_members_member_type_check CHECK ((member_type = ANY (ARRAY['employee'::text, 'spouse'::text, 'child'::text])))
 );
@@ -64541,6 +64887,12 @@ ALTER TABLE public.medical_insurance_members OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.medical_insurance_members IS 'Who is on the policy, with dates of cover and plan. A row is ended, never deleted, so the register can always say who was covered on a given day.';
+
+--
+-- Name: COLUMN medical_insurance_members.contact_email; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.medical_insurance_members.contact_email IS 'An address typed for a register row with no HR id. Nothing sends to it: the owner ruled on 2026-11-21 that no Medical Cover Statement is emailed to a person on the policy with no employee record.';
 
 --
 -- Name: medical_insurance_policies; Type: TABLE; Schema: public; Owner: postgres
@@ -101778,6 +102130,13 @@ REVOKE ALL ON FUNCTION public.phoenix_crm_withdraw_request(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_withdraw_request(p jsonb) TO service_role;
 
 --
+-- Name: FUNCTION phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_accept_outstation_claim_for_payroll(p_request_id bigint, p_expected_updated_at timestamp with time zone, p_status text, p_approval_reason text, p_updated_at timestamp with time zone, p_report_id uuid, p_report jsonb, p_expense_rows jsonb, p_audits jsonb) TO service_role;
+
+--
 -- Name: TABLE monthly_closing_drift_acknowledgements; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -102056,6 +102415,13 @@ GRANT ALL ON FUNCTION public.phx_backfill_sos_fact_rollup() TO service_role;
 
 REVOKE ALL ON FUNCTION public.phx_brick_move_period_net_status(p_since_days integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_brick_move_period_net_status(p_since_days integer) TO service_role;
+
+--
+-- Name: FUNCTION phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_cancel_automated_payroll_run(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phx_cancel_marketing_request(p_request_id uuid, p_expected_status text, p_actor_hr_id text, p_cancelled_at timestamp with time zone, p_audit jsonb); Type: ACL; Schema: public; Owner: postgres
@@ -103497,6 +103863,13 @@ REVOKE ALL ON FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, 
 GRANT ALL ON FUNCTION public.phx_reopen_automated_payroll_part1(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text) TO service_role;
 
 --
+-- Name: FUNCTION phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_reopen_automated_payroll_part2(p_run_id uuid, p_transition_token uuid, p_actor_hr_id text, p_override_detail jsonb) TO service_role;
+
+--
 -- Name: FUNCTION phx_reopen_rejected_marketing_request(p_request_id uuid, p_reopened_by text, p_reason text, p_reopened_at timestamp with time zone); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -103537,6 +103910,13 @@ GRANT ALL ON FUNCTION public.phx_report_it_set_dashboard_access(p_hr_id text, p_
 
 REVOKE ALL ON FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_reserve_late_expenses(p_run_id uuid, p_expense_ids uuid[]) TO service_role;
 
 --
 -- Name: FUNCTION phx_reserve_offer_employee_hr_id(p_offer_id uuid); Type: ACL; Schema: public; Owner: postgres
