@@ -165,6 +165,12 @@ take the pre-image before you run it. Production has **no point-in-time recovery
 are the whole recovery story. A merged PR whose migration has not been applied ships code that
 queries a column that is not there.
 
+🔴 **`bash-guard.mjs` C22 now refuses the merge until production holds it** (21 Nov 2026, after four
+19 Nov money functions merged on staging only and seven outstation approvals failed with PGRST202):
+every migration file the PR adds or changes must be in production's ledger, or named in the PR head's
+`ACKNOWLEDGED_EXCEPTIONS` (the `apply-sql-file.mjs` route). Ask before you put a merge to the owner:
+`node scripts/migration-merge-gate.mjs <pr>` — exit 0 means it will pass.
+
 ## 5 · Merge — from a directory that is not a worktree
 
 ```bash
