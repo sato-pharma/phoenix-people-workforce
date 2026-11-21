@@ -2,13 +2,19 @@
  * Phoenix CRM — what happens to a photo the Phoenix Camera sends (owner, 20 Nov 2026), decided here without a
  * database so every rule can be tested on its own.
  *
+ * 🔴 NOTHING RECORDS ITSELF (owner, 21 Nov 2026: "EVERY VISIT GOES TO CAMERA REVIEWS EVERY VISIT", "EVERY VISIT
+ * GOES TO MANUAL REVIEW FIRST"). Every item the camera sends arrives WAITING; only the Super Admin's Approve records
+ * it. The reasons below are what his page shows beside it, never a gate that lets one through.
+ *
  * His decisions, point by point:
- *   - Point 2: a rep has at most `camera_daily_cap` items (default 3) RECORDED AT ONCE in one Phoenix day; from the
- *     next one on, they wait for the Super Admin. "Every camera visit and validation lands there, even if from the
- *     first three." The SFE is excluded totally.
+ *   - The allowance (21 Nov 2026): "U ARE ALLOWED 3 A DAYS IF MORE NEEDED WE NEED APPROVAL FROM MANAGERS VIA EMAIL AND
+ *     SYSTEM ADMIN WILL UPDATE IT FOR THIS DAY ONLY". A rep has `camera_daily_cap` camera VISITS (default 3) a Phoenix
+ *     day; the Super Admin raises it for one rep and one day only (`phoenix_crm_camera_day_allowances`, with the
+ *     manager's email approval written beside it). Approve refuses a visit past that day's allowance. The SFE is
+ *     excluded totally.
  *   - Point 3: a photo with no usable position is sent as "no location" and waits.
- *   - Point 4: the same Phoenix day (it ends at 02:00) is recorded at once; the next day it waits for approval; over
- *     36 hours it is archived. The time comes from Phoenix's own anchor, else the satellites, else "time not
+ *   - Point 4: a photo that arrives after its Phoenix day ended (02:00) is marked "next day"; over 36 hours it is
+ *     archived. The time comes from Phoenix's own anchor, else the satellites, else "time not
  *     confirmed" (which waits).
  *   - Point 5: "Phoenix will not reject anything ... leave the decision to the decision maker." A seal that does not
  *     hold is red on his page and waits. The rep reads only "sent".
@@ -18,10 +24,10 @@
 
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 
-/** How many camera items a rep may have recorded at once in one Phoenix day, unless the Super Admin changes it. */
 /** The Super Admin's camera page. */
 export const CAMERA_REVIEWS_PATH = "/admin/field-crm/camera-reviews";
 
+/** How many camera visits a rep may have approved in one Phoenix day, unless the Super Admin raises that day. */
 export const CAMERA_DAILY_CAP_DEFAULT = 3;
 export const CAMERA_DAILY_CAP_MIN = 1;
 export const CAMERA_DAILY_CAP_MAX = 20;
@@ -53,7 +59,7 @@ export const CAMERA_REASON_LABELS: Record<CameraReason, string> = {
   time_unconfirmed: "Time not confirmed",
   next_day: "Arrived after its Phoenix day ended",
   no_location: "No location",
-  over_cap: "Over the daily limit",
+  over_cap: "Over the day's allowance",
   name_photo: "Name photo to check",
   rule_refusal: "The visit rules did not accept it",
 };
@@ -111,17 +117,18 @@ export type CameraArrivalInput = {
   locationProblems: readonly string[];
   time: CameraTime;
   receivedAt: Date;
-  /** Items this rep already has RECORDED AT ONCE on the photo's own Phoenix day. */
-  recordedThatDay: number;
-  cap: number;
+  /** Camera visits this rep already SENT for the photo's own Phoenix day and not rejected (this one excluded). */
+  sentThatDay: number;
+  /** The rep's allowance for that day: the daily limit, or the Super Admin's raise for that one day. */
+  allowance: number;
 };
 
 export type CameraArrival = { outcome: CameraOutcome; reasons: CameraReason[]; takenDay: string | null };
 
 /**
- * Recorded at once, waiting for the Super Admin, or archived — decided the moment it arrives, before anything is
- * written. Every reason is kept, so the page says all of them at once. The cap is spent only by an item that would
- * otherwise be recorded: one waiting for any other reason takes nothing from the rep's three.
+ * Waiting for the Super Admin, or archived — decided the moment it arrives, before anything is written. Nothing is
+ * ever recorded here (owner, 21 Nov 2026: every visit goes to manual review first). Every reason is kept, so the page
+ * says all of them at once; "over the day's allowance" is a camera VISIT past the rep's allowance for that day.
  */
 export function cameraArrival(input: CameraArrivalInput): CameraArrival {
   const takenDay = input.time.takenAt ? cairoBusinessDay(input.time.takenAt) : null;
@@ -134,8 +141,36 @@ export function cameraArrival(input: CameraArrivalInput): CameraArrival {
   if (input.time.source === "unconfirmed") reasons.push("time_unconfirmed");
   if (takenDay && takenDay !== cairoBusinessDay(input.receivedAt)) reasons.push("next_day");
   if (input.locationProblems.length > 0) reasons.push("no_location");
-  if (reasons.length === 0 && input.recordedThatDay >= Math.max(CAMERA_DAILY_CAP_MIN, input.cap)) reasons.push("over_cap");
-  return { outcome: reasons.length === 0 ? "recorded" : "waiting", reasons, takenDay };
+  if (input.intent === "visit" && takenDay && input.sentThatDay >= cameraAllowance(input.allowance)) reasons.push("over_cap");
+  return { outcome: "waiting", reasons, takenDay };
+}
+
+/** An allowance as the rules read it: never below one. */
+export function cameraAllowance(raw: number): number {
+  return Math.max(CAMERA_DAILY_CAP_MIN, Number.isFinite(raw) ? Math.floor(raw) : CAMERA_DAILY_CAP_DEFAULT);
+}
+
+/** The rep's allowance on one day: the Super Admin's raise for that day when there is one, else the daily limit. */
+export function cameraDayAllowance(cap: number, raised: number | null): number {
+  return cameraAllowance(raised !== null && raised > cap ? raised : cap);
+}
+
+/**
+ * Whether Approve may record one more camera visit for this rep on this day, and the Super Admin's words when it may
+ * not. `approved` counts the visits of that day already recorded (approved, or recorded at once before 21 Nov 2026).
+ */
+export function cameraApproveAllowed(approved: number, allowance: number): { ok: true } | { ok: false; reason: string } {
+  const allowed = cameraAllowance(allowance);
+  if (approved < allowed) return { ok: true };
+  return {
+    ok: false,
+    reason: `${approved} of ${allowed} camera ${allowed === 1 ? "visit" : "visits"} already approved for this rep on that day. Raise the allowance for that day, once the manager's approval is in by email, to approve this one.`,
+  };
+}
+
+/** The Super Admin's raise as he typed it: a whole number inside the column's own CHECK, or null. */
+export function parseCameraDayAllowance(raw: unknown): number | null {
+  return parseCameraCap(raw);
 }
 
 /** The daily limit as the Super Admin typed it: a whole number inside the column's own CHECK, or null. */
@@ -272,6 +307,8 @@ export type CameraItemRow = {
   /** What Approve would do, in his words, or null when it cannot be approved (and why, in `cannotApprove`). */
   approveLabel: string | null;
   cannotApprove: string | null;
+  /** A waiting camera visit's day: its allowance and how many are already approved, for the one-day raise. */
+  allowanceDay: { day: string; allowance: number; approved: number; raisedBy: string | null; managerApproval: string | null } | null;
 };
 
 export type CameraPageView = { tab: CameraTab; rows: CameraItemRow[]; waitingCount: number; cap: number };
