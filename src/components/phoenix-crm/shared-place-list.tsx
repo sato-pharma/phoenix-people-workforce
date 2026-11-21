@@ -56,6 +56,7 @@ import {
   NO_TIMETABLE_WITHDRAW_EXPLAINER,
   NO_TIMETABLE_WITHDRAW_LABEL,
 } from "@/lib/phoenix-crm/failing-timetable-rules";
+import { BUILDING_APPROVE_LABEL, BUILDING_APPROVING_LABEL, buildingApproveVariant, buildingStatusPill } from "@/lib/phoenix-crm/approved-place-words";
 import { adviseOnBuilding } from "@/lib/phoenix-crm/place-check-advice";
 import { sharedPlaceKindNoun } from "@/lib/phoenix-crm/shared-place-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
@@ -115,7 +116,9 @@ function VenueStatus({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
   const decides = usePlaceCheckDecides();
   if (row.status === "held") return <CrmPill tone="warn">{mode === "team" ? "Being checked" : decides ? "Waiting for you" : "Waiting for the administrator"}</CrmPill>;
   if (row.status === "retired") return <CrmPill tone="bad">{mode === "team" ? "No longer in use" : "Rejected"}</CrmPill>;
-  return <CrmPill tone="good">In use</CrmPill>;
+  // An approved building says so (owner, 21 Nov 2026: "it kept not approved"); a manager's board says only "In use".
+  const pill = buildingStatusPill(row, mode);
+  return <CrmPill tone={pill.tone}>{pill.text}</CrmPill>;
 }
 
 /**
@@ -382,8 +385,9 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
         { sharedPlaceId: row.sharedPlaceId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      // Approving a building that was never held is "Keep it" on screen, and the review says so too.
-      markSaved(done(decision === "reject" ? "rejected" : row.status === "held" ? "approved" : "kept"));
+      // Approving a building is "Approved" on screen whether it was held or already standing (owner, 21 Nov
+      // 2026): it used to read "Keep it" and then "Kept", which looked like nothing had been approved.
+      markSaved(done(decision === "reject" ? "rejected" : "approved"));
       setSaving(null);
     } catch (error) {
       if (isAlreadyDecided(error)) {
@@ -427,8 +431,8 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
       />}
       <DecisionComment disabled={saving !== null} id={`shared-place-note-${scope}-${row.sharedPlaceId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-        <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
-          {saving === "approve" ? "Approving…" : row.status === "held" ? "Approve" : "Keep it"}
+        <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant={buildingApproveVariant(row.decidedAtText)}>
+          {saving === "approve" ? BUILDING_APPROVING_LABEL : BUILDING_APPROVE_LABEL}
         </CrmButton>
         {row.lockedBySuperAdmin ? null : (
           <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
@@ -558,8 +562,8 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
     takes: (row) => !row.restorable,
     run: (row, answer) =>
       crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place", { sharedPlaceId: row.sharedPlaceId, decision: "approve", note: answer.note }, "decided"),
-    // The row's own control: a held building is approved, one already standing is kept.
-    outcomeOf: (_answer, row) => (row.status === "held" ? "approved" : "kept"),
+    // The row's own control: an approved building reads "Approved", held or already standing.
+    outcomeOf: () => "approved",
   },
   {
     key: "reject",
