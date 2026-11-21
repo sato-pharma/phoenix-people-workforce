@@ -30,6 +30,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+
+// A no-op when bash-guard imports this module; as the entry point it takes one positional, the PR number.
+refuseUnknownFlags({
+  name: 'migration-merge-gate',
+  entry: import.meta.url,
+  known: [],
+  hints: ['usage: node scripts/migration-merge-gate.mjs <pr number>'],
+});
 
 /** Production's Supabase project ref (AGENTS.md §3). The only database this gate may be answered by. */
 export const PRODUCTION_REF = 'ozucdzovmcqvepbozvqf';
