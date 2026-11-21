@@ -68,6 +68,11 @@
 //       plan: protection answers 403 on a private repo). Names from live protection, else AGENTS.md
 //       §2's declaration; fails CLOSED. PHX_RED_MERGE_OK=1 stands it down, on the owner's words only.
 //       `~/.claude/hooks/merge-checks-guard.mjs` carries it to sessions in every other folder.
+//   C22 a `gh pr merge` of a Phoenix PR carrying a `supabase/migrations/*.sql` file that production's
+//       ledger does not record and the PR head's ACKNOWLEDGED_EXCEPTIONS does not name — a merge ships
+//       the code and applies no migration (21 Nov 2026: seven outstation approvals failed with
+//       PGRST202). scripts/migration-merge-gate.mjs; fails CLOSED. PHX_MIGRATION_MERGE_OK=1 stands it
+//       down, on the owner's words only.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -2229,6 +2234,15 @@ try {
         }
       }
     }
+    // C22's file list, for a numbered Phoenix merge it is about to judge.
+    if (
+      prNumber &&
+      (namedRepo === null || phoenixNamed) &&
+      !/(?:^|[s;&|(])s*(?:$env:)?PHX_MIGRATION_MERGE_OKs*=s*['"]?1['"]?(?![w.])/i.test(cmd) &&
+      process.env.PHX_MIGRATION_MERGE_OK !== '1'
+    ) {
+      ghRead(['api', `repos/${PHOENIX_REPO}/pulls/${prNumber}/files?per_page=100`, '--paginate', '--jq', '.[]']);
+    }
     const minFiles = Number(process.env.PHX_MERGE_MIN_FILES ?? 4);
     if (
       !MERGE_STAND_DOWN.test(cmd) &&
@@ -2335,6 +2349,126 @@ try {
           'in the BACKGROUND and act on its notification — never poll). Red: fix it on the branch and ' +
           'push; the merge goes through once it passes.\n\n' +
           `Only if the owner said in his own words to merge it red: ${standDown}`,
+      );
+    }
+  }
+
+  // C22 — a merge of a Phoenix PR whose migration is NOT ON PRODUCTION is refused (2026-11-21, the
+  // owner's "Build the guard").
+  //
+  // 🔴 A MERGE SHIPS THE CODE AND APPLIES NO MIGRATION (AGENTS.md §2.3). On 19 Nov 2026 four PRs moved
+  // money steps into single database functions and merged with those functions on staging only; the
+  // live code then called functions production did not have, and on 21 Nov the owner's bulk approval
+  // of outstation claims failed for seven people with PGRST202. The nightly drift check gives a merged
+  // migration 48 hours on purpose, so it spoke only that afternoon. This clause moves the check to the
+  // one moment it cannot wait: every `supabase/migrations/*.sql` the PR adds or changes must be in
+  // production's ledger (the drift check's own match), or carry an `ACKNOWLEDGED_EXCEPTIONS` entry in
+  // the PR head — the evidenced entry `scripts/apply-sql-file.mjs` ends in. scripts/migration-merge-gate.mjs.
+  //
+  // Phoenix only: another repository has no such ledger. A PR with no migration costs one read.
+  //
+  // 🔴 IT FAILS CLOSED, LIKE C21. A ledger it cannot read (no production credentials in this checkout,
+  // a URL that is not production's ref, a network failure) is a merge it cannot vouch for. Its own
+  // stand-down is a different word from C21's and C10's on purpose: `PHX_MIGRATION_MERGE_OK=1` says
+  // "ship this code before its database change", which is the owner's decision alone.
+  const MIGRATION_MERGE_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_MIGRATION_MERGE_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (
+    GH_PR_MERGE.test(mergeText) &&
+    !MERGE_HELP.test(mergeText) &&
+    !MIGRATION_MERGE_STAND_DOWN.test(cmd) &&
+    process.env.PHX_MIGRATION_MERGE_OK !== '1'
+  ) {
+    const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
+    let prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1] ?? null;
+    const namedRepo = mergeRepoFlag(commandSegments(after)[0] ?? '');
+    const gh = (args) => ghRead(args).then((out) => out.trim());
+    const standDown = String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+      ? '$env:PHX_MIGRATION_MERGE_OK=1; <the same command>'
+      : 'PHX_MIGRATION_MERGE_OK=1 <the same command>';
+    const target = () => (prNumber ? `PR #${prNumber}` : 'this branch’s PR');
+
+    let verdict = null;
+    let unreadable = '';
+    let gate = null;
+    let judged = true;
+    try {
+      const repo =
+        namedRepo ?? (await gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])).toLowerCase();
+      if (repo !== PHOENIX_REPO.toLowerCase()) judged = false;
+      else {
+        if (!prNumber) {
+          const n = await gh(['pr', 'view', '--json', 'number', '--jq', '.number', '--repo', PHOENIX_REPO]);
+          if (!/^\d{1,7}$/.test(n)) throw new Error('no PR number came back for this branch');
+          prNumber = n;
+        }
+        gate = await import(new URL('../../scripts/migration-merge-gate.mjs', import.meta.url).href);
+        const filesOut = await gh(['api', `repos/${PHOENIX_REPO}/pulls/${prNumber}/files?per_page=100`, '--paginate', '--jq', '.[]']);
+        const files = filesOut
+          .split('\n')
+          .filter((line) => line.trim())
+          .map((line) => JSON.parse(line));
+        const migrations = gate.prMigrationFiles(files);
+        if (migrations.length === 0) judged = false;
+        else {
+          // The ledger first; the PR head's exception list only for a file the ledger does not record
+          // (the apply-sql-file route). A ledger that cannot be read only matters for a file the head
+          // does not acknowledge either, so its failure is held, not thrown.
+          const { ledger, error } = await gate.readProductionLedger().then(
+            (read) => ({ ledger: read, error: '' }),
+            (e) => ({ ledger: null, error: String(e?.message ?? e).split('\n')[0] }),
+          );
+          const isRecorded = ledger ? await gate.loadIsRecorded() : () => false;
+          let acknowledged = new Set();
+          if (migrations.some((m) => !isRecorded(m, ledger))) {
+            const pr = JSON.parse(
+              (await gh(['pr', 'view', prNumber, '--json', 'headRefOid,baseRefName', '--repo', PHOENIX_REPO])) || '{}',
+            );
+            const sha = String(pr.headRefOid ?? '');
+            if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error('no head commit came back for the PR');
+            const content = await gh([
+              'api',
+              `repos/${PHOENIX_REPO}/contents/scripts/lib/migration-inventory.ts?ref=${sha}`,
+              '--jq',
+              '.content',
+            ]);
+            acknowledged = gate.acknowledgedExceptions(gate.decodeContents(content));
+            if (!acknowledged) throw new Error('the PR head’s ACKNOWLEDGED_EXCEPTIONS list could not be parsed');
+          }
+          verdict = gate.migrationMergeVerdict({ migrations, acknowledged, ledger, isRecorded });
+          if (!verdict.ok && !ledger) {
+            verdict = null;
+            throw new Error(`production’s migration ledger could not be read: ${error}`);
+          }
+        }
+      }
+    } catch (e) {
+      if (e?.[Symbol.for('phx.hook-exit')]) throw e;
+      unreadable = String(e?.message ?? e).split('\n')[0].slice(0, 300);
+    }
+
+    if (judged && !verdict) {
+      deny(
+        `C22 — could not tell whether ${target()}'s migrations are on production, so this merge is ` +
+          `refused rather than waved through (${unreadable || 'no answer'}).\n\n` +
+          'A merge ships the code within minutes and applies no migration; code that calls a function ' +
+          'production does not have fails for everyone who reaches it (21 Nov 2026: seven outstation ' +
+          'approvals, PGRST202). Run the merge again in a moment, from a checkout with `.env.local`; or ' +
+          `check by hand: \`node scripts/migration-merge-gate.mjs ${prNumber ?? '<pr>'}\`.\n\n` +
+          `Only if the owner said in his own words to merge it anyway: ${standDown}`,
+      );
+    }
+    if (judged && verdict && !verdict.ok) {
+      deny(
+        `C22 — ${target()} carries a migration production does not have — ${gate.describeMigrationVerdict(verdict)}.\n\n` +
+          '🔴 A MERGE SHIPS THIS CODE TO PRODUCTION WITHIN MINUTES AND APPLIES NO MIGRATION, so the live ' +
+          'app would call what the database does not have (21 Nov 2026: four 19 Nov money functions ' +
+          'missing for two days; seven outstation approvals failed with PGRST202).\n\n' +
+          'Apply it to production first (the new-migration skill: apply_migration, or ' +
+          '`scripts/apply-sql-file.mjs` when the MCP declines it — that route writes no ledger row, so ' +
+          'add its evidenced ACKNOWLEDGED_EXCEPTIONS entry on the branch and push). The merge goes ' +
+          'through once the ledger or the head names every file.\n\n' +
+          `Only if the owner said in his own words to merge it before its migration: ${standDown}`,
       );
     }
   }

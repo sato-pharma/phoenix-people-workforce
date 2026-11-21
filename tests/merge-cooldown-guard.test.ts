@@ -157,6 +157,8 @@ function runGuard(
   // C21 (a merge on red checks) runs first and has its own file, merge-checks-guard.test.ts; it is
   // stood down here so every answer below is C10's or C13's, judged against these shims alone.
   env.PHX_RED_MERGE_OK = "1";
+  // C22 (a migration not on production) likewise: its own file is migration-merge-gate.test.ts.
+  env.PHX_MIGRATION_MERGE_OK = "1";
   if (opts.minFiles !== undefined) env.PHX_MERGE_MIN_FILES = String(opts.minFiles);
 
   const raw = execFileSync(process.execPath, [guardPath], {
@@ -186,6 +188,8 @@ function runGuardEnv(cwd: string, command: string, extra: Record<string, string>
   // C21 (a merge on red checks) runs first and has its own file, merge-checks-guard.test.ts; it is
   // stood down here so every answer below is C10's or C13's, judged against these shims alone.
   env.PHX_RED_MERGE_OK = "1";
+  // C22 (a migration not on production) likewise: its own file is migration-merge-gate.test.ts.
+  env.PHX_MIGRATION_MERGE_OK = "1";
   delete env.PHX_SMOKE_OK;
   if (/PHX_SMOKE_OK=1/.test(command)) {
     /* the inline form is the point of that case — leave the command to carry it */
