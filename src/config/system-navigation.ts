@@ -4933,7 +4933,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/field-crm/camera-reviews",
     icon: Camera,
     label: "Camera Reviews",
-    description: "Every photo the Phoenix Camera sent: decide the ones that wait, take back one recorded at once, and set the daily limit.",
+    description: "Every photo the Phoenix Camera sent waits here for your decision: approve or reject it, raise one rep's day on the manager's approval, and set the daily limit.",
     permissions: [{ resource: "phoenix_crm", action: "update" }],
     roles: ["Super Admin"],
   },

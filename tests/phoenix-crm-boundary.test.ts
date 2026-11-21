@@ -450,15 +450,16 @@ const ROUTE_GATES: RouteGate[] = [
   // Same permission and audience as entering a visit, because that is what it dates.
   post("time-anchor", "create"),
   // The Phoenix Camera as the rep's offline visit app (owner, 20 Nov 2026): the pack the phone keeps for a day
-  // with no network, and the sync that records a sealed photo's validation and its visit. Both the app's alone
+  // with no network, and the sync that keeps a sealed photo for the Super Admin's camera page. Both the app's alone
   // (`captureClientOf`), at the gate entering a visit takes, because that is what they are.
   get("field-camera/pack", "create"),
   post("field-camera/sync", "create"),
   // The Super Admin's Camera reviews page (owner, 20 Nov 2026: "leave the decision to the decision maker"):
-  // approve or reject an item the camera sent, and the daily limit. `update` is the Super Admin's gate here,
+  // approve or reject an item the camera sent, the daily limit and one rep-day's raise. `update` is the Super Admin's gate here,
   // and the service behind each route also asks canEnterMissedRecords, the door his "Record a missed visit" takes.
   post("camera-reviews/decide", "update"),
   post("camera-reviews/cap", "update"),
+  post("camera-reviews/day-allowance", "update"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
   // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.
@@ -1191,6 +1192,10 @@ const LATER_MIGRATIONS = [
   // and phoenix_crm_field_camera_releases, a column on phoenix_crm_settings, a private bucket, and one NEW
   // function, phoenix_crm_camera_add_customer. It replaces nothing.
   "supabase/migrations/20261120225652_phoenix_crm_camera_items.sql",
+  // The camera's day allowance (owner, 21 Nov 2026: "U ARE ALLOWED 3 A DAYS IF MORE NEEDED WE NEED APPROVAL FROM
+  // MANAGERS VIA EMAIL AND SYSTEM ADMIN WILL UPDATE IT FOR THIS DAY ONLY"): one NEW table,
+  // phoenix_crm_camera_day_allowances, service role only. It replaces nothing.
+  "supabase/migrations/20261121012152_phoenix_crm_camera_day_allowances.sql",
 ];
 
 /**

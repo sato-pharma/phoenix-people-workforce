@@ -2640,6 +2640,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 0 of the 147 names in pg_namespace and 0 of the 28 schema.table names in pg_class. Re-applying it is a
   // no-op (every statement is `if exists`).
   "20261120013609_drop_175_decided_snapshots.sql",
+  // Applied 2026-11-21 about 02:00 Cairo through scripts/apply-sql-file.mjs on staging, then production, the
+  // standing route: supabase-staging's apply_migration answered {"status":"declined"} (it reads the file's
+  // `drop policy if exists` as destructive). That route writes NO ledger row. The file creates one new, empty table,
+  // public.phoenix_crm_camera_day_allowances, and no function. Read back straight after on BOTH cifwmndunmlxjhyjugxa
+  // and ozucdzovmcqvepbozvqf (project name Phoenix HR): pg_class relrowsecurity true, one policy
+  // phoenix_crm_camera_day_allowances_service_role, grants to postgres and service_role only (none to anon,
+  // authenticated or PUBLIC), 0 rows. Re-applying is a no-op (`if not exists` / `drop policy if exists` + create).
+  "20261121012152_phoenix_crm_camera_day_allowances.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
