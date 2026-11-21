@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [Phoenix Camera stays its own app](phoenix-camera-stays-its-own-app.md) — owner 2026-11-20: never fold the camera into the CRM app.
 
 
 
