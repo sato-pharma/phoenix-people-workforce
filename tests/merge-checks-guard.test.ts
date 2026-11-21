@@ -98,6 +98,9 @@ function runGuard(cwd: string, command: string, ghDir: string | null, tool = "Ba
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_MERGE_OK;
   delete env.PHX_RED_MERGE_OK;
+  // C22 (a migration not on production) runs after C21 and has its own file,
+  // migration-merge-gate.test.ts; it is stood down here so every answer below is C21's.
+  env.PHX_MIGRATION_MERGE_OK = "1";
   // C10 and C13 come after C21 and ask their own questions; a large file count keeps C10 quiet so
   // every answer below is C21's.
   env.PHX_MERGE_MIN_FILES = minFiles;
