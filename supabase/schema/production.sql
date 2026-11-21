@@ -64527,9 +64527,11 @@ CREATE TABLE public.medical_insurance_members (
     updated_by_hr_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    contact_email text,
     CONSTRAINT medical_insurance_members_category_check CHECK ((category = ANY (ARRAY['A'::text, 'B'::text, 'C'::text]))),
     CONSTRAINT medical_insurance_members_check CHECK (((coverage_ends_on IS NULL) OR (coverage_ends_on >= coverage_starts_on))),
     CONSTRAINT medical_insurance_members_check1 CHECK (((member_type = 'employee'::text) = (principal_member_id IS NULL))),
+    CONSTRAINT medical_insurance_members_contact_email_shape CHECK (((contact_email IS NULL) OR ((contact_email = lower(btrim(contact_email))) AND (contact_email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'::text)))),
     CONSTRAINT medical_insurance_members_gender_check CHECK (((gender IS NULL) OR (gender = ANY (ARRAY['M'::text, 'F'::text])))),
     CONSTRAINT medical_insurance_members_member_type_check CHECK ((member_type = ANY (ARRAY['employee'::text, 'spouse'::text, 'child'::text])))
 );
@@ -64541,6 +64543,12 @@ ALTER TABLE public.medical_insurance_members OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.medical_insurance_members IS 'Who is on the policy, with dates of cover and plan. A row is ended, never deleted, so the register can always say who was covered on a given day.';
+
+--
+-- Name: COLUMN medical_insurance_members.contact_email; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.medical_insurance_members.contact_email IS 'An address typed for a register row with no HR id. Nothing sends to it: the owner ruled on 2026-11-21 that no Medical Cover Statement is emailed to a person on the policy with no employee record.';
 
 --
 -- Name: medical_insurance_policies; Type: TABLE; Schema: public; Owner: postgres
