@@ -2107,6 +2107,7 @@ import { runOutstationMissingTicketTests } from "./outstation-missing-ticket.tes
 import { runOutstationTrainTicketScanTests } from "./outstation-train-ticket-scan.test.ts";
 import { runOutstationNoTicketTrainFareTests } from "./outstation-no-ticket-train-fare.test.ts";
 import { runOutstationWorkloadRestampTests } from "./outstation-workload-restamp.test.ts";
+import { runOutstationStrandedReleaseTests } from "./outstation-stranded-release.test.ts";
 import { runOutstationSubmitExpenseStepsTests } from "./outstation-submit-expense-steps.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
@@ -12564,6 +12565,10 @@ await runTest(
 await runTest(
   "a trip's CRM workload stamped before the day's visits were typed is refreshed the next morning — only an undecided, system-stamped claim whose trip ended in the last 45 days, only when the CRM now holds more work, never a figure typed by hand, never the gate status, the approval revision or any money, the write pinned to the figures it read, the replaced stamp recorded for the approver, one shared stamp shape with the first capture, and the job appended to the daily run",
   runOutstationWorkloadRestampTests,
+);
+await runTest(
+  "an accepted outstation claim is never stranded off payroll — the release after an employee's own photo runs as the system, never as the employee (a District Manager's capture was refused and two accepted claims sat with every gate complete and no payroll row), and the morning departure-photo job hands every accepted claim the gate clears that no payroll row carries to the same release, a bounded batch at a time, never an undecided, rejected, still-held or already-queued claim",
+  runOutstationStrandedReleaseTests,
 );
 await runTest(
   "Submit Expense is a step form that says what to do in each step and what comes next — a trip walks trip, destination, evidence, amounts and review, a Meeting or Other expense has no destination, each step names what it still needs and Submit goes to the first one missing something, the screen after Submit lists what is still owed with the departure photo first, and Submit Expense and Expense Submissions are one page: what is owed, the form, then My claims, with the old page forwarding a submitter to it",

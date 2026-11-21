@@ -17,6 +17,7 @@ import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operation
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import {
+  releaseStrandedAcceptedOutstationClaims,
   runOutstationDeparturePhotoReminders,
   runOutstationSlaDaily,
   runOutstationWorkloadRestamp,
@@ -181,12 +182,28 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
   // Reminds the EMPLOYEE his departure photo is due, on the trip's last day and once more when
   // it goes overdue. Not behind a toggle — see the note on the function for why an unregistered
   // toggle key would leave this silently dead.
+  //
+  // Then the departure photo's follow-on, retried: an ACCEPTED claim whose photos and workload are all in but which
+  // no payroll row carries is handed to the same release, as the system (claims 111 and 347, 21 Nov 2026 — the
+  // capture's own release had failed, and after the departure photo nothing ever tried again). It decides nothing:
+  // the claim was already accepted, and the release works out the same figures it always does.
   "outstation-departure-photo": {
     resultName: "outstationDeparturePhotoReminders",
-    run: (_request, onJobFailure) =>
-      runOutstationDeparturePhotoReminders().catch(
+    run: async (_request, onJobFailure) => {
+      const reminders = await runOutstationDeparturePhotoReminders().catch(
         onJobFailure("daily-outstation-departure-photo", (message) => ({ processed: 0, errors: 1, detail: message })),
-      ),
+      );
+      // Not a second guarded pass: each morning job is exactly ONE (tests/dead-telegram-link-alert.test.ts). A failed
+      // retry is still never silent — it is an ERROR on System Issues, and its answer says it did not run.
+      const strandedClaimRelease = await releaseStrandedAcceptedOutstationClaims().catch((error: unknown) => {
+        logError("Outstation: the morning retry of stranded accepted claims did not run", {
+          error,
+          labels: { event: "outstation_stranded_release_failed", job: "daily-outstation-departure-photo" },
+        });
+        return { checked: 0, errors: 1, released: 0, stillHeld: 0, detail: clientSafeErrorMessage(error, "The retry did not run.") };
+      });
+      return { ...reminders, strandedClaimRelease };
+    },
   },
   "resignation-sla": {
     resultName: "resignationSla",
