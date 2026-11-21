@@ -94,11 +94,12 @@ the primary by absolute path with no error. Never send parallel subagents into o
   AND production's `/api/healthz` revision; it replaced 03:45's "RUN LOCAL DEV FROM MAIN". Task "Phoenix Spare Dev
   Server Follows" runs `spare-follow-production.ps1` (default `-Target production`) every 10 min and logs LOUDLY if
   the spare's `.env.local` ever names staging — never move it to a branch. Tests: `& ~/.claude/scripts/spare-test.ps1 '<command>'` from the checkout (default CI's
-  4 shards one at a time, "ran X of 2870"; runs queue one at a time, each in a fresh folder; never `pnpm` there, never a second test folder); any other command: `~/.claude/scripts/spare.ps1`. Spare: `ssh phoenix-spare`, D:\Phoenix, 8 GB.
+  4 shards one at a time, "ran X of 2870"; runs queue one at a time, each in a fresh folder; never `pnpm` there, never a second test folder); any other command: `~/.claude/scripts/spare.ps1`. 🔴 **The spare runs UBUNTU SERVER since 20 Nov 2026** (his "put Ubuntu Server on the spare") — commands are BASH; `ssh phoenix-spare` (user phoenix, passwordless sudo), checkout `~/phoenix/phoenix-workforce`, dev server = systemd `phoenix-dev` (04:00 restart timer), old D: = `/mnt/chaos`, 8 GB. 🔴 **PR PREVIEW ONLY ON HIS WORD** (his "Set up PR preview", 20 Nov): `~/.claude/scripts/spare-preview.ps1 <PR>` makes localhost:3000 that unmerged PR (production DB) for 2 h, then live returns itself; `status`, `stop`.
 - 🔴 **NEVER run a typecheck locally** — bash-guard C8 refuses it; the PR's CI answers. `PHX_TYPECHECK_OK=1 <cmd>`
   stands it down for one watched command.
 - A dev server dies with the session that started it (`dev-server-reaper.mjs`). Stop only one YOUR session started,
   by PORT; one he or another session started waits for his word.
+- 🔴 **HE HEARS A REPLY ONLY WHEN HE ASKS — never automatic** (owner, 20 Nov 2026: "انا عايز في كله"). `hooks/speak-on-request.mjs` catches "اقراها"/"بصوتك"/"read it aloud" in every session and speaks it (Arabic in Egyptian via his Gemini key); never say you cannot speak. The app's own read-aloud button cannot change. Off: `~/.claude/speak/off`.
 - **App slow? Read `~/.claude/scripts/ram-meter/claude-app-watch.txt` first.** "Re-archive the stuck sessions" =
   `unarchive_session` then `archive_session` for exactly the ones it lists. Never stop or restart the app yourself
   (only the RAM meter's own automatic restart, whose conditions are never widened).
