@@ -2,15 +2,17 @@
  * Phoenix CRM — the Phoenix Camera's items and the Super Admin's camera page (owner, 20 Nov 2026).
  *
  * Every photo the camera sends lands here as one `phoenix_crm_camera_items` row — "every camera visit and
- * validation lands there, even if from the first three" — and nothing the camera sends is refused: "Phoenix will
- * not reject anything ... leave the decision to the decision maker." The rules of what is recorded at once and
- * what waits are pure, in `camera-item-rules.ts`; this file is their I/O.
+ * validation lands there" — and nothing the camera sends is refused: "Phoenix will not reject anything ... leave the
+ * decision to the decision maker." 🔴 NOTHING RECORDS ITSELF (owner, 21 Nov 2026: "EVERY VISIT GOES TO MANUAL REVIEW
+ * FIRST"): every item arrives waiting and only the Super Admin's Approve records it, up to the rep's allowance for
+ * that day (3, raised for one day only on the manager's email approval). The rules are pure, in
+ * `camera-item-rules.ts`; this file is their I/O.
  *
  * 🔴 THE SUPER ADMIN ALONE (`canEnterMissedRecords`), NEVER THE SFE ("Exclude the SFE totally"). His Approve of a
  * visit goes through his own "Record a missed visit" door (`enterMissedVisit`), in his name; a validation is the
  * seal's own (`validateWithRepSeal`, the rep's photo slot, his decision); a new customer is added to the rep's list
  * (`phoenix_crm_camera_add_customer`) and validated at the photo's place. Reject archives the item; on an item that
- * was recorded at once it also deletes the visit (`adminDeleteRecord`) and refuses the place
+ * was recorded at once before 21 Nov 2026 it also deletes the visit (`adminDeleteRecord`) and refuses the place
  * (`refuseValidatedPlace`), so a rejected item leaves nothing counted.
  *
  * 🔴 Golden rule #1: the rep's phone reads "sent" and nothing else. Every reason, number and check is here.
@@ -24,11 +26,14 @@ import {
   CAMERA_PHOTO_KIND_LABELS,
   CAMERA_REASON_LABELS,
   cairoClockOf,
+  cameraApproveAllowed,
   cameraArrival,
+  cameraDayAllowance,
   cameraTakenAt,
   cameraVisitDraft,
   isNamePhoto,
   parseCameraCap,
+  parseCameraDayAllowance,
   type CameraIntent,
   type CameraItemRow,
   type CameraOutcome,
@@ -54,7 +59,6 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSealedNamePhoto } from "@/lib/phoenix-crm/server/signboard-check";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { refuseValidatedPlace } from "@/lib/phoenix-crm/server/validation-reviews";
-import { saveVisit } from "@/lib/phoenix-crm/server/visits";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -89,6 +93,120 @@ export async function saveCameraDailyCap(viewer: PhoenixCrmViewer, raw: unknown)
   return { cap };
 }
 
+// ── The one-day allowance (owner, 21 Nov 2026) ──────────────────────────────────────────────────
+
+const ALLOWANCES_TABLE = "phoenix_crm_camera_day_allowances";
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The Phoenix day a camera item belongs to: the photo's own day, else the day it arrived. */
+function itemDay(row: Row): string {
+  return textOrNull(row.taken_day) ?? cairoBusinessDay(new Date(String(row.received_at)));
+}
+
+type DayRaise = { allowance: number; setBy: string; managerApproval: string };
+
+async function loadDayRaise(repHrId: string, day: string, isTest: boolean): Promise<DayRaise | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(ALLOWANCES_TABLE)
+    .select("allowance, manager_approval, set_by_hr_id")
+    .eq("rep_hr_id", repHrId)
+    .eq("day", day)
+    .eq("is_test", isTest)
+    .maybeSingle();
+  throwIfError(error);
+  const row = data as Row | null;
+  if (!row) return null;
+  return { allowance: Number(row.allowance), setBy: String(row.set_by_hr_id ?? ""), managerApproval: String(row.manager_approval ?? "") };
+}
+
+/** Camera visits already recorded for this rep on this Phoenix day: approved, or recorded at once before 21 Nov. */
+async function approvedVisitsThatDay(repHrId: string, day: string, isTest: boolean): Promise<number> {
+  const admin = getSupabaseAdmin();
+  const base = () =>
+    admin.from(ITEMS_TABLE).select("taken_day, received_at").eq("rep_hr_id", repHrId).eq("is_test", isTest).eq("intent", "visit").eq("outcome", "recorded");
+  const [onDay, noDay] = await Promise.all([base().eq("taken_day", day), base().is("taken_day", null)]);
+  throwIfError(onDay.error);
+  throwIfError(noDay.error);
+  const undated = ((noDay.data ?? []) as Row[]).filter((row) => itemDay(row) === day).length;
+  return ((onDay.data ?? []) as Row[]).length + undated;
+}
+
+/** Camera visits this rep SENT for the photo's own day and not rejected, before this one. */
+async function sentVisitsThatDay(repHrId: string, takenDay: string | null, isTest: boolean): Promise<number> {
+  if (!takenDay) return 0;
+  const { count, error } = await getSupabaseAdmin()
+    .from(ITEMS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .eq("rep_hr_id", repHrId)
+    .eq("taken_day", takenDay)
+    .eq("is_test", isTest)
+    .eq("intent", "visit")
+    .neq("outcome", "archived");
+  throwIfError(error);
+  return count ?? 0;
+}
+
+export type CameraDayFacts = { day: string; allowance: number; approved: number; raisedBy: string | null; managerApproval: string | null };
+
+async function cameraDayFacts(repHrId: string, day: string, isTest: boolean, cap: number): Promise<CameraDayFacts> {
+  const [raise, approved] = await Promise.all([loadDayRaise(repHrId, day, isTest), approvedVisitsThatDay(repHrId, day, isTest)]);
+  return {
+    day,
+    allowance: cameraDayAllowance(cap, raise?.allowance ?? null),
+    approved,
+    raisedBy: raise?.setBy || null,
+    managerApproval: raise?.managerApproval || null,
+  };
+}
+
+/**
+ * The Super Admin raises ONE rep's camera visits for ONE Phoenix day, once the manager's approval is in by email
+ * (owner, 21 Nov 2026: "SYSTEM ADMIN WILL UPDATE IT FOR THIS DAY ONLY"). The approval is written beside it, and it
+ * cannot go below the visits already approved that day.
+ */
+export async function saveCameraDayAllowance(viewer: PhoenixCrmViewer, raw: unknown): Promise<CameraDayFacts> {
+  assertCameraDecider(viewer);
+  const body = (raw && typeof raw === "object" ? raw : {}) as Row;
+  if (!isUuid(body.itemId)) throw validationError("Choose the camera visit. Reload the page and try again.");
+  const allowance = parseCameraDayAllowance(body.allowance);
+  if (allowance === null) throw validationError("Write a whole number from 1 to 20.");
+  const managerApproval = typeof body.managerApproval === "string" ? body.managerApproval.trim() : "";
+  if (managerApproval.length < 3) throw validationError("Write the manager's email approval: who approved it and when.");
+  if (managerApproval.length > 500) throw validationError("Keep the manager's approval under 500 characters.");
+
+  const admin = getSupabaseAdmin();
+  const read = await admin
+    .from(ITEMS_TABLE)
+    .select("id, intent, rep_hr_id, is_test, taken_day, received_at")
+    .eq("id", String(body.itemId).toLowerCase())
+    .maybeSingle();
+  throwIfError(read.error);
+  const item = read.data as Row | null;
+  if (!item) throw notFoundError("This item is no longer there.");
+  if (item.intent !== "visit") throw validationError("Only a camera visit has a day's allowance.");
+  const repHrId = String(item.rep_hr_id ?? "").trim().toUpperCase();
+  const isTest = item.is_test === true;
+  const day = itemDay(item);
+  if (!DAY_PATTERN.test(day)) throw validationError("This visit has no day to raise.");
+  const approved = await approvedVisitsThatDay(repHrId, day, isTest);
+  if (allowance < approved) throw validationError(`${approved} camera visits are already approved that day. Write ${approved} or more.`);
+
+  const { error } = await admin.from(ALLOWANCES_TABLE).upsert(
+    {
+      rep_hr_id: repHrId,
+      day,
+      is_test: isTest,
+      allowance,
+      manager_approval: managerApproval,
+      set_by_hr_id: viewer.hrId.trim().toUpperCase(),
+      set_at: new Date().toISOString(),
+    },
+    { onConflict: "rep_hr_id,day,is_test" },
+  );
+  throwIfError(error);
+  return cameraDayFacts(repHrId, day, isTest, await loadCameraDailyCap());
+}
+
 function assertCameraDecider(viewer: PhoenixCrmViewer): void {
   if (!canEnterMissedRecords(viewer)) throw forbiddenError("Only the Super Admin decides the camera's items.");
 }
@@ -116,21 +234,6 @@ async function loadCustomerFacts(customerId: string): Promise<CustomerFacts | nu
   };
 }
 
-async function recordedThatDay(repHrId: string, takenDay: string | null, isTest: boolean): Promise<number> {
-  if (!takenDay) return 0;
-  const { count, error } = await getSupabaseAdmin()
-    .from(ITEMS_TABLE)
-    .select("id", { count: "exact", head: true })
-    .eq("rep_hr_id", repHrId)
-    .eq("taken_day", takenDay)
-    .eq("is_test", isTest)
-    .eq("outcome", "recorded")
-    // Recorded at once only: an item the Super Admin approved later took nothing from the rep's limit.
-    .is("decision", null);
-  throwIfError(error);
-  return count ?? 0;
-}
-
 async function storeItemPhoto(itemId: string, isTest: boolean, bytes: Uint8Array): Promise<string> {
   const path = `items/${isTest ? "test/" : ""}${itemId}.jpg`;
   const { error } = await getSupabaseAdmin()
@@ -140,13 +243,10 @@ async function storeItemPhoto(itemId: string, isTest: boolean, bytes: Uint8Array
   return path;
 }
 
-/** The seal's visit block, already checked to be there. */
-type SealedVisit = NonNullable<SealPayload["visit"]>;
-
 /**
- * One sealed photo from the camera. Never refuses what it can read: it is recorded at once or waits for the
- * Super Admin, and the phone is told "received" either way. A resend of the same item (same visit id) is the same
- * row and does nothing twice.
+ * One sealed photo from the camera. Never refuses what it can read and never records it: it waits for the Super
+ * Admin (or is archived when too old), and the phone is told "received" either way. A resend of the same item (same
+ * visit id) is the same row and does nothing twice.
  */
 export async function receiveCameraItem(input: {
   viewer: PhoenixCrmViewer;
@@ -192,76 +292,37 @@ export async function receiveCameraItem(input: {
     if (verdict.ok) anchorCapturedAt = verdict.capturedAt;
   }
   const time = cameraTakenAt({ anchorCapturedAt, sealHolds: inspection.sealHolds, timeSource: payload.timeSource, takenAtUtc: payload.takenAtUtc });
-  const provisional = cameraArrival({
+  const takenDay = time.takenAt ? cairoBusinessDay(time.takenAt) : null;
+  const cap = await loadCameraDailyCap();
+  const [sentThatDay, raise]: [number, DayRaise | null] =
+    intent === "visit" && takenDay
+      ? await Promise.all([sentVisitsThatDay(repHrId, takenDay, isTest), loadDayRaise(repHrId, takenDay, isTest)])
+      : [0, null];
+  const arrival = cameraArrival({
     intent,
     sealHolds: inspection.sealHolds,
     locationProblems: inspection.locationProblems,
     time,
     receivedAt,
-    recordedThatDay: 0,
-    cap: Number.MAX_SAFE_INTEGER,
+    sentThatDay,
+    allowance: cameraDayAllowance(cap, raise?.allowance ?? null),
   });
-  const cap = await loadCameraDailyCap();
-  const arrival =
-    provisional.outcome === "recorded"
-      ? cameraArrival({
-          intent,
-          sealHolds: true,
-          locationProblems: [],
-          time,
-          receivedAt,
-          recordedThatDay: await recordedThatDay(repHrId, provisional.takenDay, isTest),
-          cap,
-        })
-      : provisional;
 
   const photoPath = await storeItemPhoto(itemId, isTest, bytes);
   const reasons: CameraReason[] = [...arrival.reasons];
-  let outcome: CameraOutcome = arrival.outcome;
-  let ruleRefusal: string | null = null;
-  let visitId: string | null = null;
-  let validatedPlaceId: string | null = null;
+  const outcome: CameraOutcome = arrival.outcome;
   let reader: unknown = null;
 
-  if (outcome === "recorded" && customer && inspection.report) {
-    const sealed = { payload, report: inspection.report };
-    // A customer with no place is validated on the photo: the place photo stands at once; a name photo
-    // stands only when the reader reads the name clearly (owner, point 6), and a business card always waits,
-    // because it counts only with a location inside the polyclinic, which the Super Admin judges.
-    let mayValidate = !customer.hasPlace && !inspection.alreadyUsed;
-    if (mayValidate && isNamePhoto(photoKind)) {
-      if (photoKind === "business_card") {
-        mayValidate = false;
-        outcome = "waiting";
-        reasons.push("name_photo");
-      } else {
-        const reading = await readSealedNamePhoto({ bytes, customerName: customer.name, listType: customer.listType }).catch(() => null);
-        reader = reading;
-        if (!reading || reading.verdict !== "match") {
-          mayValidate = false;
-          outcome = "waiting";
-          reasons.push("name_photo");
-        }
-      }
-    }
-    if (outcome === "recorded") {
-      if (mayValidate) {
-        const validation = await validateWithRepSeal(viewer, { seat, isTest, customerId: visit.customerId, bytes, sealed });
-        validatedPlaceId = validation.placeId;
-      }
-      if (intent === "visit") {
-        try {
-          await saveVisit(viewer, visitBody(draft, visit, payload, seat, isTest), "app");
-          visitId = itemId;
-        } catch (error) {
-          // A rule the visit save keeps (the third visit, a far visit, a full name) never refuses the camera: the
-          // item waits, with the rule's own words, for the Super Admin.
-          if (!(error instanceof ApiError)) throw error;
-          outcome = "waiting";
-          reasons.push("rule_refusal");
-          ruleRefusal = error.message;
-        }
-      }
+  // A name photo for a customer with no place yet: the reader's verdict is written beside it for the Super Admin
+  // (owner, point 6). A business card always waits as a name photo: it counts only with a location inside the
+  // polyclinic, which he judges. Nothing is validated here: his Approve validates it.
+  if (outcome === "waiting" && customer && !customer.hasPlace && !inspection.alreadyUsed && isNamePhoto(photoKind)) {
+    if (photoKind === "business_card") {
+      reasons.push("name_photo");
+    } else {
+      const reading = await readSealedNamePhoto({ bytes, customerName: customer.name, listType: customer.listType }).catch(() => null);
+      reader = reading;
+      if (!reading || reading.verdict !== "match") reasons.push("name_photo");
     }
   }
 
@@ -294,30 +355,14 @@ export async function receiveCameraItem(input: {
     visit_draft: intent === "visit" ? draft : null,
     outcome,
     reasons,
-    rule_refusal: ruleRefusal,
-    visit_id: visitId,
-    validated_place_id: validatedPlaceId,
+    rule_refusal: null,
+    visit_id: null,
+    validated_place_id: null,
     reader,
   });
   // A second send that raced the first one is the same item: the first row stands.
   if (error && (error as { code?: string }).code !== "23505") throwIfError(error);
   return CAMERA_RECEIVED;
-}
-
-/** The visit as `saveVisit` takes it: who, where and when from the signed seal, never from the body. */
-function visitBody(draft: Record<string, unknown>, visit: SealedVisit, payload: SealPayload, seat: OrgSeat, isTest: boolean): Record<string, unknown> {
-  return {
-    ...draft,
-    id: visit.visitId,
-    seatId: seat.seatId,
-    test: isTest,
-    customerId: visit.customerId,
-    lat: payload.lat,
-    lon: payload.lon,
-    accuracyMeters: payload.accuracyMeters,
-    deviceMocked: payload.mock,
-    offline: visit.offline,
-  };
 }
 
 // ── The page ────────────────────────────────────────────────────────────────────────────────────
@@ -328,7 +373,7 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
 }
 
-function approveFacts(row: Row): { label: string | null; cannot: string | null } {
+function approveFacts(row: Row, day: CameraDayFacts | null): { label: string | null; cannot: string | null } {
   if (row.decision !== null && row.decision !== undefined) return { label: null, cannot: null };
   if (row.outcome !== "waiting") return { label: null, cannot: null };
   const intent = String(row.intent) as CameraIntent;
@@ -338,6 +383,10 @@ function approveFacts(row: Row): { label: string | null; cannot: string | null }
   }
   if (intent === "validate") {
     return hasPosition ? { label: "Validate", cannot: null } : { label: null, cannot: "No location: it cannot become the customer's place." };
+  }
+  if (day) {
+    const allowed = cameraApproveAllowed(day.approved, day.allowance);
+    if (!allowed.ok) return { label: null, cannot: allowed.reason };
   }
   return { label: "Record the visit", cannot: null };
 }
@@ -363,6 +412,16 @@ export async function loadCameraPage(viewer: PhoenixCrmViewer, rawTab: unknown):
     for (const entry of (read.data ?? []) as Row[]) customers.set(String(entry.id), String(entry.name ?? ""));
   }
   const people = [...new Set(rows.flatMap((row) => [textOrNull(row.rep_hr_id), textOrNull(row.decided_by_hr_id)]).filter((id): id is string => Boolean(id)))];
+  // Each waiting camera visit's day: its allowance and how many are already approved (one read per rep-day).
+  const dayFacts = new Map<string, CameraDayFacts>();
+  const dayKey = (row: Row) => `${String(row.rep_hr_id ?? "").trim().toUpperCase()}|${itemDay(row)}|${row.is_test === true}`;
+  const waitingVisits = rows.filter((row) => row.outcome === "waiting" && row.intent === "visit");
+  await Promise.all(
+    [...new Map(waitingVisits.map((row) => [dayKey(row), row])).entries()].map(async ([key, row]) => {
+      dayFacts.set(key, await cameraDayFacts(String(row.rep_hr_id ?? "").trim().toUpperCase(), itemDay(row), row.is_test === true, cap));
+    }),
+  );
+  for (const facts of dayFacts.values()) if (facts.raisedBy) people.push(facts.raisedBy);
   const names = await loadPeopleNames(people);
   const urls = new Map<string, string>();
   const paths = rows.map((row) => textOrNull(row.photo_path)).filter((path): path is string => Boolean(path));
@@ -380,7 +439,8 @@ export async function loadCameraPage(viewer: PhoenixCrmViewer, rawTab: unknown):
       const report = (row.seal_report && typeof row.seal_report === "object" ? row.seal_report : null) as Row | null;
       const readerRow = (row.reader && typeof row.reader === "object" ? row.reader : null) as Row | null;
       const fixAge = numberOrNull(row.fix_age_ms);
-      const facts = approveFacts(row);
+      const day = row.outcome === "waiting" && row.intent === "visit" ? (dayFacts.get(dayKey(row)) ?? null) : null;
+      const facts = approveFacts(row, day);
       const repHrId = String(row.rep_hr_id ?? "");
       const decidedBy = textOrNull(row.decided_by_hr_id);
       return {
@@ -420,6 +480,7 @@ export async function loadCameraPage(viewer: PhoenixCrmViewer, rawTab: unknown):
         decisionNote: textOrNull(row.decision_note),
         approveLabel: facts.label,
         cannotApprove: facts.cannot,
+        allowanceDay: day ? { ...day, raisedBy: day.raisedBy ? nameOf(names, day.raisedBy, day.raisedBy) : null } : null,
       };
     }),
   };
@@ -535,7 +596,11 @@ export async function decideCameraItem(viewer: PhoenixCrmViewer, raw: unknown): 
       if (intent === "visit" && !visitId) {
         const draft = cameraVisitDraft(row.visit_draft);
         const takenAt = textOrNull(row.taken_at);
-        const day = textOrNull(row.taken_day) ?? cairoBusinessDay(new Date(String(row.received_at)));
+        const day = itemDay(row);
+        // The rep's allowance for that day (owner, 21 Nov 2026): 3, unless the Super Admin raised that one day.
+        const facts = await cameraDayFacts(repHrId.trim().toUpperCase(), day, isTest, await loadCameraDailyCap());
+        const allowed = cameraApproveAllowed(facts.approved, facts.allowance);
+        if (!allowed.ok) throw conflictError(allowed.reason);
         const reason = draft.planned ? null : draft.reason && draft.reason.length >= UNPLANNED_REASON_MIN ? draft.reason : "Recorded from the Phoenix Camera, off the plan.";
         const entered = await enterMissedVisit(viewer, {
           id,

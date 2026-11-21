@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST = one Phoenix Camera item (a visit, a validation or a new customer), sent when the phone has network again.
-// Recorded at once when every rule allows it, otherwise kept for the Super Admin's camera page; the phone is told
+// Never recorded here: every item waits on the Super Admin's camera page (owner, 21 Nov 2026); the phone is told
 // "received" either way (server/camera-items.ts). A resend of the same item is the same item. The app's alone (a
 // bearer token, no session cookie); a browser is answered 404.
 export async function POST(request: Request) {

@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 // POST = the Super Admin approves or rejects one Phoenix Camera item (owner, 20 Nov 2026: "leave the decision to
 // the decision maker"). Approve records the visit through his "Record a missed visit" door, validates at the seal's
-// place or adds the new customer; Reject archives it and takes back what was recorded at once. His alone: the
+// place or adds the new customer, up to the rep's allowance for that day (21 Nov 2026); Reject archives it and takes
+// back what was recorded at once before 21 Nov 2026. His alone: the
 // service asserts `canEnterMissedRecords` again, so nothing on the screen decides who may.
 export async function POST(request: Request) {
   try {

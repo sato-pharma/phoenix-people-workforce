@@ -15,9 +15,9 @@
  *   - THE SYNC (`syncFieldCameraVisit`): one sealed photo — a visit, a validation alone or a new customer.
  *     Since camera 2.1 (owner, 20 Nov 2026: "Phoenix will not reject anything ... leave the decision to the
  *     decision maker") nothing readable is refused: `receiveCameraItem` (server/camera-items.ts) judges the seal
- *     without throwing, records the item at once when every rule allows it (the first `camera_daily_cap` of the
- *     rep's Phoenix day, the same day, a seal that holds, a position, a confirmed time), and otherwise keeps it
- *     waiting on the Super Admin's camera page. Still refused: a browser, a caller with no territory of his own,
+ *     without throwing and keeps EVERY item waiting on the Super Admin's camera page (owner, 21 Nov 2026: "EVERY
+ *     VISIT GOES TO MANUAL REVIEW FIRST"); his Approve records it, up to the rep's allowance for that day. Still
+ *     refused: a browser, a caller with no territory of his own,
  *     a file with no seal, and a photo whose seal names no customer.
  *     A resend of the same sync is the same item (the seal's visit id), never a second.
  *

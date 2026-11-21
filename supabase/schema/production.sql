@@ -66261,6 +66261,26 @@ COMMENT ON TABLE public.phoenix_crm_behaviour_integrity IS 'Phoenix CRM behaviou
 COMMENT ON COLUMN public.phoenix_crm_behaviour_integrity.measured IS 'False when the month held too few visits to judge. NOT CHECKED, which is not the same as clean.';
 
 --
+-- Name: phoenix_crm_camera_day_allowances; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_camera_day_allowances (
+    rep_hr_id text NOT NULL,
+    day date NOT NULL,
+    is_test boolean DEFAULT false NOT NULL,
+    allowance integer NOT NULL,
+    manager_approval text NOT NULL,
+    set_by_hr_id text NOT NULL,
+    set_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT phoenix_crm_camera_day_allowances_allowance_check CHECK (((allowance >= 1) AND (allowance <= 20))),
+    CONSTRAINT phoenix_crm_camera_day_allowances_manager_approval_check CHECK (((char_length(btrim(manager_approval)) >= 3) AND (char_length(btrim(manager_approval)) <= 500))),
+    CONSTRAINT phoenix_crm_camera_day_allowances_rep_hr_id_check CHECK (((char_length(rep_hr_id) >= 1) AND (char_length(rep_hr_id) <= 40))),
+    CONSTRAINT phoenix_crm_camera_day_allowances_set_by_hr_id_check CHECK (((char_length(set_by_hr_id) >= 1) AND (char_length(set_by_hr_id) <= 40)))
+);
+
+ALTER TABLE public.phoenix_crm_camera_day_allowances OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_camera_items; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -77543,6 +77563,13 @@ ALTER TABLE ONLY public.phoenix_crm_behaviour_integrity
 
 ALTER TABLE ONLY public.phoenix_crm_behaviour_integrity
     ADD CONSTRAINT phoenix_crm_behaviour_integrity_pkey PRIMARY KEY (id);
+
+--
+-- Name: phoenix_crm_camera_day_allowances phoenix_crm_camera_day_allowances_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_camera_day_allowances
+    ADD CONSTRAINT phoenix_crm_camera_day_allowances_pkey PRIMARY KEY (rep_hr_id, day, is_test);
 
 --
 -- Name: phoenix_crm_camera_items phoenix_crm_camera_items_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -96690,6 +96717,18 @@ ALTER TABLE public.phoenix_crm_behaviour_integrity ENABLE ROW LEVEL SECURITY;
 CREATE POLICY phoenix_crm_behaviour_integrity_service_role ON public.phoenix_crm_behaviour_integrity TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: phoenix_crm_camera_day_allowances; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_camera_day_allowances ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: phoenix_crm_camera_day_allowances phoenix_crm_camera_day_allowances_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_camera_day_allowances_service_role ON public.phoenix_crm_camera_day_allowances TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_camera_items; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -107549,6 +107588,12 @@ GRANT ALL ON TABLE public.phoenix_crm_admin_photo_validations TO service_role;
 --
 
 GRANT ALL ON TABLE public.phoenix_crm_behaviour_integrity TO service_role;
+
+--
+-- Name: TABLE phoenix_crm_camera_day_allowances; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.phoenix_crm_camera_day_allowances TO service_role;
 
 --
 -- Name: TABLE phoenix_crm_camera_items; Type: ACL; Schema: public; Owner: postgres
