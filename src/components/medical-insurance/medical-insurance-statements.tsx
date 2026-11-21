@@ -16,7 +16,7 @@ import { cellClassName, downloadGot, headerClassName, SaveError, textLinkClassNa
 const EMAIL_BATCH = 20;
 const SEND_URL = "/api/medical-insurance/cost-letter/send";
 
-type Outcome = { memberId: string; name: string; email: string | null; status: "sent" | "not_sent"; reason: string | null };
+type Outcome = { memberId: string; name: string; email: string | null; cc: string[]; note: string | null; status: "sent" | "not_sent"; reason: string | null };
 
 /** What each person on the row costs the employee a month, exactly as the statement prints it. */
 function monthlyLines(row: MonthlySplitRow): Array<{ key: string; name: string; as: string; plan: string; monthly: number | null }> {
@@ -37,7 +37,9 @@ const memberOf = (row: MonthlySplitRow) => row.employee?.memberId ?? "";
  * THE MEDICAL COVER STATEMENT, FOR EVERY EMPLOYEE (owner, 2026-11-21). Each employee on the policy is listed
  * with their grade and what they pay a month, and beside each one an Export PDF and an Email button; ticks
  * choose several to email at once. The email IS the statement, in the body of the house letter, with no
- * attachment, and goes to that employee's own work email alone. Nothing is sent until the list is confirmed.
+ * attachment, and goes to that employee's own work email. The confirm panel can copy each employee's direct
+ * manager and any typed addresses, as a visible CC (owner, 2026-11-21: "Both", "Visible CC"). Nothing is
+ * sent until the list is confirmed.
  * Amounts only, never the split's percentages. Super Admin only: the tab rides in the money view and both
  * routes assert the same permission.
  */
@@ -51,6 +53,8 @@ export function MedicalInsuranceStatementsTab({ money }: { money: MedicalInsuran
   const [outcomes, setOutcomes] = React.useState<Outcome[] | null>(null);
   const [pdfBusy, setPdfBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [ccManager, setCcManager] = React.useState(false);
+  const [ccText, setCcText] = React.useState("");
 
   const needle = query.trim().toLowerCase();
   const shown = needle ? rows.filter((row) => (row.employee?.name ?? "").toLowerCase().includes(needle)) : rows;
@@ -103,7 +107,7 @@ export function MedicalInsuranceStatementsTab({ money }: { money: MedicalInsuran
       for (let start = 0; start < ids.length; start += EMAIL_BATCH) {
         const batch = ids.slice(start, start + EMAIL_BATCH);
         setProgress(`Sending ${Math.min(start + batch.length, ids.length)} of ${ids.length}`);
-        const response = await fetch(SEND_URL, { body: JSON.stringify({ members: batch }), headers: { "content-type": "application/json" }, method: "POST" });
+        const response = await fetch(SEND_URL, { body: JSON.stringify({ cc: ccText, ccManager, members: batch }), headers: { "content-type": "application/json" }, method: "POST" });
         const body = (await response.json().catch(() => null)) as { message?: string; outcomes?: Outcome[] } | null;
         if (!response.ok) throw new Error(body?.message ?? "The statements could not be sent. Try again.");
         all.push(...(body?.outcomes ?? []));
@@ -187,7 +191,7 @@ export function MedicalInsuranceStatementsTab({ money }: { money: MedicalInsuran
 
   return (
     <AdminTableShell
-      description="Every employee on the policy, with their grade and what they pay each month. Export a PDF to hand on, or email the statement to the employee: the email carries the whole statement in its body (no attachment) and goes to that employee's own work email, nobody else. Tick several to email them together. It shows amounts only, never how the cost is shared."
+      description="Every employee on the policy, with their grade and what they pay each month. Export a PDF to hand on, or email the statement to the employee: the email carries the whole statement in its body (no attachment) and goes to that employee's own work email, copying their manager or other addresses only if you choose to. Tick several to email them together. It shows amounts only, never how the cost is shared."
       title="Medical Cover Statement"
     >
       <div className="space-y-4 p-4">
@@ -212,8 +216,29 @@ export function MedicalInsuranceStatementsTab({ money }: { money: MedicalInsuran
               {pending.length === 1 ? `Email ${pending[0].employee?.name} their Medical Cover Statement?` : `Email ${pending.length} employees their Medical Cover Statements?`}
             </p>
             <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
-              Each statement goes to that employee&apos;s own work email on the Employee Master, one email each, with no copy to anyone else. Someone with no work email is listed afterwards and not sent.
+              Each statement goes to that employee&apos;s own work email on the Employee Master, one email each. Anyone you copy below is shown on the email and sees the amounts. Someone with no work email is listed afterwards and not sent.
             </p>
+            <label className="flex items-start gap-2 text-sm font-bold text-phx-ink">
+              <input
+                checked={ccManager}
+                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-phx-accent"
+                onChange={(event) => setCcManager(event.target.checked)}
+                type="checkbox"
+              />
+              <span className="break-words">CC each employee&apos;s direct manager</span>
+            </label>
+            <label className="block space-y-1">
+              <span className="block break-words text-phx-xs font-bold text-phx-ink">Also CC (optional, up to 10 addresses, separated by commas)</span>
+              <input
+                aria-label="Also CC"
+                autoComplete="off"
+                className={phxFieldClassName}
+                onChange={(event) => setCcText(event.target.value)}
+                placeholder="name@satopharma.com"
+                type="text"
+                value={ccText}
+              />
+            </label>
             {pending.length > 1 ? (
               <p className="break-words text-phx-xs font-semibold text-phx-ink">{pending.map((row) => row.employee?.name).join(" · ")}</p>
             ) : null}
@@ -241,7 +266,13 @@ export function MedicalInsuranceStatementsTab({ money }: { money: MedicalInsuran
             {outcomes
               .filter((outcome) => outcome.status === "sent")
               .map((outcome) => (
-                <p className="break-words text-phx-xs font-semibold text-phx-ink-soft" key={outcome.memberId}>Sent to {outcome.name} at {outcome.email}</p>
+                <div key={outcome.memberId}>
+                  <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
+                    Sent to {outcome.name} at {outcome.email}
+                    {outcome.cc.length > 0 ? `, copying ${outcome.cc.join(", ")}` : ""}
+                  </p>
+                  {outcome.note ? <p className="break-words text-phx-xs font-bold text-phx-warn">{outcome.note}</p> : null}
+                </div>
               ))}
             {notSent.map((outcome) => (
               <p className="break-words text-phx-xs font-bold text-phx-warn" key={outcome.memberId}>Not sent to {outcome.name}: {outcome.reason}</p>
