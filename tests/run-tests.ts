@@ -1211,6 +1211,7 @@ import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runEmployeeRecordGapsTests } from "./employee-record-gaps.test.ts";
 import { runMedicalInsuranceTests } from "./medical-insurance.test.ts";
 import { runMedicalInsuranceLibanoSheetTests } from "./medical-insurance-libano-sheet.test.ts";
+import { runMedicalInsuranceCostLetterTests } from "./medical-insurance-cost-letter.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -2266,6 +2267,7 @@ import { runPhoenixCrmAdminPhotoTests } from "./phoenix-crm-admin-photo.test.ts"
 import { runPhoenixCrmFieldCameraSealTests } from "./phoenix-crm-field-camera-seal.test.ts";
 import { runPhoenixCrmCameraItemsTests } from "./phoenix-crm-camera-items.test.ts";
 import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
+import { runPhoenixCrmApprovedPlaceWordsTests } from "./phoenix-crm-approved-place-words.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -5558,6 +5560,10 @@ await runTest(
   runMedicalInsuranceLibanoSheetTests,
 );
 await runTest(
+  "medical insurance: the Medical Cover Statement prints the Cost tab's own monthly figures, family beside the employee, never the split's percentages, and refuses a short figure",
+  runMedicalInsuranceCostLetterTests,
+);
+await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
   + "no employee documents or payroll, every unticked page fenced in the sidebar, AppShell and the page APIs, "
   + "probation read without export, no recruitment alert audience, and the role open in all three CHECK constraints)",
@@ -8759,6 +8765,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lists the same customer on another line, written differently, for the Super Admin to confirm (owner, 2026-11-16: \"same customer diff rep same area diff line\", then \"Fix rule + review list\" — nothing is validated without that confirmation): a one-word slip, the words reordered or a middle name left out are one name, never محمد / محمود or two common given names; a waiting row and a validated row on another line of its area are listed Certain on the same phone or old-CRM contact and Very likely on the name, only where the three-lines rule did not pair them — never a clinic doctor without three names, a speciality against it, the same line, another area, a pharmacy, two kinds of facility, a copy as the source's place or a pair answered Not the same; a rep holding the customer twice is flagged; and the confirmation re-checks every guard and keeps the other line's validator",
   runPhoenixCrmLineLookalikesTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks draws an approval as approved (owner, 21 Nov 2026: \"it kept the bottom keep styled and it kept not approved\"): a building's button reads Approve and never Keep it, drops to the plain look once decided, and its pill reads Approved; an approved customer carries an Approved pill and a refusal the system once held him on is neutral information, never a warning, while a waiting or rejected customer keeps the warning",
+  runPhoenixCrmApprovedPlaceWordsTests,
 );
 
 await runTest(

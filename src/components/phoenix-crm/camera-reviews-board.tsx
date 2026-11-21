@@ -4,8 +4,10 @@
  * Phoenix CRM — the Super Admin's camera page (owner, 20 Nov 2026).
  *
  * Every item the Phoenix Camera sent, in three lists and a fourth tab for the daily limit. Phoenix rejects
- * nothing the camera sends ("leave the decision to the decision maker"): an item is recorded at once when every
- * rule allows it, and otherwise waits here with its reasons. A seal that does not hold is drawn in red; the time
+ * nothing the camera sends ("leave the decision to the decision maker"), and records nothing by itself (owner,
+ * 21 Nov 2026: "EVERY VISIT GOES TO MANUAL REVIEW FIRST"): every item waits here with its reasons until he
+ * approves it, up to the rep's allowance for that day (3, raised here for one day only once the manager's
+ * approval is in by email). A seal that does not hold is drawn in red; the time
  * the photo was taken, where that time came from, when it arrived and how long it took are on every row, and
  * so is the gap between the position and the shutter. The rep's phone reads only "sent".
  *
@@ -33,7 +35,7 @@ import {
   crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
-import { cairoDateTime } from "@/lib/format/cairo-datetime";
+import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 import {
   CAMERA_DAILY_CAP_MAX,
   CAMERA_DAILY_CAP_MIN,
@@ -198,6 +200,7 @@ function ChecksCell({ row }: { row: CameraItemRow }) {
           {row.readerText ? ` · ${row.readerText}` : null}
         </p>
       ) : null}
+      {row.outcome === "waiting" && row.reasons.length === 0 ? <CrmPill tone="good">Every check passed</CrmPill> : null}
       {row.reasons.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {row.reasons.map((reason) => (
@@ -234,6 +237,89 @@ function DecidedText({ row }: { row: CameraItemRow }) {
   );
 }
 
+/**
+ * A waiting camera visit's day: how many of the rep's allowance are approved, and the one-day raise (owner,
+ * 21 Nov 2026: "IF MORE NEEDED WE NEED APPROVAL FROM MANAGERS VIA EMAIL AND SYSTEM ADMIN WILL UPDATE IT FOR THIS DAY
+ * ONLY"). The manager's approval is required and kept beside it.
+ */
+function DayAllowance({ row }: { row: CameraItemRow }) {
+  const router = useRouter();
+  const day = row.allowanceDay;
+  const [raising, setRaising] = useState(false);
+  const [value, setValue] = useState(String((day?.allowance ?? CAMERA_DAILY_CAP_MIN) + 1));
+  const [approval, setApproval] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!day) return null;
+  const full = day.approved >= day.allowance;
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await crmPost("/api/phoenix-crm/camera-reviews/day-allowance", { itemId: row.id, allowance: Number(value), managerApproval: approval.trim() }, "saved");
+      setRaising(false);
+      router.refresh();
+    } catch (failure) {
+      setError(messageOf(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-1.5 border-l-[3px] border-slate-300 px-2 py-1 text-xs text-slate-600">
+      <p className="break-words font-bold text-slate-800">
+        {day.approved} of {day.allowance} camera {day.allowance === 1 ? "visit" : "visits"} approved for {utcDate(`${day.day}T12:00:00Z`)}
+      </p>
+      {day.raisedBy ? (
+        <p className="break-words" dir="auto">
+          Raised by {day.raisedBy} on the manager&apos;s approval: {day.managerApproval}
+        </p>
+      ) : null}
+      {raising ? (
+        <div className="min-w-0 space-y-2">
+          <CrmField htmlFor={`camera-day-${row.id}`} label={`Camera visits for that day only (${Math.max(CAMERA_DAILY_CAP_MIN, day.approved)} to ${CAMERA_DAILY_CAP_MAX})`}>
+            <input
+              className={crmInputClassName}
+              id={`camera-day-${row.id}`}
+              inputMode="numeric"
+              max={CAMERA_DAILY_CAP_MAX}
+              min={Math.max(CAMERA_DAILY_CAP_MIN, day.approved)}
+              onChange={(event) => setValue(event.target.value)}
+              step={1}
+              type="number"
+              value={value}
+            />
+          </CrmField>
+          <CrmField htmlFor={`camera-day-approval-${row.id}`} label="The manager's email approval: who approved it and when">
+            <textarea
+              className={crmTextareaClassName}
+              id={`camera-day-approval-${row.id}`}
+              maxLength={500}
+              onChange={(event) => setApproval(event.target.value)}
+              value={approval}
+            />
+          </CrmField>
+          <div className="flex flex-wrap gap-2">
+            <CrmButton busy={busy} disabled={busy || approval.trim().length < 3} onClick={save} size="sm" variant="primary">
+              Save for that day
+            </CrmButton>
+            <CrmButton disabled={busy} onClick={() => setRaising(false)} size="sm" variant="ghost">
+              Cancel
+            </CrmButton>
+          </div>
+        </div>
+      ) : full ? (
+        <CrmButton onClick={() => setRaising(true)} size="sm" variant="secondary">
+          Raise that day
+        </CrmButton>
+      ) : null}
+      {error ? <p className="break-words font-bold text-rose-700">{error}</p> : null}
+    </div>
+  );
+}
+
 function DecisionCell({ row }: { row: CameraItemRow }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"approved" | "rejected" | null>(null);
@@ -266,6 +352,7 @@ function DecisionCell({ row }: { row: CameraItemRow }) {
   return (
     <div className="min-w-0 space-y-2">
       <DecidedText row={row} />
+      {open && row.outcome === "waiting" ? <DayAllowance row={row} /> : null}
       {open ? (
         <>
           {row.outcome === "waiting" ? (
@@ -331,7 +418,7 @@ function DailyLimit({ cap }: { cap: number }) {
     try {
       const saved = await crmPost<{ cap: number }>("/api/phoenix-crm/camera-reviews/cap", { cap: Number(value) }, "saved");
       setValue(String(saved.cap));
-      setMessage({ tone: "good", text: `Saved. From now on the first ${saved.cap} of a rep's day are recorded at once.` });
+      setMessage({ tone: "good", text: `Saved. From now on you may approve ${saved.cap} camera ${saved.cap === 1 ? "visit" : "visits"} of a rep's day.` });
       router.refresh();
     } catch (failure) {
       setMessage({ tone: "bad", text: messageOf(failure) });
@@ -342,11 +429,11 @@ function DailyLimit({ cap }: { cap: number }) {
 
   return (
     <AdminTableShell
-      description="How many camera photos of one rep's Phoenix day (it ends at 02:00) are recorded at once when every check passes. From the next one, they wait in Waiting for your decision. The rep is never told the number."
+      description="How many camera visits of one rep's Phoenix day (it ends at 02:00) you may approve. Every visit waits for you first. For more on one day, raise that day on the visit itself once the manager's approval is in by email. The rep is never told the number."
       title="Daily limit"
     >
       <div className="max-w-md space-y-3 px-4 py-4">
-        <CrmField htmlFor="camera-daily-cap" label={`Recorded at once per rep per day (${CAMERA_DAILY_CAP_MIN} to ${CAMERA_DAILY_CAP_MAX})`}>
+        <CrmField htmlFor="camera-daily-cap" label={`Camera visits per rep per day (${CAMERA_DAILY_CAP_MIN} to ${CAMERA_DAILY_CAP_MAX})`}>
           <input
             className={crmInputClassName}
             id="camera-daily-cap"
@@ -371,12 +458,12 @@ function DailyLimit({ cap }: { cap: number }) {
 const LIST_TEXT: Record<CameraTab, { title: string; description: string; empty: string }> = {
   waiting: {
     title: "Waiting for your decision",
-    description: "Each one with the reasons it waits. Approve records it in the rep's name; Reject archives it. The rep reads only that it was sent.",
+    description: "Every camera item waits here first, with its checks. Approve records it in the rep's name, up to the rep's allowance for that day; Reject archives it. The rep reads only that it was sent.",
     empty: "Nothing from the camera waits for you.",
   },
   recorded: {
     title: "Recorded",
-    description: "Recorded at once, or approved by you. One recorded at once can still be rejected: the visit is taken back and the place refused.",
+    description: "Approved by you. One recorded at once before 21 November can still be rejected: the visit is taken back and the place refused.",
     empty: "Nothing from the camera has been recorded yet.",
   },
   archive: {

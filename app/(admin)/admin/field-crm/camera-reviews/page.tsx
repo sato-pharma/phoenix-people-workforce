@@ -12,10 +12,12 @@ export const dynamic = "force-dynamic";
 
 /**
  * Camera reviews — every item the Phoenix Camera sent, and the Super Admin's decision on the ones that wait
- * (owner, 20 Nov 2026: "Every camera visit and validation lands there, even if from the first three").
+ * (owner, 20 Nov 2026: "Every camera visit and validation lands there"; 21 Nov 2026: "EVERY VISIT GOES TO MANUAL
+ * REVIEW FIRST" — nothing records itself).
  *
- * Four tabs: Waiting (his decision), Recorded (recorded at once or approved, still rejectable), Archive
- * (rejected, or over 36 hours old) and Daily limit (how many a rep's Phoenix day records at once).
+ * Four tabs: Waiting (his decision), Recorded (approved, or recorded at once before 21 Nov and still rejectable),
+ * Archive (rejected, or over 36 hours old) and Daily limit (how many camera visits of a rep's day he may approve; a
+ * single day is raised on the visit itself, on the manager's email approval).
  *
  * 🔴 THE SUPER ADMIN'S ALONE — `canEnterMissedRecords`, on the page and inside every service it calls; never the
  * SFE ("Exclude the SFE totally"). The redirect rather than a message is deliberate: a page that does not
@@ -35,7 +37,7 @@ export default async function PhoenixCrmCameraReviewsPage({ searchParams }: { se
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Every photo the Phoenix Camera sent. The first ones of a rep's day that pass every check are recorded at once; the rest wait here for your decision. The rep reads only that the photo was sent."
+        description="Every photo the Phoenix Camera sent waits here for your decision first. You may approve 3 camera visits of a rep's day; for more, raise that day once the manager's approval is in by email. The rep reads only that the photo was sent."
         eyebrow="CRM"
         icon={<Camera className="h-3.5 w-3.5" />}
         title="Camera reviews"

@@ -143,8 +143,9 @@ export const SEAT_VIEW_REFUSED_READS: readonly RegExp[] = [
   // owner's or the CEO's own.
   /^\/api\/connector\/files\//,
   // Medical insurance: an insurer document, an invoice's paper or the movement file opened — each writes an
-  // audit row naming who took it (the two exports are already refused as export paths).
-  /^\/api\/medical-insurance\/(documents\/[^/]+|invoices\/documents\/[^/]+|movement-file)(\/|$)/,
+  // audit row naming who took it (the two exports are already refused as export paths). The Medical Cover
+  // Statement is one person's amounts and writes the same audit row, so it is refused with them.
+  /^\/api\/medical-insurance\/(documents\/[^/]+|invoices\/documents\/[^/]+|movement-file|cost-letter)(\/|$)/,
 ];
 
 /** Whether a request with this method and path may run during a seat view. */

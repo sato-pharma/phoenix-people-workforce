@@ -440,6 +440,7 @@ function policyKey(moduleName: string, eventType: string) {
  */
 export const DEFAULT_POLICY_ACKNOWLEDGED: Readonly<Record<string, { eventTypes: readonly string[]; why: string }>> = {
   // ── Direct emails: sent straight to the provider (or the durable outbox), so no policy is read ──
+  "medical_insurance": { eventTypes: ["medical_cover_statement"], why: "a direct email the Super Admin sends to the employee's own work email (cost-letter-email.ts); no policy is read" },
   "telegram": { eventTypes: ["telegram_onboarding_link"], why: "a direct email; the engine's policy is never read" },
   "production_planning": { eventTypes: ["production_expiry_alarm", "production_reorder_alarm"], why: "direct emails to the recipients named on the production planning screen; no policy is read" },
   "recruitment.website-apply": { eventTypes: ["careers_application_confirmation"], why: "a direct email to the applicant; no policy is read" },
