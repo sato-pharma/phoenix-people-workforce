@@ -207,7 +207,7 @@ function runDegradedWiringChecks() {
   assert.match(coverage, /return unwrapServedWithoutCaching\(getRoleCoverageAuditCached\(\)\);/);
 
   const asks = source("src/lib/phoenix-crm/server/visit-asks.ts");
-  assert.match(asks, /if \(missedSomeone\) serveWithoutCaching\(reach, /, "a product-manager list with someone missing is never kept");
+  assert.match(asks, /if \(stoodIn\.length > 0 \|\| missed\.length > 0\) serveWithoutCaching\(reach, /, "a product-manager list with someone missing or stood in is never kept");
   assert.match(asks, /unwrapServedWithoutCaching\(cachedProductManagerReach\(\)\)/);
 
   const review = source("src/lib/business-review/service.ts");

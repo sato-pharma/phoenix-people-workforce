@@ -44,7 +44,7 @@ import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/ser
 import { addDaysIso } from "@/lib/crm/dates";
 import { activeRoleSignIns } from "@/lib/employees/role-lookup";
 import { ApiError, conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -58,6 +58,7 @@ import {
   productManagersOfLine,
   resolveVisitAskAddressees,
   resolveVisitAskDay,
+  usableLastKnownProducts,
   VISIT_ASK_ASKABLE_ROLES,
   VISIT_ASK_KIND_LABELS,
   VISIT_ASK_KINDS,
@@ -66,6 +67,7 @@ import {
   visitAskLastDay,
   visitAskPartOf,
   wishedVisitAskDay,
+  type LastKnownProducts,
   type ProductManagerReach,
   type VisitAskAddresseeResult,
   type VisitAskKind,
@@ -114,13 +116,69 @@ const CUSTOMER_ASKS_MAX = 20;
 // ── The product managers of a line ──────────────────────────────────────────────────────────────
 
 /**
+ * Each product manager's products as last read successfully, by person — what stands in for him when
+ * a read fails (`usableLastKnownProducts`, at most a day old). Per server process: a fresh process
+ * has none, and a failed read there leaves him out exactly as before.
+ */
+const lastKnownProductManagerProducts = new Map<string, LastKnownProducts>();
+
+/**
+ * The reach of every holder: the Training Manager by her role, everyone else by his products, read
+ * with `readFamilies`. A read that fails stands on his last good read when one is usable — a warning,
+ * since nobody is left out — and leaves him out otherwise, said as an error. A good read refreshes
+ * the copy. Exported so the tests drive a failing read without a database.
+ */
+export async function productManagerReachOf<Holder extends { hrId: string; role: string }>(
+  holders: ReadonlyArray<Holder>,
+  readFamilies: (holder: Holder, hrId: string) => Promise<ReadonlyArray<string> | null>,
+  memory: Map<string, LastKnownProducts>,
+  now: () => number = Date.now,
+): Promise<{ reach: ProductManagerReach[]; stoodIn: string[]; missed: string[] }> {
+  const reach: ProductManagerReach[] = [];
+  const stoodIn: string[] = [];
+  const missed: string[] = [];
+  for (const holder of holders) {
+    const hrId = personKey(holder.hrId);
+    if (!hrId) continue;
+    // The Training Manager owns no products: she is offered on every line by her role (visit-ask-rules.ts).
+    if (holder.role === VISIT_ASK_TRAINING_MANAGER_ROLE) {
+      reach.push({ hrId, role: holder.role, families: null });
+      continue;
+    }
+    try {
+      const families = await readFamilies(holder, hrId);
+      memory.set(hrId, { families, readAt: now() });
+      reach.push({ hrId, role: holder.role, families });
+    } catch (caught) {
+      const lastKnown = usableLastKnownProducts(memory.get(hrId), now());
+      if (lastKnown) {
+        logWarning("Phoenix CRM served a product manager's products from the last good read for the visit asks", {
+          error: caught,
+          labels: { event: "phoenix_crm_visit_ask_product_manager_last_known", hrId },
+        });
+        reach.push({ hrId, role: holder.role, families: lastKnown.families });
+        stoodIn.push(hrId);
+        continue;
+      }
+      logError("Phoenix CRM could not read a product manager's products for the visit asks", {
+        error: caught,
+        labels: { event: "phoenix_crm_visit_ask_product_manager_failed", hrId },
+      });
+      missed.push(hrId);
+    }
+  }
+  return { reach, stoodIn, missed };
+}
+
+/**
  * Every person an ask for a product manager's visit can be addressed to — the app roles Product Manager
  * and Group Product Manager, and the Marketing Manager, whom the owner's CNS rule offers on CNS alone —
  * with the products he owns: the field-heard report's own rule (`productOwnerFamilies`), read with each
  * person's OWN access context, exactly as it would be read for him. WHICH of them a line offers is
  * visit-ask-rules.ts `productManagersOfLine`, never this list. Someone who has left keeps a sign-in until
  * it is switched off, so only a person whose employee record is current is offered; a person whose
- * scope cannot be read is left out, and said so in the log.
+ * scope cannot be read stands on his last good read of the day, or is left out, and said so in the log
+ * (`productManagerReachOf`).
  *
  * Cached five minutes: it reads the sales scope of every one of them, and a rep opens a customer's page
  * many times a day while a product manager's products change a few times a year. The key changed with
@@ -140,31 +198,19 @@ const cachedProductManagerReach = unstable_cache(
       const hrId = personKey(textOrNull(row.hr_id));
       if (hrId && !isTerminalEmploymentStatus(textOrNull(row.employment_status))) current.add(hrId);
     }
-    const reach: ProductManagerReach[] = [];
-    let missedSomeone = false;
-    for (const holder of holders) {
-      const hrId = personKey(holder.hrId);
-      if (!hrId || !current.has(hrId)) continue;
-      // The Training Manager owns no products: she is offered on every line by her role (visit-ask-rules.ts).
-      if (holder.role === VISIT_ASK_TRAINING_MANAGER_ROLE) {
-        reach.push({ hrId, role: holder.role, families: null });
-        continue;
-      }
-      const access: AccessContext = { hrId, loginId: holder.loginId, role: holder.role, scope: scopeForRole(holder.role), source: "system" };
-      try {
+    const { reach, stoodIn, missed } = await productManagerReachOf(
+      holders.filter((holder) => current.has(personKey(holder.hrId) ?? "")),
+      async (holder, hrId) => {
+        const access: AccessContext = { hrId, loginId: holder.loginId, role: holder.role, scope: scopeForRole(holder.role), source: "system" };
         const products = await productOwnerFamilies({ access });
-        reach.push({ hrId, role: holder.role, families: products.families === null ? null : [...products.families] });
-      } catch (caught) {
-        logError("Phoenix CRM could not read a product manager's products for the visit asks", {
-          error: caught,
-          labels: { event: "phoenix_crm_visit_ask_product_manager_failed", hrId },
-        });
-        missedSomeone = true;
-      }
-    }
-    // A list with somebody left out is offered to this one rep, never kept: cached, that product
-    // manager would vanish from every rep's picker for five minutes over one failed read.
-    if (missedSomeone) serveWithoutCaching(reach, "a product manager's products could not be read");
+        return products.families === null ? null : [...products.families];
+      },
+      lastKnownProductManagerProducts,
+    );
+    // A list read with a stand-in or with somebody left out is offered to this one rep, never kept:
+    // cached, a stale copy would outlive the blip, and a dropped product manager would vanish from
+    // every rep's picker for five minutes over one failed read.
+    if (stoodIn.length > 0 || missed.length > 0) serveWithoutCaching(reach, "a product manager's products could not be read");
     return reach;
   },
   // v3: the Training Manager joined the list (owner, 2026-10-24); v2 the CNS rule.
