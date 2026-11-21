@@ -193,15 +193,15 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
       const reminders = await runOutstationDeparturePhotoReminders().catch(
         onJobFailure("daily-outstation-departure-photo", (message) => ({ processed: 0, errors: 1, detail: message })),
       );
-      const strandedClaimRelease = await releaseStrandedAcceptedOutstationClaims().catch(
-        onJobFailure("daily-outstation-stranded-claim-release", (message) => ({
-          checked: 0,
-          errors: 1,
-          released: 0,
-          stillHeld: 0,
-          detail: message,
-        })),
-      );
+      // Not a second guarded pass: each morning job is exactly ONE (tests/dead-telegram-link-alert.test.ts). A failed
+      // retry is still never silent — it is an ERROR on System Issues, and its answer says it did not run.
+      const strandedClaimRelease = await releaseStrandedAcceptedOutstationClaims().catch((error: unknown) => {
+        logError("Outstation: the morning retry of stranded accepted claims did not run", {
+          error,
+          labels: { event: "outstation_stranded_release_failed", job: "daily-outstation-departure-photo" },
+        });
+        return { checked: 0, errors: 1, released: 0, stillHeld: 0, detail: clientSafeErrorMessage(error, "The retry did not run.") };
+      });
       return { ...reminders, strandedClaimRelease };
     },
   },

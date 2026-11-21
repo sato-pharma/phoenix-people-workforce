@@ -79,8 +79,13 @@ export function runOutstationStrandedReleaseTests() {
   );
   assert.match(
     departureJob,
-    /releaseStrandedAcceptedOutstationClaims\(\)\.catch\(\s*onJobFailure\("daily-outstation-stranded-claim-release"/,
-    "the morning departure-photo job runs the retry, and a failure is recorded under its own label",
+    /releaseStrandedAcceptedOutstationClaims\(\)\.catch\(\(error: unknown\) => \{\s*logError\(/,
+    "the morning departure-photo job runs the retry, and a failed retry is logged as an ERROR, never swallowed",
+  );
+  assert.equal(
+    (departureJob.match(/\.catch\(\s*onJobFailure\(/g) ?? []).length,
+    1,
+    "the job stays ONE guarded pass — each morning job is exactly one (tests/dead-telegram-link-alert.test.ts)",
   );
 
   // ── (c) which claims the retry may touch ───────────────────────────────────────────────────────
