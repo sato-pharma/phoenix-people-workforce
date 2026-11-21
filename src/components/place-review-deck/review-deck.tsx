@@ -97,7 +97,7 @@ const OUTCOME_WORDS: Record<PlaceCheckOutcome, string> = {
   rejected: "Rejected",
   refused: "Refused",
   restored: "Approved after all",
-  kept: "Kept in use",
+  kept: "Approved",
   settled: "Settled",
   reopened: "Put back to look at again",
   already: "Already decided",

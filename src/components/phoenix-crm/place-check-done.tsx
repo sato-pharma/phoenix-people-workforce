@@ -154,7 +154,8 @@ export function usePlaceCheckDone(): (outcome: PlaceCheckOutcome) => PlaceCheckO
 const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> = {
   approved: { text: "Approved", tone: "good" },
   waiting_building: { text: "Approved, waits for the building", tone: "good" },
-  kept: { text: "Kept", tone: "good" },
+  // No control sends "kept" any more (an approved building reads "Approved"); the word stays so an old mark never reads "Kept".
+  kept: { text: "Approved", tone: "good" },
   refused: { text: "Refused", tone: "warn" },
   rejected: { text: "Rejected", tone: "warn" },
   reopened: { text: "Reopened", tone: "neutral" },
