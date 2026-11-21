@@ -79,6 +79,18 @@ const FUNCTIONS_THE_OLD_FAN_OUT_RAN = [
   "runWeeklyPlansDriftCheck",
 ] as const;
 
+/**
+ * Functions a morning job has run since the split, each with the change that added it. A job's runner may run more
+ * than the fan-out did only when the addition is named here, so it stays a decision written down, never a drift.
+ */
+const FUNCTIONS_ADDED_SINCE_THE_SPLIT = [
+  // 21 Nov 2026 (claims 111 and 347): the departure-photo job retries an accepted claim whose gates are all complete
+  // but which no payroll row carries — the capture's own release had failed and nothing ever tried again.
+  "releaseStrandedAcceptedOutstationClaims",
+] as const;
+
+const FUNCTIONS_THE_MORNING_RUNS = [...FUNCTIONS_THE_OLD_FAN_OUT_RAN, ...FUNCTIONS_ADDED_SINCE_THE_SPLIT].sort();
+
 const FAN_OUT_ROUTE = "app/api/notifications/daily/route.ts";
 const JOB_ROUTE = "app/api/cron/daily/[job]/route.ts";
 const RUNNERS = "app/api/cron/daily/_lib/daily-job-runners.ts";
@@ -159,7 +171,7 @@ export function runDailyJobsSplitTests() {
 
   // ── (c) the fan-out runs every job, and only through the shared runners ────────────────────────
   const fanOut = stripComments(read(FAN_OUT_ROUTE));
-  const namedByFanOut = FUNCTIONS_THE_OLD_FAN_OUT_RAN.filter((name) => new RegExp(`\\b${name}\\b`).test(fanOut));
+  const namedByFanOut = FUNCTIONS_THE_MORNING_RUNS.filter((name) => new RegExp(`\\b${name}\\b`).test(fanOut));
   assert.deepEqual(
     namedByFanOut,
     [],
@@ -196,7 +208,7 @@ export function runDailyJobsSplitTests() {
   const called = [...runners.matchAll(/\b(\w+)\([^()]*\)\.catch\(\s*onJobFailure\(/g)].map((match) => match[1]);
   assert.deepEqual(
     [...called].sort(),
-    [...FUNCTIONS_THE_OLD_FAN_OUT_RAN],
+    FUNCTIONS_THE_MORNING_RUNS,
     `${RUNNERS} must run exactly the functions the fan-out ran, each once — a job added or lost here ` +
       "is a change to what the morning does, not to when",
   );
