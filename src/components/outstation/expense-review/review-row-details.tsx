@@ -64,14 +64,8 @@ export function ReviewRowDetails({
   const notices = record.allowanceNotices ?? [];
   return (
     <div className="min-w-0 border-t border-slate-200 bg-white" data-row-details={record.tripId} id={rowDetailsId(record.tripId)}>
-      <DeckSubject
-        decision={decision}
-        duplicateOf={duplicateOf}
-        record={record}
-        ticketDuplicateOf={ticketDuplicateOf}
-        unsaved={unsaved}
-        valuesOnly={valuesOnly}
-      />
+      {/* prettier-ignore */}
+      <DeckSubject decision={decision} duplicateOf={duplicateOf} record={record} ticketDuplicateOf={ticketDuplicateOf} unsaved={unsaved} valuesOnly={valuesOnly} />
       {notices.length > 0 || record.employeeNote ? (
         <div className="min-w-0 space-y-3 border-b border-slate-200 px-5 py-3">
           {notices.length > 0 ? (

@@ -76,7 +76,7 @@ import { stripComments } from "./support/comment-strip.ts";
 // branch re-formatted no client site, so the two went with work done between 09-25 and now and
 // nobody lowered the number. That is exactly what the warning below exists to catch, and leaving
 // it at 9 would have left two sites' worth of slack for a new one to be added into unnoticed.
-const CLIENT_BASELINE = 7;
+const CLIENT_BASELINE = 6;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in
@@ -334,6 +334,7 @@ export function runInstantFormatTimezoneRatchetTests() {
       "the route map's `Own GPS` label — the LOADER converts that instant first (cairoWallClockIso), so the slice reads a Cairo wall clock",
     ],
     ["src/components/recruitment/interview-calendar/time-of-day-input.tsx", "parseTimeOfDay — reads the HH:MM a browser time field typed, never a timestamp"],
+    ["src/lib/evidence/photo-file-time.ts", "exifDateTimeToIso — parses the camera's own EXIF wall clock (a vendor stamp with no zone) and converts it to an instant through the Africa/Cairo offset, or the file's own offset tag"],
     ["src/lib/crm/dates.ts", "hasRealVendorTime — inspects a vendor stamp's time-of-day to reject the midnight placeholder"],
     ["src/lib/crm/sfe-field-analytics.ts", "crmMinutesPastMidnight — vendor check_date/crm_save_date, read as written"],
     ["src/lib/double-visit-analytics/audit-export.ts", "the coaching sheet's check-in span — vendor check_date"],

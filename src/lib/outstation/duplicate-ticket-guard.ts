@@ -29,6 +29,8 @@
  * Pure and synchronous: the read that feeds it lives in service.ts.
  */
 
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
 /** A claim's request id → how every screen names it. */
 function outstationClaimRef(requestId: number | string) {
   return `OUTSTATION-${requestId}`;
@@ -90,7 +92,7 @@ function placeKey(value: string | null | undefined) {
 }
 
 function hrKey(value: string | null | undefined) {
-  return String(value ?? "").trim().toLowerCase();
+  return canonicalHrIdKey(value) ?? "";
 }
 
 /** [start, end] in YYYY-MM-DD; an end before the start, or none, is the start day. */
