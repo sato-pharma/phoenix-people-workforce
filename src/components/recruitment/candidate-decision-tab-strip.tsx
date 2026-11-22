@@ -51,7 +51,7 @@ export function CandidateDecisionTabStrip({
           <button
             aria-pressed={isActive}
             className={cn(
-              "relative inline-flex min-h-9 grow items-center justify-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs font-bold transition-colors sm:grow-0",
+              "relative inline-flex min-h-9 grow items-center justify-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs font-bold transition-colors motion-reduce:transition-none sm:grow-0",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-1",
               isActive
                 ? `bg-white text-slate-950 ${adminChipDepthClassName}`
@@ -65,13 +65,13 @@ export function CandidateDecisionTabStrip({
             {candidateDecisionTabLabels[tab]}
             <span
               className={cn(
-                "border px-1.5 text-phx-2xs font-black tabular-nums",
-                isActive ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200/80 bg-white/80 text-slate-500",
+                "border px-1.5 text-phx-xs font-black tabular-nums",
+                isActive ? "border-slate-200 bg-slate-100 text-[#08111f]" : "border-slate-200/80 bg-white/80 text-slate-500",
               )}
             >
               {counts[tab]}
             </span>
-            {isActive ? <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-0.5 bg-orange-500" /> : null}
+            {isActive ? <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-0.5 bg-[#08111f]" /> : null}
           </button>
         );
       })}

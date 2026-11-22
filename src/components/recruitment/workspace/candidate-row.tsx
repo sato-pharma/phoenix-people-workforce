@@ -203,15 +203,15 @@ export function CandidateRow({
     <article
       aria-label={row.name}
       className={cn(
-        "relative border-b border-slate-200 py-3 pl-4 pr-3 transition-colors sm:pl-5",
-        opened ? "bg-orange-50/70" : selected ? "bg-sky-50/50" : "bg-white hover:bg-slate-50/70",
+        "relative border-b border-slate-200 py-3 pl-4 pr-3 transition-colors motion-reduce:transition-none sm:pl-5",
+        opened ? "bg-slate-100" : selected ? "bg-slate-50" : "bg-white hover:bg-slate-50/70",
         row.archivedAt ? "opacity-80" : null,
       )}
       data-candidate-row={row.id}
       id={anchorId ?? `ws-row-${row.id}`}
     >
       <span aria-hidden className={cn("absolute inset-y-0 left-0 w-[3px]", statusEdgeClassName[row.status])} />
-      {opened ? <span aria-hidden className="absolute inset-y-0 right-0 w-[3px] bg-orange-500" /> : null}
+      {opened ? <span aria-hidden className="absolute inset-y-0 right-0 w-[3px] bg-[#08111f]" /> : null}
       <div className="flex min-w-0 items-start gap-3">
         {mode === "hr" && onSelect ? (
           <input
@@ -231,7 +231,7 @@ export function CandidateRow({
             <button
               aria-controls="ws-opened-cv"
               aria-expanded={opened}
-              className="group inline-flex max-w-full items-center gap-1 text-left text-[15px] font-black leading-5 tracking-tight text-slate-950 transition hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+              className="group inline-flex max-w-full items-center gap-1 text-left text-[15px] font-black leading-5 tracking-tight text-slate-950 transition motion-reduce:transition-none hover:text-[#08111f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
               onClick={() => onToggle(row.id)}
               type="button"
             >
@@ -240,7 +240,7 @@ export function CandidateRow({
               </span>
               <ChevronDown
                 aria-hidden
-                className={cn("h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-orange-600", opened ? "rotate-180 text-orange-600" : null)}
+                className={cn("h-4 w-4 shrink-0 text-slate-400 transition motion-reduce:transition-none group-hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]", opened ? "rotate-180 text-[#08111f]" : null)}
               />
             </button>
             <span

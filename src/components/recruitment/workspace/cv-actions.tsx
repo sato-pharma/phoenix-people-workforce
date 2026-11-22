@@ -84,19 +84,19 @@ export type CvPanel = "reject" | "sorry" | "manager" | "hire" | "folder" | "dele
 
 // Lifted like every house control, and flat again when greyed — a disabled button that still floats
 // reads as pressable.
-const button = `inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 text-xs font-bold transition disabled:pointer-events-none disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
+const button = `inline-flex h-8 items-center justify-center gap-1.5 border px-2.5 text-xs font-bold transition motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
 export const cvGhostButton = cn(button, "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50");
 export const cvApproveButton = cn(button, phxButtonApproveDenseClassName);
 export const cvDangerButton = cn(button, phxButtonDangerDenseClassName);
 export const cvDarkButton = cn(button, "border-slate-900 bg-slate-900 text-white hover:bg-slate-800");
-const accentButton = cn(button, "border-orange-600 bg-orange-600 text-white hover:bg-orange-700");
+const accentButton = cn(button, "border-[#08111f] bg-[#08111f] text-white hover:border-[#13233a] hover:bg-[#13233a]");
 
 function PanelBox({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
   return (
     <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-orange-200 bg-orange-50/70 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <p className="text-xs font-black uppercase tracking-[0.1em] text-slate-800">{title}</p>
-        <button aria-label="Close" className="p-0.5 text-slate-500 transition hover:text-slate-900" onClick={onClose} type="button">
+        <button aria-label="Close" className="p-0.5 text-slate-500 transition motion-reduce:transition-none hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]" onClick={onClose} type="button">
           <X aria-hidden className="h-4 w-4" />
         </button>
       </div>
@@ -107,7 +107,7 @@ function PanelBox({ children, onClose, title }: { children: ReactNode; onClose: 
 
 function Problem({ children }: { children: ReactNode }) {
   return (
-    <p className="break-words border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
+    <p className="break-words border-l-4 border-rose-500 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
       {children}
     </p>
   );

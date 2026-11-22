@@ -111,7 +111,7 @@ export function CvTakeAway({ candidateId, className, name }: { candidateId: stri
       </div>
       {problem ? (
         <p
-          className="mt-1.5 flex min-w-0 items-start gap-1.5 border-l-2 border-rose-500 bg-rose-50 px-2 py-1 text-xs font-semibold leading-snug text-rose-800"
+          className="mt-1.5 flex min-w-0 items-start gap-1.5 border-l-2 border-rose-500 bg-white px-2 py-1 text-xs font-semibold leading-snug text-rose-800"
           role="alert"
         >
           <AlertCircle aria-hidden className="mt-px h-3 w-3 shrink-0" />

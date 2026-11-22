@@ -107,7 +107,7 @@ function MediaLink({ message }: { message: InboxMessageView }) {
   const size = formatByteSize(message.mediaByteSize);
   return (
     <a
-      className="inline-flex w-fit max-w-full items-start gap-1.5 border border-slate-200 bg-white/80 px-2 py-1 text-xs font-bold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-orange-300 hover:text-orange-800"
+      className="inline-flex w-fit max-w-full items-start gap-1.5 border border-slate-200 bg-white/80 px-2 py-1 text-xs font-bold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
       href={mediaUrl(message.id)}
       rel="noreferrer"
       target="_blank"
@@ -131,8 +131,8 @@ function Bubble({ message, today }: { message: InboxMessageView; today: string }
         className={cn(
           "relative flex min-w-0 max-w-[88%] flex-col gap-1 border px-2.5 py-1.5 sm:max-w-[78%]",
           inboxBubbleShadowClassName,
-          outbound ? "border-orange-200/90 bg-[linear-gradient(180deg,#FFF6EE_0%,#FFEEDF_100%)]" : "border-slate-200/90 bg-white",
-          failed ? "border-red-300 bg-[linear-gradient(180deg,#FFF5F5_0%,#FEECEC_100%)]" : null,
+          outbound ? "border-slate-200/90 bg-slate-50" : "border-slate-200/90 bg-white",
+          failed ? "border-rose-300 bg-white" : null,
         )}
       >
         <span
@@ -140,12 +140,12 @@ function Bubble({ message, today }: { message: InboxMessageView; today: string }
           className={cn(
             "absolute top-[-1px] h-[2px] w-5",
             outbound ? "right-[-1px]" : "left-[-1px]",
-            failed ? "bg-red-400" : outbound ? "bg-orange-400" : "bg-slate-400",
+            failed ? "bg-red-400" : outbound ? "bg-[#08111f]" : "bg-slate-400",
           )}
         />
         <MediaLink message={message} />
         {message.templateName ? (
-          <span className="w-fit border border-orange-200 bg-white/70 px-1.5 py-0.5 text-phx-xs font-bold uppercase leading-none tracking-[0.08em] text-orange-700">
+          <span className="w-fit border-l-2 border-slate-400 pl-1.5 py-0.5 text-phx-xs font-bold uppercase leading-none tracking-[0.08em] text-[#08111f]">
             Template
           </span>
         ) : null}
@@ -245,7 +245,7 @@ export function CandidateChat({
   }
   if (state.phase === "failed") {
     return (
-      <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800" dir="auto" role="alert">
+      <p className="border-l-4 border-rose-500 bg-white px-3 py-2 text-sm font-semibold text-rose-800" dir="auto" role="alert">
         {state.message}
       </p>
     );
@@ -272,7 +272,7 @@ export function CandidateChat({
             {chats.map((chat) => (
               <button
                 aria-pressed={chat.id === thread.conversation.id}
-                className={cn("border px-1.5 py-0.5 transition", chat.id === thread.conversation.id ? "border-orange-400 bg-orange-50" : "border-transparent hover:border-slate-300")}
+                className={cn("border px-1.5 py-0.5 transition", chat.id === thread.conversation.id ? "border-[#08111f] bg-slate-100" : "border-transparent hover:border-slate-300")}
                 key={chat.id}
                 onClick={() => {
                   if (chat.id === thread.conversation.id) return;
@@ -296,7 +296,7 @@ export function CandidateChat({
         {hidden > 0 ? (
           <div className="flex justify-center pb-2">
             <button
-              className="border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-orange-300 hover:text-orange-800"
+              className="border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               onClick={() => {
                 heightBefore.current = scroller.current?.scrollHeight ?? null;
                 setShown((current) => current + PAGE);
@@ -309,7 +309,7 @@ export function CandidateChat({
         ) : messages.length >= ROUTE_CEILING ? (
           <p className="pb-2 text-center text-phx-xs font-semibold text-slate-500">
             Older messages are in the{" "}
-            <a className="font-bold text-orange-700 underline-offset-2 hover:underline" href="/recruitment/whatsapp-inbox">
+            <a className="font-bold text-[#08111f] underline-offset-2 hover:underline" href="/recruitment/whatsapp-inbox">
               WhatsApp Inbox
             </a>
             .

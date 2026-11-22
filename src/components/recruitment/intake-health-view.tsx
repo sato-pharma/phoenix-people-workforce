@@ -171,7 +171,7 @@ export function IntakeHealthView({
                         ["Errors", c.errors, c.errors > 0 ? "text-rose-600" : "text-slate-800"],
                       ].map(([label, value, tone]) => (
                         <div className="flex items-baseline gap-1.5" key={String(label)}>
-                          <dt className="text-phx-2xs font-bold uppercase tracking-wide text-slate-400">{label}</dt>
+                          <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">{label}</dt>
                           <dd className={`font-black tabular-nums ${tone}`}>{value}</dd>
                         </div>
                       ))}
@@ -196,7 +196,7 @@ export function IntakeHealthView({
                 </thead>
                 <tbody>
                   {analytics.byChannel.map((c) => (
-                    <tr key={c.channel} className="border-t border-slate-100 transition-colors hover:bg-slate-50/70">
+                    <tr key={c.channel} className="border-t border-slate-100 transition-colors motion-reduce:transition-none hover:bg-slate-50/70">
                       <td className="break-words px-4 py-2.5 font-semibold text-slate-800">{channelLabel(c.channel)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{c.total}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">{c.candidates}</td>
@@ -235,7 +235,7 @@ export function IntakeHealthView({
                   {/* The share of the largest outcome, so the eye finds the big ones without reading. */}
                   <div aria-hidden="true" className="mt-1.5 h-1 w-full bg-slate-100">
                     <div
-                      className="h-1 bg-orange-500"
+                      className="h-1 bg-[#08111f]"
                       style={{ width: `${largestOutcome > 0 ? Math.max(2, Math.round((o.count / largestOutcome) * 100)) : 0}%` }}
                     />
                   </div>
@@ -293,7 +293,7 @@ export function IntakeHealthView({
         title="Dead-lettered CVs"
       >
         {error ? (
-          <p className="mx-4 mt-4 border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 sm:mx-5" role="alert">
+          <p className="mx-4 mt-4 border-l-4 border-rose-500 bg-white px-3 py-2 text-xs font-semibold text-rose-700 sm:mx-5" role="alert">
             {error}
           </p>
         ) : null}
@@ -305,7 +305,7 @@ export function IntakeHealthView({
           // a warning, not a win.
           analytics.total === 0 ? (
             <div className="p-4 sm:p-5">
-              <div className={`flex items-start gap-3 border border-amber-300 bg-amber-50 px-4 py-3 ${adminSoftDepthClassName}`} role="status">
+              <div className={`flex items-start gap-3 border border-slate-200 border-l-4 border-l-amber-500 bg-white px-4 py-3 ${adminSoftDepthClassName}`} role="status">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
                 <p className="min-w-0 break-words text-sm text-amber-900">
                   No inbound messages arrived in the last {analytics.windowDays} days, so there is
@@ -335,7 +335,7 @@ export function IntakeHealthView({
                   ) : null}
                 </div>
                 <button
-                  className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                  className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                   disabled={Boolean(retrying[row.id])}
                   onClick={() => retry(row.id)}
                   type="button"

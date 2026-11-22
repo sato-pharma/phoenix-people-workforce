@@ -445,7 +445,7 @@ export function JobAdvertPanel() {
           </AdminCallout>
         ) : null}
         {destination ? (
-          <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 border border-slate-200 border-l-4 border-l-orange-500 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-600 ${adminRecessedDepthClassName}`}>
+          <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 border border-slate-200 border-l-4 border-l-[#08111f] bg-slate-50/70 px-3 py-2.5 text-sm text-slate-600 ${adminRecessedDepthClassName}`}>
             <span>Applicants will reach:</span>
             <span className="break-words font-mono text-[13px] font-bold text-slate-950">{destination}</span>
             {applyKind === "whatsapp" ? (
@@ -562,7 +562,7 @@ export function JobAdvertPanel() {
               </thead>
               <tbody>
                 {channels.map((channel) => (
-                  <tr className="border-b border-slate-100 align-top transition-colors hover:bg-orange-50/30" key={channel.id}>
+                  <tr className="border-b border-slate-100 align-top transition-colors motion-reduce:transition-none hover:bg-slate-50" key={channel.id}>
                     <td className="break-words p-2 font-semibold text-slate-900">{channel.name}</td>
                     <td className="break-words p-2 text-slate-600">
                       {platformOf(channel.kind).label}
@@ -663,7 +663,7 @@ export function JobAdvertPanel() {
               </thead>
               <tbody>
                 {relayRows.map((row) => (
-                  <tr className="border-b border-slate-100 transition-colors hover:bg-orange-50/30" key={row.number}>
+                  <tr className="border-b border-slate-100 transition-colors motion-reduce:transition-none hover:bg-slate-50" key={row.number}>
                     <td className="break-words p-2 font-mono text-xs font-semibold text-slate-900">{row.number}</td>
                     <td className="p-2">
                       <select
@@ -775,7 +775,7 @@ export function JobAdvertPanel() {
               </thead>
               <tbody>
                 {attributionRows.map((row) => (
-                  <tr className="border-b border-slate-100 transition-colors hover:bg-orange-50/30" key={row.code}>
+                  <tr className="border-b border-slate-100 transition-colors motion-reduce:transition-none hover:bg-slate-50" key={row.code}>
                     <td className="break-words p-2 font-semibold text-slate-900">{row.name}</td>
                     <td className="p-2 text-base font-black tabular-nums text-slate-950">{row.candidates}</td>
                     <td className="break-words p-2 text-slate-600">

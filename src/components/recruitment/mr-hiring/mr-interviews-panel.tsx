@@ -31,7 +31,7 @@ export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
   const [open, setOpen] = useState<Open>(null);
   if (rows === null) {
     return (
-      <p className="mb-6 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+      <p className="mb-6 border-l-4 border-amber-500 bg-white px-4 py-3 text-sm text-amber-900" role="status">
         Your Medical Rep interviews could not be loaded just now. Refresh the page to try again.
       </p>
     );
@@ -65,7 +65,7 @@ export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
                           {cairoWhen(booking.startsAt)} Cairo ·{" "}
                           {booking.platform === "zoom" ? (
                             booking.zoomJoinUrl ? (
-                              <a className="font-bold text-orange-700 underline" href={booking.zoomJoinUrl} rel="noreferrer" target="_blank">
+                              <a className="font-bold text-[#08111f] underline" href={booking.zoomJoinUrl} rel="noreferrer" target="_blank">
                                 Join on Zoom
                               </a>
                             ) : (

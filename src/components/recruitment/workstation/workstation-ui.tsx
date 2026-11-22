@@ -113,7 +113,7 @@ export function PaneHead({
     >
       {/* A 2px tick in the accent, not a heading weight competition. Four panes each need to say
           which one they are without any of them shouting; a mark reads faster than more bold. */}
-      <span aria-hidden className="h-3 w-0.5 shrink-0 bg-orange-400" />
+      <span aria-hidden className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
       {/* 11px, not 12. The body size on this page is 12px and that is correct for what a reader
           READS; a pane's own name is not read, it is glanced at once to place the pane. Four heads
           set at body size in bold uppercase was four labels competing with their own contents — the
@@ -123,7 +123,7 @@ export function PaneHead({
         {title}
       </span>
       {right ? (
-        <span className="shrink-0 border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-black leading-none tabular-nums text-orange-100">
+        <span className="shrink-0 border border-white/20 px-1.5 py-0.5 text-[11px] font-black leading-none tabular-nums text-white">
           {right}
         </span>
       ) : null}
@@ -133,7 +133,7 @@ export function PaneHead({
            would just be a second thing that can hide the CV. */
         <button
           aria-label={`Fold the ${foldName} pane away`}
-          className="hidden shrink-0 border border-white/15 bg-white/10 p-0.5 text-slate-300 transition-colors hover:border-orange-300/60 hover:bg-white/20 hover:text-white xl:inline-flex"
+          className="hidden shrink-0 border border-white/15 bg-white/10 p-0.5 text-slate-300 transition-colors motion-reduce:transition-none hover:border-[#08111f]/60 hover:bg-white/20 hover:text-white xl:inline-flex focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
           onClick={onCollapse}
           title={`Fold the ${foldName} pane away`}
           type="button"
@@ -172,18 +172,18 @@ export function PaneSpine({
   return (
     <button
       aria-label={`Bring back the ${label.toLowerCase()} pane`}
-      className={`group hidden h-full w-7 shrink-0 flex-col items-center gap-2 border border-phx-line bg-white py-2 transition-colors hover:border-phx-accent-line hover:bg-phx-accent-soft xl:flex ${adminSoftDepthClassName}`}
+      className={`group hidden h-full w-7 shrink-0 flex-col items-center gap-2 border border-phx-line bg-white py-2 transition-colors motion-reduce:transition-none hover:border-[#08111f] hover:bg-phx-accent-soft xl:flex focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminSoftDepthClassName}`}
       onClick={onOpen}
       title={`Bring back the ${label.toLowerCase()} pane`}
       type="button"
     >
       {side === "left" ? (
-        <ChevronsRight aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-accent" />
+        <ChevronsRight aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#08111f]" />
       ) : (
-        <ChevronsLeft aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-accent" />
+        <ChevronsLeft aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#08111f]" />
       )}
       <span
-        className="text-[11px] font-bold uppercase tracking-[0.12em] text-phx-ink-soft group-hover:text-phx-accent-press"
+        className="text-[11px] font-bold uppercase tracking-[0.12em] text-phx-ink-soft group-hover:text-[#08111f]"
         style={{ writingMode: "vertical-rl" }}
       >
         {label}
@@ -223,7 +223,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 border px-1.5 py-0.5 text-[10px] font-bold uppercase leading-[1.4] tracking-[0.08em]",
+        "inline-flex shrink-0 items-center gap-1 border px-1.5 py-0.5 text-[11px] font-bold uppercase leading-[1.4] tracking-[0.08em]",
         pillToneClass[tone],
         adminChipDepthClassName,
         className,
@@ -252,8 +252,8 @@ export function KeyValue({
   label: string;
 }) {
   return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-2 border-b border-phx-line/70 px-3 py-1.5 transition-colors last:border-b-0 hover:bg-phx-surface-2">
-      <span className="text-[10px] font-bold uppercase leading-[1.6] tracking-[0.12em] text-phx-ink-faint">{label}</span>
+    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-2 border-b border-phx-line/70 px-3 py-1.5 transition-colors motion-reduce:transition-none last:border-b-0 hover:bg-phx-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]">
+      <span className="text-[11px] font-bold uppercase leading-[1.6] tracking-[0.12em] text-phx-ink-faint">{label}</span>
       <span className="min-w-0 break-words text-[13px] leading-[1.45] text-phx-ink">
         {children}
         {hint ? <span className="mt-0.5 block text-[11px] leading-tight text-phx-ink-soft">{hint}</span> : null}
@@ -460,7 +460,7 @@ export function CollapsibleSection({
           HOLDS a button rather than a button that holds everything. */}
       <div
         className={cn(
-          "flex items-center gap-1.5 pr-3 transition-colors",
+          "flex items-center gap-1.5 pr-3 transition-colors motion-reduce:transition-none",
           tone === "default" ? "bg-phx-surface-2 hover:bg-phx-paper" : "bg-white hover:bg-phx-surface-2",
         )}
       >
@@ -473,8 +473,8 @@ export function CollapsibleSection({
           <ChevronRight
             aria-hidden
             className={cn(
-              "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
-              open ? "rotate-90 text-phx-accent" : "text-phx-ink-faint",
+              "h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none duration-200",
+              open ? "rotate-90 text-[#08111f]" : "text-phx-ink-faint",
             )}
           />
           <span

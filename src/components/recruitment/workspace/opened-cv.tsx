@@ -130,7 +130,7 @@ function CvFileSection({
   }
   if (state.phase === "failed") {
     return (
-      <p className={cn("border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800", fill ? "m-3" : null)} dir="auto" role="alert">
+      <p className={cn("border-l-4 border-rose-500 bg-white px-3 py-2 text-sm font-semibold text-rose-800", fill ? "m-3" : null)} dir="auto" role="alert">
         {state.message}
       </p>
     );
@@ -160,7 +160,7 @@ function CvFileSection({
         <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Other files</span>
         {others.map((item) => (
           <a
-            className={`inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 hover:border-orange-300 ${adminChipDepthClassName}`}
+            className={`inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 hover:border-[#08111f] ${adminChipDepthClassName}`}
             href={fileUrl(item.id)}
             key={item.id}
           >
@@ -343,7 +343,7 @@ export function OpenedCv({
   const [zoomSlot, setZoomSlot] = useState<HTMLElement | null>(null);
 
   if (fill) {
-    const navButton = "inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-30";
+    const navButton = "inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition motion-reduce:transition-none hover:bg-white/20 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
     return (
       <section aria-label={`CV of ${row.name}`} className="flex h-full min-h-0 min-w-0 flex-col bg-white" id="ws-opened-cv">
         {/* 1 — the header: who, and how to reach them */}
@@ -352,7 +352,7 @@ export function OpenedCv({
             <div className="flex min-w-0 grow basis-56 flex-wrap items-center gap-x-2 gap-y-1">
               {layout === "sheet" ? (
                 <button
-                  className="inline-flex h-8 shrink-0 items-center gap-1 border border-white/20 bg-white/10 px-2 text-xs font-bold text-white transition hover:bg-white/20"
+                  className="inline-flex h-8 shrink-0 items-center gap-1 border border-white/20 bg-white/10 px-2 text-xs font-bold text-white transition motion-reduce:transition-none hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                   onClick={onClose}
                   type="button"
                 >
@@ -389,14 +389,14 @@ export function OpenedCv({
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-300">
             <span>{`${candidateSourceLabels[row.source] ?? row.source} · Received ${cairoStamp(row.receivedAt, today)}`}</span>
             {hr && row.phone ? (
-              <a className="inline-flex items-center gap-1 font-bold text-white hover:text-orange-300" dir="ltr" href={`tel:${row.phone}`}>
-                <Phone aria-hidden className="h-3.5 w-3.5 text-orange-300" />
+              <a className="inline-flex items-center gap-1 font-bold text-white hover:text-white/70" dir="ltr" href={`tel:${row.phone}`}>
+                <Phone aria-hidden className="h-3.5 w-3.5 text-white/60" />
                 <span className="tabular-nums">{row.phone}</span>
               </a>
             ) : null}
             {hr && row.email ? (
-              <a className="inline-flex items-center gap-1 break-all font-bold text-white hover:text-orange-300" href={`mailto:${row.email}`}>
-                <Mail aria-hidden className="h-3.5 w-3.5 text-orange-300" />
+              <a className="inline-flex items-center gap-1 break-all font-bold text-white hover:text-white/70" href={`mailto:${row.email}`}>
+                <Mail aria-hidden className="h-3.5 w-3.5 text-white/60" />
                 {row.email}
               </a>
             ) : null}
@@ -444,7 +444,7 @@ export function OpenedCv({
           </div>
         ) : null}
         {row.duplicate && hr ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 border-l-4 border-l-amber-500 bg-white px-3 py-1.5 text-xs text-amber-900">
             <GitMerge aria-hidden className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 grow break-words font-semibold" dir="auto">
               {`Looks like the same person as ${row.duplicate.otherCandidateIds.length === 1 ? "another record" : `${row.duplicate.otherCandidateIds.length} other records`} — ${row.duplicate.reason}`}
@@ -452,7 +452,7 @@ export function OpenedCv({
             {canWork && actions
               ? row.duplicate.otherCandidateIds.map((otherId, index) => (
                   <button
-                    className="inline-flex h-7 items-center gap-1 border border-amber-500 bg-white px-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+                    className="inline-flex h-7 items-center gap-1 border border-amber-500 bg-white px-2 text-xs font-bold text-amber-900 transition motion-reduce:transition-none hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                     key={otherId}
                     onClick={() => actions.merge(row.id, otherId)}
                     type="button"
@@ -472,8 +472,8 @@ export function OpenedCv({
               <button
                 aria-selected={tab.key === section}
                 className={cn(
-                  "inline-flex h-9 items-center border-b-2 px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
-                  tab.key === section ? "border-orange-500 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-900",
+                  "inline-flex h-9 items-center border-b-2 px-3 text-sm font-bold transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400",
+                  tab.key === section ? "border-[#08111f] text-slate-950" : "border-transparent text-slate-500 hover:text-slate-900",
                 )}
                 key={tab.key}
                 onClick={() => setSection(tab.key)}
@@ -539,7 +539,7 @@ export function OpenedCv({
           <div className="flex min-w-0 grow basis-56 items-start gap-2">
             {layout === "sheet" ? (
               <button
-                className="mt-0.5 inline-flex shrink-0 items-center gap-1 border border-white/20 bg-white/10 px-2 py-1 text-xs font-bold text-white transition hover:bg-white/20"
+                className="mt-0.5 inline-flex shrink-0 items-center gap-1 border border-white/20 bg-white/10 px-2 py-1 text-xs font-bold text-white transition motion-reduce:transition-none hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                 onClick={onClose}
                 type="button"
               >
@@ -568,7 +568,7 @@ export function OpenedCv({
               <>
                 <button
                   aria-label="Previous CV"
-                  className="inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-30"
+                  className="inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition motion-reduce:transition-none hover:bg-white/20 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                   disabled={!hasPrevious}
                   onClick={onPrevious}
                   title="Previous (↑ or K)"
@@ -578,7 +578,7 @@ export function OpenedCv({
                 </button>
                 <button
                   aria-label="Next CV"
-                  className="inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-30"
+                  className="inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition motion-reduce:transition-none hover:bg-white/20 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                   disabled={!hasNext}
                   onClick={onNext}
                   title="Next (↓ or J)"
@@ -591,7 +591,7 @@ export function OpenedCv({
             {layout === "split" ? (
               <button
                 aria-label="Close the CV"
-                className="inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition hover:bg-white/20"
+                className="inline-flex h-8 w-8 items-center justify-center border border-white/20 bg-white/10 text-white transition motion-reduce:transition-none hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                 onClick={onClose}
                 title="Close (Esc)"
                 type="button"
@@ -633,15 +633,15 @@ export function OpenedCv({
         {hr && canWork && actions ? (
           <div className={`flex flex-wrap items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-2 ${adminRecessedDepthClassName}`}>
             <span className="inline-flex items-center gap-1 pr-1 text-phx-xs font-black uppercase tracking-wide text-slate-600">
-              <PhoneCall aria-hidden className="h-3.5 w-3.5 text-orange-600" />
+              <PhoneCall aria-hidden className="h-3.5 w-3.5 text-[#08111f]" />
               Call
             </span>
             {callResults.map((result) => (
               <button
                 aria-pressed={row.latestCall?.result === result}
                 className={cn(
-                  "border px-2 py-1 text-xs font-bold transition",
-                  row.latestCall?.result === result ? "border-orange-400 bg-orange-50 text-orange-900" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400",
+                  "border px-2 py-1 text-xs font-bold transition motion-reduce:transition-none",
+                  row.latestCall?.result === result ? "border-[#08111f] bg-slate-100 text-[#08111f]" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400",
                 )}
                 key={result}
                 onClick={() => actions.callResult(row.id, result, null, viewerName)}
@@ -659,7 +659,7 @@ export function OpenedCv({
         ) : null}
 
         {row.duplicate && hr ? (
-          <div className="flex flex-wrap items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <div className="flex flex-wrap items-center gap-2 border-l-4 border-amber-500 bg-white px-3 py-2 text-sm text-amber-900">
             <GitMerge aria-hidden className="h-4 w-4 shrink-0" />
             <span className="min-w-0 grow break-words font-semibold" dir="auto">
               {`Looks like the same person as ${row.duplicate.otherCandidateIds.length === 1 ? "another record" : `${row.duplicate.otherCandidateIds.length} other records`} — ${row.duplicate.reason}`}
@@ -667,7 +667,7 @@ export function OpenedCv({
             {canWork && actions
               ? row.duplicate.otherCandidateIds.map((otherId, index) => (
                   <button
-                    className="inline-flex h-8 items-center gap-1 border border-amber-500 bg-white px-2.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+                    className="inline-flex h-8 items-center gap-1 border border-amber-500 bg-white px-2.5 text-xs font-bold text-amber-900 transition motion-reduce:transition-none hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                     key={otherId}
                     onClick={() => actions.merge(row.id, otherId)}
                     type="button"
@@ -683,13 +683,13 @@ export function OpenedCv({
         {hr && (row.phone || row.email || row.placements.length > 0) ? (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             {row.phone ? (
-              <a className="inline-flex items-center gap-1 font-bold text-slate-800 hover:text-orange-700" dir="ltr" href={`tel:${row.phone}`}>
+              <a className="inline-flex items-center gap-1 font-bold text-slate-800 hover:text-[#08111f]" dir="ltr" href={`tel:${row.phone}`}>
                 <Phone aria-hidden className="h-3.5 w-3.5 text-slate-400" />
                 <span className="tabular-nums">{row.phone}</span>
               </a>
             ) : null}
             {row.email ? (
-              <a className="inline-flex items-center gap-1 break-all font-bold text-slate-800 hover:text-orange-700" href={`mailto:${row.email}`}>
+              <a className="inline-flex items-center gap-1 break-all font-bold text-slate-800 hover:text-[#08111f]" href={`mailto:${row.email}`}>
                 <Mail aria-hidden className="h-3.5 w-3.5 text-slate-400" />
                 {row.email}
               </a>

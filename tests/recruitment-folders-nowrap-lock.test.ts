@@ -76,7 +76,6 @@ type NowrapUse = {
  */
 const PINNED_NOWRAP = new Set<string>([
   // ── candidate-folders-tab.tsx ────────────────────────────────────────────────────────────────
-  "candidate-folders-tab.tsx :: filed · in the pool :: filedCount | pool.length",
   "candidate-folders-tab.tsx :: archived :: archived.length",
   "candidate-folders-tab.tsx ::  :: shelf.label",
   'candidate-folders-tab.tsx ::  :: shelf.candidateCount | shelf.candidateCount === 1 ? "CV" : "CVs"',

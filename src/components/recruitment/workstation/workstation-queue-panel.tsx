@@ -124,7 +124,7 @@ export function WorkstationQueuePanel({
               // Rides in the header's right-hand slot rather than beside the title, so a rail narrowed
               // to one seat still SAYS so — and can still be widened again — with the list folded away.
               <Action
-                className="px-1.5 py-1 text-[11px] uppercase tracking-[0.06em] text-phx-accent-press"
+                className="px-1.5 py-1 text-[11px] uppercase tracking-[0.06em] text-[#08111f]"
                 onClick={() => onSelectVacancy(null)}
                 title="Stop narrowing the list to one seat"
                 tone="ghost"
@@ -184,18 +184,18 @@ function QueueButton({
     <button
       aria-pressed={active}
       className={cn(
-        "flex w-full items-center gap-2 border-b border-phx-line px-3 py-2 text-left transition-colors",
+        "flex w-full items-center gap-2 border-b border-phx-line px-3 py-2 text-left transition-colors motion-reduce:transition-none",
         // The active row is a LEFT BAR plus a tint, not a fill: a solid orange row beside four
         // white ones dominates a 220px column and reads as an alert rather than as a selection.
         active
-          ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
+          ? "border-l-2 border-l-[#08111f] bg-slate-100"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
       )}
       onClick={onSelect}
       type="button"
     >
       <span className="min-w-0 flex-1">
-        <span className={cn("block text-[13px] font-bold leading-tight", active ? "text-phx-accent-press" : "text-phx-ink")}>
+        <span className={cn("block text-[13px] font-bold leading-tight", active ? "text-[#08111f]" : "text-phx-ink")}>
           {label}
         </span>
         <span className="block text-[11px] leading-snug text-phx-ink-soft">{description}</span>
@@ -237,9 +237,9 @@ function VacancyButton({
     <button
       aria-pressed={active}
       className={cn(
-        "flex w-full flex-col gap-0.5 border-b border-phx-line px-3 py-2 text-left transition-colors",
+        "flex w-full flex-col gap-0.5 border-b border-phx-line px-3 py-2 text-left transition-colors motion-reduce:transition-none",
         active
-          ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
+          ? "border-l-2 border-l-[#08111f] bg-slate-100"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
       )}
       onClick={onSelect}
@@ -249,7 +249,7 @@ function VacancyButton({
         <span
           className={cn(
             "min-w-0 flex-1 break-words text-[13px] font-bold leading-tight",
-            active ? "text-phx-accent-press" : "text-phx-ink",
+            active ? "text-[#08111f]" : "text-phx-ink",
           )}
         >
           {vacancy.jobTitle}

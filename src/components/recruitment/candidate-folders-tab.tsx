@@ -59,6 +59,7 @@ import {
   adminHeroActionSecondaryClassName,
 } from "@/components/admin/admin-design-tokens";
 import { RecruitmentEmptyState, RecruitmentPanel } from "@/components/recruitment/recruitment-premium";
+import { LandingMeta, LandingTitle } from "@/components/employee-portal/landing-kit";
 import { phxButtonAccentClassName, phxButtonGhostClassName } from "@/components/ui/form-tokens";
 
 /**
@@ -66,13 +67,13 @@ import { phxButtonAccentClassName, phxButtonGhostClassName } from "@/components/
  * hairline control lifted by the house control shadow; it drops the shadow when it is disabled, so a
  * greyed button never still reads as pressable.
  */
-const rowActionClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-800 disabled:pointer-events-none disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`;
+const rowActionClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:bg-slate-50 hover:text-[#08111f] disabled:pointer-events-none disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`;
 
 /** The error line under a panel's band: a rose rule, an icon, and words that wrap. */
 function PanelError({ children }: { children: string }) {
   return (
     <p
-      className="flex items-start gap-2 border-b border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-800"
+      className="flex items-start gap-2 border-b border-slate-200 border-l-[3px] border-l-rose-500 bg-white px-4 py-2.5 text-xs font-semibold text-rose-800"
       role="alert"
     >
       <AlertCircle aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -158,27 +159,21 @@ export function CandidateFoldersTab({
     <div className="space-y-5">
       {/* The one number that says whether this feature is being used, and the one that says the pool
           is not silently draining into it. Both, side by side, on purpose. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-l-[3px] border-l-orange-500 pl-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 pb-2.5">
         <div className="min-w-0 grow basis-72">
-          <h2 className="flex items-center gap-2 text-base font-black tracking-tight text-slate-950">
-            <FolderOpen aria-hidden className="h-4 w-4 text-orange-600" />
-            Folders
-          </h2>
-          <p className="mt-0.5 text-xs font-medium leading-5 text-slate-500">
-            Good CVs kept for later. Filed CVs are off the main pool and nowhere else — they still show
-            in search and still count against duplicates.
-          </p>
+          <LandingTitle>
+            <span className="inline-flex items-center gap-2">
+              <FolderOpen aria-hidden className="h-4 w-4 text-[#08111f]" />
+              Folders
+            </span>
+          </LandingTitle>
         </div>
-        <span
-          className={`whitespace-nowrap border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-black tabular-nums text-orange-800 ${adminChipDepthClassName}`}
-        >
-          {filedCount} filed · {pool.length} in the pool
-        </span>
+        <LandingMeta items={[`${filedCount} filed`, `${pool.length} in the pool`]} />
       </div>
 
       {error ? (
         <p
-          className="flex items-start gap-2 border border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+          className="flex items-start gap-2 border border-slate-200 border-l-[3px] border-l-rose-500 bg-white px-3 py-2 text-xs font-semibold text-rose-800"
           role="alert"
         >
           <AlertCircle aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -212,11 +207,11 @@ export function CandidateFoldersTab({
           <ul className="divide-y divide-slate-100">
             {archived.map((candidate) => (
               <li
-                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-slate-50/70"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors motion-reduce:transition-none hover:bg-slate-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                 key={candidate.id}
               >
                 <button
-                  className="min-w-0 break-words text-left text-[13px] font-bold text-slate-950 underline-offset-2 hover:text-orange-700 hover:underline"
+                  className="min-w-0 break-words text-left text-[13px] font-bold text-slate-950 underline-offset-2 hover:text-[#08111f] hover:underline"
                   onClick={() => onOpenCandidate(candidate.id)}
                   type="button"
                 >
@@ -305,13 +300,13 @@ export function CandidateFoldersTab({
                 {/* The open folder names itself on a recessed strip, so the rows under it read as the
                     contents of that one chip and not as another list on the shelf. */}
                 <p className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-black uppercase tracking-[0.1em] text-slate-700">
-                  <FolderOpen aria-hidden className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+                  <FolderOpen aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#08111f]" />
                   <span className="min-w-0 break-words">{folder.label}</span>
                 </p>
                 <ul className="divide-y divide-slate-100">
                   {folder.candidates.map((candidate) => (
                     <li
-                      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-orange-50/40"
+                      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                       key={candidate.id}
                     >
                       {/* The row IS the CV — and since 2026-09-02 it opens the CV itself, in place.
@@ -435,12 +430,12 @@ function FiledCvName({ candidate }: { candidate: Candidate }) {
         title={`Open ${label}'s CV`}
         type="button"
       >
-        <span className="inline-flex min-w-0 items-start gap-1.5 text-sm font-bold text-slate-950 underline-offset-4 hover:text-orange-700 hover:underline">
-          <FileText aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-600" />
+        <span className="inline-flex min-w-0 items-start gap-1.5 text-sm font-bold text-slate-950 underline-offset-4 hover:text-[#08111f] hover:underline">
+          <FileText aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#08111f]" />
           <span className="min-w-0 break-words">{label}</span>
         </span>
         <span
-          className={`whitespace-nowrap border border-slate-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-slate-500 ${adminChipDepthClassName}`}
+          className={`whitespace-nowrap border border-slate-200 bg-white px-1.5 py-0.5 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-500 ${adminChipDepthClassName}`}
         >
           {candidateStatusLabel(candidate.status)}
         </span>
@@ -606,7 +601,7 @@ function DeclaredFilingsPanel({
       {inPlay.length > 0 ? (
         // Named, not counted. "5 are in play" is a number he has to go and check; the names are the
         // thing that lets him decide without leaving this screen.
-        <p className="border-b border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50/70 px-4 py-2 text-phx-xs font-medium leading-5 text-amber-950">
+        <p className="border-b border-slate-200 border-l-[3px] border-l-amber-500 bg-white px-4 py-2 text-phx-xs font-medium leading-5 text-amber-950">
           <span className="font-bold">Filing the new ones leaves these {inPlay.length} in the pool: </span>
           {inPlay
             .map((filing) => `${candidateDisplayName(filing.fullName)} (${candidateStatusLabel(filing.status)})`)
@@ -620,10 +615,10 @@ function DeclaredFilingsPanel({
         <ul className="divide-y divide-slate-100">
           {groups.map((group) => (
             <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5" key={group.label}>
-              <FolderInput aria-hidden className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+              <FolderInput aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#08111f]" />
               <span className="whitespace-nowrap text-sm font-bold text-slate-950">{group.label}</span>
               <span
-                className={`whitespace-nowrap border border-orange-200 bg-orange-50 px-1.5 text-phx-2xs font-black tabular-nums text-orange-800 ${adminChipDepthClassName}`}
+                className={`whitespace-nowrap border-l-4 border-[#08111f] bg-white px-1.5 text-phx-xs font-black tabular-nums text-[#08111f] ${adminChipDepthClassName}`}
               >
                 {group.names.length} {group.names.length === 1 ? "CV" : "CVs"}
               </span>
@@ -669,9 +664,9 @@ function DeclaredFilingsPanel({
                 {unplacedGroups.map((group) => (
                   <div key={group.cause}>
                     <p className="flex flex-wrap items-center gap-x-2 text-xs font-black text-slate-900">
-                      <span aria-hidden="true" className="h-3 w-0.5 bg-orange-500" />
+                      <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
                       {group.heading}
-                      <span className="font-black tabular-nums text-orange-700">
+                      <span className="font-black tabular-nums text-[#08111f]">
                         {group.rows.length}
                       </span>
                     </p>
@@ -741,26 +736,26 @@ function FolderChip({
         // exceed its row; the count below keeps its own nowrap so the number never splits off.
         // Square, lifted like every chip in the module; the open one turns orange and keeps an
         // underline in the accent so the reader can see which folder the rows below belong to.
-        `relative inline-flex max-w-full items-center gap-2 border px-3 py-1.5 text-left text-xs font-bold transition ${adminChipDepthClassName}`,
+        `relative inline-flex max-w-full items-center gap-2 border px-3 py-1.5 text-left text-xs font-bold transition motion-reduce:transition-none ${adminChipDepthClassName}`,
         isOpen
-          ? "border-orange-400 bg-orange-50 text-orange-800"
-          : "border-slate-200 bg-white text-slate-700 hover:border-orange-300 hover:bg-orange-50/50",
+          ? "border-[#08111f] bg-slate-100 text-[#08111f]"
+          : "border-slate-200 bg-white text-slate-700 hover:border-[#08111f] hover:bg-slate-50",
       )}
       onClick={onToggle}
       title={folder.lastFiledAt ? `Last filed ${cairoDateTime(folder.lastFiledAt)}` : undefined}
       type="button"
     >
-      <FolderOpen aria-hidden className={cn("h-3.5 w-3.5 shrink-0", isOpen ? "text-orange-600" : "text-slate-400")} />
+      <FolderOpen aria-hidden className={cn("h-3.5 w-3.5 shrink-0", isOpen ? "text-[#08111f]" : "text-slate-400")} />
       <span className="min-w-0 break-words">{folder.label}</span>
       <span
         className={cn(
-          "whitespace-nowrap border px-1.5 text-phx-2xs font-black tabular-nums",
-          isOpen ? "border-orange-200 bg-white text-orange-700" : "border-slate-200 bg-slate-50 text-slate-500",
+          "whitespace-nowrap border px-1.5 text-phx-xs font-black tabular-nums",
+          isOpen ? "border-slate-200 bg-white text-[#08111f]" : "border-slate-200 bg-slate-50 text-slate-500",
         )}
       >
         {folder.candidates.length}
       </span>
-      {isOpen ? <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-0.5 bg-orange-500" /> : null}
+      {isOpen ? <span aria-hidden="true" className="absolute inset-x-2 bottom-0 h-0.5 bg-[#08111f]" /> : null}
     </button>
   );
 }

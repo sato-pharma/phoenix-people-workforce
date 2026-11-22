@@ -287,10 +287,10 @@ export function CvFolderCabinet({
         )}
       >
         <h3 className="flex items-center gap-1.5 whitespace-nowrap text-sm font-black uppercase tracking-[0.12em] text-white">
-          <FolderTree className="h-4 w-4 text-orange-300" aria-hidden="true" />
+          <FolderTree className="h-4 w-4 text-white/60" aria-hidden="true" />
           Your folders
         </h3>
-        <span className="whitespace-nowrap border border-orange-400/40 bg-orange-500/15 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums text-orange-100">
+        <span className="whitespace-nowrap border border-white/20 px-1.5 py-0.5 text-phx-xs font-black tabular-nums text-white">
           {cabinet.rows.length} folder{cabinet.rows.length === 1 ? "" : "s"} · {filedTotal} CV
           {filedTotal === 1 ? "" : "s"}
         </span>
@@ -304,12 +304,12 @@ export function CvFolderCabinet({
       </header>
 
       {error ? (
-        <p className="border-b border-rose-200 border-l-4 border-l-rose-500 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700">
+        <p className="border-b border-slate-200 border-l-4 border-l-rose-500 bg-white px-4 py-2 text-xs font-semibold text-rose-700">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="border-b border-emerald-200 border-l-4 border-l-emerald-500 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700">
+        <p className="border-b border-slate-200 border-l-4 border-l-emerald-500 bg-white px-4 py-2 text-xs font-semibold text-emerald-700">
           {notice}
         </p>
       ) : null}
@@ -320,10 +320,10 @@ export function CvFolderCabinet({
         {/* ── THE TREE ──────────────────────────────────────────────────────────────────────── */}
         <div className={`min-w-0 border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r ${adminRecessedDepthClassName}`}>
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2.5">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Folders</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Folders</span>
             {canManage ? (
               <button
-                className={`ml-auto flex items-center gap-1 border border-orange-600 bg-orange-600 px-2.5 py-1 text-[12px] font-bold text-white transition hover:bg-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                className={`ml-auto flex items-center gap-1 border border-[#08111f] bg-[#08111f] px-2.5 py-1 text-[12px] font-bold text-white transition motion-reduce:transition-none hover:bg-[#13233a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
                 disabled={busy}
                 onClick={() => createFolder(null)}
                 type="button"
@@ -372,11 +372,11 @@ export function CvFolderCabinet({
                 <p className="break-words text-[12px] font-medium text-slate-500">{openFolder.path.join(" › ")}</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <h4 className="flex min-w-0 items-center gap-2 break-words text-base font-black tracking-tight text-slate-950">
-                    <FolderOpen aria-hidden="true" className="h-5 w-5 flex-none text-orange-500" />
+                    <FolderOpen aria-hidden="true" className="h-5 w-5 flex-none text-[#08111f]" />
                     {openFolder.name}
                   </h4>
                   <span
-                    className={`whitespace-nowrap border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-xs font-bold tabular-nums text-orange-800 ${adminChipDepthClassName}`}
+                    className={`whitespace-nowrap border-l-4 border-[#08111f] bg-white px-1.5 py-0.5 text-xs font-bold tabular-nums text-[#08111f] ${adminChipDepthClassName}`}
                   >
                     {openFolder.directCount} here
                     {openFolder.totalCount !== openFolder.directCount
@@ -442,10 +442,10 @@ export function CvFolderCabinet({
                   <button
                     aria-expanded={adding}
                     className={cn(
-                      `flex items-center gap-1 border px-2.5 py-1 text-[12px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${adminControlDepthClassName}`,
+                      `flex items-center gap-1 border px-2.5 py-1 text-[12px] font-bold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${adminControlDepthClassName}`,
                       adding
                         ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
-                        : "border-orange-300 bg-white text-orange-700 hover:bg-orange-50",
+                        : "border-slate-300 bg-white text-[#08111f] hover:bg-slate-50",
                     )}
                     onClick={() => setAdding((current) => !current)}
                     type="button"
@@ -481,7 +481,7 @@ export function CvFolderCabinet({
                               .filter(Boolean);
                             return (
                               <li
-                                className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5 transition-colors hover:bg-orange-50/40"
+                                className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                                 key={candidate.id}
                               >
                                 <span className="break-words text-[13px] font-bold text-slate-900">
@@ -496,7 +496,7 @@ export function CvFolderCabinet({
                                 ) : null}
                                 <span className="ml-auto flex flex-wrap gap-1">
                                   <button
-                                    className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                                    className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                                     disabled={busy}
                                     onClick={() => fileCandidates(openFolder.id, [candidate.id], "move")}
                                     type="button"
@@ -505,7 +505,7 @@ export function CvFolderCabinet({
                                   </button>
                                   {inFolders.length > 0 ? (
                                     <button
-                                      className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                                      className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                                       disabled={busy}
                                       onClick={() => fileCandidates(openFolder.id, [candidate.id], "copy")}
                                       type="button"
@@ -546,8 +546,8 @@ export function CvFolderCabinet({
               ) : (
                 <>
                   {canManage && selectedIds.length > 0 ? (
-                    <div className={`flex flex-wrap items-center gap-1.5 border-b border-orange-200 border-l-4 border-l-orange-500 bg-orange-50/70 px-3 py-2 ${adminRecessedDepthClassName}`}>
-                      <span className="whitespace-nowrap text-[12px] font-black text-orange-900">
+                    <div className={`flex flex-wrap items-center gap-1.5 border-b border-slate-200 border-l-4 border-l-[#08111f] bg-slate-100 px-3 py-2 ${adminRecessedDepthClassName}`}>
+                      <span className="whitespace-nowrap text-[12px] font-black text-[#08111f]">
                         {selectedIds.length} picked
                       </span>
                       <label className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-slate-700">
@@ -569,7 +569,7 @@ export function CvFolderCabinet({
                         </select>
                       </label>
                       <button
-                        className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                         disabled={busy || !destination}
                         onClick={() => fileCandidates(destination, selectedIds, "move")}
                         type="button"
@@ -577,7 +577,7 @@ export function CvFolderCabinet({
                         Move
                       </button>
                       <button
-                        className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                         disabled={busy || !destination}
                         onClick={() => fileCandidates(destination, selectedIds, "copy")}
                         type="button"
@@ -586,7 +586,7 @@ export function CvFolderCabinet({
                         Copy
                       </button>
                       <button
-                        className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                         disabled={busy}
                         onClick={() => takeOut(openFolder.id, selectedIds)}
                         type="button"
@@ -594,7 +594,7 @@ export function CvFolderCabinet({
                         Take out of this folder
                       </button>
                       <button
-                        className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+                        className={`flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                         disabled={busy}
                         onClick={() => returnToPool(selectedIds)}
                         type="button"
@@ -615,8 +615,8 @@ export function CvFolderCabinet({
                       return (
                         <li
                           className={cn(
-                            "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors",
-                            picked ? "bg-orange-50/70" : "hover:bg-slate-50",
+                            "flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors motion-reduce:transition-none",
+                            picked ? "bg-slate-100" : "hover:bg-slate-50",
                           )}
                           key={candidate.id}
                         >
@@ -631,7 +631,7 @@ export function CvFolderCabinet({
                           ) : null}
                           <FileText aria-hidden="true" className="h-4 w-4 flex-none text-slate-400" />
                           <button
-                            className="break-words text-left text-[13px] font-bold text-slate-900 underline-offset-2 hover:text-orange-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                            className="break-words text-left text-[13px] font-bold text-slate-900 underline-offset-2 hover:text-[#08111f] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                             onClick={() => onOpenCandidate(candidate.id)}
                             type="button"
                           >
@@ -680,10 +680,10 @@ function FolderAction({
   return (
     <button
       className={cn(
-        `flex items-center gap-1 border bg-white px-2.5 py-1 text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`,
+        `flex items-center gap-1 border bg-white px-2.5 py-1 text-[12px] font-semibold transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`,
         danger
           ? "border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50"
-          : "border-slate-300 text-slate-700 hover:border-orange-400 hover:text-orange-700",
+          : "border-slate-300 text-slate-700 hover:border-[#08111f] hover:text-[#08111f]",
       )}
       disabled={busy}
       onClick={onClick}
@@ -726,9 +726,9 @@ function CvFolderBranch({
     <li>
       <div
         className={cn(
-          "flex items-center gap-1.5 border-l-[3px] py-1.5 pr-2 transition-colors",
+          "flex items-center gap-1.5 border-l-[3px] py-1.5 pr-2 transition-colors motion-reduce:transition-none",
           isCurrent
-            ? `border-l-orange-500 bg-white ${adminChipDepthClassName}`
+            ? `border-l-[#08111f] bg-white ${adminChipDepthClassName}`
             : "border-l-transparent hover:bg-white/80",
         )}
         style={{ paddingLeft: `${Math.min(node.depth - 1, MAX_CV_FOLDER_DEPTH - 1) * 12 + 6}px` }}
@@ -736,7 +736,7 @@ function CvFolderBranch({
         {hasChildren ? (
           <button
             aria-label={isOpen ? `Collapse ${node.name}` : `Expand ${node.name}`}
-            className="flex-none text-slate-400 transition hover:text-slate-700"
+            className="flex-none text-slate-400 transition motion-reduce:transition-none hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             onClick={() => onToggle(node.id)}
             type="button"
           >
@@ -760,7 +760,7 @@ function CvFolderBranch({
           type="button"
         >
           {isCurrent ? (
-            <FolderOpen aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
+            <FolderOpen aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-[#08111f]" />
           ) : (
             <Folder aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-500" />
           )}
@@ -774,7 +774,7 @@ function CvFolderBranch({
         <span
           className={cn(
             "whitespace-nowrap border px-1.5 py-px text-[11px] font-black tabular-nums",
-            isCurrent ? "border-orange-200 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-500",
+            isCurrent ? "border-slate-200 bg-slate-100 text-[#08111f]" : "border-slate-200 bg-white text-slate-500",
           )}
         >
           {node.totalCount}

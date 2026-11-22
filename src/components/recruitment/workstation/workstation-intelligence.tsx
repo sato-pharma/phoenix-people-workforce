@@ -138,9 +138,9 @@ export function WorkstationIntelligencePanel({
             aria-label={tabLabels[key]}
             aria-pressed={tab === key}
             className={cn(
-              "relative flex flex-1 items-center justify-center gap-1 px-1 py-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] transition-colors",
+              "relative flex flex-1 items-center justify-center gap-1 px-1 py-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] transition-colors motion-reduce:transition-none",
               tab === key
-                ? cn("bg-white text-phx-accent-press", adminChipDepthClassName)
+                ? cn("bg-white text-[#08111f]", adminChipDepthClassName)
                 : "text-phx-ink-faint hover:bg-white/70 hover:text-phx-ink-2",
             )}
             key={key}
@@ -151,12 +151,12 @@ export function WorkstationIntelligencePanel({
             <span className="hidden sm:inline">{tabLabels[key]}</span>
             {key === "notes" && noteCount > 0 ? (
               <span
-                className={`border border-phx-line bg-phx-paper px-1 text-[10px] tabular-nums text-phx-ink-2 ${adminChipDepthClassName}`}
+                className={`border border-phx-line bg-phx-paper px-1 text-[11px] tabular-nums text-phx-ink-2 ${adminChipDepthClassName}`}
               >
                 {noteCount}
               </span>
             ) : null}
-            {tab === key ? <span aria-hidden className="absolute inset-x-1.5 bottom-0 h-0.5 bg-phx-accent" /> : null}
+            {tab === key ? <span aria-hidden className="absolute inset-x-1.5 bottom-0 h-0.5 bg-[#08111f]" /> : null}
           </button>
         ))}
       </div>
@@ -377,7 +377,7 @@ function SummaryTab({
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-phx-ink-soft">Ask them</p>
             {briefing.question ? (
-              <p className="mt-1 border-l-2 border-l-phx-accent bg-phx-accent-soft px-2 py-1.5 text-[12px] leading-relaxed text-phx-ink">
+              <p className="mt-1 border-l-2 border-l-[#08111f] bg-slate-50 px-2 py-1.5 text-[12px] leading-relaxed text-phx-ink">
                 {briefing.question}
               </p>
             ) : (
@@ -555,7 +555,7 @@ function CvDataTab({
                         them one at a time, looking at the document that produced them. */}
                     {onAccept && unapplied.has(row.key) ? (
                       <button
-                        className={`mt-1 border border-phx-accent-line bg-phx-accent-soft px-2 py-0.5 text-[11px] font-bold text-phx-accent-press transition hover:bg-phx-accent hover:text-white ${adminControlDepthClassName}`}
+                        className={`mt-1 border border-slate-300 bg-phx-accent-soft px-2 py-0.5 text-[11px] font-bold text-[#08111f] transition motion-reduce:transition-none hover:bg-phx-accent hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
                         onClick={() => onAccept(row.key, unapplied.get(row.key) ?? null)}
                         title="Write this reading onto the candidate record"
                         type="button"

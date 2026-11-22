@@ -15,7 +15,7 @@ import { describeUnavailable, type RecruitmentReadSource } from "@/lib/recruitme
  * leading edge, lifted like any other box inside a panel, and an icon tile so it reads as the page
  * talking rather than as a row of data. Square, like everything in the module.
  */
-const noticeClassName = `flex min-w-0 items-start gap-3 border border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 ${adminSoftDepthClassName}`;
+const noticeClassName = `flex min-w-0 items-start gap-3 border border-slate-200 border-l-[3px] border-l-amber-500 bg-white px-4 py-3 text-sm text-amber-950 ${adminSoftDepthClassName}`;
 
 const noticeIconClassName = `flex h-8 w-8 shrink-0 items-center justify-center border border-amber-300 bg-white text-amber-600 ${adminChipDepthClassName}`;
 
