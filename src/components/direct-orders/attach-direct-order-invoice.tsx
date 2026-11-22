@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
+import { phxButtonAccentClassName } from "@/components/ui/form-tokens";
 
 /**
  * Attach the distributor invoice to an order already sent (owner, 2026-09-14).
@@ -107,12 +109,12 @@ export function AttachDirectOrderInvoice({ hasInvoice, requestId }: { hasInvoice
       </div>
 
       {invoice ? (
-        <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+        <div className="mt-2 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="break-all text-phx-sm font-bold text-emerald-900" dir="auto">
               {invoice.fileName}
             </span>
-            <button type="button" onClick={clear} className="text-phx-xs font-bold text-orange-600">
+            <button type="button" onClick={clear} className="text-phx-xs font-bold text-[#08111f] underline-offset-2 hover:underline">
               Remove
             </button>
           </div>
@@ -120,7 +122,7 @@ export function AttachDirectOrderInvoice({ hasInvoice, requestId }: { hasInvoice
             <ZoomablePhoto
               alt="Distributor invoice"
               caption="Distributor invoice"
-              className="mt-2 w-full max-w-md border border-emerald-200"
+              className="mt-2 w-full max-w-md border border-slate-200"
               src={invoice.dataUrl}
             />
           )}
@@ -134,7 +136,7 @@ export function AttachDirectOrderInvoice({ hasInvoice, requestId }: { hasInvoice
         type="button"
         onClick={() => void send()}
         disabled={busy || !invoice}
-        className="mt-3 w-full bg-orange-500 px-4 py-2.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className={cn(phxButtonAccentClassName, "mt-3 w-full justify-center py-2.5 text-phx-sm font-black uppercase tracking-wider disabled:cursor-not-allowed")}
       >
         {busy ? "Saving…" : hasInvoice ? "Replace the invoice" : "Attach the invoice"}
       </button>

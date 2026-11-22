@@ -102,8 +102,8 @@ class ChartErrorBoundary extends Component<ChartErrorBoundaryProps, ChartErrorBo
     if (this.state.hasError) {
       const stale = this.state.staleDeploy;
       return (
-        <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 rounded border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded bg-amber-50 text-amber-500 ring-1 ring-amber-100">
+        <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
+          <div className="flex h-10 w-10 items-center justify-center bg-amber-50 text-amber-500 ring-1 ring-amber-100">
             <AlertTriangle className="h-5 w-5" />
           </div>
           <p className="text-sm font-semibold text-slate-700">
@@ -120,7 +120,7 @@ class ChartErrorBoundary extends Component<ChartErrorBoundaryProps, ChartErrorBo
               }
               this.setState({ hasError: false, staleDeploy: false });
             }}
-            className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
           >
             {stale ? "Reload" : "Try again"}
           </button>
@@ -179,10 +179,10 @@ type ChartTooltipEntry<TPayload> = {
 /* ─── Design tokens ────────────────────────────────────────────────── */
 
 const panelClass =
-  "relative overflow-hidden rounded border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5";
+  "relative overflow-hidden  border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5";
 
 const surfaceClass =
-  "rounded border border-slate-100 bg-gradient-to-b from-white to-slate-50/80 p-3 sm:p-4";
+  " border border-slate-100 bg-gradient-to-b from-white to-slate-50/80 p-3 sm:p-4";
 
 const mixColors = ["#f97316", "#0ea5e9", "#10b981", "#f59e0b", "#e11d48", "#64748b"];
 
@@ -221,7 +221,7 @@ function achievementColor(rate: number) {
 
 function ChartEmptyState({ label }: { label: string }) {
   return (
-    <div className="flex h-full min-h-[220px] items-center justify-center rounded border border-dashed border-slate-200 bg-white/70 text-sm font-semibold text-slate-500">
+    <div className="flex h-full min-h-[220px] items-center justify-center border border-dashed border-slate-200 bg-white/70 text-sm font-semibold text-slate-500">
       {label}
     </div>
   );
@@ -521,11 +521,11 @@ function Header({
   if (!hasActiveFilters && !contextSource && !contextMonth) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-orange-200/60 bg-gradient-to-r from-orange-50/40 to-white p-3 sm:p-4 rtl:bg-gradient-to-l">
+    <div className="flex flex-wrap items-center justify-between gap-3 border border-orange-200/60 bg-gradient-to-r from-orange-50/40 to-white p-3 sm:p-4 rtl:bg-gradient-to-l">
       <div>
         {(contextSource || contextMonth) && (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-white px-3 py-1 text-xs font-semibold text-orange-700">
+            <span className="inline-flex items-center gap-1.5 border border-orange-200 bg-white px-3 py-1 text-xs font-semibold text-orange-700">
               {contextSource && <span>From {contextSource}</span>}
               {contextSource && contextMonth && <span>-</span>}
               {contextMonth && <span>{contextMonth}</span>}
@@ -540,7 +540,7 @@ function Header({
         {hasActiveFilters && (
           <button
             onClick={onResetFilters}
-            className="flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
+            className="flex items-center gap-2 border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50/60 hover:text-orange-700"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Reset Filters
@@ -607,7 +607,7 @@ function FilterBar({
   };
 
   return (
-    <div className="space-y-3 rounded border border-slate-200/80 bg-white p-4 shadow-sm">
+    <div className="space-y-3 border border-slate-200/80 bg-white p-4 shadow-sm">
       {/* Period pills — horizontally scrollable on mobile */}
       <div>
         <div className="mb-2 flex items-center justify-between">
@@ -630,7 +630,7 @@ function FilterBar({
                 key={period}
                 type="button"
                 onClick={() => togglePeriod(period)}
-                className={`shrink-0 rounded px-3 py-1.5 text-xs font-bold transition-all ${
+                className={`shrink-0 px-3 py-1.5 text-xs font-bold transition-all ${
                   isActive
                     ? "bg-orange-500 text-white shadow-sm"
                     : "border border-slate-200 bg-slate-50 text-slate-600 hover:border-orange-300 hover:bg-orange-50"
@@ -684,7 +684,7 @@ function FilterBar({
         <div className="flex items-end">
           <button
             onClick={onToggleMoreFilters}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50"
+            className="flex h-10 w-full items-center justify-center gap-2 border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50"
           >
             <Filter className="h-3.5 w-3.5" />
             More Filters
@@ -707,7 +707,7 @@ function FilterBar({
                     onProductsChange([...selectedProducts, product]);
                   }
                 }}
-                className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
+                className={`px-2.5 py-1 text-xs font-semibold transition ${
                   selectedProducts.includes(product)
                     ? "bg-orange-500 text-white"
                     : "border border-slate-200 bg-white text-slate-700 hover:border-orange-300 hover:bg-orange-50"
@@ -726,7 +726,7 @@ function FilterBar({
           {selectedPeriods.map((period) => (
             <div
               key={period}
-              className="flex items-center gap-1 rounded border border-orange-200 bg-orange-50/60 px-2 py-0.5 text-phx-xs font-semibold text-orange-700"
+              className="flex items-center gap-1 border border-orange-200 bg-orange-50/60 px-2 py-0.5 text-phx-xs font-semibold text-orange-700"
             >
               {formatPeriodLabel(period)}
               <button onClick={() => onPeriodsChange(selectedPeriods.filter((p) => p !== period))} type="button" className="hover:text-orange-900">
@@ -737,7 +737,7 @@ function FilterBar({
           {selectedProducts.map((product) => (
             <div
               key={product}
-              className="flex items-center gap-1 rounded border border-orange-200 bg-orange-50/60 px-2 py-0.5 text-phx-xs font-semibold text-orange-700"
+              className="flex items-center gap-1 border border-orange-200 bg-orange-50/60 px-2 py-0.5 text-phx-xs font-semibold text-orange-700"
             >
               {product}
               <button onClick={() => onProductsChange(selectedProducts.filter((p) => p !== product))} type="button" className="hover:text-orange-900">
@@ -811,7 +811,7 @@ function KPICards({
       {cards.map((card, index) => (
         <div
           key={card.title}
-          className={`ep-fade-in-up border-l-[3px] ${card.accent} rounded border border-slate-200/80 bg-white p-3 sm:p-4 shadow-sm`}
+          className={`ep-fade-in-up border-l-[3px] ${card.accent} border border-slate-200/80 bg-white p-3 sm:p-4 shadow-sm`}
           style={{ animationDelay: `${index * 60}ms` }}
         >
           <div className="flex items-center justify-between gap-2">
@@ -852,24 +852,24 @@ function TrendTooltip({
   if (!active || !row) return null;
 
   return (
-    <div className="min-w-48 rounded border border-slate-200 bg-white p-3 shadow-lg">
+    <div className="min-w-48 border border-slate-200 bg-white p-3 shadow-lg">
       <p className="text-phx-sm font-bold uppercase tracking-widest text-slate-400">{row.label}</p>
       <div className="mt-2 space-y-1.5 text-xs">
         <div className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span className="h-2 w-2 rounded-sm bg-orange-500" />Sales
+            <span className="h-2 w-2 bg-orange-500" />Sales
           </span>
           <span className="font-bold text-slate-900">{formatCompactCurrency(row.sales)}</span>
         </div>
         <div className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span className="h-2 w-2 rounded-sm bg-slate-400" />Target
+            <span className="h-2 w-2 bg-slate-400" />Target
           </span>
           <span className="font-bold text-slate-900">{formatCompactCurrency(row.target)}</span>
         </div>
         <div className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span className="h-2 w-2 rounded-sm bg-sky-500" />Achievement
+            <span className="h-2 w-2 bg-sky-500" />Achievement
           </span>
           <span className="font-bold" style={{ color: achievementColor(row.achievement / 100) }}>
             {row.achievement.toFixed(1)}%
@@ -922,17 +922,17 @@ const TrendChart = memo(function TrendChart({
           <h2 className="mt-1 text-base font-black text-slate-900 sm:text-lg">Monthly control chart</h2>
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
-          <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
+          <div className="border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Sales</p>
             <p className="mt-0.5 text-xs font-black text-slate-900 sm:text-sm">{formatCompactCurrency(totalSales)}</p>
           </div>
-          <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
+          <div className="border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Ach.</p>
             <p className="mt-0.5 text-xs font-black sm:text-sm" style={{ color: achievementColor(blendedAchievement / 100) }}>
               {blendedAchievement.toFixed(1)}%
             </p>
           </div>
-          <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
+          <div className="border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Best</p>
             <p className="mt-0.5 text-xs font-black text-slate-900 sm:text-sm">{best ? best.label : "-"}</p>
           </div>
@@ -1029,28 +1029,28 @@ const TrendChart = memo(function TrendChart({
 
         {/* Sidebar stats */}
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-1 xl:gap-3">
-          <div className="rounded border border-slate-100 bg-slate-50 p-3">
+          <div className="border border-slate-100 bg-slate-50 p-3">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Latest</p>
             <p className="mt-1 text-sm font-black text-slate-900">{latest ? latest.label : "-"}</p>
             <p className="text-xs font-semibold text-slate-500">
               {latest ? `${latest.achievement.toFixed(1)}%` : "-"}
             </p>
           </div>
-          <div className="rounded border border-slate-100 bg-slate-50 p-3">
+          <div className="border border-slate-100 bg-slate-50 p-3">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Gap</p>
             <p className={`mt-1 text-sm font-black ${totalSales - totalTarget >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
               {formatCompactCurrency(totalSales - totalTarget)}
             </p>
           </div>
-          <div className="col-span-2 flex items-center gap-4 rounded border border-slate-100 bg-slate-50 p-3 xl:col-span-1">
+          <div className="col-span-2 flex items-center gap-4 border border-slate-100 bg-slate-50 p-3 xl:col-span-1">
             <span className="flex items-center gap-1 text-phx-sm font-bold text-slate-500">
-              <span className="h-2 w-2 rounded-sm bg-orange-500" />Sales
+              <span className="h-2 w-2 bg-orange-500" />Sales
             </span>
             <span className="flex items-center gap-1 text-phx-sm font-bold text-slate-500">
-              <span className="h-2 w-2 rounded-sm bg-slate-400" />Target
+              <span className="h-2 w-2 bg-slate-400" />Target
             </span>
             <span className="flex items-center gap-1 text-phx-sm font-bold text-slate-500">
-              <span className="h-2 w-2 rounded-sm bg-sky-500" />Ach%
+              <span className="h-2 w-2 bg-sky-500" />Ach%
             </span>
           </div>
         </div>
@@ -1085,10 +1085,10 @@ function FamilyPerformanceChart({
           const targetPct = (fam.target / maxSales) * 100;
           const color = familyColors[i % familyColors.length];
           return (
-            <div key={fam.family} className="rounded border border-slate-100 bg-slate-50/50 p-3">
+            <div key={fam.family} className="border border-slate-100 bg-slate-50/50 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-1 rounded-sm" style={{ backgroundColor: color }} />
+                  <span className="h-3 w-1 " style={{ backgroundColor: color }} />
                   <span className="text-sm font-bold text-slate-800">{fam.family}</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
@@ -1102,13 +1102,13 @@ function FamilyPerformanceChart({
                 </div>
               </div>
               {/* Layered bar — target as background, sales as foreground */}
-              <div className="relative mt-2 h-3 overflow-hidden rounded-sm bg-slate-200/60">
+              <div className="relative mt-2 h-3 overflow-hidden bg-slate-200/60">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-sm bg-slate-300/50"
+                  className="absolute inset-y-0 left-0 bg-slate-300/50"
                   style={{ width: `${targetPct}%` }}
                 />
                 <div
-                  className="absolute inset-y-0 left-0 rounded-sm transition-all duration-500"
+                  className="absolute inset-y-0 left-0 transition-all duration-500"
                   style={{
                     width: `${salesPct}%`,
                     background: `linear-gradient(90deg, ${color} 0%, ${color}99 100%)`,
@@ -1165,7 +1165,7 @@ const ProductTable = memo(function ProductTable({
   ) : null;
 
   return (
-    <div className="overflow-hidden rounded border border-slate-200/80 bg-white shadow-sm">
+    <div className="overflow-hidden border border-slate-200/80 bg-white shadow-sm">
       {/* Header with search */}
       <div className="border-b border-slate-100 bg-slate-50/50 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1208,7 +1208,7 @@ const ProductTable = memo(function ProductTable({
               <button
                 type="button"
                 onClick={() => onSort(sortConfig.key)}
-                className="rounded border border-slate-200 bg-white p-1 text-slate-500 hover:bg-orange-50 hover:text-orange-600"
+                className="border border-slate-200 bg-white p-1 text-slate-500 hover:bg-orange-50 hover:text-orange-600"
                 aria-label={`Sort ${sortConfig.direction === "asc" ? "descending" : "ascending"}`}
               >
                 {sortConfig.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
@@ -1226,7 +1226,7 @@ const ProductTable = memo(function ProductTable({
                     key={product.product}
                     type="button"
                     onClick={() => onProductClick(product.product)}
-                    className={`block w-full rounded border p-3 text-left transition ${
+                    className={`block w-full border p-3 text-left transition ${
                       isSelected
                         ? "border-orange-300 bg-orange-50/70"
                         : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30"
@@ -1244,9 +1244,9 @@ const ProductTable = memo(function ProductTable({
                     </div>
 
                     {/* Gradient achievement bar */}
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
+                    <div className="mt-2 h-1.5 overflow-hidden bg-slate-100">
                       <div
-                        className="h-full rounded-sm transition-all duration-500"
+                        className="h-full transition-all duration-500"
                         style={{
                           width: `${Math.min(product.achievementRate * 100, 100)}%`,
                           background: `linear-gradient(90deg, ${achColor} 0%, ${achColor}80 100%)`,
@@ -1346,9 +1346,9 @@ const ProductTable = memo(function ProductTable({
                           >
                             {formatPercent(product.achievementRate)}
                           </span>
-                          <div className="h-1.5 w-full max-w-[5rem] overflow-hidden rounded-sm bg-slate-100">
+                          <div className="h-1.5 w-full max-w-[5rem] overflow-hidden bg-slate-100">
                             <div
-                              className="h-full rounded-sm transition-all duration-500"
+                              className="h-full transition-all duration-500"
                               style={{
                                 width: `${Math.min(product.achievementRate * 100, 100)}%`,
                                 background: `linear-gradient(90deg, ${achievementColor(product.achievementRate)}, ${achievementColor(product.achievementRate)}80)`,
@@ -1417,13 +1417,13 @@ function TopBottomProducts({
               <button
                 key={product.product}
                 onClick={() => onProductClick(product.product)}
-                className="group block w-full rounded border border-slate-100 bg-white p-2.5 text-left transition hover:border-orange-200 hover:bg-orange-50/30 focus:outline-none focus:ring-1 focus:ring-orange-400/20"
+                className="group block w-full border border-slate-100 bg-white p-2.5 text-left transition hover:border-orange-200 hover:bg-orange-50/30 focus:outline-none focus:ring-1 focus:ring-orange-400/20"
                 type="button"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-phx-sm font-black text-white"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center text-phx-sm font-black text-white"
                       style={{ backgroundColor: accentColor }}
                     >
                       {index + 1}
@@ -1441,9 +1441,9 @@ function TopBottomProducts({
                   </div>
                 </div>
                 {/* Gradient bar */}
-                <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
+                <div className="mt-2 h-1.5 overflow-hidden bg-slate-100">
                   <div
-                    className="h-full rounded-sm transition-all duration-500"
+                    className="h-full transition-all duration-500"
                     style={{ width: `${salesWidth}%`, background: barGradient }}
                   />
                 </div>
@@ -1469,7 +1469,7 @@ function ProductMixTooltip({
   if (!active || !item) return null;
 
   return (
-    <div className="rounded border border-slate-200 bg-white p-2.5 shadow-lg">
+    <div className="border border-slate-200 bg-white p-2.5 shadow-lg">
       <p className="text-sm font-bold text-slate-900">{item.name}</p>
       <p className="mt-0.5 text-xs font-medium text-slate-500">{formatCurrency(item.value)}</p>
       <p className="mt-1 text-xs font-bold text-slate-700">{item.contribution.toFixed(1)}% of sales</p>
@@ -1500,11 +1500,11 @@ function ProductMixChart({
           <h2 className="mt-1 text-base font-black text-slate-900 sm:text-lg">Revenue concentration</h2>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-1.5">
+          <div className="border border-slate-100 bg-slate-50 px-2.5 py-1.5">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Leader</p>
             <p className="mt-0.5 text-xs font-bold text-slate-900">{leading?.name ?? "-"}</p>
           </div>
-          <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-1.5">
+          <div className="border border-slate-100 bg-slate-50 px-2.5 py-1.5">
             <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Top 3</p>
             <p className="mt-0.5 text-xs font-bold text-sky-600">{concentration.toFixed(1)}%</p>
           </div>
@@ -1543,7 +1543,7 @@ function ProductMixChart({
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-[1]">
-                <div className="rounded border border-slate-100 bg-white/95 px-3 py-2 text-center shadow-sm">
+                <div className="border border-slate-100 bg-white/95 px-3 py-2 text-center shadow-sm">
                   <p className="text-lg font-black text-slate-900">{formatCompactCurrency(total).replace("EGP ", "")}</p>
                   <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">EGP total</p>
                 </div>
@@ -1555,7 +1555,7 @@ function ProductMixChart({
         </div>
         <div className="grid content-start gap-1.5">
           {data.length === 0 ? (
-            <p className="rounded border border-slate-100 bg-slate-50 p-3 text-xs font-medium text-slate-500">
+            <p className="border border-slate-100 bg-slate-50 p-3 text-xs font-medium text-slate-500">
               Product mix will appear after sales data is linked.
             </p>
           ) : (
@@ -1563,7 +1563,7 @@ function ProductMixChart({
               const isClickable = entry.name !== "Remaining Products";
               return (
                 <button
-                  className={`flex items-center gap-2 rounded border border-slate-100 bg-white px-3 py-2 text-left transition ${
+                  className={`flex items-center gap-2 border border-slate-100 bg-white px-3 py-2 text-left transition ${
                     isClickable ? "hover:border-orange-200 hover:bg-orange-50/30 focus:outline-none focus:ring-1 focus:ring-orange-400/20" : "cursor-default"
                   }`}
                   disabled={!isClickable}
@@ -1571,7 +1571,7 @@ function ProductMixChart({
                   onClick={() => isClickable && onSegmentClick(entry.name)}
                   type="button"
                 >
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: mixColors[index % mixColors.length] }} />
+                  <span className="h-2.5 w-2.5 shrink-0 " style={{ backgroundColor: mixColors[index % mixColors.length] }} />
                   <span className="min-w-0 flex-1 text-xs font-semibold text-slate-800">{entry.name}</span>
                   <span className="shrink-0 text-xs font-black text-slate-900">{entry.contribution.toFixed(1)}%</span>
                 </button>
@@ -1619,7 +1619,7 @@ function PerformanceInsights({
           return (
             <div
               key={`${insight.type}-${insight.title}`}
-              className={`border-l-[3px] ${c.border} rounded border border-slate-100 bg-white p-3 transition hover:shadow-sm`}
+              className={`border-l-[3px] ${c.border} border border-slate-100 bg-white p-3 transition hover:shadow-sm`}
             >
               <div className="flex items-start gap-2.5">
                 <Icon className={`h-4 w-4 shrink-0 mt-0.5 ${c.color}`} />
@@ -1646,36 +1646,36 @@ function LoadingState() {
       {/* KPI skeleton */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="rounded border border-slate-200 bg-white p-4">
-            <div className="employee-portal-skeleton h-3 w-16 rounded" />
-            <div className="employee-portal-skeleton mt-3 h-6 w-28 rounded" />
+          <div key={i} className="border border-slate-200 bg-white p-4">
+            <div className="employee-portal-skeleton h-3 w-16 " />
+            <div className="employee-portal-skeleton mt-3 h-6 w-28 " />
           </div>
         ))}
       </div>
 
       {/* Trend chart skeleton */}
-      <div className="rounded border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="border border-slate-200 bg-white p-4 sm:p-5">
         <div className="space-y-2">
-          <div className="employee-portal-skeleton h-3 w-24 rounded" />
-          <div className="employee-portal-skeleton h-5 w-48 rounded" />
+          <div className="employee-portal-skeleton h-3 w-24 " />
+          <div className="employee-portal-skeleton h-5 w-48 " />
         </div>
-        <div className="employee-portal-skeleton mt-4 h-[260px] rounded sm:h-[320px]" />
+        <div className="employee-portal-skeleton mt-4 h-[260px] sm:h-[320px]" />
       </div>
 
       {/* Product table skeleton */}
-      <div className="rounded border border-slate-200 bg-white">
+      <div className="border border-slate-200 bg-white">
         <div className="border-b border-slate-100 p-4">
-          <div className="employee-portal-skeleton h-3 w-28 rounded" />
-          <div className="employee-portal-skeleton mt-2 h-5 w-40 rounded" />
+          <div className="employee-portal-skeleton h-3 w-28 " />
+          <div className="employee-portal-skeleton mt-2 h-5 w-40 " />
         </div>
         <div className="divide-y divide-slate-100">
           {[0, 1, 2, 3, 4].map((i) => (
             <div key={i} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 space-y-1.5">
-                <div className="employee-portal-skeleton h-3.5 w-36 rounded" />
-                <div className="employee-portal-skeleton h-2.5 w-20 rounded" />
+                <div className="employee-portal-skeleton h-3.5 w-36 " />
+                <div className="employee-portal-skeleton h-2.5 w-20 " />
               </div>
-              <div className="employee-portal-skeleton h-3.5 w-16 rounded" />
+              <div className="employee-portal-skeleton h-3.5 w-16 " />
             </div>
           ))}
         </div>
@@ -1683,31 +1683,31 @@ function LoadingState() {
 
       {/* Top/bottom skeleton */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="employee-portal-skeleton h-[240px] rounded" />
-        <div className="employee-portal-skeleton h-[240px] rounded" />
+        <div className="employee-portal-skeleton h-[240px] " />
+        <div className="employee-portal-skeleton h-[240px] " />
       </div>
 
       {/* Mix skeleton */}
-      <div className="rounded border border-slate-200 bg-white p-4">
-        <div className="employee-portal-skeleton h-3 w-20 rounded" />
-        <div className="employee-portal-skeleton mt-2 h-5 w-44 rounded" />
+      <div className="border border-slate-200 bg-white p-4">
+        <div className="employee-portal-skeleton h-3 w-20 " />
+        <div className="employee-portal-skeleton mt-2 h-5 w-44 " />
         <div className="mt-4 grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <div className="employee-portal-skeleton h-[240px] rounded" />
+          <div className="employee-portal-skeleton h-[240px] " />
           <div className="space-y-1.5">
             {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="employee-portal-skeleton h-9 rounded" />
+              <div key={i} className="employee-portal-skeleton h-9 " />
             ))}
           </div>
         </div>
       </div>
 
       {/* Insights skeleton */}
-      <div className="rounded border border-slate-200 bg-white p-4">
-        <div className="employee-portal-skeleton h-3 w-20 rounded" />
-        <div className="employee-portal-skeleton mt-2 h-5 w-40 rounded" />
+      <div className="border border-slate-200 bg-white p-4">
+        <div className="employee-portal-skeleton h-3 w-20 " />
+        <div className="employee-portal-skeleton mt-2 h-5 w-40 " />
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <div className="employee-portal-skeleton h-14 rounded" />
-          <div className="employee-portal-skeleton h-14 rounded" />
+          <div className="employee-portal-skeleton h-14 " />
+          <div className="employee-portal-skeleton h-14 " />
         </div>
       </div>
     </div>
@@ -1718,7 +1718,7 @@ function LoadingState() {
 
 function EmptyState() {
   return (
-    <div className="flex items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50/60 px-6 py-16">
+    <div className="flex items-center justify-center border border-dashed border-slate-200 bg-slate-50/60 px-6 py-16">
       <div className="text-center">
         <BarChart3 className="mx-auto h-8 w-8 text-slate-300" />
         <h2 className="mt-3 text-sm font-bold text-slate-900">No Sales Data Available</h2>

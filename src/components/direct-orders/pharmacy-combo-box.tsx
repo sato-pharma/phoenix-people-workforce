@@ -193,14 +193,14 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pick(hit)}
-                className={`block w-full border-b border-slate-100 px-3 py-2 text-left ${index === highlight ? "bg-orange-50" : "bg-white"} hover:bg-orange-50`}
+                className={`block w-full border-b border-slate-100 px-3 py-2 text-left ${index === highlight ? "bg-slate-100" : "bg-white"} hover:bg-slate-50`}
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-phx-md font-bold text-slate-900" dir="auto">
                     {nameOf(hit)}
                   </span>
                   {hit.source === "phoenix" ? (
-                    <span className="shrink-0 bg-slate-900 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wider text-white">
+                    <span className="shrink-0 border-l-2 border-[#08111f] pl-1.5 text-phx-xs font-black uppercase leading-tight tracking-wider text-[#08111f]">
                       {hit.phoenixPharmacyCode}
                     </span>
                   ) : null}
@@ -213,13 +213,13 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
                   ) : null}
                   {hit.areaCode ? <span>{hit.areaName || hit.areaCode}</span> : null}
                   {hit.verificationStatus === "pending_review" ? (
-                    <span className="bg-amber-100 px-1 py-0.5 font-bold text-amber-800">awaiting validation</span>
+                    <span className="border-l-2 border-amber-500 pl-1 font-bold text-amber-800">awaiting validation</span>
                   ) : null}
                   {/* A rejected pharmacy is deactivated, so it should never reach this list at all —
                       every search path filters on `active`. Labelled anyway: if one ever does
                       appear, the submitter must see WHY rather than a row that looks ordinary. */}
                   {hit.verificationStatus === "rejected" ? (
-                    <span className="bg-rose-100 px-1 py-0.5 font-bold text-rose-800">rejected — do not use</span>
+                    <span className="border-l-2 border-rose-500 pl-1 font-bold text-rose-800">rejected — do not use</span>
                   ) : null}
                   {/* 🔴 CONFIRMED LINKS ONLY, AND NEVER A SUGGESTION. This line says a person
                       decided these rows are one customer; the engine's maybes stay on the Super

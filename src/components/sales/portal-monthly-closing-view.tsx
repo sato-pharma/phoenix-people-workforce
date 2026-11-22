@@ -15,6 +15,7 @@ import {
 } from "@/components/sales/monthly-closing-filters";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-cells";
@@ -206,7 +207,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
   return (
     <div className="space-y-4">
       {/* Line (locked, or a picker for a genuinely multi-line viewer) + published-month picker */}
-      <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:flex-row sm:items-end sm:justify-between">
+      <div className={`flex flex-col gap-3 border border-slate-200 bg-white p-4 sm:flex-row sm:items-end sm:justify-between ${adminSoftDepthClassName}`}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
@@ -225,7 +226,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 ))}
               </SearchableSelect>
             ) : (
-              <div className="flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
+              <div className="flex h-11 items-center border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
                 {line}
               </div>
             )}
@@ -245,7 +246,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 ))}
               </SearchableSelect>
             ) : (
-              <div className="flex h-11 w-44 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
+              <div className="flex h-11 w-44 items-center border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
                 {formatPeriod(selectedPeriod)}
               </div>
             )}
@@ -258,7 +259,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
       </div>
 
       {/* Matrix / Details tabs — same two views as /sales/monthly-closing */}
-      <div className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+      <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
         <div className="flex items-center gap-1 border-b border-slate-100 px-4 pt-3">
           {([
             { icon: <CalendarRange className="h-4 w-4" />, key: "matrix" as const, label: "Closing Matrix" },
@@ -314,7 +315,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
               </button>
             </div>
             {exportError ? (
-              <p className="border-b border-rose-100 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700">
+              <p className="border-b border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 shadow-[inset_4px_0_0_#f43f5e]" role="alert">
                 {exportError}
               </p>
             ) : null}

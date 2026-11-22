@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -13,6 +14,7 @@ import {
   type DirectOrderInvoiceSlotCount,
 } from "@/lib/direct-orders/invoice-evidence";
 import {
+  phxButtonAccentClassName,
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
@@ -134,12 +136,12 @@ export function PharmacyInvoiceValidationCapture({ pharmacyId, pharmacyName, req
 
   return (
     <div className="space-y-3 px-4 py-4">
-      <p className="border border-sky-300 bg-sky-50 px-3 py-2 text-phx-sm font-semibold text-sky-900">
+      <p className="border border-l-4 border-slate-200 border-l-sky-500 bg-white px-3 py-2 text-phx-sm font-semibold text-slate-700">
         A distributor invoice issued to this pharmacy validates it on its own — no location and no
         photo of the sign. An SFE Manager or a System Admin reviews it.
       </p>
 
-      <div className={`border px-3 py-2 ${slotsFull ? "border-amber-300 bg-amber-50" : "border-[#eef1f3]"}`}>
+      <div className={`border px-3 py-2 ${slotsFull ? "border-slate-200 border-l-4 border-l-amber-500 bg-white" : "border-[#eef1f3]"}`}>
         <p className="text-phx-sm font-black text-slate-900">{directOrderInvoiceSlotLabel(slots)}</p>
         <p className={`mt-0.5 text-phx-xs font-semibold ${slotsFull ? "text-amber-900" : "text-slate-500"}`}>
           {slotsFull
@@ -174,7 +176,7 @@ export function PharmacyInvoiceValidationCapture({ pharmacyId, pharmacyName, req
         />
       </div>
 
-      <div className={`border p-3 ${invoice ? "border-[#eef1f3]" : "border-amber-300 bg-amber-50"}`}>
+      <div className={`border p-3 ${invoice ? "border-[#eef1f3]" : "border-slate-200 border-l-4 border-l-amber-500 bg-white"}`}>
         <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Distributor invoice *</p>
         <p className="mt-1 text-phx-sm font-medium text-slate-600">
           The invoice a distributor issued to this pharmacy. The reviewer checks that it names this
@@ -213,7 +215,7 @@ export function PharmacyInvoiceValidationCapture({ pharmacyId, pharmacyName, req
           <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
         </div>
         {invoice ? (
-          <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+          <div className="mt-2 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-3 py-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="break-all text-phx-sm font-bold text-emerald-900" dir="auto">{invoice.fileName}</span>
               <button type="button" onClick={clearInvoice} className="text-phx-xs font-bold text-orange-600">
@@ -239,7 +241,7 @@ export function PharmacyInvoiceValidationCapture({ pharmacyId, pharmacyName, req
         type="button"
         onClick={submit}
         disabled={busy || sent || slotsFull || !invoice}
-        className="w-full bg-orange-500 px-4 py-2.5 text-phx-md font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className={cn(phxButtonAccentClassName, "w-full justify-center py-2.5 text-phx-md font-black uppercase tracking-wider disabled:cursor-not-allowed")}
       >
         {busy ? "Sending…" : "Send the invoice for review"}
       </button>

@@ -151,7 +151,7 @@ export function ClosingPeriodSelect({
 
             {ordered.map((period) => (
               <label
-                className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm text-slate-700 transition hover:bg-orange-50/60"
+                className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
                 key={period}
               >
                 <input

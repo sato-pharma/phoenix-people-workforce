@@ -246,8 +246,11 @@ import { stripComments } from "./support/comment-strip.ts";
  *
  * 140 -> 58 on 2026-11-20: the employee portal redesign onto the landing kit. Names, titles and
  * status words across the portal, the approvals hub and the action centre now wrap instead of cutting.
+ *
+ * 58 -> 55 on 2026-11-23: the portal redesign, wave 2 (sales, direct orders, CRM, recruitment). More
+ * names and labels wrap instead of cutting.
  */
-const BASELINE = 58;
+const BASELINE = 55;
 
 const ROOTS = ["app", "src"];
 

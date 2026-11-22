@@ -56,8 +56,8 @@ function Callout({ surface, tone, children }: { surface: "admin" | "portal"; ton
   if (surface === "admin") return <AdminCallout tone={tone}>{children}</AdminCallout>;
   const toneClassName =
     tone === "danger"
-      ? "border-rose-200 border-l-rose-500 bg-rose-50 text-rose-800"
-      : "border-slate-200 border-l-slate-400 bg-slate-50 text-slate-700";
+      ? "border-slate-200 border-l-rose-500 bg-white text-rose-800"
+      : "border-slate-200 border-l-slate-400 bg-white text-slate-700";
   return (
     <div className={`flex items-start gap-3 border border-l-[3px] px-4 py-3 text-sm font-medium leading-6 ${toneClassName}`}>
       {children}
@@ -626,7 +626,7 @@ function DetailCards({ rows }: { rows: NamedClosingDetailRow[] }) {
     <div className="space-y-2 px-4 md:hidden">
       {rows.map((row) => (
         <div
-          className={`rounded-2xl border p-3 ${countsInClosingHeadline(row) ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/70"}`}
+          className={`border border-l-[3px] p-3 ${countsInClosingHeadline(row) ? "border-slate-200 border-l-slate-200 bg-white" : "border-slate-200 border-l-amber-500 bg-white"}`}
           key={row.id}
         >
           <div className="flex items-start justify-between gap-2">

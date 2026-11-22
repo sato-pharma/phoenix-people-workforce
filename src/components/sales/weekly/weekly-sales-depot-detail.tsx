@@ -20,6 +20,8 @@ import {
 
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
 import { formatEgp, formatEgpFull } from "@/components/sales/target-visuals";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LandingTitle, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import { weeklyAreaLabel, weeklyDistributorLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import {
@@ -102,9 +104,10 @@ const MOVEMENT_OPTIONS: MultiSelectFilterOption[] = (
   Object.keys(WEEKLY_SALES_DETAIL_MOVEMENT_LABELS) as WeeklySalesDetailMovement[]
 ).map((code) => ({ code, label: WEEKLY_SALES_DETAIL_MOVEMENT_LABELS[code] }));
 
+/** A movement's colour: coloured small capitals on a 2px rail (the landing kit), never a tinted pill. */
 const MOVEMENT_BADGE: Record<WeeklySalesDetailMovement, string> = {
-  sold: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  returns: "border-rose-200 bg-rose-50 text-rose-700",
+  sold: "border-emerald-500 text-emerald-700",
+  returns: "border-rose-500 text-rose-700",
 };
 const MOVEMENT_RAIL: Record<WeeklySalesDetailMovement, string> = {
   sold: "bg-emerald-500",
@@ -348,7 +351,7 @@ export function WeeklySalesDepotDetail({
             type="button"
             onClick={() => setFiltersOpen((open) => !open)}
             aria-expanded={filtersOpen}
-            className="inline-flex min-h-10 items-center gap-1.5 border border-slate-600 bg-white/10 px-2.5 text-phx-sm font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:hidden"
+            className={landingActionClassName("outline", "md:hidden")}
           >
             <SlidersHorizontal className="h-3 w-3" />
             {`Filters · ${activeFilterCount}`}
@@ -358,7 +361,7 @@ export function WeeklySalesDepotDetail({
             <button
               type="button"
               onClick={resetFilters}
-              className="inline-flex min-h-10 items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:min-h-0"
+              className={landingActionClassName("outline")}
             >
               <RotateCcw className="h-3 w-3" />
               Reset {activeFilterCount}
@@ -418,10 +421,8 @@ export function WeeklySalesDepotDetail({
       <div className="space-y-5">
         {error ? <ErrorBanner message={error} /> : null}
         {filtersPanel}
-        <div className="flex flex-col items-center justify-center gap-3 border border-dashed border-slate-200 bg-white p-12 text-center">
-          <span className="flex h-12 w-12 items-center justify-center bg-orange-50 text-orange-500 ring-1 ring-orange-100">
-            <Building2 className={`h-5 w-5 ${loading ? "animate-pulse" : ""}`} />
-          </span>
+        <div className={`flex flex-col items-center justify-center gap-3 border border-slate-200 bg-white p-12 text-center ${adminSoftDepthClassName}`}>
+          <Building2 aria-hidden="true" className={`h-6 w-6 text-slate-400 ${loading ? "animate-pulse motion-reduce:animate-none" : ""}`} />
           <p className="max-w-md text-sm font-semibold text-slate-600">
             {loading ? "Loading every product at every branch…" : "The branch detail could not be loaded."}
           </p>
@@ -466,9 +467,10 @@ export function WeeklySalesDepotDetail({
       {error ? <ErrorBanner message={error} /> : null}
 
       {payload.allocationUnavailable ? (
-        <div className="flex gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <p className="text-phx-md font-semibold text-amber-900">
+        <div className="flex gap-3 border border-slate-200 bg-white py-3 pr-4">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-500" />
+          <TriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-phx-md font-semibold text-slate-700">
             {isRep
               ? "The branch-to-area map did not load just now, so only branches mapped to your area by hand are counted and your figures read low."
               : "The branch-to-area map did not load just now, so branches serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted."}{" "}
@@ -591,14 +593,14 @@ export function WeeklySalesDepotDetail({
             title="Sales"
             action={
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex flex-wrap border border-slate-700">
+                <div className="flex flex-wrap border border-slate-200">
                   {tabs.map((item) => (
                     <button
                       key={item.key}
                       type="button"
                       onClick={() => setTab(item.key)}
-                      className={`min-h-10 whitespace-nowrap px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide transition md:min-h-0 ${
-                        activeTab === item.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
+                      className={`min-h-10 whitespace-nowrap px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide transition motion-reduce:transition-none md:min-h-0 ${LANDING_FOCUS} ${
+                        activeTab === item.key ? "bg-[#08111f] text-white" : "bg-white text-slate-600 hover:bg-slate-50 hover:text-[#08111f]"
                       }`}
                     >
                       {item.label}
@@ -607,7 +609,7 @@ export function WeeklySalesDepotDetail({
                 </div>
                 <a
                   href={exportHref}
-                  className="inline-flex h-10 items-center gap-1.5 border border-slate-600 bg-white px-2.5 text-phx-sm font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600 md:h-7"
+                  className={landingActionClassName("outline")}
                 >
                   <Download className="h-3 w-3" />
                   Export
@@ -621,8 +623,8 @@ export function WeeklySalesDepotDetail({
                   {formatCount(rowCount)} {rowCount === 1 ? "row" : "rows"} · {payload.scope.periodLabel}
                 </span>
                 {loading ? (
-                  <span className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wide text-orange-600">
-                    <span className="h-1.5 w-1.5 animate-pulse bg-orange-500" />
+                  <span className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wide text-[#08111f]">
+                    <span className="h-1.5 w-1.5 animate-pulse bg-[#08111f] motion-reduce:animate-none" />
                     Updating
                   </span>
                 ) : null}
@@ -674,7 +676,7 @@ export function WeeklySalesDepotDetail({
                 <button
                   type="button"
                   onClick={showMore}
-                  className="inline-flex min-h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 md:min-h-0"
+                  className="inline-flex min-h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide text-slate-700 transition hover:border-[#08111f] hover:text-[#08111f] md:min-h-0"
                 >
                   Show {formatCount(Math.min(PAGE_SIZE, rowCount - limit))} more
                 </button>
@@ -722,13 +724,10 @@ function Panel({
 }) {
   return (
     <div
-      className={`${overflowVisible ? "" : "overflow-hidden "}border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60`}
+      className={`${overflowVisible ? "" : "overflow-hidden "}border border-slate-200 bg-white ${adminSoftDepthClassName}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+        <LandingTitle>{title}</LandingTitle>
         {action}
       </div>
       {overflowVisible ? <div className={bodyClassName ? `${bodyClassName} p-4` : "p-4"}>{children}</div> : children}
@@ -737,15 +736,18 @@ function Panel({
 }
 
 function ErrorBanner({ message }: { message: string }) {
-  return <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{message}</div>;
+  return (
+    <div className="flex gap-3 border border-slate-200 bg-white py-3 pr-4" role="alert">
+      <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-rose-500" />
+      <p className="min-w-0 break-words text-sm font-semibold text-rose-800">{message}</p>
+    </div>
+  );
 }
 
 function EmptyPanel({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 border border-dashed border-slate-200 bg-white p-12 text-center">
-      <span className="flex h-12 w-12 items-center justify-center bg-orange-50 text-orange-500 ring-1 ring-orange-100">
-        <Building2 className="h-5 w-5" />
-      </span>
+    <div className={`flex flex-col items-center justify-center gap-3 border border-slate-200 bg-white p-12 text-center ${adminSoftDepthClassName}`}>
+      <Building2 aria-hidden="true" className="h-6 w-6 text-slate-400" />
       <p className="max-w-md text-sm font-semibold text-slate-600">{message}</p>
     </div>
   );
@@ -770,9 +772,7 @@ function Kpi({
     <>
       <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: accent }} />
       <div className="p-3.5 sm:p-4">
-        <span className="flex h-7 w-7 items-center justify-center" style={{ backgroundColor: `${accent}1A`, color: accent }}>
-          <Icon className="h-3.5 w-3.5" />
-        </span>
+        <Icon aria-hidden="true" className="h-3.5 w-3.5" style={{ color: accent }} />
         <p className="mt-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
         <p className="mt-0.5 text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
         <p className="mt-0.5 text-phx-sm font-semibold text-slate-400">{sub}</p>
@@ -780,9 +780,9 @@ function Kpi({
     </>
   );
   const className =
-    "relative block w-full overflow-hidden border border-slate-200 bg-white text-left shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60";
+    `relative block w-full overflow-hidden border border-slate-200 bg-white text-left ${adminSoftDepthClassName}`;
   return onClick ? (
-    <button type="button" onClick={onClick} className={`${className} transition hover:border-orange-300`} title={`Show ${label.toLowerCase()} rows`}>
+    <button type="button" onClick={onClick} className={`${className} transition hover:border-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`} title={`Show ${label.toLowerCase()} rows`}>
       {body}
     </button>
   ) : (
@@ -792,7 +792,7 @@ function Kpi({
 
 function MovementBadge({ movement }: { movement: WeeklySalesDetailMovement }) {
   return (
-    <span className={`inline-flex items-center border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-wide ${MOVEMENT_BADGE[movement]}`}>
+    <span className={`inline-flex items-center border-l-2 pl-1.5 text-phx-sm font-black uppercase leading-tight tracking-wide ${MOVEMENT_BADGE[movement]}`}>
       {WEEKLY_SALES_DETAIL_MOVEMENT_LABELS[movement]}
     </span>
   );
@@ -853,7 +853,7 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
           </thead>
           <tbody>
             {rows.map((cell) => (
-              <tr key={cellKey(cell)} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
+              <tr key={cellKey(cell)} className="border-b border-slate-100 align-top transition hover:bg-slate-50">
                 <td className="px-3 py-2.5">
                   <p className="break-words font-bold text-slate-900">{cell.branchName}</p>
                   <p className="break-words text-phx-sm font-semibold text-slate-500">{cellPlace(cell, isRep)}</p>
@@ -907,7 +907,7 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
 
 function DrillName({ name, onClick }: { name: string; onClick?: () => void }) {
   return onClick ? (
-    <button type="button" onClick={onClick} className="break-words text-left font-bold text-slate-900 underline-offset-2 hover:text-orange-600 hover:underline">
+    <button type="button" onClick={onClick} className="break-words text-left font-bold text-slate-900 underline-offset-2 hover:text-[#08111f] hover:underline">
       {name}
     </button>
   ) : (
@@ -940,7 +940,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.productCode} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
+              <tr key={row.productCode} className="border-b border-slate-100 align-top transition hover:bg-slate-50">
                 <td className="px-3 py-2.5">
                   <DrillName name={row.productName} onClick={onDrill ? () => onDrill(row.productCode) : undefined} />
                   <p className="break-words text-phx-sm font-semibold text-slate-500">{row.line}</p>
@@ -1055,7 +1055,7 @@ function GroupTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={`${row.code}|${row.parentName}`} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
+              <tr key={`${row.code}|${row.parentName}`} className="border-b border-slate-100 align-top transition hover:bg-slate-50">
                 <td className="px-3 py-2.5">
                   <DrillName name={groupName(nameLabel, row)} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
                   {row.parentName ? <p className="break-words text-phx-sm font-semibold text-slate-500">{groupParent(nameLabel, row)}</p> : null}

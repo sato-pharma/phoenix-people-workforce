@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { formatPeriod } from "@/components/sales/target-visuals";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { formatNumber, formatPercent } from "@/lib/sales/format";
 import type {
@@ -24,7 +25,7 @@ import type {
 // So this surface, used for the Medical Rep alone, drops the region and national rollups (both are
 // the rep's own area restated, never a sibling's) and stacks the closing down the page: a black
 // executive hero per area carrying its achievement against target, then one card per product with its
-// own achievement bar and figures. Phoenix black-and-orange, square edges, depth from shadow only —
+// own achievement bar and figures. A night-navy headline board, white cards, square edges —
 // the closing SCREEN's own identity, never the Sato workbook's. It fits a phone and a desktop with no
 // side scroll. Presentation only: the data is the same scoped matrix, and the Details tab and the
 // Export XLSX route are untouched — the export still emits the rep's full scoped workbook as before.
@@ -69,7 +70,7 @@ function AchievementBar({
     <div className={cn("w-full overflow-hidden", tall ? "h-2" : "h-1.5", track)}>
       {achievement === null ? null : (
         <div
-          className={cn("h-full", achievement >= 1 ? "bg-emerald-500" : "bg-[#F97316]")}
+          className={cn("h-full", achievement >= 1 ? "bg-emerald-500" : dark ? "bg-white" : "bg-[#08111f]")}
           style={{ width: `${pct}%` }}
         />
       )}
@@ -79,7 +80,7 @@ function AchievementBar({
 
 function Tile({ label, tone, children }: { label: string; tone?: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 border border-slate-100 bg-slate-50/70 px-3 py-2.5">
+    <div className="flex flex-col gap-1 border-l-2 border-slate-200 px-3 py-1.5">
       <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <span className={cn("text-sm font-bold tabular-nums", tone ?? "text-slate-900")}>{children}</span>
     </div>
@@ -88,10 +89,10 @@ function Tile({ label, tone, children }: { label: string; tone?: string; childre
 
 function ProductCard({ column, cell }: { column: MonthlyClosingColumn; cell: MonthlyClosingCell }) {
   return (
-    <div className="group border border-slate-200 bg-white p-4 transition-shadow hover:border-[#fbcfa8] hover:shadow-[0_12px_30px_rgba(249,115,22,0.12)]">
+    <div className="border border-slate-200 bg-white p-4">
       {/* The product by name only: its code is a raw ID a rep never needs (names, never codes). */}
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 break-words text-sm font-bold text-slate-900">{column.productName}</p>
+        <p className="min-w-0 break-words text-sm font-bold text-[#08111f]">{column.productName}</p>
         <span className={cn("shrink-0 text-lg font-black leading-none tabular-nums", achTone(cell.achievement))}>
           {achText(cell.achievement)}
         </span>
@@ -104,8 +105,8 @@ function ProductCard({ column, cell }: { column: MonthlyClosingColumn; cell: Mon
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label="Units">{unitsText(cell.salesUnits)}</Tile>
         <Tile label="Value">{valueText(cell.salesValue)}</Tile>
-        <Tile label="Target units" tone="text-orange-900">{unitsText(cell.targetUnits)}</Tile>
-        <Tile label="Target value" tone="text-orange-900">{valueText(cell.targetValue)}</Tile>
+        <Tile label="Target units" tone="text-slate-600">{unitsText(cell.targetUnits)}</Tile>
+        <Tile label="Target value" tone="text-slate-600">{valueText(cell.targetValue)}</Tile>
       </div>
     </div>
   );
@@ -127,14 +128,15 @@ function AreaBlock({
   const context = [line, period ? formatPeriod(period) : null].filter(Boolean).join(" · ");
   const overTarget = total.achievement !== null && total.achievement >= 1;
   return (
-    <section className="overflow-hidden border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.10)]">
-      {/* Black executive hero — the rep's own area and its own achievement. No region, no national. */}
-      <div className="bg-[#0B0B0B] px-5 py-4">
+    <section className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      {/* The navy headline board — the rep's own area and its own achievement. No region, no national. */}
+      <div aria-hidden="true" className="h-0.5 w-full bg-[#F05A1A]" />
+      <div className="bg-[#08111f] px-5 py-4">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
-            <span className="text-phx-sm font-bold uppercase tracking-[0.24em] text-[#F97316]">Your area</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-white/70">Your area</span>
             <p className="mt-1 break-words text-xl font-black leading-tight text-white">{area.areaName}</p>
-            {/* slate-400, not 500: 10px slate-500 on the #0B0B0B hero is about 4:1, under AA for small text. */}
+            {/* slate-400, not 500: slate-500 on the navy board is under AA for small text. */}
             <span className="text-phx-sm font-semibold uppercase tracking-[0.16em] text-slate-400">{context}</span>
           </div>
           <div className="text-right">
@@ -151,14 +153,14 @@ function AreaBlock({
               Value <span className="ml-1 text-sm font-bold text-white">{valueText(total.salesValue)}</span>
             </span>
             <span>
-              Target <span className="ml-1 text-sm font-bold text-[#FDBA74]">{valueText(total.targetValue)}</span>
+              Target <span className="ml-1 text-sm font-bold text-slate-200">{valueText(total.targetValue)}</span>
             </span>
           </div>
         </div>
       </div>
 
       {/* One card per product, stacked down the page — never across it. */}
-      <div className="space-y-2 bg-slate-50/40 p-3 md:p-4">
+      <div className="space-y-2 bg-slate-50 p-3 md:p-4">
         {columns.map((column, idx) => {
           const cell = area.cells[idx];
           if (!cell) return null;

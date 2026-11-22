@@ -28,6 +28,9 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS, landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 /**
  * Market Awareness — the approvals inbox.
@@ -146,20 +149,18 @@ function cairoDate(value: string | null | undefined): string {
 
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="block text-phx-3xs font-bold uppercase tracking-[0.14em] text-phx-ink-faint">
+    <span className="block text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-500">
       {children}
     </span>
   );
 }
 
-const BTN_APPROVE =
-  "inline-flex items-center justify-center gap-2 border border-phx-ok bg-phx-ok px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-paper transition disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_RETURN =
-  "inline-flex items-center justify-center gap-2 border border-phx-warn-line bg-phx-warn-bg px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-warn transition disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_REJECT =
-  "inline-flex items-center justify-center gap-2 border border-phx-danger-line bg-phx-danger-bg px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-danger transition disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_QUIET =
-  "inline-flex items-center justify-center gap-2 border border-phx-line bg-phx-paper px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft transition hover:border-phx-line-strong hover:text-phx-ink";
+/** Every approval decision wears the one interface (approval-action-kit.tsx). */
+const BTN_APPROVE = approvalActionClassName("approve");
+const BTN_RETURN = approvalActionClassName("return");
+const BTN_REJECT = approvalActionClassName("reject");
+/** A step that is not a decision (refresh, cancel): the landing kit's navy outline. */
+const BTN_QUIET = landingActionClassName("outline", "bg-white");
 const INPUT = cn(phxFieldClassName, "w-full px-3 text-phx-sm");
 const TEXTAREA = cn(phxTextareaClassName, "min-h-20 w-full px-3 py-2 text-phx-sm");
 
@@ -271,23 +272,24 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
       {error ? (
-        <div className="flex min-w-0 items-start gap-2 border border-phx-warn-line bg-phx-warn-bg px-3 py-2.5">
-          <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-phx-warn" />
-          <p className="min-w-0 break-words text-phx-xs font-bold text-phx-warn">{error}</p>
+        <div className="flex min-w-0 items-start gap-2.5 border border-slate-200 bg-white py-2.5 pr-3" role="alert">
+          <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-500" />
+          <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <p className="min-w-0 break-words text-phx-xs font-bold text-slate-600">{error}</p>
         </div>
       ) : null}
 
-      <div className="flex w-full min-w-0 border border-phx-line bg-phx-paper p-1" role="tablist">
+      <div className={`flex w-full min-w-0 border border-slate-200 bg-white p-1 ${adminSoftDepthClassName}`} role="tablist">
         {INBOX_TABS.map((definition) => {
           const Icon = definition.icon;
           const isActive = definition.key === scope;
           return (
             <button
               aria-selected={isActive}
-              className={`inline-flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.08em] transition ${
+              className={`inline-flex min-h-10 min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-0.5 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.08em] transition motion-reduce:transition-none ${LANDING_FOCUS} ${
                 isActive
-                  ? "bg-phx-ink text-phx-paper"
-                  : "text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink"
+                  ? "bg-[#08111f] text-white"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-[#08111f]"
               }`}
               key={definition.key}
               onClick={() => setScope(definition.key)}
@@ -297,8 +299,8 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
               <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               <span className="break-words">{definition.label}</span>
               <span
-                className={`hidden break-words text-phx-3xs font-medium normal-case tracking-normal sm:inline ${
-                  isActive ? "text-phx-paper-2" : "text-phx-ink-faint"
+                className={`hidden break-words text-phx-xs font-medium normal-case tracking-normal sm:inline ${
+                  isActive ? "text-white/65" : "text-slate-500"
                 }`}
               >
                 {definition.description}
@@ -308,8 +310,8 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
         })}
       </div>
 
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-phx-line pb-3">
-        <p className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.08em] text-phx-ink">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <p className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.08em] text-[#08111f]">
           {headline}
         </p>
         <button className={BTN_QUIET} onClick={() => void load(scope)} type="button">
@@ -321,16 +323,16 @@ export function MarketAwarenessInbox({ isCeoStepHolder }: { isCeoStepHolder: boo
       {loading ? (
         <div className="flex min-w-0 flex-col gap-2">
           {[0, 1].map((i) => (
-            <div className="h-28 w-full animate-pulse border border-phx-line bg-phx-paper-2" key={i} />
+            <div aria-hidden="true" className="employee-portal-skeleton h-28 w-full" key={i} />
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex min-w-0 flex-col items-center gap-2 border border-dashed border-phx-line bg-phx-paper-2 px-4 py-12 text-center">
-          <CheckCircle2 aria-hidden="true" className="h-6 w-6 shrink-0 text-phx-ok" />
-          <p className="break-words text-phx-sm font-black text-phx-ink">
+        <div className={`flex min-w-0 flex-col items-center gap-2 border border-slate-200 bg-white px-4 py-12 text-center ${adminSoftDepthClassName}`}>
+          <CheckCircle2 aria-hidden="true" className="h-6 w-6 shrink-0 text-emerald-600" />
+          <p className="break-words text-phx-sm font-black text-[#08111f]">
             {scope === "history" ? "Nothing has been answered yet" : "Your queue is clear"}
           </p>
-          <p className="max-w-md break-words text-phx-xs font-medium text-phx-ink-soft">
+          <p className="max-w-md break-words text-phx-xs font-medium text-slate-600">
             {scope === "history"
               ? "Approved, rejected, withdrawn, executed and closed activities you can see collect here once they have been answered."
               : "An awareness activity appears here the moment a product manager submits it. Everything you can see is listed; the decision buttons show only where the decision is actually yours."}
@@ -398,7 +400,7 @@ function ApproverStrip({ activity }: { activity: Activity }) {
   const answered = activity.approvers.filter((slot) => slot.decision !== null).length;
 
   return (
-    <div className="mt-3 min-w-0 border border-phx-line bg-phx-paper-2 px-3 py-2">
+    <div className="mt-3 min-w-0 border border-slate-200 bg-white px-3 py-2">
       <MicroLabel>
         Marketing and sales approval — {answered} of {activity.approvers.length} answered
       </MicroLabel>
@@ -406,10 +408,10 @@ function ApproverStrip({ activity }: { activity: Activity }) {
         {activity.approvers.map((slot) => {
           const tone =
             slot.decision === "approve"
-              ? "text-phx-ok"
+              ? "text-emerald-700"
               : slot.decision === null
-                ? "text-phx-ink-faint"
-                : "text-phx-warn";
+                ? "text-slate-500"
+                : "text-amber-700";
           const answer =
             slot.decision === "approve"
               ? "Approved"
@@ -420,24 +422,24 @@ function ApproverStrip({ activity }: { activity: Activity }) {
                   : "Not answered yet";
           return (
             <li className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5" key={slot.id}>
-              <span className="break-words text-phx-2xs font-black text-phx-ink">
+              <span className="break-words text-phx-xs font-black text-[#08111f]">
                 {slot.assignedName ?? "Seat empty"}
               </span>
-              <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+              <span className="break-words text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-600">
                 {slotLabel(slot)}
               </span>
-              <span className={`text-phx-3xs font-black uppercase tracking-[0.08em] ${tone}`}>
+              <span className={`text-phx-xs font-black uppercase tracking-[0.08em] ${tone}`}>
                 {answer}
               </span>
               {/* Somebody covering answered in place of the person it was sent to. Said plainly,
                   because a decision attributed to the wrong name is worse than an extra line. */}
               {slot.decidedByName && slot.decidedByName !== slot.assignedName ? (
-                <span className="break-words text-phx-3xs font-medium text-phx-ink-faint">
+                <span className="break-words text-phx-xs font-medium text-slate-500">
                   answered by {slot.decidedByName}
                 </span>
               ) : null}
               {slot.comment ? (
-                <span className="block w-full break-words text-phx-2xs font-medium text-phx-ink-soft">
+                <span className="block w-full break-words text-phx-xs font-medium text-slate-600">
                   {slot.comment}
                 </span>
               ) : null}
@@ -492,54 +494,52 @@ function InboxCard({
   ];
 
   return (
-    <article className="relative min-w-0 border border-phx-line bg-phx-paper">
-      <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-phx-accent" />
-
-      <header className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-phx-line px-4 py-3 pl-5">
+    <article className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <header className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-3 py-2.5 sm:px-4">
         <div className="min-w-0">
           <MicroLabel>{describeInboxStep({ canDecide, status: activity.status })}</MicroLabel>
-          <h3 className="break-words text-phx-md font-black text-phx-ink">
+          <h3 className="break-words text-phx-md font-black text-[#08111f]">
             {activity.title?.trim() || activity.activityType.name}
           </h3>
-          <p className="mt-0.5 break-words text-phx-3xs font-medium text-phx-ink-faint">
+          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">
             {activity.activityCode}
           </p>
         </div>
-        <span className="shrink-0 border border-phx-accent-line bg-phx-accent-soft px-2 py-1 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-press">
+        <span className="inline-flex max-w-full shrink-0 items-center break-words border-l-2 border-[#08111f] pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em] text-[#08111f]">
           {describeInboxWait(activity)}
         </span>
       </header>
 
-      <div className="min-w-0 p-4 pl-5">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-phx-line pb-3">
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
-            <UserRound aria-hidden="true" className="h-3 w-3 shrink-0 text-phx-ink-faint" />
+      <div className="min-w-0 p-3 sm:p-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-200 pb-3">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-xs font-bold text-slate-600">
+            <UserRound aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-500" />
             <span className="break-words">{activity.requesterName ?? activity.requesterHrId}</span>
           </span>
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
-            <MapPin aria-hidden="true" className="h-3 w-3 shrink-0 text-phx-ink-faint" />
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-xs font-bold text-slate-600">
+            <MapPin aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-500" />
             <span className="break-words">{activity.areaName ?? activity.areaCode}</span>
           </span>
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
-            <CalendarRange aria-hidden="true" className="h-3 w-3 shrink-0 text-phx-ink-faint" />
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-xs font-bold text-slate-600">
+            <CalendarRange aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-500" />
             <span className="break-words">{cairoDate(activity.startDate)}</span>
           </span>
         </div>
 
         <dl className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {facts.map(([label, value]) => (
-            <div className="min-w-0 border border-phx-line bg-phx-paper-2 px-3 py-2" key={label}>
+            <div className="min-w-0 border border-slate-200 bg-white px-3 py-2" key={label}>
               <dt>
                 <MicroLabel>{label}</MicroLabel>
               </dt>
-              <dd className="mt-0.5 break-words text-phx-xs font-black text-phx-ink">{value}</dd>
+              <dd className="mt-0.5 break-words text-phx-xs font-black text-[#08111f]">{value}</dd>
             </div>
           ))}
         </dl>
 
-        <div className="mt-3 min-w-0 border border-phx-line bg-phx-paper-2 px-3 py-2">
+        <div className="mt-3 min-w-0 border border-slate-200 bg-white px-3 py-2">
           <MicroLabel>Targeted products</MicroLabel>
-          <p className="mt-0.5 break-words text-phx-xs font-bold text-phx-ink">
+          <p className="mt-0.5 break-words text-phx-xs font-bold text-[#08111f]">
             {activity.products.map((p) => p.productName ?? p.productCode).join(" · ") || "None"}
           </p>
         </div>
@@ -549,9 +549,10 @@ function InboxCard({
         {/* Frozen. Stated at the top of the body rather than buried, because it is the reason
             nothing else on this card can be pressed. */}
         {activity.status === "on_hold" ? (
-          <div className="mt-3 flex min-w-0 items-start gap-2 border border-phx-warn-line bg-phx-warn-bg px-3 py-2.5">
-            <PauseCircle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-phx-warn" />
-            <p className="min-w-0 break-words text-phx-xs font-bold text-phx-warn">
+          <div className="mt-3 flex min-w-0 items-start gap-2.5 border border-slate-200 bg-white py-2.5 pr-3">
+            <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-500" />
+            <PauseCircle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <p className="min-w-0 break-words text-phx-xs font-bold text-amber-800">
               {activity.heldByName ? `${activity.heldByName} put this on hold` : "This is on hold"}
               {activity.heldAt ? ` on ${cairoDate(activity.heldAt)}` : ""}
               {activity.holdReason ? `: ${activity.holdReason}` : "."}
@@ -566,20 +567,20 @@ function InboxCard({
             <ol className="mt-1.5 flex min-w-0 flex-col gap-1.5">
               {activity.decisions.map((decision) => (
                 <li
-                  className="flex min-w-0 flex-wrap items-baseline gap-x-2 border-l-2 border-phx-line pl-2.5"
+                  className="flex min-w-0 flex-wrap items-baseline gap-x-2 border-l-2 border-slate-200 pl-2.5"
                   key={decision.id}
                 >
-                  <span className="break-words text-phx-2xs font-black text-phx-ink">
+                  <span className="break-words text-phx-xs font-black text-[#08111f]">
                     {decision.actorName ?? "Unknown"}
                   </span>
-                  <span className="text-phx-3xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-600">
                     {decision.action}
                   </span>
-                  <span className="text-phx-3xs font-medium text-phx-ink-faint">
+                  <span className="text-phx-xs font-medium text-slate-500">
                     {cairoDate(decision.createdAt)}
                   </span>
                   {decision.comment ? (
-                    <span className="block w-full break-words text-phx-2xs font-medium text-phx-ink-soft">
+                    <span className="block w-full break-words text-phx-xs font-medium text-slate-600">
                       {decision.comment}
                     </span>
                   ) : null}
@@ -595,11 +596,11 @@ function InboxCard({
 
         {/* The decision — rendered only where it is actually this viewer's to make. */}
         {canDecide ? (
-          <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-phx-line pt-4">
+          <div className="mt-4 flex min-w-0 flex-col gap-3 border-t border-slate-200 pt-4">
             <label className="block min-w-0">
               <span className="mb-1.5 flex flex-wrap items-center gap-2">
                 <MicroLabel>Comment</MicroLabel>
-                <span className="inline-flex items-center gap-1 text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+                <span className="inline-flex items-center gap-1 text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
                   <MessageSquare aria-hidden="true" className="h-3 w-3 shrink-0" />
                   Required to return it
                 </span>
@@ -626,7 +627,7 @@ function InboxCard({
                   placeholder={String(Math.round(asked))}
                   value={amend}
                 />
-                <span className="mt-1.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
+                <span className="mt-1.5 block break-words text-phx-xs font-medium text-slate-500">
                   {amendInvalid
                     ? "An amended amount has to be greater than zero."
                     : amendedValue === null
@@ -703,14 +704,14 @@ function InboxCard({
               ) : null}
             </div>
 
-            <p className="break-words text-phx-3xs font-medium text-phx-ink-faint">
+            <p className="break-words text-phx-xs font-medium text-slate-500">
               {activity.status === "pending_ceo"
                 ? "Approving releases it: every district manager in the region for this line, the national sales manager, the SFE manager, the area's rep and Finance are told."
                 : "It goes to the CEO once everyone here has approved. Returning it sends it back to the requester to edit and resubmit, and the whole group is asked again. Putting it on hold freezes it for everyone until you release it."}
             </p>
           </div>
         ) : canRelease ? (
-          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2.5 border-t border-phx-line pt-4">
+          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2.5 border-t border-slate-200 pt-4">
             <button
               className={BTN_APPROVE}
               disabled={busy}
@@ -720,15 +721,15 @@ function InboxCard({
               <PlayCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
               <span>{busy ? "Saving" : "Release the hold"}</span>
             </button>
-            <span className="min-w-0 break-words text-phx-3xs font-medium text-phx-ink-faint">
+            <span className="min-w-0 break-words text-phx-xs font-medium text-slate-500">
               Puts it back in front of everyone who has not answered. The days it spent on hold do
               not count against them.
             </span>
           </div>
         ) : (
-          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 border-t border-phx-line pt-4">
-            <Eye aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
-            <span className="min-w-0 break-words text-phx-2xs font-bold text-phx-ink-soft">
+          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
+            <Eye aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+            <span className="min-w-0 break-words text-phx-xs font-bold text-slate-600">
               {waitingOn(activity)}
             </span>
           </div>

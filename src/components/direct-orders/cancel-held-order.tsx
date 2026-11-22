@@ -97,7 +97,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Withdraw this request</h3>
       </header>
       <div className="space-y-3 px-4 py-4">
-        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+        <p className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2 text-phx-sm font-semibold text-slate-800">
           You are about to withdraw {productName} — {qty.toLocaleString("en-US")} units,{" "}
           {Math.round(salesValue).toLocaleString("en-US")} EGP. This cannot be undone, and the order will
           not reach an approver. If the pharmacy is real, validate it above instead — that keeps the sale.
@@ -119,7 +119,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
         </div>
 
         {error ? (
-          <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-800">{error}</p>
+          <p className="border border-l-4 border-slate-200 border-l-rose-500 bg-white px-3 py-2 text-phx-sm font-semibold text-rose-800" role="alert">{error}</p>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
