@@ -576,7 +576,7 @@ export function InterviewCalendarView({
       <section aria-label="The week" className={`min-w-0 border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
         <header className={`flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-4 py-3.5 text-white sm:px-5 ${adminPanelHeaderClassName}`}>
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-orange-300">
+            <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-white/60">
               <CalendarDays aria-hidden className="h-3.5 w-3.5" />
               {weekStart === thisWeek ? "This week" : "Interview week"}
             </p>
@@ -671,7 +671,7 @@ export function InterviewCalendarView({
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-slate-600">
             <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-              <span aria-hidden className="inline-block h-2.5 w-2.5 bg-orange-600 shadow-[0_0_0_2px_#ffedd5]" />
+              <span aria-hidden className="inline-block h-2.5 w-2.5 bg-slate-500" />
               In office
             </span>
             <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
@@ -713,7 +713,7 @@ export function InterviewCalendarView({
       {/* ── Desktop: the grid ──────────────────────────────────────────────────────────────── */}
       <section aria-busy={loading} aria-label="Week grid" className={`relative hidden border border-slate-200 bg-white md:block ${adminPanelDepthClassName}`}>
         {loading ? (
-          <div className="absolute right-3 top-2.5 z-10 inline-flex items-center gap-1 border border-orange-400/40 bg-slate-950/80 px-2 py-0.5 text-[11px] font-semibold text-orange-100">
+          <div className="absolute right-3 top-2.5 z-10 inline-flex items-center gap-1 border border-white/20 bg-slate-950/80 px-2 py-0.5 text-[11px] font-semibold text-orange-100">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading the week…
           </div>
         ) : null}
@@ -734,13 +734,13 @@ export function InterviewCalendarView({
               </th>
               {days.map((day) => (
                 <th
-                  className={cn("border-r border-slate-700 px-2 py-2.5 text-left last:border-r-0", day === todayKey && "bg-orange-600")}
+                  className={cn("border-r border-slate-700 px-2 py-2.5 text-left last:border-r-0", day === todayKey && "border-t-2 border-t-[#F05A1A] bg-[#13233a]")}
                   key={day}
                   scope="col"
                 >
                   <span className="flex flex-wrap items-baseline gap-x-1.5">
                     <span className="text-[13px] font-black tracking-tight">{weekdayName(day)}</span>
-                    {day === todayKey ? <span className="text-[10px] font-black uppercase tracking-[0.12em] opacity-90">Today</span> : null}
+                    {day === todayKey ? <span className="text-[11px] font-black uppercase tracking-[0.12em] opacity-90">Today</span> : null}
                   </span>
                   <span className="block text-[11px] font-semibold tabular-nums opacity-80">{formatShortDate(day)}</span>
                 </th>
@@ -765,8 +765,8 @@ export function InterviewCalendarView({
                         cover
                           ? cover.platform === "zoom"
                             ? "bg-sky-50"
-                            : "bg-orange-50"
-                          : day === todayKey && "bg-orange-50/40",
+                            : "bg-slate-100"
+                          : day === todayKey && "bg-slate-100",
                       )}
                       key={day}
                     >
@@ -781,7 +781,7 @@ export function InterviewCalendarView({
                         <button
                           aria-label={`Book at ${formatTimeOfDay(start)}, ${formatDayLong(day)}`}
                           className={cn(
-                            "absolute inset-0 z-0 flex cursor-pointer items-center justify-center text-[11px] font-bold text-orange-700 opacity-0 transition-opacity hover:bg-orange-50 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500 group-hover:opacity-100",
+                            "absolute inset-0 z-0 flex cursor-pointer items-center justify-center text-[11px] font-bold text-[#08111f] opacity-0 transition-opacity motion-reduce:transition-none hover:bg-slate-50 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500 group-hover:opacity-100",
                             !empty && "items-end pb-0.5",
                           )}
                           onClick={() => setCell({ dateKey: day, start })}
@@ -810,7 +810,7 @@ export function InterviewCalendarView({
                               aria-label={`${booking.candidateName}, until ${formatTimeOfDay(booking.startMinutes + booking.durationMinutes)}`}
                               className={cn(
                                 "pointer-events-auto block h-2 w-full",
-                                booking.platform === "zoom" ? "bg-sky-300 hover:bg-sky-500" : "bg-orange-300 hover:bg-orange-500",
+                                booking.platform === "zoom" ? "bg-sky-300 hover:bg-sky-500" : "bg-slate-400 hover:bg-slate-600",
                               )}
                               key={booking.id}
                               onClick={() => openInterview(booking.id)}
@@ -856,12 +856,12 @@ export function InterviewCalendarView({
               <p
                 className={cn(
                   "flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 px-3 py-2.5 text-white",
-                  day === todayKey ? "bg-orange-600" : adminPanelHeaderClassName,
+                  day === todayKey ? "border-t-2 border-t-[#F05A1A] bg-[#13233a]" : adminPanelHeaderClassName,
                 )}
               >
                 <span className="inline-flex items-baseline gap-1.5">
                   <span className="text-[14px] font-black tracking-tight">{weekdayName(day)}</span>
-                  {day === todayKey ? <span className="text-[10px] font-black uppercase tracking-[0.12em] text-orange-100">Today</span> : null}
+                  {day === todayKey ? <span className="text-[11px] font-black uppercase tracking-[0.12em] text-white/70">Today</span> : null}
                 </span>
                 <span className="inline-flex items-baseline gap-2 text-[12px] font-semibold tabular-nums opacity-90">
                   {items.length > 0 ? (
@@ -881,10 +881,10 @@ export function InterviewCalendarView({
                       <li key={`s-${item.session.id}`}>
                         <button
                           className={cn(
-                            "flex w-full items-start gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors",
+                            "flex w-full items-start gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors motion-reduce:transition-none",
                             item.session.platform === "zoom"
                               ? "border-l-sky-600 bg-sky-50 hover:bg-sky-100"
-                              : "border-l-orange-600 bg-orange-50 hover:bg-orange-100",
+                              : "border-l-[#08111f] bg-slate-100 hover:bg-slate-200",
                           )}
                           onClick={() => openSession(item.session.id)}
                           type="button"
@@ -910,8 +910,8 @@ export function InterviewCalendarView({
                       <li key={item.booking.id}>
                         <button
                           className={cn(
-                            "flex w-full items-start gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors hover:bg-orange-50",
-                            item.booking.platform === "zoom" ? "border-l-sky-300" : "border-l-orange-300",
+                            "flex w-full items-start gap-3 border-l-[3px] px-3 py-2.5 text-left transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]",
+                            item.booking.platform === "zoom" ? "border-l-sky-300" : "border-l-slate-400",
                           )}
                           onClick={() => openInterview(item.booking.id)}
                           type="button"
@@ -920,7 +920,7 @@ export function InterviewCalendarView({
                             {formatTimeOfDay(item.booking.startMinutes)}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block break-words text-[14px] font-bold text-orange-700 underline decoration-orange-300 underline-offset-2">
+                            <span className="block break-words text-[14px] font-bold text-[#08111f] underline decoration-slate-400 underline-offset-2">
                               {item.booking.candidateName}
                               {item.booking.area ? <span className="font-semibold text-slate-500"> / {item.booking.area}</span> : null}
                             </span>
@@ -1047,7 +1047,7 @@ function LinkBanner({ link, role }: { link: InterviewCalendarLinkView; role: Int
     link.accessLevel === "editor" ? "book, move and cancel interviews" : link.accessLevel === "commenter" ? "leave notes on interviews" : null;
   return (
     <section
-      className={`flex flex-col gap-3 border border-sky-200 border-l-[3px] border-l-sky-600 bg-gradient-to-r from-sky-50 to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${adminSoftDepthClassName}`}
+      className={`flex flex-col gap-3 border border-sky-200 border-l-[3px] border-l-sky-600 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${adminSoftDepthClassName}`}
     >
       <div className="flex min-w-0 items-start gap-3 text-[13px] text-slate-800">
         <span aria-hidden className={`mt-0.5 hidden h-9 w-9 shrink-0 items-center justify-center border border-sky-200 bg-white text-sky-700 sm:inline-flex ${adminSoftDepthClassName}`}>
@@ -1083,14 +1083,14 @@ function SessionChip({ booked, onOpen, session }: { booked: number; onOpen: () =
   return (
     <button
       className={cn(
-        "pointer-events-auto block w-full border border-l-[3px] bg-white px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors",
-        zoom ? "border-sky-300 border-l-sky-600 hover:bg-sky-100" : "border-orange-300 border-l-orange-600 hover:bg-orange-100",
+        "pointer-events-auto block w-full border border-l-[3px] bg-white px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors motion-reduce:transition-none",
+        zoom ? "border-sky-300 border-l-sky-600 hover:bg-sky-100" : "border-slate-300 border-l-[#08111f] hover:bg-slate-200",
       )}
       onClick={onOpen}
       title="Open the session"
       type="button"
     >
-      <span className={cn("flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide", zoom ? "text-sky-800" : "text-orange-800")}>
+      <span className={cn("flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide", zoom ? "text-sky-800" : "text-slate-700")}>
         <Users className="h-3 w-3" /> Session · {PLATFORM_LABEL[session.platform]}
       </span>
       <span className="block break-words text-[12px] font-bold leading-tight text-slate-900">{session.title ?? "Interview session"}</span>
@@ -1115,8 +1115,8 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
   return (
     <button
       className={cn(
-        "group/chip pointer-events-auto block w-full border-l-[3px] px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors",
-        zoom ? "border-l-sky-600 bg-sky-100 hover:bg-sky-200" : "border-l-orange-600 bg-orange-100 hover:bg-orange-200",
+        "group/chip pointer-events-auto block w-full border-l-[3px] px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-colors motion-reduce:transition-none",
+        zoom ? "border-l-sky-600 bg-sky-100 hover:bg-sky-200" : "border-l-slate-600 bg-slate-100 hover:bg-slate-200",
       )}
       onClick={onOpen}
       title={`Open ${booking.candidateName}'s CV`}
@@ -1311,7 +1311,7 @@ function InterviewDetail({
       <p
         className={cn(
           "mb-4 px-3 py-2 text-[12px]",
-          waiting ? "bg-slate-50 text-slate-500" : "border-l-[3px] border-l-amber-500 bg-amber-50 text-slate-700",
+          waiting ? "bg-slate-50 text-slate-500" : "border-l-[3px] border-l-amber-500 bg-white text-slate-700",
         )}
       >
         {waiting ? "Opening the CV…" : why}
@@ -1428,8 +1428,8 @@ function InterviewPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="border-l-[3px] border-l-orange-500 pl-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-orange-700">Interview</p>
+      <div className="border-l-[3px] border-l-[#08111f] pl-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#08111f]">Interview</p>
         <p className="mt-0.5 break-words text-[18px] font-black leading-snug tracking-tight text-slate-950">{booking.candidateName}</p>
         {booking.jobTitle ? <p className="break-words text-[12px] font-semibold text-slate-700">Interviewed for {booking.jobTitle}</p> : null}
         {booking.candidateJobTitle && booking.candidateJobTitle !== booking.jobTitle ? (
@@ -1562,7 +1562,7 @@ function InterviewPanel({
                     <button
                       aria-pressed={chosen}
                       className={cn(
-                        "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none transition-colors disabled:opacity-50 lg:min-h-0 lg:px-2",
+                        "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none transition-colors motion-reduce:transition-none disabled:opacity-50 lg:min-h-0 lg:px-2",
                         chosen
                           ? "border-slate-900 bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]"
                           : "border-slate-300 bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-500",
@@ -1585,7 +1585,7 @@ function InterviewPanel({
                       <button
                         aria-pressed={chosen}
                         className={cn(
-                          "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none transition-colors disabled:opacity-50 lg:min-h-0 lg:px-2",
+                          "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none transition-colors motion-reduce:transition-none disabled:opacity-50 lg:min-h-0 lg:px-2",
                           chosen
                             ? "border-slate-900 bg-slate-900 text-white shadow-[inset_0_-2px_0_#f97316]"
                             : "border-slate-300 bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:border-slate-500",
@@ -1618,7 +1618,7 @@ function InterviewPanel({
 
       {canBook ? (
         confirmCancel ? (
-          <div className="border border-red-200 border-l-[3px] border-l-red-600 bg-red-50 p-3">
+          <div className="border border-slate-200 border-l-[3px] border-l-rose-600 bg-white p-3">
             <p className="break-words text-[12px] font-semibold text-red-800">
               Cancel this interview? It leaves the calendar with its notes
               {booking.sessionId ? ", and its slot in the session is free again" : booking.zoomJoinUrl ? ", and its Zoom meeting is deleted" : ""}.
@@ -1697,7 +1697,7 @@ function InterviewPanel({
         ) : (
           <ul className="flex flex-col gap-2">
             {booking.comments.map((comment) => (
-              <li className={cn("border-l-[3px] px-3 py-2", comment.mine ? "border-l-orange-500 bg-orange-50/60" : "border-l-slate-300 bg-slate-50")} key={comment.id}>
+              <li className={cn("border-l-[3px] px-3 py-2", comment.mine ? "border-l-[#08111f] bg-slate-100" : "border-l-slate-300 bg-slate-50")} key={comment.id}>
                 <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-[11px]">
                   <span className="font-bold text-slate-800">{comment.mine ? "You" : comment.authorName}</span>
                   <span className="text-slate-500">{cairoStamp(comment.createdAt)}</span>

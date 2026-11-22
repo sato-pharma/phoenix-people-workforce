@@ -43,7 +43,7 @@ function sourceLabel(source: string | null): string {
 }
 
 /** The row's own Accept: a hairline control that lifts on hover, never a second loud button. */
-const acceptButtonClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-40 ${adminControlDepthClassName} disabled:shadow-none`;
+const acceptButtonClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition motion-reduce:transition-none hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-40 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`;
 
 /** A proposed value with the AI's own hedge beside it, so "low" is never mistaken for a fact. */
 function Proposed({ confidence, value }: { confidence: "high" | "low"; value: string | null }) {
@@ -168,13 +168,13 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
         title="Contact details found in CVs"
       >
         {error ? (
-          <p className="mx-4 mt-4 border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 sm:mx-5" role="alert">
+          <p className="mx-4 mt-4 border-l-4 border-rose-500 bg-white px-3 py-2 text-sm font-semibold text-rose-700 sm:mx-5" role="alert">
             {error}
           </p>
         ) : null}
 
         {report ? (
-          <div className="mx-4 mt-4 space-y-2 border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-sm sm:mx-5" role="status">
+          <div className="mx-4 mt-4 space-y-2 border-l-4 border-emerald-500 bg-white px-3 py-2.5 text-sm sm:mx-5" role="status">
             <p className="flex items-center gap-1.5 font-bold text-emerald-900">
               <Check aria-hidden="true" className="h-4 w-4" />
               {report.applied} candidate{report.applied === 1 ? "" : "s"} updated.
@@ -228,7 +228,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
                   <dl className="mt-2 space-y-1.5 text-xs">
                     {row.proposal.email ? (
                       <div className="flex items-start gap-2">
-                        <dt className="flex flex-none items-center gap-1 pt-px text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                        <dt className="flex flex-none items-center gap-1 pt-px text-phx-xs font-bold uppercase tracking-wide text-slate-400">
                           <Mail aria-hidden="true" className="h-3 w-3" />
                           Email
                         </dt>
@@ -239,7 +239,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
                     ) : null}
                     {row.proposal.phone ? (
                       <div className="flex items-start gap-2">
-                        <dt className="flex flex-none items-center gap-1 pt-px text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                        <dt className="flex flex-none items-center gap-1 pt-px text-phx-xs font-bold uppercase tracking-wide text-slate-400">
                           <Phone aria-hidden="true" className="h-3 w-3" />
                           Phone
                         </dt>
@@ -283,7 +283,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
                 <tbody>
                   {rows.map((row) => (
                     <tr
-                      className="border-t border-slate-100 align-top transition-colors hover:bg-slate-50/70"
+                      className="border-t border-slate-100 align-top transition-colors motion-reduce:transition-none hover:bg-slate-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                       key={row.candidateId}
                     >
                       <td className="px-4 py-3">

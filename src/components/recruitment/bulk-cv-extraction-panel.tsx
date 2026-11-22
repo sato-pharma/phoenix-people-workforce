@@ -89,7 +89,7 @@ function QueueStatus({ item }: { item: QueueItem }) {
 }
 
 /** "Review" — the one next step a ready row has, in the module's accent so it is the obvious one. */
-const reviewButtonClassName = `inline-flex items-center gap-1.5 border border-orange-300 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-800 transition hover:bg-orange-100 ${adminControlDepthClassName}`;
+const reviewButtonClassName = `inline-flex items-center gap-1.5 border border-slate-300 bg-slate-100 px-2.5 py-1 text-xs font-bold text-[#08111f] transition motion-reduce:transition-none hover:bg-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`;
 
 export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: string) => void }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -192,7 +192,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
         ) : null}
         <div className="flex min-w-0 grow basis-60 flex-col gap-1.5">
           <span className={`inline-flex items-center gap-1.5 ${phxLabelTextClassName}`}>
-            <Files aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
+            <Files aria-hidden="true" className="h-3.5 w-3.5 text-[#08111f]" />
             CV files
           </span>
           <span
@@ -260,7 +260,7 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
               </thead>
               <tbody>
                 {queue.map((item) => (
-                  <tr className="border-t border-slate-100 transition-colors hover:bg-slate-50/70" key={item.id}>
+                  <tr className="border-t border-slate-100 transition-colors motion-reduce:transition-none hover:bg-slate-50/70" key={item.id}>
                     <td className="break-all px-3 py-2.5 font-semibold text-slate-900" dir="auto">
                       {item.fileName}
                     </td>

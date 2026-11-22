@@ -30,7 +30,7 @@ export function FolderChoice({
   return (
     <label className="flex min-w-0 flex-col gap-1.5">
       <span className={`inline-flex items-center gap-1.5 ${phxLabelTextClassName}`}>
-        <FolderOpen aria-hidden className="h-3.5 w-3.5 text-orange-600" />
+        <FolderOpen aria-hidden className="h-3.5 w-3.5 text-[#08111f]" />
         Folder
       </span>
       <select

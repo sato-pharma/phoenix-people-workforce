@@ -633,7 +633,7 @@ export function CvDocumentView({
   // takes away in the working one. He is told what to do instead, in words, rather than being left
   // looking at a red sentence with nothing under it.
   const failureNotice = error ? (
-    <div className="flex items-start gap-2.5 border border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2.5 text-sm">
+    <div className="flex items-start gap-2.5 border border-slate-200 border-l-[3px] border-l-rose-500 bg-white px-3 py-2.5 text-sm">
       <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
       <div className="min-w-0">
         <p className="break-words font-semibold text-rose-800">{error}</p>
@@ -744,9 +744,9 @@ export function CvDocumentView({
 
   const fitButton = (mode: "width" | "page", label: string, title: string) => (
     <button
-      className={`flex h-8 items-center px-2.5 text-phx-xs font-bold transition ${
+      className={`flex h-8 items-center px-2.5 text-phx-xs font-bold transition motion-reduce:transition-none ${
         manualZoom === null && activeFit === mode ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
-      }`}
+      } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
       onClick={() => {
         setFitMode(mode);
         setManualZoom(null);
@@ -766,7 +766,7 @@ export function CvDocumentView({
     <>
       <button
         aria-label="Zoom out"
-        className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+        className="flex h-8 w-8 items-center justify-center text-slate-600 transition motion-reduce:transition-none hover:bg-white hover:text-slate-900 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
         disabled={zoom <= MIN_ZOOM + 0.001}
         onClick={() => setManualZoom(clampZoom(zoom - ZOOM_STEP))}
         type="button"
@@ -776,7 +776,7 @@ export function CvDocumentView({
       <span className="min-w-[3.25rem] text-center text-phx-xs font-bold tabular-nums text-slate-700">{Math.round(zoom * 100)}%</span>
       <button
         aria-label="Zoom in"
-        className="flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+        className="flex h-8 w-8 items-center justify-center text-slate-600 transition motion-reduce:transition-none hover:bg-white hover:text-slate-900 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
         disabled={zoom >= MAX_ZOOM - 0.001}
         onClick={() => setManualZoom(clampZoom(zoom + ZOOM_STEP))}
         type="button"
@@ -858,18 +858,18 @@ export function CvPreviewModal({
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span
               aria-hidden="true"
-              className="flex h-9 w-9 shrink-0 items-center justify-center border border-orange-400/40 bg-orange-500/15 text-orange-300"
+              className="flex h-9 w-9 shrink-0 items-center justify-center text-white/60"
             >
               <FileText className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">CV preview</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-white/60">CV preview</p>
               <p className="break-all text-sm font-semibold text-white">{fileName}</p>
             </div>
           </div>
           <button
             aria-label="Close"
-            className="flex h-9 w-9 shrink-0 items-center justify-center border border-white/15 bg-white/5 text-slate-200 transition hover:border-white/30 hover:bg-white/15 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center border border-white/15 bg-white/5 text-slate-200 transition motion-reduce:transition-none hover:border-white/30 hover:bg-white/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             onClick={onClose}
             type="button"
           >
@@ -883,7 +883,7 @@ export function CvPreviewModal({
             {headerActions}
             {allowDownload ? (
               <a
-                className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-800 ${adminControlDepthClassName}`}
+                className={`inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:bg-slate-50 hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
                 href={downloadUrl}
                 rel="noreferrer"
                 target="_blank"

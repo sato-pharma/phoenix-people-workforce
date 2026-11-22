@@ -123,7 +123,7 @@ function EngagementCvName({ candidate }: { candidate: ManagerCvEngagementCandida
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
       <button
-        className="break-words text-left text-sm font-bold text-slate-900 underline-offset-2 hover:text-orange-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-60"
+        className="break-words text-left text-sm font-bold text-slate-900 underline-offset-2 hover:text-[#08111f] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-60"
         disabled={state === "loading"}
         onClick={handleClick}
         type="button"
@@ -175,10 +175,10 @@ function ManagerCandidateList({ candidates }: { candidates: readonly ManagerCvEn
     <div className="space-y-3">
       {groups.map(({ area, list }) => (
         <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} key={area}>
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-3 py-2">
-            <span className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">{area}</span>
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
+            <span className="break-words text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">{area}</span>
             <span
-              className={`border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums text-orange-800 ${adminChipDepthClassName}`}
+              className={`border-l-4 border-[#08111f] bg-white px-1.5 py-0.5 text-phx-xs font-black tabular-nums text-[#08111f] ${adminChipDepthClassName}`}
             >
               {list.length}
             </span>
@@ -274,7 +274,7 @@ function ExportXlsxButton({ query, disabled }: { query: string; disabled: boolea
       {/* Wraps rather than pushing the button off a 375px screen when the message is showing. */}
       {state === "error" ? <span className="text-xs font-semibold text-rose-600">Export failed — try again</span> : null}
       <button
-        className={`inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
+        className={`inline-flex h-10 items-center gap-2 border border-[#08111f] bg-[#08111f] px-4 text-sm font-bold text-white transition motion-reduce:transition-none hover:bg-[#13233a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:opacity-50 ${adminControlDepthClassName} disabled:shadow-none`}
         disabled={disabled || state === "working"}
         onClick={() => void handleClick()}
         title="Every manager on screen, their four counts, and one line per CV behind them."
@@ -292,7 +292,7 @@ function ExpandChevron({ open }: { open: boolean }) {
   return (
     <ChevronDown
       aria-hidden="true"
-      className={cn("h-4 w-4 text-slate-400 transition-transform", open ? "rotate-180 text-orange-600" : "")}
+      className={cn("h-4 w-4 text-slate-400 transition-transform motion-reduce:transition-none", open ? "rotate-180 text-[#08111f]" : "")}
     />
   );
 }
@@ -355,7 +355,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
           counted from the day this feature shipped, so a CV a manager read on paper months ago reads
           as not-opened until he opens it in the app. Say so, once, at the top — without assuming the
           number is large, because on a given line it may not be. */}
-      <div className={`flex gap-3 border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50 p-3 text-xs leading-5 text-amber-900 ${adminChipDepthClassName}`}>
+      <div className={`flex gap-3 border border-slate-200 border-l-4 border-l-amber-500 bg-white p-3 text-xs leading-5 text-amber-900 ${adminChipDepthClassName}`}>
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
         <p className="min-w-0">
           <span className="font-black">Reading these numbers:</span> &ldquo;Received&rdquo; is every CV in the
@@ -429,7 +429,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
                   <col className="w-[5%]" />
                 </colgroup>
                 <thead>
-                  <tr className="border-b border-slate-200 text-left text-phx-2xs uppercase tracking-[0.12em]">
+                  <tr className="border-b border-slate-200 text-left text-phx-xs uppercase tracking-[0.12em]">
                     <th className="px-4 py-3 font-black">Manager</th>
                     <th className="px-4 py-3 font-black">Area / Line</th>
                     <th className="px-4 py-3 text-right font-black">Received</th>
@@ -465,7 +465,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
                   <div
                     className={cn(
                       `border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`,
-                      isOpen ? "border-l-4 border-l-orange-500" : "",
+                      isOpen ? "border-l-4 border-l-[#08111f]" : "",
                     )}
                     key={key}
                   >
@@ -516,8 +516,8 @@ function FragmentRow({ row, isOpen, onToggle }: { row: ManagerCvEngagementRow; i
     <>
       <tr
         className={cn(
-          "cursor-pointer border-b border-slate-100 align-top transition-colors last:border-0 hover:bg-orange-50/40",
-          isOpen ? "bg-orange-50/50" : "",
+          "cursor-pointer border-b border-slate-100 align-top transition-colors motion-reduce:transition-none last:border-0 hover:bg-slate-50",
+          isOpen ? "bg-slate-100" : "",
         )}
         onClick={onToggle}
         {...rowDetailToggleProps(detailId, isOpen)}

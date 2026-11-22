@@ -80,7 +80,7 @@ export function AnswerChip({
   if (editing) {
     return (
       <span
-        className={cn("inline-flex max-w-full flex-wrap items-center gap-1.5 border border-orange-300 bg-orange-50/60 p-1.5", adminChipDepthClassName)}
+        className={cn("inline-flex max-w-full flex-wrap items-center gap-1.5 border border-slate-300 bg-slate-100 p-1.5", adminChipDepthClassName)}
         onClick={(event) => event.stopPropagation()}
       >
         {withLabel ? <span className="text-phx-xs font-black uppercase tracking-wide text-slate-600">{chip.label}</span> : null}
@@ -119,7 +119,7 @@ export function AnswerChip({
         )}
         <button
           aria-label="Save the answer"
-          className="inline-flex h-8 items-center gap-1 border border-slate-900 bg-slate-900 px-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1 border border-slate-900 bg-slate-900 px-2 text-xs font-bold text-white transition motion-reduce:transition-none hover:bg-slate-800 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
           disabled={busy}
           onClick={() => void save()}
           type="button"
@@ -129,7 +129,7 @@ export function AnswerChip({
         </button>
         <button
           aria-label="Cancel"
-          className={`inline-flex h-8 items-center border border-slate-300 bg-white px-2 text-xs font-bold text-slate-600 transition hover:bg-slate-100 ${adminChipDepthClassName}`}
+          className={`inline-flex h-8 items-center border border-slate-300 bg-white px-2 text-xs font-bold text-slate-600 transition motion-reduce:transition-none hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminChipDepthClassName}`}
           disabled={busy}
           onClick={() => setEditing(false)}
           type="button"
@@ -155,7 +155,7 @@ export function AnswerChip({
     if (chip.value === null) {
       const missingCell = "inline-flex max-w-full flex-wrap items-center gap-1 border border-dashed border-amber-400 bg-amber-50/70 px-1.5 py-0.5 text-xs font-bold text-amber-900";
       return canEdit ? (
-        <button className={cn(missingCell, "transition hover:border-amber-600 hover:bg-amber-100")} onClick={openEditor} title={`Add the answer to “${chip.label}”`} type="button">
+        <button className={cn(missingCell, "transition motion-reduce:transition-none hover:border-amber-600 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]")} onClick={openEditor} title={`Add the answer to “${chip.label}”`} type="button">
           <Plus aria-hidden className="h-3 w-3" />
           Missing · add
         </button>
@@ -168,7 +168,7 @@ export function AnswerChip({
       <>
         <span className="break-words text-sm font-semibold leading-5 text-slate-900" dir="auto">
           {chip.value}
-          {canEdit ? <PenLine aria-hidden className="ml-1 inline h-3 w-3 text-slate-300 group-hover:text-orange-600" /> : null}
+          {canEdit ? <PenLine aria-hidden className="ml-1 inline h-3 w-3 text-slate-300 group-hover:text-[#08111f]" /> : null}
         </span>
         {byHrCell ? (
           <span className="block text-phx-xs font-bold text-violet-700" title={byHrCell.name ?? undefined}>
@@ -178,7 +178,7 @@ export function AnswerChip({
       </>
     );
     return canEdit ? (
-      <button className="group block w-full text-left transition hover:text-orange-800" onClick={openEditor} title={`Edit “${chip.label}”`} type="button">
+      <button className="group block w-full text-left transition hover:text-[#08111f]" onClick={openEditor} title={`Edit “${chip.label}”`} type="button">
         {valueCell}
       </button>
     ) : (
@@ -207,7 +207,7 @@ export function AnswerChip({
     );
     return canEdit ? (
       <button
-        className={cn(missingClass, "transition hover:border-amber-600 hover:bg-amber-100")}
+        className={cn(missingClass, "transition motion-reduce:transition-none hover:border-amber-600 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]")}
         onClick={(event) => {
           event.stopPropagation();
           open();
@@ -230,12 +230,12 @@ export function AnswerChip({
         {chip.value}
       </span>
       {byHr ? (
-        <span className="border border-violet-200 bg-violet-50 px-1 text-phx-xs font-bold text-violet-800" title={byHr.name ?? undefined}>
+        <span className="border-l-2 border-violet-500 pl-1 text-phx-xs font-bold text-violet-800" title={byHr.name ?? undefined}>
           added by HR{byHr.name ? ` · ${byHr.name}` : ""}
           {byHr.at ? ` · ${cairoDayLabel(byHr.at, today)}` : ""}
         </span>
       ) : null}
-      {canEdit ? <PenLine aria-hidden className="h-3 w-3 text-slate-300 group-hover:text-orange-600" /> : null}
+      {canEdit ? <PenLine aria-hidden className="h-3 w-3 text-slate-300 group-hover:text-[#08111f]" /> : null}
     </>
   );
   const chipClass = cn(
@@ -245,7 +245,7 @@ export function AnswerChip({
   );
   return canEdit ? (
     <button
-      className={cn(chipClass, "transition hover:border-orange-300")}
+      className={cn(chipClass, "transition hover:border-[#08111f]")}
       onClick={(event) => {
         event.stopPropagation();
         open();

@@ -61,7 +61,7 @@ export function RequisitionRecommendationBand({
           adminRecessedDepthClassName,
         )}
       >
-        <span className="font-bold uppercase tracking-[0.06em] text-phx-accent-press">Recommended: keep shortlisted.</span>{" "}
+        <span className="font-bold uppercase tracking-[0.06em] text-[#08111f]">Recommended: keep shortlisted.</span>{" "}
         {recommendation.reason}
       </p>
     );
@@ -70,12 +70,12 @@ export function RequisitionRecommendationBand({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l-[3px] border-t border-l-phx-accent border-t-phx-line bg-phx-accent-soft px-4 py-2",
+        "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l-[3px] border-t border-l-[#08111f] border-t-phx-line bg-slate-50 px-4 py-2",
         adminRecessedDepthClassName,
       )}
     >
       <p className="min-w-0 flex-1 basis-64 text-[12px] text-phx-ink-2">
-        <span className="font-bold uppercase tracking-[0.06em] text-phx-accent-press">Recommended: attach to a requisition.</span>{" "}
+        <span className="font-bold uppercase tracking-[0.06em] text-[#08111f]">Recommended: attach to a requisition.</span>{" "}
         {recommendation.reason}
         {options.length === 1 ? (
           <span className="block font-semibold text-phx-ink">

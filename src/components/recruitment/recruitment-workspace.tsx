@@ -612,8 +612,8 @@ function SendToManagerCard({
   const notified = application.managerNotified;
 
   return (
-    <div className="space-y-2 border border-orange-200 bg-orange-50 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Send to the hiring manager</p>
+    <div className="space-y-2 border-l-4 border-[#08111f] bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#08111f]">Send to the hiring manager</p>
       {managerName ? (
         <p className="text-xs text-slate-600">
           {notified
@@ -826,7 +826,7 @@ function FinalSelectionCard({
                 </tr>
               ) : (
                 board.map((entry) => (
-                  <tr key={entry.application.id} className={entry.application.id === application.id ? "bg-orange-50" : ""}>
+                  <tr key={entry.application.id} className={entry.application.id === application.id ? "bg-slate-100" : ""}>
                     <td className="break-words px-2 py-1 font-semibold text-slate-900">{entry.candidate?.fullName ?? "—"}</td>
                     <td className="break-words px-2 py-1 tabular-nums">{entry.ratingAverage ?? "—"}</td>
                     <td className="break-words px-2 py-1 tabular-nums">{entry.candidate?.expectedSalary ?? "—"}</td>
@@ -1452,7 +1452,7 @@ function PipelineApplicationCard({
   const stalledDays = waiting !== null && waiting >= STALLED_AFTER_DAYS ? waiting : null;
 
   return (
-    <div className={cn("cursor-pointer transition-colors", selected && "bg-orange-50")} onClick={onSelect}>
+    <div className={cn("cursor-pointer transition-colors motion-reduce:transition-none", selected && "bg-slate-100")} onClick={onSelect}>
       <PortalRecordCard
         accent={selected ? "orange" : "slate"}
         actions={
@@ -1690,8 +1690,8 @@ function PipelineTab({
                       key={application.id}
                       className={
                         selectedId === application.id
-                          ? "bg-orange-50"
-                          : "cursor-pointer transition-colors hover:bg-slate-50"
+                          ? "bg-slate-100"
+                          : "cursor-pointer transition-colors motion-reduce:transition-none hover:bg-slate-50"
                       }
                       onClick={() => selectApplication(application.id)}
                     >
@@ -2413,7 +2413,7 @@ function RequisitionsTab({
           <ul className="divide-y divide-slate-100">
             {openVacancies.map((vacancy) => (
               <li
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-slate-50 sm:px-5"
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors motion-reduce:transition-none hover:bg-slate-50 sm:px-5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                 key={vacancy.id}
               >
                 <div className="min-w-0 grow basis-56">
@@ -2492,7 +2492,7 @@ function RequisitionsTab({
               </thead>
               <tbody>
                 {requisitions.map((requisition) => (
-                  <tr className="transition-colors hover:bg-slate-50" key={requisition.id}>
+                  <tr className="transition-colors motion-reduce:transition-none hover:bg-slate-50" key={requisition.id}>
                     <td className="break-words px-3 py-2 font-semibold text-slate-950">{requisition.jobTitle}</td>
                     <td className="px-3 py-2">
                       <StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>
@@ -2646,7 +2646,7 @@ const PROFILE_LANDING_GAP = 12;
  * `aria-label` and the native tooltip so a screen reader and a hovering recruiter get the same word.
  */
 const poolIconButtonClass =
-  `inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500 ${adminControlDepthClassName} disabled:shadow-none`;
+  `inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500 ${adminControlDepthClassName} disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`;
 
 function PoolIconButton({
   active,
@@ -2672,7 +2672,7 @@ function PoolIconButton({
   return (
     <button
       aria-label={label}
-      className={cn(poolIconButtonClass, toneClass, active && "border-phx-accent-line bg-orange-50 text-phx-accent")}
+      className={cn(poolIconButtonClass, toneClass, active && "border-[#08111f] bg-[#08111f] text-white")}
       disabled={disabled}
       onClick={onClick}
       title={label}
@@ -2826,7 +2826,7 @@ function FileToFolderPicker({
     });
 
   return (
-    <div className="space-y-1.5 border border-sky-200 bg-sky-50/60 p-1.5">
+    <div className="space-y-1.5 border-l-4 border-sky-500 bg-white p-1.5">
       <select
         className={`${phxSelectClassName} min-w-0`}
         onChange={(e) => {
@@ -3092,7 +3092,7 @@ function CandidateActionsControl({
 
       {/* Only the row being acted on mounts a picker, so 555 rows do not carry 1,110 dropdowns. */}
       {canManage && openPanel === "send" ? (
-        <div className="space-y-1.5 border border-orange-200 bg-orange-50/60 p-1.5">
+        <div className="space-y-1.5 border-l-4 border-[#08111f] bg-white p-1.5">
           <PositionPicker
             disabled={pending}
             freeArea={sendFreeArea[candidate.id] ?? ""}
@@ -3193,7 +3193,7 @@ function ManagerGroupHeading({
       <span className="text-sm font-black text-phx-ink">{name}</span>
       {seatLabel ? <span className="text-xs font-semibold text-slate-600">{seatLabel}</span> : null}
       {regionName ? <span className="text-xs font-medium text-slate-400">{regionName}</span> : null}
-      <span className="ml-auto text-xs font-bold tabular-nums text-phx-accent-press">
+      <span className="ml-auto text-xs font-bold tabular-nums text-[#08111f]">
         {count} {count === 1 ? "CV" : "CVs"}
       </span>
       {lastSentAt ? (
@@ -3861,11 +3861,11 @@ function CandidatePoolCard({
   const whatsappAnswersSection = hasAnswersSection ? (
     <section aria-label={`WhatsApp answers of ${displayName}`} className="my-2 border border-slate-100 bg-slate-50 px-2.5 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">WhatsApp answers</h4>
+        <h4 className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">WhatsApp answers</h4>
         <button
           aria-controls={answersBodyId}
           aria-expanded={answersOpen}
-          className={`inline-flex min-h-8 items-center border border-slate-200 bg-white px-2.5 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:text-orange-600 ${adminControlDepthClassName}`}
+          className={`inline-flex min-h-8 items-center border border-slate-200 bg-white px-2.5 text-phx-xs font-semibold text-slate-600 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
           onClick={() => {
             setAnswersOpen((open) => !open);
             setEditingColumnKey(null);
@@ -3986,7 +3986,7 @@ function CandidatePoolCard({
       title={
         // Same as the desktop row: the name opens the candidate's own page in a new tab.
         <a
-          className="hover:text-orange-600 hover:underline"
+          className="hover:text-[#08111f] hover:underline"
           href={candidateHref}
           rel="noopener"
           target="_blank"
@@ -4018,7 +4018,7 @@ function CandidatePoolCard({
                     : "Not stated"}
                 {/* The family, and only when it is not just the title again in capitals. */}
                 {roleFamily && !roleTitleAlreadySaysFamily ? (
-                  <div className="mt-0.5 text-phx-2xs font-black uppercase tracking-[0.06em] text-slate-400">
+                  <div className="mt-0.5 text-phx-xs font-black uppercase tracking-[0.06em] text-slate-400">
                     {candidateRoleFamilyLabels[roleFamily]}
                   </div>
                 ) : null}
@@ -4062,9 +4062,9 @@ function CandidatePoolCard({
                         facts.region ? facts.region.confirmed : facts.governorate!.confirmed,
                       )}
                       {facts.area ? (
-                        <div className="mt-0.5 text-phx-2xs font-semibold text-slate-600">{facts.area.value}</div>
+                        <div className="mt-0.5 text-phx-xs font-semibold text-slate-600">{facts.area.value}</div>
                       ) : facts.region && facts.governorate ? (
-                        <div className="mt-0.5 text-phx-2xs font-semibold text-slate-500">
+                        <div className="mt-0.5 text-phx-xs font-semibold text-slate-500">
                           {facts.governorate.value}
                         </div>
                       ) : null}
@@ -4923,12 +4923,12 @@ function CandidatesTab({
                   <button
                     aria-pressed={isActive}
                     className={cn(
-                      "inline-flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-xs font-semibold transition",
+                      "inline-flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-xs font-semibold transition motion-reduce:transition-none",
                       key === "red" ? "border-l border-phx-line" : "",
                       isActive
                         ? key === "red"
-                          ? "bg-rose-50 text-rose-700"
-                          : "bg-orange-50 text-phx-accent-press"
+                          ? "bg-slate-100 text-rose-700"
+                          : "bg-slate-100 text-[#08111f]"
                         : "bg-white text-slate-600 hover:bg-slate-50",
                     )}
                     key={key}
@@ -4959,7 +4959,7 @@ function CandidatesTab({
               Fits-the-screen rule: no fixed widths, no nowrap, no truncation. A long name and a
               long folder label both WRAP. */}
           {q && filedMatches.length > 0 ? (
-            <div className="border border-amber-200 bg-amber-50 p-3">
+            <div className="border-l-4 border-amber-500 bg-white p-3">
               <p className="text-xs font-semibold text-amber-900">
                 {filedMatches.length === 1
                   ? "1 more CV matches, filed in a folder"
@@ -4972,7 +4972,7 @@ function CandidatesTab({
               <ul className="mt-2 space-y-1.5">
                 {filedMatches.map(({ candidate, folderLabel, shelfLabel }) => (
                   <li
-                    className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-amber-200 pt-1.5 first:border-t-0 first:pt-0"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-200 pt-1.5 first:border-t-0 first:pt-0"
                     key={candidate.id}
                   >
                     <button
@@ -5072,11 +5072,11 @@ function CandidatesTab({
             {duplicateCount > 0 ? (
               <button
                 aria-pressed={duplicatesOnly}
-                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition motion-reduce:transition-none ${
                   duplicatesOnly
-                    ? "border-phx-accent bg-orange-50 text-phx-accent-press"
-                    : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
-                }`}
+                    ? "border-[#08111f] bg-[#08111f] text-white"
+                    : "border-phx-line bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f]"
+                } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                 onClick={() => setDuplicatesOnly((previous) => !previous)}
                 type="button"
               >
@@ -5088,11 +5088,11 @@ function CandidatesTab({
             {experienceGapCount > 0 || experienceGapOnly ? (
               <button
                 aria-pressed={experienceGapOnly}
-                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition motion-reduce:transition-none ${
                   experienceGapOnly
-                    ? "border-phx-accent bg-orange-50 text-phx-accent-press"
-                    : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
-                }`}
+                    ? "border-[#08111f] bg-[#08111f] text-white"
+                    : "border-phx-line bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f]"
+                } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                 onClick={() => setExperienceGapOnly((previous) => !previous)}
                 title="Only the CVs whose experience count disagrees with the band chosen on WhatsApp"
                 type="button"
@@ -5110,11 +5110,11 @@ function CandidatesTab({
             {notifiedVisibleCount > 0 ? (
               <button
                 aria-pressed={groupByManager}
-                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition motion-reduce:transition-none ${
                   groupByManager
-                    ? "border-phx-accent bg-orange-50 text-phx-accent-press"
-                    : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
-                }`}
+                    ? "border-[#08111f] bg-[#08111f] text-white"
+                    : "border-phx-line bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f]"
+                } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]`}
                 onClick={() => setGroupByManager((previous) => !previous)}
                 type="button"
               >
@@ -5136,7 +5136,7 @@ function CandidatesTab({
                 URL cannot, while this one is bookmarkable and survives closing the browser. It
                 opens on the unread pile because that is the reason to come back a second time. */}
             <Link
-              className="inline-flex items-center gap-1.5 border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition motion-reduce:transition-none hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               href={screeningHref(screeningBasePath, { seen: "unseen", status: statusFilterForDecisionTab(decisionTab) })}
               title="Open the screening queue on its own page, starting with the CVs you have never read"
             >
@@ -5149,7 +5149,7 @@ function CandidatesTab({
                 554 of 781 candidates on 2026-09-05. A second link rather than a replacement, because
                 the one above is in the owner's bookmarks and answers a different question. */}
             <Link
-              className="inline-flex items-center gap-1.5 border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition motion-reduce:transition-none hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               href={screeningHref(screeningBasePath, { seen: "untouched", status: statusFilterForDecisionTab(decisionTab) })}
               title="Open the screening queue on the CVs nobody has read yet — not you, not the other screener"
             >
@@ -5182,7 +5182,7 @@ function CandidatesTab({
             area then name — the same order the send dropdown uses, so the summary reads in the
             order the recruiter chose from. */}
         {groupByManager && managerGroups.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5 border-y border-orange-200 bg-orange-50/60 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5 border-y border-slate-200 bg-slate-50 px-3 py-2">
             <span className="mr-1 whitespace-nowrap text-xs font-black uppercase tracking-wide text-slate-500">
               {managerGroups.length} {managerGroups.length === 1 ? "manager" : "managers"}
             </span>
@@ -5190,7 +5190,7 @@ function CandidatesTab({
               const seatLabel = managerSeatLabel(group.seat);
               return (
                 <button
-                  className="inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-accent-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent-press"
+                  className={`inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
                   key={group.key}
                   onClick={() => scrollToManagerGroup(group.key)}
                   title={seatLabel ? `${group.seat.name} — ${seatLabel}` : group.seat.name}
@@ -5198,13 +5198,13 @@ function CandidatesTab({
                 >
                   <span className="font-bold">{group.seat.name}</span>
                   {seatLabel ? <span className="font-medium text-slate-500">{seatLabel}</span> : null}
-                  <span className="font-bold tabular-nums text-phx-accent-press">{group.candidates.length}</span>
+                  <span className="font-bold tabular-nums text-[#08111f]">{group.candidates.length}</span>
                 </button>
               );
             })}
             {unsentVisible.length > 0 ? (
               <button
-                className={`inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400 ${adminControlDepthClassName}`}
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition motion-reduce:transition-none hover:border-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
                 onClick={() => scrollToManagerGroup(UNSENT_GROUP_KEY)}
                 type="button"
               >
@@ -5222,7 +5222,7 @@ function CandidatesTab({
           the table, and picking twelve people out of a stack of cards on a phone is not a workflow.
         */}
         {canSelect && selectedVisibleIds.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 border-y border-orange-200 bg-orange-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 border-y border-slate-200 bg-slate-50 px-3 py-2">
             <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
               {selectedVisibleIds.length} selected
             </span>
@@ -5378,7 +5378,7 @@ function CandidatesTab({
               <>
                 {groupHeader ? (
                   <div
-                    className="border-l-4 border-phx-accent bg-orange-50/70 px-4 py-2"
+                    className="border-l-4 border-[#08111f] bg-slate-50 px-4 py-2"
                     id={managerGroupAnchorId(groupHeader.key, "card")}
                   >
                     <ManagerGroupHeading
@@ -5561,8 +5561,8 @@ function CandidatesTab({
                   return (
                     <Fragment key={candidate.id}>
                       {groupHeader ? (
-                        <tr className="bg-orange-50/70" id={managerGroupAnchorId(groupHeader.key, "table")}>
-                          <td className="border-l-4 border-phx-accent px-3 py-2" colSpan={headingColSpan}>
+                        <tr className="bg-slate-100" id={managerGroupAnchorId(groupHeader.key, "table")}>
+                          <td className="border-l-4 border-[#08111f] px-3 py-2" colSpan={headingColSpan}>
                             <ManagerGroupHeading
                               count={groupHeader.candidates.length}
                               lastSentAt={groupHeader.lastSentAt}
@@ -5586,7 +5586,7 @@ function CandidatesTab({
                           </td>
                         </tr>
                       ) : null}
-                    <tr className="align-top transition-colors hover:bg-orange-50/50">
+                    <tr className="align-top transition-colors motion-reduce:transition-none hover:bg-slate-50">
                       {canSelect ? (
                         <td className="px-3 py-2.5">
                           <input
@@ -5609,7 +5609,7 @@ function CandidatesTab({
                           {/* The name opens everything on file for this person, in a new tab, so
                               the filtered pool is still here when that tab is closed. */}
                           <a
-                            className="min-w-0 break-words font-semibold text-phx-ink hover:text-orange-600 hover:underline"
+                            className="min-w-0 break-words font-semibold text-phx-ink hover:text-[#08111f] hover:underline"
                             href={candidatePageHref(candidatePageRoot, candidate.id)}
                             rel="noopener"
                             target="_blank"
@@ -5767,7 +5767,7 @@ function CandidatesTab({
             ref={profileHeaderRef}
           >
             <button
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent ${adminControlDepthClassName}`}
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
               onClick={returnToPool}
               type="button"
             >
@@ -5789,7 +5789,7 @@ function CandidatesTab({
            */}
           {wayBackOffScreen ? (
             <button
-              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-accent-line bg-white px-4 py-2.5 text-xs font-semibold text-phx-accent shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:bg-phx-accent-soft"
+              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-[#08111f] shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition motion-reduce:transition-none hover:bg-phx-accent-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               onClick={returnToPool}
               type="button"
             >
@@ -5904,7 +5904,7 @@ function CandidatesTab({
           {canManage && (storedExtraction || profile.files.some((file) => file.kind === "cv")) ? (
             <div className="space-y-2">
               {!retryExtraction && storedExtraction && pendingExtractionFieldCount > 0 ? (
-                <div className="flex flex-wrap items-center justify-between gap-2 border border-orange-200 bg-orange-50/70 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-l-4 border-[#08111f] bg-white p-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
                       {pendingExtractionFieldCount} {pendingExtractionFieldCount === 1 ? "field" : "fields"} read from this CV
@@ -6084,7 +6084,7 @@ function CandidatesTab({
                 profile.files.map((file) =>
                   file.kind === "cv" && detectCvFileKind(file.mimeType ?? "", file.fileName) !== "unsupported" ? (
                     <button
-                      className="block text-left text-xs text-orange-600 underline-offset-2 hover:underline"
+                      className="block text-left text-xs text-[#08111f] underline-offset-2 hover:underline"
                       key={file.id}
                       onClick={() => setViewCvFile(file)}
                       type="button"
@@ -6099,7 +6099,7 @@ function CandidatesTab({
                 )
               )}
               {profile.candidate.cvExternalUrl ? (
-                <a className="text-xs text-orange-600" href={profile.candidate.cvExternalUrl} target="_blank" rel="noreferrer">
+                <a className="text-xs text-[#08111f]" href={profile.candidate.cvExternalUrl} target="_blank" rel="noreferrer">
                   CV link
                 </a>
               ) : null}

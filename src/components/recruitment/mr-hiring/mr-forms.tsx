@@ -125,7 +125,7 @@ export function MrResultForm({
       }}
     >
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-600">
+        <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-[#08111f]">
           {decidedWithoutDsm ? "Decide without DSM feedback" : MR_RESULT_STEP_LABELS[step]}
         </p>
         <p className="mt-1 break-words text-sm font-bold text-slate-900">{candidateName}</p>
@@ -276,7 +276,7 @@ export function MrRecommendationForm({
       }}
     >
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-600">Your recommendation</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-[#08111f]">Your recommendation</p>
         <p className="mt-1 break-words text-sm font-bold text-slate-900">{candidateName}</p>
         <p className="mt-1 text-xs leading-5 text-slate-600">The HR Manager makes the final decision after reading it.</p>
       </div>
@@ -497,7 +497,7 @@ export function MrBookingForm({
       }}
     >
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-600">{changing ? "Change the interview" : "Book the interview"}</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-[#08111f]">{changing ? "Change the interview" : "Book the interview"}</p>
         <p className="mt-1 break-words text-sm font-bold text-slate-900">{row.name}</p>
       </div>
       {rounds.length > 1 ? (
@@ -511,7 +511,7 @@ export function MrBookingForm({
           </select>
         </FormField>
       ) : (
-        <p className="border-l-4 border-orange-500 bg-orange-50 px-3 py-2 text-sm font-bold text-slate-900">{MR_ROUND_LABELS[round]}</p>
+        <p className="border-l-4 border-[#08111f] bg-slate-100 px-3 py-2 text-sm font-bold text-slate-900">{MR_ROUND_LABELS[round]}</p>
       )}
       <div className={phxFieldGridTwoClassName}>
         <FormField htmlFor="mr-day" label="Day" required>

@@ -86,7 +86,7 @@ export function BackgroundReviewPanel({
     >
       {error ? (
         <p
-          className="flex items-start gap-2 border-b border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-800"
+          className="flex items-start gap-2 border-b border-slate-200 border-l-[3px] border-l-rose-500 bg-white px-4 py-2.5 text-xs font-semibold text-rose-800"
           role="alert"
         >
           <AlertCircle aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -164,9 +164,9 @@ function ReviewGroup({
       {/* The group's own sub-header: a recessed strip with the orange tick, so the two questions
           read as two halves of the queue rather than as one list with a line through it. */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-slate-200 bg-slate-50 px-4 py-2">
-        <span aria-hidden="true" className="h-3 w-0.5 self-center bg-orange-500" />
+        <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A] self-center" />
         <span className="whitespace-nowrap text-xs font-black text-slate-800">{heading}</span>
-        <span className={`ml-auto whitespace-nowrap border border-slate-200 bg-white px-1.5 text-phx-2xs font-black tabular-nums text-slate-600 ${adminChipDepthClassName}`}>
+        <span className={`ml-auto whitespace-nowrap border border-slate-200 bg-white px-1.5 text-phx-xs font-black tabular-nums text-slate-600 ${adminChipDepthClassName}`}>
           {rows.length}
         </span>
         <span className="basis-full text-phx-xs font-medium leading-5 text-slate-500">{note}</span>
@@ -175,7 +175,7 @@ function ReviewGroup({
       <ul className="divide-y divide-slate-100">
         {rows.slice(0, shown).map(({ candidate, standing }) => (
           <li
-            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors motion-reduce:transition-none hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             key={candidate.id}
           >
             {/* The NAME wraps. Measured at 375px on 2026-09-02: pinned at `whitespace-nowrap` a real
@@ -187,7 +187,7 @@ function ReviewGroup({
                 The title says PROFILE, not CV: this button routes to the profile panel, and the row
                 in the folder list beside it is the one that now opens the CV itself. */}
             <button
-              className="inline-flex min-w-0 items-start gap-1.5 text-left text-sm font-bold text-slate-950 underline-offset-2 hover:text-orange-700 hover:underline"
+              className="inline-flex min-w-0 items-start gap-1.5 text-left text-sm font-bold text-slate-950 underline-offset-2 hover:text-[#08111f] hover:underline"
               onClick={() => onOpenCandidate(candidate.id)}
               title={`Open ${candidateDisplayName(candidate.fullName)}'s profile`}
               type="button"
@@ -196,7 +196,7 @@ function ReviewGroup({
               <span className="min-w-0 break-words">{candidateDisplayName(candidate.fullName)}</span>
             </button>
 
-            <span className={`whitespace-nowrap border border-slate-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-slate-500 ${adminChipDepthClassName}`}>
+            <span className={`whitespace-nowrap border border-slate-200 bg-white px-1.5 py-0.5 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-500 ${adminChipDepthClassName}`}>
               {candidateStatusLabel(candidate.status)}
             </span>
 
@@ -213,7 +213,7 @@ function ReviewGroup({
                 rendering today is only 265px inside 349px, which is why it had not bitten yet. */}
             {candidate.folder &&
             (candidate.folder.kind === "medical_rep" || candidate.folder.kind === "district_manager") ? (
-              <span className="border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-xs font-semibold text-amber-800">
+              <span className="border-l-4 border-amber-500 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-amber-800">
                 Filed: {candidateFolderKindLabels[candidate.folder.kind]} ·{" "}
                 {candidateFolderLabel(candidate.folder.kind, candidate.folder.key)}
               </span>

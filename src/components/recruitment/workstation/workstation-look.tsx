@@ -78,7 +78,7 @@ const actionToneClass: Record<ActionTone, string> = {
     "border border-transparent text-phx-ink-soft hover:border-phx-line hover:bg-white hover:text-phx-ink-2",
   onDark:
     "border border-white/15 bg-white/10 text-slate-100 hover:border-white/30 hover:bg-white/20 hover:text-white",
-  primary: `border border-phx-accent-press bg-phx-accent text-phx-accent-ink hover:bg-phx-accent-hover ${adminControlDepthClassName} disabled:shadow-none`,
+  primary: `border border-[#08111f] bg-[#08111f] text-white hover:border-[#13233a] hover:bg-[#13233a] ${adminControlDepthClassName} disabled:shadow-none`,
   quiet: `border border-phx-line bg-white text-phx-ink-2 hover:border-phx-line-strong hover:bg-phx-paper ${adminControlDepthClassName} disabled:shadow-none`,
 };
 
@@ -112,7 +112,7 @@ export function Action({
   return (
     <button
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+        "inline-flex shrink-0 items-center gap-1.5 font-bold leading-none transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-45",
         size === "sm" ? "px-2 py-1.5 text-[12px]" : "px-3 py-2 text-[13px]",
         actionToneClass[tone],
         className,
@@ -150,7 +150,7 @@ export function ActionLink({
   return (
     <a
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 text-[12px] font-bold leading-none transition-colors",
+        "inline-flex shrink-0 items-center gap-1.5 px-2 py-1.5 text-[12px] font-bold leading-none transition-colors motion-reduce:transition-none",
         actionToneClass[tone],
         className,
       )}
@@ -186,7 +186,7 @@ export function ActionLink({
 export type BandTone = "accent" | "quiet" | "warn";
 
 const bandToneClass: Record<BandTone, string> = {
-  accent: "border-l-phx-accent bg-phx-accent-soft",
+  accent: "border-l-[#08111f] bg-slate-100",
   quiet: "border-l-phx-line-strong bg-phx-surface-2",
   warn: "border-l-phx-warn bg-phx-warn-bg",
 };
@@ -365,7 +365,7 @@ export function Medallion({
       title={title}
     >
       <span className="text-[15px] font-black leading-none tabular-nums">{value === null ? "—" : value}</span>
-      <span className="text-[9px] font-bold uppercase leading-none tracking-[0.06em]">{caption}</span>
+      <span className="text-[11px] font-bold uppercase leading-none tracking-[0.06em]">{caption}</span>
     </span>
   );
 }
@@ -390,7 +390,7 @@ export function Tally({ active, children }: { active: boolean; children: React.R
       className={cn(
         "min-w-6 shrink-0 border px-1 py-0.5 text-center text-[12px] font-bold leading-none tabular-nums",
         active
-          ? "border-phx-accent-line bg-white text-phx-accent-press"
+          ? "border-slate-300 bg-white text-[#08111f]"
           : "border-phx-line bg-phx-paper text-phx-ink-2",
         adminChipDepthClassName,
       )}
@@ -410,7 +410,7 @@ export function Tally({ active, children }: { active: boolean; children: React.R
 export function Eyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <span
-      className={cn("text-[10px] font-bold uppercase leading-none tracking-[0.12em] text-phx-ink-faint", className)}
+      className={cn("text-[11px] font-bold uppercase leading-none tracking-[0.12em] text-phx-ink-faint", className)}
     >
       {children}
     </span>

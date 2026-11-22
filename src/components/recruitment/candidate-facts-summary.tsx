@@ -54,7 +54,7 @@ type Frame = "card" | "flat";
 function BlockHeading({ children }: { children: string }) {
   return (
     <p className="flex items-center gap-2 text-[11px] font-black uppercase leading-[1.45] tracking-[0.12em] text-slate-500">
-      <span aria-hidden="true" className="h-3 w-0.5 bg-orange-500" />
+      <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
       {children}
     </p>
   );
@@ -276,7 +276,7 @@ export function CandidateFactsSummary({
       {candidate.professionalSummary ? (
         <div className={`mt-4 border-t ${ruleClass} pt-3`}>
           <p
-            className="border-l-2 border-orange-300 pl-3 text-[13px] leading-relaxed text-slate-700"
+            className="border-l-2 border-slate-300 pl-3 text-[13px] leading-relaxed text-slate-700"
             dir="auto"
           >
             {candidate.professionalSummary}
@@ -296,8 +296,8 @@ function FactCells({ cells, flat = false }: { cells: Cell[]; flat?: boolean }) {
           <dt
             className={
               flat
-                ? "text-[10px] font-bold uppercase leading-[1.5] tracking-[0.1em] text-phx-ink-faint"
-                : "text-[10px] font-bold uppercase leading-[1.5] tracking-[0.1em] text-slate-400"
+                ? "text-[11px] font-bold uppercase leading-[1.5] tracking-[0.1em] text-phx-ink-faint"
+                : "text-[11px] font-bold uppercase leading-[1.5] tracking-[0.1em] text-slate-400"
             }
           >
             {cell.label}
