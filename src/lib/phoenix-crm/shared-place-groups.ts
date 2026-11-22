@@ -28,6 +28,7 @@ import {
   type ValidationReviewFilters,
   type ValidationReviewOutcome,
 } from "@/lib/phoenix-crm/validation-review-filters";
+import type { EarlierDecision } from "@/lib/phoenix-crm/earlier-decision";
 import type { ScheduleHeldBecause, ScheduleLegibility, ScheduleProblem } from "@/lib/phoenix-crm/schedule-rules";
 import type { ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 import { compareOldestFirst } from "@/lib/phoenix-crm/waiting-rules";
@@ -80,6 +81,8 @@ export type SeatedCustomer = ValidationReviewFilterable & {
   restorable: boolean;
   /** A rejection the database will not take back: he was captured again at this door since (`door-captured-again.ts`). */
   capturedAgain?: boolean;
+  /** A WAITING customer only: his latest decision before this capture (`earlier-decision.ts`). */
+  earlierDecision?: EarlierDecision | null;
   /** 🔴 The Super Admin approved this seat, so nobody else may reject it (owner, 2026-11-16). */
   lockedBySuperAdmin?: boolean;
   /** Visits measured against his place, and the places he would keep — only a validated row knows them. */
@@ -155,6 +158,7 @@ function fromReview(row: ValidationReviewRow, sharedPlaceId: string, state: Seat
     refusable: row.refusable,
     restorable: row.restorable,
     capturedAgain: row.capturedAgain === true,
+    earlierDecision: state === "waiting" ? (row.earlierDecision ?? null) : null,
     lockedBySuperAdmin: row.lockedBySuperAdmin === true,
     visits: null,
     otherPlaces: null,
@@ -372,6 +376,35 @@ export function needsYouDecisionCount(input: {
   }
   const oldest = [...units.values()].sort(compareOldestFirst)[0];
   return { count: units.size, oldestAt: oldest ? oldest.at : null };
+}
+
+/**
+ * The same count, split the way the two pages split their rows (22 Nov 2026, the deep audit of Place checks).
+ * 🔴 WHAT THE SFE MANAGER RECOMMENDED ON IS NOT ON PLACE CHECKS, SO IT IS NOT COUNTED AS IF IT WERE (owner,
+ * 19 Nov 2026: "the recommended by him goes separately in a separate page for admin decision"). Needs you
+ * read "N place checks wait for your approval" and opened Place checks, where 25 of them were nowhere: the
+ * board hands a waiting place and a HELD building the SFE Manager recommended on to the SFE
+ * recommendations page (`withoutSfeRecommended`). `yours` is what Place checks still draws, counted as
+ * `needsYouDecisionCount` counts it, with the handed-over buildings off the board; `sfeRecommended` is what
+ * that page counts — each recommended place and each recommended held building, once.
+ */
+export function needsYouDecisionCountWithSfe(input: {
+  waiting: ReadonlyArray<{ id: string; at: string; placeId: string; sharedPlaceId: string | null }>;
+  heldVenues: ReadonlyArray<{ id: string; at: string }>;
+  venuesOnBoard: ReadonlySet<string>;
+  sfeRecommendedPlaces: ReadonlySet<string>;
+  sfeRecommendedVenues: ReadonlySet<string>;
+}): { count: number; oldestAt: string | null; sfeRecommended: { count: number; oldestAt: string | null } } {
+  const handedOverVenues = input.heldVenues.filter((venue) => input.sfeRecommendedVenues.has(venue.id));
+  const handedOverVenueIds = new Set(handedOverVenues.map((venue) => venue.id));
+  const handedOverPlaces = input.waiting.filter((row) => input.sfeRecommendedPlaces.has(row.placeId));
+  const yours = needsYouDecisionCount({
+    waiting: input.waiting.filter((row) => !input.sfeRecommendedPlaces.has(row.placeId)),
+    heldVenues: input.heldVenues.filter((venue) => !handedOverVenueIds.has(venue.id)),
+    venuesOnBoard: new Set([...input.venuesOnBoard].filter((id) => !handedOverVenueIds.has(id))),
+  });
+  const handedOver = [...handedOverPlaces, ...handedOverVenues].sort(compareOldestFirst);
+  return { ...yours, sfeRecommended: { count: handedOver.length, oldestAt: handedOver[0]?.at ?? null } };
 }
 
 /**

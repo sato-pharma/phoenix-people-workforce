@@ -870,9 +870,9 @@ const TEAM_PLACE_CHECKS_TIERS = new Set(["DM", "ACTING_DM"]);
  * because the next session reads the paragraph above as an open question. Only his own word, naming
  * the rung, changes it.
  *
- * It decides NOTHING. `canDecideValidationReviews` is the Super Admin and the SFE Manager, never the
- * district manager, and the manager's screen never says so (his own instruction, the same day: "don't
- * show this on the screen").
+ * It decides NOTHING. `canDecideValidationReviews` is the Super Admin alone (since 19 Nov 2026; the SFE
+ * Manager recommends), never the district manager, and the manager's screen never says so (his own
+ * instruction, the same day: "don't show this on the screen").
  */
 export function readsTeamPlaceChecks(viewer: PhoenixCrmViewer): boolean {
   return viewer.managerSeats.some((seat) => TEAM_PLACE_CHECKS_TIERS.has(seat.tier));

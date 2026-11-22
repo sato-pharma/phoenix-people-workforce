@@ -127,7 +127,7 @@ function PhotoCell({ row }: { row: CameraItemRow }) {
       <div className="flex flex-wrap gap-1">
         <CrmPill tone="info">{row.intentLabel}</CrmPill>
         <CrmPill tone="neutral">{row.photoKindLabel}</CrmPill>
-        {row.isTest ? <CrmPill tone="orange">Test persona</CrmPill> : null}
+        {row.isTest ? <CrmPill tone="orange">Test login</CrmPill> : null}
       </div>
     </div>
   );

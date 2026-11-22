@@ -43,8 +43,8 @@ export function PlaceReviewDeckButton({ input, openOn, rows }: { input: PlaceRev
   const close = () => {
     setStart(null);
     writeReviewParam(null);
-    // The board's rows draw no saved outcome for what was decided on a slide, so he must not come back to them
-    // still offering Approve while the re-read waits for a pause.
+    // The board's rows carry each slide's saved mark (`useSavedOutcome`), but the decided rows still belong in
+    // their new sections, so the page is read now rather than after the pause.
     placeCheckReread.flush();
   };
 
