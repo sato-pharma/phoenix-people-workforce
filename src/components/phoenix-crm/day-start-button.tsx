@@ -105,7 +105,7 @@ export function DayStartBlock({
           <Sunrise aria-hidden className="h-5 w-5 shrink-0" />
           <span className="min-w-0 break-words text-base font-black">{saving ? "Sending…" : DAY_START_BUTTON_LABEL}</span>
         </span>
-        <span className="min-w-0 break-words text-xs font-semibold text-orange-50">{DAY_START_BUTTON_NOTE}</span>
+        <span className="min-w-0 break-words text-xs font-semibold text-white/70">{DAY_START_BUTTON_NOTE}</span>
       </CrmButton>
       <p className="mt-2 flex min-w-0 items-start gap-2 text-xs font-semibold text-slate-500">
         <CircleCheck aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />

@@ -43,6 +43,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { announceRouteTransition } from "@/components/layout/route-transition-provider";
+import { LANDING_FOCUS, LandingTick } from "@/components/employee-portal/landing-kit";
 import { crmGet, crmUrl, isRetryableFailure, messageOf } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
 // The leaf module, never the camera: see captured-photo.ts for why the shell must not import the camera.
@@ -653,7 +654,10 @@ export function PhoenixCrmApp({
         <CrmBlock>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-black text-slate-950">Test login</h2>
+              <h2 className="flex min-w-0 items-center gap-2 text-phx-sm font-black uppercase tracking-[0.1em] text-[#08111f]">
+                <LandingTick />
+                <span className="min-w-0">Test login</span>
+              </h2>
               <CrmPill tone="orange">Test entries</CrmPill>
             </div>
             <p className="mt-1 text-sm text-slate-600">
@@ -726,8 +730,9 @@ export function PhoenixCrmApp({
               aria-controls={panelId(key)}
               aria-selected={selected}
               className={cn(
-                "flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-1.5 rounded-none border px-2 py-2 text-center text-sm font-black transition",
-                selected ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                "flex min-h-11 min-w-0 flex-wrap items-center justify-center gap-1.5 rounded-none border px-2 py-2 text-center text-phx-sm font-bold uppercase tracking-[0.08em] transition motion-reduce:transition-none",
+                LANDING_FOCUS,
+                selected ? "border-[#08111f] bg-[#08111f] text-white" : "border-slate-200 bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f]",
               )}
               id={tabId(key)}
               key={key}
@@ -739,14 +744,14 @@ export function PhoenixCrmApp({
             >
               <span className="min-w-0 break-words">{TAB_LABELS[key]}</span>
               {count > 0 ? (
-                <span className="inline-flex min-w-5 items-center justify-center rounded-none bg-orange-600 px-1 text-phx-sm font-black leading-5 text-white">
+                <span className="inline-flex min-w-5 items-center justify-center rounded-none border border-current px-1 text-phx-xs font-black leading-5 tabular-nums">
                   {countText(count)}
                   <span className="sr-only"> waiting for you</span>
                 </span>
               ) : null}
               {heldAside ? (
                 <span className="inline-flex items-center">
-                  <span aria-hidden className="h-2 w-2 rounded-none bg-orange-500" />
+                  <span aria-hidden className="h-2 w-2 rounded-none bg-amber-500" />
                   <span className="sr-only">, not finished</span>
                 </span>
               ) : null}
@@ -773,7 +778,7 @@ export function PhoenixCrmApp({
    * here would compete with the tab he actually came to press.
    */
   function startGuideLink() {
-    const linkClass = "font-black text-slate-700 underline underline-offset-2 hover:text-orange-700";
+    const linkClass = `font-black text-slate-700 underline underline-offset-2 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`;
     return (
       <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
         <span className="min-w-0">New here? The one-page guide to recording a visit:</span>

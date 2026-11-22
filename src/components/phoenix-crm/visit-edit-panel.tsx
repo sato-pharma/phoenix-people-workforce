@@ -74,7 +74,7 @@ function EditForm({
   }
 
   return (
-    <div className="grid w-full min-w-0 gap-4 border border-slate-200 bg-slate-50/60 p-3">
+    <div className="grid w-full min-w-0 gap-4 border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white p-3">
       <p className="break-words text-xs font-semibold leading-5 text-slate-600">
         {`Correct what was recorded on the visit to ${form.customerName}. The customer, the day, the time and the location stay as they were. The rep is not told, and a copy of what it said before is kept.`}
       </p>

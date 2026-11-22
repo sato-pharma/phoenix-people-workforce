@@ -117,7 +117,7 @@ function RepName({ onPick, picked, score }: { onPick: (rep: string) => void; pic
       aria-pressed={picked}
       className={cn(
         "min-w-0 break-words text-left text-sm font-black underline-offset-2 hover:underline",
-        picked ? "text-orange-700" : "text-slate-900",
+        picked ? "text-[#08111f] underline underline-offset-2" : "text-slate-900",
       )}
       onClick={() => onPick(picked ? "" : score.repName)}
       type="button"
@@ -258,7 +258,7 @@ export function PlaceCheckScorecard({
             </thead>
             <tbody>
               {shown.map((score) => (
-                <tr key={score.repName} className={pickedRep === score.repName ? "bg-orange-50/60" : undefined}>
+                <tr key={score.repName} className={pickedRep === score.repName ? "bg-slate-100" : undefined}>
                   <td className={crmTdClassName}>
                     <RepName onPick={onPickRep} picked={pickedRep === score.repName} score={score} />
                     <span className="block text-xs font-semibold text-slate-500">{placesText(score.places)}</span>

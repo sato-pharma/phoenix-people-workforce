@@ -93,7 +93,7 @@ export function OffPlanAllowanceCard({
   if (allowance.exemptAll && exemption) {
     return (
       <section aria-label="Out-of-plan allowance" className={cn("min-w-0 border border-l-4 border-slate-200 border-l-emerald-600 bg-white px-3.5 py-3", className)}>
-        <p className="break-words text-xs font-bold leading-5 text-emerald-800">{exemption}</p>
+        <p className="break-words text-xs font-bold leading-5 text-emerald-700">{exemption}</p>
       </section>
     );
   }
@@ -102,7 +102,7 @@ export function OffPlanAllowanceCard({
       aria-label="Out-of-plan allowance"
       className={cn(
         "min-w-0 border border-l-4 bg-white px-3.5 py-3",
-        full ? "border-amber-200 border-l-amber-500 bg-amber-50/40" : "border-slate-200 border-l-orange-500",
+        full ? "border-slate-200 border-l-amber-500" : "border-slate-200 border-l-[#08111f]",
         className,
       )}
     >
@@ -110,10 +110,10 @@ export function OffPlanAllowanceCard({
         <OffPlanMeter label="Today" tally={allowance.day} />
         <OffPlanMeter label="This week" tally={allowance.week} />
       </div>
-      <p className={cn("mt-2.5 break-words text-xs font-semibold leading-5", full ? "text-amber-900" : "text-slate-600")}>
+      <p className={cn("mt-2.5 break-words text-xs font-semibold leading-5", full ? "text-amber-700" : "text-slate-600")}>
         {offPlanAllowanceSentence(allowance, voice)}
       </p>
-      {exemption ? <p className="mt-1.5 break-words text-xs font-bold leading-5 text-emerald-800">{exemption}</p> : null}
+      {exemption ? <p className="mt-1.5 break-words text-xs font-bold leading-5 text-emerald-700">{exemption}</p> : null}
     </section>
   );
 }
@@ -125,7 +125,7 @@ export function OffPlanStandingStrip({ className, standing }: { className?: stri
     <p
       className={cn(
         "mb-3 min-w-0 break-words border border-l-4 px-3 py-2 text-xs font-bold leading-5",
-        full ? "border-amber-200 border-l-amber-500 bg-amber-50/40 text-amber-900" : "border-slate-200 border-l-orange-500 bg-white text-slate-700",
+        full ? "border-slate-200 border-l-amber-500 bg-white text-amber-700" : "border-slate-200 border-l-[#08111f] bg-white text-slate-700",
         className,
       )}
     >

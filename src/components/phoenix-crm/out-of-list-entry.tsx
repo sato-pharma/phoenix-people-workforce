@@ -224,7 +224,7 @@ export function OutOfListEntry({
               {waiting.map((customer) => (
                 <li key={customer.customerId}>
                   <button
-                    className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-[#08111f] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={customer.visitedToday || customer.waitingToSend === true}
                     onClick={() => onPick(customer.customerId)}
                     type="button"

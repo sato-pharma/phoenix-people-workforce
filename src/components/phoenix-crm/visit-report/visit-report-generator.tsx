@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Trash2 } from "lucide-react";
 
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { crmDelete, crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, dayLabelWithYear, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { VisitReportDashboardView } from "@/components/phoenix-crm/visit-report/visit-report-dashboard";
@@ -130,7 +131,7 @@ function previousMonth(isoDay: string): { from: string; to: string } {
   return { from: first.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10) };
 }
 
-const SUBHEAD = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
+const SUBHEAD = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 export function VisitReportGenerator({ initial, scope }: { initial: VisitReportInitial; scope: VisitReportScopeView }) {
   const offered = useMemo(() => visitReportFieldsFor(scope.sight), [scope.sight]);
@@ -512,7 +513,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
           }
           title={`2 · Fields — ${countText(selected.size)} of ${countText(offered.length)} chosen`}
         >
-          <div className="mb-3 grid min-w-0 gap-4 border border-slate-200 bg-slate-50 p-3.5">
+          <div className="mb-3 grid min-w-0 gap-4 border border-slate-200 bg-white p-3.5">
             <div className="grid min-w-0 gap-2">
               <p className={SUBHEAD}>Start from a ready-made set</p>
               <div className="flex min-w-0 flex-wrap gap-2">
@@ -613,7 +614,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
                       onClick={() => toggleCollapsed(category.id)}
                       type="button"
                     >
-                      <span className="block break-words text-sm font-black text-slate-950">{category.label}</span>
+                      <span className="block break-words text-sm font-bold text-[#08111f]">{category.label}</span>
                       <span className="mt-0.5 block break-words text-xs font-medium text-slate-500">{category.blurb}</span>
                     </button>
                     <div className="flex flex-wrap items-center gap-2">
@@ -663,7 +664,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
             </CrmButton>
             {downloadHref ? (
               <a
-                className="inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-none border border-slate-200 bg-white px-4 py-2 text-center text-sm font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                className={landingActionClassName("outline", "min-h-11 min-w-0 gap-2 px-4 text-phx-sm sm:min-h-11")}
                 href={downloadHref}
               >
                 <Download aria-hidden className="h-4 w-4 shrink-0" />

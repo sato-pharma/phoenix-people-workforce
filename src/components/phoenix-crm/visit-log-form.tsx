@@ -193,12 +193,12 @@ type VisitExtra = "pharmacy" | "left";
 function FoldedStep({ disabled, label, note, onOpen }: { disabled: boolean; label: string; note: string; onOpen: () => void }) {
   return (
     <button
-      className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-none border border-dashed border-slate-300 bg-white px-3 py-2.5 text-left transition hover:border-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-none border border-dashed border-slate-300 bg-white px-3 py-2.5 text-left transition hover:border-[#08111f] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
       disabled={disabled}
       onClick={onOpen}
       type="button"
     >
-      <Plus aria-hidden className="h-4 w-4 shrink-0 text-orange-600" />
+      <Plus aria-hidden className="h-4 w-4 shrink-0 text-[#08111f]" />
       <span className="min-w-0">
         <span className="block break-words text-sm font-black text-slate-800">{label}</span>
         <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{note}</span>
@@ -941,9 +941,9 @@ export function VisitLogForm({
       ) : (
         <>
       <CrmBlock title="1 · Customer">
-        <div className="min-w-0 border border-l-[3px] border-orange-200 border-l-orange-500 bg-orange-50/50 px-3 py-2.5">
+        <div className="min-w-0 border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white px-3 py-2.5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-            <p className="min-w-0 flex-1 break-words text-base font-black text-slate-950">{customer.name}</p>
+            <p className="min-w-0 flex-1 break-words text-base font-bold text-[#08111f]">{customer.name}</p>
             <CrmPill tone={visitType === "planned" || visitType === "pharmacy" ? "good" : "orange"}>{logVisitTypeLabel(visitType)}</CrmPill>
           </div>
           <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</p>
@@ -1109,9 +1109,9 @@ export function VisitLogForm({
             single tick, with one tap to clear it and one to put it back. A silent prefill he cannot see
             the source of is worse than asking. */}
         {customer.lastVisit && lastProducts.length > 0 && !retryOf ? (
-          <div className="mb-2 grid min-w-0 gap-2 border border-orange-200 bg-orange-50/60 px-3 py-2 sm:flex sm:items-center">
-            <p className="flex min-w-0 flex-1 items-start gap-2 text-xs font-semibold leading-5 text-orange-900">
-              <History aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+          <div className="mb-2 grid min-w-0 gap-2 border border-l-[3px] border-slate-200 border-l-sky-500 bg-white px-3 py-2 sm:flex sm:items-center">
+            <p className="flex min-w-0 flex-1 items-start gap-2 text-xs font-semibold leading-5 text-slate-600">
+              <History aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
               <span className="min-w-0 break-words">
                 {productsDone
                   ? `Filled in from your last visit on ${dayLabel(customer.lastVisit.date)}. Change any of them.`
@@ -1192,8 +1192,8 @@ export function VisitLogForm({
 
       {/* The line between what the save needs and what it does not. Everything under it may stay blank and
           the visit is still whole — said once, here, rather than as a nag on every box. */}
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-slate-200 bg-slate-50 px-4 py-2.5 sm:px-5">
-        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-600">Optional</p>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-slate-200 bg-white px-4 py-2.5 sm:px-5">
+        <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">Optional</p>
         <p className="min-w-0 break-words text-xs font-semibold text-slate-500">The visit logs without these. Add what helps.</p>
       </div>
 
@@ -1389,7 +1389,7 @@ export function VisitLogForm({
           height) the way the plan's save bar is: under his thumb wherever he has scrolled to. It is still
           the form's ONE way to save — the press is read at the button and `save` keeps its own
           single-flight guard — and it says the one thing still missing before he taps, not after. */}
-      <div data-portal-action-bar="" className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
+      <div data-portal-action-bar="" className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 border-t border-slate-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
         {/* He tried to leave with a recording on the form. Said HERE, in the bar, so it is in view from
             either exit — the back arrow at the top or Cancel at the bottom. It states the mechanism and
             offers both doors: "Leave without it" always works, because a guard he cannot get out of is a
@@ -1431,12 +1431,12 @@ export function VisitLogForm({
                   onClick={() => showStep(openStep)}
                   type="button"
                 >
-                  <ArrowDown aria-hidden className={cn("mt-0.5 h-4 w-4 shrink-0", tried ? "text-rose-600" : "text-orange-600")} />
+                  <ArrowDown aria-hidden className={cn("mt-0.5 h-4 w-4 shrink-0", tried ? "text-rose-600" : "text-[#08111f]")} />
                   <span className="min-w-0">
-                    <span className={cn("block text-phx-sm font-black uppercase tracking-[0.16em]", tried ? "text-rose-600" : "text-orange-600")}>
+                    <span className={cn("block text-phx-xs font-bold uppercase tracking-[0.1em]", tried ? "text-rose-700" : "text-slate-500")}>
                       {tried ? "Still needed" : "Next"}
                     </span>
-                    <span className={cn("block break-words text-sm font-black", tried ? "text-rose-700" : "text-slate-950")}>{check.problem}</span>
+                    <span className={cn("block break-words text-sm font-black", tried ? "text-rose-700" : "text-[#08111f]")}>{check.problem}</span>
                   </span>
                 </button>
               )}

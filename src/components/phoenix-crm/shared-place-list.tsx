@@ -212,8 +212,8 @@ function TimetablePhoto({
     return (
       <div className="min-w-0 space-y-1.5">
         {headed ? <PhotoHeading>The timetable inside</PhotoHeading> : null}
-        <div className="flex min-h-32 w-full flex-col items-center justify-center gap-1 border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center">
-          <p className="break-words text-sm font-black text-slate-700">This building has no timetable.</p>
+        <div className="flex min-h-32 w-full flex-col items-center justify-center gap-1 border border-dashed border-slate-300 bg-white px-4 py-4 text-center">
+          <p className="break-words text-sm font-bold text-[#08111f]">This building has no timetable.</p>
           {mode === "team" ? null : (
             <>
               <p className="break-words text-xs text-slate-700">Its customers are validated by the administrator as an exception.</p>
@@ -243,7 +243,7 @@ function TimetablePhoto({
         <div
           className={cn(
             "flex h-64 w-full items-center justify-center border border-dashed px-4 text-center text-sm font-black",
-            row.seated > 0 ? "border-rose-300 bg-rose-50 text-rose-800" : "border-slate-300 bg-slate-50 text-slate-500",
+            row.seated > 0 ? "border-rose-300 bg-white text-rose-700" : "border-slate-300 bg-white text-slate-500",
           )}
         >
           <span className="break-words">
@@ -273,7 +273,7 @@ function Where({ row }: { row: SharedPlaceBoardRow }) {
           {line}
         </p>
       ))}
-      <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
+      <a className="inline-block text-xs font-black text-[#08111f] underline underline-offset-2 hover:text-slate-600" href={row.mapsLink} rel="noreferrer" target="_blank">
         Open the building in Google Maps
       </a>
       <p className="break-words border-t border-slate-100 pt-1 text-xs text-slate-500">
@@ -648,7 +648,7 @@ export function SharedPlaceList({
               <Where row={row} />
               <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="cards" />
             </div>
-            <div className="border-t border-slate-100 bg-slate-50/60 pb-2">
+            <div className="border-t border-slate-200 bg-white pb-2">
               <SeatedCustomers customers={customers} layout="cards" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
             </div>
           </div>
