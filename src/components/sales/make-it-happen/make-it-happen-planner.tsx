@@ -110,6 +110,10 @@ import { TableRowDetail } from "@/components/ui/table-row-detail";
 // chips as Sales vs Target and Targets, taken from `target-visuals.tsx`. White cards, thin slate
 // borders, orange accents and selected state, calm dark numbers. No dark bands, no glows, no
 // gradients. The square-edge golden rule binds, so nothing here carries a `rounded` class.
+//
+// THE PORTAL (2026-11-20): with `surface="portal"` the screen wears the employee-portal landing
+// kit instead — navy actions, hairline cells, coloured small-capital status words on a rail and no
+// tinted icon squares. The admin screen (`surface="sales"`) is unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Coach = { message: string; reachable: boolean | null };
@@ -129,6 +133,25 @@ const PRIMARY_BUTTON =
 /** A quiet secondary action: white with a slate hairline, orange on hover. */
 const SECONDARY_BUTTON =
   "border border-slate-200 bg-white text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-60";
+
+/** The portal's primary action (2026-11-20 landing kit): solid navy, square, no shadow. */
+const PORTAL_PRIMARY_BUTTON =
+  "border border-[#08111f] bg-[#08111f] text-white transition-colors hover:border-[#13233a] hover:bg-[#13233a] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none";
+
+/** The portal's quiet action: a white hairline cell that turns navy-framed on hover. */
+const PORTAL_SECONDARY_BUTTON =
+  "border border-slate-200 bg-white text-[#08111f] transition-colors hover:border-[#08111f] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none";
+
+/** The portal's status word: coloured small capitals on a 2px rail, never a filled pill. */
+const PORTAL_STATUS_WORD =
+  "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em]";
+
+/** The portal's scenario cells: hairline cells with a tone rail in place of the orange top border. */
+const PORTAL_SCENARIO_RAIL: Record<PlanScenario["key"], { rail: string; kicker: string }> = {
+  pace: { rail: "bg-slate-400", kicker: "text-slate-500" },
+  realistic: { rail: "bg-[#08111f]", kicker: "text-[#08111f]" },
+  stretch: { rail: "bg-amber-500", kicker: "text-amber-700" },
+};
 
 /** The pale strip a card's controls sit on, under its header. */
 const CONTROL_STRIP = "border-b border-slate-100 bg-slate-50/70";
@@ -571,6 +594,10 @@ export function MakeItHappenPlanner({
         ? { icon: CheckCircle2, frame: "border-l-emerald-500 bg-emerald-50/40", kicker: "text-emerald-700", iconTone: "text-emerald-500" }
         : { icon: Target, frame: "border-l-sky-500 bg-sky-50/40", kicker: "text-sky-700", iconTone: "text-sky-500" };
   const CoachIcon = coachTone.icon;
+  // The portal wears the landing kit (2026-11-20); the admin Make It Happen keeps its orange look.
+  const portal = surface === "portal";
+  const primaryButton = portal ? PORTAL_PRIMARY_BUTTON : PRIMARY_BUTTON;
+  const secondaryButton = portal ? PORTAL_SECONDARY_BUTTON : SECONDARY_BUTTON;
 
   const bandSubtitle = `${data.periodLabel} · ${data.viewingRep ? data.viewingRep.name : data.scopeLabel}`;
   const bandStats = (
@@ -661,7 +688,7 @@ export function MakeItHappenPlanner({
             <span className="min-w-0 break-words">You are looking at {data.viewingRep.name}&apos;s own plan.</span>
           </p>
           <Link
-            className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
+            className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold", secondaryButton, FOCUS_RING)}
             href={href({ period: data.periodKey })}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -775,7 +802,7 @@ export function MakeItHappenPlanner({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  className={cn("inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-black", PRIMARY_BUTTON, FOCUS_RING)}
+                  className={cn("inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-black", primaryButton, FOCUS_RING)}
                   aria-busy={busy === "suggest"}
                   disabled={!openForForecast || busy !== null}
                   onClick={makeItHappen}
@@ -789,7 +816,7 @@ export function MakeItHappenPlanner({
                   {busy === "suggest" ? "Phoenix is building your plan" : "Press here and Phoenix will Make It Happen"}
                 </button>
                 <button
-                  className={cn("inline-flex items-center gap-1.5 px-3 py-3 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
+                  className={cn("inline-flex items-center gap-1.5 px-3 py-3 text-xs font-bold", secondaryButton, FOCUS_RING)}
                   disabled={busy !== null || Object.keys(units).length === 0}
                   onClick={clearForecast}
                   type="button"
@@ -851,7 +878,7 @@ export function MakeItHappenPlanner({
                         <button
                           className={cn(
                             "mt-3 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-black",
-                            scenario.key === suggestedKey ? PRIMARY_BUTTON : SECONDARY_BUTTON,
+                            scenario.key === suggestedKey ? primaryButton : secondaryButton,
                             FOCUS_RING,
                           )}
                           disabled={busy !== null}
@@ -917,7 +944,7 @@ export function MakeItHappenPlanner({
             <section className={cn(SURFACE_CLASS, "flex flex-col items-center gap-3 px-5 py-8 text-center")}>
               <p className="text-sm font-bold text-slate-900">No product matches these filters.</p>
               <button
-                className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
+                className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold", secondaryButton, FOCUS_RING)}
                 onClick={() => setFilters(NO_PLANNER_FILTERS)}
                 type="button"
               >
@@ -981,7 +1008,7 @@ export function MakeItHappenPlanner({
                     />
                   </label>
                   <button
-                    className={cn("inline-flex h-10 items-center gap-1.5 px-4 text-sm font-bold", PRIMARY_BUTTON, FOCUS_RING)}
+                    className={cn("inline-flex h-10 items-center gap-1.5 px-4 text-sm font-bold", primaryButton, FOCUS_RING)}
                     aria-busy={busy === "save"}
                     disabled={busy !== null}
                     onClick={() => savePlan(false)}
@@ -992,7 +1019,7 @@ export function MakeItHappenPlanner({
                   </button>
                   {activePlanId ? (
                     <button
-                      className={cn("inline-flex h-10 items-center gap-1.5 px-4 text-sm font-bold", SECONDARY_BUTTON, FOCUS_RING)}
+                      className={cn("inline-flex h-10 items-center gap-1.5 px-4 text-sm font-bold", secondaryButton, FOCUS_RING)}
                       disabled={busy !== null}
                       onClick={() => savePlan(true)}
                       type="button"
@@ -1043,7 +1070,7 @@ export function MakeItHappenPlanner({
                           <AchievementMeter value={plan.forecastAchievement} />
                         </div>
                         <button
-                          className={cn("px-3 py-1.5 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
+                          className={cn("px-3 py-1.5 text-xs font-bold", secondaryButton, FOCUS_RING)}
                           onClick={() => openPlan(plan)}
                           type="button"
                         >
@@ -1115,7 +1142,7 @@ export function MakeItHappenPlanner({
                 <div className="flex flex-wrap items-center gap-2">
                   {data.canSave ? (
                     <button
-                      className={cn("inline-flex items-center gap-1.5 px-4 py-2 text-sm font-black", PRIMARY_BUTTON, FOCUS_RING)}
+                      className={cn("inline-flex items-center gap-1.5 px-4 py-2 text-sm font-black", primaryButton, FOCUS_RING)}
                       onClick={jumpToSave}
                       type="button"
                     >
@@ -1124,7 +1151,7 @@ export function MakeItHappenPlanner({
                     </button>
                   ) : null}
                   <button
-                    className={cn("inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
+                    className={cn("inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold", secondaryButton, FOCUS_RING)}
                     disabled={busy !== null}
                     onClick={clearForecast}
                     type="button"
@@ -1355,7 +1382,7 @@ function FilterBar({
     return (
       <button
         aria-busy={busy === format}
-        className={cn(SECONDARY_BUTTON, "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-black lg:h-8", FOCUS_RING)}
+        className={cn(surface === "portal" ? PORTAL_SECONDARY_BUTTON : SECONDARY_BUTTON, "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-black lg:h-8", FOCUS_RING)}
         disabled={busy !== null}
         onClick={() => onExport(format)}
         type="button"
@@ -1410,7 +1437,7 @@ function FilterBar({
         <div className="flex flex-wrap items-center gap-2">
           {active ? (
             <button
-              className={cn(SECONDARY_BUTTON, "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-bold lg:h-8", FOCUS_RING)}
+              className={cn(portal ? PORTAL_SECONDARY_BUTTON : SECONDARY_BUTTON, "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-bold lg:h-8", FOCUS_RING)}
               onClick={() => onFilters({ ...NO_PLANNER_FILTERS, sort: filters.sort })}
               type="button"
             >
@@ -2110,7 +2137,7 @@ function TeamSection({
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <Link
-                        className={cn(SECONDARY_BUTTON, "inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold", FOCUS_RING)}
+                        className={cn(surface === "portal" ? PORTAL_SECONDARY_BUTTON : SECONDARY_BUTTON, "inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold", FOCUS_RING)}
                         href={repHref(rep.key)}
                       >
                         {rep.savedPlans.length === 0 ? "Open" : `Open · ${rep.savedPlans.length} saved`}
