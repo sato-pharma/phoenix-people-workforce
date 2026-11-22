@@ -178,6 +178,19 @@ function runShareTests(): void {
   assert.equal(skipOf(customer({ pendingReview: true })), "in_review", "his own validation waits for the Super Admin");
   assert.equal(skipOf(customer({ pendingDrop: true })), "drop_requested");
   assert.equal(skipOf(customer({ fullNameHeld: true })), "full_name_held");
+  // 🔴 Owner, 2026-11-23: a capture he rejected is never validated in silence from another line — the pair
+  // goes on his "Same customer, other line" list instead (tests/phoenix-crm-line-lookalikes.test.ts).
+  assert.equal(
+    skipOf(customer({ lastRejectedAt: "2026-11-19T01:53:00Z", lastRejectedReason: "wrong_name" })),
+    "rejected_capture",
+    "his own capture was rejected: the rule leaves him to the Super Admin",
+  );
+  {
+    // A row whose last decided capture was APPROVED and then reopened is no rejected row: the rule shares it.
+    const waiting = customer({ lastRejectedAt: null });
+    const source = validated({ seatId: "pedia-ca1", lineCode: "pedia" });
+    assert.equal(planLineTwinShares({ customers: [waiting, source], places: [place(source, {})] }).shares.length, 1);
+  }
   assert.equal(skipOf(customer({ name: "مصطفي مصطفي شلش" })), "needs_full_name", "a doubled name is asked for again, never validated");
   {
     const second = validated({ seatId: "pedia-ca1b", lineCode: "pedia", name: "احمد صبري مشعل" });
@@ -280,6 +293,12 @@ function runSourceTests(): void {
   assert.match(sql, /perform pg_advisory_xact_lock\(hashtext\('phoenix_crm:seat:' \|\| v_seat\)\);/, "under the target seat's lock");
   assert.match(sql, /'kind', 'line_twin'/, "every copy carries where it came from");
   assert.match(sql, /photo_path[^;]*null/, "a copy never takes a photo slot");
+  {
+    // The server reads every decided validation review, and the LATEST one decides whether he was rejected.
+    const server = read("src/lib/phoenix-crm/server/line-twins.ts");
+    assert.match(server, /query\.eq\("kind", "validation"\)\.in\("status", \["approved", "rejected"\]\)/, "the decided validations are read");
+    assert.match(server, /lastRejectedAt: lastDecided\.get\(String\(row\.id\)\)\?\.status === "rejected"/, "only a LATEST rejection holds the row");
+  }
   for (const skip of ["not_waiting", "has_place", "in_review", "drop_requested", "full_name_held", "source_gone"]) {
     assert.ok(sql.includes(`'skipped', '${skip}'`), `the RPC steps aside on ${skip}`);
   }

@@ -32,6 +32,14 @@
  * clinic …) must be the same on both rows, and two different descriptors (general / central /
  * specialized / private …) separate them; one row leaving its descriptor off does not. Nothing pairs and
  * nothing merges across that line — `sameFacilityKind`.
+ *
+ * 🔴 A REJECTED CAPTURE IS NEVER UNDONE IN SILENCE (owner, 2026-11-23: "if this doctor have more than one
+ * validation by more than one rep, then check those more validations … I must know that this is one
+ * customer, but it has those validations"). On 20 Nov and 22 Nov this rule validated two doctors the
+ * Super Admin had rejected hours before, from another line's capture, and nobody told him. A waiting row
+ * whose own last capture was rejected (`lastRejectedAt`) is no longer shared by the rule: it is skipped
+ * (`rejected_capture`) and listed on "Same customer, other line" as a Certain card that says so, with
+ * the other line's photograph and evidence beside it, and only his "Same customer" validates it.
  */
 
 import { AGREE_METERS, sameName, specialityFamily } from "@/lib/phoenix-crm/customer-match-groups";
@@ -74,6 +82,13 @@ export type TwinCustomer = {
   pendingDrop: boolean;
   /** A full name waits for the Super Admin's word. */
   fullNameHeld: boolean;
+  /**
+   * When his own last capture was rejected, if it was and nothing validated him since (the latest decided
+   * validation review of his is a rejection). The rule never shares onto such a row; the Super Admin does.
+   */
+  lastRejectedAt?: string | null;
+  /** The reason that rejection gave (`VALIDATION_REFUSAL_REASONS` key), when it gave one. */
+  lastRejectedReason?: string | null;
 };
 
 /** One active place, as the comparison reads it. */
@@ -231,7 +246,7 @@ export function waitingRefusal(customer: TwinCustomer, activePlaces: number): Wa
 }
 
 /** Why a waiting row with a validated twin was left alone. */
-export type LineTwinSkipReason = WaitingRefusal | "two_on_one_line" | "two_doctors" | "twice_on_this_list";
+export type LineTwinSkipReason = WaitingRefusal | "rejected_capture" | "two_on_one_line" | "two_doctors" | "twice_on_this_list";
 
 export const LINE_TWIN_SKIP_TEXT: Record<LineTwinSkipReason, string> = {
   not_waiting: "Not waiting",
@@ -239,6 +254,7 @@ export const LINE_TWIN_SKIP_TEXT: Record<LineTwinSkipReason, string> = {
   drop_requested: "A request to drop this customer waits",
   full_name_held: "The full name waits for the Super Admin",
   needs_full_name: "A PM customer still needs all three names",
+  rejected_capture: "This row's own capture was rejected — the Super Admin confirms the other line's validation himself (Same customer, other line)",
   two_on_one_line: "Two validated customers of this name on one line",
   two_doctors: "Two different validated customers match this name",
   twice_on_this_list: "On this list twice",
@@ -480,6 +496,11 @@ export function planLineTwinShares(input: LineTwinInput): LineTwinSharePlan {
     const refusal = waitingRefusal(customer, index.activePlaces.get(customer.id) ?? 0);
     if (refusal) {
       if (refusal !== "not_waiting") skipped.push({ ...base, reason: refusal });
+      continue;
+    }
+    // 🔴 His own capture was rejected: never validated behind the Super Admin's back — it goes on his list.
+    if (customer.lastRejectedAt) {
+      skipped.push({ ...base, reason: "rejected_capture" });
       continue;
     }
     const lines = new Map<string, number>();

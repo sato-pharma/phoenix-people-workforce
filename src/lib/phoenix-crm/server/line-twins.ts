@@ -113,12 +113,29 @@ async function readAll(table: string, columns: string, scope: WorldScope, tune: 
 
 /** Every AM and PM row of the scope, with its active places and what each row is waiting on. */
 export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<TwinWorld> {
-  const [customerRows, placeRows, reviewRows, dropRows] = await Promise.all([
+  const [customerRows, placeRows, reviewRows, dropRows, decidedRows] = await Promise.all([
     readAll("phoenix_crm_customers", CUSTOMER_COLUMNS, scope, (query) => query.in("list_type", ["AM", "PM"]).in("status", ["active", "pending"]), "The AM and PM customers"),
     readAll("phoenix_crm_places", PLACE_COLUMNS, scope, (query) => query.eq("status", "active"), "The active places"),
     readAll("phoenix_crm_validation_reviews", "id, customer_id, place_id", scope, (query) => query.eq("status", "pending"), "The validations waiting for the Super Admin"),
     readAll("phoenix_crm_list_requests", "id, seat_id, customer_id, reference_contact_crm_id", scope, (query) => query.eq("kind", "drop").eq("status", "pending"), "The drop requests waiting"),
+    readAll(
+      "phoenix_crm_validation_reviews",
+      "id, customer_id, status, decided_at, refusal_reason",
+      scope,
+      (query) => query.eq("kind", "validation").in("status", ["approved", "rejected"]),
+      "The validations already decided",
+    ),
   ]);
+  // 🔴 A REJECTED CAPTURE IS NEVER UNDONE IN SILENCE (owner, 2026-11-23). His latest decided validation
+  // review, per customer: when it is a rejection, the rule leaves the row to the Super Admin's list.
+  const lastDecided = new Map<string, Row>();
+  for (const row of decidedRows) {
+    const id = text(row.customer_id);
+    const at = Date.parse(String(row.decided_at ?? ""));
+    if (!id || !Number.isFinite(at)) continue;
+    const held = lastDecided.get(id);
+    if (!held || Date.parse(String(held.decided_at)) < at) lastDecided.set(id, row);
+  }
   // 🔴 A REVIEW WAITS ONLY WHILE ITS PLACE IS IN USE (owner, 14 Nov 2026, the items the audit left). A
   // rejected building and a place removed from the list leave their pending review pending, and it is
   // nobody's to decide; counted here it kept the row "in review" and out of the line sharing for good.
@@ -150,6 +167,8 @@ export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<T
       pendingReview: inReview.has(String(row.id)),
       pendingDrop: dropById.has(String(row.id)) || (reference !== null && dropByReference.has(`${row.seat_id}|${reference}`)),
       fullNameHeld: text(row.full_name_held) !== null,
+      lastRejectedAt: lastDecided.get(String(row.id))?.status === "rejected" ? text(lastDecided.get(String(row.id))?.decided_at) : null,
+      lastRejectedReason: lastDecided.get(String(row.id))?.status === "rejected" ? text(lastDecided.get(String(row.id))?.refusal_reason) : null,
     };
   });
   const contacts = new Map<string, TwinContact>(

@@ -125,6 +125,14 @@ function runListTests(): void {
     assert.equal(list[0]?.confidence, "certain", "the same old-CRM contact is certain");
   }
   assert.deepEqual(listFor(customer({}), validated({})), [], "the rule's own pair is the rule's to share, never this list's");
+  {
+    // 🔴 Owner, 2026-11-23: "I must know that this is one customer, but it has those validations". The rule
+    // no longer shares onto a row whose own capture was rejected, so its own pair comes here, as Certain.
+    const list = listFor(customer({ lastRejectedAt: "2026-11-19T01:53:00Z", lastRejectedReason: "wrong_name" }), validated({}));
+    assert.equal(list.length, 1, "a rejected row's rule pair is listed for the Super Admin");
+    assert.equal(list[0].confidence, "certain", "the rule itself would have paired them");
+    assert.equal(list[0].nameKind, "same");
+  }
   assert.deepEqual(listFor(customer({ name: "احمد صبري" }), validated({ name: "احمد صبري مشعل" })), [], "a clinic doctor without three names cannot be validated");
   assert.deepEqual(
     listFor(customer({ speciality: "Pediatrics" }), validated({ name: "احمد صبري معشل", speciality: "Chest" })),
@@ -205,6 +213,13 @@ function runConfirmTests(): void {
     planLookalikeConfirm({ customers: [waiting, twin], places: [place(twin)], notSame: new Set() }, waiting.id, twin.id),
     { ok: false, refusal: "rule_pairs_them" },
   );
+  {
+    // His rejected row: the rule refuses it, so his own "Same customer" is the one way it is validated.
+    const rejected = customer({ lastRejectedAt: "2026-11-19T01:53:00Z" });
+    const rejectedTwin = validated({});
+    const confirmed = planLookalikeConfirm({ customers: [rejected, rejectedTwin], places: [place(rejectedTwin)], notSame: new Set() }, rejected.id, rejectedTwin.id);
+    assert.equal(confirmed.ok, true, "the Super Admin confirms a rejected row's rule pair himself");
+  }
 }
 
 // ── 4. By source ─────────────────────────────────────────────────────────────────────────────────
@@ -230,6 +245,10 @@ function runSourceTests(): void {
   );
   assert.ok(server.includes("readEveryPage<Row>("), "🔴 every read is paged");
   assert.ok(server.includes('callPhoenixCrm<Row>("phoenix_crm_share_line_validation"'), "a confirmation validates through the three-lines rule's own door");
+  assert.ok(
+    server.includes("? `This row's own capture was rejected on ${formatPhoenixDateTime(waiting.lastRejectedAt)}"),
+    "🔴 a rejected row's card says it was rejected, and when (owner, 2026-11-23)",
+  );
   assert.ok(server.includes("actor_hr_id: viewer.hrId") && server.includes("validated_by_hr_id: plan.validatedByHrId"), "he is the actor; the other line's validator keeps the validation");
   assert.ok(server.includes("planLookalikeConfirm("), "every guard is asked again before it validates");
   assert.ok(server.includes('await afterResponse("phoenix-crm line look-alike: post-validation records"'), "the answer never waits for the records after it");
