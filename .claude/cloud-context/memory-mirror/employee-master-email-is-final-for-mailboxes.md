@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: d38670a2-bd36-46fe-8c65-7595bfd880e2
-  modified: 2026-11-22T22:18:10.681Z
+  modified: 2026-11-22T22:24:23.704Z
 ---
 
 The work email on the Employee Master (and the organogram) is the address. Never change it, never pick a
@@ -19,3 +19,9 @@ change it. If it is not created, but stick to it."
 **How to apply:** for any bounce or missing mailbox, the fix is on the mail side (create/restore at the
 Employee Master address), never an Employee Master edit. A deleted address shows "was recently deleted —
 restore" in the console's Add email users form; restore keeps the same address. Related: [[never-fire-bulk-emails-ever]].
+
+**Only he makes an exception, by name.** 23 Nov 2026: Mohamed Gamal (CN-0017) — the restore of
+mohamed.gamal failed and he said "no another one make mohamad.gamal". mohamad.gamal@satopharma.com was
+created in Turbify, and on his MCQ answer the Employee Master work_email and app_auth_users.email moved to
+it (sign-in is by login_id, so login is untouched). The mailbox and the Master must always end up the SAME
+address — when he picks a new mailbox name, ask whether the Master follows.
