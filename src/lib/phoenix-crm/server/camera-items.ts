@@ -26,11 +26,13 @@ import {
   CAMERA_PHOTO_KIND_LABELS,
   CAMERA_REASON_LABELS,
   cairoClockOf,
+  cameraAlreadySavedText,
   cameraApproveAllowed,
   cameraArrival,
   cameraDayAllowance,
   cameraSenderName,
   cameraTakenAt,
+  cameraVisitDayKey,
   cameraVisitDraft,
   isNamePhoto,
   parseCameraCap,
@@ -374,10 +376,12 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
 }
 
-function approveFacts(row: Row, day: CameraDayFacts | null): { label: string | null; cannot: string | null } {
+function approveFacts(row: Row, day: CameraDayFacts | null, savedAt: string | null | undefined): { label: string | null; cannot: string | null } {
   if (row.decision !== null && row.decision !== undefined) return { label: null, cannot: null };
   if (row.outcome !== "waiting") return { label: null, cannot: null };
   const intent = String(row.intent) as CameraIntent;
+  // Already saved that day: Record would be refused (already_visited), so the row says so before he clicks.
+  if (intent === "visit" && savedAt !== undefined) return { label: null, cannot: cameraAlreadySavedText(savedAt) };
   const hasPosition = row.lat !== null && row.lat !== undefined;
   if (intent === "new_customer") {
     return hasPosition ? { label: "Add to the rep's list", cannot: null } : { label: null, cannot: "No location: it cannot become the customer's place." };
@@ -423,6 +427,8 @@ export async function loadCameraPage(viewer: PhoenixCrmViewer, rawTab: unknown):
     }),
   );
   for (const facts of dayFacts.values()) if (facts.raisedBy) people.push(facts.raisedBy);
+  // Each waiting camera visit whose customer already has a visit saved on that seat and day: the earliest one's time.
+  const savedVisits = await loadSavedVisitTimes(waitingVisits);
   const names = await loadPeopleNames(people);
   const urls = new Map<string, string>();
   const paths = rows.map((row) => textOrNull(row.photo_path)).filter((path): path is string => Boolean(path));
@@ -441,7 +447,8 @@ export async function loadCameraPage(viewer: PhoenixCrmViewer, rawTab: unknown):
       const readerRow = (row.reader && typeof row.reader === "object" ? row.reader : null) as Row | null;
       const fixAge = numberOrNull(row.fix_age_ms);
       const day = row.outcome === "waiting" && row.intent === "visit" ? (dayFacts.get(dayKey(row)) ?? null) : null;
-      const facts = approveFacts(row, day);
+      const savedKey = cameraVisitDayKey({ seatId: row.seat_id, customerId: row.customer_id, day: itemDay(row), isTest: row.is_test });
+      const facts = approveFacts(row, day, row.outcome === "waiting" && row.intent === "visit" && savedVisits.has(savedKey) ? (savedVisits.get(savedKey) ?? null) : undefined);
       const repHrId = String(row.rep_hr_id ?? "");
       const decidedBy = textOrNull(row.decided_by_hr_id);
       return {
@@ -485,6 +492,32 @@ export async function loadCameraPage(viewer: PhoenixCrmViewer, rawTab: unknown):
       };
     }),
   };
+}
+
+/**
+ * The visits already saved for the waiting camera visits' customers, keyed like the visit insert's own
+ * already_visited refusal (seat, customer, visit day, test world; an archived visit refuses too), with the earliest
+ * capture time of each. One read for the whole page.
+ */
+async function loadSavedVisitTimes(waitingVisits: Row[]): Promise<Map<string, string | null>> {
+  const saved = new Map<string, string | null>();
+  const withCustomer = waitingVisits.filter((row) => textOrNull(row.customer_id));
+  if (withCustomer.length === 0) return saved;
+  const customerIds = [...new Set(withCustomer.map((row) => String(row.customer_id)))];
+  const days = [...new Set(withCustomer.map((row) => itemDay(row)))];
+  const read = await getSupabaseAdmin()
+    .from("phoenix_crm_visits")
+    .select("seat_id, customer_id, visit_date, is_test, captured_at")
+    .in("customer_id", customerIds)
+    .in("visit_date", days);
+  throwIfError(read.error);
+  for (const visit of (read.data ?? []) as Row[]) {
+    const key = cameraVisitDayKey({ seatId: visit.seat_id, customerId: visit.customer_id, day: visit.visit_date, isTest: visit.is_test });
+    const at = textOrNull(visit.captured_at);
+    const kept = saved.get(key);
+    if (!saved.has(key) || (at && (!kept || at < kept))) saved.set(key, at);
+  }
+  return saved;
 }
 
 /** How many items wait for the Super Admin, for his needs-you count. */
@@ -588,6 +621,13 @@ export async function decideCameraItem(viewer: PhoenixCrmViewer, raw: unknown): 
       placeId = validation.placeId;
     } else {
       if (!customerId) throw validationError("This item names no customer.");
+      // A second copy of a visit already saved is refused BEFORE the seal validates anything, so a refused Record
+      // never leaves a place behind it.
+      if (intent === "visit" && !visitId) {
+        const saved = await loadSavedVisitTimes([row]);
+        const key = cameraVisitDayKey({ seatId: row.seat_id, customerId: row.customer_id, day: itemDay(row), isTest: row.is_test });
+        if (saved.has(key)) throw conflictError(cameraAlreadySavedText(saved.get(key) ?? null));
+      }
       if (bytes && sealed && !placeId) {
         const validation = await validateWithRepSeal(slot, { seat, isTest, customerId, bytes, sealed, actorHrId: viewer.hrId });
         placeId = validation.placeId ?? placeId;

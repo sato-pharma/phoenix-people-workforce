@@ -152,6 +152,13 @@ and the row wears a "Test login" tag (the screens never say "account"); a real r
 test login had sent (20–21 Nov) were deleted with their photos, on his word ("Camera items only" — the test visit, places
 and plans it made stay); their rows are kept in `phoenix_crm_backup_20261123.aya_test_camera_items`.
 
+**A second copy of a visit already saved says so before the click** (owner, 23 Nov 2026: "Remove + warn next time").
+Mohamed Salah saved Dr Sabah Lotfy Areiba's visit in the app at 18:27 on 22 Nov; his camera photo of 18:18 then waited,
+and Record answered "This customer's visit for today is already saved" only after it was pressed. The page now reads the
+saved visits on the visit insert's own `already_visited` key (seat, customer, visit day, test world — `cameraVisitDayKey`)
+and, where one exists, prints "Already saved in the app at <time>" in place of Record; Record itself refuses the same way
+before the seal validates any place. That copy was archived the same night (decision note names the saved visit).
+
 **The update button.** `scripts/phoenix-camera-publish-release.ts` uploads a signed APK under `releases/` in the same
 private bucket and writes one `phoenix_crm_field_camera_releases` row; every pack then carries it as `latestApp` with a
 link that lasts a day. A dry run is the default; publishing reaches every rep's phone and is the owner's word alone.
