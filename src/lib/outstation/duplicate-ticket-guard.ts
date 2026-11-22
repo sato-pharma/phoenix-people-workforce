@@ -45,7 +45,8 @@ export type DuplicateTicketCandidate = {
   employeeHrId: string;
   goTicketAmount?: number | null;
   otherAmount?: number | null;
-  receipts?: TicketReceiptFile[] | null;
+  /** The ticket photos, as files or as fingerprints already made by `ticketReceiptFingerprint`. */
+  receipts?: Array<TicketReceiptFile | string> | null;
   returnTicketAmount?: number | null;
   toCity?: string | null;
   tripEndDate?: string | null;
@@ -122,8 +123,12 @@ export function ticketReceiptFingerprint(file: TicketReceiptFile): string | null
   return `${name}|${Math.round(size)}`;
 }
 
-function fingerprints(files: TicketReceiptFile[] | null | undefined) {
-  return new Set((files ?? []).map(ticketReceiptFingerprint).filter((value): value is string => Boolean(value)));
+function fingerprints(files: Array<TicketReceiptFile | string> | null | undefined) {
+  return new Set(
+    (files ?? [])
+      .map((file) => (typeof file === "string" ? file || null : ticketReceiptFingerprint(file)))
+      .filter((value): value is string => Boolean(value)),
+  );
 }
 
 /** What `candidate` repeats of `other`, empty when nothing. */
@@ -208,7 +213,7 @@ export type DuplicateTicketRow = {
   goTicketAmount?: number | null;
   hrId?: string | null;
   otherAmount?: number | null;
-  receipts?: TicketReceiptFile[] | null;
+  receipts?: Array<TicketReceiptFile | string> | null;
   returnTicketAmount?: number | null;
   status?: string | null;
   toCity?: string | null;

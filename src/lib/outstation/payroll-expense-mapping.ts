@@ -3,6 +3,7 @@ import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
 import { parseOutstationDescription } from "@/lib/outstation/description-format";
+import { ticketReceiptFingerprint } from "@/lib/outstation/duplicate-ticket-guard";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { nextPayrollPeriod } from "@/lib/outstation/payroll-period";
 
@@ -373,7 +374,10 @@ export function mapOutstationRequestRowToPayrollApproval(
     ticketReceipts: Array.isArray(row.ticket_attachment_metadata)
       ? (row.ticket_attachment_metadata as Array<Record<string, unknown>>)
           .filter((file) => Boolean(file) && typeof file === "object")
-          .map((file) => ({ name: typeof file.name === "string" ? file.name : null, size: toNumber(file.size) }))
+          .map((file) =>
+            ticketReceiptFingerprint({ name: typeof file.name === "string" ? file.name : null, size: toNumber(file.size) }),
+          )
+          .filter((print): print is string => Boolean(print))
       : [],
     toCity: toText(row.to_city) || null,
     hr: hrStatus,

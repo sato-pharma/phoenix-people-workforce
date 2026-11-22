@@ -136,11 +136,12 @@ export type ExpenseTripRecord = {
    * the employee's words. Display-only; Phoenix-submitted requests only. */
   allowanceNotices?: string[];
   /** The go and return ticket amounts as the employee claimed them, the other cost's city, and the
-   * ticket photos' names and sizes — read by the "Same ticket as" flag on Expense Approvals
-   * (duplicate-ticket-guard.ts). Phoenix-submitted requests only; display and review only. */
+   * ticket photos' fingerprints (name|size, `ticketReceiptFingerprint`) — read by the "Same ticket
+   * as" flag on Expense Approvals (duplicate-ticket-guard.ts). Phoenix-submitted requests only;
+   * review only. Text, never objects: the expense report prints a record's fields generically. */
   goTicketAmount?: number;
   returnTicketAmount?: number;
-  ticketReceipts?: Array<{ name: string | null; size: number }>;
+  ticketReceipts?: string[];
   toCity?: string | null;
   hrId?: string | null;
   from: string;

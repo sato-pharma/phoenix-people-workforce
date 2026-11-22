@@ -149,6 +149,16 @@ export async function runOutstationClaimGuardsTests() {
   assert.deepEqual(nahedMatch?.repeats, ["receipt"], "the same ticket photo is refused on its own, whatever the dates and amounts");
   assert.ok(duplicateTicketMessage(nahedMatch!).includes("the same ticket photo"));
   assert.equal(ticketReceiptFingerprint({ name: "IMG_0001.jpg", size: 0 }), null, "a file with no size has no fingerprint");
+  // The approvals screen carries receipts as text fingerprints (ExpenseTripRecord.ticketReceipts).
+  assert.equal(ticketReceiptFingerprint({ name: "1-IMG_1649.jpg", size: 361687 }), "img_1649.jpg|361687");
+  assert.deepEqual(
+    flagDuplicateTicketRows([
+      { date: "2026-09-20", hrId: "PD-0164", receipts: ["img_1649.jpg|361687"], tripId: "164" },
+      { date: "2026-10-05", hrId: "PD-0164", receipts: ["img_1649.jpg|361687"], tripId: "175" },
+    ]).get("175"),
+    ["164"],
+    "a fingerprint matches a fingerprint on the approvals screen",
+  );
   assert.equal(
     findDuplicateTicket(
       { employeeHrId: "PD-0164", receipts: [{ name: "IMG_1649.jpg", size: 361000 }], tripStartDate: "2026-10-05" },
