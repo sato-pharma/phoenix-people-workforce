@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { CoverageFilterOptions, CoverageFilterSelection } from "@/lib/crm/reps-list-board";
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -123,7 +124,7 @@ export function RepsListFilters({
         </p>
         {narrowed > 0 ? (
           <button
-            className="inline-flex min-h-11 items-center border border-slate-300 bg-white px-3 py-1 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:text-slate-400 md:min-h-0"
+            className={`inline-flex min-h-11 items-center border border-[#08111f] bg-white px-3 py-1 text-phx-sm font-black uppercase tracking-[0.12em] text-[#08111f] transition-colors hover:bg-[#08111f] hover:text-white motion-reduce:transition-none disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 md:min-h-0 ${LANDING_FOCUS}`}
             disabled={pending}
             onClick={clearAll}
             type="button"
@@ -143,7 +144,7 @@ export function RepsListFilters({
           <label className="block" key={level.key}>
             <span className={LABEL_CLASS}>
               {level.label}
-              {selection[level.key] ? <span className="ml-1.5 text-orange-700">· set</span> : null}
+              {selection[level.key] ? <span className="ml-1.5 text-[#08111f]">· set</span> : null}
             </span>
             <select
               className={`mt-1 ${SELECT_CLASS}`}

@@ -46,7 +46,7 @@ import { kpiBandOf, type KpiBand } from "@/lib/crm/kpis-filters";
 
 const EYEBROW = "text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-xs";
 const SMALL = "text-phx-sm leading-4 text-slate-500 sm:text-phx-xs";
-const LINK = "underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500";
+const LINK = "underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
 
 /** The three states of a planned doctor, each one flat swatch. Late is the only one in a warning colour. */
 const STATE_SWATCH = {
@@ -162,7 +162,7 @@ export function KpiFloorTrack({
         {/* The floor: one 2px rule through the track, a little taller than it. */}
         <span
           aria-hidden
-          className="absolute -bottom-1 -top-1 w-0.5 -translate-x-1/2 bg-slate-900"
+          className="absolute -bottom-1 -top-1 w-0.5 -translate-x-1/2 bg-[#08111f]"
           style={{ left: `${Math.min(100, floorPct)}%` }}
         />
       </div>
@@ -171,7 +171,7 @@ export function KpiFloorTrack({
           <li className="flex items-start gap-2" key={segment.key}>
             <span aria-hidden className={`mt-1 h-2 w-2 shrink-0 ${segment.swatch}`} />
             <span className="min-w-0 flex-1 text-phx-md leading-4 text-slate-700 sm:text-phx-sm">{segment.label}</span>
-            <span className="shrink-0 text-phx-md font-black tabular-nums text-slate-900 sm:text-phx-sm">
+            <span className="shrink-0 text-phx-md font-black tabular-nums text-[#08111f] sm:text-phx-sm">
               <CountLink count={segment.count} href={segment.href} />
             </span>
           </li>
@@ -219,7 +219,7 @@ export function KpiLateAgeingPanel({
           unit={["late doctor", "late doctors"]}
         />
       </div>
-      <dl className="grid divide-y divide-slate-100 border-t border-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <dl className="grid divide-y divide-slate-200 border-t border-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         {buckets.map((bucket) => {
           const oldest = bucket.doctors
             .flatMap((doctor) => doctor.planDates.filter((day) => day <= asOf))
@@ -227,7 +227,7 @@ export function KpiLateAgeingPanel({
           return (
             <div className="min-w-0 px-3 py-2.5" key={bucket.age}>
               <dt className={SMALL}>{bucket.label}</dt>
-              <dd className="mt-0.5 text-lg font-black tabular-nums text-slate-900">
+              <dd className="mt-0.5 text-lg font-black tabular-nums text-[#08111f]">
                 <CountLink count={bucket.doctors.length} href={lateHref} />
               </dd>
               <dd className={SMALL}>
@@ -248,7 +248,7 @@ function DoctorLine({ doctor }: { doctor: KpiCoverageDoctor }) {
   return (
     <span className="block min-w-0">
       {doctor.name ? (
-        <span className="block font-semibold leading-5 text-slate-900" dir="auto">
+        <span className="block font-semibold leading-5 text-[#08111f]" dir="auto">
           {doctor.name}
         </span>
       ) : (
@@ -292,7 +292,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
             <col style={{ width: "50%" }} />
             <col style={{ width: "40%" }} />
           </colgroup>
-          <thead className="border-b border-slate-100">
+          <thead className="border-b border-slate-200 bg-white">
             <tr>
               <th className={TH} scope="col">
                 #
@@ -305,7 +305,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {steps.map((step, index) => (
               <tr key={step.doctor.contactCrmId}>
                 <td className={NUM}>{index + 1}</td>
@@ -321,7 +321,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
             ))}
           </tbody>
         </table>
-        <ol className="divide-y divide-slate-100 @min-[34rem]:md:hidden">
+        <ol className="divide-y divide-slate-200 @min-[34rem]:md:hidden">
           {steps.map((step, index) => (
             <li className="flex items-start gap-3 px-3 py-2.5 text-sm" key={step.doctor.contactCrmId}>
               <span className="w-5 shrink-0 font-black tabular-nums text-slate-400">{index + 1}</span>
@@ -437,7 +437,7 @@ export function KpiCoverageGroupTable({
             <col style={{ width: "20%" }} />
             <col style={{ width: "20%" }} />
           </colgroup>
-          <thead className="border-b border-slate-100">
+          <thead className="border-b border-slate-200 bg-white">
             <tr>
               <th className={TH} scope="col">
                 {groupHeading}
@@ -456,7 +456,7 @@ export function KpiCoverageGroupTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {rows.map((row) => (
               <tr key={row.label}>
                 <td className={TD}>
@@ -475,11 +475,11 @@ export function KpiCoverageGroupTable({
             ))}
           </tbody>
         </table>
-        <ul className="divide-y divide-slate-100 @min-[34rem]:md:hidden">
+        <ul className="divide-y divide-slate-200 @min-[34rem]:md:hidden">
           {rows.map((row) => (
             <li className="px-3 py-2.5" key={row.label}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 text-sm font-semibold text-slate-900">
+                <span className="min-w-0 text-sm font-semibold text-[#08111f]">
                   <GroupName row={row} />
                 </span>
                 <span className={`shrink-0 text-sm font-black tabular-nums ${toneOf(groupBand(row)).text}`}>{row.pct}%</span>

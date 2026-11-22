@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
+import { LandingTitle } from "@/components/employee-portal/landing-kit";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { groupSyncRuns, type SyncRunGroup } from "@/lib/crm/sync-run-groups";
 
@@ -62,9 +63,8 @@ export function CrmSyncStatusPanel({
 
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
-      <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Sync Status</h2>
-        <div className="h-1.5 w-12 bg-orange-500" />
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
+        <LandingTitle>Sync Status</LandingTitle>
       </div>
 
       {retiredAt ? (
@@ -104,7 +104,7 @@ function RoutineRunGroup({ group }: { group: Extract<SyncRunGroup, { kind: "rout
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
           <div>
-            <p className="font-semibold text-slate-900">
+            <p className="font-semibold text-[#08111f]">
               {group.runs.length} scheduled syncs
               {" · "}
               {formatDate(group.windowFrom)} – {formatDate(group.windowTo)}
@@ -143,7 +143,7 @@ function SyncRunRow({ nested = false, run }: { nested?: boolean; run: VisitsSync
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-slate-400" />
         )}
         <div>
-          <p className="font-semibold text-slate-900">
+          <p className="font-semibold text-[#08111f]">
             {run.trigger === "cron" ? "Scheduled sync" : run.trigger === "manual_backfill" ? "Manual backfill" : "Manual sync"}
             {" · "}
             {formatDate(run.dateFrom)} – {formatDate(run.dateTo)}

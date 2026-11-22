@@ -14,6 +14,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { previousEntryIsThisApp } from "@/lib/navigation/back-to-previous";
 
 type NavigationLike = { currentEntry?: { index: number } | null; entries?: () => Array<{ url: string | null }> };
@@ -31,7 +32,7 @@ export function BackToPreviousPage({ fallbackHref }: { fallbackHref: string }) {
   return (
     <div className="mb-3 border border-slate-200 bg-white px-5 py-3">
       <Link
-        className="inline-flex items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-orange-800 transition-colors hover:bg-orange-100"
+        className={landingActionClassName("outline", "gap-2 py-2")}
         href={fallbackHref}
         onClick={(event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;

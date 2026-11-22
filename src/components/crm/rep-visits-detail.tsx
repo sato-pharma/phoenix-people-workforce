@@ -7,6 +7,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { LANDING_FOCUS, LANDING_INK, LandingTitle } from "@/components/employee-portal/landing-kit";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
@@ -43,15 +44,15 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 // It stays in the export, where somebody reconciles against the CRM and a name alone cannot be
 // matched back.
 
-const THEAD = "px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 const CHIP = "px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]";
 
 /** The proof bucket, coloured. Green proved, rose unproved, sky campaign, slate not-field-work. */
 function standingChip(standing: RepVisitStanding): string {
-  if (standing === "verified") return `${CHIP} border border-emerald-300 bg-emerald-50 text-emerald-700`;
-  if (standing === "unverified") return `${CHIP} border border-rose-300 bg-rose-50 text-rose-700`;
-  if (standing === "campaign") return `${CHIP} border border-sky-300 bg-sky-50 text-sky-700`;
-  return `${CHIP} border border-slate-300 bg-slate-50 text-slate-500`;
+  if (standing === "verified") return `${CHIP} border-l-2 border-l-emerald-600 bg-white text-emerald-800`;
+  if (standing === "unverified") return `${CHIP} border-l-2 border-l-rose-600 bg-white text-rose-800`;
+  if (standing === "campaign") return `${CHIP} border-l-2 border-l-sky-600 bg-white text-sky-800`;
+  return `${CHIP} border-l-2 border-l-slate-300 bg-white text-slate-600`;
 }
 
 function standingText(standing: RepVisitStanding): string {
@@ -208,7 +209,7 @@ const VISIT_COLS = [
 function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
   // Wrapped, never scrolled: cells grow to fill each line, so no line ends in an empty grey slot.
   const cells: Array<{ label: string; tone: string; value: number }> = [
-    { label: "Calls", tone: "text-slate-900", value: summary.fieldCalls },
+    { label: "Calls", tone: LANDING_INK, value: summary.fieldCalls },
     { label: "Proved", tone: "text-emerald-700", value: summary.verified },
     { label: "No proof", tone: "text-rose-700", value: summary.unverified },
     { label: "Campaign", tone: "text-sky-700", value: summary.campaign },
@@ -231,8 +232,8 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     <div className="flex flex-wrap border-l border-t border-slate-200">
       {cells.map((cell) => (
         <div className="min-w-0 basis-32 flex-1 border-b border-r border-slate-200 bg-white px-3 py-2.5" key={cell.label}>
-          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
-          <p className={`text-lg font-black ${cell.tone}`}>{cell.value.toLocaleString("en-US")}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{cell.label}</p>
+          <p className={`text-lg font-black tabular-nums ${cell.tone}`}>{cell.value.toLocaleString("en-US")}</p>
         </div>
       ))}
     </div>
@@ -326,28 +327,31 @@ export function RepVisitsDetail({
           column of markers. It is a TODO with a route attached, not a fault: the CRM region is a real
           coded record on every one of these rows, it has simply never been tied to a Phoenix brick. */}
       {summary.unmappedTerritory > 0 ? (
-        <div className="border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-xs font-bold text-amber-900">
+        <div className="flex items-stretch gap-3 border border-slate-200 bg-white px-4 py-3">
+          <span aria-hidden className="w-1 shrink-0 self-stretch bg-amber-500" />
+          <div className="min-w-0">
+          <p className={`text-xs font-bold ${LANDING_INK}`}>
             {summary.unmappedTerritory.toLocaleString("en-US")} of these calls sit in a CRM region that is not tied to a
             Phoenix brick yet, so their area and region cannot be resolved.
           </p>
           {surface === "portal" ? (
-            <p className="mt-1 text-phx-md text-amber-800">
+            <p className="mt-1 text-phx-md text-slate-600">
               The place is still named on every row — it is the brick, area and region behind it that are missing.
             </p>
           ) : (
-          <p className="mt-1 text-phx-md text-amber-800">
+          <p className="mt-1 text-phx-md text-slate-600">
             {mappedRegions === 0
               ? "No CRM region has been mapped at all so far."
               : `${mappedRegions.toLocaleString("en-US")} CRM regions are mapped so far.`}{" "}
             The place is still named on every row — it is the brick, area and region behind it that are missing. Map them
             once in{" "}
-            <Link className="font-bold underline hover:text-amber-950" href="/admin/crm">
+            <Link className={`font-bold underline underline-offset-2 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`} href="/admin/crm">
               CRM → Region Mapping
             </Link>{" "}
             and this column resolves everywhere, for every rep and every month.
           </p>
           )}
+          </div>
         </div>
       ) : null}
 
@@ -447,7 +451,7 @@ export function RepVisitsDetail({
                           <span className="flex flex-wrap items-center gap-1.5">
                             <span className="text-slate-600">{territoryLabel(row)}</span>
                             {row.territory.status === "unmapped" ? (
-                              <span className={`${CHIP} border border-amber-300 bg-amber-50 text-amber-700`}>
+                              <span className={`${CHIP} border-l-2 border-l-amber-500 bg-white text-amber-800`}>
                                 Not mapped
                               </span>
                             ) : null}
@@ -474,18 +478,18 @@ export function RepVisitsDetail({
                     <col style={{ width: "18%" }} />
                   </colgroup>
                   <thead>
-                    <tr className="bg-slate-900 text-left">
+                    <tr className="border-b border-slate-200 bg-white text-left">
                       <SortableTh className={THEAD} label="Day" onSort={table.toggleSort} sort={table.sort} sortKey="dateIso" />
                       <SortableTh className={THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contact" />
                       <SortableTh
-                        className={`${THEAD} border-l border-slate-700`}
+                        className={`${THEAD} border-l border-slate-200`}
                         label="Clinic · Where"
                         onSort={table.toggleSort}
                         sort={table.sort}
                         sortKey="territory"
                       />
                       <SortableTh
-                        className={`${THEAD} border-l border-slate-700`}
+                        className={`${THEAD} border-l border-slate-200`}
                         label="Visit Type"
                         onSort={table.toggleSort}
                         sort={table.sort}
@@ -494,14 +498,14 @@ export function RepVisitsDetail({
                       <SortableTh className={THEAD} label="Proof" onSort={table.toggleSort} sort={table.sort} sortKey="standing" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {table.rows.map((row, index) => {
                       const note = campaignContactNote(row);
                       const unscored = unscoredLabel(row);
                       return (
-                        <tr className="bg-white align-top hover:bg-slate-50" key={`${row.visitCrmId ?? "row"}-${index}`}>
+                        <tr className="bg-white align-top transition-colors hover:bg-slate-50 motion-reduce:transition-none" key={`${row.visitCrmId ?? "row"}-${index}`}>
                           <td className="break-words px-3 py-2">
-                            <span className="block font-semibold text-slate-900">{dayText(row.dateIso)}</span>
+                            <span className={`block font-semibold ${LANDING_INK}`}>{dayText(row.dateIso)}</span>
                             <span className="block font-bold text-slate-500">{sessionText(row)}</span>
                           </td>
                           {/* The doctor, named, with his speciality beneath. A campaign row has no
@@ -509,7 +513,7 @@ export function RepVisitsDetail({
                               so what shows is the rep's own note, MARKED as free text rather than
                               passed off as a resolved contact. */}
                           <td className="break-words px-3 py-2">
-                            <span className="block font-semibold leading-tight text-slate-900">{contactText(row)}</span>
+                            <span className={`block font-semibold leading-tight ${LANDING_INK}`}>{contactText(row)}</span>
                             {row.contactCrmId == null && note ? (
                               <span className={`block text-phx-sm font-black uppercase tracking-[0.1em] ${note.tone}`}>
                                 {note.text}
@@ -532,7 +536,7 @@ export function RepVisitsDetail({
                             {row.customerName ? <span className="block text-slate-700">{row.customerName}</span> : null}
                             <span className="block text-slate-500">{territoryLabel(row)}</span>
                             {row.territory.status === "unmapped" ? (
-                              <span className={`mt-1 inline-block ${CHIP} border border-amber-300 bg-amber-50 text-amber-700`}>
+                              <span className={`mt-1 inline-block ${CHIP} border-l-2 border-l-amber-500 bg-white text-amber-800`}>
                                 Not mapped
                               </span>
                             ) : null}
@@ -579,9 +583,9 @@ export function RepVisitsDetail({
           half holidays is the explanation for a low rate, not a hidden one. */}
       {offDutyRows.length > 0 ? (
         <div className="border border-slate-200 bg-white">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 bg-slate-100 px-5 py-3">
-            <h3 className="text-phx-md font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
-            <p className="text-phx-md text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-5 py-3">
+            <LandingTitle as="h3">Days not in the field</LandingTitle>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
               {offDutyRows.length.toLocaleString("en-US")}{" "}
               {offDutyRows.length === 1 ? "day" : "days"} · leave, public holidays, meetings and training · counted in no
               rate, and never a visit
@@ -618,7 +622,7 @@ export function RepVisitsDetail({
                       <col style={{ width: "54%" }} />
                     </colgroup>
                     <thead>
-                      <tr className="bg-slate-600 text-left">
+                      <tr className="border-b border-slate-200 bg-white text-left">
                         <th className={THEAD} scope="col">
                           Date
                         </th>
@@ -630,10 +634,10 @@ export function RepVisitsDetail({
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-200">
                       {offDutyRows.map((row, index) => (
-                        <tr className="bg-white align-top hover:bg-slate-50" key={`${row.visitCrmId ?? "off"}-${index}`}>
-                          <td className="break-words px-3 py-2 font-semibold text-slate-900">{dayText(row.dateIso)}</td>
+                        <tr className="bg-white align-top transition-colors hover:bg-slate-50 motion-reduce:transition-none" key={`${row.visitCrmId ?? "off"}-${index}`}>
+                          <td className={`break-words px-3 py-2 font-semibold ${LANDING_INK}`}>{dayText(row.dateIso)}</td>
                           <td className="break-words px-3 py-2 font-semibold text-slate-600">{row.visitTypeLabel}</td>
                           <td className="break-words px-3 py-2 text-slate-600">
                             {offDutyReason(row) ?? <span className="text-slate-300">—</span>}

@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
+
 import type { CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 
 /**
@@ -96,8 +98,8 @@ export function RepsListTabs({
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? "inline-flex min-h-11 items-center border-b-[3px] border-orange-500 bg-orange-50 px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
-                : "inline-flex min-h-11 items-center border-b-[3px] border-transparent px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                ? `inline-flex min-h-11 items-center border-b-2 border-[#08111f] bg-white px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-[#08111f] ${LANDING_FOCUS}`
+                : `inline-flex min-h-11 items-center border-b-2 border-transparent px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500 transition-colors hover:border-slate-300 hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`
             }
             href={tabHref({ basePath, selection, tab: tab.key, week })}
             key={tab.key}

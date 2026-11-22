@@ -10,7 +10,9 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { neighbourTint, type NeighbourTint } from "@/components/phoenix-crm/brick-tints";
 import { visitTallyText } from "@/components/phoenix-crm/labels";
+import { LANDING_FOCUS, LANDING_INK } from "@/components/employee-portal/landing-kit";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
 import {
@@ -44,11 +46,12 @@ import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
 import { brickCoverage } from "@/lib/crm/reps-list-groups";
 import { brickSpreadLine, REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { cn } from "@/lib/utils";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
 //
-// Styling copies doctor-list-tables.tsx verbatim (flat borders, slate-900 header rows, orange
-// accent, the same THEAD/grade vocabulary) because this board replaces it in the same shell.
+// Styling: the landing kit (owner, 2026-11-20) — flat borders, white small-caps header rows on a
+// hairline, navy ink, the keyboard ring from LANDING_FOCUS; the THEAD/grade vocabulary is unchanged.
 //
 // THE FILTER AND SEARCH ARE CLIENT-SIDE HERE, unlike the cascade next door, and deliberately so:
 // the cascade decides WHICH REP a viewer may open, which is an access decision and therefore the
@@ -60,10 +63,9 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 // would also make "find this doctor" a hunt through fifteen boxes. Group headings stay visible while
 // a filter is active, minus any group the filter empties.
 
-const THEAD = "px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500";
-const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
+const SELECT_CLASS = cn(phxSelectClassName, "h-9 px-2 font-semibold text-slate-700");
 
 /**
  * The same two controls on Phoenix CRM's List tab, where a rep filters with a thumb: 44px on a phone
@@ -71,9 +73,8 @@ const SELECT_CLASS =
  * phone's native select draws its own. My List, the manager Reps List and the admin board keep the
  * two classes above byte for byte.
  */
-const FIELD_LABEL_CLASS = "block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-400";
-const FIELD_SELECT_CLASS =
-  "h-11 w-full rounded-none border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 md:h-9";
+const FIELD_LABEL_CLASS = "block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500";
+const FIELD_SELECT_CLASS = cn(phxSelectClassName, "h-11 px-2 font-semibold text-slate-700 md:h-9");
 
 /**
  * True inside Phoenix CRM's List tab (the `collapsible` board). Read where a prop cannot reach without
@@ -316,7 +317,7 @@ function GroupCaret({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden
-      className={`h-3 w-3 shrink-0 self-center text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}
+      className={`h-3 w-3 shrink-0 self-center text-slate-500 transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
       fill="none"
       stroke="currentColor"
       strokeLinecap="square"
@@ -393,7 +394,7 @@ function GroupHeading({
         {collapsible ? <GroupCaret open={!collapsed} /> : null}
         {/* dir="auto" on the heading: brick names in production are single-language Arabic locality
             names, which is the case where block-level auto is house style and correct. */}
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900" dir="auto">
+        <h3 className={`text-phx-xs font-black uppercase tracking-[0.14em] ${LANDING_INK}`} dir="auto">
           {group.heading}
         </h3>
         {/* The brick's area and the area's region, from the sales master (owner, 2026-10-31: "get the
@@ -460,8 +461,7 @@ function cairoDay(iso: string): string {
   return formatStableEnGb(parsed, { day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
 }
 
-const LINK_CLASS =
-  "font-semibold text-orange-700 underline decoration-orange-300 underline-offset-2 hover:text-orange-900";
+const LINK_CLASS = `font-semibold ${LANDING_INK} underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`;
 
 /**
  * ## The colour budget, and why it is this small
@@ -533,7 +533,7 @@ function ConfidenceChip({ onOpen, row }: { onOpen: () => void; row: RepsListCont
   }
   return (
     <button
-      className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+      className={`w-full text-left ${LANDING_FOCUS}`}
       onClick={onOpen}
       title="How this score was worked out"
       type="button"
@@ -601,16 +601,16 @@ function DialogShell({
         className="max-h-[85svh] w-full max-w-lg overflow-y-auto rounded-none border border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-3">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
           <div className="min-w-0">
-            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">{eyebrow}</p>
-            <p className="break-words text-sm font-bold text-white" dir="auto">
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{eyebrow}</p>
+            <p className={`break-words text-sm font-bold ${LANDING_INK}`} dir="auto">
               {subject}
             </p>
           </div>
           <button
             aria-label="Close"
-            className="-my-2 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-lg font-bold leading-none text-slate-300 hover:text-white"
+            className={`-my-2 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-lg font-bold leading-none text-slate-500 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
             onClick={onClose}
             type="button"
           >
@@ -689,7 +689,7 @@ function InsightsChip({ onOpen, row }: { onOpen: () => void; row: RepsListContac
   if (!insights || insights.length === 0) return null;
   return (
     <button
-      className={`mt-1 bg-slate-900 font-black uppercase tracking-[0.08em] text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+      className={`mt-1 bg-slate-900 font-black uppercase tracking-[0.08em] text-white transition-colors hover:bg-slate-700 motion-reduce:transition-none ${LANDING_FOCUS} ${
         field ? "inline-flex min-h-8 items-center px-2 text-phx-sm" : "inline-block px-1.5 py-0.5 text-phx-xs"
       }`}
       onClick={onOpen}
@@ -1015,7 +1015,7 @@ function matchesActivity(row: RepsListContact, choice: string): boolean {
 function ValidationChip({ row }: { row: RepsListContact }) {
   const at = row.validatedAt ? cairoDay(row.validatedAt) : "";
   return row.validatedAt ? (
-    <span className="mt-0.5 inline-flex flex-wrap items-center gap-1 bg-white px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-900 ring-1 ring-inset ring-slate-400">
+    <span className="mt-0.5 inline-flex flex-wrap items-center gap-1 bg-white px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-[#08111f] ring-1 ring-inset ring-slate-400">
       Validated
       {at ? <span className="font-semibold text-slate-500">{at}</span> : null}
     </span>
@@ -1056,7 +1056,7 @@ function ContactCell({
   const phone = phoneOf(row);
   return (
     <div className="break-words">
-      <span className="block font-semibold text-slate-900" dir="auto">
+      <span className={`block font-semibold ${LANDING_INK}`} dir="auto">
         {row.name}
       </span>
       {/* Directly UNDER the name rather than inline beside it. The Contact column is 21% of the
@@ -1253,7 +1253,7 @@ function GroupTable({
               )}
             </colgroup>
             <thead>
-              <tr className="bg-slate-900 text-left">
+              <tr className="border-b border-slate-200 bg-white text-left">
                 <th className={THEAD}>Contact</th>
                 <th className={THEAD}>Specialty</th>
                 {showList ? <th className={THEAD}>List</th> : null}
@@ -1594,12 +1594,12 @@ export function RepsListContacts({
           // colour: a tab holds many bricks, so borrowing one brick's hue would say something false
           // about the other forty. Off everywhere but Phoenix CRM, where orange stays the accent.
           const tabTint = brickColor ? BRICK_TINTS[index % BRICK_TINTS.length] : null;
-          const activeTone = tabTint ? `${tabTint.tab} ${tabTint.fill} text-slate-900` : "border-orange-500 text-slate-900";
+          const activeTone = tabTint ? `${tabTint.tab} ${tabTint.fill} text-[#08111f]` : "border-[#08111f] text-[#08111f]";
           return (
             <button
               aria-selected={active}
-              className={`-mb-px ${brickColor ? "border-b-2" : "min-h-11 border-b-[3px]"} px-3 py-2 text-left ${
-                active ? activeTone : "border-transparent text-slate-400 hover:border-slate-300 hover:text-slate-600"
+              className={`-mb-px ${brickColor ? "border-b-2" : "min-h-11 border-b-[3px]"} px-3 py-2 text-left transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
+                active ? activeTone : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
               }`}
               key={entry.key}
               onClick={() => chooseTab(entry.key)}
@@ -1609,7 +1609,7 @@ export function RepsListContacts({
               <span className="block text-phx-sm font-black uppercase tracking-[0.12em]">
                 {`${entry.label} · ${tabCounts[entry.key]}`}
               </span>
-              <span className="block text-phx-xs font-semibold text-slate-400">{entry.sub}</span>
+              <span className="block text-phx-xs font-semibold text-slate-500">{entry.sub}</span>
             </button>
           );
         })}
@@ -1622,7 +1622,7 @@ export function RepsListContacts({
           <button
             aria-controls={filtersId}
             aria-expanded={filtersOpen}
-            className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-sm font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
+            className={`flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-sm font-black uppercase tracking-[0.16em] text-slate-600 md:hidden ${LANDING_FOCUS}`}
             onClick={() => setFiltersOpen((open) => !open)}
             type="button"
           >
@@ -1760,7 +1760,7 @@ export function RepsListContacts({
           )}
           {filtersOn > 0 ? (
             <button
-              className="min-h-11 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
+              className={`min-h-11 border border-[#08111f] bg-white px-3 text-phx-sm font-black uppercase tracking-[0.12em] text-[#08111f] transition-colors hover:bg-[#08111f] hover:text-white motion-reduce:transition-none ${LANDING_FOCUS} md:min-h-9`}
               onClick={clearFilters}
               type="button"
             >
@@ -1857,7 +1857,7 @@ export function RepsListContacts({
           </p>
           {totalCount > 0 && filtersOn > 0 ? (
             <button
-              className="mt-3 min-h-11 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
+              className={`mt-3 min-h-11 border border-[#08111f] bg-white px-3 text-phx-sm font-black uppercase tracking-[0.12em] text-[#08111f] transition-colors hover:bg-[#08111f] hover:text-white motion-reduce:transition-none ${LANDING_FOCUS} md:min-h-9`}
               onClick={clearFilters}
               type="button"
             >
@@ -1995,7 +1995,7 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
       }`}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900">{day.label}</h3>
+        <h3 className={`text-phx-xs font-black uppercase tracking-[0.14em] ${LANDING_INK}`}>{day.label}</h3>
         {dated ? null : (
           <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
             The CRM recorded no date on these rows
@@ -2069,7 +2069,7 @@ function ShiftLine({ ampm }: { ampm: string | null }) {
 function OffListContactCell({ row }: { row: PlanDoctorRow }) {
   return (
     <div className="break-words">
-      <span className="block font-semibold text-slate-900" dir="auto">
+      <span className={`block font-semibold ${LANDING_INK}`} dir="auto">
         {row.entry.contactName}
       </span>
       <span className="mt-0.5 block text-phx-sm font-semibold">
@@ -2197,7 +2197,7 @@ function PlanDayTable({
               <col className="w-[26%]" />
             </colgroup>
             <thead>
-              <tr className="bg-slate-900 text-left">
+              <tr className="border-b border-slate-200 bg-white text-left">
                 <th className={THEAD}>Contact</th>
                 <th className={THEAD}>Specialty</th>
                 <th className={THEAD}>List</th>

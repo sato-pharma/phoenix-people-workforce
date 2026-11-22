@@ -67,18 +67,18 @@ export function districtPlansExportHref(weekStart: string): string {
   return `${DISTRICT_PLANS_EXPORT_PATH}?week=${encodeURIComponent(weekStart)}`;
 }
 
-export const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
-export const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white";
+export const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 transition-colors hover:border-[#08111f] hover:bg-slate-50 hover:text-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
+export const LINK_ON = "border border-[#08111f] bg-[#08111f] px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
 export const LABEL = "text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 /** A quiet name link to a manager's section, only when that section is on the page. */
 function ManagerName({ anchor, listed, name }: { anchor: string; listed: boolean; name: string }) {
   return listed ? (
-    <a className="text-phx-sm font-black text-slate-900 hover:underline" href={`#${anchor}`}>
+    <a className="text-phx-sm font-black text-[#08111f] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]" href={`#${anchor}`}>
       {name}
     </a>
   ) : (
-    <span className="text-phx-sm font-black text-slate-900">{name}</span>
+    <span className="text-phx-sm font-black text-[#08111f]">{name}</span>
   );
 }
 
@@ -103,7 +103,7 @@ export function DistrictPlansToolbar({
     <div className="grid gap-3 border border-slate-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-phx-md font-black text-slate-900">
+          <p className="text-phx-md font-black text-[#08111f]">
             Week · {districtPlanDayLabel(report.weekStart)} – {districtPlanDayLabel(report.weekEnd)}
           </p>
           <p className="text-phx-sm text-slate-500">
@@ -265,7 +265,7 @@ export function DistrictPlansGridPanel({ report, show }: { report: DistrictManag
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <th className="px-3 py-2" scope="col">District manager</th>
               {grid.days.map((date) => (
-                <th className={`px-2 py-2 ${date === report.cairoToday ? "bg-slate-900 text-white" : ""}`} key={date} scope="col">
+                <th className={`px-2 py-2 ${date === report.cairoToday ? "bg-[#08111f] text-white" : ""}`} key={date} scope="col">
                   {districtPlanShortDay(date)}
                 </th>
               ))}
@@ -315,7 +315,7 @@ export function DistrictPlansGridPanel({ report, show }: { report: DistrictManag
                 <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1">
                   {grid.days.map((date) => (
                     <div className="contents" key={date}>
-                      <dt className={`text-phx-xs font-black uppercase tracking-[0.1em] ${date === report.cairoToday ? "text-slate-900" : "text-slate-500"}`}>{districtPlanShortDay(date)}</dt>
+                      <dt className={`text-phx-xs font-black uppercase tracking-[0.1em] ${date === report.cairoToday ? "text-[#08111f]" : "text-slate-500"}`}>{districtPlanShortDay(date)}</dt>
                       <dd className="grid min-w-0 gap-1 sm:grid-cols-2">
                         {row.cells
                           .filter((entry) => entry.date === date)
@@ -394,7 +394,7 @@ export function DistrictPlansRepsAlonePanel({ report, show }: { report: District
               <ul className="grid gap-1">
                 {entry.reps.map((rep) => (
                   <li className="border border-slate-200 bg-slate-50 px-2 py-1" key={rep.seatId}>
-                    <p className="break-words text-phx-sm font-black text-slate-900">{rep.name}</p>
+                    <p className="break-words text-phx-sm font-black text-[#08111f]">{rep.name}</p>
                     <p className="break-words text-phx-xs text-slate-500">
                       {rep.territory}
                       {districtRepLeaveLine(rep, report.weekStart) ? ` · ${districtRepLeaveLine(rep, report.weekStart)}` : ""}
@@ -423,7 +423,7 @@ export function DistrictPlansChainVisitsPanel({ report }: { report: DistrictMana
               <p className={LABEL}>
                 {districtPlanShortDay(chain.date)} {chain.half}
               </p>
-              <p className="min-w-0 break-words text-phx-sm font-black text-slate-900">{chain.week.managerName}</p>
+              <p className="min-w-0 break-words text-phx-sm font-black text-[#08111f]">{chain.week.managerName}</p>
               {chain.lines.map((line) => (
                 <p className="flex min-w-0 items-start gap-1.5 break-words text-phx-sm font-semibold text-sky-800 md:col-start-3" key={line}>
                   <Users aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -500,10 +500,10 @@ export function DistrictPlansCustomersPanel({ report, show }: { report: District
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-300 bg-slate-50 align-top">
-              <th className="px-4 py-2.5 text-left text-phx-sm font-black text-slate-900" scope="row">The whole team</th>
-              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold tabular-nums text-slate-900">{districtCustomerCountLine(team)}</td>
-              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold tabular-nums text-slate-900">{teamCells.grades}</td>
-              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold text-slate-900">{teamCells.specialities}</td>
+              <th className="px-4 py-2.5 text-left text-phx-sm font-black text-[#08111f]" scope="row">The whole team</th>
+              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold tabular-nums text-[#08111f]">{districtCustomerCountLine(team)}</td>
+              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold tabular-nums text-[#08111f]">{teamCells.grades}</td>
+              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold text-[#08111f]">{teamCells.specialities}</td>
             </tr>
           </tfoot>
         </table>
@@ -525,7 +525,7 @@ export function DistrictPlansCustomersPanel({ report, show }: { report: District
             );
           })}
           <li className="grid gap-0.5 bg-slate-50 px-4 py-2.5">
-            <p className="text-phx-sm font-black text-slate-900">The whole team</p>
+            <p className="text-phx-sm font-black text-[#08111f]">The whole team</p>
             <p className="break-words text-phx-sm tabular-nums text-slate-700">{districtCustomerCountLine(team)}</p>
             <p className="break-words text-phx-sm tabular-nums text-slate-600">Grades: {teamCells.grades}</p>
           </li>

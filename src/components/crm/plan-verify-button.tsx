@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
+import { LANDING_FOCUS as FOCUS } from "@/components/employee-portal/landing-kit";
 import { planStatusClass, planStatusLabel } from "@/lib/crm/plan-verification";
 import type { PlanSummary } from "@/lib/crm/plan-board";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
@@ -104,8 +106,8 @@ export function PlanApproveButton({ canApprove, plan }: { canApprove: boolean; p
         <button
           className={
             armed
-              ? "h-8 border border-orange-500 bg-orange-500 px-3 text-phx-sm font-black uppercase tracking-[0.1em] text-white disabled:opacity-60"
-              : "h-8 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:border-orange-400 disabled:opacity-60"
+              ? approvalActionClassName("confirm", "dense", `h-8 uppercase tracking-[0.1em] motion-reduce:transition-none ${FOCUS}`)
+              : approvalActionClassName("approve", "dense", `h-8 uppercase tracking-[0.1em] motion-reduce:transition-none ${FOCUS}`)
           }
           disabled={busy || pending}
           onClick={() => {
@@ -118,7 +120,7 @@ export function PlanApproveButton({ canApprove, plan }: { canApprove: boolean; p
         </button>
         {armed && !busy ? (
           <button
-            className="h-8 px-2 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-400 hover:text-slate-700"
+            className={`h-8 px-2 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${FOCUS}`}
             onClick={() => setArmed(false)}
             type="button"
           >

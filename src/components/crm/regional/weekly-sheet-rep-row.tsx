@@ -39,7 +39,7 @@ export function WeeklySheetRepRow({
         <td className="break-words px-4 py-3">
           {lastCell}
           <button
-            className="mt-1 text-left text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 hover:underline"
+            className="mt-1 text-left text-phx-xs font-black uppercase tracking-[0.1em] text-[#08111f] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             onClick={() => setOpen((value) => !value)}
             type="button"
             {...rowDetailToggleProps(detailId, open)}

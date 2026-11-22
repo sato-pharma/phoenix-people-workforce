@@ -143,7 +143,7 @@ export function KpiShareBar({
             <>
               <span aria-hidden className={`mt-1 h-2 w-2 shrink-0 ${slice.swatch}`} />
               <span className="min-w-0 flex-1 text-phx-md leading-4 text-slate-700 sm:text-phx-sm">{slice.label}</span>
-              <span className="shrink-0 text-phx-md font-black tabular-nums text-slate-900 sm:text-phx-sm">{slice.count}</span>
+              <span className="shrink-0 text-phx-md font-black tabular-nums text-[#08111f] sm:text-phx-sm">{slice.count}</span>
               <span className="w-9 shrink-0 text-right text-phx-sm tabular-nums text-slate-500 sm:text-phx-xs">
                 {percents[index]}%
               </span>
@@ -153,7 +153,7 @@ export function KpiShareBar({
             <li key={slice.key}>
               {slice.href ? (
                 <Link
-                  className="flex items-start gap-2 underline-offset-2 hover:underline hover:decoration-orange-500"
+                  className="flex items-start gap-2 underline-offset-2 transition-colors hover:underline hover:decoration-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                   href={slice.href}
                 >
                   {body}
@@ -323,7 +323,7 @@ export function KpiTeamCoverageRollup({ floorPct, teams }: { floorPct: number; t
           <col style={{ width: "18%" }} />
           <col style={{ width: "18%" }} />
         </colgroup>
-        <thead className="border-b border-slate-200 bg-slate-50">
+        <thead className="border-b border-slate-200 bg-white">
           <tr>
             <th className={`px-3 py-2.5 text-left ${EYEBROW}`} scope="col">
               Team
@@ -343,11 +343,11 @@ export function KpiTeamCoverageRollup({ floorPct, teams }: { floorPct: number; t
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-slate-200">
           {teams.map(({ coverage, team }) => (
             <tr key={team.key}>
               <td className="px-3 py-3 align-top">
-                <span className="block text-sm font-bold leading-5 text-slate-900" dir="auto">
+                <span className="block text-sm font-bold leading-5 text-[#08111f]" dir="auto">
                   {team.managerName}
                 </span>
                 <span className={`block ${SMALL}`} dir="auto">
@@ -361,22 +361,22 @@ export function KpiTeamCoverageRollup({ floorPct, teams }: { floorPct: number; t
                   {coverage.covered} of {coverage.planned} planned doctors
                 </span>
               </td>
-              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-slate-900">
+              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-[#08111f]">
                 {coverage.notReached}
               </td>
-              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-slate-900">
+              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-[#08111f]">
                 {coverage.withPlan > 0 ? `${coverage.atFloor} of ${coverage.withPlan}` : "–"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <ul className="divide-y divide-slate-100 border border-slate-200 md:hidden">
+      <ul className="divide-y divide-slate-200 border border-slate-200 md:hidden">
         {teams.map(({ coverage, team }) => (
           <li className="px-3 py-3" key={team.key}>
             <div className="flex items-baseline justify-between gap-3">
               <span className="min-w-0">
-                <span className="block text-sm font-bold leading-5 text-slate-900" dir="auto">
+                <span className="block text-sm font-bold leading-5 text-[#08111f]" dir="auto">
                   {team.managerName}
                 </span>
                 <span className={`block ${SMALL}`} dir="auto">
@@ -410,7 +410,7 @@ export function KpiTeamCoverageRollup({ floorPct, teams }: { floorPct: number; t
  */
 export function KpiTeamHeadingRow({ columns, entry }: { columns: number; entry: KpiTeamWithCoverage }) {
   return (
-    <tr className="border-t-2 border-slate-900 bg-slate-50">
+    <tr className="border-t-2 border-[#08111f] bg-slate-50">
       <th className="px-3 py-2.5 text-left font-normal" colSpan={columns} scope="colgroup">
         <KpiTeamHeadingText entry={entry} />
       </th>
@@ -421,7 +421,7 @@ export function KpiTeamHeadingRow({ columns, entry }: { columns: number; entry: 
 /** The same heading over a team's phone cards. */
 export function KpiTeamHeadingBand({ entry }: { entry: KpiTeamWithCoverage }) {
   return (
-    <div className="border-t-2 border-slate-900 bg-slate-50 px-4 py-2.5">
+    <div className="border-t-2 border-[#08111f] bg-slate-50 px-4 py-2.5">
       <KpiTeamHeadingText entry={entry} />
     </div>
   );
@@ -432,7 +432,7 @@ function KpiTeamHeadingText({ entry }: { entry: KpiTeamWithCoverage }) {
   return (
     <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <span className="min-w-0">
-        <span className="block text-phx-md font-black uppercase tracking-[0.12em] text-slate-900" dir="auto">
+        <span className="block text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f]" dir="auto">
           {kpiTeamHeading(team)}
         </span>
         <span className={`block ${SMALL}`}>{teamHeadCount(coverage)}</span>
@@ -513,7 +513,7 @@ export function KpiBrickGlance({ rows }: { rows: readonly KpiBrickRow[] }) {
                       {row.label}
                     </span>
                     <span className="shrink-0 text-phx-md tabular-nums text-slate-500 sm:text-phx-sm">
-                      <span className="font-black text-slate-900">{row.left}</span> left · {row.covered} of {row.planned}
+                      <span className="font-black text-[#08111f]">{row.left}</span> left · {row.covered} of {row.planned}
                       {pct == null ? "" : ` · ${pct}%`}
                     </span>
                   </span>
