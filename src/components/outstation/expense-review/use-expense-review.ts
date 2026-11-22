@@ -27,6 +27,7 @@ import {
 } from "@/lib/outstation/expense-approval-filters";
 import { buildExpenseApprovalEmployeeSummary, totalExpenseApprovalSummary } from "@/lib/outstation/expense-approval-summary";
 import { type ExpenseApprovalSort, compareExpenseApprovalTrips, withLiveWorkloadStatus } from "@/lib/outstation/expense-approval-triage";
+import { flagDuplicateTicketRows } from "@/lib/outstation/duplicate-ticket-guard";
 import { flagDuplicateTripRows } from "@/lib/outstation/duplicate-trip-guard";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 
@@ -284,6 +285,26 @@ export function useExpenseReview({ canDecide, viewerHrId }: { canDecide: boolean
   // Same employee, same day, same destination, both live: a trip claimed twice. Read over the WHOLE
   // queue so a pending copy of an already-approved trip is flagged. A review signal only.
   const duplicateFlags = useMemo(() => flagDuplicateTripRows(records), [records]);
+  // "Same ticket as …" — the same tickets, other cost or receipt photo on two live claims of one
+  // employee (duplicate-ticket-guard.ts, owner 2026-11-22). A signal to look, never a decision.
+  const ticketDuplicateFlags = useMemo(
+    () =>
+      flagDuplicateTicketRows(
+        records.map((record) => ({
+          date: record.date,
+          goTicketAmount: record.goTicketAmount,
+          hrId: record.hrId,
+          otherAmount: record.other,
+          receipts: record.ticketReceipts,
+          returnTicketAmount: record.returnTicketAmount,
+          status: record.status,
+          toCity: record.toCity,
+          toDate: record.toDate,
+          tripId: record.tripId,
+        })),
+      ),
+    [records],
+  );
   const activeFilterCount = countActiveExpenseApprovalFilters(filters);
   const narrowed = activeFilterCount > 0 || search.trim().length > 0;
 
@@ -748,6 +769,7 @@ export function useExpenseReview({ canDecide, viewerHrId }: { canDecide: boolean
     records,
     retry,
     rows,
+    ticketDuplicateFlags,
     search,
     sessionExpired,
     tab,

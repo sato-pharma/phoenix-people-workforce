@@ -2107,6 +2107,7 @@ import { runOutstationMissingTicketTests } from "./outstation-missing-ticket.tes
 import { runOutstationTrainTicketScanTests } from "./outstation-train-ticket-scan.test.ts";
 import { runOutstationNoTicketTrainFareTests } from "./outstation-no-ticket-train-fare.test.ts";
 import { runOutstationWorkloadRestampTests } from "./outstation-workload-restamp.test.ts";
+import { runOutstationStrandedReleaseTests } from "./outstation-stranded-release.test.ts";
 import { runOutstationSubmitExpenseStepsTests } from "./outstation-submit-expense-steps.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
@@ -3121,6 +3122,7 @@ import { runPlansHistoryReplacedDraftsAndWeekLabelsTests } from "./plans-history
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
+import { runOutstationClaimGuardsTests } from "./outstation-claim-guards.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
 import { runOutstationExpenseApprovalsCollapsibleRowsTests } from "./outstation-expense-approvals-collapsible-rows.test.ts";
@@ -12571,6 +12573,10 @@ await runTest(
   runOutstationWorkloadRestampTests,
 );
 await runTest(
+  "an accepted outstation claim is never stranded off payroll — the release after an employee's own photo runs as the system, never as the employee (a District Manager's capture was refused and two accepted claims sat with every gate complete and no payroll row), and the morning departure-photo job hands every accepted claim the gate clears that no payroll row carries to the same release, a bounded batch at a time, never an undecided, rejected, still-held or already-queued claim",
+  runOutstationStrandedReleaseTests,
+);
+await runTest(
   "Submit Expense is a step form that says what to do in each step and what comes next — a trip walks trip, destination, evidence, amounts and review, a Meeting or Other expense has no destination, each step names what it still needs and Submit goes to the first one missing something, the screen after Submit lists what is still owed with the departure photo first, and Submit Expense and Expense Submissions are one page: what is owed, the form, then My claims, with the old page forwarding a submitter to it",
   runOutstationSubmitExpenseStepsTests,
 );
@@ -12765,6 +12771,10 @@ await runTest(
 await runTest(
   "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",
   runOutstationDuplicateTripGuardTests,
+);
+await runTest(
+  "the guards from the October expense audit: a ticket, a parking cost or a receipt photo already on a live claim of the same employee (OUTSTATION-318/320, 401/402, 164/175) is refused at submission before any file is stored and flagged as a pair on the approvals screen; a departure photo after the last Cairo day of the trip is refused, first capture and retake alike, and the card says so instead of offering a camera; an uploaded arrival photo carries the EXIF time of the file itself on its watermark and under the photo, or says the file has none",
+  runOutstationClaimGuardsTests,
 );
 await runTest(
   "Expense Approvals reads a multi-day trip as one: the trip length (3 days · 2 nights) is one helper shown on the queue row and the decision panel, each trip day is one folding row whose map is drawn only when opened, nothing is cut off with an ellipsis, and Approve is the panel's pinned last part below the scrolling evidence",

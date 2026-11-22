@@ -81,9 +81,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ManagerAreaRepOption } from "@/lib/outstation/area-rep-options";
 import {
   drawEvidenceWatermark,
+  formatEvidenceDateTimeStamp,
   getCompressedEvidenceCanvasSize,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
+import { photoFileTimeCaption, readPhotoFileTakenAt } from "@/lib/evidence/photo-file-time";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -98,6 +100,8 @@ type CarEvidenceState = {
   capturedLatitude: number;
   capturedLocationLabel: string;
   capturedLongitude: number;
+  /** An uploaded photo's own time from its EXIF, null when the file has none (photo-file-time.ts). */
+  fileTakenAt?: string | null;
   imageDataUrl: string;
   requestDraftId: string;
   requestId: string | null;
@@ -721,6 +725,7 @@ export function MobileOutstationWizard({
         capturedLatitude: restore.carEvidenceLatitude,
         capturedLocationLabel: restore.carEvidenceLocationLabel ?? "Location unavailable",
         capturedLongitude: restore.carEvidenceLongitude,
+        fileTakenAt: restore.carEvidenceFileTakenAt ?? null,
         imageDataUrl: restore.carEvidenceImageDataUrl ?? "",
         requestDraftId: draftId,
         requestId: null,
@@ -782,6 +787,7 @@ export function MobileOutstationWizard({
       carEvidenceLongitude: carEvidence?.capturedLongitude ?? null,
       carEvidenceRequestId: carEvidenceDraftId,
       carEvidenceSource: carEvidence?.source,
+      carEvidenceFileTakenAt: carEvidence?.fileTakenAt ?? null,
       expenseType,
       goTicketAmount,
       hasTicketAttachments: ticketFiles.length > 0,
@@ -889,6 +895,7 @@ export function MobileOutstationWizard({
                     capturedLocationLabel: draft.carEvidenceLocationLabel,
                     capturedLongitude: Number(draft.carEvidenceLongitude),
                     employeeHrId,
+                    fileTakenAt: draft.carEvidenceFileTakenAt ?? null,
                     requestDraftId: draft.carEvidenceRequestId,
                     requestId: null,
                     // Pre-2026-08-05 drafts carry no source; those are all live captures.
@@ -967,6 +974,7 @@ export function MobileOutstationWizard({
       capturedLocationLabel: carEvidence.capturedLocationLabel,
       capturedLongitude: carEvidence.capturedLongitude,
       employeeHrId,
+      ...(carEvidence.source === "upload" ? { fileTakenAt: carEvidence.fileTakenAt ?? null } : {}),
       requestDraftId: carEvidence.requestDraftId,
       requestId: carEvidence.requestId,
       source: carEvidence.source,
@@ -1420,6 +1428,9 @@ export function MobileOutstationWizard({
     setIsCapturingCarEvidence(true);
     const objectUrl = URL.createObjectURL(file);
     try {
+      // The file's own time, read BEFORE the canvas re-encode below drops it (owner, 2026-11-23:
+      // an upload "will come with a timestamp exactly like the live camera"). Null = none in the file.
+      const fileTakenAt = readPhotoFileTakenAt(await file.arrayBuffer());
       const image = await new Promise<HTMLImageElement>((resolve, reject) => {
         const element = new Image();
         element.onload = () => resolve(element);
@@ -1453,7 +1464,7 @@ export function MobileOutstationWizard({
         // mistake it for a live capture, and the burned-in panel is the one part of the evidence
         // that survives being screenshotted out of the app.
         label: "Arrival photo (uploaded)",
-        locationLines: location.lines,
+        locationLines: [photoFileTimeCaption(fileTakenAt, formatEvidenceDateTimeStamp), ...location.lines],
         reference: `Draft: ${carEvidenceDraftId}`,
       });
 
@@ -1462,6 +1473,7 @@ export function MobileOutstationWizard({
         capturedLatitude: captured.capturedLatitude,
         capturedLocationLabel: location.label,
         capturedLongitude: captured.capturedLongitude,
+        fileTakenAt,
         imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
         requestDraftId: carEvidenceDraftId,
         requestId: carEvidence?.requestId ?? null,

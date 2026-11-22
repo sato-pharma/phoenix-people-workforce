@@ -141,8 +141,7 @@ function Recommendations({
     try {
       await crmPost<unknown>("/api/phoenix-crm/place-notes/recommendation", { recommendation, subjectId, subjectKind }, "recommended");
       // This reads the page now, so a decision's re-read still waiting would read it a second time.
-      placeCheckReread.cancel();
-      router.refresh();
+      placeCheckReread.refreshNow(() => router.refresh());
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);
@@ -235,8 +234,7 @@ function CommentBox({ subjectId, subjectKind }: { subjectId: string; subjectKind
       setBody("");
       setOpen(false);
       setSaving(null);
-      placeCheckReread.cancel();
-      router.refresh();
+      placeCheckReread.refreshNow(() => router.refresh());
     } catch (error) {
       setProblem(messageOf(error));
       setSaving(null);

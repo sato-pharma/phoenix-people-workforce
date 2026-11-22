@@ -261,9 +261,9 @@ export function outstationRequestMayReachPayroll(input: {
  * The "after" half used to send too, worded as overdue, and the owner ended it that evening with
  * the right question: what does that email add? The departure photo is a live camera capture,
  * taken at the destination, before the employee leaves. Once he is home there is no photo left
- * for him to take. He can still technically submit one — the trip window is enforced only on a
- * RETAKE (see the capture path in service.ts) — but it would be captured wherever he now is, days
- * late, and come back flagged `far_from_arrival` and `outside_trip_window`. So the overdue mail
+ * for him to take. Since 2026-11-22 the service refuses one after the trip's last day, first
+ * capture and retake alike (departurePhotoWindowClosedMessage); before that it was accepted
+ * wherever he now was, days late, flagged `far_from_arrival` and `outside_trip_window`. So the overdue mail
  * asked a man whose money was stuck either to ignore it or to manufacture evidence that reads as
  * suspicious for a trip that genuinely happened. Neither is worth sending.
  *
