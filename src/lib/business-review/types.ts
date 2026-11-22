@@ -218,7 +218,7 @@ export type LineSummary = {
   customersPharmacy: number;
 };
 
-export type MarketingSummary = {
+type MarketingSummary = {
   /** Committed spend attributed to this line. */
   committed: number;
   /** Requested but not yet decided — shown separately, never added to committed. */
@@ -258,7 +258,7 @@ export type RepVisit = {
   area: string | null;
 };
 
-export type VisitsSummary = {
+type VisitsSummary = {
   /** False when this window holds no CRM visit rows at all — "no data", never "zero visits". */
   available: boolean;
   totalDeduped: number;
@@ -282,7 +282,7 @@ export type VisitsSummary = {
   activityMix: { label: string; rows: number }[];
 };
 
-export type ReviewMeta = {
+type ReviewMeta = {
   line: string;
   /** Display label for the window — "Jan – Jun 2026". */
   period: string;

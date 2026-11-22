@@ -60,7 +60,7 @@ import type { OfferApprovalTrail, OfferTerms } from "./offer-rules";
  */
 
 /** The subset of an offer letter the ATS genuinely knows. Every other field stays the composer's. */
-export type OfferLetterDraft = Pick<
+type OfferLetterDraft = Pick<
   OfferFields,
   "candidateEmail" | "candidateName" | "salutationName" | "startDate" | "territory" | "title" | "totalMonthly"
 >;

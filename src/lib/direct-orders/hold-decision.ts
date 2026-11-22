@@ -41,7 +41,8 @@ export type DirectOrderHoldGround =
   | "admin_released"
   | "unproven"
   | "code_conflict"
-  | "pharmacy_rejected";
+  | "pharmacy_rejected"
+  | "admin_kept_held";
 
 /** A resolving code that nonetheless failed the release test, and the reason. */
 export type DirectOrderHoldConflict = {
@@ -139,6 +140,12 @@ export function decideDirectOrderHold(input: DirectOrderHoldInput): DirectOrderH
   //    Nermeen's placeholder-code case). Recorded on the pharmacy, so it covers sibling orders.
   if (input.holdReleaseGround === "admin_released") {
     return { hold: false, ground: "admin_released", ...none };
+  }
+
+  // 3b. A System Admin looked and ruled its orders STAY held. No code and no SFE clean-up lets one through
+  //     behind his back; his own release (3) or his confirmation (2) is the way out (owner, 2026-11-20).
+  if (input.holdReleaseGround === "kept_held") {
+    return { hold: true, ground: "admin_kept_held", ...none };
   }
 
   // 4. THE RELEASE TEST. A code that resolves in the master database, whose brick agrees with the
@@ -393,6 +400,8 @@ export function describeDirectOrderHoldGround(decision: DirectOrderHoldDecision)
     }
     case "pharmacy_rejected":
       return "This pharmacy was examined and found not to be real. Nothing releases it.";
+    case "admin_kept_held":
+      return "The system administrator reviewed this pharmacy and ruled its orders stay held. Only the system administrator releases them.";
     case "unproven":
     default:
       return "No distributor customer code proves this pharmacy exists, so the order is held until it passes validation or a System Admin decides.";

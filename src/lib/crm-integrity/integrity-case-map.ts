@@ -40,7 +40,7 @@ export const CASE_MAP_MAX_SIDE = 640;
 export type CaseMapBasemapRequest = { centre: GeoPoint; zoom: number; width: number; height: number };
 
 /** The address of one frame's streets. Six decimals is 11 cm: the frame the markers were placed in. */
-export function caseMapBasemapUrl(input: CaseMapBasemapRequest): string {
+function caseMapBasemapUrl(input: CaseMapBasemapRequest): string {
   return (
     `${CASE_MAP_BASEMAP_ROUTE}?lat=${input.centre.lat.toFixed(6)}&lon=${input.centre.lon.toFixed(6)}` +
     `&zoom=${input.zoom}&w=${Math.round(input.width)}&h=${Math.round(input.height)}`
@@ -79,7 +79,7 @@ export type CaseMapPoint = GeoPoint & {
   accuracyMeters: number | null;
 };
 
-export type CaseMapMarker = {
+type CaseMapMarker = {
   label: string;
   /** 1, 2, 3 — what the marker shows and what the numbers beside the map refer to. */
   index: number;
@@ -92,7 +92,7 @@ export type CaseMapMarker = {
   sharesPointWith: number | null;
 };
 
-export type CaseMapPair = {
+type CaseMapPair = {
   fromIndex: number;
   toIndex: number;
   meters: number;

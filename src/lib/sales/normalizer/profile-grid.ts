@@ -7,7 +7,7 @@ import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 // Area ID / Region ID are derived from the Brick (never mapped); Distrub ID is the distributor's own code.
 
 export type HeaderGridColumn = { key: string; label: string };
-export type HeaderGridRow = { cells: Record<string, string>; distributorCode: string; distributorName: string };
+type HeaderGridRow = { cells: Record<string, string>; distributorCode: string; distributorName: string };
 export type HeaderGrid = { columns: HeaderGridColumn[]; rows: HeaderGridRow[] };
 
 // Unified Phoenix headers shown as columns, in coded-sheet order.

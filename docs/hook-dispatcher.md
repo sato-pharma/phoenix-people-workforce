@@ -384,6 +384,54 @@ A merge now takes about two rounds of GitHub reads instead of nine one after ano
 `tests/merge-checks-guard.test.ts`: every call in its `gh` stub holds for 700 ms and records when it
 ran; at least three must overlap, and no question may be asked twice.
 
+## bash-guard C22 — a merge waits for its migration to be on production
+
+Added 2026-11-21 on the owner's "Build the guard".
+
+**Why.** A merge ships the app's code to production within minutes and applies **no** migration
+(AGENTS.md §2.3). On 19 Nov 2026 four PRs moved money steps into single database functions — #603 and
+#608 (accepting an outstation claim for payroll), #590 (Cancel run, Reopen Part 2) and #623 (reserving
+late trips) — and merged with those functions on staging only. From that evening the live code called
+four functions production did not have. On 21 Nov at 22:11 Cairo the owner's bulk approval of
+outstation claims failed for seven people with `PGRST202` ("could not find the function"), and nothing
+was saved for any of them. The nightly drift check had seen it, but only at 17:02 that day: it ignores
+anything merged in the last 48 hours on purpose, because a PR's own migration is supposed to read
+unapplied while it is in review. The merge is the one moment that window must not cover. The four were
+applied by hand that night (#682).
+
+**What it does.** On `gh pr merge [<n>]` for this repository it lists the PR's files
+(`pulls/<n>/files`, paged) and takes every `supabase/migrations/<version>_<name>.sql` the PR adds,
+changes or renames to. Each one must be either:
+
+- **in production's ledger** — `supabase_migrations.schema_migrations`, read through the drift check's own
+  RPC `phx_ci_migration_versions` (paged; PostgREST caps an RPC response) and matched by the drift
+  check's own `isRecorded` (version, name, or the version inside a name), never a copy; or
+- **acknowledged in the PR head** — an `ACKNOWLEDGED_EXCEPTIONS` entry in that commit's
+  `scripts/lib/migration-inventory.ts`, which is how the `scripts/apply-sql-file.mjs` route ends,
+  because it writes no ledger row. Read only for a file the ledger does not record.
+
+A removed file, a file outside that folder, a PR with no migration and another repository are not
+judged. The reading is `scripts/migration-merge-gate.mjs`; `node scripts/migration-merge-gate.mjs <pr>`
+gives the same answer by hand (exit 0 on production, 1 not, 2 could not tell). Run on the 19 Nov PR it
+answers `not on production: 20261119132423_outstation_accept_claim_for_payroll_atomically.sql`.
+
+- **Production only.** The credentials come from the process environment, then `.env.local` and
+  `.env.production.rls.local` at the repository root — never the staging file, never the folder the
+  merge runs from. A URL whose project ref is not production's is refused before any read: staging has
+  every migration first, so a gate staging answered would pass exactly the merges it exists to stop.
+- **Fails closed**, like C21: an unreadable file list, no credentials, a non-production URL, an HTTP
+  error or an empty ledger refuses the merge, unless every file is acknowledged in the head.
+- **Stand-down:** `PHX_MIGRATION_MERGE_OK=1 <cmd>` (`$env:PHX_MIGRATION_MERGE_OK=1; <cmd>`), on the owner's own
+  words only. C21's `PHX_RED_MERGE_OK` and C10's `PHX_MERGE_OK` do not pass it.
+- **This repository only.** A session in another folder has no production credentials to read; the
+  user-level `merge-checks-guard.mjs` does not carry it.
+- Its GitHub reads go through `ghRead` like C21's: the file list is prefetched with the others, and the
+  PR head is the read C21 already made.
+
+Pinned by `tests/migration-merge-gate.test.ts` — the pure pieces against the real exception list, the
+ledger read with a fake fetch, and the real hook through a `gh` shim with a staging URL in its
+environment, so the read is refused before any network.
+
 ## bash-guard C20 — a `.claude` push carries the cloud-mirror refresh
 
 The owner asked for it mechanically on 2026-10-23 ("make it mechanical"), the same morning he said

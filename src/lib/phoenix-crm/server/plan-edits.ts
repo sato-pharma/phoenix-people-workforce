@@ -41,6 +41,7 @@ import {
 import { isUuid, planStatusLine, repChangeableDays, repWeekState, standingReturnedDay, type RepWeekState } from "@/lib/phoenix-crm/plan-rules";
 import { territoryReviewer, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { assertPlanEditApprover, canDecidePlanEdit, canOverrideDecision, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { assertSuperAdminDecisionStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -392,7 +393,7 @@ export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pr
 
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_plan_edit_requests")
-    .select("id, plan_id, seat_id, week_start, rep_hr_id, status, is_test")
+    .select("id, plan_id, seat_id, week_start, rep_hr_id, status, is_test, manager_decided_by_hr_id, admin_decided_by_hr_id")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
@@ -411,6 +412,11 @@ export async function decidePlanEdit(viewer: PhoenixCrmViewer, raw: unknown): Pr
   if (!asAdministrator) {
     assertPlanEditApprover(viewer, seat, isTest, stage);
     if (!planEditDecisionsFor(stage).includes(decision)) throw validationError("Approve or refuse this step.");
+  }
+
+  // 🔴 A step the Super Admin approved is never refused at a later step (owner, 2026-11-20).
+  if (decision === "refuse") {
+    await assertSuperAdminDecisionStands(viewer.isSuperAdmin, [row.manager_decided_by_hr_id, row.admin_decided_by_hr_id]);
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_plan_edit_request", {

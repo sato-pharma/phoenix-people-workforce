@@ -11,7 +11,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 import { employeeExitDay, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { compareInvoiceToPlan, MEDICAL_INSURANCE_INVOICE_KINDS, type InvoiceComparison, type MedicalInsuranceInvoiceKind } from "./compare";
+import { compareInvoiceToPlan, invoiceDatesProblem, MEDICAL_INSURANCE_INVOICE_KINDS, type InvoiceComparison, type MedicalInsuranceInvoiceKind } from "./compare";
 import {
   parseRateCard,
   withPlanRates,
@@ -40,6 +40,9 @@ import {
   removeMedicalInsuranceFile,
   uploadMedicalInsuranceFile,
 } from "./file-storage";
+import { LIBANO_DELETIONS_SHEET_ROWS } from "./libano-movement-sheet";
+import { buildCostLetter, CostLetterError, type CostLetter } from "./cost-letter";
+import { cleanCostLetterCc, COST_LETTER_EMAIL_BATCH, sendCostLetterEmails, type CostLetterEmailOutcome } from "./cost-letter-email";
 import { buildMonthlySplit } from "./monthly-split";
 import { libanoLineGaps, type LibanoMemberFileKind, type LibanoMemberLine } from "./workbooks";
 import type {
@@ -53,7 +56,7 @@ import type {
 } from "./view";
 
 /** A refusal the person can act on: the route answers it with its own message, as a 400. */
-export class MedicalInsuranceInputError extends Error {}
+class MedicalInsuranceInputError extends Error {}
 
 const POLICY_COLUMNS = "id, insurer, policy_number, proposal_code, starts_on, ends_on, rate_card";
 const MEMBER_COLUMNS =
@@ -427,6 +430,90 @@ export async function getMedicalInsuranceMoney(): Promise<MedicalInsuranceMoneyV
     rateCard: policy.rateCard,
     year: yearCost(state),
   };
+}
+
+/**
+ * One employee's Medical Cover Statement (owner, 2026-11-21), from the same monthly split the Cost tab shows,
+ * so the paper and the tab can never disagree. `memberId` is the employee's own row on the register. Callers
+ * assert medical_insurance_invoices first: it carries amounts.
+ */
+export async function getMedicalInsuranceCostLetter(memberId: string): Promise<CostLetter> {
+  const id = memberId.trim();
+  if (!id) throw new MedicalInsuranceInputError("Choose an employee first.");
+  const asOf = todayInCairo();
+  const policy = await requirePolicy(asOf);
+  const state = await loadState(policy, asOf);
+  const split = buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard });
+  const row = split.rows.find((candidate) => candidate.employee?.memberId === id);
+  if (!row) throw new MedicalInsuranceInputError("That employee is not covered on the policy today, so there is no monthly cost to show.");
+  try {
+    return buildCostLetter(row, { endsOn: policy.endsOn, insurer: policy.insurer, policyNumber: policy.policyNumber, startsOn: policy.startsOn });
+  } catch (error) {
+    if (error instanceof CostLetterError) throw new MedicalInsuranceInputError(error.message);
+    throw error;
+  }
+}
+
+/**
+ * Emails each chosen employee their own Medical Cover Statement — the statement itself as the body of the
+ * house letter, no attachment (owner, 2026-11-21) — to their work email on the Employee Master, one email
+ * each. Answers what happened to every person; a person who could not be sent to is named with the reason.
+ */
+export async function sendMedicalInsuranceCostLetters(access: AccessContext, body: unknown): Promise<CostLetterEmailOutcome[]> {
+  const input = (body ?? {}) as { members?: unknown; cc?: unknown; ccManager?: unknown };
+  const raw = input.members;
+  const memberIds = Array.isArray(raw) ? [...new Set(raw.map((id) => String(id ?? "").trim()).filter(Boolean))] : [];
+  if (memberIds.length === 0) throw new MedicalInsuranceInputError("Choose at least one employee.");
+  if (memberIds.length > COST_LETTER_EMAIL_BATCH) throw new MedicalInsuranceInputError(`Send at most ${COST_LETTER_EMAIL_BATCH} statements at a time.`);
+  let cc: string[];
+  try {
+    cc = cleanCostLetterCc(input.cc);
+  } catch (error) {
+    if (error instanceof CostLetterError) throw new MedicalInsuranceInputError(error.message);
+    throw error;
+  }
+  const ccManager = input.ccManager === true;
+
+  const [{ emailNotificationsEnabled }, { sendPhoenixEmail }, { systemEmail }, { satoEmailFrom }, { writeAuditLog }] = await Promise.all([
+    import("@/lib/notifications/email"),
+    import("@/lib/email/send-phoenix-email"),
+    import("@/config/system-settings"),
+    import("@/lib/sato-email/service"),
+    import("@/lib/admin/audit"),
+  ]);
+  if (!emailNotificationsEnabled()) throw new MedicalInsuranceInputError("Email sending is switched off in Phoenix, so nothing was sent.");
+
+  const asOf = todayInCairo();
+  const policy = await requirePolicy(asOf);
+  const state = await loadState(policy, asOf);
+  const split = buildMonthlySplit({ asOf, members: state.members, rateCard: policy.rateCard });
+  const preparedOn = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
+
+  const outcomes = await sendCostLetterEmails({
+    cc,
+    ccManager,
+    from: satoEmailFrom(systemEmail.satoComposerFromEmail),
+    memberIds,
+    minute: Math.floor(Date.now() / 60_000),
+    policy: { endsOn: policy.endsOn, insurer: policy.insurer, policyNumber: policy.policyNumber, startsOn: policy.startsOn },
+    preparedOn,
+    replyTo: systemEmail.satoComposerReplyToEmail,
+    rows: split.rows,
+    send: sendPhoenixEmail,
+    managers: new Map([...state.employeeRows].map(([hrId, row]) => [hrId, row.managerHrId])),
+    workEmails: new Map([...state.employeeRows].map(([hrId, row]) => [hrId, row.workEmail])),
+  });
+
+  for (const outcome of outcomes.filter((candidate) => candidate.status === "sent")) {
+    // The email has already gone, so a missed audit row is logged by writeAuditLog, never thrown back as "not sent".
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityId: outcome.memberId,
+      entityType: "medical_insurance_export",
+      summary: `Emailed the Medical Cover Statement to ${outcome.name} at ${outcome.email}${outcome.cc.length > 0 ? `, copying ${outcome.cc.join(", ")}` : ""}`,
+    });
+  }
+  return outcomes;
 }
 
 // ── Cleaning what a person typed ───────────────────────────────────────────────────────────────
@@ -1054,7 +1141,8 @@ export async function recordMedicalInsuranceInvoice(access: AccessContext, input
   if (!MEDICAL_INSURANCE_INVOICE_KINDS.includes(kind)) throw new MedicalInsuranceInputError("Choose what the bill is for.");
   const coversFrom = cleanDay(input.coversFrom, "The first day the bill covers");
   const coversTo = cleanDay(input.coversTo, "The last day the bill covers");
-  if (coversFrom && coversTo && coversTo < coversFrom) throw new MedicalInsuranceInputError("The bill's last day is before its first.");
+  const datesProblem = invoiceDatesProblem(kind, coversFrom, coversTo);
+  if (datesProblem) throw new MedicalInsuranceInputError(datesProblem);
   const typed = cleanMoney(input.totalDue, "The total");
   const totalDue = kind === "deletions" ? -Math.abs(typed) : typed;
 
@@ -1284,7 +1372,9 @@ function memberLine(row: MemberDbRow, rows: ReadonlyMap<string, MemberDbRow>, em
  * that the rule no longer names. A deleted employee's spouse and children are listed with them, one row
  * each, as the insurer's sheet has a row per person. `everyone` is every person covered today.
  */
-export async function prepareLibanoMemberFile(body: Record<string, unknown>): Promise<{ policyId: string; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
+export async function prepareLibanoMemberFile(
+  body: Record<string, unknown>,
+): Promise<{ policyId: string; policy: { startsOn: string; endsOn: string }; kind: LibanoMemberFileKind; rows: LibanoMemberLine[] }> {
   const kind = body.kind;
   if (kind !== "additions" && kind !== "deletions" && kind !== "everyone") throw new MedicalInsuranceInputError("Choose additions, deletions or everyone covered.");
   const asOf = todayInCairo();
@@ -1302,6 +1392,7 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
     const orphans = open.filter((row) => row.member_type !== "employee" && !ordered.includes(row));
     return {
       kind,
+      policy: { endsOn: policy.endsOn, startsOn: policy.startsOn },
       policyId: policy.id,
       rows: [...ordered, ...orphans].map((row) => memberLine(row, rowsById, state.employeeRows, row.coverage_starts_on)),
     };
@@ -1335,7 +1426,10 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
         rows.push(memberLine(row, rowsById, state.employeeRows, action.effectiveOn));
       }
     }
-    return { kind, policyId: policy.id, rows };
+    if (rows.length > LIBANO_DELETIONS_SHEET_ROWS) {
+      throw new MedicalInsuranceInputError(`Libano-Suisse's deletions sheet holds ${LIBANO_DELETIONS_SHEET_ROWS} people, families included; this file has ${rows.length}. Tick fewer and export twice.`);
+    }
+    return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
   }
 
   const rows = actions.map((action): LibanoMemberLine => {
@@ -1366,5 +1460,5 @@ export async function prepareLibanoMemberFile(body: Record<string, unknown>): Pr
   if (gaps.length > 0) {
     throw new MedicalInsuranceInputError(`Libano-Suisse's file needs a date of birth and sex for everyone. Fill them on the Employee Master, or untick: ${gaps.join(", ")}.`);
   }
-  return { kind, policyId: policy.id, rows };
+  return { kind, policy: { endsOn: policy.endsOn, startsOn: policy.startsOn }, policyId: policy.id, rows };
 }

@@ -353,7 +353,7 @@ function evidenceStatus(value: string | null | undefined): MarketingEvidenceStat
  * Scoped to ACTIVE links only, exactly like the screen — an inactive link is not shown to anybody,
  * so nudging about it would send a rep to a row he cannot see.
  */
-export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingFieldCaptureBacklog> {
+async function loadMarketingFieldCaptureBacklog(): Promise<MarketingFieldCaptureBacklog> {
   const supabase = getSupabaseAdmin();
 
   const linksResult = await supabase

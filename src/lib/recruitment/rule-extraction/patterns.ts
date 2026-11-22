@@ -5,8 +5,6 @@
 // language model can beat, for nothing, in microseconds. Reading them with a paid model was always
 // the wrong tool.
 
-import { EGYPT_GOVERNORATES } from "@/lib/recruitment/rule-extraction/dictionaries";
-
 // ---------------------------------------------------------------------------
 // Email
 // ---------------------------------------------------------------------------
@@ -237,7 +235,7 @@ const MONTHS: Readonly<Record<string, number>> = {
 /** Words that mean "this job has not ended". */
 export const PRESENT_WORDS: readonly string[] = ["present", "current", "currently", "now", "till now", "to date", "حتى الآن", "الآن"];
 
-export function isPresentWord(value: string): boolean {
+function isPresentWord(value: string): boolean {
   const lower = value.trim().toLowerCase();
   return PRESENT_WORDS.some((word) => lower === word || lower.startsWith(word));
 }
@@ -353,22 +351,3 @@ export function matchDictionary(
   return null;
 }
 
-/** Every canonical value whose alias appears — for genuinely multi-valued facts like languages. */
-export function matchDictionaryAll(
-  haystack: string,
-  entries: ReadonlyArray<{ readonly canonical: string; readonly aliases: readonly string[] }>,
-): string[] {
-  const found: string[] = [];
-  for (const entry of entries) {
-    if (entry.aliases.some((alias) => containsPhrase(haystack, alias))) found.push(entry.canonical);
-  }
-  return found;
-}
-
-/** The governorate a free-text address belongs to, by district first and governorate second. */
-export function governorateFromText(text: string): string | null {
-  return matchDictionary(
-    text,
-    EGYPT_GOVERNORATES.map((entry) => ({ aliases: entry.aliases, canonical: entry.canonical })),
-  );
-}

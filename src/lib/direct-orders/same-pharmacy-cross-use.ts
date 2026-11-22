@@ -37,7 +37,7 @@ import { marketingRequestStatusLabel } from "@/lib/marketing-requests/request-st
 import { INERT_MARKETING_REQUEST_STATUSES } from "@/lib/marketing-requests/request-overlap";
 
 /** Direct-order statuses that never committed money, so they cannot make anyone pay twice. */
-export const INERT_DIRECT_ORDER_CROSS_USE_STATUSES: ReadonlySet<string> = new Set([
+const INERT_DIRECT_ORDER_CROSS_USE_STATUSES: ReadonlySet<string> = new Set([
   "draft",
   "rejected",
   "cancelled",
@@ -63,14 +63,14 @@ export function isSameRequester(left: string | null | undefined, right: string |
 }
 
 /** A product whose direct-order deal is "extra" above this level. Matched by product code. */
-export type ExtraDealLimit = {
+type ExtraDealLimit = {
   productName: string;
   productCodes: readonly string[];
   kind: "bonus" | "discount";
   limitPct: number;
 };
 
-export const EXTRA_DEAL_LIMITS: readonly ExtraDealLimit[] = [
+const EXTRA_DEAL_LIMITS: readonly ExtraDealLimit[] = [
   { productName: "Ivyronc", productCodes: ["IV001"], kind: "bonus", limitPct: 20 },
   { productName: "Lacto Advanced", productCodes: ["LA001", "LA002"], kind: "discount", limitPct: 15 },
   { productName: "Guamusin", productCodes: ["GU001"], kind: "bonus", limitPct: 10 },
@@ -136,7 +136,7 @@ export function extraDealsOnOrder(lines: readonly DirectOrderDealLine[]): string
 }
 
 /** "Ivyronc above 20% bonus, Lacto Advanced above 15% discount, Guamusin above 10% bonus". */
-export const EXTRA_DEAL_LIMITS_TEXT = EXTRA_DEAL_LIMITS.map(
+const EXTRA_DEAL_LIMITS_TEXT = EXTRA_DEAL_LIMITS.map(
   (limit) => `${limit.productName} above ${pct(limit.limitPct)} ${limit.kind}`,
 ).join(", ");
 

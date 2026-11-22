@@ -26,7 +26,7 @@ const DEFAULT_MIN_SCORE = 0.5;
 // and is refused, exactly like any other network failure — the policy in the header.
 const RECAPTCHA_TIMEOUT_MS = 5000;
 
-export type RecaptchaReason = "challenge_failed" | "low_score" | "missing_token" | "not_configured" | "verify_unavailable";
+type RecaptchaReason = "challenge_failed" | "low_score" | "missing_token" | "not_configured" | "verify_unavailable";
 export type RecaptchaResult = { ok: boolean; reason?: RecaptchaReason };
 
 /** A refusal that is OUR side failing (no key, Google unreachable), not the applicant failing the check. */

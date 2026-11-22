@@ -387,7 +387,7 @@ export async function getDoctorListRepSummaries(): Promise<DoctorListRepSummary[
   return (await getRepListSummaries()).filter((summary): summary is DoctorListRepSummary => summary.agentCrmId != null);
 }
 
-export type DoctorListBoard = {
+type DoctorListBoard = {
   /** The rep whose list is on screen, or null when the mirror is empty. */
   selected: DoctorListRepSummary | null;
   reps: DoctorListRepSummary[];

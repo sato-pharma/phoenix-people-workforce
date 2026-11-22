@@ -21,7 +21,7 @@ const egp = (value: number): string =>
   `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EGP`;
 
 /** The statuses a request may be in when it is settled — the same money-bearing set the Finance command centre counts. */
-export const OFFSET_ELIGIBLE_REQUEST_STATUSES = ["approved", "active", "roi_tracking", "finance_hold"] as const;
+const OFFSET_ELIGIBLE_REQUEST_STATUSES = ["approved", "active", "roi_tracking", "finance_hold"] as const;
 
 /**
  * What is still owed on an order: value, less cash collected, less every offset.
@@ -98,8 +98,6 @@ export const SERVICE_FEE_REQUEST_TYPES = [
   { code: "deal", label: "Deal" },
   { code: "other", label: "Other" },
 ] as const;
-
-export type ServiceFeeRequestTypeCode = (typeof SERVICE_FEE_REQUEST_TYPES)[number]["code"];
 
 /**
  * May the Administrator record a service fee against this order? The database function repeats

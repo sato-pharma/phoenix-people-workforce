@@ -70,9 +70,9 @@ const PAGE_TRAIL_MAX_ROWS = 20_000;
 const SOURCE_TABLE = "app_error_events";
 const HEALTH_CHECK_LOGIN = "admin-hr";
 
-export type AppErrorCursor = { createdAt: string; id: string };
+type AppErrorCursor = { createdAt: string; id: string };
 
-export type AppErrorPageRequest = {
+type AppErrorPageRequest = {
   /** Strictly after this row; null reads from the beginning. */
   after: AppErrorCursor | null;
   /** Strictly before this instant (ISO). */
@@ -82,7 +82,7 @@ export type AppErrorPageRequest = {
   window?: { fromIso: string; toIso: string } | null;
 };
 
-export type PageTrailRequest = { eventId: string; hrIds: string[]; at: string };
+type PageTrailRequest = { eventId: string; hrIds: string[]; at: string };
 
 /** Where the rows come from — the database in production, a snapshot for the historical runner. */
 export interface AppErrorSource {
@@ -155,7 +155,7 @@ type LedgerOpenRow = {
 };
 
 /** Production: `app_error_events`, the ledger's open occurrences, and `activity_events` page views. */
-export function createDatabaseAppErrorSource(supabase: Client): AppErrorSource {
+function createDatabaseAppErrorSource(supabase: Client): AppErrorSource {
   return {
     kind: "database",
     async readPage({ after, before, limit, window }) {

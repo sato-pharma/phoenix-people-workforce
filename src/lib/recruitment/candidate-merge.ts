@@ -85,8 +85,8 @@ export const mergeableFields = [
   { column: "offer_id", key: "offerId", label: "job offer letter" },
 ] as const;
 
-export type MergeableField = (typeof mergeableFields)[number];
-export type MergeableFieldKey = MergeableField["key"];
+type MergeableField = (typeof mergeableFields)[number];
+type MergeableFieldKey = MergeableField["key"];
 
 export type MergeCandidateFacts = {
   [Key in MergeableFieldKey]?: string | number | null;

@@ -93,7 +93,7 @@ export type ScreeningFilterCounts = {
   total: number;
 };
 
-export function emptyScreeningFilterCounts(): ScreeningFilterCounts {
+function emptyScreeningFilterCounts(): ScreeningFilterCounts {
   return {
     area: {},
     notified: {},

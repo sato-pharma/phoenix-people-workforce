@@ -146,7 +146,7 @@ function TapsTable({ pages }: { pages: SlowPage[] }) {
   );
 }
 
-export function SlowPagesView({ overview }: { overview: SlowPagesOverview }) {
+function SlowPagesView({ overview }: { overview: SlowPagesOverview }) {
   const hard = overview.pages.filter((page) => page.firstByte || page.firstContent || page.largestContent);
   const tapped = overview.pages
     .filter((page) => page.taps)

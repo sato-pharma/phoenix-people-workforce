@@ -29,7 +29,7 @@ import { logError } from "@/lib/observability/log";
  */
 
 /** The design a letter was rendered from, frozen at the press — markOfferSent stores it as the snapshot. */
-export type OfferLetterDesignSnapshot = {
+type OfferLetterDesignSnapshot = {
   blocks: unknown;
   fontFamily: unknown;
   fontSizePt: unknown;
@@ -81,7 +81,7 @@ export type FollowUpGate =
   | { decision: "skip"; reason: string }
   | { decision: "later"; reason: string };
 
-export function isDurableEmailFollowUp(value: unknown): value is DurableEmailFollowUp {
+function isDurableEmailFollowUp(value: unknown): value is DurableEmailFollowUp {
   if (!value || typeof value !== "object") return false;
   const kind = (value as { kind?: unknown }).kind;
   return kind === "offer_letter" || kind === "offer_expiry" || kind === "interview_invitation";

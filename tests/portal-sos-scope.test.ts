@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import {
   PORTAL_SOS_ACTION_ROLES,
   PORTAL_SOS_ROLES,
+  canReadPharmacyActions,
   computePortalSosVisibility,
   isPortalSosActionsRole,
   isPortalSosRole,
 } from "../src/lib/sales/portal-sos-dashboard.ts";
+import { sourceOfSalesPageItems } from "../src/config/system-navigation.ts";
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
@@ -44,6 +46,23 @@ export function runPortalSosScopeTests() {
   }
   assert.equal(PORTAL_SOS_ACTION_ROLES.length, 7, "exactly seven roles get the pharmacy action lists");
 
+  // The CEO, the Super Admin and the SFE Manager read the same lists company-wide from the admin
+  // Field Sales page (owner, 2026-11-20: the sheet download, then "Add SFE Manager") — nobody else.
+  for (const role of [...PORTAL_SOS_ACTION_ROLES, "CEO", "Super Admin", "SFE Manager"] as const) {
+    assert.equal(canReadPharmacyActions(role), true, `${role} may read the pharmacy action lists`);
+  }
+  for (const role of ["Employee", "Manager", "Finance Manager", "HR Operations"] as const) {
+    assert.equal(canReadPharmacyActions(role), false, `${role} must NOT read the pharmacy action lists`);
+  }
+
+  // The SFE Manager opens the admin Field Sales page for the lists ONLY — the company dashboard there
+  // stays the CEO's and the Super Admin's — and finds it from a Source of Sales hub card.
+  const adminPage = readSource("../app/(admin)/admin/field-sales/source-of-sales/page.tsx");
+  assert.ok(adminPage.includes('const listsOnly = access.role === "SFE Manager";'), "the SFE Manager gets in, for the lists");
+  assert.ok(adminPage.includes("{listsOnly ? null : ("), "the company dashboard is not rendered for the SFE Manager");
+  const hubCard = sourceOfSalesPageItems.find((item) => item.href === "/admin/field-sales/source-of-sales");
+  assert.ok(hubCard && "roles" in hubCard && hubCard.roles?.includes("SFE Manager"), "the SFE Manager has a hub card to the lists");
+
   // The rep is admitted to the ACTION LISTS only. The page must still gate the distributor dashboard on
   // isPortalSosRole (region-level scope would show a rep his sibling areas), and the lists must narrow
   // him to his own area after the load and never reveal El Qema.
@@ -54,7 +73,11 @@ export function runPortalSosScopeTests() {
     "the distributor dashboard stays behind the six-role gate",
   );
   const actionsRoute = readSource("../app/api/employee-portals/source-of-sales/actions/route.ts");
-  assert.ok(actionsRoute.includes("isPortalSosActionsRole(access.role)"), "the actions API gates by role");
+  assert.ok(actionsRoute.includes("canReadPharmacyActions(access.role)"), "the actions API gates by role");
+  const exportRoute = readSource("../app/api/employee-portals/source-of-sales/actions/export/route.ts");
+  assert.ok(exportRoute.includes("canReadPharmacyActions(access.role)"), "the sheet download gates by the same role rule");
+  assert.ok(exportRoute.includes('assertPermission(access, "sales", "read")'), "the sheet download asserts sales:read");
+  assert.ok(exportRoute.includes("loadPortalPharmacyActions("), "the sheet is built by the screen's own loader, never a second read");
   assert.ok(actionsRoute.includes('assertPermission(access, "sales", "read")'), "the actions API asserts sales:read");
   const actionsLoader = readSource("../src/lib/sales/sos-pharmacy-actions-loader.ts");
   assert.ok(

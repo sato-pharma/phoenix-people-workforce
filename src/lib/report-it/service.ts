@@ -247,13 +247,6 @@ export async function getReport(
 
 // ─── The read log ─────────────────────────────────────────────────────────
 
-export type ReportItAuditAction =
-  | "report_viewed"
-  | "reports_listed"
-  | "status_changed"
-  | "dashboard_access_granted"
-  | "dashboard_access_revoked";
-
 /**
  * Writes one row to `report_it_audit_logs` for a read of patient data, and REFUSES the read if it
  * cannot. These are adverse-event reports: who opened which one, and when, must always be

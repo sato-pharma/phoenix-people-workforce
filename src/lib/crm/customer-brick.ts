@@ -28,7 +28,7 @@ export type CrmCustomerResolutionAction = "ignored" | "mapped" | "pending";
 
 /** Where a customer on this tab was found: in the visits, or only on a rep's plan or doctor list
  * (the contact master's own `source`). */
-export type CrmCustomerSource = "list" | "plan" | "visit";
+type CrmCustomerSource = "list" | "plan" | "visit";
 
 /** One row on the Customer Mapping punch-list: a CRM contact with no "mapped" resolution yet. */
 export type UnmappedCrmCustomerRow = {
@@ -276,7 +276,7 @@ export type CrmCustomerTemplateRow = {
 /** Template status for a contact with no customer decision whose CRM locality places it. Its Brick
  * ID stays BLANK, so re-uploading the sheet untouched skips the row (blank brick, not "ignored") and
  * never turns a locality brick into a customer decision; typing a brick into it maps that customer. */
-export const CRM_CUSTOMER_TEMPLATE_VIA_LOCALITY_STATUS = "via locality";
+const CRM_CUSTOMER_TEMPLATE_VIA_LOCALITY_STATUS = "via locality";
 
 /** Every distinct CRM customer ever seen — visited, or only on a rep's plan or doctor list (visit
  * count 0) — each annotated with its current resolution status/brick_id ("via locality" when only its
@@ -370,7 +370,7 @@ export type CrmCustomerBulkImportInputRow = {
   statusText: string;
 };
 
-export type CrmCustomerBulkImportBlockedRow = { crmContactId: number; reason: string; row: number };
+type CrmCustomerBulkImportBlockedRow = { crmContactId: number; reason: string; row: number };
 
 export type CrmCustomerBulkImportResult = {
   blockedRows: CrmCustomerBulkImportBlockedRow[];

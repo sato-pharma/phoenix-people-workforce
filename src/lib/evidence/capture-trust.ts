@@ -97,10 +97,10 @@ export const CAPTURE_GAP_FLAG_SECONDS = 600;
  * one way when it belongs the other. That is why the wording on both sides is neutral and why
  * neither side is ever rendered as suspicion - the boundary is an explanation, not a verdict.
  */
-export const PHOTO_FIX_LIVE_FROM = "2026-09-29T16:34:09Z";
+const PHOTO_FIX_LIVE_FROM = "2026-09-29T16:34:09Z";
 
 /** Why a capture has no photo coordinates. Null whenever it HAS them. */
-export type CaptureUnmeasuredReason =
+type CaptureUnmeasuredReason =
   /** Taken before the shutter took its own reading - the feature did not exist yet. */
   | "predates_shutter_fix"
   /** Taken after, but the camera reported no position: refused, timed out, or no signal. */

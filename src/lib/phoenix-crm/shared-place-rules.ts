@@ -363,7 +363,7 @@ export const SHARED_PLACE_DAY_FULL_CODE = "phoenix_crm:shared_place_day_full";
  *
  * Golden rule #1: it names the venue, the count and the cap, and nothing about any check on him.
  */
-export function sharedPlaceCapRefusal(input: {
+function sharedPlaceCapRefusal(input: {
   name: string;
   kind: SharedPlaceKind;
   dayLabel: string;
@@ -374,7 +374,7 @@ export function sharedPlaceCapRefusal(input: {
 }
 
 /** The same sentence on the send, where the fix is a different one: take one off and save first. */
-export function sharedPlaceSendCapRefusal(input: {
+function sharedPlaceSendCapRefusal(input: {
   name: string;
   kind: SharedPlaceKind;
   dayLabel: string;

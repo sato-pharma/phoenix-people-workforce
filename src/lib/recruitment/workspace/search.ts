@@ -23,7 +23,7 @@ import type { WorkspaceViewer } from "@/lib/recruitment/workspace/role-tabs";
  * pool holds a few hundred people, so 500 is every realistic match while keeping `search_ids` — which
  * travels inside the filter's jsonb on every page and count — bounded.
  */
-export const WORKSPACE_CV_SEARCH_CAP = 500;
+const WORKSPACE_CV_SEARCH_CAP = 500;
 
 /** Candidate ids whose CV reading contains every term of the query. Empty for a short or blank query. */
 export async function workspaceCvSearchIds(viewer: WorkspaceViewer, query: string): Promise<string[]> {

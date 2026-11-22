@@ -20,7 +20,7 @@ import type { CodedRow, NormalizeIgnoredRow } from "@/lib/sales/normalizer/types
 // before geography is resolved, so it has none.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type PreviewBreakdownRow = {
+type PreviewBreakdownRow = {
   code: string;
   label: string;
   parent: string | null; // line for product; region for area; area for brick; null for region/line

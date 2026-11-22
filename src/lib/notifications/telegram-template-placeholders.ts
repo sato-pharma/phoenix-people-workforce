@@ -63,7 +63,7 @@ export type TelegramTemplateButtonInput = {
   url?: string | null;
 };
 
-export const telegramTemplateButtonTypes = ["open_phoenix", "view_details", "custom"] as const;
+const telegramTemplateButtonTypes = ["open_phoenix", "view_details", "custom"] as const;
 export type TelegramTemplateButtonType = (typeof telegramTemplateButtonTypes)[number];
 
 function isSafeButtonType(value: string) {

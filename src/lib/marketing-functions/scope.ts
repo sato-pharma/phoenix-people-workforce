@@ -18,10 +18,10 @@ import type { MarketingMonthStatus } from "./vocabulary";
 type Viewer = Pick<AccessContext, "role" | "hrId">;
 
 /** The one role that writes both sheets. */
-export const MARKETING_FUNCTIONS_AUTHOR_ROLES: readonly PhoenixRole[] = ["Product Manager"] as const;
+const MARKETING_FUNCTIONS_AUTHOR_ROLES: readonly PhoenixRole[] = ["Product Manager"] as const;
 
 /** Read every Product Manager's sheets and forms. */
-export const MARKETING_FUNCTIONS_SEE_ALL_ROLES: readonly PhoenixRole[] = [
+const MARKETING_FUNCTIONS_SEE_ALL_ROLES: readonly PhoenixRole[] = [
   "Super Admin",
   "CEO",
   "Marketing Manager",
@@ -30,14 +30,14 @@ export const MARKETING_FUNCTIONS_SEE_ALL_ROLES: readonly PhoenixRole[] = [
 
 /** Stamp a submitted month Reviewed, or reopen one. The Marketing Manager covers a sheet with no
  * Group Product Manager above it (a Product Manager reporting to him directly). */
-export const MARKETING_FUNCTIONS_REVIEWER_ROLES: readonly PhoenixRole[] = [
+const MARKETING_FUNCTIONS_REVIEWER_ROLES: readonly PhoenixRole[] = [
   "Group Product Manager",
   "Marketing Manager",
   "Super Admin",
 ] as const;
 
 /** Read the field feedback only on the reps under them. */
-export const FIELD_FEEDBACK_LINE_READER_ROLES: readonly PhoenixRole[] = ["National Sales Manager"] as const;
+const FIELD_FEEDBACK_LINE_READER_ROLES: readonly PhoenixRole[] = ["National Sales Manager"] as const;
 
 /** Who is offered the Monthly Marketing Functions page at all (UX; the routes re-check). */
 export const MARKETING_FUNCTIONS_PORTAL_ROLES: readonly PhoenixRole[] = [
@@ -60,7 +60,7 @@ export function seesEveryMarketingSheet(viewer: Pick<AccessContext, "role">): bo
   return MARKETING_FUNCTIONS_SEE_ALL_ROLES.includes(viewer.role);
 }
 
-export function canReviewMarketingMonths(viewer: Pick<AccessContext, "role">): boolean {
+function canReviewMarketingMonths(viewer: Pick<AccessContext, "role">): boolean {
   return MARKETING_FUNCTIONS_REVIEWER_ROLES.includes(viewer.role);
 }
 

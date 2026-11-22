@@ -123,6 +123,17 @@ export async function register() {
       } catch (error) {
         console.error("[db-host] failed to start:", error);
       }
+
+      // The film studio for the ChatGPT connector: one queued film at a time, rendered as the person who
+      // asked. Worker (or "all") on Railway only — a laptop's server, whose .env.local is PRODUCTION, must
+      // never pick up a film (src/lib/chatgpt-connector/films/worker.ts). Its own try, like the rest.
+      try {
+        const { startFilmWorker } = await import("@/lib/chatgpt-connector/films/worker");
+        const result = startFilmWorker();
+        console.log(result.started ? "[films] studio running" : `[films] not started: ${result.reason}`);
+      } catch (error) {
+        console.error("[films] failed to start:", error);
+      }
     } else {
       console.log("[schedulers] not started: not a production build (next dev does not compile them)");
     }

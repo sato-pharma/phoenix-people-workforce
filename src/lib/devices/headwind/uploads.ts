@@ -175,7 +175,7 @@ export function headwindUploadLengthDecision(
  * consumed the uploaded file — a sentence that names nothing, after up to 300 MB crossed the network
  * twice. Four bytes read here refuse it before anything is sent.
  */
-export async function looksLikeApk(file: File): Promise<boolean> {
+async function looksLikeApk(file: File): Promise<boolean> {
   const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
   return head.length === 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
 }

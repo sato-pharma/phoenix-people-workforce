@@ -135,7 +135,7 @@ const CANDIDATE_COLUMNS =
   "id,declared_role_family,declared_background,preferred_region_code,preferred_region_name,preferred_area_name,declared_experience,declared_expected_salary,screening_extra_answers,answers_expected,answers_given,missing_answer_keys";
 
 /** One candidate row as completeness reads it. `placementFamily` is the role a placement carries. */
-export function answersFromRow(row: CandidateAnswerRow, placementFamily: string | null): CompletenessAnswers {
+function answersFromRow(row: CandidateAnswerRow, placementFamily: string | null): CompletenessAnswers {
   const extras: Record<string, string> = {};
   for (const [key, value] of Object.entries(row.screening_extra_answers ?? {})) {
     if (typeof value === "string" && value.trim()) extras[key] = value;

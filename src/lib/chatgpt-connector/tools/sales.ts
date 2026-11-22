@@ -68,7 +68,7 @@ import { defineTool, ToolRefusal } from "@/lib/chatgpt-connector/types";
 /** The widest range one call may read — the achievement loader's own cap (ACHIEVEMENT_MAX_MONTHS). */
 const MAX_MONTHS = 24;
 
-export const SALES_GROUPINGS = [
+const SALES_GROUPINGS = [
   "company",
   "line",
   "region",
@@ -77,7 +77,7 @@ export const SALES_GROUPINGS = [
   "district_manager",
   "regional_manager",
 ] as const;
-export type SalesGrouping = (typeof SALES_GROUPINGS)[number];
+type SalesGrouping = (typeof SALES_GROUPINGS)[number];
 
 function totalsData(total: VsTargetTotals, unitsAddable: boolean) {
   return {

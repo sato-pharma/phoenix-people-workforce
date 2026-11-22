@@ -50,7 +50,7 @@ export const REP_SPOTLIGHT_MIN_ACHIEVEMENT = 90;
  * bounds the per-request work: every month is a separate ~17,000-cell read of the achievement engine,
  * folded and dropped, and an unbounded range would let one request stream the whole history.
  */
-export const REP_SPOTLIGHT_MAX_MONTHS = 12;
+const REP_SPOTLIGHT_MAX_MONTHS = 12;
 
 /** The first published month in the business. Below it nothing can be published, so nothing counts. */
 const PUBLICATION_FLOOR: PeriodKey = "2026-07";

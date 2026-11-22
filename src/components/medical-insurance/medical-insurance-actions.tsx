@@ -150,7 +150,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   return (
     <div className="space-y-5">
       <AdminTableShell
-        description="Where the rule and the register disagree. Tick who goes on Libano-Suisse's member file and export it: deletions and additions are separate files, each on the insurer's own sheet. The file goes to the insurer by your hand. Saving a change here records it on the register."
+        description="Where the rule and the register disagree. Tick who goes on Libano-Suisse's member file and export it: deletions and additions are separate files, each on Libano-Suisse's own Additions and Deletions workbook, as they issued it. The file goes to the insurer by your hand. Saving a change here records it on the register."
         title="Who should be in, and who should be out"
       >
         <div className="flex flex-wrap gap-2 border-b border-phx-line p-4">

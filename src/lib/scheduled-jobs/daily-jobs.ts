@@ -87,7 +87,7 @@ export type DailyJobKey = (typeof DAILY_JOBS)[number]["key"];
 export const DAILY_JOB_PATH_PREFIX = "/api/cron/daily/";
 
 /** Prefix of every daily job's heartbeat slug. */
-export const DAILY_JOB_SLUG_PREFIX = "phoenix-daily-";
+const DAILY_JOB_SLUG_PREFIX = "phoenix-daily-";
 
 /**
  * How late a job may report before its silence means something. One hour, the grace the single
@@ -142,10 +142,6 @@ export function dailyJobsSplitIsOn(env: Readonly<Record<string, string | undefin
  */
 export function dailyJobsRunOn(splitOn: boolean): "fan-out" | "own-route" {
   return splitOn ? "own-route" : "fan-out";
-}
-
-export function isDailyJobKey(value: string): value is DailyJobKey {
-  return DAILY_JOBS.some((job) => job.key === value);
 }
 
 export function findDailyJob(key: string): (typeof DAILY_JOBS)[number] | undefined {

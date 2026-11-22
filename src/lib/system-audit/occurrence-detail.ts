@@ -70,7 +70,7 @@ export type OccurrenceDetailOccurrence = {
   isTest: boolean;
 };
 
-export type OccurrenceDetailIssue = {
+type OccurrenceDetailIssue = {
   id: string;
   title: string;
   family: SystemAuditFamily;
@@ -84,7 +84,7 @@ export type OccurrenceDetailIssue = {
   lastSeenAt: string | null;
 };
 
-export type OccurrenceHistoryEntry = {
+type OccurrenceHistoryEntry = {
   id: string;
   at: string;
   fromLabel: string | null;
@@ -98,7 +98,7 @@ export type OccurrenceHistoryEntry = {
   otherOccurrenceRef: string | null;
 };
 
-export type OccurrenceFix = {
+type OccurrenceFix = {
   id: string;
   generation: number;
   commitSha: string;
@@ -110,12 +110,12 @@ export type OccurrenceFix = {
 
 export type ReproTrailEntry = { at: string; moduleLabel: string; path: string };
 
-export type ReproTrail =
+type ReproTrail =
   | { status: "ok"; entries: ReproTrailEntry[]; note: string | null }
   | { status: "not_applicable"; reason: string }
   | { status: "unavailable"; reason: string };
 
-export type OccurrenceScreen = {
+type OccurrenceScreen = {
   id: string;
   capturedAt: string;
   kind: string;
@@ -130,7 +130,7 @@ export type OccurrenceScreen = {
  * The screenshots of what the person saw (owner, 23 Oct 2026). `pruned` counts the pictures the
  * occurrence names that the 90-day retention has already removed — never read as "there were none".
  */
-export type OccurrenceScreens =
+type OccurrenceScreens =
   | { status: "ok"; screens: OccurrenceScreen[]; pruned: number }
   | { status: "not_applicable"; reason: string }
   | { status: "unavailable"; reason: string };
@@ -238,14 +238,14 @@ function mapOccurrence(row: Row): OccurrenceDetailOccurrence {
 }
 
 /** A status key from the trail in words; `occurrence` is the triage function's "no override". */
-export function historyStatusLabel(status: string | null): string | null {
+function historyStatusLabel(status: string | null): string | null {
   if (status === null) return null;
   if (status === "occurrence") return "Occurrence — no override";
   return SYSTEM_AUDIT_STATUS_LABELS[status as SystemAuditStatus] ?? status;
 }
 
 /** Automatic actors in words; everything else is an HR ID resolved to a name by the caller. */
-export function automaticActorName(actor: string): string | null {
+function automaticActorName(actor: string): string | null {
   if (actor === "system:verifier") return "Automatic verifier";
   if (actor.startsWith("seed:")) return "Historical review (reviewed seed)";
   if (actor.startsWith("system:")) return "Automatic process";

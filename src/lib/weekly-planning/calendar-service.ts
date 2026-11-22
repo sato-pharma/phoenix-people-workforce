@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { activeRoleSignIns } from "@/lib/employees/role-lookup";
+import { isProductManagerTitle } from "@/lib/employees/job-function";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -150,7 +151,7 @@ function itemHasJobTitle(item: PlanningCalendarPlanItem, needle: string) {
 // substring match is intentional (e.g. matching "group product manager" is safe
 // since no other title contains that longer string).
 function itemIsExactlyProductManager(item: PlanningCalendarPlanItem) {
-  return normalizeLowerText(item.employeeJobTitle) === "product manager";
+  return isProductManagerTitle(item.employeeJobTitle);
 }
 
 function itemHasLine(item: PlanningCalendarPlanItem, lineName: string | null) {

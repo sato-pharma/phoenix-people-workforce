@@ -29,7 +29,7 @@ export const crmPanelClassName = "rounded-none border border-slate-200/90 bg-whi
 export const crmInputClassName =
   `${phxFieldClassName} min-w-0`;
 
-export const crmSelectClassName = crmInputClassName;
+const crmSelectClassName = crmInputClassName;
 
 export const crmTextareaClassName =
   cn(phxTextareaClassName, "min-h-24 min-w-0 leading-6");

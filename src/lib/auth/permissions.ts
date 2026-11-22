@@ -88,6 +88,10 @@ export const phoenixCompanyJobTitles = [
   "Senior Medical Representative",
   "National Sales Manager",
   "Product Manager",
+  // A seniority grade on the Product Manager title (AI-0037, 2026-11-20). Like "Senior District
+  // Manager" it is a JOB TITLE and nothing else: it carries no access of its own, and every
+  // job-function rule (resolveJobFunctionRole, isProductManagerTitle) treats it as a Product Manager.
+  "Senior Product Manager",
   "Group Product Manager",
   "Admin Assist",
   "SFE Manager",

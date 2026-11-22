@@ -278,7 +278,7 @@ export async function loadManagerSlotCustomers(slotIds: ReadonlyArray<string>): 
   return out;
 }
 
-export type ManagerEditAskStatus = "pending" | "first_approved" | "reopened" | "refused" | "expired";
+type ManagerEditAskStatus = "pending" | "first_approved" | "reopened" | "refused" | "expired";
 
 export type ManagerEditAskRow = {
   requestId: string;

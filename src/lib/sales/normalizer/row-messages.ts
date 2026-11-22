@@ -24,7 +24,7 @@ export function isRefusedRow(exception: NormalizeException): exception is Refuse
 }
 
 // How many row lines a message spells out before it says "and N more".
-export const ROW_LINE_LIMIT = 8;
+const ROW_LINE_LIMIT = 8;
 
 export function listRowLines(lines: readonly string[], limit = ROW_LINE_LIMIT): string {
   const shown = lines.slice(0, limit).join("; ");

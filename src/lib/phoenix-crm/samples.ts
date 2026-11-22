@@ -53,7 +53,7 @@ export function isSampleMaterial(value: unknown): value is SampleMaterial {
   return typeof value === "string" && MATERIAL_KEYS.has(value);
 }
 
-export function sampleMaterialLabel(key: string): string | null {
+function sampleMaterialLabel(key: string): string | null {
   return SAMPLE_MATERIALS.find((entry) => entry.key === key)?.label ?? null;
 }
 

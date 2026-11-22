@@ -18,7 +18,7 @@ export type DetectionProfile = {
   optionalGroups: string[][];
 };
 
-export type DistributorDetection = {
+type DistributorDetection = {
   distributorCode: string;
   distributorName: string;
   isCandidate: boolean; // every required group matched

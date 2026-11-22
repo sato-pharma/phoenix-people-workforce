@@ -42,7 +42,7 @@ import { offerRevisionCancelRefusal, offerRevisionRefusal } from "@/lib/offers/r
  *      table would contradict its own headline.
  */
 
-export class OfferSchemaMissingError extends Error {
+class OfferSchemaMissingError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "OfferSchemaMissingError";
@@ -186,7 +186,7 @@ function toTemplate(row: TemplateRow): OfferTemplate {
  * Rows are matched by `builtin_key`, never by name, so renaming "SATO Executive Offer" in the
  * designer does not orphan it and cause a duplicate to be seeded alongside it on the next request.
  */
-export async function ensureBuiltinTemplates(): Promise<OfferTemplate[]> {
+async function ensureBuiltinTemplates(): Promise<OfferTemplate[]> {
   const db = getSupabaseAdmin();
 
   const existing = await db.from("offer_templates").select("*").not("builtin_key", "is", null);
@@ -572,7 +572,7 @@ export async function deleteOfferJobTitle(id: string): Promise<void> {
  * INFLATE basic and transport — the whole package would be split as though no cost-of-living
  * allowance existed, on a document somebody signs. A null makes the caller decide.
  */
-export function findJobTitle(titles: OfferJobTitle[], name: string): OfferJobTitle | null {
+function findJobTitle(titles: OfferJobTitle[], name: string): OfferJobTitle | null {
   const needle = name.trim().toLowerCase();
   return titles.find((t) => t.title.trim().toLowerCase() === needle) ?? null;
 }
@@ -589,7 +589,7 @@ export function findJobTitle(titles: OfferJobTitle[], name: string): OfferJobTit
  * catalogue that cannot be read is not a reason to refuse to write an offer — it is a reason to
  * fall back to the default design, which is where every offer started before bindings existed.
  */
-export async function lookupOfferTemplateIdForTitle(title: string): Promise<string | null> {
+async function lookupOfferTemplateIdForTitle(title: string): Promise<string | null> {
   if (!title.trim()) return null;
   try {
     return findJobTitle(await listOfferJobTitles(), title)?.templateId ?? null;

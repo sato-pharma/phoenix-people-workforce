@@ -64,11 +64,11 @@ type Row = Record<string, unknown>;
 export const SIGNBOARD_SYSTEM_ACTOR = "SYSTEM";
 
 /** The decision note the board shows beside "the system" — the one sentence of why. */
-export const SIGNBOARD_SYSTEM_APPROVAL_NOTE = "The system read the customer's name on the signboard.";
+const SIGNBOARD_SYSTEM_APPROVAL_NOTE = "The system read the customer's name on the signboard.";
 
 /** Places re-read in one hourly run, and how long the run may keep starting them. */
-export const HELD_SIGNBOARD_RECHECK_LIMIT = 12;
-export const HELD_SIGNBOARD_RECHECK_BUDGET_MS = 50_000;
+const HELD_SIGNBOARD_RECHECK_LIMIT = 12;
+const HELD_SIGNBOARD_RECHECK_BUDGET_MS = 50_000;
 const HELD_SIGNBOARD_RECHECK_CONCURRENCY = 4;
 
 export type HeldSignboardPlace = {

@@ -50,8 +50,8 @@ export class HeadwindUserError extends Error {
 /** The audit writer — a parameter only so a test can read the row without a database. */
 type AuditWriter = typeof writeRequiredAuditLog;
 
-export const HEADWIND_ROLES_PATH = "/rest/private/users/roles";
-export const HEADWIND_USERS_PATH = "/rest/private/users/all";
+const HEADWIND_ROLES_PATH = "/rest/private/users/roles";
+const HEADWIND_USERS_PATH = "/rest/private/users/all";
 
 export type HeadwindConsoleUser = {
   id: number;
@@ -168,7 +168,7 @@ export type HeadwindUserInput = {
  * 🔴 THE PASSWORD GOES UP ONLY AS ITS UPPER-CASE MD5, in both `newPassword` and `confirmModal`, the
  * way `users.controller.js` sends it. Never the password itself.
  */
-export function consoleUserCreateBody(input: {
+function consoleUserCreateBody(input: {
   login: string;
   name: string;
   email: string | null;

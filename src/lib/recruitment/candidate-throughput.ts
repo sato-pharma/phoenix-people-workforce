@@ -40,7 +40,7 @@ export const THROUGHPUT_BUCKETS = 4;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BUCKET_MS = THROUGHPUT_BUCKET_DAYS * DAY_MS;
 
-export type ThroughputBucket = {
+type ThroughputBucket = {
   /** 0 is the last seven days, 1 the seven before that, and so on. */
   index: number;
   /** Inclusive start of the span, as an epoch millisecond. */

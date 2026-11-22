@@ -174,7 +174,7 @@ export function wishedVisitAskDay(value: unknown, cairoToday: string): string | 
   return day;
 }
 
-export type VisitAskDayRefusal = "bad_input" | "not_field_day" | "passed" | "too_far" | "holiday";
+type VisitAskDayRefusal = "bad_input" | "not_field_day" | "passed" | "too_far" | "holiday";
 
 export type VisitAskDayResult = { ok: true; day: string } | { ok: false; kind: VisitAskDayRefusal; error: string };
 
@@ -196,9 +196,9 @@ export function resolveVisitAskDay(input: { day: unknown; cairoToday: string; ho
 export type VisitAskProductManager = { hrId: string; role: string };
 
 /** Who answers the ask, and who is told about it. */
-export type VisitAskAddressees = { askedHrId: string; toldHrId: string | null };
+type VisitAskAddressees = { askedHrId: string; toldHrId: string | null };
 
-export type VisitAskAddresseeRefusal = "no_manager" | "no_senior" | "no_product_manager" | "not_line_product_manager";
+type VisitAskAddresseeRefusal = "no_manager" | "no_senior" | "no_product_manager" | "not_line_product_manager";
 
 export type VisitAskAddresseeResult = { ok: true; value: VisitAskAddressees } | { ok: false; kind: VisitAskAddresseeRefusal; error: string };
 
@@ -260,6 +260,31 @@ export function resolveVisitAskAddressees(input: {
  * discussed, never a pack size. `families` null: no bound at all, every product.
  */
 export type ProductManagerReach = { hrId: string; role: string; families: ReadonlyArray<string> | null };
+
+/**
+ * How long a product manager's last SUCCESSFUL read of his products stands in for a read that fails.
+ *
+ * Every recorded failure of that read — 25 Oct 16:16, 28 Oct 12:01, 18 Nov 17:52 Cairo — was the
+ * whole database answering nothing for a minute (19, 36 and 75 timeouts across a dozen features each),
+ * never a fault in the read itself. Dropping him for that minute took him out of every rep's picker
+ * AND refused a visit that named him, since the save checks against the same list. His products change
+ * a few times a year, so a copy read within the day is the true answer far more often than nobody is.
+ */
+export const PRODUCT_MANAGER_LAST_KNOWN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** A product manager's products as last read, and when (epoch milliseconds). */
+export type LastKnownProducts = { families: ReadonlyArray<string> | null; readAt: number };
+
+/**
+ * The copy that may stand in for a failed read: one read inside the last day, never one from the
+ * future (a clock that moved back), never an older one. Null means nothing may stand in for him.
+ */
+export function usableLastKnownProducts(entry: LastKnownProducts | undefined, now: number): LastKnownProducts | null {
+  if (!entry) return null;
+  const age = now - entry.readAt;
+  if (!Number.isFinite(age) || age < 0 || age > PRODUCT_MANAGER_LAST_KNOWN_MAX_AGE_MS) return null;
+  return entry;
+}
 
 function familyKey(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();

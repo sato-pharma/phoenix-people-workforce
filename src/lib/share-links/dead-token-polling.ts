@@ -53,7 +53,7 @@ export type DeadTokenPollJudgeableLink = {
   sheet: string;
 };
 
-export type DeadTokenPoll = {
+type DeadTokenPoll = {
   /** Whole days since the token died, so the message can say how long this has been going on. */
   deadForDays: number;
   id: string;

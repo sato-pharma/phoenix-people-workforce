@@ -246,6 +246,7 @@ import {
   googleGeocodeAddress,
   googleReverseGeocode,
 } from "@/lib/google-maps/server";
+import { selectStrandedAcceptedClaims } from "@/lib/outstation/stranded-release";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -5567,6 +5568,60 @@ export async function sendOutstationDeparturePhotoReminder(
   return true;
 }
 
+/**
+ * The morning retry for an ACCEPTED claim that every gate has cleared but no payroll row carries (claims 111 and
+ * 347, 21 Nov 2026). The capture that completes a held claim releases it, and that release never throws — "the next
+ * capture tries again" — but after the departure photo there is no next capture, so one failed release stranded the
+ * money for good. This hands each such claim to the SAME release, as the system: the decision was already made, this
+ * only delivers it, with the figures the release itself works out. A claim still waiting for its photo or workload, a
+ * claim with a payroll row (queued or paid) and anything not accepted are never touched — selectStrandedAcceptedClaims.
+ * A failed read throws, so the job reports a failure and never a zero that reads as "nothing was stranded".
+ */
+export async function releaseStrandedAcceptedOutstationClaims(): Promise<{
+  checked: number;
+  errors: number;
+  released: number;
+  stillHeld: number;
+}> {
+  const supabase = getSupabaseAdmin();
+  const accepted = (
+    await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("outstation_expense_requests").select("*").like("status", "accepted%"),
+      "id",
+    )
+  ).map(mapOutstationRequestRow);
+
+  const tripIds = accepted.map((request) => outstationPayrollTripId(request.id));
+  const payrollTripIds = new Set<string>();
+  for (let start = 0; start < tripIds.length; start += 200) {
+    const { data, error } = await supabase
+      .from("outstation_expenses")
+      .select("trip_id")
+      .in("trip_id", tripIds.slice(start, start + 200));
+    if (error) throw new Error(error.message);
+    for (const row of (data ?? []) as Array<{ trip_id?: unknown }>) payrollTripIds.add(String(row.trip_id ?? ""));
+  }
+
+  const stranded = selectStrandedAcceptedClaims(accepted, payrollTripIds);
+  let released = 0;
+  let stillHeld = 0;
+  let errors = 0;
+  for (const request of stranded) {
+    const release = await releaseOutstationRequestToPayrollIfReady(request.id, systemAccessContext);
+    if (release.released) {
+      released += 1;
+      continue;
+    }
+    stillHeld += 1;
+    if (!release.awaitingDecision) errors += 1;
+    logError("Outstation: an accepted claim with every gate complete is still off payroll after the morning retry", {
+      error: new Error(release.reason),
+      labels: { event: "outstation_stranded_release_held", requestId: String(request.id) },
+    });
+  }
+  return { checked: stranded.length, errors, released, stillHeld };
+}
+
 export async function runOutstationDeparturePhotoReminders(): Promise<{
   processed: number;
   errors: number;
@@ -5878,7 +5933,7 @@ export async function captureOutstationDeparturePhoto(
   // workload — and then to release the request into payroll if that succeeded. Both steps are
   // best-effort follow-ons: the photo is already saved, and neither a dead CRM nor a payroll
   // hiccup may turn the employee's successful capture into an error he has to retry.
-  await captureWorkloadAndReleaseIfReady(request, access);
+  await captureWorkloadAndReleaseIfReady(request);
 
   return { gateStatus, review };
 }
@@ -6868,11 +6923,13 @@ export async function addOutstationJourneyStopAsAdmin(
  * written, and the claim simply never reached payroll. The admin-triggered callers already surface
  * `release.reason`; these two now at least log it under their own event label.
  */
-async function runAutomaticOutstationRelease(
-  request: OutstationExpenseRequest,
-  access: AccessContext,
-) {
-  const release = await releaseOutstationRequestToPayrollIfReady(request.id, access);
+async function runAutomaticOutstationRelease(request: OutstationExpenseRequest) {
+  // AS THE SYSTEM, never as whoever made the capture (claims 111 and 347, 21 Nov 2026). The claim was
+  // accepted earlier by a Super Admin or the rule; the release only delivers that decision. Run under the
+  // employee's own access, the payroll save asked HIM for expense-approval rights — a District Manager
+  // has none — so "Forbidden: District Manager cannot approve expenses" stranded two accepted claims with
+  // every gate complete. followStopToPayroll does the same, for the same reason.
+  const release = await releaseOutstationRequestToPayrollIfReady(request.id, systemAccessContext);
   if (!release.released) {
     if (release.awaitingDecision) {
       // The employee has captured evidence while the request is still `submitted` — i.e. waiting on
@@ -6912,11 +6969,10 @@ async function runAutomaticOutstationRelease(
  */
 async function captureWorkloadAndReleaseIfReady(
   request: OutstationExpenseRequest,
-  access: AccessContext,
 ): Promise<{ reason: string; released: boolean } | null> {
   try {
     if (request.workloadGateStatus !== "pending_workload") {
-      return await runAutomaticOutstationRelease(request, access);
+      return await runAutomaticOutstationRelease(request);
     }
 
     const capture = await captureOutstationTripWorkload({
@@ -6953,7 +7009,7 @@ async function captureWorkloadAndReleaseIfReady(
       })
       .eq("id", request.id);
 
-    return await runAutomaticOutstationRelease(request, access);
+    return await runAutomaticOutstationRelease(request);
   } catch (error) {
     logError("Outstation workload capture failed after the departure photo (non-blocking)", {
       error,
@@ -7781,7 +7837,7 @@ export async function retryOutstationWorkloadCapture(
     throw new Error("This request is not waiting on its workload.");
   }
 
-  const release = await captureWorkloadAndReleaseIfReady(request, access);
+  const release = await captureWorkloadAndReleaseIfReady(request);
 
   // Re-read rather than infer: captureWorkloadAndReleaseIfReady is best-effort and swallows its
   // own failures, so the only honest answer about what happened is the row itself.

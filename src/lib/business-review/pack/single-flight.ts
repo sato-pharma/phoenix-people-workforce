@@ -16,7 +16,7 @@
 // Nothing is kept once a build ends: the next click after a finished download builds fresh.
 
 /** What a finished build answered — kept as bytes so every waiting request can be handed its own Response. */
-export type SharedPackAnswer = {
+type SharedPackAnswer = {
   body: Uint8Array;
   headers: [string, string][];
   status: number;

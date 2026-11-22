@@ -124,7 +124,7 @@ async function loadCustomer(customerId: string): Promise<CustomerRow> {
 }
 
 /** Read every reading of where a rep stood with this customer; `mergeTrustedPointReadings` merges and de-duplicates them. */
-export async function gatherTrustedPointReadings(customer: Pick<CustomerRow, "id" | "isTest" | "contactIds">): Promise<TrustedPointGathered> {
+async function gatherTrustedPointReadings(customer: Pick<CustomerRow, "id" | "isTest" | "contactIds">): Promise<TrustedPointGathered> {
   const supabase = getSupabaseAdmin();
   const [visitsResult, placesResult, oldCheckins] = await Promise.all([
     supabase
@@ -154,15 +154,16 @@ export async function gatherTrustedPointReadings(customer: Pick<CustomerRow, "id
   });
 }
 
-/** The seat's own area code, from the organogram — the territory a captured place is filed in. */
-async function seatAreaCodes(seatId: string): Promise<string[]> {
+/** The seat's own area code, from the organogram — the territory a captured place is filed in. Shared with server/admin-photo.ts. */
+export async function seatAreaCodes(seatId: string): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin().from("au_v_org_tree").select("seat_id, area_code").eq("seat_id", seatId).limit(1);
   throwIfError(error);
   const area = ((data ?? []) as Row[])[0]?.area_code;
   return typeof area === "string" && area.trim() ? [area.trim()] : [];
 }
 
-async function blockedReasonFor(customer: CustomerRow): Promise<string | null> {
+/** Why a customer cannot be validated by the Super Admin at all; null when he can. Shared with server/admin-photo.ts. */
+export async function blockedReasonFor(customer: Pick<CustomerRow, "id" | "status" | "listType">): Promise<string | null> {
   if (customer.status === "dropped") return "This customer is in the Archive.";
   if (customer.status !== "pending" && customer.status !== "active") return "This customer is not on the rep's list.";
   if (customer.listType !== "AM" && customer.listType !== "PM") return "A pharmacy is never validated.";

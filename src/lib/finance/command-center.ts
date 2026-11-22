@@ -59,7 +59,7 @@ export type FinancePayrollRun = {
  * First payment vs second. `one_part` settles entirely in Part 1; everything else (including a
  * NULL, which normalizePayrollPaymentMode defaults to `two_parts`) carries into Part 2.
  */
-export type FinancePayrollParts = {
+type FinancePayrollParts = {
   firstOnlyCount: number;
   firstOnlyNet: number;
   bothPartsCount: number;
@@ -71,7 +71,7 @@ export type FinancePayrollParts = {
  * non-overlapping — anyone not on a named bank is Treasury — so the three always reconcile to the
  * standing net beside them.
  */
-export type FinancePayoutChannels = {
+type FinancePayoutChannels = {
   fabCount: number;
   fabNet: number;
   cibCount: number;
@@ -80,7 +80,7 @@ export type FinancePayoutChannels = {
   treasuryNet: number;
 };
 
-export type FinanceStatusSlice = { status: string; count: number; value: number };
+type FinanceStatusSlice = { status: string; count: number; value: number };
 
 export type FinanceCommandCenterData = {
   generatedAt: string;
@@ -169,7 +169,7 @@ export type FinanceCommandCenterData = {
  * authorization rule in SQL is how two copies of a rule drift apart, so it stays where it is
  * enforced.
  */
-export type FinanceSheetAvailability = {
+type FinanceSheetAvailability = {
   period: { month: number; year: number };
   hasRun: boolean;
   part1: boolean;

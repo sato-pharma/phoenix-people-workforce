@@ -54,7 +54,7 @@ export type JoinerCandidate = {
   addressHeldBy: string | null;
 };
 
-export type JoinerOutcome = {
+type JoinerOutcome = {
   hrId: string;
   displayName: string;
   address: string | null;

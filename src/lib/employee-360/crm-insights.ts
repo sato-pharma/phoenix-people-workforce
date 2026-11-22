@@ -44,7 +44,7 @@ export type CrmInsight<T> = { state: "data"; value: T } | { state: "unread" } | 
 // ── Plan compliance ─────────────────────────────────────────────────────────────────────────────
 
 /** One list's plan against what happened, summed over the period's months. */
-export type CrmRepPlanLine = {
+type CrmRepPlanLine = {
   listType: PhoenixCrmDoctorListType;
   planned: number;
   kept: number;
@@ -67,7 +67,7 @@ export type CrmRepPlanCompliance = {
   shortened: boolean;
 };
 
-export type CrmManagerPlanWeek = {
+type CrmManagerPlanWeek = {
   weekStart: string;
   weekEnd: string;
   statusLabel: string;
@@ -90,9 +90,9 @@ export type CrmManagerPlanCompliance = {
 export type CrmPlanCompliance = CrmRepPlanCompliance | CrmManagerPlanCompliance;
 
 /** Months of the rep's plan read for one report (each one call of the Plan vs actual report). */
-export const CRM_REP_PLAN_MAX_MONTHS = 6;
+const CRM_REP_PLAN_MAX_MONTHS = 6;
 /** Sent weeks of a manager's plan read for one report (each one manager report). */
-export const CRM_MANAGER_PLAN_MAX_WEEKS = 13;
+const CRM_MANAGER_PLAN_MAX_WEEKS = 13;
 
 /**
  * The period cut into calendar-month windows, newest kept, each within the Plan vs actual report's

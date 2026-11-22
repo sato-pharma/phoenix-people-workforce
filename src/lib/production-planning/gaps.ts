@@ -15,7 +15,7 @@
 import { isBoughtBySato } from "./rules";
 import type { WireMaterial } from "./wire";
 
-export type DataGapKind = "amount" | "stock";
+type DataGapKind = "amount" | "stock";
 
 export type DataGap = {
   readonly materialId: string;

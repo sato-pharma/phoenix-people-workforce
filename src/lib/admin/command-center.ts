@@ -37,7 +37,7 @@ import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecyc
  * `null` on any figure means its source could not be read — and the reason is named in
  * `AdminCommandCenterData.dataUnavailable`. A reader shows "Unavailable", never 0 or 100%.
  */
-export type DataHealthMetrics = {
+type DataHealthMetrics = {
   attendanceMappingIssues: number | null;
   attendanceReadinessRate: UncomputedRate;
   leaveApprovedRequests: number | null;

@@ -60,6 +60,14 @@ database**, every 10 minutes. So:
 - **It shows what is LIVE, never your branch.** To prove a change in `src/lib/`, use Direct
   invocation below or the tests on the spare (`& ~/.claude/scripts/spare-test.ps1`); the PR's CI is
   the verdict.
+- **The one exception is a PR PREVIEW, and only on the owner's own word** ("preview 649"; owner,
+  2026-11-20: "Set up PR preview"). `& ~/.claude/scripts/spare-preview.ps1 <PR>` makes
+  `localhost:3000` that open pull request for 2 hours (`-Hours` to change), then the live version
+  returns by itself; `spare-preview.ps1 status` says which one is showing, `spare-preview.ps1 stop`
+  ends it now. The spare's 8 GB cannot hold two dev servers, so a preview REPLACES the live version
+  for him and every session while it runs. Never open one on your own reading. It runs as the user
+  `phxpreview` (no sudo) on the production database, so everything done in it is real. The script's
+  header has the rest.
 - Read it first (it can take 8 s when cold, and times out while the spare is compiling):
 
 ```bash

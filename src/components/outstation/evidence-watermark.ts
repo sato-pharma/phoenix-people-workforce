@@ -206,7 +206,7 @@ export async function resolveEvidenceLocationStamp(
   return readEvidenceLocationStamp(payload, latitude, longitude, accuracyMeters);
 }
 
-export function loadWatermarkLogo() {
+function loadWatermarkLogo() {
   return new Promise<HTMLImageElement | null>((resolve) => {
     const image = new Image();
     image.onload = () => resolve(image);

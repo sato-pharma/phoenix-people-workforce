@@ -17,7 +17,7 @@ import { cairoWallClock } from "@/lib/format/cairo-zone";
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { interviewOutcomeLabels, type InterviewOutcome } from "@/lib/recruitment/interview-calendar-types";
 import { serializeWorkspaceFilters, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
-import { workspaceRoleTabLabels, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
+import { workspaceRoleTabLabels } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceCursor, WorkspacePlacement, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 
 const twoDigits = (value: number) => String(value).padStart(2, "0");
@@ -200,11 +200,6 @@ export function filterQuery(filters: WorkspaceFilters): string {
 /** The page's own URL query — the filters plus the opened CV. */
 export function pageQuery(filters: WorkspaceFilters): string {
   return serializeWorkspaceFilters(filters).toString();
-}
-
-/** A role tab's label, or the raw key when the vocabulary has none (never blank). */
-export function roleTabLabel(tab: WorkspaceRoleTab | string): string {
-  return (workspaceRoleTabLabels as Record<string, string>)[tab] ?? tab;
 }
 
 /** A plain, stable message from anything thrown. */

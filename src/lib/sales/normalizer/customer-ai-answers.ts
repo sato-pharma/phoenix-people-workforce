@@ -21,7 +21,7 @@ const FRESH_DAYS = 90;
 // PostgREST requests start failing.
 const READ_CHUNK = 50;
 
-export function aiAnswerKeyHash(pharmacyKey: string): string {
+function aiAnswerKeyHash(pharmacyKey: string): string {
   return createHash("sha256").update(pharmacyKey, "utf8").digest("hex");
 }
 

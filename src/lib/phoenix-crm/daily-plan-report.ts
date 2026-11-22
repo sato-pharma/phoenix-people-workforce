@@ -329,7 +329,7 @@ export type DailyPlanDay = {
   onLeave: boolean;
 };
 
-export type DailyPlanTerritory = { seatId: string; name: string; lineName: string | null; repName: string | null };
+type DailyPlanTerritory = { seatId: string; name: string; lineName: string | null; repName: string | null };
 
 export type DailyPlanReportView = {
   period: DailyPlanPeriod;

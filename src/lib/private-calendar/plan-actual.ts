@@ -25,7 +25,7 @@ import { isPrivateCalendarVisitKind, privateCalendarItemKind, type PrivateCalend
 import { PRIVATE_CALENDAR_TILE_FIGURE_LABELS, privateCalendarDayTile, privateCalendarTileHeadline, type PrivateCalendarDayTile } from "@/lib/private-calendar/day-tile";
 import type { PrivateCalendarItem, PrivateCalendarPlanActivity } from "@/lib/private-calendar/logic";
 
-export type DayPlanActualHalf = PrivateCalendarPlanActivity["half"];
+type DayPlanActualHalf = PrivateCalendarPlanActivity["half"];
 
 export type DayPlanActualRow = {
   /** What was recorded for this half, each line said once. Empty when nothing was. */

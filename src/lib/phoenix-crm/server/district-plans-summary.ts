@@ -40,7 +40,7 @@ import type {
 // ── The week's state ─────────────────────────────────────────────────────────────────────────────
 
 /** Where one district manager's week stands, in the order the status bar reads them. */
-export const DISTRICT_PLAN_STATES = ["approved", "waiting", "ended", "returned", "draft", "not_started", "vacant"] as const;
+const DISTRICT_PLAN_STATES = ["approved", "waiting", "ended", "returned", "draft", "not_started", "vacant"] as const;
 export type DistrictPlanState = (typeof DISTRICT_PLAN_STATES)[number];
 
 export const DISTRICT_PLAN_STATE_LABEL: Record<DistrictPlanState, string> = {
@@ -119,7 +119,7 @@ export function districtPlanWorkingDays(weekStart: string): string[] {
 }
 
 /** The week's Friday — shown only when somebody planned something on it. */
-export function districtPlanFriday(weekStart: string): string {
+function districtPlanFriday(weekStart: string): string {
   return addDaysIso(weekStart, 6);
 }
 
@@ -444,7 +444,7 @@ export type DistrictPlanGridCell =
   | { state: "open" }
   | { state: "unsent" };
 
-export type DistrictPlanGridRow = {
+type DistrictPlanGridRow = {
   week: DistrictManagerWeek;
   state: DistrictPlanState;
   /** One cell per day and half, in the grid's own day order. */
@@ -454,7 +454,7 @@ export type DistrictPlanGridRow = {
 export type DistrictPlanGrid = { days: string[]; rows: DistrictPlanGridRow[] };
 
 /** The few words a grid cell carries: the rep's name for a half with a rep, otherwise the plan's own words. */
-export function districtPlanCellText(half: Pick<DistrictPlanHalf, "kind" | "repName" | "text">): string {
+function districtPlanCellText(half: Pick<DistrictPlanHalf, "kind" | "repName" | "text">): string {
   if (half.kind === "with_rep") return half.repName ?? half.text;
   return half.text;
 }
@@ -708,7 +708,7 @@ export function districtPlanListedSeats(weeks: readonly DistrictManagerWeek[], s
  * he goes with and whom he will visit"). A customer ticked on two half-days is ticked twice but is ONE customer: the
  * grades and specialities count customers, never ticks. A customer no longer on file is counted and named as such.
  */
-export const DISTRICT_CUSTOMER_GRADE_KEYS = ["A", "B", "C", "none"] as const;
+const DISTRICT_CUSTOMER_GRADE_KEYS = ["A", "B", "C", "none"] as const;
 export type DistrictCustomerGradeKey = (typeof DISTRICT_CUSTOMER_GRADE_KEYS)[number];
 
 export const DISTRICT_CUSTOMER_GRADE_LABEL: Record<DistrictCustomerGradeKey, string> = { A: "A", B: "B", C: "C", none: "No grade" };

@@ -77,7 +77,7 @@ export type DeviceMapRow = {
   non_employee_label: string | null;
   created_at: string | null;
 };
-export type LatestPunchRow = { device_id: string; device_user_id: string; latest_punch_at: string | null };
+type LatestPunchRow = { device_id: string; device_user_id: string; latest_punch_at: string | null };
 
 type Label = { label: string; shell: AuditOccurrenceInput["shell"] };
 

@@ -144,7 +144,7 @@ const DOOR_READERS = [
  * whole re-read of one place — the blind look, its second look, the guided look and its check — gets
  * this long. Nobody waits on it: it runs after the rep's reply and in the hourly re-check.
  */
-export const PHOENIX_CRM_SIGNBOARD_HELD_BUDGET_MS = 45_000;
+const PHOENIX_CRM_SIGNBOARD_HELD_BUDGET_MS = 45_000;
 /** No single call may take the whole re-read, or a hung call would leave no time for the fallback. */
 const HELD_CALL_CAP_MS = 20_000;
 const HELD_READERS = [
@@ -153,10 +153,10 @@ const HELD_READERS = [
 ] as const;
 
 /** How much of the frame around a sign's own box is kept when the sign is read again on its own. */
-export const SIGNBOARD_CROP_MARGIN = 0.06;
+const SIGNBOARD_CROP_MARGIN = 0.06;
 
 /** Which reader is asking: a rep at the door, or the night. */
-export type SignboardReadMode = "door" | "sweep";
+type SignboardReadMode = "door" | "sweep";
 
 const INSTRUCTIONS =
   "You are looking at a photograph taken by a pharmaceutical sales representative standing in " +
@@ -924,6 +924,22 @@ export async function readPlaceSignboard(input: {
   if (!bytes) return unjudged("no_bytes");
 
   return judgeBytes({ bytes, customerName: input.customerName, listType: input.listType, mode: "door", photoBrick: input.photoBrick ?? null });
+}
+
+/**
+ * Read a doctor's-name photo the Phoenix Camera sealed (owner, 20 Nov 2026, point 6: the door sign, the banner or
+ * the prescription). The door's own reader on bytes the seal already vouched for: no storage path, because the
+ * camera's photo never went through a photo slot. Only `match` validates on it; anything else waits for the
+ * Super Admin as "doctor's name photo", and his decisions are kept beside the reading to correct the reader.
+ */
+export async function readSealedNamePhoto(input: {
+  bytes: Uint8Array;
+  customerName: string;
+  listType: PhoenixCrmListType;
+  photoBrick?: string | null;
+}): Promise<PhoenixCrmSignboardCheck> {
+  if (!hasAiApiKey()) return unjudged("no_api_key");
+  return judgeBytes({ bytes: input.bytes, customerName: input.customerName, listType: input.listType, mode: "door", photoBrick: input.photoBrick ?? null });
 }
 
 /**

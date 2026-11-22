@@ -4,17 +4,21 @@
 // component imports it.
 //
 // THE CONTRACT (policy 50048950, document MED/6021-3, issued 22 November 2026, cover to 26 November 2027):
-//   * The premium is per person for the policy's term, by plan and five-year age band, to the piastre as the
-//     schedule prints it ("Premium per age band group"). The code calls it the annual rate.
+//   * The premium is per person for the policy's term, by plan and five-year age band. The code calls it the
+//     annual rate, and the card holds it BEFORE TAX: the schedule's printed "Premium per age band group" already
+//     carries the 1.55%, so each stored rate is the printed one divided by 1.0155, to the piastre (Libano-Suisse's
+//     first invoice and Initial Breakdown, 20 November 2026, prove it: each person's year is the printed rate).
 //   * On top of the premium: 1.55% tax and supervision, EGP 30 per member for the card, and EGP 90 issue fee.
+//   * The band is picked by the insurer's age: the year cover starts less the year of birth (`pricingAge`).
+//   * The year's premium and tax are paid in quarterly instalments (`premiumInstalments`); the first one also
+//     carries every card and the issue fee.
 //   * A joiner is charged the premium by the day, from the day they join to the policy's end; one who joins
 //     from the policy's tenth month (its last quarter) pays 25% of it instead.
 //   * A leaver is refunded for the rest of the term, whether or not a claim was made (the policy's annex);
 //     this file counts it by the day from the day after they leave.
 //
 // WHAT THE CONTRACT DOES NOT SAY, AND THIS FILE ASSUMES (each one is shown on the Cost tab):
-//   * The age that picks the band is the age on the day cover starts (the policy's first day for everyone on
-//     it from the start).
+//   * A joiner's age is taken in the year of their own first day.
 //   * The 1.55% is added to a joiner's charge and taken off a leaver's refund as well; the card fee is
 //     charged on a joiner and never refunded; the issue fee is charged once, on the opening bill.
 //
@@ -45,6 +49,11 @@ export type MedicalInsuranceRateCard = {
   issueFee: number;
   cardReissueFee: number;
   lastQuarterAdditionBasisPoints: number;
+  /**
+   * How many instalments the year's premium and tax are paid in (policy 50048950: 4, quarterly). The first one
+   * also carries every card and the issue fee. Missing means one bill for the year.
+   */
+  premiumInstalments?: number;
   ageLimits: Record<MedicalInsuranceMemberType, number>;
 };
 
@@ -59,7 +68,7 @@ function dayNumber(day: string): number {
 }
 
 /** Days from `start` to `end`, both counted. */
-export function inclusiveDays(start: string, end: string): number {
+function inclusiveDays(start: string, end: string): number {
   return dayNumber(end) - dayNumber(start) + 1;
 }
 
@@ -85,7 +94,19 @@ export function ageOn(birthDate: string | null | undefined, day: string): number
   return age < 0 ? null : age;
 }
 
-export function ageBandIndex(card: MedicalInsuranceRateCard, age: number): number {
+/**
+ * The age the insurer prices with: the year of the day cover starts less the year of birth, so someone born
+ * on 3 December 1996 is priced at 30 for cover from 22 November 2026. Libano-Suisse's Initial Breakdown for
+ * policy 50048950 (20 November 2026) priced all 139 people this way; the exact age on the day priced only 136
+ * of them. Null without a birth date, or for a birth year after the day's.
+ */
+export function pricingAge(birthDate: string | null | undefined, day: string): number | null {
+  if (!birthDate || !/^\d{4}-\d{2}-\d{2}/.test(birthDate)) return null;
+  const age = Number(day.slice(0, 4)) - Number(birthDate.slice(0, 4));
+  return age < 0 ? null : age;
+}
+
+function ageBandIndex(card: MedicalInsuranceRateCard, age: number): number {
   return card.ageBands.findIndex((band) => age >= band.from && (band.to === null || age <= band.to));
 }
 
@@ -102,7 +123,7 @@ export function lastQuarterStart(policy: MedicalInsurancePolicyDates): string {
 export type PersonToPrice = {
   category: MedicalInsuranceCategory;
   birthDate: string | null;
-  /** The day cover starts. Sets the age, and so the band. */
+  /** The day cover starts. Its year sets the priced age (`pricingAge`), and so the band. */
   coverageStart: string;
 };
 
@@ -112,7 +133,7 @@ export type Rate =
 
 /** A person's annual premium. Unpriced, with the reason in words, when no birth date or no quoted rate. */
 export function annualRate(card: MedicalInsuranceRateCard, person: PersonToPrice): Rate {
-  const age = ageOn(person.birthDate, person.coverageStart);
+  const age = pricingAge(person.birthDate, person.coverageStart);
   if (age === null) return { age: null, band: -1, priced: false, reason: "No date of birth" };
   const band = ageBandIndex(card, age);
   const rate = band >= 0 ? card.plans[person.category]?.rates[band] : null;
@@ -122,7 +143,7 @@ export function annualRate(card: MedicalInsuranceRateCard, person: PersonToPrice
   return { age, annual: rate, band, priced: true };
 }
 
-export type BandLine = { band: number; label: string; people: number; rate: number | null; premium: number };
+type BandLine = { band: number; label: string; people: number; rate: number | null; premium: number };
 
 export type PlanLine = { category: MedicalInsuranceCategory; people: number; premium: number; bands: BandLine[] };
 
@@ -189,6 +210,34 @@ export function openingStatement(card: MedicalInsuranceRateCard, people: readonl
     total: toEgp(premiumPiastres + tax + cards + issue),
     unpriced,
   };
+}
+
+/** How many instalments the card says the year is paid in; one when it does not say. */
+export function premiumInstalmentCount(card: Pick<MedicalInsuranceRateCard, "premiumInstalments">): number {
+  return card.premiumInstalments ?? 1;
+}
+
+/**
+ * Which instalment a bill is, 1 to `count`, from the first day it covers: the year is cut into `count` equal
+ * runs of months from the policy's first day (quarterly: 22 November, 22 February, 22 May, 22 August). A bill
+ * that gives no first day is taken as the first.
+ */
+export function instalmentNumber(policy: Pick<MedicalInsurancePolicyDates, "startsOn">, count: number, coversFrom: string | null): number {
+  if (count <= 1 || !coversFrom) return 1;
+  const [y1, m1, d1] = policy.startsOn.slice(0, 10).split("-").map(Number);
+  const [y2, m2, d2] = coversFrom.slice(0, 10).split("-").map(Number);
+  const months = (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+  return Math.min(Math.max(Math.floor(months / (12 / count)) + 1, 1), count);
+}
+
+/**
+ * One instalment of the opening statement: the year's premium and tax split evenly, the first one also carrying
+ * every card and the issue fee. With one instalment it is the whole opening bill.
+ */
+export function openingInstalment(opening: Pick<OpeningStatement, "premium" | "tax" | "cards" | "issueFee">, count: number, number: number): number {
+  const share = Math.round((toPiastres(opening.premium) + toPiastres(opening.tax)) / Math.max(count, 1));
+  const fees = number === 1 ? toPiastres(opening.cards) + toPiastres(opening.issueFee) : 0;
+  return toEgp(share + fees);
 }
 
 export type Movement = {
@@ -268,6 +317,7 @@ export function parseRateCard(raw: unknown): MedicalInsuranceRateCard {
       return plan && Array.isArray(plan.rates) && plan.rates.length === bands.length && plan.rates.every((rate) => rate === null || (number(rate) && rate > 0));
     }) &&
     [card.taxBasisPoints, card.cardFeePerMember, card.issueFee, card.cardReissueFee, card.lastQuarterAdditionBasisPoints].every(number) &&
+    (card.premiumInstalments === undefined || (Number.isInteger(card.premiumInstalments) && card.premiumInstalments >= 1 && card.premiumInstalments <= 12)) &&
     number(card.ageLimits?.employee) && number(card.ageLimits?.spouse) && number(card.ageLimits?.child);
   if (!sound) throw new Error("The policy's rate card is missing a figure, so no cost can be worked out.");
   return card as MedicalInsuranceRateCard;

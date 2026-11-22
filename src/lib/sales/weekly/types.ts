@@ -627,12 +627,9 @@ export type WeeklyDashboardUnitView = {
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────
 
-/** A raw label captured from an uploaded file that the mapping engine couldn't resolve. */
-export type WeeklyMissingLabel = { dimension: "product" | "region"; rawValue: string };
-
 // ── product-scope administration (which PM/GPM/Marketing Manager owns which products) ──────────
 
-export type WeeklyProductOption = { code: string; name: string; line: string };
+type WeeklyProductOption = { code: string; name: string; line: string };
 
 export type WeeklyScopeAssignment = {
   hrId: string;

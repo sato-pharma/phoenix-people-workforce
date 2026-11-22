@@ -30,7 +30,7 @@ import type { Candidate } from "@/lib/recruitment/types";
  * undecided rows and would pull the whole Egypt place vocabulary into this bundle to do it; those
  * eight land under "Region not on the CV", which is true rather than merely convenient.
  */
-export function screeningRegionOf(candidate: Candidate): CandidateRegionCode | null {
+function screeningRegionOf(candidate: Candidate): CandidateRegionCode | null {
   const stated = String(candidate.preferredRegionCode ?? "").trim().toUpperCase();
   if ((candidateRegionCodes as readonly string[]).includes(stated)) return stated as CandidateRegionCode;
   return candidateRegionForGovernorate(candidate.governorate);

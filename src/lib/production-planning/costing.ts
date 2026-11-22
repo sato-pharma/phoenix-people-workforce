@@ -23,10 +23,8 @@ import { QTY_SCALE, roundDiv, toDisplayQty } from "./rules";
 
 export type Currency = "USD" | "EGP";
 
-export const CURRENCIES: readonly Currency[] = ["USD", "EGP"] as const;
-
 /** Money is carried in 1/10,000ths of a unit, matching the `numeric(18,4)` cost columns. */
-export const MONEY_SCALE = BigInt(10_000);
+const MONEY_SCALE = BigInt(10_000);
 
 /** A price is `numeric(18,6)` per display unit; the quantity it multiplies is micro base units. */
 const PRICE_SCALE = QTY_SCALE;
@@ -219,9 +217,3 @@ export function formatMoney(scaled: bigint): string {
   return negative ? `-${text}` : text;
 }
 
-/** The FX rate as a readable decimal: `48500000n` → `"48.5"`. */
-export function formatFxRate(micro: bigint): string {
-  const whole = micro / QTY_SCALE;
-  const fraction = (micro % QTY_SCALE).toString().padStart(6, "0").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : whole.toString();
-}

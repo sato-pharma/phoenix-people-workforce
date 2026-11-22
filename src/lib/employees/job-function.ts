@@ -44,8 +44,25 @@ const JOB_FUNCTION_BY_TITLE: Record<string, PhoenixRole> = {
   "national sales manager": "National Sales Manager",
   nsm: "National Sales Manager",
   "product manager": "Product Manager",
+  // A SENIOR Product Manager is a Product Manager with a seniority grade, not a different job
+  // (B-10's promotion of Nourhan Abdelmoniem, 2026-11-20). She keeps the same line, the same
+  // seat and the same app role, so every rule keyed off the job FUNCTION must land where it did
+  // the day before. Without this the title falls through to normalizeRole and classifies as the
+  // baseline "Employee", which is silent and wrong, as the senior-DM entry above documents.
+  "senior product manager": "Product Manager",
   "group product manager": "Group Product Manager",
 };
+
+/**
+ * True for the exact titles "Product Manager" and "Senior Product Manager". "Group Product
+ * Manager" is a more senior, different title and is deliberately NOT matched — callers that
+ * compare a title for equality (never a substring) use this so a seniority grade never drops
+ * someone out of a Product Manager rule.
+ */
+export function isProductManagerTitle(title: string | null | undefined): boolean {
+  const key = String(title ?? "").trim().toLowerCase();
+  return key === "product manager" || key === "senior product manager";
+}
 
 export function resolveJobFunctionRole(title: string | null | undefined): PhoenixRole {
   const raw = String(title ?? "").trim();

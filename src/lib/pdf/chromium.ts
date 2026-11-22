@@ -206,7 +206,7 @@ export type ChromiumPage = {
   setViewport: (viewport: { width: number; height: number; deviceScaleFactor?: number }) => Promise<void>;
 };
 
-export type ChromiumBrowser = {
+type ChromiumBrowser = {
   close: () => Promise<void>;
   newPage: () => Promise<ChromiumPage>;
 };

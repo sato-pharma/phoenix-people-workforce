@@ -46,14 +46,14 @@ export type MergeCandidate = {
 
 export type MergeRefusal = "list_type_differs" | "too_many_places" | "loser_has_moves" | "keeper_not_validated";
 
-export type MergeNotCopied = { field: "grade" | "potential" | "phone" | "primary pharmacy"; fromName: string; value: string };
+type MergeNotCopied = { field: "grade" | "potential" | "phone" | "primary pharmacy"; fromName: string; value: string };
 
 export type MergePlan =
   | { ok: true; keeper: MergeCandidate; losers: MergeCandidate[]; why: string; notCopied: MergeNotCopied[] }
   | { ok: false; refused: MergeRefusal; rows: MergeCandidate[] };
 
 /** The keep order, as a comparator: negative when `left` should be kept over `right`. */
-export function keepOrder(left: MergeCandidate, right: MergeCandidate): number {
+function keepOrder(left: MergeCandidate, right: MergeCandidate): number {
   return (
     Number(right.activePlaces > 0) - Number(left.activePlaces > 0) ||
     Number(right.validatedAt !== null) - Number(left.validatedAt !== null) ||
@@ -64,7 +64,7 @@ export function keepOrder(left: MergeCandidate, right: MergeCandidate): number {
 }
 
 /** Why the keeper won, in plain words, read off the first key that separated it from the runner-up. */
-export function keepReason(keeper: MergeCandidate, runnerUp: MergeCandidate): string {
+function keepReason(keeper: MergeCandidate, runnerUp: MergeCandidate): string {
   if (keeper.activePlaces > 0 && runnerUp.activePlaces === 0) return "It holds the validated place";
   if (keeper.validatedAt !== null && runnerUp.validatedAt === null) return "It is the validated row";
   if (keeper.visits !== runnerUp.visits) return "It carries more saved visits";

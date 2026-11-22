@@ -51,7 +51,7 @@ export const LINKED_RUN_STEP_TABLE = "monthly_sales_run_step";
  * The retired direct vintage: rows uploaded from Excel under distributor code `DIRECT`, periods
  * 2026-01..2026-07, `area_code` an empty string. These are what the cleanup exists to remove.
  */
-export const RETIRED_DIRECT_DISTRIBUTOR_CODE = "DIRECT";
+const RETIRED_DIRECT_DISTRIBUTOR_CODE = "DIRECT";
 
 /**
  * The live vintage begins here. AGENTS.md §4, the direct-order month golden rule: the system's own

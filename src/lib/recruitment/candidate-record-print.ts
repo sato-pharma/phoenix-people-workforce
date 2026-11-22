@@ -79,9 +79,9 @@ import { candidateWhatsAppAnswers, type WhatsAppAnswer } from "@/lib/recruitment
 // ── The model ────────────────────────────────────────────────────────────────────────────────────
 
 /** One value of a field, with the quieter line that goes under it (who, when, where it came from). */
-export type PrintValue = { text: string; note: string | null };
+type PrintValue = { text: string; note: string | null };
 
-export type PrintEntryLine = { label: string; text: string };
+type PrintEntryLine = { label: string; text: string };
 
 export type PrintField = {
   label: string;
@@ -94,11 +94,11 @@ export type PrintField = {
   entries: PrintEntryLine[][];
 };
 
-export type PrintItem = { title: string; lines: string[] };
+type PrintItem = { title: string; lines: string[] };
 
-export type PrintEvent = { title: string; detail: string | null; at: string };
+type PrintEvent = { title: string; detail: string | null; at: string };
 
-export type PrintNote = { author: string; role: string | null; at: string; body: string[] };
+type PrintNote = { author: string; role: string | null; at: string; body: string[] };
 
 export type PrintBlock =
   | { kind: "fields"; heading: string | null; count: number | null; fields: PrintField[] }
@@ -115,7 +115,7 @@ export type PrintSection = {
   blocks: PrintBlock[];
 };
 
-export type PrintNotice = { text: string; footnote: string | null };
+type PrintNotice = { text: string; footnote: string | null };
 
 export type CandidateRecordPrint = {
   name: string;

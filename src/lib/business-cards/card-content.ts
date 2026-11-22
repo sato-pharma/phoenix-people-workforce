@@ -83,7 +83,7 @@ export function formatCardLineArea(lineName: string | null | undefined, areaName
 }
 
 /** The company mail domain every card address is on. */
-export const CARD_EMAIL_DOMAIN = "satopharma.com";
+const CARD_EMAIL_DOMAIN = "satopharma.com";
 
 /**
  * "first.second@satopharma.com" — the address a card prints when the register holds no work email.

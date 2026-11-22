@@ -95,7 +95,7 @@ export type AutopilotVacancyRow = {
   filledByHrId?: string | null;
 };
 
-export type AutopilotSkipReason = "parked" | "replacement_still_employed";
+type AutopilotSkipReason = "parked" | "replacement_still_employed";
 
 export type AutopilotPlan = {
   open: AutopilotSeat[];
@@ -141,7 +141,7 @@ function isClosedSeatRow(status: string): boolean {
 }
 
 /** Is this draft one the autopilot itself left behind? Only those are ever touched. */
-export function isAutopilotDraft(requisition: Pick<AutopilotRequisition, "status" | "notes">): boolean {
+function isAutopilotDraft(requisition: Pick<AutopilotRequisition, "status" | "notes">): boolean {
   return requisition.status === "req_draft" && textOrNull(requisition.notes) === AUTOPILOT_OPEN_NOTE;
 }
 

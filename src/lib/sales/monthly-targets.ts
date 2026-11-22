@@ -476,7 +476,7 @@ export async function loadMonthlyAchievement(period: string): Promise<Achievemen
 // the covered figure the LARGER of the two (CNS January 2026 does exactly this). Do
 // not "correct" that with a clamp — both figures are right and the difference is real.
 
-export type AchievementTotal = {
+type AchievementTotal = {
   actualValue: number;
   actualUnits: number;
   /**
@@ -819,7 +819,7 @@ export async function loadEmployeeEmploymentStatusMap(): Promise<Map<string, str
 // Decompose a closing number to its raw source (distributor + brick). Reconciles
 // exactly to au.f_monthly_attribution. Used by the expandable Targets rows + export.
 
-export type SourceBreakdownRow = {
+type SourceBreakdownRow = {
   productCode: string;
   productName: string;
   distributorName: string;
@@ -839,32 +839,6 @@ export type DirectBreakdownRow = {
 };
 
 export type LineSourceBreakdownRow = SourceBreakdownRow & { areaCode: string };
-
-/** Indirect distributor×brick breakdown for one (period, line, area[, product]). */
-export async function loadSourceBreakdown(
-  period: string,
-  lineCode: string,
-  areaCode: string,
-  productCode?: string | null,
-): Promise<SourceBreakdownRow[]> {
-  if (!isValidPeriod(period) || !lineCode || !areaCode) return [];
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("phx_sales_source_breakdown", {
-    p_period: period,
-    p_line_code: lineCode,
-    p_area_code: areaCode,
-    p_product_code: productCode ?? null,
-  });
-  if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
-    productCode: str(row.product_code),
-    productName: str(row.product_name) || str(row.product_code),
-    distributorName: str(row.distributor_name),
-    brickName: str(row.brick_name),
-    units: num(row.units),
-    value: num(row.value),
-  }));
-}
 
 /** Direct (company) channel breakdown for one (period, line). */
 export async function loadDirectBreakdown(period: string, lineCode: string): Promise<DirectBreakdownRow[]> {
@@ -948,24 +922,6 @@ export type SourceFileRow = {
   importableRows: number;
   status: string;
 };
-
-/** The validated distributor uploads that fed a month (provenance / paper-trail). */
-export async function loadSourceFiles(period: string): Promise<SourceFileRow[]> {
-  if (!isValidPeriod(period)) return [];
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("phx_sales_source_files", { p_period: period });
-  if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
-    distributorName: str(row.distributor_name),
-    fileName: str(row.file_name),
-    uploadedBy: str(row.uploaded_by),
-    uploadedAt: str(row.uploaded_at),
-    totalQty: num(row.total_qty),
-    totalValue: num(row.total_value),
-    importableRows: num(row.importable_rows),
-    status: str(row.status),
-  }));
-}
 
 /** Whole-line indirect breakdown (all areas) — for the Excel audit export. */
 export async function loadLineSourceBreakdown(period: string, lineCode: string): Promise<LineSourceBreakdownRow[]> {

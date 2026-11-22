@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion, type HTMLMotionProps } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 
 /**
@@ -11,42 +11,6 @@ import type { ReactNode } from "react";
  */
 
 const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
-type FadeInUpProps = HTMLMotionProps<"div"> & {
-  children: ReactNode;
-  /** Stagger delay in seconds. */
-  delay?: number;
-  /** Vertical travel distance in px. */
-  distance?: number;
-};
-
-/** Fade + rise the element into view once, when scrolled into the viewport. */
-export function FadeInUp({
-  children,
-  delay = 0,
-  distance = 14,
-  ...rest
-}: FadeInUpProps) {
-  const reduce = useReducedMotion();
-
-  if (reduce) {
-    // Static render (no transform/opacity animation) but keep motion.div so the
-    // spread props remain type-compatible.
-    return <motion.div {...rest}>{children}</motion.div>;
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: distance }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.15 }}
-      transition={{ duration: 0.5, ease: EASE_OUT, delay }}
-      {...rest}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 type StaggerGroupProps = {
   children: ReactNode;

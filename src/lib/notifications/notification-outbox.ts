@@ -69,7 +69,7 @@ export function readQueuedNotificationWrite(payload: unknown): QueuedNotificatio
  * refused by the unique key anyway, and for `notification_deliveries` the write is an upsert on
  * that key, so replaying either is safe while losing either is not.
  */
-export async function notificationWriteAlreadyLanded(payload: QueuedNotificationWrite): Promise<boolean> {
+async function notificationWriteAlreadyLanded(payload: QueuedNotificationWrite): Promise<boolean> {
   try {
     const supabase = getSupabaseAdmin({ requestTimeoutMs: 10_000 });
     const { data, error } =
@@ -129,7 +129,7 @@ export const notificationWriteQueue: OutboxQueue<QueuedNotificationWrite> = {
   table: NOTIFICATION_OUTBOX_TABLE,
 };
 
-export const maybeDrainNotificationOutbox = makeOpportunisticDrain(notificationWriteQueue);
+const maybeDrainNotificationOutbox = makeOpportunisticDrain(notificationWriteQueue);
 
 /** Write one notification row, surviving an outage. Returns the error that ended it, or null. */
 export function persistNotificationWrite(payload: QueuedNotificationWrite): Promise<unknown | null> {

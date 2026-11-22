@@ -67,7 +67,7 @@ export const SATO_EMAIL_SOURCE_MAX_CHARS = 24_000;
  * Same number, same reasoning as the CV intake: a real document runs to thousands, and the failure
  * it catches is a scan that answered with a page marker and nothing else.
  */
-export const MIN_SOURCE_TEXT_CHARS = 200;
+const MIN_SOURCE_TEXT_CHARS = 200;
 
 export function detectSatoSourceKind(contentType: string, fileName: string): SatoSourceKind {
   const mime = (contentType || "").toLowerCase();

@@ -50,7 +50,7 @@ export type SuggestionInput = {
 export const PLACE_TIERS = ["none", "governorate", "neighbourhood", "area"] as const;
 export type PlaceTier = (typeof PLACE_TIERS)[number];
 
-export type PositionSuggestion = {
+type PositionSuggestion = {
   vacancy: VacancyOption;
   placeTier: PlaceTier;
   /** Plain words a recruiter can check against the CV in front of them. Never a score, never "AI". */

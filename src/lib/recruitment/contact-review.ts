@@ -24,7 +24,7 @@ import { isEmptyExtractedField, type ExtractedCandidateFields } from "@/lib/recr
 import { isBlankCandidateValue, isSingleDiallablePhone } from "@/lib/recruitment/cv-auto-apply";
 
 /** One proposed value, carrying the AI's own hedge so a reviewer sees what it was unsure about. */
-export type ContactProposalField = {
+type ContactProposalField = {
   value: string;
   confidence: "high" | "low";
 };

@@ -43,7 +43,7 @@ export type SpecialtyVisitRow = {
   visits: number;
 };
 
-export type SpecialtyCount = {
+type SpecialtyCount = {
   /** The vendor's value, trimmed. Empty string for a contact carrying none. */
   speciality: string;
   /** What to print: the value itself, or "No speciality recorded" when it is blank. */

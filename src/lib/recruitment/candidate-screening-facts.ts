@@ -54,7 +54,7 @@ import { candidateBackgroundLabels } from "@/lib/recruitment/inbound/whatsapp-cl
  * intake because the CV reader was confident. `confirmed: false` means it is the CV reader's hedged
  * answer, shown because a hedged answer beats a blank cell but never presented as settled.
  */
-export type ScreeningFact<T> = { confirmed: boolean; value: T };
+type ScreeningFact<T> = { confirmed: boolean; value: T };
 
 /**
  * The CV reader's LOW-confidence answers for one candidate — the values `selectAutoApplyFields`

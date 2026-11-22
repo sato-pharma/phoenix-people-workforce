@@ -69,11 +69,6 @@ export function isOnBooking(viewer: MrViewer, booking: Pick<MrBookingFact, "inte
   return sameHr(booking.interviewerHrId, viewer.hrIdKey) || booking.panelistHrIds.some((hrId) => sameHr(hrId, viewer.hrIdKey));
 }
 
-/** Whether the viewer is the LEAD interviewer of this interview. */
-export function isLeadOnBooking(viewer: MrViewer, booking: Pick<MrBookingFact, "interviewerHrId"> | null): boolean {
-  return Boolean(booking && sameHr(booking.interviewerHrId, viewer.hrIdKey));
-}
-
 /** Whether the viewer may see this recommendation's proposed salary. */
 export function canSeeSalary(viewer: MrViewer, recommendation: Pick<MrRecommendationFact, "byHrId">): boolean {
   return viewer.isHrManager || viewer.isTalentAcquisition || sameHr(recommendation.byHrId, viewer.hrIdKey);
@@ -92,7 +87,7 @@ export function redactFactsFor(viewer: MrViewer, facts: MrCandidateFacts): MrCan
 }
 
 /** Which workflow step a result step belongs to. */
-export function stageStepForResult(step: MrResultStep): MrStep {
+function stageStepForResult(step: MrResultStep): MrStep {
   if (step === "hr_screening") return "screening";
   if (step === "final_decision") return "decision";
   if (step === "nsm_final" || step === "joint_final") return "final";
@@ -100,7 +95,7 @@ export function stageStepForResult(step: MrResultStep): MrStep {
 }
 
 /** The interview round a result step is recorded against, or null for screening and the decision. */
-export function roundForResultStep(step: MrResultStep): MrInterviewRound | null {
+function roundForResultStep(step: MrResultStep): MrInterviewRound | null {
   return step === "hr_screening" || step === "final_decision" ? null : step;
 }
 

@@ -29,7 +29,7 @@
  */
 export type ReleaseGateEnv = Readonly<Record<string, string | undefined>>;
 
-export type ReleaseGateReason =
+type ReleaseGateReason =
   /** Not production on Railway — a laptop, CI, staging. Nothing writes a row for these, so none is asked for. */
   | "not_production_railway"
   /** An upload with no git commit: the urgent route's `railway up`, which skips the checks by the owner's own words. */

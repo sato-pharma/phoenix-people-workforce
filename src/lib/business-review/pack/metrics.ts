@@ -32,7 +32,7 @@ export type PackLevel = "company" | "line" | "district" | "rep";
 
 export const PACK_LEVELS: readonly PackLevel[] = ["company", "line", "district", "rep"];
 
-export type MetricGroupId = "summary" | "sales" | "origin" | "activity" | "link" | "cost" | "people";
+type MetricGroupId = "summary" | "sales" | "origin" | "activity" | "link" | "cost" | "people";
 
 export type MetricGroup = {
   id: MetricGroupId;

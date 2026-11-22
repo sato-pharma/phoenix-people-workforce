@@ -62,7 +62,7 @@ export type RecipientAssuranceDecision =
   /** Not derivable — refuse the send. */
   | { outcome: "block"; code: AssuranceBlockCode; reason: string };
 
-export type AssuranceBlockCode =
+type AssuranceBlockCode =
   | "intended_recipient_has_no_address"
   | "no_recipient"
   | "unknown_recipient_address";

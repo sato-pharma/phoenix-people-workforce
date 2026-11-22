@@ -25,7 +25,7 @@ export type MatchQueueShop = {
   codes: Array<{ distributorCode: string; distributorName: string; customerCode: string; recentValue: number }>;
 };
 
-export type MatchQueueSighting = {
+type MatchQueueSighting = {
   customerName: string;
   customerKind: "Doctor" | "Account";
   customerHref: string;

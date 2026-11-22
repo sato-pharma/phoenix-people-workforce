@@ -99,7 +99,7 @@ export function formatPct(value: number | null): string {
   return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
 }
 
-export function formatSignedPct(value: number | null): string {
+function formatSignedPct(value: number | null): string {
   if (value == null) return "—";
   return `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }
@@ -131,7 +131,7 @@ export function achievementHex(value: number | null): string {
   return "#EF4444";
 }
 
-export function growthTone(value: number | null): string {
+function growthTone(value: number | null): string {
   if (value == null) return "text-slate-400";
   if (value > 0) return "text-emerald-600";
   if (value < 0) return "text-red-600";

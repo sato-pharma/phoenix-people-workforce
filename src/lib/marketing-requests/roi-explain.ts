@@ -18,7 +18,7 @@ export type RoiExplainReason =
 
 /** The current attribution counts only exact (distributor + pharmacy code + product +
  *  period) matches, so every attributed ledger row is high confidence. */
-export type RoiExplainConfidence = "high";
+type RoiExplainConfidence = "high";
 
 export const ROI_EXPLAIN_MATCH_REASON = "Exact distributor + pharmacy code + product + period";
 
@@ -114,7 +114,7 @@ export type RoiNearMissRow = {
   valueIfMatched: number;
 };
 
-export type RoiNearMissGroup = {
+type RoiNearMissGroup = {
   kind: RoiNearMissKind;
   rows: number;
   units: number;
@@ -130,7 +130,7 @@ export type RoiNearMissReport = {
   truncated: boolean;
 };
 
-export type RoiExplainDiagnostic = {
+type RoiExplainDiagnostic = {
   reason: RoiExplainReason;
   pharmaciesTargeted: number;
   pharmaciesFound: number;

@@ -130,7 +130,7 @@ export type TalentMonthMark = {
   title: string;
 };
 
-export type TalentCalendarMonth = {
+type TalentCalendarMonth = {
   /** "October 2026". */
   label: string;
   /** Keyed `YYYY-MM-DD`. Built once, so a 6x7 grid does not rescan every item 42 times. */
@@ -155,7 +155,7 @@ export type TalentCalendarMonth = {
  * role is a runtime resolution, and a calendar drawn with no role would be a blank week, which is
  * the one wrong answer a diary can give.
  */
-export type TalentInterviewCalendar = {
+type TalentInterviewCalendar = {
   /** Whether she may search candidates / add one to Recruitment from inside the calendar. */
   abilities: { canAddToRecruitment: boolean; canSearchCandidates: boolean };
   /** Whether she reads the requests waiting for a time — her seat (`readsInterviewRequestInbox`); as an owner she also gives them a time. */
@@ -654,9 +654,9 @@ export function breakdownBarPercent(count: number, largest: number): number {
 }
 
 /** The three groups the six figure cards stand in, in the order he reads them. */
-export type TalentTileGroupKey = "seats" | "candidates" | "outcomes";
+type TalentTileGroupKey = "seats" | "candidates" | "outcomes";
 
-export type TalentTileGroupSpec = {
+type TalentTileGroupSpec = {
   /** One short line under the caption — what the group answers. */
   caption: string;
   key: TalentTileGroupKey;
@@ -672,7 +672,7 @@ export type TalentTileGroupSpec = {
  *
  * Keyed on TILE KEYS, never on a label — a label is worded for a person and is reworded freely.
  */
-export const TALENT_TILE_GROUPS: readonly TalentTileGroupSpec[] = [
+const TALENT_TILE_GROUPS: readonly TalentTileGroupSpec[] = [
   {
     caption: "Empty seats, by line",
     key: "seats",
@@ -700,7 +700,7 @@ export const TALENT_TILE_GROUPS: readonly TalentTileGroupSpec[] = [
 export const TALENT_KEPT_BUILDER_TILE_KEYS: readonly string[] = ["hired", "offers-sent"];
 
 /** The business lines whose seats she sees, in his reading order (Pedia, Anti Infective, CNS). */
-export const TALENT_SEAT_LINES: ReadonlyArray<{ key: string; label: string }> = [
+const TALENT_SEAT_LINES: ReadonlyArray<{ key: string; label: string }> = [
   { key: "pedia", label: "Pedia" },
   { key: "anti-infective", label: "Anti Infective" },
   { key: "cns", label: "CNS" },

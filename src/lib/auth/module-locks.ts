@@ -174,7 +174,7 @@ async function fetchActiveModuleLocks(): Promise<ModuleLock[]> {
 }
 
 /** Every lock that is in force right now, cached. Returns [] on any failure — see the header. */
-export async function loadActiveModuleLocks(): Promise<ModuleLock[]> {
+async function loadActiveModuleLocks(): Promise<ModuleLock[]> {
   if (cache && cache.fetchedAt + cacheMs > Date.now()) return cache.locks;
 
   if (!inFlight) {
@@ -231,16 +231,8 @@ export async function resolveModuleLocksForAccess(
   return locks.filter((lock) => lockAppliesTo(lock, access));
 }
 
-/** The set of locked module keys for this viewer — what the sidebar renders padlocks from. */
-export async function resolveLockedModuleKeysForAccess(
-  access: Pick<AccessContext, "hrId" | "loginId" | "scope" | "source">,
-): Promise<string[]> {
-  const locks = await resolveModuleLocksForAccess(access);
-  return Array.from(new Set(locks.map((lock) => lock.moduleKey)));
-}
-
 /** The lock standing between this viewer and this module, or null. */
-export async function findActiveModuleLock(
+async function findActiveModuleLock(
   access: Pick<AccessContext, "hrId" | "loginId" | "scope" | "source">,
   resource: PermissionResource,
 ): Promise<ModuleLock | null> {
@@ -257,11 +249,6 @@ export async function isModuleLockedForAccess(
 }
 
 // ── Administration ────────────────────────────────────────────────────────────
-
-export type ModuleLockAdminRow = ModuleLock & {
-  fullName: string | null;
-  role: string | null;
-};
 
 /**
  * Locks for the admin screen: every live lock, plus the most recent released ones so the screen can

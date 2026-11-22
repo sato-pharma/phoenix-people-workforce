@@ -36,6 +36,7 @@ import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/re
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
+import { seatedTimetablePill } from "@/lib/phoenix-crm/approved-place-words";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
@@ -105,6 +106,7 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
         {customer.state === "rejected" ? <CrmPill tone="bad">{mode === "team" ? "Settled" : "Rejected"}</CrmPill> : null}
         {customer.state === "sent_back" ? <CrmPill tone="neutral">Waiting to be captured again</CrmPill> : null}
         {customer.state === "in_use" && !customer.reviewed ? <CrmPill tone="info">Never looked at</CrmPill> : null}
+        {customer.state === "in_use" && customer.reviewStatus === "approved" && mode !== "team" ? <CrmPill tone="good">Approved</CrmPill> : null}
         {customer.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
     </div>
@@ -159,8 +161,10 @@ function Timetable({
   return (
     <div className="min-w-0 space-y-1 text-sm text-slate-700">
       {customer.timetable ? (
-        <CrmPill tone={customer.timetable.verdict === "match" ? "good" : customer.timetable.verdict === "unjudged" ? "neutral" : "warn"}>
-          {TIMETABLE_TEXT[customer.timetable.verdict]}
+        // An approved customer is drawn approved: what the system read is kept as information, never a
+        // warning over a decision already taken (owner, 21 Nov 2026: "it kept not approved").
+        <CrmPill tone={seatedTimetablePill(customer, customer.timetable.verdict, TIMETABLE_TEXT).tone}>
+          {seatedTimetablePill(customer, customer.timetable.verdict, TIMETABLE_TEXT).text}
         </CrmPill>
       ) : (
         <p className="text-xs text-slate-500">The timetable has not been read for this customer yet.</p>
@@ -352,7 +356,7 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
 
   return (
     <div className="space-y-2">
-      <RefusalReasonField disabled={saving !== null} id={`seated-reason-${scope}-${customer.key}`} kind="schedule" onChange={setReason} value={reason} />
+      <RefusalReasonField buildingHasNoTimetable={noTimetable} disabled={saving !== null} id={`seated-reason-${scope}-${customer.key}`} kind="schedule" onChange={setReason} value={reason} />
       <DecisionComment disabled={saving !== null} id={`seated-note-${scope}-${customer.key}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">

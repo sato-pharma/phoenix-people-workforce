@@ -27,7 +27,7 @@ import { isStaleDeployChunkError } from "@/lib/utils/stale-deploy-recovery";
  * ledger from its own history — so a change bumps SIGNATURE_VERSION, and the key carries it.
  */
 
-export const SIGNATURE_VERSION = 1;
+const SIGNATURE_VERSION = 1;
 
 /** The `app_error_events` columns the audit reads. Snake case, so a DB row and a snapshot CSV row both fit. */
 export type AppErrorEventRow = {

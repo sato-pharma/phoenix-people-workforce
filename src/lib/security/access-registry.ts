@@ -770,6 +770,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/members/export", permission: { resource: "medical_insurance", action: "export" } }),
   // The insurer's EDI file for the people ticked on the page. POST so the list rides in the body; it builds a file and changes nothing.
   sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/movement-file", permission: { resource: "medical_insurance", action: "export" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/cost-letter", permission: { resource: "medical_insurance_invoices", action: "read" } }),
+  // Emails each chosen employee their own statement, in the body of the house letter, to their work email.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/cost-letter/send", permission: { resource: "medical_insurance_invoices", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/members", permission: { resource: "medical_insurance", action: "create" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["PATCH"], pattern: "/api/medical-insurance/members/:id", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/exceptions", permission: { resource: "medical_insurance", action: "update" } }),
@@ -1187,6 +1190,13 @@ export const accessRegistry = [
   // `canPlaceOnTrustedPoint` in the service. GET is the preview, POST writes the place.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/trusted-point", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/trusted-point", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Validating a customer with a photo the Super Admin uploads, the location being the rep's own live reading
+  // (owner, 2026-11-20): the Super Admin alone — `update` at the route, `canValidateWithAdminPhoto` in the service.
+  // The rep's half (`/ask`) is `create` at the route and `territoryForValidation` in the service.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/admin-photo", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/admin-photo", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/admin-photo/ask", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/admin-photo/ask", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The rep drops a customer he met outside his list (no approval: he was never on it).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/outside/drop", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The SFE Manager brings a customer back from the Archive himself.
@@ -1324,6 +1334,12 @@ export const accessRegistry = [
   // loadDoctorDirectory — a directory role reads the company, everyone else reads downward only.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/doctors", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/time-anchor", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/field-camera/pack", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/field-camera/sync", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The Super Admin's Camera reviews page (owner, 20 Nov 2026): approve or reject a kept camera item, the daily limit, and one rep-day's raised allowance (21 Nov 2026).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/camera-reviews/decide", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/camera-reviews/cap", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/camera-reviews/day-allowance", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The native app's live photo: it sends the stamped JPEG as a base64 data URL and the server does the
   // PUT the browser makes to the slot directly (React Native cannot PUT binary to a signed URL). Same
@@ -2737,6 +2753,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-stock/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/source-of-sales", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/actions", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/actions/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/area/:areaCode", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown/totals", permission: { resource: "sales", action: "read" } }),

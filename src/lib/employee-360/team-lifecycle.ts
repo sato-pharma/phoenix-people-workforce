@@ -33,7 +33,7 @@ import { isProbationFieldRoleTitle } from "@/lib/probation/intelligence/cases";
 import { ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type TeamProbationRep = { hrId: string; name: string; daysRemaining: number };
+type TeamProbationRep = { hrId: string; name: string; daysRemaining: number };
 
 export type TeamLifecycleSummary = {
   hasData: boolean;

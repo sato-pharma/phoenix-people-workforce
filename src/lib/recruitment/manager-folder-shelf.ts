@@ -22,13 +22,7 @@
 // reached from a "use client" component, so a database import anywhere in the chain would drag the
 // service-role client into the browser bundle.
 
-import {
-  candidateFolderKinds,
-  isCandidateFolderKind,
-  partitionCandidatesByFolder,
-  type CandidateFolderKind,
-  type CandidateFolderShelf,
-} from "@/lib/recruitment/candidate-folder";
+import { candidateFolderKinds, partitionCandidatesByFolder, type CandidateFolderKind, type CandidateFolderShelf } from "@/lib/recruitment/candidate-folder";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -149,10 +143,3 @@ export function isManagersOwnFiling(
   return Boolean(left && right && left === right);
 }
 
-/** The shelf a filing sits on, when a screen needs to name it without unpacking the whole partition. */
-export function filingShelfKind(filing: ManagerFolderFiling | null | undefined): CandidateFolderKind | null {
-  // Null for the duplicate archive, which is stored in the same columns and is NOT a shelf — every
-  // caller of this asks in order to name a shelf, and there is no shelf to name.
-  const kind = filing?.kind ?? null;
-  return kind && isCandidateFolderKind(kind) ? kind : null;
-}

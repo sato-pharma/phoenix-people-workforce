@@ -5,7 +5,8 @@
 // still streaming died with it. On 2026-10-31 that was React error 419 ("The server could not finish
 // this Suspense boundary") on /admin and /sales/vs-target, twice in one session.
 // scripts/dev-server-graceful-restart.mjs keeps the trigger and moves the exit to the first quiet
-// moment, with a hard stop at 92% of the cap and a 90 s limit on the wait.
+// moment, with a hard stop at 86% of the cap and a 20 s limit on the wait (92% and 90 s until
+// 2026-11-20, when the spare laptop ran out of memory while the hook still waited on three compiles).
 //
 // Four layers, because each one alone can pass while a page is still cut mid-render:
 //   1. the decision (decideRestart) and where it installs (shouldInstall);
@@ -41,6 +42,15 @@ const at = (share: number) => Math.round(LIMIT * share);
 
 function testTheDecision() {
   assert.equal(RESTART_AT, 0.8, "the trigger is Next's own 80% — only the moment of the exit changes");
+  // 2026-11-20: at 92% and 90 s the spare laptop's server died out of memory (exit 134, heap 3,974 of
+  // 4,096 MB) while the hook still waited on three compiles. The window must stay narrow.
+  assert.ok(HARD_STOP_AT <= 0.86, `the hard stop must leave room for a compile already under way (is ${HARD_STOP_AT})`);
+  assert.ok(MAX_WAIT_MS <= 20_000, `a wait longer than 20 s lets open compiles grow the heap into the crash (is ${MAX_WAIT_MS} ms)`);
+  assert.equal(
+    decideRestart({ limitBytes: LIMIT, waitingSinceMs: null, nowMs: 0, usedBytes: at(0.9), inFlight: 3 }).action,
+    "restart",
+    "90% with three compiles open is the 20 Nov crash: restart now, never wait",
+  );
   assert.equal(NEXT_RESTART_EXIT_CODE, 77, "77 is the code `next dev` respawns its server on");
   const base = { limitBytes: LIMIT, waitingSinceMs: null, nowMs: 1_000 };
 
@@ -152,7 +162,7 @@ async function testOnARealServer() {
     assert.deepEqual(exits, [], "one request in flight: wait");
     clock = MAX_WAIT_MS;
     hook.check();
-    assert.deepEqual(exits, [NEXT_RESTART_EXIT_CODE], "90 s of waiting is the limit");
+    assert.deepEqual(exits, [NEXT_RESTART_EXIT_CODE], "20 s of waiting is the limit");
 
     hook.state.exited = false;
     exits.length = 0;
@@ -160,7 +170,7 @@ async function testOnARealServer() {
     clock = 0;
     heap.used_heap_size = at(0.95);
     hook.check();
-    assert.deepEqual(exits, [NEXT_RESTART_EXIT_CODE], "past 92% it restarts at once, request or not");
+    assert.deepEqual(exits, [NEXT_RESTART_EXIT_CODE], "past 86% it restarts at once, request or not");
   } finally {
     // A failed assertion above leaves /slow open, and close() waits for it: release it and drop
     // every socket, so a regression fails here instead of hanging the suite.

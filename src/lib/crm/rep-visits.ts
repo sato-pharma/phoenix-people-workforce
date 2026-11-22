@@ -279,7 +279,7 @@ export function collectCampaignFragments(visits: readonly VisitForRepDrilldown[]
   return [...seen];
 }
 
-export function toRepVisitRow<C extends CheckinForMatch>(
+function toRepVisitRow<C extends CheckinForMatch>(
   visit: VisitForRepDrilldown,
   checkinIndex: Map<string, C[]>,
   territoryIndex: CrmRegionTerritoryIndex,
@@ -513,7 +513,7 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
 }
 
 /** Newest first, then AM before PM within a day, then by contact so a day reads in a stable order. */
-export function sortRepVisitRows(rows: readonly RepVisitRow[]): RepVisitRow[] {
+function sortRepVisitRows(rows: readonly RepVisitRow[]): RepVisitRow[] {
   const sessionRank = (session: CallSession): number => (session === "am" ? 0 : session === "pm" ? 1 : 2);
   return [...rows].sort((a, b) => {
     if (a.dateIso !== b.dateIso) return a.dateIso < b.dateIso ? 1 : -1;

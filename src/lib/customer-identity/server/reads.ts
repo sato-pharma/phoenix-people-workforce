@@ -534,7 +534,7 @@ export async function loadIdentityCandidates(): Promise<IdentityCandidate[]> {
  * drops a ruled pair, so leaving the key out brings the pair straight back as a suggestion with no
  * other change anywhere.
  */
-export async function loadRuledOutPairKeys(): Promise<Set<string>> {
+async function loadRuledOutPairKeys(): Promise<Set<string>> {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("customer_identity_rulings")
@@ -545,7 +545,7 @@ export async function loadRuledOutPairKeys(): Promise<Set<string>> {
 }
 
 /** Rows already on a master — settled, so never offered again. */
-export async function loadLinkedSourceIds(): Promise<Set<string>> {
+async function loadLinkedSourceIds(): Promise<Set<string>> {
   const admin = getSupabaseAdmin();
   const out = new Set<string>();
   for (let from = 0; ; from += PAGE) {

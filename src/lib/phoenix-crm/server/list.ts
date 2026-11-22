@@ -113,6 +113,7 @@ import {
 import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
 import { customerNameKey } from "@/lib/phoenix-crm/name-fold";
 import { callPhoenixCrm, chunk, numberOrNull, phoenixCrmRefusal, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { assertListStandingIsNotSuperAdmins, assertSuperAdminDecisionStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { googleMismatchMessage, mismatchIsHeld, type LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
@@ -725,7 +726,7 @@ export type TerritoryListView = {
 };
 
 /** The database refuses a sixth active place (phoenix_crm_add_place, too_many_places). */
-export const PHOENIX_CRM_PLACES_MAX = 5;
+const PHOENIX_CRM_PLACES_MAX = 5;
 
 /**
  * The written reason moving a customer to another rep needs — the same bounds a place move has
@@ -733,7 +734,7 @@ export const PHOENIX_CRM_PLACES_MAX = 5;
  * captured. `phoenix_crm_move_customer` repeats both bounds, so a phone cannot get round them.
  */
 export const CUSTOMER_MOVE_REASON_MIN = 10;
-export const CUSTOMER_MOVE_REASON_MAX = 500;
+const CUSTOMER_MOVE_REASON_MAX = 500;
 
 export function mapTimings(raw: unknown): PhoenixCrmTiming[] {
   if (!Array.isArray(raw)) return [];
@@ -882,7 +883,7 @@ async function mintReferenceCustomers(seat: OrgSeat, isTest: boolean): Promise<v
  */
 export const REFERENCE_MINT_FRESH_MS = 5 * 60_000;
 /** The most seats whose last mint is remembered; past it the oldest goes, which costs one extra mint. */
-export const REFERENCE_MINT_STAMPS_MAX = 2_000;
+const REFERENCE_MINT_STAMPS_MAX = 2_000;
 
 const referenceMints = createRecentOnce({ freshMs: REFERENCE_MINT_FRESH_MS, maxKeys: REFERENCE_MINT_STAMPS_MAX });
 
@@ -3355,7 +3356,7 @@ export async function addPlace(
 }
 
 /** What the rep is told once a new signboard photo is saved. Never names a check or a model. */
-export const SIGNBOARD_RETAKE_SAVED_TEXT: Record<"confirmed" | "checking", string> = {
+const SIGNBOARD_RETAKE_SAVED_TEXT: Record<"confirmed" | "checking", string> = {
   confirmed: "The customer's name was read on the new photo. This place is confirmed.",
   checking: "The new photo is saved. The system is checking this place.",
 };
@@ -3637,6 +3638,8 @@ export async function sfeBringBack(viewer: PhoenixCrmViewer, raw: unknown): Prom
   const customerId = String(body.customerId).toLowerCase();
   const note = cleanText(body.note, 500);
   await refuseAMergedDuplicate(customerId);
+  // Where the Super Admin left this customer, only the Super Admin changes (owner, 2026-11-20).
+  await assertListStandingIsNotSuperAdmins(viewer, customerId, isTest);
   const created = await callPhoenixCrm<Row>("phoenix_crm_create_request", {
     p: {
       seat_id: seat.seatId,
@@ -3683,6 +3686,8 @@ export async function sfeDropFromList(
   assertListCurator(viewer, seat, isTest);
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to drop.");
   const customerId = String(body.customerId).toLowerCase();
+  // Where the Super Admin left this customer, only the Super Admin changes (owner, 2026-11-20).
+  await assertListStandingIsNotSuperAdmins(viewer, customerId, isTest);
   const drop = parseDropDraft(body);
   if (!drop.ok) throw validationError(drop.error);
 
@@ -3749,6 +3754,8 @@ export async function moveCustomerToSeat(
   if (!reason || reason.length < CUSTOMER_MOVE_REASON_MIN) {
     throw validationError(`Write why the customer is moving (at least ${CUSTOMER_MOVE_REASON_MIN} characters).`);
   }
+  // Where the Super Admin left this customer, only the Super Admin changes (owner, 2026-11-20).
+  await assertListStandingIsNotSuperAdmins(viewer, String(body.customerId).toLowerCase(), isTest);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_move_customer", {
     p: {
@@ -3914,7 +3921,7 @@ export async function decideListRequest(
   const requestId = String(body.requestId).toLowerCase();
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_list_requests")
-    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id, decided_by_hr_id")
+    .select("id, seat_id, is_test, kind, status, stage, manager_decided_at, customer_id, decided_by_hr_id, manager_decided_by_hr_id, admin_decided_by_hr_id")
     .eq("id", requestId)
     .maybeSingle();
   throwIfError(error);
@@ -3950,6 +3957,11 @@ export async function decideListRequest(
   // The Administrator approves or declines at whichever step it waits at, in place of its holder, and is
   // no step himself (owner, 2026-10-14; before that he could only decline, 2026-10-08).
   if (!canOverrideDecision(viewer, isTest)) assertListRequestApprover(viewer, seat, isTest, rowStage);
+  // 🔴 A step the Super Admin approved is never refused at a later step (owner, 2026-11-20: "the opposite of
+  // the system administrator opinion"). Refusing it would overturn his approval; agreeing with it is fine.
+  if (decision === "refuse") {
+    await assertSuperAdminDecisionStands(viewer.isSuperAdmin, [request.manager_decided_by_hr_id, request.admin_decided_by_hr_id]);
+  }
 
   const approvedGrade = kind === "add" ? parseGrade(body.approvedGrade) : null;
   const potentialGrade = kind === "add" ? parsePotentialGrade(body.potentialGrade) : null;

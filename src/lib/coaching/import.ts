@@ -77,7 +77,7 @@ const META_COLUMNS = {
 
 const scoreItemLabel = new Map(coachingScoreItems.map((item) => [item.key, item.label]));
 
-export type CoachingImportClassification = "matched" | "archived" | "duplicate" | "skipped";
+type CoachingImportClassification = "matched" | "archived" | "duplicate" | "skipped";
 
 export type CoachingImportRawRow = {
   areaOfDevelopment: string | null;

@@ -132,7 +132,7 @@ export type PayrollResignationCandidateRecord = {
   updatedAt: string;
 };
 
-export type ResignationEmployeeOption = {
+type ResignationEmployeeOption = {
   value: string;
   label: string;
   jobTitle: string | null;

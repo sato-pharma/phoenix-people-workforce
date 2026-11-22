@@ -27,7 +27,7 @@ export function isInboxRoleFamily(value: string | null | undefined): value is Ca
   return (candidateRoleFamilies as readonly string[]).includes(String(value));
 }
 
-export function isInboxRegionCode(value: string | null | undefined): value is CandidateRegionCode {
+function isInboxRegionCode(value: string | null | undefined): value is CandidateRegionCode {
   return (candidateRegionCodes as readonly string[]).includes(String(value));
 }
 
@@ -49,7 +49,7 @@ export function inboxPositionHasArea(position: string | null | undefined): boole
 }
 
 /** Area names are compared the way people type them: case and spacing do not make a different area. */
-export function inboxAreaKey(value: string | null | undefined): string {
+function inboxAreaKey(value: string | null | undefined): string {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 

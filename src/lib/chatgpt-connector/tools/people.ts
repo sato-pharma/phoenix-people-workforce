@@ -34,7 +34,7 @@ import { capRows, cappedNote, matchPeople, personLabel, pickFields, scalarFields
 import { defineTool, ToolRefusal } from "@/lib/chatgpt-connector/types";
 
 /** The fields both screens a non-directory seat can open print about a person. */
-export const BASIC_PERSON_FIELDS = [
+const BASIC_PERSON_FIELDS = [
   "hrId",
   "fullName",
   "displayName",
@@ -78,7 +78,7 @@ export type VisiblePeople = {
 };
 
 /** The people this seat may see, by the screens' own rules (see the file header). */
-export async function loadVisiblePeople(ctx: AccessContext, includeFormer: boolean): Promise<VisiblePeople> {
+async function loadVisiblePeople(ctx: AccessContext, includeFormer: boolean): Promise<VisiblePeople> {
   const all = await getEmployeeDirectoryRows({ includeInactive: true });
   const wanted = includeFormer ? all : all.filter((row) => isActiveLifecycleStatus(row.employmentStatus));
 

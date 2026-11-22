@@ -40,7 +40,7 @@ import type {
 /** The two papers this board is about. The exit forms answer a different question, for a different population. */
 export const READINESS_DOCUMENTS = ["contract", "form1"] as const satisfies readonly HiringPackDocument[];
 
-export type ReadinessDocument = (typeof READINESS_DOCUMENTS)[number];
+type ReadinessDocument = (typeof READINESS_DOCUMENTS)[number];
 
 /** Which value a row filled without anybody typing it, so the screen can say where it came from. */
 export type DerivedValue = AutoFilledValue | "nationality";
@@ -98,11 +98,6 @@ export type ReadinessSummary = {
   arabicAnswersOutstanding: number;
   /** Rows whose stored birth date disagrees with their national ID. */
   idConflicts: number;
-};
-
-export type HiringPackReadiness = {
-  summary: ReadinessSummary;
-  rows: ReadinessRow[];
 };
 
 function emptyDocumentRecord<T>(value: () => T): Record<ReadinessDocument, T> {

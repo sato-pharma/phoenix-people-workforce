@@ -60,7 +60,7 @@ export type ManagerHubStepState = "done" | "current" | "waiting" | "returned" | 
 
 export type ManagerHubStep = { label: string; who: string; state: ManagerHubStepState; at: string | null };
 
-export type ManagerHubAsk = {
+type ManagerHubAsk = {
   requestId: string;
   reason: string;
   askedAt: string | null;

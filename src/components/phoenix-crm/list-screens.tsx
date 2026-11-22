@@ -217,6 +217,7 @@ export type ListScreen =
   | { name: "seat-in-venue"; customerId: string }
   /** The Super Admin validates a customer on the point the reps' readings agree on (owner, 2026-11-10). */
   | { name: "trusted-point"; customerId: string }
+  | { name: "admin-photo"; customerId: string }
   /** A polyclinic's timetable photographed on its own, from the page of a customer waiting for it. */
   | { name: "venue-timetable"; customerId: string; sharedPlaceId: string }
   | { name: "grade"; customerId: string }
@@ -259,7 +260,7 @@ export function listBoardUrl(seatId: string, test: boolean, month?: string): str
 }
 
 /** Who decides a grade change — the district manager's one step — as a sentence. */
-export function deciderText(view: Pick<TerritoryListView, "isTest" | "territory">): string {
+function deciderText(view: Pick<TerritoryListView, "isTest" | "territory">): string {
   if (view.isTest) return "In test mode it is decided under Requests.";
   return view.territory.reviewerName ? `${view.territory.reviewerName} decides it.` : "The manager above this territory decides it.";
 }

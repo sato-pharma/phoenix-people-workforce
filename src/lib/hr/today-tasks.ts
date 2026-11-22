@@ -67,7 +67,7 @@ const RENEWAL_NOTICE_DAYS = 14;
 
 export type HrTaskUrgency = "clear" | "due" | "overdue";
 
-export type HrTaskItem = {
+type HrTaskItem = {
   /** "waiting 6 days", "ends in 3 days", "overdue by 2 days". Null when age says nothing here. */
   age: string | null;
   href: string;

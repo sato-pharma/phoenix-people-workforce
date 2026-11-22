@@ -66,13 +66,6 @@ export type Placement =
       h: number;
     };
 
-/** A page of official artwork and the values that go on it. */
-export type FormPage = {
-  /** Public path of the page's SVG artwork. */
-  svg: string;
-  placements: readonly Placement[];
-};
-
 /**
  * One value, positioned over the artwork.
  *

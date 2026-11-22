@@ -16,7 +16,7 @@ import { getJson } from "@/components/recruitment/recruitment-fetch";
 import { cursorParam, errorText } from "@/components/recruitment/workspace/workspace-format";
 import type { WorkspaceCounts, WorkspaceCursor, WorkspacePage, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 
-export const WORKSPACE_PAGE_SIZE = 50;
+const WORKSPACE_PAGE_SIZE = 50;
 
 export type WorkspaceRowsState = {
   rows: WorkspaceRow[];

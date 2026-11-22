@@ -53,7 +53,7 @@ export type LegacyWho = {
   vacant: boolean;
 };
 
-export type LegacyDistrict = {
+type LegacyDistrict = {
   ach: number | null;
   dir: number;
   dist: number;
@@ -66,14 +66,14 @@ export type LegacyDistrict = {
   vacant: number;
 };
 
-export type LegacyTeam = {
+type LegacyTeam = {
   d: LegacyDistrict;
   dm: string;
   members: LegacySeat[];
   probation: string | null;
 };
 
-export type LegacyProductCell = { dir: number; dist: number; office: number; store: number };
+type LegacyProductCell = { dir: number; dist: number; office: number; store: number };
 
 export type LegacyShape = {
   SEATS: { ranked: number; rows: LegacySeat[]; total: number };

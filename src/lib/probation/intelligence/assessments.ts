@@ -254,13 +254,6 @@ export async function getSfeEvidencePreview(caseId: string) {
   return buildSfeEvidence(c.employee_hr_id, evidenceWindow(c));
 }
 
-/** Live HR evidence preview (limited signals; the rest reported unavailable). */
-export async function getHrEvidencePreview(caseId: string) {
-  const c = await loadCase(caseId);
-  if (!c) throw new Error("Not found: probation case does not exist.");
-  return buildHrEvidence(c.employee_hr_id, evidenceWindow(c));
-}
-
 export async function getCaseAssessments(access: AccessContext, caseId: string): Promise<CaseAssessments> {
   // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
   // non-uuid with 22P02 from the WHERE clause instead of with no rows, which leaves as a 500.

@@ -20,7 +20,7 @@
 /** A calendar date with no time and no zone — the only date type this module knows. */
 export type PlainDate = { year: number; month: number; day: number };
 
-export type MilestoneUnit = "day" | "month" | "year";
+type MilestoneUnit = "day" | "month" | "year";
 
 /** A period measured from the hire date: `{ count: 1, unit: "month" }` is the first month. */
 export type MilestoneSpec = { count: number; unit: MilestoneUnit };
@@ -48,7 +48,7 @@ export function isFirstDaySpec(spec: MilestoneSpec): boolean {
 }
 
 /** What the picker offers before anyone types their own. The first two are the owner's own cases. */
-export const MILESTONE_PRESETS: readonly MilestoneSpec[] = [
+const MILESTONE_PRESETS: readonly MilestoneSpec[] = [
   FIRST_DAY_SPEC,
   { count: 1, unit: "month" },
   { count: 3, unit: "month" },
@@ -156,22 +156,6 @@ export function firstSatoBirthday(hire: PlainDate, birthday: MonthDay): PlainDat
 /** Which birthday at Sato Pharma a given celebration is — 1 for the first. */
 export function satoBirthdayOrdinal(on: PlainDate, first: PlainDate): number {
   return on.year - first.year + 1;
-}
-
-/** The next Sato-Pharma birthday on or after `from`, with its ordinal. */
-export function nextSatoBirthday(
-  hire: PlainDate,
-  birthday: MonthDay,
-  from: PlainDate,
-): { ordinal: number; on: PlainDate; birthday: MonthDay } {
-  const first = firstSatoBirthday(hire, birthday);
-  let year = Math.max(from.year, first.year);
-  let on = monthDayOn(birthday, year);
-  if (comparePlainDates(on, from) < 0) {
-    year += 1;
-    on = monthDayOn(birthday, year);
-  }
-  return { ordinal: satoBirthdayOrdinal(on, first), on, birthday };
 }
 
 /** Every Sato-Pharma birthday that falls inside `[from, to]`, earliest first. */

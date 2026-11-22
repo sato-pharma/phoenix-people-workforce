@@ -39,7 +39,7 @@ import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
 import { getActiveHref, getSections, normalizePathnameForMode } from "@/lib/navigation/active-path";
 
 /** Module and brand are joined by a middot, matching the app's own heading style. */
-export const TITLE_SEPARATOR = " · ";
+const TITLE_SEPARATOR = " · ";
 
 /**
  * Spellings the humanizer must not sentence-case. Only forms that actually occur in a

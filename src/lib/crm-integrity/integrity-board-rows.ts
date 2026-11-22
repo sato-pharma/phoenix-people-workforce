@@ -41,7 +41,7 @@ export type IntegrityBoardRow = {
  * Cairo and not UTC, because the day is picked on a calendar in Cairo: a capture at 01:30 local on
  * the 4th is 23:30 UTC on the 3rd, and filtering "the 4th" in UTC would hide it.
  */
-export function integrityCairoDay(value: string | null): string | null {
+function integrityCairoDay(value: string | null): string | null {
   if (value === null || value === "") return null;
   const stamped = cairoDateTimeSortable(value);
   return stamped === "" ? null : stamped.slice(0, 10);

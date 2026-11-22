@@ -50,7 +50,7 @@ export type CvDigestCandidateRow = {
   channel: string | null;
 };
 
-export type CvDigestGroup = { count: number; label: string };
+type CvDigestGroup = { count: number; label: string };
 
 export type CvDigestForManager = {
   bySender: CvDigestGroup[];
@@ -129,7 +129,7 @@ type ManagerCvBatch = {
   candidates: CvDigestCandidateRow[];
 };
 
-export async function loadRecentPushedCandidates(now: Date = new Date()): Promise<ManagerCvBatch[]> {
+async function loadRecentPushedCandidates(now: Date = new Date()): Promise<ManagerCvBatch[]> {
   const since = new Date(now.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
   const supabase = recruitmentDb();
 

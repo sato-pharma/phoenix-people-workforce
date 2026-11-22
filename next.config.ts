@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 import { installGracefulRestart, shouldInstall } from "./scripts/dev-server-graceful-restart.mjs";
+import { resolvePageRetention } from "./scripts/dev-server-page-retention.mjs";
 
 const isProduction = process.env.NODE_ENV === "production";
 const builderPreviewOrigin = "https://builder.io";
@@ -224,6 +225,9 @@ const securityHeaders = [
 // when scripts/dev-server.mjs asked for it; `next build` and `next start` never install it. Kept out of
 // the policy block above, which tests/csp-headers.test.ts lifts and runs without this file's imports.
 const devGracefulRestart = !isProduction && shouldInstall() && installGracefulRestart() !== null;
+// DEV ONLY, OFF unless PHOENIX_DEV_PAGES_KEPT or PHOENIX_DEV_PAGE_IDLE_MINUTES is set: how many compiled
+// pages `next dev` keeps and for how long (Next: 5 pages, 1 minute). Why: scripts/dev-server-page-retention.mjs.
+const devPageRetention = isProduction ? null : resolvePageRetention();
 const nextConfig: NextConfig = {
   // `next dev` (16+) auto-writes a generic "This is NOT the Next.js you know..." block into
   // AGENTS.md every time it starts (node_modules/next/dist/server/lib/generate-agent-files.js),
@@ -311,6 +315,9 @@ const nextConfig: NextConfig = {
       // needs to fetch it over HTTP, and a real signature on a guessable public URL is worth
       // avoiding. Server-read only, which means it ships only if it is traced — hence this line.
       "./assets/brand/*.png",
+      // Libano-Suisse's own Additions and Deletions workbook, filled by the medical insurance movement file
+      // (src/lib/medical-insurance/libano-movement-sheet.ts). Server-read only, so it ships only if traced.
+      "./assets/medical-insurance/*.xlsx",
       // The business-card design and its two Montserrat faces (src/lib/business-cards/render-pdf.ts).
       // Same reasoning as the signature: the owner's card artwork is read by the server, never served.
       "./assets/business-cards/*.pdf",
@@ -327,6 +334,9 @@ const nextConfig: NextConfig = {
       "./node_modules/pdf-parse/**",
       "./node_modules/mammoth/**",
       "./node_modules/word-extractor/**",
+      // The ChatGPT connector's capture fence reads the source-built list of routes whose GET writes
+      // (src/lib/chatgpt-connector/browser/fence.ts). Missing, the fence fails CLOSED and no capture runs.
+      "./scripts/phoenix-inspect/generated/side-effect-routes.json",
     ],
   },
   experimental: {
@@ -497,6 +507,7 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
+  ...(devPageRetention ? { onDemandEntries: devPageRetention } : {}),
   allowedDevOrigins: [
     "192.168.1.45",
     "imagines-sixfold-corny.ngrok-free.dev",

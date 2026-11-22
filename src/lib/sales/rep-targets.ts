@@ -55,7 +55,7 @@ import {
 import { filterRowsForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
 
 /** How far AHEAD the tab looks for a loaded target. Targets arrive a quarter at a time. */
-export const REP_TARGETS_FORWARD_MONTHS = 3;
+const REP_TARGETS_FORWARD_MONTHS = 3;
 
 /**
  * How far BACK it looks — the same trailing year Sales vs Target loads.
@@ -63,7 +63,7 @@ export const REP_TARGETS_FORWARD_MONTHS = 3;
  * Load-bearing, not cosmetic: the range loader expands at most 24 months from its start, so a
  * window anchored at the July 2026 floor would silently stop reaching the current month in 2028.
  */
-export const REP_TARGETS_HISTORY_MONTHS = 12;
+const REP_TARGETS_HISTORY_MONTHS = 12;
 
 /**
  * Where a month stands. Decides what the screen may say about its sales.
@@ -111,7 +111,7 @@ export type RepTargetsProduct = {
   gapValue: number | null;
 };
 
-export type RepTargetsTotals = {
+type RepTargetsTotals = {
   targetValue: number;
   actualValue: number | null;
   achievementValue: number | null;

@@ -37,7 +37,7 @@ export const DOCTOR_FAMILY_LABEL: Record<Exclude<DoctorFamily, "other">, string>
 };
 
 /** One letter for each way an Arabic letter is written, no diacritics, no tatweel, Latin in lower case. */
-export function foldCommentText(text: string): string {
+function foldCommentText(text: string): string {
   return String(text ?? "")
     .normalize("NFKC")
     .replace(/[ً-ٰٟـ‎‏؜]/g, "")

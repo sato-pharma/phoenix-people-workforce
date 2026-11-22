@@ -8,7 +8,7 @@ const defaultSignatureCacheTtlMs = 60 * 60 * 1000;
 const maxImageRedirects = 20;
 const signatureImageChecks = new Map<string, { checkedAt: number; contentType: string }>();
 
-export type RecipientPolicyIssue =
+type RecipientPolicyIssue =
   | { code: "too_many_recipients"; limit: number; message: string }
   | { code: "external_justification_required"; externalRecipients: string[]; message: string };
 
@@ -224,7 +224,7 @@ export async function resolvesToBlockedAddress(hostname: string): Promise<boolea
  * `assets.example.com` is deliberately NOT matched: that is the fixture the governance test
  * uses to exercise the real fetch-and-cache path.
  */
-export function isReservedTestImageHost(hostname: string): boolean {
+function isReservedTestImageHost(hostname: string): boolean {
   const h = hostname.trim().toLowerCase().replace(/\.$/, "");
   if (h === "example.com" || h === "example.net" || h === "example.org") return true;
   if (h === "example" || h === "invalid" || h === "test") return true;

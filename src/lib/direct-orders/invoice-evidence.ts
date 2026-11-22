@@ -23,7 +23,7 @@ export const DIRECT_ORDER_INVOICE_SLOT_LIMIT = 5;
 /** A scanner's PDF or a phone photo of a printed invoice routinely clears the 2MB live-capture cap. */
 export const DIRECT_ORDER_INVOICE_MAX_BYTES = 5 * 1024 * 1024;
 
-export const DIRECT_ORDER_INVOICE_CONTENT_TYPES = ["image/jpeg", "image/png", "application/pdf"] as const;
+const DIRECT_ORDER_INVOICE_CONTENT_TYPES = ["image/jpeg", "image/png", "application/pdf"] as const;
 
 export type DirectOrderInvoiceContentType = (typeof DIRECT_ORDER_INVOICE_CONTENT_TYPES)[number];
 

@@ -57,6 +57,7 @@ import { runPhoenixInspectRouteFenceTests } from "./phoenix-inspect-route-fence.
 import { runPhoenixInspectMeasureTests } from "./phoenix-inspect-measure.test.ts";
 import { runPhoenixInspectMcpHttpTests } from "./phoenix-inspect-mcp-http.test.ts";
 import { runChatgptConnectorOAuthTests } from "./chatgpt-connector-oauth.test.ts";
+import { runChatgptConnectorCaptureTests } from "./chatgpt-connector-capture.test.ts";
 import { runChatgptConnectorToolsTests } from "./chatgpt-connector-tools.test.ts";
 import { runPhoenixInspectAuthorizationServerTests } from "./phoenix-inspect-authorization-server.test.ts";
 import { runSystemAuditApiPageMapTests } from "./system-audit-api-page-map.test.ts";
@@ -1209,6 +1210,8 @@ import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
 import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runEmployeeRecordGapsTests } from "./employee-record-gaps.test.ts";
 import { runMedicalInsuranceTests } from "./medical-insurance.test.ts";
+import { runMedicalInsuranceLibanoSheetTests } from "./medical-insurance-libano-sheet.test.ts";
+import { runMedicalInsuranceCostLetterTests } from "./medical-insurance-cost-letter.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -2104,6 +2107,7 @@ import { runOutstationMissingTicketTests } from "./outstation-missing-ticket.tes
 import { runOutstationTrainTicketScanTests } from "./outstation-train-ticket-scan.test.ts";
 import { runOutstationNoTicketTrainFareTests } from "./outstation-no-ticket-train-fare.test.ts";
 import { runOutstationWorkloadRestampTests } from "./outstation-workload-restamp.test.ts";
+import { runOutstationStrandedReleaseTests } from "./outstation-stranded-release.test.ts";
 import { runOutstationSubmitExpenseStepsTests } from "./outstation-submit-expense-steps.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
@@ -2260,7 +2264,11 @@ import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-co
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
+import { runPhoenixCrmAdminPhotoTests } from "./phoenix-crm-admin-photo.test.ts";
+import { runPhoenixCrmFieldCameraSealTests } from "./phoenix-crm-field-camera-seal.test.ts";
+import { runPhoenixCrmCameraItemsTests } from "./phoenix-crm-camera-items.test.ts";
 import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
+import { runPhoenixCrmApprovedPlaceWordsTests } from "./phoenix-crm-approved-place-words.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -2391,6 +2399,7 @@ import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-healt
 import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
 import { runForeignKeyIndexesTests } from "./foreign-key-indexes.test.ts";
 import { runSchemaBaselineTests } from "./schema-baseline.test.ts";
+import { runDbAccessTestsTests } from "./db-access-tests.test.ts";
 import { runSupabaseFolderLayoutTests } from "./supabase-folder-layout.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
@@ -2636,6 +2645,7 @@ import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.te
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 import { runVulnScanTests } from "./vuln-scan.test.ts";
+import { runCiDuplicatesReportTests } from "./ci-duplicates-report.test.ts";
 import { runAppsScriptPushTests } from "./apps-script-push.test.ts";
 import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 import { runHrFormsRenewalTests } from "./hr-forms-renewal.test.ts";
@@ -2842,6 +2852,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runDevServerLeanTests } from "./dev-server-lean.test.ts";
 import { runDevServerGracefulRestartTests } from "./dev-server-graceful-restart.test.ts";
+import { runDevServerPageRetentionTests } from "./dev-server-page-retention.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
@@ -2867,6 +2878,7 @@ import { runTestRegistrationCheckTests } from "./test-registration-check.test.ts
 import { runSqlColumnHintTests } from "./sql-column-hint.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runMergeChecksGuardTests } from "./merge-checks-guard.test.ts";
+import { runMigrationMergeGateTests } from "./migration-merge-gate.test.ts";
 import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runRollupMemberGuardTests } from "./rollup-member-guard.test.ts";
 import { runTestsParseGuardTests } from "./tests-parse-guard.test.ts";
@@ -3011,6 +3023,7 @@ import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.
 import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
 import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-representative-title.test.ts";
+import { runSeniorProductManagerTitleTests } from "./senior-product-manager-title.test.ts";
 import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-press.test.ts";
 import { runRollupBranchNameTests } from "./rollup-branch-name.test.ts";
 import { runUrgentDeployTests } from "./urgent-deploy.test.ts";
@@ -3481,6 +3494,7 @@ await runTest("the visual explorer reads every colour the browser computes (rgb,
 await runTest("the visual explorer's remote MCP door admits only the owner's token for this resource, refuses a foreign origin or host, production and oversized bodies, and sends only masked images within the byte cap", runPhoenixInspectMcpHttpTests);
 await runTest("the ChatGPT connector registers only ChatGPT return addresses, needs PKCE, spends a code once, revokes a token family on a refresh replay or a changed account, refuses another address, audits every call without the answer and builds PDFs in the ink rule", runChatgptConnectorOAuthTests);
 await runTest("the ChatGPT connector tools read as the signed-in seat: names match in English and Arabic, sales come from the published closing by value, and the raw table reader is the owner's alone and refuses secrets", runChatgptConnectorToolsTests);
+await runTest("the ChatGPT connector's screenshot and video tools open only Phoenix pages, send GET and HEAD alone through a fence that fails closed, never open a page that writes when rendered, and show the picture as an image block and the video in _meta, never as text", runChatgptConnectorCaptureTests);
 await runTest("the visual explorer's built-in sign-in registers only ChatGPT, checks the owner through Google, binds codes to PKCE, rotates refresh tokens and revokes on replay, stops every token at the kill switch, and holds one page per call under a hard time limit", runPhoenixInspectAuthorizationServerTests);
 await runTest("every API route maps to the sidebar page that calls it, or is listed as having no screen", runSystemAuditApiPageMapTests);
 await runTest("system audit columns 10 and 11 count over the period, so a filter never turns SHARED into UNIQUE", runSystemAuditPeriodCountsTests);
@@ -5541,6 +5555,14 @@ await runTest(
 await runTest(
   "medical insurance: who should be in or out, the plan to the piastre, an invoice against it, and no amount ever reaches an HR seat",
   runMedicalInsuranceTests,
+);
+await runTest(
+  "medical insurance: additions and deletions go on Libano-Suisse's own Additions and Deletions workbook, cell for cell, with nobody's data left in the template",
+  runMedicalInsuranceLibanoSheetTests,
+);
+await runTest(
+  "medical insurance: the Medical Cover Statement prints the Cost tab's own monthly figures, family beside the employee, never the split's percentages, and refuses a short figure",
+  runMedicalInsuranceCostLetterTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
@@ -8722,6 +8744,21 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM lets the Super Admin validate a customer with a photo he uploads while the rep captures the location (owner, 2026-11-20: \"make a button for me to press on watch the rep while capturing location ... while this button is on, the rep will capture the location\"): the rep's reading stands only with a known accuracy within 250 m and never at 0,0, and a watch is open only while watching or captured and inside its 30 minutes; the Super Admin's route asks update and every one of his services asks who first, the rep's route asks create and his services ask his own validation gate, the rep receives four keys and no watch, time, accuracy or person, and his card never asks on a timer; the database function is a known writer, closed to the browser roles, and refuses a validation before the rep's reading arrives",
+  runPhoenixCrmAdminPhotoTests,
+);
+
+await runTest(
+  "Phoenix CRM trusts a photo from the Phoenix Camera only when its seal holds (owner, 2026-11-20: a separate camera app for a clinic with no network — \"take every precaution against fake locations and fraud, and keep its seal\"): a good file holds and names its seal and phone key; a changed picture, a changed payload, a key outside Google's roots, an unlocked phone, a key kept in software, another app, a re-signed copy, another challenge and a key with no attestation are refused; a fake location, fewer than 4 satellites, a stale fix, a rough reading, a photo over 72 hours old or later than now and satellite time far from Phoenix's clock refuse, while a drifted phone clock and USB debugging only warn; production trusts Google's roots and our release identity only, a sealed file is judged before it is uploaded and born captured with the seal's reading, the browser sends it whole, and one seal validates one customer",
+  runPhoenixCrmFieldCameraSealTests,
+);
+
+await runTest(
+  "Phoenix CRM rejects nothing the Phoenix Camera sends and leaves the decision to the Super Admin (owner, 2026-11-20: \"Phoenix will not reject anything ... leave the decision to the decision maker\"): the time is Phoenix's anchor, else the satellites inside a seal that holds, else not confirmed; the same Phoenix day (ending 02:00) under the daily limit of 3 records at once, the fourth, the next day, a failed seal, no location, an unconfirmed time and a new customer wait with every reason at once, and over 36 hours goes to the archive; the phone hears only received, a resend is the same item, a visit rule makes it wait, a business card always waits and a name photo goes through the reader; the camera page, its two routes and its card are the Super Admin's alone (never the SFE), an approved visit goes through his Record a missed visit door and a rejected recorded item is taken back whole; a customer whose name photo waits is not refused a third visit, a no-timetable building is never refused for a timetable, the board fits the screen and the two new tables are closed to the browser roles",
+  runPhoenixCrmCameraItemsTests,
+);
+
+await runTest(
   "Phoenix CRM shares one doctor's validation across the three lines (owner, 2026-11-12: \"if it is one place in the three or one customer, then and it is validated, make in the three lines validation\", only from a Phoenix validation, and \"Both\"): one doctor is the same list, the same area, another line and the same name of three words or more with no speciality against it — never two words, another area, the same line or a pharmacy; a waiting row takes the validated line's places (best point first, never two within 150 m, at most five) unless his own validation or a drop waits, a clinic doctor lacks his three names, two validated doctors of the name sit on one line, two different doctors match or he is on his list twice, and a copy never breeds a copy; validated twins whose photo or pin points agree move onto the best one, a chosen point is never moved and 400 m apart is two clinics; the migration copies under the seat's lock with no photo and the system as actor, a copy follows its source, and no copy ever reaches Place checks or the two match boards",
   runPhoenixCrmLineTwinsTests,
 );
@@ -8729,6 +8766,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lists the same customer on another line, written differently, for the Super Admin to confirm (owner, 2026-11-16: \"same customer diff rep same area diff line\", then \"Fix rule + review list\" — nothing is validated without that confirmation): a one-word slip, the words reordered or a middle name left out are one name, never محمد / محمود or two common given names; a waiting row and a validated row on another line of its area are listed Certain on the same phone or old-CRM contact and Very likely on the name, only where the three-lines rule did not pair them — never a clinic doctor without three names, a speciality against it, the same line, another area, a pharmacy, two kinds of facility, a copy as the source's place or a pair answered Not the same; a rep holding the customer twice is flagged; and the confirmation re-checks every guard and keeps the other line's validator",
   runPhoenixCrmLineLookalikesTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks draws an approval as approved (owner, 21 Nov 2026: \"it kept the bottom keep styled and it kept not approved\"): a building's button reads Approve and never Keep it, drops to the plain look once decided, and its pill reads Approved; an approved customer carries an Approved pill and a refusal the system once held him on is neutral information, never a warning, while a waiting or rejected customer keeps the warning",
+  runPhoenixCrmApprovedPlaceWordsTests,
 );
 
 await runTest(
@@ -9145,6 +9187,10 @@ await runTest(
 await runTest(
   "the production schema baseline is normalised, committed and checked every night (REC-041: noise stripped, objects compared by name, unexplained drift is red)",
   runSchemaBaselineTests,
+);
+await runTest(
+  "the weekly pgTAP access tests read only a full pass as a pass, roll themselves back, match their plan, and run after the restore with an ACCESS alert",
+  runDbAccessTestsTests,
 );
 await runTest(
   "the supabase folder says what each file is (F-ENG-016, F-DB-013: only seed.sql at the root, one-off scripts in supabase/scripts, the edge function source present and outside the app typecheck)",
@@ -10174,6 +10220,13 @@ await runTest(
   runVulnScanTests,
 );
 await runTest(
+  "the pull request copy-paste report names only the blocks THIS PR copied (jscpd's isNew against the base ref, "
+  + "never the ~1,000 already on main), cannot call a PR clean below its coverage floor or on a report it does not "
+  + "understand, pins each warning to a repo-relative file within GitHub's ten-per-step cap, and runs in ci.yml's "
+  + "static job on every event (no event condition), continue-on-error with its own timeout, so it can never redden a required check",
+  runCiDuplicatesReportTests,
+);
+await runTest(
   "a sheet fix actually reaches the sheet (Apps Script push refuses to write an empty project, "
   + "refuses when the managed file is absent or the wrong type, preserves appsscript.json and "
   + "every sibling file, and every docs/*-live-sheet.gs on disk is declared in the manifest) and its "
@@ -11146,8 +11199,13 @@ await runTest(
 );
 
 await runTest(
-  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 92% of the cap or after 90 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
+  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 86% of the cap or after 20 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
   runDevServerGracefulRestartTests,
+);
+
+await runTest(
+  "the dev server keeps more compiled pages only when asked: PHOENIX_DEV_PAGES_KEPT and PHOENIX_DEV_PAGE_IDLE_MINUTES reach Next's onDemandEntries outside production, unset or nonsense leaves Next's 5 pages and 1 minute, and the installed Next still reads both",
+  runDevServerPageRetentionTests,
 );
 
 await runTest(
@@ -11173,6 +11231,11 @@ await runTest(
 await runTest(
   "bash-guard C21 refuses a `gh pr merge` whose checks are RED, STILL RUNNING or NOT REPORTED on the PR head commit (2026-11-04: on the free plan GitHub answers 403 on branch protection and no longer refuses a red merge itself, measured that day on PR 18 red and PR 20 running): the required names come from live protection, else AGENTS.md §2's declaration (validate, checks), so a red non-required `mobile` still merges; a skipped required check is red; the newest re-run wins; another repository with no readable protection is held to nothing failing and nothing running, and one with no CI merges; an unreadable read FAILS CLOSED; PHX_RED_MERGE_OK=1 in both spellings stands it down while C10's PHX_MERGE_OK does not; and gh pr view/checks, a git merge, help and a commit message that quotes the command stay allowed",
   runMergeChecksGuardTests,
+);
+
+await runTest(
+  "bash-guard C22 refuses a `gh pr merge` of a Phoenix PR carrying a supabase/migrations file that production does not have (21 Nov 2026: four 19 Nov money functions merged on staging only, and seven outstation approvals failed with PGRST202 two days later): a file passes when production's ledger records it by the drift check's own three-way match or the PR head's ACKNOWLEDGED_EXCEPTIONS names it; a removed file, a file outside the folder, a PR with no migration and another repository are not judged; the ledger read pages past 1,000 rows and refuses a URL that is not production's ref, an HTTP error, an empty ledger and missing credentials; an unreadable file list or ledger FAILS CLOSED; and PHX_MIGRATION_MERGE_OK=1 inline or in the environment stands it down while C21's word does not",
+  runMigrationMergeGateTests,
 );
 
 await runTest(
@@ -11997,6 +12060,10 @@ await runTest(
   "the Senior Medical Representative title behaves exactly like Medical Representative everywhere (job function, pay, attendance, compliance, CRM mirror, HR pay view, catalogue, import) while granting nothing new",
   runSeniorMedicalRepresentativeTitleTests,
 );
+await runTest(
+  "the Senior Product Manager title lands wherever Product Manager lands (job function, expense analysis, the exact-title checks) and never matches a Group Product Manager",
+  runSeniorProductManagerTitleTests,
+);
 
 await runTest("phoenix crm: no save bar takes two presses to discard", runPhoenixCrmDiscardOnePressTests);
 
@@ -12498,6 +12565,10 @@ await runTest(
 await runTest(
   "a trip's CRM workload stamped before the day's visits were typed is refreshed the next morning — only an undecided, system-stamped claim whose trip ended in the last 45 days, only when the CRM now holds more work, never a figure typed by hand, never the gate status, the approval revision or any money, the write pinned to the figures it read, the replaced stamp recorded for the approver, one shared stamp shape with the first capture, and the job appended to the daily run",
   runOutstationWorkloadRestampTests,
+);
+await runTest(
+  "an accepted outstation claim is never stranded off payroll — the release after an employee's own photo runs as the system, never as the employee (a District Manager's capture was refused and two accepted claims sat with every gate complete and no payroll row), and the morning departure-photo job hands every accepted claim the gate clears that no payroll row carries to the same release, a bounded batch at a time, never an undecided, rejected, still-held or already-queued claim",
+  runOutstationStrandedReleaseTests,
 );
 await runTest(
   "Submit Expense is a step form that says what to do in each step and what comes next — a trip walks trip, destination, evidence, amounts and review, a Meeting or Other expense has no destination, each step names what it still needs and Submit goes to the first one missing something, the screen after Submit lists what is still owed with the departure photo first, and Submit Expense and Expense Submissions are one page: what is owed, the form, then My claims, with the old page forwarding a submitter to it",

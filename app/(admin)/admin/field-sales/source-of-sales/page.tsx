@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { PortalSosDashboard } from "@/components/sales/portal/portal-sos-dashboard";
+import { PortalSosPharmacyActions } from "@/components/sales/portal/portal-sos-pharmacy-actions";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import {
   assertPermission,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
+  canReadPharmacyActions,
   getPortalSosDashboard,
   toPortalSosScopeView,
   type PortalSosComparison,
@@ -115,7 +117,10 @@ export default async function CompanySourceOfSalesPage({
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  if (!(access.role === "CEO" || canAccessSystemAdministratorWorkspace(access))) {
+  // The SFE Manager comes in for the pharmacy lists and their sheet only (owner, 2026-11-20: "Add SFE
+  // Manager") — the company dashboard below stays the CEO's and the Super Admin's.
+  const listsOnly = access.role === "SFE Manager";
+  if (!(access.role === "CEO" || listsOnly || canAccessSystemAdministratorWorkspace(access))) {
     redirect("/admin");
   }
   await assertPermission(access, "sales", "read");
@@ -131,22 +136,31 @@ export default async function CompanySourceOfSalesPage({
           <p className={pageHeaderKickerClassName}>Field Sales · Company Scope</p>
           <h1 className={pageHeaderTitleClassName}>Source of Sales</h1>
           <p className={pageHeaderDescriptionClassName}>
-            Monthly distributor sell-in across the whole company — value, units, channel mix, regions,
-            areas, products and distributors. Same live dashboard the field managers use, at company scope.
+            {listsOnly
+              ? "The pharmacies that stopped buying, dropped 30% or more, or started buying, across the whole company, read from the published closings, with the sheet to download."
+              : "Monthly distributor sell-in across the whole company — value, units, channel mix, regions, areas, products and distributors. Same live dashboard the field managers use, at company scope."}
           </p>
         </div>
       </div>
 
-      <Suspense
-        fallback={
-          <AppRouteLoadingState
-            title="Loading Source of Sales"
-            description="Aggregating company-wide monthly sell-in."
-          />
-        }
-      >
-        <CompanySosContent access={access} filters={filters} />
-      </Suspense>
+      {/* The pharmacy action lists and their sheet download (owner, 2026-11-20): who stopped, dropped
+          or started buying, company-wide, read from the published closings. Same panel the field
+          managers see; the feed resolves the CEO / Super Admin / SFE Manager to company scope from
+          the session. */}
+      {canReadPharmacyActions(access.role) ? <PortalSosPharmacyActions subtitle="" /> : null}
+
+      {listsOnly ? null : (
+        <Suspense
+          fallback={
+            <AppRouteLoadingState
+              title="Loading Source of Sales"
+              description="Aggregating company-wide monthly sell-in."
+            />
+          }
+        >
+          <CompanySosContent access={access} filters={filters} />
+        </Suspense>
+      )}
     </div>
   );
 }

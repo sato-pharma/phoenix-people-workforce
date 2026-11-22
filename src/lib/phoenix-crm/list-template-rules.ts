@@ -90,7 +90,7 @@ export const TEMPLATE_TABLE_NOTE =
 /** The most rows one upload will take, so a mis-picked file cannot load a book at a territory. */
 export const TEMPLATE_ROWS_MAX = 1000;
 
-export const TEMPLATE_NOTE_MAX = 300;
+const TEMPLATE_NOTE_MAX = 300;
 
 /**
  * One column: the token written in the header, and the aliases the parser accepts for it. Aliases are
@@ -313,7 +313,7 @@ export function isTemplateHintRow(raw: Record<TemplateColumnKey, string>): boole
  * because an SFE may paste more rows than the 400 offered and the note then moves down with them), so
  * it arrived in the List column and was refused as a customer called "One customer per row…".
  */
-export function isTemplateFurnitureRow(raw: Record<TemplateColumnKey, string>): boolean {
+function isTemplateFurnitureRow(raw: Record<TemplateColumnKey, string>): boolean {
   if (isTemplateHintRow(raw)) return true;
   const filled = TEMPLATE_COLUMNS.filter((column) => raw[column.key] !== "");
   return filled.length === 1 && filled[0]!.key === "listType" && raw.listType === TEMPLATE_TABLE_NOTE;

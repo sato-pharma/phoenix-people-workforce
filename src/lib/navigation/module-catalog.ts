@@ -127,7 +127,7 @@ export function moduleLabel(key: string): string {
   return MODULE_LABELS[key as PermissionResource] ?? key;
 }
 
-export type ModuleCatalogEntry = {
+type ModuleCatalogEntry = {
   key: PermissionResource;
   label: string;
 };

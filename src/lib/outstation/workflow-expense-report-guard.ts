@@ -47,7 +47,7 @@
 import { isWorkflowTripId } from "@/lib/outstation/workflow-trip-id-guard";
 
 /** The suffix only the outstation workflow gives the report it mints for an app trip. */
-export const WORKFLOW_EXPENSE_REPORT_SUFFIX = ".workflow";
+const WORKFLOW_EXPENSE_REPORT_SUFFIX = ".workflow";
 
 /**
  * The file name of the report the workflow mints for request `<id>`. The ONE place the name is built,

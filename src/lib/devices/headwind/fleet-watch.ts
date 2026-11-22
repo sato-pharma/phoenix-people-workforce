@@ -37,11 +37,11 @@ import type { RepHeadwindRow } from "@/lib/devices/headwind/fleet";
 
 const HOUR_MS = 60 * 60 * 1000;
 
-export const TABLET_SILENT_LIMIT_HOURS = 72;
+const TABLET_SILENT_LIMIT_HOURS = 72;
 export const TABLET_NO_FIX_LIMIT_HOURS = 72;
 /** How long a held tablet may run an older launcher than its rules want before the watch names it. */
 export const TABLET_LAUNCHER_BEHIND_LIMIT_HOURS = 24;
-export const FLEET_READ_BLIND_LIMIT_MS = 3 * HOUR_MS;
+const FLEET_READ_BLIND_LIMIT_MS = 3 * HOUR_MS;
 
 /**
  * A launcher version string as one comparable number, or null when there is nothing to parse.

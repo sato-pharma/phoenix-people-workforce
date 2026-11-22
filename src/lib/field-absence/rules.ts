@@ -40,7 +40,7 @@ import {
   isFieldWorkforceWeeklyOff,
 } from "@/lib/field-workforce-compliance/weekend-policy";
 
-export const FIELD_ABSENCE_TIERS = ["REP", "ACTING_DM", "DM", "RSM", "NSM"] as const;
+const FIELD_ABSENCE_TIERS = ["REP", "ACTING_DM", "DM", "RSM", "NSM"] as const;
 export type FieldAbsenceTier = (typeof FIELD_ABSENCE_TIERS)[number];
 
 export const FIELD_ABSENCE_TIER_LABELS: Record<FieldAbsenceTier, string> = {
@@ -116,7 +116,7 @@ export type FieldAbsenceEvidence = {
   holidaysComplete: boolean;
 };
 
-export type FieldAbsenceDayKind = "working" | "weekly-off" | "holiday" | "future";
+type FieldAbsenceDayKind = "working" | "weekly-off" | "holiday" | "future";
 
 export type FieldAbsenceEntry = {
   key: string;
@@ -246,7 +246,7 @@ function employedOn(person: FieldAbsencePerson, day: string): boolean {
 }
 
 /** What the calendar box itself is, before anyone is judged in it. */
-export function fieldAbsenceDayKind(day: string, today: string, holidays: ReadonlySet<string>): FieldAbsenceDayKind {
+function fieldAbsenceDayKind(day: string, today: string, holidays: ReadonlySet<string>): FieldAbsenceDayKind {
   if (day > today) return "future";
   if (holidays.has(day)) return "holiday";
   // Friday is off for every field title; Saturday is decided per person below.

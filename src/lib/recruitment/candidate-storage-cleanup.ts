@@ -30,7 +30,7 @@ import { RECRUITMENT_FILES_BUCKET } from "@/lib/recruitment/supabase-storage";
 /** PostgREST answers an over-long `.in()` with ZERO rows and no error, so filters are chunked. */
 const CHUNK_SIZE = 50;
 
-export type StorageCleanupLabels = Record<string, string | number>;
+type StorageCleanupLabels = Record<string, string | number>;
 
 export type StorageCleanupDeps = {
   /** The service-role client. Tests hand in a plain-object fake; production leaves it unset. */

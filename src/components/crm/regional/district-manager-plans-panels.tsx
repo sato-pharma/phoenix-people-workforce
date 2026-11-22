@@ -61,7 +61,7 @@ import {
  */
 
 /** The Excel file's address, for the week on the screen. It always holds every seat, whatever the filter. */
-export const DISTRICT_PLANS_EXPORT_PATH = "/api/crm/district-manager-plans/export";
+const DISTRICT_PLANS_EXPORT_PATH = "/api/crm/district-manager-plans/export";
 
 export function districtPlansExportHref(weekStart: string): string {
   return `${DISTRICT_PLANS_EXPORT_PATH}?week=${encodeURIComponent(weekStart)}`;

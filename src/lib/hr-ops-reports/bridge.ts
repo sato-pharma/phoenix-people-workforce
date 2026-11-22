@@ -130,7 +130,7 @@ export type BridgeDayOutcome =
   | { outcome: "superseded" };
 
 /** The deduction categories that already charge a person-day a reviewed field day would also charge. */
-export const FIELD_DAY_CLAIM_CATEGORIES: readonly DeductionsCategory[] = ["crm", "crm_half_day", "fingerprint"];
+const FIELD_DAY_CLAIM_CATEGORIES: readonly DeductionsCategory[] = ["crm", "crm_half_day", "fingerprint"];
 
 /** One live deduction of a person's month, as the claim check reads it. */
 export type DayClaim = {
@@ -228,7 +228,7 @@ export function reviewWeekForDay(workDate: string): (SettlementWeek & { monthKey
 }
 
 /** What the weekly-review day says about where it came from — words only, never an HR code. */
-export function reviewedDayEvidence(line: HrOpsBridgeLine): Record<string, string> {
+function reviewedDayEvidence(line: HrOpsBridgeLine): Record<string, string> {
   const evidence: Record<string, string> = {
     reviewed_as: line.section === "field" ? "Field day" : "Office day",
     decided_in: "HR operations report",
@@ -243,7 +243,7 @@ export function reviewedDayEvidence(line: HrOpsBridgeLine): Record<string, strin
 }
 
 /** The sentence a field day the bridge adds carries as its reason. */
-export function reviewedDayReason(line: HrOpsBridgeLine, days: number): string {
+function reviewedDayReason(line: HrOpsBridgeLine, days: number): string {
   const kind = line.section === "field" ? "Field day" : "Office day";
   return `${kind} reviewed in the HR operations report and decided at ${daysText(days)}.`;
 }
@@ -664,7 +664,7 @@ function parseOutcome(data: unknown): BridgeDayOutcome {
   }
 }
 
-export function liveBridgeDeps(): HrOpsBridgeDeps {
+function liveBridgeDeps(): HrOpsBridgeDeps {
   return {
     todayIso: () => cairoTodayIso(),
     nowIso: () => new Date().toISOString(),

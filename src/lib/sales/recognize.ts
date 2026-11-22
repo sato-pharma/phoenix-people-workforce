@@ -43,7 +43,7 @@ export function dominantPeriod(rows: CodedRow[]): string | null {
 // One distinct ignored product the user must explicitly review before importing.
 // Only rows whose reason === "ignore_mapped" are surfaced here — bonus/free-goods rows
 // are sheet-level flags and are never surfaced for review.
-export type DistinctIgnoredItem = {
+type DistinctIgnoredItem = {
   raw: string;         // raw value from the sheet (product code or name column)
   displayName: string; // best human-readable name: rawProductName → master name → raw
   count: number;       // number of rows carrying this raw product

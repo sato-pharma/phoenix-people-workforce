@@ -18,7 +18,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 export const SYSTEM_CLEANUP_MAX_BULK = 25;
 const SYSTEM_CLEANUP_PAGE_SIZE = 1000;
 
-export const systemCleanupModuleKeys = [
+const systemCleanupModuleKeys = [
   "vacation_requests",
   "outstation_expenses",
   "weekly_plans",
@@ -58,7 +58,7 @@ export type SystemCleanupRecord = {
   title: string;
 };
 
-export type SystemCleanupSummary = {
+type SystemCleanupSummary = {
   blocked: number;
   payrollLocked: number;
   safe: number;

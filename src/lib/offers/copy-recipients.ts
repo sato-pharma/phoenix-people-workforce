@@ -27,7 +27,7 @@
  */
 export const OFFER_COPY_MAX = 10;
 
-export type OfferCopyRecipients = {
+type OfferCopyRecipients = {
   bcc: string[];
   cc: string[];
 };
@@ -72,7 +72,7 @@ export function splitOfferCopyAddresses(value: unknown): string[] {
   return out;
 }
 
-export function isOfferCopyAddress(value: string): boolean {
+function isOfferCopyAddress(value: string): boolean {
   return EMAIL_SHAPE.test(value.trim());
 }
 

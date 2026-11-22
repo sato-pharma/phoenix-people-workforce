@@ -30,7 +30,7 @@ import { ROBOT_ACTOR } from "./safety";
 import { createDryRunJoinerDriver, type JoinerConsoleDriver } from "./driver";
 import { explainUnusableInitialPassword, isUsableInitialPassword } from "./initial-password";
 
-export type AdoptionOutcome = {
+type AdoptionOutcome = {
   hrId: string;
   displayName: string;
   address: string;

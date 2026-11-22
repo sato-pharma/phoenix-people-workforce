@@ -48,7 +48,7 @@
 import type { EngineValue } from "./closing-engine-fill";
 
 /** SalesData's columns, by position — the same block the pivot cache reads. */
-export const SALES_COLUMN = {
+const SALES_COLUMN = {
   region: 0,
   area: 1,
   product: 5,

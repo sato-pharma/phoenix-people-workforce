@@ -884,7 +884,54 @@ Nobody but a Super Admin may reject it. What the SFE Manager or the system appro
 
 **Where it is enforced.**
 
-- Database, migration `20261116230741_phoenix_crm_super_admin_approval_is_final.sql`: `phoenix_crm_is_super_admin(text)` is the one test. `phoenix_crm_decide_validation_review` and `phoenix_crm_decide_shared_place` raise `phoenix_crm:approved_by_super_admin` for anyone else, which the service maps to a 403 with the sentence "The administrator approved this, so only the administrator can take it back." `phoenix_crm_super_admin_hr_ids()` returns the same list, built on the same test, for the screen.
+- Database, migration `20261116230741_phoenix_crm_super_admin_approval_is_final.sql`: `phoenix_crm_is_super_admin(text)` is the one test. `phoenix_crm_decide_validation_review` and `phoenix_crm_decide_shared_place` raise `phoenix_crm:approved_by_super_admin` for anyone else, which the service maps to a 403 with the sentence "This is the system administrator's decision. You have no right to override it." (the wording of 20 November 2026; until then it read "The administrator approved this, so only the administrator can take it back.") `phoenix_crm_super_admin_hr_ids()` returns the same list, built on the same test, for the screen.
 - Service: `refuseValidatedPlace` reads the review's status and approver and refuses BEFORE its upsert. After the upsert, the database could no longer see the approval (only a place he created).
 - Screens: the buildings board, the validated places (and the review deck, which reuses its Refuse button), the reviews queue and the customers seated in a polyclinic show the sentence instead of Reject or Refuse; bulk reject and bulk refuse skip locked rows. The rows carry `lockedBySuperAdmin`, which is computed only for a viewer who is not a Super Admin.
 - Shared logic: `src/lib/phoenix-crm/super-admin-approval-rules.ts` (the sentence and the pure check) and `src/lib/phoenix-crm/server/super-admin-approval.ts` (the list, which throws on a failed read rather than answering an empty set).
+
+## Nothing the Super Admin did is undone below him (2026-11-20)
+
+The owner, 20 November 2026: *"anything done by the system administrator in the system, any manual validation, any approval, anything done by the system administrator in the system, the SFE can never return it back. And whenever he try to do anything that return back or it is the opposite of the system administrator opinion, it clearly to him that this is the system administrator decision and you have no right to overcome it."*
+
+**The sentence.** Every refusal reads *"This is the system administrator's decision. You have no right to override it."* (`SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT`), a 403 the screens print as written. The 16 November reject lock above now uses the same sentence.
+
+**What is refused, for anybody who is not a Super Admin** (each checked in the service before its write, `src/lib/phoenix-crm/server/super-admin-approval.ts`):
+
+| The act | Refused when |
+| --- | --- |
+| Moving a validated place (`movePlace`), removing one (`retirePlace`) | the place was created or photographed by a Super Admin, or the newest event that decided its point (`PLACE_STANDING_EVENTS`: added, moved, restored, seated, updated, validation approved) is his |
+| Dropping a customer off a list (`sfeDropFromList`), moving him to another rep (`moveCustomerToSeat`), bringing him back from the Archive (`sfeBringBack`) | the newest event that decided where he stands (`LIST_STANDING_EVENTS`: validated, validation approved, restored, moved in or out, dropped, archived, request decided, place or building restored) is a Super Admin's |
+| Refusing a list request, an off-plan or recorded visit, or a request to edit a sent week at a later step | a Super Admin approved an earlier step (`manager_decided_by_hr_id` or `admin_decided_by_hr_id`) — approving it is still allowed |
+| Returning a week or a month (`transitionPlan`, `decideMonthlyPlan`) | the plan is approved and was approved by a Super Admin, or as the Administrator (`decided_by_role = 'administrator'`) |
+| Answering a marketing doctor-list check the other way (`decideMarketingListCheck`) | a Super Admin gave the answer it has — giving the same answer again is allowed |
+
+**What deliberately does not lock.** His bulk loads and housekeeping never freeze a list: on production on 20 November 2026, 3,413 `customer_pending` rows, 528 `customer_loaded`, 453 merges and 772 re-measures carry his id. His rejection of a photo does not lock the customer either: it sends the customer back to be captured, and says nothing about whether he belongs on the list. A rep's own drop request, decided by his district manager and SFE, is unchanged.
+
+**Already the Super Admin's alone, so nothing to lock:** Place checks decisions, taking a rejection back, seating in a polyclinic, trusted points, admin photos, integrity cases, held full names, Rep Exceptions and Polyclinic Caps, team start and stop, missed records and visit edits.
+
+**Not covered by this change:** New Hire Accounts (a resend by the SFE Manager replaces a setup link the Super Admin sent; it decides nothing), the Doctor Coverage visit norms (a setting both may change, last save wins), and the SFE Manager's grants outside Phoenix CRM (attendance, leave, weekly sales, weekly plans, contact lists, sales import, employee profile), which were not traced row by row.
+
+Pinned by `tests/phoenix-crm-super-admin-approval-is-final.test.ts` (`checkEverySfeUndo`): each guard was removed in turn and the test failed naming it.
+
+### Direct Orders and Marketing Requests (the same evening)
+
+The owner, 20 November 2026: *"Also in direct orders and in marketing requests. And if I manual validate this to the manager doing, he cannot override my decision."* The same sentence, the same 403 and the same database list of Super Admins (`loadSuperAdminHrIds`); Direct Orders' shared checks live in `src/lib/direct-orders/super-admin-decision.ts`.
+
+| The act, by anybody who is not a Super Admin | Refused or kept when |
+| --- | --- |
+| Rejecting or returning a direct order at a later rung (`decideDirectOrder`) | he approved an earlier rung, in its holder's place or as himself. **The CEO keeps his say**: his own rung may still reject or return. Approving is never refused. |
+| Filing a reversal of an approved order (`reverseDirectOrder`) | he approved any rung of it |
+| Approving or matching a pharmacy claim (`decideDirectOrderPharmacyValidation`) | he confirmed the pharmacy, decided any of its claims either way, or ruled its orders stay held. Rejecting the claim agrees with him and stays open. |
+| Releasing a held order on a code (`decideDirectOrderHold`, which the rep's submit and the SFE clean-up both ask) | he ruled the pharmacy's orders stay held: the new ground `admin_kept_held` holds them whatever code arrives; his own release or confirmation is the way out |
+| Merging away a pharmacy, or cancelling an order as a duplicate (`confirmDirectOrderCleanup`) | the pharmacy is one he ruled on, or the order is one he approved a rung of or released. The whole plan is checked before its first write. |
+| Changing a pharmacy's name, brick, area, region (`updateDirectOrderPharmacyDetails`) or codes (`replaceDirectOrderPharmacyCodes`) | he ruled on it. Its doctor, address and CRM contact stay editable. |
+| A later order's SFE rung confirming the pharmacy again (`markDirectOrderPharmacyVerified`) | the pharmacy is already confirmed: the first confirmer's name is kept |
+| A capture completing a customer's evidence (`createMarketingValidationRecord`) | he validated the customer: the evidence is saved, his verdict, note and name stay |
+| The same capture re-deciding a customer–pharmacy link | the link is `admin_approved`, or he decided it last: it keeps its verdict and author |
+| Turning round or clearing the licence-name verdict (`recordMarketingPharmacyLicenseVerdict`) | he recorded it. Recording the same answer is allowed. |
+| Merging away a marketing venue (`mergeMarketingVenue`) | he validated it |
+| Changing a marketing control setting (`updateMarketingControlSetting`) | he set it last |
+
+**Not covered here, and why.** Finance's month booking, "Correct the total" and removing a service-fee settlement move money, which is never decided in chat — they are the Finance officer's and his own screens, reported to him, not changed. A rep attaching a NEW licence file still resets the licence verdict, because his verdict was about the old document. Marketing request types and workflow steps record no author, so who last set them cannot be told without a schema change. The marketing approval chain itself needed nothing: its gate checks identity, so nobody acts at his rung and no later rung overrides him there.
+
+Pinned by `checkDirectOrdersAndMarketing` in the same test: each of the 17 checks was broken in turn and the test failed naming it.

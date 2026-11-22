@@ -198,7 +198,7 @@ export type ManagedTabletTone = "ok" | "warn" | "bad";
  * - `contested`         — another enrolled tablet would write a different IMEI into the same entry,
  *                         or this same IMEI into a different one.
  */
-export type ImeiStatus =
+type ImeiStatus =
   | "not_reported"
   | "none"
   | "unmatched"

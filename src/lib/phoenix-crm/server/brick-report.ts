@@ -93,7 +93,7 @@ function mapCrmRow(row: Row): BrickCrmRow {
  * `Iterable`, not an array: `loadUploadedPeriodsInRange` answers with a Set, and a signature that
  * demanded an array would only push a spread to every call site.
  */
-export function landedMonthsIn(period: ReportPeriod, uploaded: Iterable<string>): string[] {
+function landedMonthsIn(period: ReportPeriod, uploaded: Iterable<string>): string[] {
   const from = period.from.slice(0, 7);
   const to = period.to.slice(0, 7);
   return [...new Set(uploaded)].filter((month) => month >= from && month <= to).sort();

@@ -394,7 +394,7 @@ function ValueSelect({
 }
 
 /** Everything a tab can filter and sort by. A dimension with no options hides its picker. */
-export type CaptureFilterOptions = {
+type CaptureFilterOptions = {
   reps: Array<{ hrId: string; name: string }>;
   managers: Array<{ hrId: string; name: string }>;
   lines: string[];

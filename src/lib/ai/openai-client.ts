@@ -21,7 +21,7 @@ export const OPENAI_EMAIL_DEFAULT_MODEL = OPENAI_NANO_MODEL;
 export const OPENAI_EMAIL_TIMEOUT_MS = 25_000;
 export const OPENAI_MAX_RETRIES = 1;
 export const OPENAI_ROUTE_BUDGET_MS = 60_000;
-export const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
+const OPENAI_EMAIL_MAX_OUTPUT_TOKENS = 4_096;
 
 // Deliberately its OWN tier, not the email nano default: parsing a CEO's free-
 // text payroll instructions (resolving names against a 100+ person roster,
@@ -584,6 +584,68 @@ async function runOpenAiResponse(params: CreateResponseTextParams, model: string
       provider: "openai",
       purpose: params.purpose,
       ...legOutcome(normalized.code, failoverTo),
+    });
+    throw normalized;
+  }
+}
+
+// ── Speech ──────────────────────────────────────────────────────────────────────────────────────
+
+/** The voice the ChatGPT connector's films speak with (owner, 20 Nov 2026: "Voice-over + captions"). */
+export const OPENAI_SPEECH_MODEL = "gpt-4o-mini-tts";
+export const OPENAI_SPEECH_VOICES = ["marin", "cedar", "coral", "sage", "ash", "verse"] as const;
+export type OpenAiSpeechVoice = (typeof OPENAI_SPEECH_VOICES)[number];
+const OPENAI_SPEECH_TIMEOUT_MS = 90_000;
+
+export type CreateSpeechParams = {
+  /** What is read aloud: up to 4,096 characters, the provider's own limit. */
+  text: string;
+  voice: OpenAiSpeechVoice;
+  /** How it is read: the tone, the accent, the pace. */
+  instructions?: string;
+  purpose: string;
+  component?: AiCallComponent;
+  timeoutMs?: number;
+};
+
+/**
+ * One piece of narration read aloud, as an MP3. OpenAI only: Anthropic has no speech engine, so there is
+ * no second account to move on to, and a caller treats a failure as "no voice" (the films fall back to
+ * captions alone). Recorded on the AI board like every other call, under the caller's component.
+ */
+export async function createOpenAiSpeech(params: CreateSpeechParams): Promise<{ audio: Buffer; model: string }> {
+  const component = params.component ?? "openai_client";
+  const startedAt = Date.now();
+  try {
+    const text = params.text.trim().slice(0, 4_096);
+    if (!text) throw new PhoenixOpenAiError("failed", "There is nothing to read aloud.");
+    const response = await openAiClient(undefined, params.timeoutMs ?? OPENAI_SPEECH_TIMEOUT_MS).audio.speech.create({
+      input: text,
+      model: OPENAI_SPEECH_MODEL,
+      response_format: "mp3",
+      voice: params.voice,
+      ...(params.instructions?.trim() ? { instructions: params.instructions.trim().slice(0, 1_000) } : {}),
+    });
+    const audio = Buffer.from(await response.arrayBuffer());
+    recordAiCall({
+      component,
+      latencyMs: Date.now() - startedAt,
+      model: OPENAI_SPEECH_MODEL,
+      provider: "openai",
+      purpose: params.purpose,
+      status: "success",
+    });
+    return { audio, model: OPENAI_SPEECH_MODEL };
+  } catch (error) {
+    const normalized = normalizeOpenAiError(error, params.purpose);
+    recordAiCall({
+      component,
+      errorCode: normalized.code,
+      latencyMs: Date.now() - startedAt,
+      model: OPENAI_SPEECH_MODEL,
+      provider: "openai",
+      purpose: params.purpose,
+      status: "error",
     });
     throw normalized;
   }

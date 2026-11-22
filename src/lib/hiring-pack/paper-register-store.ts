@@ -37,7 +37,7 @@ type RegisterRow = {
 const TABLE = "hiring_pack_paper_register";
 
 /** "Not set up yet", in each of the shapes PostgREST and Postgres say it. */
-export function isPaperRegisterMissing(error: { code?: string | null } | null | undefined): boolean {
+function isPaperRegisterMissing(error: { code?: string | null } | null | undefined): boolean {
   const code = error?.code ?? "";
   return code === "PGRST205" || code === "PGRST204" || code === "42P01" || code === "42703";
 }

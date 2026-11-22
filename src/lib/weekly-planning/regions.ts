@@ -106,7 +106,7 @@ export function canonicalPlanningRegionName(value: unknown): ApprovedPlanningReg
  * reverse never holds — picking "Upper Egypt 2" must never reach an Upper Egypt 1 area, which is
  * the whole point of showing the districts apart.
  */
-export function planningRegionCoversSeatRegion(
+function planningRegionCoversSeatRegion(
   selected: string | null | undefined,
   seatRegionName: string | null | undefined,
 ): boolean {

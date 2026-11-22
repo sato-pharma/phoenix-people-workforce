@@ -67,7 +67,7 @@ export const MANAGER_HOLD_RETURN_ACTOR = "ops:manager-hold-45-days";
 export const MANAGER_HOLD_RETURN_STATUS = RECALL_RETURN_STATUS;
 
 /** One manager's hold on one CV, as the rule reads it. */
-export type HeldSendRecord = {
+type HeldSendRecord = {
   managerHrId: string;
   managerName: string | null;
   /** ISO instant the CV reached this manager — the send row's `sent_at`, or the legacy stamp's. */

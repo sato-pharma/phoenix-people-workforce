@@ -21,7 +21,7 @@ import { tabsWithAreas, type WorkspaceRoleTab } from "@/lib/recruitment/workspac
 import type { WorkspaceCounts, WorkspacePlaces } from "@/lib/recruitment/workspace/types";
 import { cn } from "@/lib/utils";
 
-export const UNSPECIFIED_REGION = "unspecified";
+const UNSPECIFIED_REGION = "unspecified";
 
 const NUMBER = new Intl.NumberFormat("en-US");
 

@@ -77,7 +77,7 @@ export const MASTER_MAP_MANAGER_LINES = ["Anti Infective", "CNS", "Pedia"] as co
 /** An area the organogram has no row for at all. Only "Main Store" is in this state, with 0 bricks. */
 export const UNKNOWN_MANAGER = "Not in the organogram";
 
-export type MasterMapBrick = {
+type MasterMapBrick = {
   brickId: string;
   brickName: string;
   customers: MasterMapCustomer[];
@@ -95,7 +95,7 @@ export type MasterMapArea = {
 };
 
 /** One line's share of an organogram tab: the areas THAT line files under the region. */
-export type MasterMapLineSection = {
+type MasterMapLineSection = {
   areas: MasterMapArea[];
   customerCount: number;
   lineName: string;
@@ -448,7 +448,7 @@ export function describeSource(slug: string): string {
 }
 
 /** Every distinct provenance behind one shop, already humanised. */
-export function describeSources(sources: readonly string[]): string {
+function describeSources(sources: readonly string[]): string {
   return [...new Set(sources.map(describeSource).filter(Boolean))].join("   |   ");
 }
 
@@ -499,7 +499,7 @@ export function areaManagerCells(area: MasterMapArea): string[] {
  * NOT the region the tab or the Region column shows. Those are geography, from the area master;
  * this is structure, from the organogram, and on 37 line × area pairs the two differ today.
  */
-export function areaLineRegionCells(area: MasterMapArea): string[] {
+function areaLineRegionCells(area: MasterMapArea): string[] {
   return MASTER_MAP_MANAGER_LINES.map((line) => area.lineRegions.get(line) ?? UNKNOWN_MANAGER);
 }
 
@@ -531,7 +531,7 @@ const CHANNEL_LABEL = {
  * "Primary" is simply the first pairing in the merge's own stable order, so it never changes
  * between syncs for the same data.
  */
-export function customerIdentityCells(
+function customerIdentityCells(
   customer: MasterMapCustomer,
   distributorName: (code: string) => string,
 ): [string, string, string, string] {

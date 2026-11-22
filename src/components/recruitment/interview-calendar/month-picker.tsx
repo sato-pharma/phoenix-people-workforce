@@ -24,7 +24,7 @@ export function cursorFor(dateKey: string): MonthCursor {
   return { monthIndex: month - 1, year };
 }
 
-export function shiftCursor(cursor: MonthCursor, months: number): MonthCursor {
+function shiftCursor(cursor: MonthCursor, months: number): MonthCursor {
   const total = cursor.year * 12 + cursor.monthIndex + months;
   return { monthIndex: ((total % 12) + 12) % 12, year: Math.floor(total / 12) };
 }

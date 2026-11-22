@@ -34,10 +34,10 @@
  */
 
 /** Metres. Within this of the shown pin, a check-in is the same address — phone GPS drifts 10-20 m. */
-export const NEAR_M = 100;
+const NEAR_M = 100;
 
 /** Metres. Within this, the same block — a rep who parked round the corner. Counts for half. */
-export const CLOSE_M = 300;
+const CLOSE_M = 300;
 
 /**
  * Metres. Two contacts this close are at one address.
@@ -104,7 +104,7 @@ function repPhraseParts(names: readonly string[]): string[] {
  * Reps joined for a sentence: "Sara", "Sara and Omar", "Sara, Omar and Hana" — exactly as the three
  * builders below have always joined them — and unnamed partners counted rather than repeated.
  */
-export function joinRepNames(names: readonly string[]): string {
+function joinRepNames(names: readonly string[]): string {
   const parts = repPhraseParts(names);
   if (parts.length <= 1) return parts[0] ?? "";
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
@@ -151,7 +151,7 @@ export type CheckinPoint = {
 export type ConfidenceBand = "high" | "medium" | "low" | "unverified";
 
 /** One line of the popup's explanation: what was checked, and what it was worth. */
-export type ConfidenceReason = {
+type ConfidenceReason = {
   detail: string;
   label: string;
   /** Points this line contributed. Null for a line that explains rather than scores. */

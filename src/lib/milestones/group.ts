@@ -46,7 +46,7 @@ import {
 export const MILESTONE_GROUP_MAX = 12;
 
 /** The fewest. One person has their own card, which is a better card than a group of one. */
-export const MILESTONE_GROUP_MIN = 2;
+const MILESTONE_GROUP_MIN = 2;
 
 /**
  * What the whole picture is about.
@@ -106,7 +106,7 @@ export function assertMilestoneGroupSize(count: number): void {
  * Lower-cased, because it lands mid-sentence: the strip labels are capitalised for a table cell, and
  * "these rows are Fourth birthday and five years" reads as a bug in the sentence.
  */
-export function milestoneGroupRowLabel(periodSpec: string): string {
+function milestoneGroupRowLabel(periodSpec: string): string {
   const birthday = BIRTHDAY_SPEC.exec(periodSpec.trim());
   const label = birthday
     ? birthdayStripLabel(Number(birthday[1]))

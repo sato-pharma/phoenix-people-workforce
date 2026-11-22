@@ -197,7 +197,7 @@ function text(value: unknown, max = 200): string {
 }
 
 /** Arabic-Indic and Persian digits → ASCII, so a number typed on an Arabic keyboard still reads. */
-export function asciiDigits(value: string): string {
+function asciiDigits(value: string): string {
   return value
     .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));

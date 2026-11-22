@@ -36,7 +36,6 @@ import { getDoubleVisitRows } from "@/lib/crm/reads";
  * the `tests/crm-single-source.test.ts` guardrail regex names the symbol — never as the source.
  */
 export const DV_SOURCE_TABLE = "ireports360_visits";
-export const DV_SOURCE_TYPE = "ireports360" as const;
 
 /**
  * Fieldwork visit-type codes that can count as a double visit — Regular (0) and
@@ -46,7 +45,7 @@ export const DV_SOURCE_TYPE = "ireports360" as const;
 export const DV_VISIT_TYPE_CODES = [0, -8] as const;
 
 /** Columns selected from ireports360_visits for probation DV detection. */
-export const DV_SOURCE_COLUMNS =
+const DV_SOURCE_COLUMNS =
   "id, crm_visit_id, visit_date, visit_type, visit_type_description, " +
   "agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, double2_hr_id, double2_name, " +
   "contact_name, customer_name, comment, ampm";

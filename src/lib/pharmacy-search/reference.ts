@@ -91,12 +91,6 @@ export async function getTerritoryReference(): Promise<TerritoryReference> {
   return await inFlight;
 }
 
-/** Test seam — drops the cache so a following call re-reads. */
-export function resetTerritoryReferenceCache(): void {
-  cached = null;
-  inFlight = null;
-}
-
 /**
  * Turn the codes stored on a mapping row into the names a human reads.
  *

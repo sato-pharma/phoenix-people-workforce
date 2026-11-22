@@ -57,7 +57,7 @@ export type FieldWorkforceMirrorFreshness = {
   latestStatus: string | null;
 };
 
-export const FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS = 26;
+const FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS = 26;
 
 /** Pure freshness summary from the visits-report sync-run history. Exported for unit tests. */
 export function summarizeFieldWorkforceMirrorFreshness(input: {
@@ -178,7 +178,7 @@ export function listRecentFieldWorkforceComplianceMonths(input: {
   return options;
 }
 
-export type FieldWorkforceEmployeeTrendPoint = {
+type FieldWorkforceEmployeeTrendPoint = {
   compliancePercent: number | null;
   highSeverityCount: number;
   matchStatus: "matched" | "unmatched";

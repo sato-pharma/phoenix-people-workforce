@@ -232,11 +232,6 @@ function setMemoryCache(rows: EmployeeDirectoryRow[]) {
   };
 }
 
-export function invalidateSalesDirectoryCache() {
-  directoryMemory.__phoenixSalesDirectory = undefined;
-  directoryMemory.__phoenixSalesVacancies = undefined;
-}
-
 async function loadDirectory() {
   const cached = memoryCache();
   if (cached && cached.expiresAt > Date.now()) {

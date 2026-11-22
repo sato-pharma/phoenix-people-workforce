@@ -23,12 +23,7 @@
 // than read from `au.canonical_areas`, so the whole tree is unit-testable without either.
 
 import type { InferredPlacement } from "@/lib/recruitment/candidate-folder-inference";
-import {
-  candidateFolderKindLabels,
-  candidateFolderLabel,
-  cleanFolderKey,
-  type CandidateFolderKind,
-} from "@/lib/recruitment/candidate-folder";
+import { candidateFolderKindLabels, candidateFolderLabel, cleanFolderKey } from "@/lib/recruitment/candidate-folder";
 import type { CandidateFolderSuggestion } from "@/lib/recruitment/candidate-folder-suggestion";
 import { normalizeGovernorate, recruitmentRegionForArea } from "@/lib/recruitment/candidate-region";
 import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
@@ -80,7 +75,7 @@ export const NO_LOCATION_FOLDER_NAME = "Location not on the CV";
 export const UNREADABLE_TITLE_FOLDER_NAME = "Job title not clear";
 
 /** Inferred and outside Egypt — the country sits under this so the region list stays Egyptian. */
-export const OUTSIDE_EGYPT_FOLDER_NAME = "Outside Egypt";
+const OUTSIDE_EGYPT_FOLDER_NAME = "Outside Egypt";
 
 /**
  * Characters Drive tolerates but a human browsing folders does not, plus the separator this module
@@ -444,9 +439,3 @@ export function driveFileNameFor(input: {
   return `${stem}${extension}`;
 }
 
-/** The shelf labels this module can produce, so a test can assert the tree's top level exactly. */
-export function driveShelfLabels(): string[] {
-  return (Object.keys(candidateFolderKindLabels) as CandidateFolderKind[])
-    .map((kind) => candidateFolderKindLabels[kind])
-    .concat(UNCLASSIFIED_FOLDER_NAME);
-}

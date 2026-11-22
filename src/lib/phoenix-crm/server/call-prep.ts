@@ -68,7 +68,7 @@ type Row = Record<string, unknown>;
  * territory that has been running a year. Kept as its own named constant rather than imported,
  * because that one is private to the form — the WINDOW is shared, the declaration is not.
  */
-export const CALL_PREP_LAST_VISIT_MONTHS = 6;
+const CALL_PREP_LAST_VISIT_MONTHS = 6;
 
 /** The first day of the month `months` before this Cairo day. Arithmetic on the parts, so no zone shifts it. */
 function monthsBackFrom(isoDay: string, months: number): string {

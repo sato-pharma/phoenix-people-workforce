@@ -98,6 +98,7 @@ import {
   type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { assertApprovedPlanStands } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { ensureReferenceCustomersForView, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -228,9 +229,9 @@ export type MonthlyDoctorRow = DoctorMonthTally & {
 };
 
 /** What the board calls the week a month opens with and does not own (owner, 2026-10-01). */
-export const LEADING_WEEK_LABEL = "First days";
+const LEADING_WEEK_LABEL = "First days";
 /** ...and the week the rep is in, whenever that is the week the board opens with — even when it also holds the month's first days (2026-10-31). */
-export const RUNNING_WEEK_LABEL = "This week";
+const RUNNING_WEEK_LABEL = "This week";
 
 /** A field-week of the month, with its own status and its days (the derived weekly plan). */
 export type MonthlyWeekView = {
@@ -975,7 +976,7 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
 
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_monthly_plans")
-    .select("id, seat_id, month_start, status, is_test, submitted_by_hr_id")
+    .select("id, seat_id, month_start, status, is_test, submitted_by_hr_id, decided_by_hr_id, decided_by_role")
     .eq("id", monthlyPlanId)
     .maybeSingle();
   throwIfError(error);
@@ -1000,6 +1001,8 @@ export async function decideMonthlyPlan(viewer: PhoenixCrmViewer, raw: unknown):
     actorRole = decidedAs === "sfe" ? "sfe_manager" : decidedAs === "administrator" ? "administrator" : "reviewer";
     if (monthEndOf(monthStart) < today) throw conflictError("This month is over, so its plan can no longer be returned. Reload the page.");
     if (!note) throw validationError("Write a note for the rep on what to change.");
+    // 🔴 A plan the Super Admin approved is never returned by anybody else (owner, 2026-11-20).
+    await assertApprovedPlanStands(viewer, headerRow);
   }
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_monthly_plan_transition", {

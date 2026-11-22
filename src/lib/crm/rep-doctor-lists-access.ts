@@ -26,8 +26,3 @@ export function canAccessRepDoctorLists(context: Pick<AccessContext, "role" | "s
   return REP_DOCTOR_LISTS_ACCESS_ROLES.includes(context.role);
 }
 
-export function assertRepDoctorListsAccess(context: Pick<AccessContext, "role" | "scope">): void {
-  if (!canAccessRepDoctorLists(context)) {
-    throw new Error(`Forbidden: ${context.role} cannot read rep doctor lists.`);
-  }
-}

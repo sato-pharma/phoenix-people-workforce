@@ -66,7 +66,7 @@ const MALE_SPELLINGS = new Set(["male", "m", "ذكر"]);
  * national ID at all and is therefore already blocked from printing any paper — so the masculine
  * fallback below is currently unreachable, and exists for correctness rather than for use.
  */
-export function resolveSexForPapers(sources: {
+function resolveSexForPapers(sources: {
   gender?: string | null;
   nationalId?: string | null;
 }): EgyptianSex | null {

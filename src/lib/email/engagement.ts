@@ -128,7 +128,7 @@ async function loadWindowOutbox(
   }
 }
 
-export function summarizeEmailActivity(rows: readonly EmailActivityRow[]): EmailActivityData["summary"] {
+function summarizeEmailActivity(rows: readonly EmailActivityRow[]): EmailActivityData["summary"] {
   return {
     bounced: rows.filter((row) => row.bounced || row.sendStatus === "failed").length,
     clicked: rows.filter((row) => row.clicked).length,

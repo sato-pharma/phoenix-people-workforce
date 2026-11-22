@@ -28,7 +28,7 @@
  * the notice. Two shapes would duplicate the apparatus and let the two drift apart, which on paper
  * means the annex and the notice naming the same company two different ways.
  */
-export type RenewalVariant = "renewal" | "nonRenewal";
+type RenewalVariant = "renewal" | "nonRenewal";
 
 /**
  * Every token either paper can carry.
@@ -92,7 +92,7 @@ export type RenewalField = {
 };
 
 /** One numbered article of the annex. */
-export type RenewalArticle = {
+type RenewalArticle = {
   /** The article label exactly as printed — "مادة (1)". */
   number: string;
   /** The article's own heading. Null on an untitled article. */
@@ -163,25 +163,6 @@ export const RENEWAL_BLANK_RULE = "……………………";
 
 /** A wider rule, for a box that takes a sentence rather than a value. */
 export const RENEWAL_BLANK_RULE_WIDE = "………………………………………………………………";
-
-/**
- * Substitute the blanks.
- *
- * An absent value becomes a dotted rule, NOT an empty string — the same rule the contract follows
- * and for the same reason: an instrument that silently closes up around a missing date reads as
- * complete, and a reader has no way to see that something was dropped. A visible run of dots is
- * what the paper form gives, and it survives photocopying.
- */
-export function fillRenewalTokens(
-  template: string,
-  values: Partial<Record<RenewalToken, string | null | undefined>>,
-): string {
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (whole, token: string) => {
-    const value = values[token as RenewalToken];
-    const text = typeof value === "string" ? value.trim() : "";
-    return text.length > 0 ? text : RENEWAL_BLANK_RULE;
-  });
-}
 
 /** Every string in a version that can carry a token, so a caller can sweep the whole document. */
 export function renewalTemplateStrings(template: RenewalTemplate): string[] {

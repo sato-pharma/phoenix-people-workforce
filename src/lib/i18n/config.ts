@@ -1,10 +1,10 @@
-export const SUPPORTED_LOCALES = ["en", "ar"] as const;
+const SUPPORTED_LOCALES = ["en", "ar"] as const;
 
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number];
 
 export const DEFAULT_LOCALE: AppLocale = "en";
 
-export const LOCALE_DIRECTION: Record<AppLocale, "ltr" | "rtl"> = {
+const LOCALE_DIRECTION: Record<AppLocale, "ltr" | "rtl"> = {
   en: "ltr",
   ar: "rtl",
 };

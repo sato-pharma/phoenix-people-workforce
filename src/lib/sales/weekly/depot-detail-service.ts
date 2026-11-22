@@ -56,7 +56,7 @@ const modeOf = (params: URLSearchParams, key: string): WeeklyFilterMode =>
  * Depot keys travel as one repeated `depot` parameter, never a comma list: a depot with no code is keyed
  * by its NAME, and a depot name can hold a comma.
  */
-export function parseDepotKeys(params: URLSearchParams): string[] {
+function parseDepotKeys(params: URLSearchParams): string[] {
   return params
     .getAll("depot")
     .map((key) => key.trim())
@@ -91,7 +91,7 @@ export function parseWeeklySalesDetailManagerParams(params: URLSearchParams): We
 }
 
 /** Area names for the depot rows. Fails soft: without names a depot shows its area code, not an error page. */
-export async function loadWeeklyAreaNames(): Promise<Map<string, string>> {
+async function loadWeeklyAreaNames(): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   try {
     const { data, error } = await getSupabaseAdmin().from("source_of_sales_areas").select("area_code, area_name");

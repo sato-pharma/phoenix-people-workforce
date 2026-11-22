@@ -45,7 +45,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** A finished item stays on the board this long before it drops out of the lists. */
-export const DONE_ITEM_KEEP_DAYS = 120;
+const DONE_ITEM_KEEP_DAYS = 120;
 const COMMENT_ID_CHUNK = 80;
 
 export class ReminderServiceError extends Error {
@@ -135,7 +135,7 @@ function audienceOrThrow(access: Pick<AccessContext, "hrId" | "role">): Reminder
  * PERSON (the HR Manager's two logins are one), named as the company names them. A test account is
  * a mirror of someone else and is never a teammate.
  */
-export async function loadReminderTeam(): Promise<TeamMember[]> {
+async function loadReminderTeam(): Promise<TeamMember[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from("app_auth_users")

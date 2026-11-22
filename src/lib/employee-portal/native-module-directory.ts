@@ -186,7 +186,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
 };
 
 /** What the app renders for one module. */
-export type NativePortalModule = {
+type NativePortalModule = {
   /** The live pending-count badge this destination carries, or null. Mirrors the web bottom bar's dot. */
   badge: PortalNavEntry["navBadge"] | null;
   href: string;

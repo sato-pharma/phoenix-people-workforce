@@ -658,11 +658,21 @@ export const MODULES = [
       // The camera's own reading (2026-10-22): which of its readings becomes the photo's is what capture
       // trust later measures, so a session editing the camera gets the cold-reading rule with it.
       "src/components/phoenix-crm/location-receiver.ts",
+      // The Phoenix Camera seal (2026-11-20): what makes an offline sealed photo stand in for the live reading.
+      "src/lib/phoenix-crm/field-camera/**",
+      "src/lib/phoenix-crm/server/field-camera{,-seal,-sync}.ts",
+      // The camera's items and the Super Admin's Camera reviews page (2026-11-20): record at once or keep for him.
+      "src/lib/phoenix-crm/{camera-item-rules.ts,server/camera-items.ts}",
+      "src/components/phoenix-crm/camera-reviews-board.tsx",
+      "app/**/field-crm/camera-reviews/**",
+      "app/api/phoenix-crm/{field-camera,camera-reviews}/**",
+      "scripts/phoenix-camera-publish-release.ts",
+      "scripts/field-camera/**",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/{shared-places,validation-reviews,full-names}/**",
       "app/api/phoenix-crm/list/places/{seat,signboard,trusted-point}/**",
       "scripts/{phoenix-crm-merge-same-seat-duplicates.ts,phoenix-crm-reread-signboards.mjs,phoenix-crm-trusted-point.ts,phoenix-crm-line-twins.ts}",
-      "tests/phoenix-crm-{seat-in-venue,signboard-check,held-signboard,capture-trust-place,validation-feedback,place-brick-lookup,place-location-frozen,place-match-groups,shared-place,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow,photo-reading,doctor-full-name,trusted-point,line-twins,line-lookalikes}*",
+      "tests/phoenix-crm-{seat-in-venue,signboard-check,held-signboard,capture-trust-place,validation-feedback,place-brick-lookup,place-location-frozen,place-match-groups,shared-place,duplicate-merge,refuse-validation,validation-review-filters,place-checks-in-overflow,photo-reading,doctor-full-name,trusted-point,line-twins,line-lookalikes,field-camera-seal,camera-items}*",
     ],
     keywords: ["signboard", "refusal reason", "validate again", "duplicate merge", "place checks", "capture trust", "brick lookup", "shared place", "polyclinic", "timetable", "same place", "place match", "full name", "doctor name"],
     tables: [],

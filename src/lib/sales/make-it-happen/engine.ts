@@ -66,20 +66,20 @@
 /** The first month Make It Happen reads (owner decision 2026-09-14). */
 export const MAKE_IT_HAPPEN_FLOOR = "2026-07";
 /** Below this many closed months the trend is not read at all — the average is the pace. */
-export const EARLY_HISTORY_MONTHS = 3;
+const EARLY_HISTORY_MONTHS = 3;
 /**
  * The standard-normal 75th percentile (rule 8). Scenario 2 is the upper QUARTILE of the forecast:
  * a result the pace alone reaches about one time in four, and focus makes likelier.
  */
-export const REALISTIC_Z = 0.6745;
+const REALISTIC_Z = 0.6745;
 /** How many closed months the trend reads, newest first. */
 export const TREND_WINDOW_MONTHS = 6;
 /** A month above this multiple of the median is a one-off (a bulk order), not a pace. */
-export const SPIKE_MULTIPLE = 2.5;
+const SPIKE_MULTIPLE = 2.5;
 /** A monthly slope within ±5% of the average month is flat. */
-export const FLAT_BAND = 0.05;
+const FLAT_BAND = 0.05;
 /** A forecast larger than this is a typing slip, not a plan. */
-export const MAX_FORECAST_UNITS = 10_000_000;
+const MAX_FORECAST_UNITS = 10_000_000;
 /**
  * The owner's own sentence for an out-of-reach target (2026-09-13). It is never paraphrased.
  * Declared here, not in coach.ts, because the scenarios the planner builds in the browser say it too
@@ -487,7 +487,7 @@ export type MixGoal = {
   codes: ReadonlySet<string> | null;
 };
 
-export type MixGoalOutcome = {
+type MixGoalOutcome = {
   key: string;
   /** null when the goal has no target. */
   reachable: boolean | null;
@@ -737,7 +737,7 @@ export type ConcentrationPlanRow = {
  * their OWN target (rule 7). Set only on the Pedia line, from Semester 2 2026, when the viewer's
  * scope carries a Sato product at all.
  */
-export type SatoHalfGroup = {
+type SatoHalfGroup = {
   /** product_codes — identities, never rendered. */
   productCodes: string[];
   /** The products by name, e.g. "Guamusin and Ivyronc". */

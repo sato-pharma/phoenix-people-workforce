@@ -29,6 +29,9 @@ const REFUSALS: Record<string, Refusal> = {
   location_in_review: { status: 409, message: "The system is still checking this customer's location. It confirms it automatically." },
   review_not_found: { status: 404, message: "This place is no longer waiting. Reload the page." },
   review_decided: { status: 409, message: "This place was already decided. Reload the page." },
+  // The Camera reviews page (owner, 2026-11-20). Only the Super Admin decides a camera item.
+  camera_item_not_found: { status: 404, message: "This camera item is no longer there. Reload the page." },
+  camera_item_decided: { status: 409, message: "This camera item was already decided. Reload the page." },
   // What the Super Admin approved, only the Super Admin rejects (owner, 2026-11-16). Read by the SFE Manager.
   approved_by_super_admin: { status: 403, message: SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT },
   // A doctor's full name waiting for the Super Admin (owner, 2026-11-07, pm-name-rules.ts).
@@ -229,6 +232,10 @@ const REFUSALS: Record<string, Refusal> = {
     status: 409,
     message: "This customer already has a validated place. Move that place instead of validating on a trusted point.",
   },
+  // The Super Admin's uploaded-photo validation (owner, 2026-11-20, server/admin-photo.ts). Read by him alone.
+  admin_photo_not_found: { status: 404, message: "This request is no longer open. Reload the page." },
+  admin_photo_no_reading: { status: 409, message: "The rep's location has not arrived yet." },
+  admin_photo_closed: { status: 409, message: "This request is closed. Reload the page." },
   move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
   // Moving a customer from one rep's list to another's (owner, 2026-10-06). The reason's own refusal is
   // `note_required` above, in the same words a place move uses.
@@ -405,6 +412,7 @@ export const CUSTOMER_360_PHOENIX_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_share_line_validation",
   "phoenix_crm_update_place",
   "phoenix_crm_validate_customer",
+  "phoenix_crm_validate_with_admin_photo",
 ]);
 
 export async function callPhoenixCrm<T>(fn: string, args: Record<string, unknown>): Promise<T> {

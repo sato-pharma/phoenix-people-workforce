@@ -77,7 +77,7 @@ export type ReadSummary = {
 };
 
 /** Supabase's default `db-max-rows`. A read at exactly this size with no limit may have been cut. This is a detector, not a read. */
-export const DEFAULT_MAX_ROWS = POSTGREST_ROW_CEILING;
+const DEFAULT_MAX_ROWS = POSTGREST_ROW_CEILING;
 
 export function summarizeReads(reads: readonly RecordedRead[], maxRows = DEFAULT_MAX_ROWS): ReadSummary {
   const last = new Map<string, RecordedRead>();

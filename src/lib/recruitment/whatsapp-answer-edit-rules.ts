@@ -25,7 +25,6 @@ import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode }
 
 /** The six built-in questions a recruiter may edit — every one of them. */
 export const editableBuiltInAnswerKeys = ["job_title", "background", "region", "area", "experience", "salary"] as const;
-export type EditableBuiltInAnswerKey = (typeof editableBuiltInAnswerKeys)[number];
 
 /** Long enough for any answer the bot has stored; short enough that a paste of a CV is refused. */
 export const WHATSAPP_ANSWER_MAX_CHARS = 400;

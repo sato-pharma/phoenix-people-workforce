@@ -62,7 +62,7 @@ export const FORMAT_VERSION = "f3";
 /** How long a loaded snapshot may be reused for slices without re-checking the source. */
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
-export type MasterMapTabPlan = {
+type MasterMapTabPlan = {
   /** Widest row on this tab. The script grows the tab to fit before it writes into it. */
   columns: number;
   /** Content hash of this tab's text. The sheet repaints only when this moves. */

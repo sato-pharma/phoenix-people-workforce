@@ -27,7 +27,7 @@ const vacationRequestsTable = "v2_vacation_requests";
 /** A PostgREST `.in()` over a long list fails three ways; ~50 is this repo's figure. */
 const CHUNK = 50;
 
-export type WhoElseIsOffRow = {
+type WhoElseIsOffRow = {
   /** "Full day", "AM only", "PM only". */
   dayPartLabel: string;
   fromDate: string;

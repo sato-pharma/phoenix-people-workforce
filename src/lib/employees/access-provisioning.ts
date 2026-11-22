@@ -10,7 +10,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { resolveEmployeeAccessRole } from "@/lib/employees/access-role";
 
-export type EmployeeAccessProvisioningResult = {
+type EmployeeAccessProvisioningResult = {
   hrId: string;
   message?: string;
   status: "created" | "failed" | "skipped";

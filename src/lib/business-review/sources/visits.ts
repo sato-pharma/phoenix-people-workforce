@@ -184,7 +184,7 @@ export type VisitManagerFact = {
 };
 
 /** The activity mix, in the classifier's own display labels. */
-export type VisitActivityFact = { period: string; label: string; rows: number };
+type VisitActivityFact = { period: string; label: string; rows: number };
 
 export type VisitsLoad = {
   agents: VisitAgentFact[];

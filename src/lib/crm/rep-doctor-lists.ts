@@ -112,7 +112,7 @@ export const REP_DOCTOR_DRILLDOWN_CAP = 500;
 const PLAN_PAGE_SIZE = 1000;
 
 /** COVERAGE status — was this doctor reached at all this month? */
-export type RepDoctorStatus = "seen" | "missed" | "off_plan";
+type RepDoctorStatus = "seen" | "missed" | "off_plan";
 
 /**
  * FREQUENCY status — did the number of calls match what the plan asked for, to date?

@@ -25,7 +25,7 @@ export const REPORT_IT_TRANSITIONS: Readonly<Record<ReportItStatus, ReportItStat
 /** The statuses a report is still open in — the desk's due-date view. */
 export const REPORT_IT_OPEN_STATUSES: readonly ReportItStatus[] = ["received", "under_assessment"];
 
-export function isReportItStatus(value: unknown): value is ReportItStatus {
+function isReportItStatus(value: unknown): value is ReportItStatus {
   return typeof value === "string" && (REPORT_IT_STATUSES as readonly string[]).includes(value);
 }
 

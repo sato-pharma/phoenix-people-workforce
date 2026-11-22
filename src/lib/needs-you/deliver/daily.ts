@@ -50,12 +50,12 @@ import type { NeedsYouBoard } from "../types";
 /** The name the route's `onJobFailure` records, and the audit entity. One spelling, used by both. */
 export const NEEDS_YOU_DAILY_JOB = "needs-you-daily-digest";
 
-export const NEEDS_YOU_DAILY_EVENT = "needs_you_daily_digest";
+const NEEDS_YOU_DAILY_EVENT = "needs_you_daily_digest";
 
 /** The board's own screen. `actionUrlRequired` is true for this module's policy row. */
 export const NEEDS_YOU_BOARD_PATH = "/admin/needs-you" as const;
 
-export const NEEDS_YOU_DAILY_TITLE = "Needs You";
+const NEEDS_YOU_DAILY_TITLE = "Needs You";
 
 export type NeedsYouDailyResult = {
   delivered: number;
