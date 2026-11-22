@@ -379,6 +379,35 @@ export function needsYouDecisionCount(input: {
 }
 
 /**
+ * The same count, split the way the two pages split their rows (22 Nov 2026, the deep audit of Place checks).
+ * 🔴 WHAT THE SFE MANAGER RECOMMENDED ON IS NOT ON PLACE CHECKS, SO IT IS NOT COUNTED AS IF IT WERE (owner,
+ * 19 Nov 2026: "the recommended by him goes separately in a separate page for admin decision"). Needs you
+ * read "N place checks wait for your approval" and opened Place checks, where 25 of them were nowhere: the
+ * board hands a waiting place and a HELD building the SFE Manager recommended on to the SFE
+ * recommendations page (`withoutSfeRecommended`). `yours` is what Place checks still draws, counted as
+ * `needsYouDecisionCount` counts it, with the handed-over buildings off the board; `sfeRecommended` is what
+ * that page counts — each recommended place and each recommended held building, once.
+ */
+export function needsYouDecisionCountWithSfe(input: {
+  waiting: ReadonlyArray<{ id: string; at: string; placeId: string; sharedPlaceId: string | null }>;
+  heldVenues: ReadonlyArray<{ id: string; at: string }>;
+  venuesOnBoard: ReadonlySet<string>;
+  sfeRecommendedPlaces: ReadonlySet<string>;
+  sfeRecommendedVenues: ReadonlySet<string>;
+}): { count: number; oldestAt: string | null; sfeRecommended: { count: number; oldestAt: string | null } } {
+  const handedOverVenues = input.heldVenues.filter((venue) => input.sfeRecommendedVenues.has(venue.id));
+  const handedOverVenueIds = new Set(handedOverVenues.map((venue) => venue.id));
+  const handedOverPlaces = input.waiting.filter((row) => input.sfeRecommendedPlaces.has(row.placeId));
+  const yours = needsYouDecisionCount({
+    waiting: input.waiting.filter((row) => !input.sfeRecommendedPlaces.has(row.placeId)),
+    heldVenues: input.heldVenues.filter((venue) => !handedOverVenueIds.has(venue.id)),
+    venuesOnBoard: new Set([...input.venuesOnBoard].filter((id) => !handedOverVenueIds.has(id))),
+  });
+  const handedOver = [...handedOverPlaces, ...handedOverVenues].sort(compareOldestFirst);
+  return { ...yours, sfeRecommended: { count: handedOver.length, oldestAt: handedOver[0]?.at ?? null } };
+}
+
+/**
  * The buildings the filters leave, each with the customers that pass them.
  *
  * A building is shown when it passes the filters itself, or when any customer behind it does. The text

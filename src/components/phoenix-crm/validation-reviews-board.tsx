@@ -49,7 +49,7 @@ import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board"
 import { FailingTimetablesPanel } from "@/components/phoenix-crm/failing-timetables-panel";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { useBulkRunGoing } from "@/components/phoenix-crm/place-check-bulk";
-import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
+import { hearOtherTabs, placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
@@ -338,9 +338,28 @@ export function ValidationReviewsBoard({
   // found the same place that I accepted or rejected is as it is"). The board tells the re-read which page
   // it draws; the browser's copy from before a decision whose re-read died with the board reads itself again.
   const router = useRouter();
+  // 🔴 AND NEVER OLDER THAN A DECISION MADE IN HIS OTHER TAB (22 Nov 2026): each tab kept its own page, so a
+  // row he settled in one stood waiting in the other until it made a decision of its own. A decision in any
+  // tab owes the others a read, made when that tab is shown or focused again — never at once, or two windows
+  // side by side would rebuild the heaviest page once per decision.
+  const shownReadAt = useRef(readAt);
   useEffect(() => {
+    shownReadAt.current = readAt;
     placeCheckReread.showing(readAt, () => router.refresh());
   }, [readAt, router]);
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState === "visible") placeCheckReread.shownAgain(shownReadAt.current, () => router.refresh());
+    };
+    const stopHearing = hearOtherTabs(() => placeCheckReread.owe());
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
+    return () => {
+      stopHearing();
+      document.removeEventListener("visibilitychange", back);
+      window.removeEventListener("focus", back);
+    };
+  }, [router]);
   const readAtSeen = useRef(readAt);
   const reloadEverything = everythingRead.reload;
   useEffect(() => {
