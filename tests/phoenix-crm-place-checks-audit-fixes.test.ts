@@ -294,6 +294,76 @@ function checkBackgroundRuns() {
   const notes = code("src/components/phoenix-crm/place-check-notes.tsx");
   assert.equal((notes.match(/placeCheckReread\.cancel\(\);\s*router\.refresh\(\);/g) ?? []).length, 2, "and so do both note saves");
   assert.equal((notes.match(/router\.refresh\(\)/g) ?? []).length, 2, "with no other refresh in the file");
+
+  checkComingBackAfterDecisions(board);
+}
+
+// ── D3: the page he comes back to is never older than his decisions (owner, 22 Nov 2026: "I keep approving
+// or rejecting … I turn around and do anything, and I come back … the same place … is as it is") ──────
+function checkComingBackAfterDecisions(board: string) {
+  const timers = new Map<number, () => void>();
+  let next = 0;
+  const reread = createPlaceCheckReread<number>({
+    clear: (handle) => void timers.delete(handle),
+    set: (callback) => {
+      next += 1;
+      timers.set(next, callback);
+      return next;
+    },
+  });
+  let reads = 0;
+  const read = () => (reads += 1);
+  const opened = "2026-11-22T19:20:00.000Z";
+  const fresh = "2026-11-22T19:31:00.000Z";
+
+  // His evening: the board opens, he approves and rejects, and leaves inside the quiet time.
+  reread.showing(opened, read);
+  assert.equal(reads, 0, "opening the board reads nothing");
+  reread.ask(read);
+  reread.ask(read);
+  reread.cancel();
+  assert.equal(reads, 0, "leaving drops the waiting timer, as D2 says");
+  // He comes back, and the browser draws the copy from before his decisions.
+  reread.showing(opened, read);
+  assert.equal(reads, 1, "🔴 the old page drawn again reads the page at once — the decisions he left are owed");
+  reread.showing(fresh, read);
+  reread.showing(opened, read);
+  assert.equal(reads, 1, "a page read after them settles them: nothing more is owed, even if an old copy shows later");
+
+  // A page the server read after his decisions (the link after the router cache ran out) is not read twice.
+  reread.ask(read);
+  reread.cancel();
+  reread.showing("2026-11-22T19:40:00.000Z", read);
+  assert.equal(reads, 1, "a newer page settles the decision without a second read");
+
+  // While he stays, the quiet-time read lands a newer page, which settles the run; a later remount is quiet.
+  reread.showing("2026-11-22T19:41:00.000Z", read);
+  reread.ask(read);
+  for (const run of [...timers.values()]) run();
+  assert.equal(reads, 2, "the quiet time's own read");
+  reread.showing("2026-11-22T19:43:00.000Z", read);
+  reread.showing("2026-11-22T19:43:00.000Z", read);
+  assert.equal(reads, 2, "and the page it brought back owes nothing");
+
+  // A coming-back read takes the place of a timer still waiting, so the same page is never read twice.
+  reread.ask(read);
+  assert.equal(timers.size, 1, "a decision waits");
+  reread.showing("2026-11-22T19:43:00.000Z", read);
+  assert.equal(reads, 3, "the same page drawn again reads now");
+  assert.equal(timers.size, 0, "and the waiting timer goes with it");
+
+  // A board with no stamp settles nothing and reads nothing.
+  reread.ask(read);
+  reread.cancel();
+  reread.showing(null, read);
+  assert.equal(reads, 3, "no stamp, no read");
+  reread.showing("2026-11-22T19:43:00.000Z", read);
+  assert.equal(reads, 4, "and the decision is still owed to the next stamped page");
+
+  assert.ok(
+    /useEffect\(\(\) => \{\s*placeCheckReread\.showing\(readAt, \(\) => router\.refresh\(\)\);\s*\}, \[readAt, router\]\);/.test(board),
+    "🔴 the board tells the re-read which page it draws, every time that page changes",
+  );
 }
 
 export function runPhoenixCrmPlaceChecksAuditFixesTests() {

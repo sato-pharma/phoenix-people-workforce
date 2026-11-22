@@ -34,6 +34,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { useCrmGet } from "@/components/phoenix-crm/api";
@@ -333,6 +334,13 @@ export function ValidationReviewsBoard({
   if (onDemand && !wanted && (view === "unconfirmed" || filtering || deckAsked)) setWanted(true);
   const everythingRead = useCrmGet<PlaceChecksEverything>(onDemand && wanted ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything");
   const readAt = onDemand?.readAt ?? null;
+  // 🔴 THE PAGE HE COMES BACK TO IS NEVER OLDER THAN HIS DECISIONS (owner, 22 Nov 2026: "I come back. I
+  // found the same place that I accepted or rejected is as it is"). The board tells the re-read which page
+  // it draws; the browser's copy from before a decision whose re-read died with the board reads itself again.
+  const router = useRouter();
+  useEffect(() => {
+    placeCheckReread.showing(readAt, () => router.refresh());
+  }, [readAt, router]);
   const readAtSeen = useRef(readAt);
   const reloadEverything = everythingRead.reload;
   useEffect(() => {
