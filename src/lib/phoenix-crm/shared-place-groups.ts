@@ -28,6 +28,7 @@ import {
   type ValidationReviewFilters,
   type ValidationReviewOutcome,
 } from "@/lib/phoenix-crm/validation-review-filters";
+import type { EarlierDecision } from "@/lib/phoenix-crm/earlier-decision";
 import type { ScheduleHeldBecause, ScheduleLegibility, ScheduleProblem } from "@/lib/phoenix-crm/schedule-rules";
 import type { ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 import { compareOldestFirst } from "@/lib/phoenix-crm/waiting-rules";
@@ -80,6 +81,8 @@ export type SeatedCustomer = ValidationReviewFilterable & {
   restorable: boolean;
   /** A rejection the database will not take back: he was captured again at this door since (`door-captured-again.ts`). */
   capturedAgain?: boolean;
+  /** A WAITING customer only: his latest decision before this capture (`earlier-decision.ts`). */
+  earlierDecision?: EarlierDecision | null;
   /** 🔴 The Super Admin approved this seat, so nobody else may reject it (owner, 2026-11-16). */
   lockedBySuperAdmin?: boolean;
   /** Visits measured against his place, and the places he would keep — only a validated row knows them. */
@@ -155,6 +158,7 @@ function fromReview(row: ValidationReviewRow, sharedPlaceId: string, state: Seat
     refusable: row.refusable,
     restorable: row.restorable,
     capturedAgain: row.capturedAgain === true,
+    earlierDecision: state === "waiting" ? (row.earlierDecision ?? null) : null,
     lockedBySuperAdmin: row.lockedBySuperAdmin === true,
     visits: null,
     otherPlaces: null,

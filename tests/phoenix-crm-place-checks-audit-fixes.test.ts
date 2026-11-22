@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import { createPlaceCheckReread } from "../src/components/phoenix-crm/place-check-reread.ts";
+import { earlierDecisionOf, earlierDecisionText } from "../src/lib/phoenix-crm/earlier-decision.ts";
 import { needsYouDecisionCount } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import { refusalTakeBack } from "../src/lib/phoenix-crm/validation-feedback.ts";
 
@@ -366,9 +367,61 @@ function checkComingBackAfterDecisions(board: string) {
   );
 }
 
+// ── D4: a new capture of a customer already decided says so (owner, 22 Nov 2026). A rejection sends the rep
+// "Validate again" and he often captures the same door within the minute — 10 of 878 rejections within the
+// hour on production — so the new row read exactly like the one just decided. ──────────────────────────
+function checkEarlierDecision() {
+  const decided = [
+    { customerId: "c1", status: "approved" as const, decidedAt: "2026-11-10T08:00:00.000Z", deciderName: "Omar Gawish", refusalLabel: null },
+    { customerId: "c1", status: "rejected" as const, decidedAt: "2026-11-22T19:10:00.000Z", deciderName: "Omar Gawish", refusalLabel: "No timetable in the photo" },
+    { customerId: "c1", status: "approved" as const, decidedAt: "2026-11-22T19:30:00.000Z", deciderName: "Omar Gawish", refusalLabel: null },
+    { customerId: "c2", status: "rejected" as const, decidedAt: "2026-11-22T19:00:00.000Z", deciderName: null, refusalLabel: null },
+    { customerId: "c1", status: "rejected" as const, decidedAt: "not a date", deciderName: null, refusalLabel: null },
+  ];
+  const earlier = earlierDecisionOf("c1", "2026-11-22T19:11:00.000Z", decided);
+  assert.equal(earlier?.decidedAt, "2026-11-22T19:10:00.000Z", "🔴 the latest decision BEFORE the capture, a minute earlier");
+  assert.equal(earlier?.status, "rejected");
+  assert.equal(earlierDecisionOf("c1", "2026-11-22T19:10:00.000Z", decided)?.status, "approved", "a decision at the same instant is not before it");
+  assert.equal(earlierDecisionOf("c1", "2026-11-01T00:00:00.000Z", decided), null, "a customer decided only later has nothing earlier");
+  assert.equal(earlierDecisionOf("c3", "2026-11-22T19:11:00.000Z", decided), null, "a customer never decided has nothing");
+  assert.equal(earlierDecisionOf("c1", "garbage", decided), null, "a capture whose instant cannot be read says nothing");
+
+  const text = earlierDecisionText({ ...(earlier as NonNullable<typeof earlier>), decidedAtText: "22 Nov 2026, 9:10 PM" });
+  assert.equal(
+    text,
+    "An earlier photo of this customer was rejected by Omar Gawish on 22 Nov 2026, 9:10 PM (No timetable in the photo). This is a new capture.",
+  );
+  assert.equal(
+    earlierDecisionText({ status: "approved", decidedAt: "x", decidedAtText: "10 Nov", deciderName: null, refusalLabel: "ignored" }),
+    "An earlier photo of this customer was approved on 10 Nov. This is a new capture.",
+    "no decider for a viewer who decides nothing, and no refusal reason on an approval",
+  );
+
+  const loader = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  assert.ok(
+    /await markDoorsCapturedAgain\(rows, reviews, placeById\);\s*await markEarlierDecisions\(rows, reviews, decides\);/.test(loader),
+    "🔴 the board's read marks every waiting review with the decision before it",
+  );
+  const mark = fn(loader, "async function markEarlierDecisions(");
+  assert.ok(mark.includes('row.status === "pending"'), "only a waiting review is marked");
+  assert.ok(/names = decides \?/.test(mark), "the decider's name rides only to a viewer who decides");
+  for (const [path, why] of [
+    ["src/components/phoenix-crm/validation-review-queue.tsx", "the queue row"],
+    ["src/components/place-review-deck/review-deck.tsx", "the one-by-one slide"],
+    ["src/components/phoenix-crm/shared-place-customers.tsx", "a customer waiting in a building"],
+  ] as const) {
+    assert.ok(/earlierDecision \? [\s\S]{0,120}earlierDecisionText\(/.test(code(path)), `🔴 ${why} prints the earlier decision`);
+  }
+  assert.ok(
+    code("src/lib/phoenix-crm/shared-place-groups.ts").includes('earlierDecision: state === "waiting" ? (row.earlierDecision ?? null) : null'),
+    "a seated customer carries it only while waiting",
+  );
+}
+
 export function runPhoenixCrmPlaceChecksAuditFixesTests() {
   checkCounts();
   checkDecisionPaths();
   checkWording();
   checkBackgroundRuns();
+  checkEarlierDecision();
 }

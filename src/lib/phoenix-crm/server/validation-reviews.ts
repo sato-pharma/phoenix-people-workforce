@@ -25,6 +25,7 @@ import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
+import { earlierDecisionOf, type EarlierDecision, type EarlierDecisionSource } from "@/lib/phoenix-crm/earlier-decision";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -644,6 +645,13 @@ export type ValidationReviewRow = {
    */
   capturedAgain?: boolean;
   /**
+   * A WAITING review only: the customer's latest decision made before this capture, when there is one
+   * (owner, 22 Nov 2026: "the same place that I accepted or rejected is as it is"). A rep told "Validate
+   * again" often captures the same door at once, and the new row read exactly like the one just decided.
+   * Absent on a decided row, on a customer never decided, and when the read of the earlier ones failed.
+   */
+  earlierDecision?: EarlierDecision | null;
+  /**
    * Whether this APPROVAL can still be taken back (owner, 2026-10-15: "make admin able to reject
    * validation even if approved before"): the place it approved is still active, so rejecting it now
    * has something to retire. The mirror image of `restorable`, and the same test the database makes.
@@ -739,6 +747,50 @@ async function markDoorsCapturedAgain(rows: ValidationReviewRow[], reviews: Row[
       row.restorable = false;
       row.capturedAgain = true;
     }
+  }
+}
+
+/**
+ * Every WAITING review learns the customer's latest decision made before it was captured (`earlier-decision.ts`).
+ * One read of the decided reviews of the waiting rows' customers — 58 customers on 22 Nov 2026, so one page.
+ * The decider's name rides only to a viewer who decides (`decides`), like `decidedByName`.
+ *
+ * 🔴 A FAILED READ CHANGES NOTHING — the waiting rows keep everything else and say nothing about the past.
+ */
+async function markEarlierDecisions(rows: ValidationReviewRow[], reviews: Row[], decides: boolean): Promise<void> {
+  const customerByReview = new Map(reviews.map((review) => [String(review.id), String(review.customer_id)]));
+  const waiting = rows.filter((row) => row.status === "pending" && customerByReview.has(row.reviewId));
+  if (waiting.length === 0) return;
+  try {
+    const decided = await selectByIds<Row>(
+      "phoenix_crm_validation_reviews",
+      "id, customer_id, status, decided_at, decided_by_hr_id, refusal_reason",
+      "customer_id",
+      [...new Set(waiting.map((row) => customerByReview.get(row.reviewId)))],
+      (query) => query.in("status", ["approved", "rejected"]).not("decided_at", "is", null),
+    );
+    const names = decides ? await loadPeopleNames(decided.map((row) => text(row.decided_by_hr_id))) : null;
+    const sources: EarlierDecisionSource[] = decided.map((row) => ({
+      customerId: String(row.customer_id),
+      status: row.status === "approved" ? "approved" : "rejected",
+      decidedAt: String(row.decided_at),
+      deciderName: names ? deciderLabel(names, text(row.decided_by_hr_id)) : null,
+      refusalLabel: row.status === "rejected" ? validationRefusalLabel(text(row.refusal_reason)) : null,
+    }));
+    for (const row of waiting) {
+      const earlier = earlierDecisionOf(customerByReview.get(row.reviewId) ?? "", row.createdAt, sources);
+      row.earlierDecision = earlier
+        ? {
+            status: earlier.status,
+            decidedAt: earlier.decidedAt,
+            decidedAtText: formatPhoenixDateTime(earlier.decidedAt),
+            deciderName: earlier.deciderName,
+            refusalLabel: earlier.refusalLabel,
+          }
+        : null;
+    }
+  } catch (error) {
+    logError("Phoenix CRM earlier-decision read failed", { error, labels: { event: "phoenix_crm_earlier_decision_read_failed" } });
   }
 }
 
@@ -943,6 +995,7 @@ export async function loadValidationReviews(
     };
   });
   await markDoorsCapturedAgain(rows, reviews, placeById);
+  await markEarlierDecisions(rows, reviews, decides);
   // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
   // 14 days is kept only while it can still be taken back — its place still retired. One whose place
   // is active again, or gone, has nothing left to reverse, so it drops back under the ordinary window
