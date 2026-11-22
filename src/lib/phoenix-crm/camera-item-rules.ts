@@ -181,6 +181,23 @@ export function cameraApproveAllowed(approved: number, allowance: number): { ok:
   };
 }
 
+/**
+ * A camera visit is a SECOND COPY when its customer already has a visit saved on that seat and day (owner, 23 Nov
+ * 2026: "warn next time"). The key is the one the visit insert refuses on — `phoenix_crm:already_visited`, seat +
+ * customer + visit day + test world — so the page warns exactly where Record would have been refused, before he
+ * clicks it.
+ */
+export function cameraVisitDayKey(input: { seatId: unknown; customerId: unknown; day: unknown; isTest: unknown }): string {
+  return `${String(input.seatId ?? "")}|${String(input.customerId ?? "")}|${String(input.day ?? "")}|${input.isTest === true}`;
+}
+
+/** The words where Record would be, when the rep already saved that customer's visit that day. */
+export function cameraAlreadySavedText(savedAt: string | null): string {
+  const at = savedAt ? new Date(savedAt) : null;
+  const clock = at && !Number.isNaN(at.getTime()) ? ` at ${cairoClockOf(at)}` : "";
+  return `Already saved in the app${clock}: this photo is a second copy of the same visit. Reject it; the saved visit stays counted.`;
+}
+
 /** The Super Admin's raise as he typed it: a whole number inside the column's own CHECK, or null. */
 export function parseCameraDayAllowance(raw: unknown): number | null {
   return parseCameraCap(raw);

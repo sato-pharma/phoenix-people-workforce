@@ -184,6 +184,9 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/crm/weekly-sheet.ts": 2,
     "src/lib/customer-identity/server/reads.ts": 2,
     "src/lib/phoenix-crm/server/behaviour.ts": 1,
+    // The camera page's "already saved" warning (owner, 2026-11-23) asks exactly what the visit insert's
+    // already_visited refusal asks — seat, customer, day, world — and that refusal counts a copied visit too.
+    "src/lib/phoenix-crm/server/camera-items.ts": 1,
     "src/lib/phoenix-crm/server/commitments.ts": 1,
     "src/lib/phoenix-crm/server/customer-timeline.ts": 1,
     "src/lib/phoenix-crm/server/daily-plan-report.ts": 1,
