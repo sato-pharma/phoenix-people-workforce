@@ -226,8 +226,10 @@ export function BulkDecideBar<Row>({
     ownsRun.current = true;
     setBulkRunGoing(true);
     // A re-read still waiting from an earlier press would rebuild the rows under the run; this one reads
-    // the page itself when it ends.
+    // the page itself when it ends. 🔴 Its rows are owed from the first one (22 Nov 2026): leaving mid-run
+    // never reaches that read, and the page he comes back to must still not show them waiting.
     placeCheckReread.cancel();
+    placeCheckReread.owe();
     setDone(0);
     setFailures([]);
     setSummary(null);
@@ -264,8 +266,7 @@ export function BulkDecideBar<Row>({
     // that failed stay where they are with their reason beside them. A re-read already waiting for the
     // decisions to pause is dropped first: this one reads the same page now.
     if (failed.length < targets.length) picks.clear();
-    placeCheckReread.cancel();
-    router.refresh();
+    placeCheckReread.refreshNow(() => router.refresh());
   }
 
   if (picks.selectable === 0) return null;
