@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import {
   CAMERA_DAILY_CAP_DEFAULT,
   CAMERA_REVIEWS_PATH,
+  cameraAlreadySavedText,
   cameraApproveAllowed,
   cameraArrival,
   cameraDayAllowance,
@@ -13,6 +14,7 @@ import {
   cameraFixGapText,
   cameraSenderName,
   cameraTakenAt,
+  cameraVisitDayKey,
   cameraVisitDraft,
   parseCameraCap,
   parseCameraDayAllowance,
@@ -283,7 +285,41 @@ function aTestItemIsNamedAfterItsTestLogin(): void {
   assert.match(loader, /repName: cameraSenderName\(nameOf\(names, repHrId, repHrId\), row\.is_test === true\)/, "the page's rows carry it");
 }
 
+/**
+ * A camera visit the rep already saved in the app that day is a second copy (owner, 23 Nov 2026: "Remove + warn next
+ * time" — Mohamed Salah saved Dr Sabah Lotfy Areiba's visit at 18:27 and his camera photo of 18:18 then waited, and
+ * Record answered "already saved" only after the click). The page says so where Record would be, on the same key
+ * the visit insert refuses on, and Record refuses before the seal validates anything.
+ */
+function aSecondCopyOfASavedVisitSaysSoBeforeTheClick(): void {
+  const key = cameraVisitDayKey({ seatId: "SEAT-CNS-REP-D22", customerId: "c1", day: "2026-11-22", isTest: false });
+  assert.equal(key, "SEAT-CNS-REP-D22|c1|2026-11-22|false", "seat, customer, day and world, as already_visited asks");
+  assert.notEqual(key, cameraVisitDayKey({ seatId: "SEAT-CNS-REP-D22", customerId: "c1", day: "2026-11-22", isTest: true }), "a test visit is another world");
+  assert.equal(
+    cameraAlreadySavedText("2026-11-22T16:27:20.140Z"),
+    "Already saved in the app at 18:27: this photo is a second copy of the same visit. Reject it; the saved visit stays counted.",
+    "the saved visit's own Cairo time",
+  );
+  assert.doesNotMatch(cameraAlreadySavedText(null), / at [0-9]/, "no time read, no time printed");
+  const loader = read("src/lib/phoenix-crm/server/camera-items.ts");
+  assert.ok(
+    loader.includes('if (intent === "visit" && savedAt !== undefined) return { label: null, cannot: cameraAlreadySavedText(savedAt) };'),
+    "the row loses Record and says why",
+  );
+  assert.ok(loader.includes("const savedVisits = await loadSavedVisitTimes(waitingVisits);"), "one read for the whole page");
+  assert.match(
+    loader,
+    /\.from\("phoenix_crm_visits"\)\s*\.select\("seat_id, customer_id, visit_date, is_test, captured_at"\)/,
+    "it reads the visits on the insert's own key",
+  );
+  const decide = loader.slice(loader.indexOf("export async function decideCameraItem("));
+  const refuse = decide.indexOf("throw conflictError(cameraAlreadySavedText(");
+  assert.ok(refuse > 0, "Record refuses a second copy in words");
+  assert.ok(refuse < decide.indexOf("placeId = validation.placeId ?? placeId;"), "before the seal validates a place");
+}
+
 export function runPhoenixCrmCameraItemsTests(): void {
+  aSecondCopyOfASavedVisitSaysSoBeforeTheClick();
   aTestItemIsNamedAfterItsTestLogin();
   timeComesFromPhoenixFirst();
   arrivalAlwaysWaitsOrArchives();
