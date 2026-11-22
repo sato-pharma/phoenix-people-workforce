@@ -14,6 +14,7 @@
  * the metadata, and it is read from there. evidence-waiver.ts, captured-coordinates.ts and
  * departure-location-refusals.ts pull in nothing heavier than a number reader, so all are safe here.
  */
+import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import {
   NO_GPS_CAUSE_NOT_REPORTED,
@@ -149,7 +150,7 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       refusedTries: [],
       retakeCount: 0,
       review: null,
-      sourceNote: arrivalMeta?.source === "upload" ? "Uploaded, not captured with the live camera." : null,
+      sourceNote: arrivalMeta?.source === "upload" ? uploadedArrivalSourceNote(arrivalMeta.fileTakenAt) : null,
       url: arrivalUrl,
     },
     {
@@ -170,4 +171,19 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       url: departureUrl,
     },
   ];
+}
+
+/**
+ * What an approver reads under an UPLOADED arrival photo: that it was uploaded, and when the file
+ * itself says it was taken (photo-file-time.ts, owner 2026-11-23). A claim filed before the file's
+ * time was read (`undefined`) says only that it was uploaded — never "carries no time", which
+ * would be a claim about a file nobody read.
+ */
+export function uploadedArrivalSourceNote(fileTakenAt: string | null | undefined) {
+  const base = "Uploaded, not captured with the live camera.";
+  if (fileTakenAt === undefined) return base;
+  if (!fileTakenAt || Number.isNaN(Date.parse(fileTakenAt))) {
+    return `${base} The file carries no time of its own (a screenshot or a copy).`;
+  }
+  return `${base} The file says it was taken at ${formatPhoenixDateTime(fileTakenAt)} (Cairo).`;
 }

@@ -147,6 +147,7 @@ export function ExpenseReviewWorkspace({ canDecide, viewerHrId }: { canDecide: b
           canDecide={canDecide}
           decisionFor={review.decisionFor}
           duplicateFlags={review.duplicateFlags}
+          ticketDuplicateFlags={review.ticketDuplicateFlags}
           isUnsaved={(record) => isUnsaved(record, decisions)}
           loadError={review.loadError}
           loading={review.loading}
