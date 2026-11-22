@@ -25,9 +25,10 @@
  * in place of its buttons, until the page's next reading of that row takes over.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
+import { createSavedMarks, savedMarkKey } from "@/components/phoenix-crm/place-check-marks";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { errorCodeOf } from "@/components/phoenix-crm/api";
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
@@ -144,7 +145,12 @@ export function usePlaceCheckDone(): (outcome: PlaceCheckOutcome) => PlaceCheckO
   return useCallback(
     (outcome: PlaceCheckOutcome): PlaceCheckOutcome => {
       scope?.done(scope.item, outcome);
-      placeCheckReread.ask(() => router.refresh());
+      // 🔴 ONLY THE PAGE IT WAS PRESSED ON (22 Nov 2026): a page with no board (the SFE recommendations, the
+      // location integrity) never cancels the timer, so it refreshed whatever page he had opened since.
+      const pressedOn = typeof window === "undefined" ? null : window.location.pathname;
+      placeCheckReread.ask(() => {
+        if (pressedOn === null || window.location.pathname === pressedOn) router.refresh();
+      });
       return outcome;
     },
     [router, scope],
@@ -169,42 +175,23 @@ const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> =
  * was pressed. `subject` is that row: once the page's re-read brings it back changed — decided, or
  * restorable, or refusable — the server's own view of the row is drawn again, so an undo offered on the
  * fresh row is never hidden behind this. A re-read that never comes leaves the saved outcome showing,
- * which is the truth: the database holds it.
+ * which is the truth: the database holds it. Every control drawing the same row listens for its mark, so a
+ * sibling's buttons go when one of them is saved (`place-check-marks.ts`, 22 Nov 2026).
  */
 export function useSavedOutcome(subject: unknown): { saved: PlaceCheckOutcome | null; markSaved: (outcome: PlaceCheckOutcome) => void } {
-  const snapshot = JSON.stringify(subject);
-  const [, redraw] = useState(0);
-  const markSaved = useCallback(
-    (outcome: PlaceCheckOutcome) => {
-      rememberSaved(snapshot, outcome);
-      redraw((count) => count + 1);
-    },
-    [snapshot],
+  const snapshot = savedMarkKey(subject);
+  const subscribe = useCallback((listener: () => void) => SAVED_MARKS.listen(snapshot, listener), [snapshot]);
+  const saved = useSyncExternalStore(
+    subscribe,
+    () => SAVED_MARKS.savedUnder(snapshot),
+    () => null,
   );
-  const mark = SAVED_MARKS.get(snapshot) ?? null;
-  return { saved: mark !== null && mark.snapshot === snapshot ? mark.outcome : null, markSaved };
+  const markSaved = useCallback((outcome: PlaceCheckOutcome) => SAVED_MARKS.remember(snapshot, outcome), [snapshot]);
+  return { saved, markSaved };
 }
 
-/**
- * 🔴 THE SAVED MARK OUTLIVES THE CONTROL (owner, 2026-11-08: "places checks is stale"). It was component
- * state, so a list that remounted — a tab change, a filter, Show more, the one-by-one review closing —
- * forgot it, and the decided row stood there with live buttons until the page's re-read, up to 30 seconds
- * later: the next press answered "This place was already decided". Kept for the tab, keyed by the row as
- * it was pressed, every control drawing that same row reads it; the re-read's changed row no longer
- * matches, so the server's own view takes over exactly as before.
- */
-const SAVED_MARKS = new Map<string, { outcome: PlaceCheckOutcome; snapshot: string }>();
-const SAVED_MARKS_KEPT = 500;
-
-function rememberSaved(snapshot: string, outcome: PlaceCheckOutcome) {
-  SAVED_MARKS.delete(snapshot);
-  SAVED_MARKS.set(snapshot, { outcome, snapshot });
-  while (SAVED_MARKS.size > SAVED_MARKS_KEPT) {
-    const oldest = SAVED_MARKS.keys().next().value;
-    if (oldest === undefined) break;
-    SAVED_MARKS.delete(oldest);
-  }
-}
+/** The tab's one store of saved marks, outside every control (`place-check-marks.ts` says why). */
+const SAVED_MARKS = createSavedMarks<PlaceCheckOutcome>();
 
 /**
  * 🔴 A BULK RUN MARKS EVERY ROW IT SETTLED, AS THE ROW'S OWN CONTROL WOULD (17 Nov 2026, the audit's
@@ -213,7 +200,7 @@ function rememberSaved(snapshot: string, outcome: PlaceCheckOutcome) {
  * same row the control hands `useSavedOutcome`, so the mark lands under exactly that control.
  */
 export function markRowSaved(subject: unknown, outcome: PlaceCheckOutcome) {
-  rememberSaved(JSON.stringify(subject), outcome);
+  SAVED_MARKS.remember(savedMarkKey(subject), outcome);
 }
 
 /**

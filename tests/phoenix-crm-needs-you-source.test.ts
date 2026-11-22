@@ -197,7 +197,8 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     // And no item is produced at zero: the four pushes are each behind a `> 0`.
     // Six since 2026-10-08: a refused place not yet captured again is the sixth.
     // Seven since 2026-10-16: a recorded visit waiting for the Administrator.
-    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 7, "each of the seven counts produces an item only when it is non-zero");
+    // Eight since 22 Nov 2026: a place check the SFE Manager recommended on, which waits on his page.
+    assert.equal((block.match(/> 0\) \{/g) ?? []).length, 8, "each of the eight counts produces an item only when it is non-zero");
 
     // 🔴 THE WEEKLY PLANS ARE ON THE BOARD (2026-10-08). The module's own badge always counted them;
     // this board did not, so a district manager read 0 here while weeks sat on his desk — the
@@ -315,7 +316,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     assert.match(countBlock, /\.eq\("status", "pending"\)\s+\.eq\("is_test", false\)/, "the waiting reviews are the real ones the page draws");
     assert.match(countBlock, /\.eq\("status", "held"\)\s+\.eq\("is_test", false\)/, "and so are the held buildings");
     // A building is ONE decision, held or with anybody waiting behind it: the Needs you tab's own count.
-    assert.ok(countBlock.includes("return needsYouDecisionCount({"), "counted the way the Needs you tab counts");
+    assert.ok(countBlock.includes("return needsYouDecisionCountWithSfe({"), "counted the way the Needs you tab counts");
     assert.ok(countBlock.includes(".filter(sharedPlaceIsOnTheBoard)"), "a waiting customer is filed under his building exactly when the board files him there");
     // 14 Nov 2026: it was a head count of every pending review. A review left pending on a retired place
     // is nobody's to decide and the page no longer lists it, so the count reads the waiting rows whole,
