@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { NO_SHUTTER_FIX, readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { useRouter } from "next/navigation";
 import {
@@ -27,6 +28,7 @@ import { VENUE_LOCATION_REQUIRED_MESSAGE } from "@/lib/venues/venue-validation-r
 import { PharmacyInvoiceValidationCapture } from "@/components/direct-orders/pharmacy-invoice-validation-capture";
 import type { DirectOrderInvoiceSlotCount } from "@/lib/direct-orders/invoice-evidence";
 import {
+  phxButtonAccentClassName,
   phxFieldClassName,
   phxLabelClassName,
 } from "@/components/ui/form-tokens";
@@ -466,7 +468,7 @@ export function PharmacyValidationCapture({
               onClick={() => chooseRoute(choice.key)}
               className={`flex-1 basis-48 border-b-2 px-4 py-2 text-left text-phx-sm font-black ${
                 route === choice.key
-                  ? "border-orange-500 bg-orange-50 text-orange-700"
+                  ? "border-[#08111f] bg-white text-[#08111f]"
                   : "border-transparent text-slate-600 hover:bg-slate-50"
               }`}
             >
@@ -485,7 +487,7 @@ export function PharmacyValidationCapture({
         />
       ) : (
       <div className="space-y-3 px-4 py-4">
-        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+        <p className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2 text-phx-sm font-semibold text-slate-700">
           {isUpgrade ? (
             <>
               You validated this {venueWord} with a distributor invoice. Capture your location and a
@@ -504,8 +506,8 @@ export function PharmacyValidationCapture({
           <label className={labelClass}>{venueLabel} name *</label>
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} dir="auto" />
           {suggestions.length > 0 ? (
-            <div className="mt-2 border border-sky-300 bg-sky-50 px-3 py-2">
-              <p className="text-phx-sm font-black text-sky-900">
+            <div className="mt-2 border border-l-4 border-slate-200 border-l-sky-500 bg-white px-3 py-2">
+              <p className="text-phx-sm font-black text-slate-800">
                 Phoenix already knows {suggestions.length === 1 ? "a venue" : "venues"} with a similar name:
               </p>
               <ul className="mt-1 space-y-1">
@@ -588,7 +590,7 @@ export function PharmacyValidationCapture({
             had just stopped demanding one. An optional field for a document that does not exist is
             still the screen asking a question with no answer. */}
         {licenseApplies ? (
-          <div className={`border p-3 ${licenseFillsTheGap && !license ? "border-amber-300 bg-amber-50" : "border-[#eef1f3]"}`}>
+          <div className={`border p-3 ${licenseFillsTheGap && !license ? "border-slate-200 border-l-4 border-l-amber-500" : "border-[#eef1f3]"}`}>
             <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
               Pharmacy licence · رخصة الصيدلية {licenseFillsTheGap ? "" : "(optional)"}
             </p>
@@ -633,10 +635,10 @@ export function PharmacyValidationCapture({
               <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
             </div>
             {license ? (
-              <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+              <div className="mt-2 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-phx-sm font-bold text-emerald-900" dir="auto">{license.fileName}</span>
-                  <button type="button" onClick={clearLicense} className="text-phx-xs font-bold text-orange-600">
+                  <span className="break-all text-phx-sm font-bold text-slate-800" dir="auto">{license.fileName}</span>
+                  <button type="button" onClick={clearLicense} className="text-phx-xs font-bold text-[#08111f] underline-offset-2 hover:underline">
                     Remove
                   </button>
                 </div>
@@ -663,7 +665,7 @@ export function PharmacyValidationCapture({
           type="button"
           onClick={submit}
           disabled={busy || !photo}
-          className="w-full bg-orange-500 px-4 py-2.5 text-phx-md font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className={cn(phxButtonAccentClassName, "w-full justify-center py-2.5 text-phx-md font-black uppercase tracking-wider disabled:cursor-not-allowed")}
         >
           {busy ? "Sending…" : "Send for validation"}
         </button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowRight,
@@ -151,7 +152,7 @@ function DeskGroup({
           <Link
             key={tool.href}
             href={tool.href}
-            className={`${surface(variant)} flex min-h-[44px] items-start gap-3 p-4 transition-colors hover:bg-orange-50/40`}
+            className={`${surface(variant)} flex min-h-[44px] items-start gap-3 p-4 transition-colors hover:bg-slate-50`}
           >
             <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
             <span className="min-w-0">
@@ -172,21 +173,24 @@ const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} E
 // `createdAt` is an instant: read it on the Cairo calendar, never the first ten characters of its UTC text.
 const shortDate = (value: string | null) => cairoDate(value);
 
-/** The two visual families the owner's rule preserves: square admin, rounded portal. */
+/**
+ * The two visual families: the admin panel token, and the portal's white sheet on the depth token.
+ * Both are square — the square-edge golden rule reaches the portal too (the old rounded portal
+ * family was flattened by the shell's CSS anyway, so no corner a viewer saw has moved).
+ */
 const surface = (variant: Variant) =>
   variant === "portal"
-    ? `rounded-xl border border-slate-200 bg-white ${adminPanelDepthClassName}`
+    ? `border border-slate-200 bg-white ${adminPanelDepthClassName}`
     : adminPanelClassName;
-
-const control = (variant: Variant) => (variant === "portal" ? "rounded-lg" : "");
 
 // ── Summary cards ────────────────────────────────────────────────────────────
 
+/** The tile's tone is the icon's ink alone — no tinted square behind it (the landing kit). */
 const TONE_RING: Record<string, string> = {
-  amber: "bg-amber-50 text-amber-700 ring-amber-200",
-  sky: "bg-sky-50 text-sky-700 ring-sky-200",
-  rose: "bg-rose-50 text-rose-700 ring-rose-200",
-  emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  amber: "text-amber-600",
+  sky: "text-sky-600",
+  rose: "text-rose-600",
+  emerald: "text-emerald-600",
 };
 
 function SummaryCard({
@@ -209,7 +213,7 @@ function SummaryCard({
   const body = (
     <>
       <div className="flex items-center gap-2">
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center ring-1 ${TONE_RING[tone]} ${control(variant)}`}>
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center ${TONE_RING[tone]}`}>
           {icon}
         </span>
         <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{label}</span>
@@ -219,7 +223,7 @@ function SummaryCard({
     </>
   );
   const className = `${surface(variant)} min-h-[44px] p-3 text-left transition-colors ${
-    onClick ? "hover:bg-orange-50/40" : ""
+    onClick ? "hover:bg-slate-50" : ""
   }`;
   return onClick ? (
     <button type="button" onClick={onClick} className={className}>
@@ -284,7 +288,7 @@ function NeedsActionInbox({
           {group.items.length === 0 ? (
             <Link
               href={group.seeAllHref}
-              className="flex min-h-[44px] items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-orange-700 hover:bg-orange-50/40"
+              className="flex min-h-[44px] items-center justify-between gap-2 px-4 py-3 text-sm font-bold text-[#08111f] hover:bg-slate-50"
             >
               {group.actionLabel}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -295,18 +299,18 @@ function NeedsActionInbox({
                 <li key={item.id} className="border-b border-slate-100 last:border-b-0">
                   <Link
                     href={withReturnTo(item.href, returnTo ?? null)}
-                    className="flex min-h-[56px] items-center gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40"
+                    className="flex min-h-[56px] items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-900">{item.title}</p>
-                      <p className="truncate text-phx-xs text-slate-500">{item.subtitle}</p>
+                      <p className="break-words text-sm font-bold text-slate-900">{item.title}</p>
+                      <p className="break-words text-phx-xs text-slate-500">{item.subtitle}</p>
                     </div>
                     {item.flagged ? (
-                      <span className="shrink-0 rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                      <span className="shrink-0 border-l-2 border-rose-500 pl-1.5 text-phx-xs font-black uppercase leading-tight tracking-wide text-rose-700">
                         over cap
                       </span>
                     ) : null}
-                    <span className="shrink-0 text-phx-xs font-black text-orange-700">{group.actionLabel}</span>
+                    <span className="shrink-0 text-phx-xs font-black text-[#08111f]">{group.actionLabel}</span>
                   </Link>
                 </li>
               ))}
@@ -463,7 +467,7 @@ function OrderRow({
     <li className="border-b border-slate-100 last:border-b-0">
       <Link
         href={withReturnTo(`${basePath}/${encodeURIComponent(row.id)}`, returnTo ?? null)}
-        className="flex min-h-[64px] flex-col gap-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40"
+        className="flex min-h-[64px] flex-col gap-1.5 px-4 py-3 transition-colors hover:bg-slate-50"
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -614,13 +618,13 @@ function OrdersList({
             setShown(PAGE_SIZE);
           }}
           placeholder={searchPlaceholder(rows, Boolean(server))}
-          className={`${phxFieldClassName} pl-9 ${control(variant)}`}
+          className={cn(phxFieldClassName, "pl-9")}
         />
       </label>
 
       {/* The status chips WRAP onto a second row. A scrolling strip measured 468px in 359px at 375px
           and cut the last chip off (fits-the-screen golden rule). */}
-      <div className={`inline-flex max-w-full flex-wrap border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control(variant)}`} role="tablist">
+      <div className={`inline-flex max-w-full flex-wrap border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName}`} role="tablist">
         {FILTERS.map((entry) => (
           <button
             key={entry.key}
@@ -632,7 +636,7 @@ function OrdersList({
               setShown(PAGE_SIZE);
               server?.onGroupChange(entry.key);
             }}
-            className={`min-h-[36px] px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control(variant)} ${
+            className={`min-h-[36px] px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${
               filter === entry.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
             }`}
           >
@@ -775,7 +779,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
           <div className="hidden sm:flex sm:justify-end">
             <Link
               href={newOrderHref}
-              className={`inline-flex min-h-[44px] items-center gap-2 bg-orange-600 px-4 text-sm font-black text-white transition hover:bg-orange-700 ${control(variant)}`}
+              className={`inline-flex min-h-[44px] items-center gap-2 ${variant === "portal" ? "bg-[#08111f] hover:bg-[#13233a]" : "bg-orange-600 hover:bg-orange-700"} px-4 text-sm font-black text-white transition`}
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               New Order
@@ -784,7 +788,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
           <div className={`fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:hidden ${adminThumbBarDepthClassName}`}>
             <Link
               href={newOrderHref}
-              className={`flex min-h-[48px] items-center justify-center gap-2 bg-orange-600 text-sm font-black text-white ${control(variant)}`}
+              className={`flex min-h-[48px] items-center justify-center gap-2 ${variant === "portal" ? "bg-[#08111f]" : "bg-orange-600"} text-sm font-black text-white`}
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               New Order
@@ -848,7 +852,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
       {props.reportHref ? (
         <Link
           href={props.reportHref}
-          className="inline-flex min-h-[40px] items-center gap-1.5 px-2 text-phx-sm font-black uppercase tracking-wide text-slate-500 hover:text-orange-700"
+          className="inline-flex min-h-[40px] items-center gap-1.5 px-2 text-phx-sm font-black uppercase tracking-wide text-slate-500 hover:text-[#08111f]"
         >
           <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
           Report
@@ -875,7 +879,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
               <button
                 type="button"
                 onClick={() => goTab("orders")}
-                className="-my-2 inline-flex min-h-[44px] items-center px-2 text-phx-xs font-black text-orange-700"
+                className="-my-2 inline-flex min-h-[44px] items-center px-2 text-phx-xs font-black text-[#08111f] underline-offset-2 hover:underline"
               >
                 See all
               </button>
@@ -913,7 +917,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
       {tab === "orders" ? (
         <div className="space-y-3">
           {showOrdersScopeStrip ? (
-            <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control(variant)}`} role="tablist">
+            <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName}`} role="tablist">
               {ORDERS_FILTERS.map((option) => (
                 <button
                   key={option.key}
@@ -923,7 +927,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   onClick={() => goOrdersFilter(option.key)}
                   className={`min-h-[36px] px-3 text-phx-sm font-black transition-colors ${
                     ordersFilter === option.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
-                  } ${control(variant)}`}
+                  }`}
                 >
                   {option.label}
                 </button>
@@ -973,7 +977,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   type="button"
                   onClick={() => goPage(servedPage.page - 1)}
                   disabled={servedPage.page <= 1}
-                  className={`min-h-[44px] border border-slate-300 px-3 text-phx-sm font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
+                  className={`min-h-[44px] border border-slate-300 px-3 text-phx-sm font-black text-slate-700 disabled:opacity-40`}
                 >
                   Previous
                 </button>
@@ -981,7 +985,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   type="button"
                   onClick={() => goPage(servedPage.page + 1)}
                   disabled={servedPage.page * servedPage.pageSize >= servedPage.totalCount}
-                  className={`min-h-[44px] border border-slate-300 px-3 text-phx-sm font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
+                  className={`min-h-[44px] border border-slate-300 px-3 text-phx-sm font-black text-slate-700 disabled:opacity-40`}
                 >
                   Next
                 </button>

@@ -281,10 +281,10 @@ export function RepProductAchievementWorkspace({
                     <button
                       aria-pressed={active}
                       className={cn(
-                        "min-h-9 min-w-0 px-3 py-1.5 text-sm font-bold transition",
+                        "min-h-10 min-w-0 px-3 py-1.5 text-sm font-bold transition motion-reduce:transition-none",
                         active
-                          ? "bg-white text-slate-950 shadow-[0_1px_3px_rgba(15,23,42,0.12)]"
-                          : "text-slate-500 hover:text-slate-800",
+                          ? "bg-[#08111f] text-white"
+                          : "text-slate-500 hover:bg-white hover:text-[#08111f]",
                       )}
                       key={line.value}
                       onClick={() => update("line", line.value)}
@@ -570,7 +570,7 @@ function DesktopRepRows({
   const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <>
-      <tr className={cn("border-b border-slate-100 transition hover:bg-orange-50/40", expanded && "bg-slate-50/60")}>
+      <tr className={cn("border-b border-slate-100 transition hover:bg-slate-50", expanded && "bg-slate-50/60")}>
         <td className={cn("border-l-[3px] px-3 py-2.5", band ? BAND_RULE[band] : "border-l-slate-200")}>
           <button aria-expanded={expanded} className="flex w-full min-w-0 items-start gap-2 text-left" onClick={onToggle} type="button">
             <Chevron className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
@@ -603,7 +603,7 @@ function DesktopRepRows({
                 <span
                   className={cn(
                     "break-words text-xs font-bold",
-                    product.productCode === productCode ? "text-orange-700" : "text-slate-700",
+                    product.productCode === productCode ? "text-[#08111f] underline decoration-[#F05A1A] decoration-2 underline-offset-4" : "text-slate-700",
                   )}
                 >
                   {product.productName}
@@ -698,7 +698,7 @@ function MobileRepCard({
       {record.products.length ? (
         <button
           aria-expanded={expanded}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.12em] text-orange-700"
+          className="mt-3 inline-flex min-h-10 items-center gap-1 text-xs font-black uppercase tracking-[0.12em] text-[#08111f]"
           onClick={onToggle}
           type="button"
         >

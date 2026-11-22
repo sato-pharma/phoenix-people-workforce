@@ -169,7 +169,7 @@ function PackPickerForm({ action, hidden, level, selected }: Props) {
     <details className={cn(phxFormBlockClassName, "group")}>
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
         <span className="min-w-0">
-          <span className="block text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-700">
+          <span className="block text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
             Download the Business Review
           </span>
           <span className="mt-0.5 block break-words text-sm font-bold text-slate-900">
@@ -254,7 +254,7 @@ function PackPickerForm({ action, hidden, level, selected }: Props) {
                             <span className="block break-words">
                               {metric.label}
                               {takesLonger(metric) && (
-                                <span className="ml-1.5 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                                <span className="ml-1.5 whitespace-nowrap text-phx-xs font-bold uppercase tracking-wide text-slate-500">
                                   · takes longer
                                 </span>
                               )}

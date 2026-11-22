@@ -42,7 +42,7 @@ export function DirectOrderInvoiceEvidence({
       {!url ? (
         // Said out loud: a blank space here would read as "nothing was attached", and every invoice
         // claim has a file — the row is removed if the upload fails.
-        <p className="mt-1 border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-800">
+        <p className="mt-1 border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2 text-phx-sm font-semibold text-slate-800">
           The invoice file could not be opened just now. Reload the page to try again.
         </p>
       ) : contentType === "application/pdf" ? (

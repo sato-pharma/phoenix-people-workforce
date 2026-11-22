@@ -157,7 +157,7 @@ export function DistributorCustomerPicker({
           </select>
 
           {picked ? (
-            <div className="flex items-center justify-between gap-2 border border-emerald-200 bg-emerald-50 px-2 py-1.5">
+            <div className="flex items-center justify-between gap-2 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-2 py-1.5">
               <span className="text-phx-sm font-bold text-emerald-900">
                 {row.customerName} <span className="text-emerald-700">({row.customerCode})</span>
               </span>
@@ -194,7 +194,7 @@ export function DistributorCustomerPicker({
                     <li key={`${option.customerCode}-${option.areaCode ?? ""}`}>
                       <button
                         type="button"
-                        className="block w-full px-2 py-1.5 text-left text-phx-sm hover:bg-orange-50"
+                        className="block w-full px-2 py-1.5 text-left text-phx-sm hover:bg-slate-50"
                         onClick={() => {
                           onChange({ customerCode: option.customerCode, customerName: option.customerName });
                           setOpen(false);

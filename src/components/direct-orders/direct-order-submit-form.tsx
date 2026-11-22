@@ -19,7 +19,8 @@ import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
 import { humanizeCode } from "@/lib/format/code-label";
 import { cn } from "@/lib/utils";
-import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
+import { phxButtonAccentClassName, phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
+import { LandingTitle } from "@/components/employee-portal/landing-kit";
 
 import { maxBonusUnits } from "@/lib/direct-orders/approval-flow";
 import { describeDirectOrderBasketQuantities } from "@/lib/direct-orders/basket-label";
@@ -42,7 +43,7 @@ import {
   venueTypeLabel,
   type VenueTypeChoice,
 } from "@/lib/venues/venue-type";
-import { adminControlDepthClassName, adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminPanelClassName, adminPanelHeaderClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type ProductOption = {
   productCode: string;
@@ -685,7 +686,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   }
 
   const tabClass = (active: boolean) =>
-    `flex-1 border px-3 py-1.5 text-sm font-bold ${active ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-300 bg-white text-slate-500"}`;
+    `flex-1 border px-3 py-1.5 text-sm font-bold ${active ? "border-[#08111f] bg-[#08111f] text-white" : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50"}`;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
@@ -745,14 +746,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             }}
           />
           {invoicePhoto ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
-              <p className="text-phx-sm font-semibold text-emerald-900">
+            <div className="flex flex-wrap items-center justify-between gap-2 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-3 py-2">
+              <p className="text-phx-sm font-semibold text-slate-700">
                 This invoice is sent with the order, so your approvers see the invoice you used.
               </p>
               <button
                 type="button"
                 onClick={() => setInvoicePhoto(null)}
-                className="text-phx-xs font-bold text-orange-600"
+                className="text-phx-xs font-bold text-[#08111f] underline-offset-2 hover:underline"
               >
                 Don&apos;t attach it
               </button>
@@ -790,7 +791,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               asks: making them share one quantity would be a worse lie than not offering the
               second line. */}
           {siblings.length > 0 ? (
-            <div className="border border-orange-200 bg-orange-50/40 p-3">
+            <div className="border border-l-4 border-slate-200 border-l-[#08111f] bg-white p-3">
               <p className="text-phx-xs font-black uppercase tracking-wider text-slate-600">
                 Add another {product?.familyCode ? familyKey(product.familyCode) : ""} concentration
               </p>
@@ -944,7 +945,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           </div>
 
           {dealType === "discount" && product && !hasPublicPrice ? (
-            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
+            <p className="border border-l-4 border-slate-200 border-l-rose-500 bg-white px-3 py-2 text-phx-sm font-semibold text-rose-700">
               No public price is set for {product.productName}. Ask an admin to set it, or use bonus mode.
             </p>
           ) : null}
@@ -953,14 +954,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               factory-price fallback any more — a bonus deal is priced on the pharmacy price or it
               is refused, so the message now states the refusal rather than promising a basis. */}
           {missingBonusBasis ? (
-            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
+            <p className="border border-l-4 border-slate-200 border-l-rose-500 bg-white px-3 py-2 text-phx-sm font-semibold text-rose-700">
               No pharmacy price is set for {product?.productName}. A bonus deal is valued on the pharmacy
               price, so this order cannot be submitted until an admin sets it.
             </p>
           ) : null}
 
           {overCap ? (
-            <div className="space-y-2 border border-amber-300 bg-amber-50 px-3 py-2.5">
+            <div className="space-y-2 border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2.5">
               <p className="text-phx-sm font-bold text-amber-800">
                 Over cap — this request still submits and goes through the normal approval chain. It is flagged for every approver, not blocked.
               </p>
@@ -971,13 +972,13 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             </div>
           ) : null}
 
-          <div className="border border-orange-200 bg-orange-50 px-3 py-2 text-sm">
-            <span className="font-black uppercase tracking-wider text-phx-xs text-orange-700">
+          <div className="border border-l-4 border-slate-200 border-l-[#08111f] bg-slate-50 px-3 py-2 text-sm">
+            <span className="font-black uppercase tracking-wider text-phx-xs text-slate-500">
               {isBasketOrder
                 ? "Sales value (total)"
                 : `Sales value (${dealType === "discount" ? "public × (1−disc%)" : "bonus excluded"})`}
             </span>
-            <div className="text-lg font-black text-slate-900">{money(salesValue)}</div>
+            <div className="text-lg font-black tabular-nums text-[#08111f]">{money(salesValue)}</div>
             {isBasketOrder ? (
               // One row per line, so the requester can see each concentration was counted and what
               // it contributed. A line the server would refuse for a missing price says so here
@@ -1071,7 +1072,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   type="button"
                   onClick={() => setPharmacyMode(tab.mode)}
                   className={`px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider ${
-                    pharmacyMode === tab.mode ? "bg-orange-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                    pharmacyMode === tab.mode ? "bg-[#08111f] text-white" : "bg-white text-slate-500 hover:bg-slate-50"
                   }`}
                 >
                   {tab.label}
@@ -1087,7 +1088,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   // An empty list and a failed load must never read the same. One says "you have
                   // none yet"; the other says "we do not know", and only the second is a reason to
                   // go and search rather than trust the emptiness.
-                  <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-bold text-amber-800">
+                  <p className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2 text-phx-sm font-bold text-amber-800">
                     Your venues could not be loaded. Use Search before adding a new venue — do
                     not retype one you have ordered on before.
                   </p>
@@ -1110,7 +1111,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           type="button"
                           onClick={() => setPickedMine(pharmacy)}
                           className={`block w-full min-w-0 break-words border px-2.5 py-1.5 text-left ${
-                            chosen ? "border-emerald-400 bg-emerald-50" : "border-[#eef1f3] bg-white hover:bg-slate-50"
+                            chosen ? "border-[#08111f] bg-slate-50 shadow-[inset_3px_0_0_#08111f]" : "border-[#eef1f3] bg-white hover:bg-slate-50"
                           }`}
                         >
                           <span className="block break-words text-phx-md font-black text-slate-900" dir="auto">
@@ -1132,7 +1133,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               </div>
             ) : pharmacyMode === "picked" ? (
               pickedHit ? (
-                <div className="mt-1 border border-emerald-300 bg-emerald-50 px-3 py-2.5">
+                <div className="mt-1 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-3 py-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-phx-md font-black text-slate-900" dir="auto">
@@ -1152,7 +1153,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     </div>
                     <button
                       type="button"
-                      className="shrink-0 text-phx-sm font-bold text-orange-600 hover:text-orange-700"
+                      className="shrink-0 text-phx-sm font-bold text-[#08111f] underline-offset-2 hover:underline"
                       onClick={() => setPickedHit(null)}
                     >
                       Change
@@ -1173,7 +1174,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               )
             ) : (
               <div className="mt-1 space-y-2">
-                <div className="border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2">
                   <p className="text-phx-sm font-bold text-amber-800">
                     This venue is not in the master database, so the request will NOT enter the
                     approval flow until the venue is validated. Search first — most venues
@@ -1181,7 +1182,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </p>
                   <button
                     type="button"
-                    className="mt-1 text-phx-sm font-bold text-orange-600 hover:text-orange-700"
+                    className="mt-1 text-phx-sm font-bold text-[#08111f] underline-offset-2 hover:underline"
                     onClick={() => setPharmacyMode("picked")}
                   >
                     ← Back to search
@@ -1189,7 +1190,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 </div>
                 <div
                   className={
-                    unansweredVenueType ? "border border-orange-300 bg-orange-50/60 p-2" : "border border-[#eef1f3] p-2"
+                    unansweredVenueType ? "border border-l-4 border-slate-200 border-l-amber-500 p-2" : "border border-[#eef1f3] p-2"
                   }
                 >
                   <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">What is this? *</p>
@@ -1198,7 +1199,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       <button
                         className={
                           newVenueType === venueType
-                            ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-phx-sm font-black text-orange-700"
+                            ? "border border-transparent bg-[#08111f] px-2.5 py-1 text-phx-sm font-black text-white"
                             : `border border-[#eef1f3] bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
                         }
                         key={venueType}
@@ -1211,7 +1212,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </div>
                   {/* Three states, never two: unanswered says so, nursery explains itself, pharmacy is silent. */}
                   {!venueTypeIsAnswered(newVenueType) ? (
-                    <p className="mt-1 text-phx-xs font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
+                    <p className="mt-1 text-phx-xs font-bold text-amber-800">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
                   ) : venueRequiresDistributorCode(newVenueType) ? null : (
                     <p className="mt-1 text-phx-xs font-semibold text-slate-500">
                       A {venueTypeLabel(newVenueType).toLowerCase()} has no distributor account, so it has no
@@ -1265,8 +1266,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     (owner, 2026-08-13), because a name on its own does not identify a pharmacy —
                     that is precisely how two "حضانه زمزم" records ended up in D15. */}
                 {!nameMatchDismissed && preflight.nameMatches.length > 0 ? (
-                  <div className="border border-sky-300 bg-sky-50 px-3 py-2">
-                    <p className="text-phx-sm font-bold text-sky-800">
+                  <div className="border border-l-4 border-slate-200 border-l-sky-500 bg-white px-3 py-2">
+                    <p className="text-phx-sm font-bold text-slate-700">
                       Did you mean one of these? A venue with this name is already registered in
                       your region.
                     </p>
@@ -1274,7 +1275,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       {preflight.nameMatches.map((hit) => (
                         <div
                           key={`${hit.source}-${hit.phoenixPharmacyCode ?? ""}-${hit.distributorCode ?? ""}-${hit.customerCode ?? ""}`}
-                          className="flex items-start justify-between gap-2 border border-sky-200 bg-white px-2 py-1.5"
+                          className={`flex items-start justify-between gap-2 border border-slate-200 bg-slate-50 px-2 py-1.5 ${adminRecessedDepthClassName}`}
                         >
                           <div className="min-w-0">
                             <span className="block break-words text-phx-sm font-bold text-slate-800" dir="auto">
@@ -1292,7 +1293,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           </div>
                           <button
                             type="button"
-                            className="shrink-0 border border-sky-600 px-2 py-1 text-phx-sm font-black text-sky-700 hover:bg-sky-100"
+                            className={`shrink-0 border border-[#08111f] bg-white px-2 py-1 text-phx-sm font-black text-[#08111f] hover:bg-[#08111f] hover:text-white ${adminControlDepthClassName}`}
                             onClick={() => applySuggestedPharmacy(hit)}
                           >
                             Yes, this one
@@ -1345,7 +1346,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       }
                     />
                   ))}
-                  <button type="button" className="text-phx-sm font-bold text-orange-600 hover:text-orange-700" onClick={() => setDistRows((prev) => [...prev, { distributorCode: "", customerCode: "" }])}>
+                  <button type="button" className="text-phx-sm font-bold text-[#08111f] underline-offset-2 hover:underline" onClick={() => setDistRows((prev) => [...prev, { distributorCode: "", customerCode: "" }])}>
                     + Add distributor
                   </button>
                 </div>
@@ -1361,7 +1362,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     BOTH answers move her forward. There is no third outcome where she is simply
                     stuck. */}
                 {preflight.codeConflicts.length > 0 ? (
-                  <div className="border-2 border-rose-400 bg-rose-50 px-3 py-2.5">
+                  <div className="border border-l-4 border-slate-200 border-l-rose-500 bg-white px-3 py-2.5">
                     <p className="text-phx-sm font-black text-rose-800">
                       This distributor code already belongs to a registered pharmacy. Did you mean this
                       one?
@@ -1370,7 +1371,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       {preflight.codeConflicts.map((conflict) => (
                         <div
                           key={`${conflict.distributorCode}-${conflict.customerCode}`}
-                          className="border border-rose-200 bg-white px-2 py-1.5"
+                          className={`border border-slate-200 bg-slate-50 px-2 py-1.5 ${adminRecessedDepthClassName}`}
                         >
                           <div className="min-w-0">
                             <span className="block break-words text-phx-md font-black text-slate-900" dir="auto">
@@ -1420,7 +1421,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         the contested code, and the claim is recorded on the record for a System Admin
                         to settle. She is not blocked, and nothing is silently overwritten. */}
                     {acknowledgedCodeConflict ? (
-                      <p className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1.5 text-phx-xs font-bold text-amber-800">
+                      <p className="mt-1.5 border border-l-4 border-slate-200 border-l-amber-500 bg-white px-2 py-1.5 text-phx-xs font-bold text-amber-800">
                         Understood — your pharmacy will be registered WITHOUT this distributor code,
                         and the code dispute goes to a System Admin to settle. The order still submits
                         and still goes through the normal approval chain.
@@ -1481,7 +1482,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             type="button"
             onClick={submit}
             disabled={!readyToSubmit}
-            className="w-full bg-orange-500 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-60"
+            className={cn(phxButtonAccentClassName, "w-full justify-center py-2.5 font-black uppercase tracking-wider")}
           >
             {busy ? "Submitting…" : "Submit direct order"}
           </button>
@@ -1490,8 +1491,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
 
       {/* ── My requests ── */}
       <section className={adminPanelClassName}>
-        <header className="border-b border-phx-line bg-slate-100 px-4 py-2.5">
-          <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">My direct orders</h3>
+        <header className="border-b border-slate-200 bg-white px-4 py-2.5">
+          <LandingTitle as="h3">My direct orders</LandingTitle>
         </header>
         {myRequests.length === 0 ? (
           <p className="px-4 py-6 text-sm text-slate-500">You have not submitted any direct orders yet.</p>
@@ -1511,7 +1512,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <col className="w-[7%]" />
                 </colgroup>
                 <thead>
-                  <tr className="border-b border-phx-line bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                     <th className="px-3 py-2">Product</th>
                     <th className="px-3 py-2 text-right">Qty / bonus</th>
                     <th className="px-3 py-2 text-right">Value</th>
@@ -1534,7 +1535,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         <div className="mt-0.5 text-phx-xs text-slate-500">
                           {bonusCell(r)}
                           {r.bonusOverCap ? (
-                            <span className="ml-1 inline-block bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                            <span className="ml-1 inline-block border-l-2 border-rose-500 pl-1.5 text-phx-xs font-black uppercase tracking-wide text-rose-700">
                               over cap
                             </span>
                           ) : null}
@@ -1557,7 +1558,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       <td className="break-words px-3 py-2 text-right">
                         <Link
                           href={`${basePath}/${encodeURIComponent(r.id)}`}
-                          className="font-bold text-orange-600 hover:text-orange-700"
+                          className="font-bold text-[#08111f] underline-offset-2 hover:underline"
                         >
                           Track →
                         </Link>
@@ -1575,7 +1576,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               {myRequests.map((r) => (
                 <div
                   key={`${r.id}-mobile`}
-                  className="border border-[#eef1f3] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                  className={`border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -1595,7 +1596,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     <p className="text-slate-600">
                       Bonus: <span className="font-bold text-slate-900">{bonusCell(r)}</span>
                       {r.bonusOverCap ? (
-                        <span className="ml-1 inline-block bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                        <span className="ml-1 inline-block border-l-2 border-rose-500 pl-1.5 text-phx-xs font-black uppercase tracking-wide text-rose-700">
                           over cap
                         </span>
                       ) : null}
@@ -1609,7 +1610,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </p>
                   <Link
                     href={`${basePath}/${encodeURIComponent(r.id)}`}
-                    className="mt-2 inline-block text-phx-sm font-bold text-orange-600 hover:text-orange-700"
+                    className="mt-2 inline-block text-phx-sm font-bold text-[#08111f] underline-offset-2 hover:underline"
                   >
                     Track →
                   </Link>

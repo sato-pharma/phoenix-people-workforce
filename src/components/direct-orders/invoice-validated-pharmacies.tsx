@@ -7,6 +7,7 @@ import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidenc
 import type { DirectOrderInvoiceSlots } from "@/lib/direct-orders/pharmacy-validation";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 const cairo = (iso: string) =>
   iso
@@ -40,10 +41,10 @@ export function InvoiceValidatedPharmacies({ slots }: { slots: DirectOrderInvoic
           const isOpen = openId === pharmacy.pharmacyId;
           const state =
             pharmacy.status === "pending"
-              ? { tone: "bg-slate-100 text-slate-700", label: "Invoice waiting for review" }
+              ? { tone: "border-slate-400 text-slate-700", label: "Invoice waiting for review" }
               : pharmacy.fieldValidationPending
-                ? { tone: "bg-sky-100 text-sky-800", label: "Live photo sent — waiting for review" }
-                : { tone: "bg-emerald-100 text-emerald-800", label: "Confirmed on the invoice" };
+                ? { tone: "border-sky-500 text-sky-800", label: "Live photo sent — waiting for review" }
+                : { tone: "border-emerald-500 text-emerald-800", label: "Confirmed on the invoice" };
           const canConfirmInField = pharmacy.status !== "pending" && !pharmacy.fieldValidationPending;
           return (
             <li key={pharmacy.validationId} className="px-4 py-3">
@@ -52,7 +53,7 @@ export function InvoiceValidatedPharmacies({ slots }: { slots: DirectOrderInvoic
                   <p className="break-words text-sm font-black text-slate-900" dir="auto">{pharmacy.pharmacyName}</p>
                   <p className="text-phx-xs text-slate-500">Invoice sent {cairo(pharmacy.requestedAt)}</p>
                 </div>
-                <span className={`px-2 py-0.5 text-phx-xs font-black ${state.tone}`}>{state.label}</span>
+                <span className={`border-l-2 pl-1.5 text-phx-xs font-black leading-tight ${state.tone}`}>{state.label}</span>
               </div>
               {canConfirmInField ? (
                 <button
@@ -60,8 +61,8 @@ export function InvoiceValidatedPharmacies({ slots }: { slots: DirectOrderInvoic
                   onClick={() => setOpenId(isOpen ? null : pharmacy.pharmacyId)}
                   className={
                     isOpen
-                      ? "mt-2 border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-                      : "mt-2 bg-orange-500 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600"
+                      ? landingActionClassName("outline", "mt-2")
+                      : landingActionClassName("solid", "mt-2")
                   }
                 >
                   {isOpen ? "Close" : "Validate with a live photo and location"}

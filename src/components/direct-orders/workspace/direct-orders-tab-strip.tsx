@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import type { DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
 import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
 
 /**
  * What each tab is CALLED. Lives here, with the strip that renders it, so the workspace and the
@@ -50,11 +51,15 @@ export function DirectOrdersTabStrip({
   activeTab: DirectOrderWorkspaceTabKey | null;
   basePath: string;
   needsActionCount?: number;
-  /** Portal shell is rounded, admin is square — the one visual difference between the two. */
+  /**
+   * True on the portal shell. The name is historical (the portal strip used to be rounded); both
+   * shells are square now, and on the portal the chosen tab is night navy with the landing focus ring.
+   */
   rounded?: boolean;
 }) {
   if (tabs.length === 0) return null;
-  const control = rounded ? "rounded-lg" : "";
+  const portal = rounded;
+  const control = portal ? `motion-reduce:transition-none ${LANDING_FOCUS}` : "";
   return (
     // The tabs WRAP onto a second row rather than scroll sideways (fits-the-screen golden rule).
     <div className={`inline-flex max-w-full flex-wrap border border-slate-300 bg-white p-1 ${adminRecessedDepthClassName} ${control}`} role="tablist">
@@ -67,12 +72,12 @@ export function DirectOrdersTabStrip({
             role="tab"
             aria-selected={active}
             className={`min-h-[40px] px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control} ${
-              active ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
+              active ? (portal ? "bg-[#08111f] text-white" : "bg-slate-900 text-white") : "text-slate-500 hover:bg-slate-100"
             }`}
           >
             {TAB_LABEL[key]}
             {key === "needs-action" && needsActionCount > 0 ? (
-              <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-phx-warn px-1 text-phx-2xs text-white">
+              <span className="ml-1.5 inline-flex min-w-[18px] justify-center bg-phx-warn px-1 text-phx-xs text-white">
                 {needsActionCount}
               </span>
             ) : null}

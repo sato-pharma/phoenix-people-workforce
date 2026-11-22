@@ -24,6 +24,7 @@ import {
   SpecialtyMixPanel,
 } from "./concentration.client";
 import { cn } from "@/lib/utils";
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
 import { figureWindowLabel, hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
 import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
@@ -166,12 +167,13 @@ const Ach = ({ value }: { value: number | null }) => (
   <span className={cn("font-black tabular-nums", achClass(value))}>{pct(value)}</span>
 );
 
+/** A band's colour: coloured small capitals on a 2px rail (the landing kit), never a tinted pill. */
 const BAND_STYLE: Record<string, string> = {
-  elite: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  "not-eligible": "border-slate-200 bg-slate-50 text-slate-500",
-  "on-target": "border-sky-200 bg-sky-50 text-sky-700",
-  "over-achiever": "border-teal-200 bg-teal-50 text-teal-700",
-  threshold: "border-amber-200 bg-amber-50 text-amber-700",
+  elite: "border-emerald-500 text-emerald-700",
+  "not-eligible": "border-slate-300 text-slate-500",
+  "on-target": "border-sky-500 text-sky-700",
+  "over-achiever": "border-teal-500 text-teal-700",
+  threshold: "border-amber-500 text-amber-700",
 };
 const BAND_TEXT: Record<string, string> = {
   elite: "Elite 150%+",
@@ -198,7 +200,7 @@ const BAND_TEXT: Record<string, string> = {
 const Band = ({ band }: { band: string }) => (
   <span
     className={cn(
-      "inline-flex rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
+      "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-black uppercase leading-tight tracking-[0.04em]",
       BAND_STYLE[band] ?? BAND_STYLE["not-eligible"],
     )}
   >
@@ -208,22 +210,22 @@ const Band = ({ band }: { band: string }) => (
 const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "rose" }) => (
   <span
     className={cn(
-      "inline-flex rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
-      tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500",
+      "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-black uppercase leading-tight tracking-[0.04em]",
+      tone === "rose" ? "border-rose-500 text-rose-700" : "border-slate-300 text-slate-500",
     )}
   >
     {children}
   </span>
 );
 
-const TH = "break-words px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const TH = "break-words px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500";
 const THR = `${TH} text-right`;
 const TD = "break-words px-3 py-1.5 text-sm font-semibold leading-tight text-slate-800";
 const TDR = `${TD} text-right tabular-nums`;
 const HEAD = "border-b border-slate-200 bg-slate-50/70";
 const ROW = "border-b border-slate-100 last:border-0";
-const FIELD = "rounded border border-slate-100 bg-slate-50 px-2.5 py-2";
-const FIELD_LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400";
+const FIELD = "border border-slate-100 bg-slate-50 px-2.5 py-2";
+const FIELD_LABEL = "text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500";
 
 const TABS = [
   { id: "performance", label: "Performance" },
@@ -274,7 +276,7 @@ function LongList({ children, count, label }: { children: React.ReactNode; count
         <span className="min-w-0 break-words text-sm font-bold text-slate-900">
           {num(count)} {label} — folded to keep this page readable
         </span>
-        <span className="shrink-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">
+        <span className="shrink-0 whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-[#08111f]">
           <span className="group-open:hidden">Show all</span>
           <span className="hidden group-open:inline">Hide</span>
         </span>
@@ -406,13 +408,13 @@ export function BusinessReviewPortal({
     <div className={cn(portalSubtlePanelClassName, "space-y-3 p-4")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">My scope · read-only</p>
-          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-xl">{headline}</h2>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">My scope · read-only</p>
+          <h2 className="mt-1 text-lg font-black tracking-tight text-[#08111f] sm:text-xl">{headline}</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">
             {scopeLabel} · {num(areas.length)} area{areas.length === 1 ? "" : "s"} · ≥90% earns
           </p>
         </div>
-        <label className="flex shrink-0 items-center gap-2.5 rounded border border-slate-200 bg-white px-3 py-2">
+        <label className="flex shrink-0 items-center gap-2.5 border border-slate-200 bg-white px-3 py-2">
           <Switch checked={excludeVacant} label="Hide vacant and resigned" onChange={setExcludeVacant} />
           <span className="whitespace-nowrap text-sm font-bold text-slate-700">Hide vacant and resigned</span>
         </label>
@@ -446,9 +448,10 @@ export function BusinessReviewPortal({
     <div className="space-y-4">
       {header}
 
-      <div className="flex items-start gap-2.5 rounded border border-amber-200 bg-amber-50 p-4">
+      <div className="flex items-start gap-2.5 border border-slate-200 bg-white py-3 pr-4">
+        <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-500" />
         <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-        <p className="text-xs font-semibold leading-5 text-amber-900">{restatementNotice}</p>
+        <p className="text-phx-sm font-semibold leading-5 text-slate-600">{restatementNotice}</p>
       </div>
 
       <CoverageBanner coverage={coverage} />
@@ -486,8 +489,9 @@ export function BusinessReviewPortal({
         {TABS.map((t) => (
           <button
             className={cn(
-              "flex-1 whitespace-nowrap rounded px-3 py-2 text-sm font-bold transition",
-              tab === t.id ? "bg-white text-slate-950 shadow-[0_1px_3px_rgba(15,23,42,0.12)]" : "text-slate-500 hover:text-slate-800",
+              "min-h-10 flex-1 whitespace-nowrap px-3 py-2 text-sm font-bold transition motion-reduce:transition-none",
+              LANDING_FOCUS,
+              tab === t.id ? "bg-[#08111f] text-white" : "text-slate-500 hover:bg-white hover:text-[#08111f]",
             )}
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -724,7 +728,7 @@ export function BusinessReviewPortal({
                   {keyProducts.length > 0 ? (
                     <dl className="mt-2 grid grid-cols-2 gap-2">
                       {keyProducts.map((product) => (
-                        <div className="rounded border border-slate-100 bg-white px-2.5 py-2" key={product}>
+                        <div className="border border-slate-100 bg-white px-2.5 py-2" key={product}>
                           <dt className={cn(FIELD_LABEL, "break-words")}>{product}</dt>
                           <dd className="mt-0.5">
                             <Ach value={row.products?.[product]?.ach ?? null} />
@@ -1038,7 +1042,7 @@ export function BusinessReviewPortal({
                   <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.area}</h3>
                   <dl className="mt-2 grid grid-cols-3 gap-2">
                     {months.map((month, index) => (
-                      <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5" key={month}>
+                      <div className="border border-slate-100 bg-slate-50 px-2 py-1.5" key={month}>
                         <dt className={FIELD_LABEL}>{periodColumnLabel(month, months)}</dt>
                         <dd
                           className={cn(

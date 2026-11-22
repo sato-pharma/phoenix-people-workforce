@@ -22,6 +22,8 @@ import {
 
 import { Conversation } from "@/components/market-awareness/market-awareness-conversation";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LandingTitle, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -147,12 +149,13 @@ const STATUS: Record<string, { label: string; tone: "neutral" | "live" | "good" 
   withdrawn: { label: "Withdrawn", tone: "neutral" },
 };
 
+/** A status's colour: coloured small capitals on a 2px rail (the landing kit), never a filled pill. */
 const TONE_CLASS: Record<string, string> = {
-  neutral: "border-phx-line bg-phx-paper-2 text-phx-ink-soft",
-  live: "border-phx-accent-line bg-phx-accent-soft text-phx-accent-press",
-  good: "border-phx-ok-line bg-phx-ok-bg text-phx-ok",
-  warn: "border-phx-warn-line bg-phx-warn-bg text-phx-warn",
-  bad: "border-phx-danger-line bg-phx-danger-bg text-phx-danger",
+  neutral: "border-slate-300 text-slate-600",
+  live: "border-[#08111f] text-[#08111f]",
+  good: "border-emerald-500 text-emerald-700",
+  warn: "border-amber-500 text-amber-700",
+  bad: "border-rose-500 text-rose-700",
 };
 
 function money(amount: number | null | undefined, currency = "EGP"): string {
@@ -204,7 +207,7 @@ function activityName(activity: Activity): string {
 /** The uppercase hairline label that sits above every value on the page. */
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="block text-phx-3xs font-bold uppercase tracking-[0.14em] text-phx-ink-faint">
+    <span className="block text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
       {children}
     </span>
   );
@@ -214,17 +217,17 @@ function StatusChip({ status }: { status: string }) {
   const entry = STATUS[status] ?? { label: status, tone: "neutral" as const };
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 border px-2 py-1 text-phx-3xs font-black uppercase tracking-[0.10em] ${TONE_CLASS[entry.tone]}`}
+      className={`inline-flex max-w-full shrink-0 items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em] ${TONE_CLASS[entry.tone]}`}
     >
-      <span aria-hidden="true" className="h-1.5 w-1.5 bg-current" />
       {entry.label}
     </span>
   );
 }
 
 /**
- * A panel. The 2px accent rail down the left is the only decoration on the page — it is what makes
- * a stack of sections read as one document rather than as a pile of boxes.
+ * A panel — the employee-portal landing kit's white sheet: a hairline, the platform's soft depth
+ * token, and a header that is the orange tick and the title in navy capitals. The kicker that used
+ * to sit above the title reads as a small-capital label on the header's right.
  */
 function Panel({
   children,
@@ -238,18 +241,17 @@ function Panel({
   action?: React.ReactNode;
 }) {
   return (
-    <section className="relative min-w-0 border border-phx-line bg-phx-paper">
-      <span aria-hidden="true" className="absolute left-0 top-0 h-full w-[2px] bg-phx-accent" />
-      <header className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 pl-5 sm:px-5 sm:pl-6">
-        <div className="min-w-0">
-          {kicker ? <MicroLabel>{kicker}</MicroLabel> : null}
-          <h2 className="break-words text-phx-sm font-black uppercase tracking-[0.08em] text-phx-ink">
-            {title}
-          </h2>
-        </div>
-        {action}
+    <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 px-3 py-2.5 sm:px-4">
+        <LandingTitle>{title}</LandingTitle>
+        {kicker || action ? (
+          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+            {kicker ? <MicroLabel>{kicker}</MicroLabel> : null}
+            {action}
+          </div>
+        ) : null}
       </header>
-      <div className="min-w-0 p-4 pl-5 sm:p-5 sm:pl-6">{children}</div>
+      <div className="min-w-0 p-3 sm:p-4">{children}</div>
     </section>
   );
 }
@@ -269,16 +271,17 @@ function StatTile({
   tone?: "neutral" | "accent";
 }) {
   return (
-    <div className="min-w-0 border border-phx-line bg-phx-paper p-3 sm:p-4">
+    <div className={`min-w-0 border border-slate-200 bg-white p-3 sm:p-4 ${adminSoftDepthClassName}`}>
       <div className="flex min-w-0 items-center gap-2">
         <Icon
-          className={`h-3.5 w-3.5 shrink-0 ${tone === "accent" ? "text-phx-accent" : "text-phx-ink-faint"}`}
+          aria-hidden="true"
+          className={`h-3.5 w-3.5 shrink-0 ${tone === "accent" ? "text-[#08111f]" : "text-slate-400"}`}
         />
         <MicroLabel>{label}</MicroLabel>
       </div>
-      <p className="mt-2 break-words text-phx-xl font-black leading-none text-phx-ink">{value}</p>
+      <p className="mt-2 break-words text-[28px] font-bold leading-none tracking-[-0.02em] tabular-nums text-[#08111f]">{value}</p>
       {hint ? (
-        <p className="mt-1.5 break-words text-phx-3xs font-medium text-phx-ink-faint">{hint}</p>
+        <p className="mt-1.5 break-words text-phx-xs font-medium text-slate-500">{hint}</p>
       ) : null}
     </div>
   );
@@ -294,10 +297,10 @@ function EmptyState({
   icon: typeof Sparkles;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-center gap-2 border border-dashed border-phx-line bg-phx-paper-2 px-4 py-10 text-center">
-      <Icon className="h-6 w-6 shrink-0 text-phx-ink-faint" />
-      <p className="break-words text-phx-sm font-black text-phx-ink">{title}</p>
-      <p className="max-w-md break-words text-phx-xs font-medium text-phx-ink-soft">{body}</p>
+    <div className="flex min-w-0 flex-col items-center gap-2 border border-slate-200 bg-white px-4 py-10 text-center">
+      <Icon aria-hidden="true" className="h-6 w-6 shrink-0 text-slate-400" />
+      <p className="break-words text-phx-sm font-black text-[#08111f]">{title}</p>
+      <p className="max-w-md break-words text-phx-xs font-medium text-slate-600">{body}</p>
     </div>
   );
 }
@@ -307,32 +310,29 @@ function SkeletonRows({ rows = 3 }: { rows?: number }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {Array.from({ length: rows }).map((_, index) => (
-        <div className="h-12 w-full animate-pulse border border-phx-line bg-phx-paper-2" key={index} />
+        <div aria-hidden="true" className="employee-portal-skeleton h-12 w-full" key={index} />
       ))}
     </div>
   );
 }
 
 function Notice({ tone, children }: { tone: "info" | "warn" | "good"; children: React.ReactNode }) {
-  const cls =
-    tone === "warn"
-      ? "border-phx-warn-line bg-phx-warn-bg text-phx-warn"
-      : tone === "good"
-        ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
-        : "border-phx-info-line bg-phx-info-bg text-phx-info";
+  // The landing kit's rail line: the tone on a 4px rail at the left, the words slate, no tinted box.
+  const rail = tone === "warn" ? "bg-amber-500" : tone === "good" ? "bg-emerald-500" : "bg-sky-500";
+  const icon = tone === "warn" ? "text-amber-600" : tone === "good" ? "text-emerald-600" : "text-sky-600";
   return (
-    <div className={`flex min-w-0 items-start gap-2 border px-3 py-2.5 ${cls}`}>
-      <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <p className="min-w-0 break-words text-phx-xs font-bold">{children}</p>
+    <div className="flex min-w-0 items-start gap-2.5 border border-slate-200 bg-white py-2.5 pr-3">
+      <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${rail}`} />
+      <TriangleAlert aria-hidden="true" className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${icon}`} />
+      <p className="min-w-0 break-words text-phx-xs font-bold text-slate-600">{children}</p>
     </div>
   );
 }
 
-const INPUT = cn(phxSelectClassName, "w-full px-3 text-phx-sm disabled:text-phx-ink-faint");
-const BTN_PRIMARY =
-  "inline-flex items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-accent-ink transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60";
-const BTN_QUIET =
-  "inline-flex items-center justify-center gap-2 border border-phx-line bg-phx-paper px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft transition hover:border-phx-line-strong hover:text-phx-ink";
+const INPUT = cn(phxSelectClassName, "w-full px-3 text-phx-sm disabled:text-slate-500");
+/** The landing kit's action shapes: navy solid for the one primary action, navy outline otherwise. */
+const BTN_PRIMARY = landingActionClassName("solid", "px-4 disabled:cursor-not-allowed");
+const BTN_QUIET = landingActionClassName("outline", "bg-white disabled:cursor-not-allowed");
 
 function Field({
   children,
@@ -350,14 +350,14 @@ function Field({
       <span className="mb-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <MicroLabel>{label}</MicroLabel>
         {required ? (
-          <span className="text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent">
+          <span className="text-phx-xs font-black uppercase tracking-[0.10em] text-[#08111f]">
             Required
           </span>
         ) : null}
       </span>
       {children}
       {hint ? (
-        <span className="mt-1.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
+        <span className="mt-1.5 block break-words text-phx-xs font-medium text-slate-500">
           {hint}
         </span>
       ) : null}
@@ -430,7 +430,7 @@ function TrackingChart({
         {baselineCount > 0 && baselineCount < periods.length ? (
           <g>
             <line
-              stroke="var(--phx-accent)"
+              stroke="#08111f"
               strokeDasharray="3 3"
               strokeWidth={1.5}
               x1={padLeft + slot * baselineCount}
@@ -439,7 +439,7 @@ function TrackingChart({
               y2={padTop + plotH}
             />
             <text
-              fill="var(--phx-accent)"
+              fill="#08111f"
               fontSize={8.5}
               fontWeight={800}
               letterSpacing="1.4"
@@ -472,7 +472,7 @@ function TrackingChart({
               />
               {/* Brick: the subject. Accent inside the window, faint ink outside it. */}
               <rect
-                fill={inWindow ? "var(--phx-accent)" : "var(--phx-ink-faint)"}
+                fill={inWindow ? "#08111f" : "var(--phx-ink-faint)"}
                 height={Math.max(0, padTop + plotH - y(brickV))}
                 width={barW}
                 x={brickX}
@@ -480,7 +480,7 @@ function TrackingChart({
               />
               {brickV > 0 ? (
                 <text
-                  fill={inWindow ? "var(--phx-accent-press)" : "var(--phx-ink-faint)"}
+                  fill={inWindow ? "#08111f" : "var(--phx-ink-faint)"}
                   fontSize={8}
                   fontWeight={800}
                   textAnchor="middle"
@@ -517,7 +517,7 @@ function TrackingChart({
 
       <figcaption className="mt-3 flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2">
         {[
-          { fill: "var(--phx-accent)", label: "Brick, in the window" },
+          { fill: "#08111f", label: "Brick, in the window" },
           { fill: "var(--phx-ink-faint)", label: "Brick, baseline" },
           { fill: "var(--phx-line-strong)", label: "Whole area" },
         ].map((entry) => (
@@ -527,7 +527,7 @@ function TrackingChart({
               className="h-2.5 w-2.5 shrink-0"
               style={{ backgroundColor: entry.fill }}
             />
-            <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-soft">
+            <span className="break-words text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-600">
               {entry.label}
             </span>
           </span>
@@ -545,21 +545,21 @@ function DeltaBlock({ after, before, label }: { after: number; before: number; l
   const Icon = up ? TrendingUp : TrendingDown;
 
   return (
-    <div className="min-w-0 border border-phx-line bg-phx-paper p-4">
+    <div className="min-w-0 border border-slate-200 bg-white p-4">
       <MicroLabel>{label}</MicroLabel>
       <div className="mt-3 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="break-words text-phx-md font-bold text-phx-ink-faint">{money(before)}</span>
-        <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
-        <span className="break-words text-phx-xl font-black leading-none text-phx-ink">
+        <span className="break-words text-phx-md font-bold text-slate-500">{money(before)}</span>
+        <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+        <span className="break-words text-phx-xl font-black leading-none text-[#08111f]">
           {money(after)}
         </span>
       </div>
       <p className="mt-2.5 inline-flex min-w-0 items-center gap-1.5">
         <Icon
           aria-hidden="true"
-          className={`h-3.5 w-3.5 shrink-0 ${up ? "text-phx-ok" : "text-phx-danger"}`}
+          className={`h-3.5 w-3.5 shrink-0 ${up ? "text-emerald-600" : "text-rose-600"}`}
         />
-        <span className={`break-words text-phx-sm font-black ${up ? "text-phx-ok" : "text-phx-danger"}`}>
+        <span className={`break-words text-phx-sm font-black tabular-nums ${up ? "text-emerald-700" : "text-rose-700"}`}>
           {hasBaseline ? `${up ? "+" : ""}${pct.toFixed(1)}%` : "No baseline to compare"}
         </span>
       </p>
@@ -711,7 +711,7 @@ export function MarketAwarenessWorkspace({ canCreate, seesAll = false }: { canCr
       </div>
 
       {/* Tabs as an underline rail. A pill row would need round corners. */}
-      <nav aria-label="Market Awareness sections" className="flex min-w-0 border-b border-phx-line">
+      <nav aria-label="Market Awareness sections" className="flex min-w-0 border-b border-slate-200">
         {(
           [
             { icon: ClipboardList, key: "request" as const, label: "Request" },
@@ -723,10 +723,10 @@ export function MarketAwarenessWorkspace({ canCreate, seesAll = false }: { canCr
           return (
             <button
               aria-current={active ? "page" : undefined}
-              className={`-mb-px inline-flex min-w-0 items-center justify-center gap-2 border-b-2 px-4 py-3 text-phx-xs font-black uppercase tracking-[0.10em] transition sm:px-6 ${
+              className={`-mb-px inline-flex min-h-10 min-w-0 items-center justify-center gap-2 border-b-2 px-4 py-3 text-phx-xs font-black uppercase tracking-[0.10em] transition motion-reduce:transition-none sm:px-6 ${LANDING_FOCUS} ${
                 active
-                  ? "border-phx-accent text-phx-accent-press"
-                  : "border-transparent text-phx-ink-faint hover:text-phx-ink"
+                  ? "border-[#08111f] text-[#08111f]"
+                  : "border-transparent text-slate-500 hover:text-[#08111f]"
               }`}
               key={entry.key}
               onClick={() => setTab(entry.key)}
@@ -845,10 +845,10 @@ function RequestTab({
                 <col style={{ width: "13%" }} />
               </colgroup>
               <thead>
-                <tr className="border-b border-phx-line-strong">
+                <tr className="border-b border-slate-300">
                   {["Activity", "Line", "Where", "Starts", "Value", "Status"].map((heading) => (
                     <th
-                      className="px-2 py-2.5 text-left text-phx-3xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint"
+                      className="px-2 py-2.5 text-left text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500"
                       key={heading}
                       scope="col"
                     >
@@ -860,37 +860,37 @@ function RequestTab({
               <tbody>
                 {activities.map((activity) => (
                   <tr
-                    className="cursor-pointer border-b border-phx-line align-top transition hover:bg-phx-accent-soft"
+                    className="cursor-pointer border-b border-slate-200 align-top transition hover:bg-slate-50"
                     key={activity.id}
                     onClick={() => onTrack(activity.id)}
                   >
                     <td className="break-words px-2 py-3">
-                      <span className="block break-words text-phx-sm font-black text-phx-ink">
+                      <span className="block break-words text-phx-sm font-black text-[#08111f]">
                         {activityName(activity)}
                       </span>
                     </td>
-                    <td className="break-words px-2 py-3 text-phx-xs font-bold text-phx-ink-soft">
+                    <td className="break-words px-2 py-3 text-phx-xs font-bold text-slate-600">
                       {activity.primaryLine.name}
                     </td>
                     <td className="break-words px-2 py-3">
-                      <span className="block break-words text-phx-xs font-bold text-phx-ink-soft">
+                      <span className="block break-words text-phx-xs font-bold text-slate-600">
                         {activity.areaName ?? "—"}
                       </span>
-                      <span className="mt-0.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
+                      <span className="mt-0.5 block break-words text-phx-xs font-medium text-slate-500">
                         {activity.regionName ?? ""}
                       </span>
                     </td>
-                    <td className="break-words px-2 py-3 text-phx-xs font-bold text-phx-ink-soft">
+                    <td className="break-words px-2 py-3 text-phx-xs font-bold text-slate-600">
                       {cairoDate(activity.startDate)}
                     </td>
-                    <td className="break-words px-2 py-3 text-phx-xs font-black text-phx-ink">
+                    <td className="break-words px-2 py-3 text-phx-xs font-black text-[#08111f]">
                       {money(activity.approvedCost ?? activity.estimatedCost, activity.currency)}
                     </td>
                     <td className="px-2 py-3">
                       <StatusChip status={activity.status} />
                       {["draft", "returned"].includes(activity.status) ? (
                         <button
-                          className="mt-1.5 inline-flex items-center gap-1.5 border border-phx-accent bg-phx-accent px-2 py-1 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-ink transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                          className="mt-1.5 inline-flex items-center gap-1.5 border border-[#08111f] bg-[#08111f] px-2 py-1 text-phx-xs font-black uppercase tracking-[0.10em] text-white transition hover:bg-[#13233a] disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={busyId === activity.id}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -913,19 +913,19 @@ function RequestTab({
               {activities.map((activity) => (
                 <li className="min-w-0" key={activity.id}>
                   <button
-                    className="flex w-full min-w-0 flex-col gap-2 border border-phx-line bg-phx-paper p-3.5 text-left transition hover:border-phx-accent-line"
+                    className="flex w-full min-w-0 flex-col gap-2 border border-slate-200 bg-white p-3.5 text-left transition hover:border-[#08111f]"
                     onClick={() => onTrack(activity.id)}
                     type="button"
                   >
                     <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                      <span className="min-w-0 break-words text-phx-sm font-black text-phx-ink">
+                      <span className="min-w-0 break-words text-phx-sm font-black text-[#08111f]">
                         {activityName(activity)}
                       </span>
                       <StatusChip status={activity.status} />
                     </span>
                     {["draft", "returned"].includes(activity.status) ? (
                       <span
-                        className="inline-flex w-fit items-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1.5 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-ink"
+                        className="inline-flex w-fit items-center gap-1.5 border border-[#08111f] bg-[#08111f] px-2.5 py-1.5 text-phx-xs font-black uppercase tracking-[0.10em] text-white"
                         onClick={(event) => {
                           event.stopPropagation();
                           onSubmitActivity(activity.id);
@@ -937,21 +937,21 @@ function RequestTab({
                         <span>{busyId === activity.id ? "Sending" : "Submit for approval"}</span>
                       </span>
                     ) : null}
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-phx-line pt-2">
-                      <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
-                        <MapPin aria-hidden="true" className="h-3 w-3 shrink-0 text-phx-ink-faint" />
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-200 pt-2">
+                      <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-xs font-bold text-slate-600">
+                        <MapPin aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-500" />
                         <span className="break-words">
                           {activity.areaName ? `${activity.areaName} · ` : ""}{activity.primaryLine.name}
                         </span>
                       </span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
+                      <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-xs font-bold text-slate-600">
                         <CalendarRange
                           aria-hidden="true"
-                          className="h-3 w-3 shrink-0 text-phx-ink-faint"
+                          className="h-3 w-3 shrink-0 text-slate-500"
                         />
                         <span className="break-words">{cairoDate(activity.startDate)}</span>
                       </span>
-                      <span className="break-words text-phx-2xs font-black text-phx-ink">
+                      <span className="break-words text-phx-xs font-black text-[#08111f]">
                         {money(activity.approvedCost ?? activity.estimatedCost, activity.currency)}
                       </span>
                     </span>
@@ -1065,10 +1065,10 @@ function TrackingTab({
                       <col style={{ width: "33%" }} />
                     </colgroup>
                     <thead>
-                      <tr className="border-b border-phx-line-strong">
+                      <tr className="border-b border-slate-300">
                         {["Month", "Brick", "Area"].map((heading) => (
                           <th
-                            className="px-2 py-2 text-left text-phx-3xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint"
+                            className="px-2 py-2 text-left text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500"
                             key={heading}
                             scope="col"
                           >
@@ -1082,21 +1082,21 @@ function TrackingTab({
                         const inWindow = index >= cut;
                         return (
                           <tr
-                            className={`border-b border-phx-line ${inWindow ? "bg-phx-accent-soft" : ""}`}
+                            className={`border-b border-slate-200 ${inWindow ? "bg-slate-50" : ""}`}
                             key={period}
                           >
                             <td className="break-words px-2 py-2">
-                              <span className="block break-words text-phx-xs font-bold text-phx-ink">
+                              <span className="block break-words text-phx-xs font-bold text-[#08111f]">
                                 {monthYearLabel(period)}
                               </span>
-                              <span className="mt-0.5 block text-phx-3xs font-medium text-phx-ink-faint">
+                              <span className="mt-0.5 block text-phx-xs font-medium text-slate-500">
                                 {inWindow ? "In the window" : "Baseline"}
                               </span>
                             </td>
-                            <td className="break-words px-2 py-2 text-phx-xs font-black text-phx-ink">
+                            <td className="break-words px-2 py-2 text-phx-xs font-black text-[#08111f]">
                               {money(series.brick[index]?.totalValue ?? 0)}
                             </td>
-                            <td className="break-words px-2 py-2 text-phx-xs font-bold text-phx-ink-soft">
+                            <td className="break-words px-2 py-2 text-phx-xs font-bold text-slate-600">
                               {money(series.area[index]?.totalValue ?? 0)}
                             </td>
                           </tr>
@@ -1118,8 +1118,8 @@ function TrackingTab({
             </Notice>
           ) : (
             <p className="inline-flex min-w-0 items-center gap-2">
-              <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-phx-ok" />
-              <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+              <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              <span className="break-words text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
                 Every month reconciles against the published Monthly Closing
               </span>
             </p>
@@ -1149,7 +1149,7 @@ function ActivitySummary({ activity }: { activity: Activity }) {
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusChip status={activity.status} />
           {activity.expectedUpliftPct !== null ? (
-            <span className="border border-phx-line bg-phx-paper-2 px-2 py-1 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-ink-soft">
+            <span className="border border-slate-200 bg-white px-2 py-1 text-phx-xs font-black uppercase tracking-[0.10em] text-slate-600">
               {`Expected uplift ${activity.expectedUpliftPct}%`}
             </span>
           ) : null}
@@ -1157,18 +1157,18 @@ function ActivitySummary({ activity }: { activity: Activity }) {
 
         <dl className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {facts.map(([label, value]) => (
-            <div className="min-w-0 border border-phx-line bg-phx-paper-2 px-3 py-2.5" key={label}>
+            <div className="min-w-0 border border-slate-200 bg-white px-3 py-2.5" key={label}>
               <dt>
                 <MicroLabel>{label}</MicroLabel>
               </dt>
-              <dd className="mt-1 break-words text-phx-sm font-black text-phx-ink">{value}</dd>
+              <dd className="mt-1 break-words text-phx-sm font-black text-[#08111f]">{value}</dd>
             </div>
           ))}
         </dl>
 
-        <div className="min-w-0 border border-phx-line bg-phx-paper-2 px-3 py-2.5">
+        <div className="min-w-0 border border-slate-200 bg-white px-3 py-2.5">
           <MicroLabel>Targeted products</MicroLabel>
-          <p className="mt-1 break-words text-phx-xs font-bold text-phx-ink">
+          <p className="mt-1 break-words text-phx-xs font-bold text-[#08111f]">
             {activity.products.map((p) => p.productName ?? p.productCode).join(" · ") || "None"}
           </p>
         </div>
@@ -1185,8 +1185,8 @@ function ActivitySummary({ activity }: { activity: Activity }) {
           </Notice>
         ) : activity.rep.name ? (
           <p className="inline-flex min-w-0 items-center gap-2">
-            <UserRound aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
-            <span className="break-words text-phx-2xs font-bold text-phx-ink-soft">
+            <UserRound aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+            <span className="break-words text-phx-xs font-bold text-slate-600">
               {`Medical rep: ${activity.rep.name}`}
             </span>
           </p>
@@ -1198,20 +1198,20 @@ function ActivitySummary({ activity }: { activity: Activity }) {
             <ol className="mt-2 flex min-w-0 flex-col gap-2">
               {activity.decisions.map((decision) => (
                 <li
-                  className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 border-l-2 border-phx-line pl-3"
+                  className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 border-l-2 border-slate-200 pl-3"
                   key={decision.id}
                 >
-                  <span className="break-words text-phx-xs font-black text-phx-ink">
+                  <span className="break-words text-phx-xs font-black text-[#08111f]">
                     {decision.actorName ?? "Unknown"}
                   </span>
-                  <span className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-600">
                     {decision.action}
                   </span>
-                  <span className="text-phx-3xs font-medium text-phx-ink-faint">
+                  <span className="text-phx-xs font-medium text-slate-500">
                     {cairoDate(decision.createdAt)}
                   </span>
                   {decision.comment ? (
-                    <span className="block w-full break-words text-phx-2xs font-medium text-phx-ink-soft">
+                    <span className="block w-full break-words text-phx-xs font-medium text-slate-600">
                       {decision.comment}
                     </span>
                   ) : null}
@@ -1249,11 +1249,9 @@ function FormSection({
 }) {
   return (
     <section className="min-w-0">
-      <div className="mb-3 flex min-w-0 items-center gap-2.5 border-b border-phx-line pb-2">
-        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center border border-phx-accent bg-phx-accent text-phx-3xs font-black text-phx-accent-ink">
-          {step}
-        </span>
-        <h3 className="break-words text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink">
+      <div className="mb-3 flex min-w-0 items-center gap-2.5 border-b border-slate-200 pb-2">
+        <span className="shrink-0 text-phx-xs font-black tabular-nums text-slate-400">{step}</span>
+        <h3 className="break-words text-phx-xs font-black uppercase tracking-[0.10em] text-[#08111f]">
           {title}
         </h3>
       </div>
@@ -1303,7 +1301,7 @@ function MultiSelectList<T>({
 
   if (disabled) {
     return (
-      <p className="border border-phx-line bg-phx-paper-2 px-3 py-3 text-phx-xs font-bold text-phx-ink-faint">
+      <p className="border border-slate-200 bg-white px-3 py-3 text-phx-xs font-bold text-slate-500">
         {emptyText}
       </p>
     );
@@ -1311,30 +1309,30 @@ function MultiSelectList<T>({
 
   if (items.length === 0) {
     return (
-      <p className="border border-phx-line bg-phx-paper-2 px-3 py-3 text-phx-xs font-bold text-phx-ink-faint">
+      <p className="border border-slate-200 bg-white px-3 py-3 text-phx-xs font-bold text-slate-500">
         {emptyText}
       </p>
     );
   }
 
   return (
-    <div className="min-w-0 border border-phx-line bg-phx-paper">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-phx-paper-2 px-3 py-2">
-        <span className="text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+    <div className="min-w-0 border border-slate-200 bg-white">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
+        <span className="text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
           {selected.length === 0
             ? `${items.length} available`
             : `${selected.length} of ${items.length} chosen`}
         </span>
         <span className="flex flex-wrap gap-2">
           <button
-            className="text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent transition hover:text-phx-accent-press"
+            className="text-phx-xs font-black uppercase tracking-[0.10em] text-[#08111f] transition hover:underline"
             onClick={() => onChange(items.map(keyOf))}
             type="button"
           >
             Select all
           </button>
           <button
-            className="text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-ink-faint transition hover:text-phx-ink"
+            className="text-phx-xs font-black uppercase tracking-[0.10em] text-slate-500 transition hover:text-[#08111f]"
             onClick={() => onChange([])}
             type="button"
           >
@@ -1349,8 +1347,8 @@ function MultiSelectList<T>({
           const isOn = chosen.has(key);
           const sub = subLabelOf?.(item) ?? null;
           return (
-            <li className="min-w-0 border-b border-phx-line last:border-b-0" key={key}>
-              <label className="flex min-w-0 cursor-pointer items-start gap-2.5 px-3 py-2 transition hover:bg-phx-accent-soft">
+            <li className="min-w-0 border-b border-slate-200 last:border-b-0" key={key}>
+              <label className="flex min-w-0 cursor-pointer items-start gap-2.5 px-3 py-2 transition hover:bg-slate-50">
                 <input
                   checked={isOn}
                   className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-phx-accent"
@@ -1359,12 +1357,12 @@ function MultiSelectList<T>({
                 />
                 <span className="min-w-0">
                   <span
-                    className={`block break-words text-phx-xs ${isOn ? "font-black text-phx-ink" : "font-bold text-phx-ink-soft"}`}
+                    className={`block break-words text-phx-xs ${isOn ? "font-black text-[#08111f]" : "font-bold text-slate-600"}`}
                   >
                     {labelOf(item)}
                   </span>
                   {sub ? (
-                    <span className="mt-0.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
+                    <span className="mt-0.5 block break-words text-phx-xs font-medium text-slate-500">
                       {sub}
                     </span>
                   ) : null}
@@ -1914,7 +1912,7 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
           </Field>
         </FormSection>
 
-        <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-phx-line pt-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
           <button
             className={BTN_PRIMARY}
             disabled={saving || !ready}
@@ -1927,13 +1925,13 @@ function ActivityForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
             Cancel
           </button>
           {!ready ? (
-            <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+            <span className="break-words text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
               {totalProducts === 0
                 ? "Choose at least one product to save"
                 : "Fill the required fields to save"}
             </span>
           ) : (
-            <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">
+            <span className="break-words text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
               {`${totalProducts} product${totalProducts === 1 ? "" : "s"} across ${targetedLines.length} line${targetedLines.length === 1 ? "" : "s"}`}
             </span>
           )}

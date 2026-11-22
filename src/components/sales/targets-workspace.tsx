@@ -149,9 +149,9 @@ const divisionHint = (actual: number, target: number): string =>
 
 const keyOf = (row: TargetGridRow): string => `${row.areaCode}|${row.productCode}`;
 
-/** A quiet white action (a download link, a toggle) that turns orange on hover and focus. */
+/** A quiet white action (a download link, a toggle) that turns navy on hover and focus. */
 const OUTLINE_ACTION_CLASS =
-  "inline-flex h-8 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500";
+  "inline-flex h-8 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#08111f]";
 
 type CustomerLine = { customerName: string; units: number; value: number };
 type DistGroup = { distributorName: string; units: number; value: number; customers: CustomerLine[] };
@@ -223,14 +223,14 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
               return (
                 <div key={point.period} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                   <span
-                    className={cn("w-full", isCurrent ? "bg-orange-500" : "bg-slate-200")}
+                    className={cn("w-full", isCurrent ? "bg-[#08111f]" : "bg-slate-200")}
                     style={{ height: `${Math.max(2, (Math.abs(point.value) / maxTrend) * 44)}px` }}
                     aria-hidden
                   />
                   <span
                     className={cn(
                       "text-phx-3xs tabular-nums",
-                      isCurrent ? "font-black text-orange-600" : "text-slate-500",
+                      isCurrent ? "font-black text-[#08111f]" : "text-slate-500",
                     )}
                   >
                     {point.period.slice(2)}
@@ -248,13 +248,13 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
         <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
           {groups.map((brick) => (
             <div key={brick.brickName} className="border border-slate-200 bg-white">
-              {/* The brick header: an orange left rule on a quiet slate ground. No wrapper
+              {/* The brick header: a navy left rule on a quiet slate ground. No wrapper
                   overflow-hidden and no nowrap, so the figures wrap under the name on a phone
                   instead of being cut at the card's edge. */}
-              <div className="border-b border-slate-200 border-l-[3px] border-l-orange-500 bg-slate-50 px-3 py-2">
+              <div className="border-b border-slate-200 border-l-[3px] border-l-[#08111f] bg-slate-50 px-3 py-2">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                   <span className="min-w-0 break-words text-phx-xs font-black text-slate-900">{brick.brickName}</span>
-                  <span className="text-phx-xs font-black tabular-nums text-orange-600">
+                  <span className="text-phx-xs font-black tabular-nums text-[#08111f]">
                     {fmtUnits(brick.units)} units · {formatEgpFull(brick.value)}
                   </span>
                 </div>
@@ -273,7 +273,7 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
                   {dist.customers.map((cust, ci) => (
                     <div
                       key={`${cust.customerName}-${ci}`}
-                      className="flex items-baseline gap-x-3 border-t border-slate-100 py-1 pl-6 pr-3 text-phx-xs transition-colors hover:bg-orange-50/40"
+                      className="flex items-baseline gap-x-3 border-t border-slate-100 py-1 pl-6 pr-3 text-phx-xs transition-colors hover:bg-slate-50"
                     >
                       <span className="min-w-0 flex-1 break-words text-slate-500">{cust.customerName}</span>
                       <span className="w-16 shrink-0 text-right tabular-nums text-slate-600">{fmtUnits(cust.units)}</span>
@@ -334,7 +334,7 @@ function RollupList({
       {entries.map((entry, index) => (
         <li
           key={entry.name}
-          className="grid grid-cols-[1.5rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40"
+          className="grid grid-cols-[1.5rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-slate-50"
           title={divisionHint(entry.actualValue, entry.targetValue)}
         >
           <span
@@ -633,20 +633,20 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       />
 
       {props.error ? (
-        <div className="flex items-start gap-3 border border-l-[3px] border-red-200 border-l-red-500 bg-red-50 px-4 py-3">
+        <div className="flex items-start gap-3 border border-l-[3px] border-slate-200 border-l-rose-500 bg-white px-4 py-3" role="alert">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-          <p className="min-w-0 text-xs font-semibold leading-5 text-red-800">{props.error}</p>
+          <p className="min-w-0 text-xs font-semibold leading-5 text-rose-800">{props.error}</p>
         </div>
       ) : null}
 
       {message ? (
-        <div className="border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3 text-xs font-semibold text-slate-800">{message}</div>
+        <div className="border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white px-4 py-3 text-xs font-semibold text-slate-800">{message}</div>
       ) : null}
 
       {/* The same words the Sales vs Target panel uses for the same month. */}
       {salesPublished ? null : (
-        <div className="flex items-start gap-3 border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+        <div className="flex items-start gap-3 border border-l-[3px] border-slate-200 border-l-amber-500 bg-white px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0 text-xs leading-5 text-slate-800">
             <p className="font-bold">
               {`Monthly Closing for ${lineLabel}, ${formatPeriod(props.selectedPeriod)}, has not been published yet.`}
@@ -662,9 +662,9 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       {/* Ungraded sales banner — the same explanation Sales vs Target gives, in the same words, so
           the two screens cannot be read as disagreeing about what achievement measures. */}
       {total && notGraded !== 0 ? (
-        <div className="flex items-start gap-3 border border-l-[3px] border-amber-200 border-l-amber-500 bg-amber-50 px-4 py-3">
+        <div className="flex items-start gap-3 border border-l-[3px] border-slate-200 border-l-amber-500 bg-white px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div className="min-w-0 text-xs leading-5 text-amber-900">
+          <div className="min-w-0 text-xs leading-5 text-slate-800">
             {/* One template literal, not `{expr} text`: a JSX text chunk that carries an HTML
                 entity (`&apos;`) and follows an expression on the same line loses its LEADING
                 space in the SWC transform, and the banner rendered "EGP 617,990of this line's".
@@ -732,7 +732,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               </Button>
             </div>
           ) : (
-            <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="border-l-2 border-slate-300 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em] text-slate-500">
               View only
             </span>
           )
@@ -899,10 +899,10 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                                 aria-label={detail ? "Hide source" : "Show source"}
                                 {...rowDetailToggleProps(`source-${key}`, Boolean(detail))}
                                 className={cn(
-                                  "flex h-6 w-6 items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
+                                  "flex h-6 w-6 items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#08111f]",
                                   detail
-                                    ? "border-orange-300 bg-white text-orange-600"
-                                    : "border-transparent text-slate-400 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600",
+                                    ? "border-[#08111f] bg-white text-[#08111f]"
+                                    : "border-transparent text-slate-400 hover:border-slate-300 hover:bg-slate-50 hover:text-[#08111f]",
                                 )}
                                 onClick={() => toggleBreakdown(row)}
                               >

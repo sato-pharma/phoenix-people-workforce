@@ -103,14 +103,14 @@ const Ach = ({ value }: { value: number | null }) => (
   <span className={cn("font-black tabular-nums", achClass(value))}>{pct(value)}</span>
 );
 
-const TH = "break-words px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const TH = "break-words px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500";
 const THR = `${TH} text-right`;
 const TD = "px-3 py-1.5 text-sm font-semibold leading-tight text-slate-800";
 const TDR = `${TD} text-right tabular-nums`;
 const HEAD = "border-b border-slate-200 bg-slate-50/70";
 const ROW = "border-b border-slate-100 last:border-0";
-const FIELD = "rounded border border-slate-100 bg-slate-50 px-2.5 py-2";
-const FIELD_LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400";
+const FIELD = "border border-slate-100 bg-slate-50 px-2.5 py-2";
+const FIELD_LABEL = "text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500";
 
 function Fields({ items }: { items: { label: string; value: React.ReactNode }[] }) {
   return (
@@ -201,7 +201,7 @@ export function RepBusinessReview({
       {/* ---------- header ---------- */}
       <div className={cn(portalSubtlePanelClassName, "space-y-3 p-4")}>
         <div className="min-w-0">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">My review · read-only</p>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">My review · read-only</p>
           <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-xl">{headline}</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">
             {lineLabel} · my {num(areas.length)} area{areas.length === 1 ? "" : "s"} · {windowLabel}
@@ -425,7 +425,7 @@ export function RepBusinessReview({
                 <dt className={FIELD_LABEL}>Pharmacies</dt>
                 <dd className="mt-0.5 text-xl font-black tabular-nums text-slate-950">{pharmacyTile.value}</dd>
                 {/* Phoenix CRM logs no pharmacy visit: "Not recorded", never 0 (visit-count-buckets.ts). */}
-                {pharmacyTile.note ? <dd className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{pharmacyTile.note}</dd> : null}
+                {pharmacyTile.note ? <dd className="mt-0.5 text-phx-xs font-semibold text-slate-500">{pharmacyTile.note}</dd> : null}
               </div>
             </dl>
             <dl className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">

@@ -143,8 +143,8 @@ export function DirectOrderCorrectResubmit({
   }
 
   return (
-    <div className="border-t border-amber-200 bg-amber-50/60 px-4 py-3">
-      <p className="text-phx-2xs font-black uppercase tracking-wider text-amber-700">
+    <div className="border-t border-slate-200 bg-white px-4 py-3 shadow-[inset_4px_0_0_#f59e0b]">
+      <p className="text-phx-xs font-black uppercase tracking-wider text-amber-700">
         Sent back to you for a correction
       </p>
 

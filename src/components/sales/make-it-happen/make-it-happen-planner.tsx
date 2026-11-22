@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 
+import { LANDING_INK, LandingEmpty, LandingTitle } from "@/components/employee-portal/landing-kit";
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import {
   AchievementMeter,
@@ -155,6 +156,28 @@ const PORTAL_SCENARIO_RAIL: Record<PlanScenario["key"], { rail: string; kicker: 
 
 /** The pale strip a card's controls sit on, under its header. */
 const CONTROL_STRIP = "border-b border-slate-100 bg-slate-50/70";
+
+/** The portal's control strip: white over a hairline — the landing kit has no tinted bands. */
+const PORTAL_CONTROL_STRIP = "border-b border-slate-200 bg-white";
+
+/** The portal's trend words: the trend's colour on the status word's rail. */
+const PORTAL_TREND_TONE: Record<TrendKind, string> = {
+  none: "border-slate-300 text-slate-500",
+  early: "border-amber-500 text-amber-700",
+  growing: "border-emerald-500 text-emerald-700",
+  flat: "border-sky-500 text-sky-700",
+  declining: "border-red-500 text-red-700",
+};
+
+/**
+ * Which surface the planner is drawn on, for the small parts (trend words, history bars, bricks,
+ * the Pedia halves) that the page renders without threading a prop through every row.
+ */
+const PlannerSurface = createContext<"sales" | "portal">("sales");
+
+function usePortalPlanner(): boolean {
+  return useContext(PlannerSurface) === "portal";
+}
 
 /** What the realistic plan is built from — each line is a rule the engine actually enforces. */
 const PACE_RULES = [
@@ -644,6 +667,7 @@ export function MakeItHappenPlanner({
   );
 
   return (
+    <PlannerSurface.Provider value={surface}>
     <div className="space-y-4">
       {surface === "portal" ? (
         // The portal lays the ring out in a panel of its own, where a lone ring sat in a full-width
@@ -680,11 +704,21 @@ export function MakeItHappenPlanner({
       )}
 
       {data.viewingRep ? (
-        <div className={cn(SURFACE_CLASS, "flex flex-wrap items-center justify-between gap-2 border-l-[3px] border-l-sky-500 px-4 py-3 text-sm")}>
-          <p className="flex min-w-0 items-center gap-2 font-bold text-slate-900">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100">
-              <Users className="h-3.5 w-3.5" />
-            </span>
+        <div
+          className={cn(
+            SURFACE_CLASS,
+            "flex flex-wrap items-center justify-between gap-2 border-l-[3px] px-4 py-3 text-sm",
+            portal ? "border-l-[#08111f]" : "border-l-sky-500",
+          )}
+        >
+          <p className={cn("flex min-w-0 items-center gap-2 font-bold", portal ? LANDING_INK : "text-slate-900")}>
+            {portal ? (
+              <Users aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
+            ) : (
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100">
+                <Users className="h-3.5 w-3.5" />
+              </span>
+            )}
             <span className="min-w-0 break-words">You are looking at {data.viewingRep.name}&apos;s own plan.</span>
           </p>
           <Link
@@ -715,7 +749,7 @@ export function MakeItHappenPlanner({
         </section>
       ) : (
         <>
-          <section className={cn(SURFACE_CLASS, "border-l-[3px] border-l-orange-500 px-4 py-4 sm:px-6")}>
+          <section className={cn(SURFACE_CLASS, "px-4 py-4 sm:px-6", !portal && "border-l-[3px] border-l-orange-500")}>
             {/* Side by side from xl, not lg: beside the portal sidebar a 1024px screen left the text
                 about 430px and wrapped the Make It Happen button under itself. */}
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -743,9 +777,12 @@ export function MakeItHappenPlanner({
                     {PACE_RULES.map((rule) => (
                       <li
                         key={rule}
-                        className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50/70 px-2 py-1 text-phx-xs font-bold text-slate-700"
+                        className={cn(
+                          "inline-flex items-center gap-1.5 border border-slate-200 px-2 py-1 text-phx-xs font-bold",
+                          portal ? "bg-white text-slate-600" : "bg-slate-50/70 text-slate-700",
+                        )}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                        <CheckCircle2 className={cn("h-3.5 w-3.5 shrink-0", portal ? "text-emerald-600" : "text-orange-500")} />
                         {rule}
                       </li>
                     ))}
@@ -828,12 +865,12 @@ export function MakeItHappenPlanner({
             </div>
             {coach?.message ? (
               <div
-                className={cn("mt-4 flex gap-3 border border-slate-200 border-l-[3px] px-4 py-3", coachTone.frame)}
+                className={cn("mt-4 flex gap-3 border border-slate-200 border-l-[3px] px-4 py-3", coachTone.frame, portal && "bg-white")}
                 role="status"
               >
                 <CoachIcon className={cn("mt-0.5 h-5 w-5 shrink-0", coachTone.iconTone)} />
                 <div className="min-w-0">
-                  <p className={cn("text-phx-sm font-black uppercase tracking-[0.2em]", coachTone.kicker)}>Phoenix&apos;s plan</p>
+                  <p className={cn("text-phx-sm font-black uppercase", portal ? "tracking-[0.1em]" : "tracking-[0.2em]", coachTone.kicker)}>Phoenix&apos;s plan</p>
                   <p className="mt-0.5 break-words text-sm font-semibold leading-6 text-slate-800">{coach.message}</p>
                 </div>
               </div>
@@ -846,28 +883,43 @@ export function MakeItHappenPlanner({
                 <div className={cn("mt-2 grid gap-3", hasTarget && "md:grid-cols-3")}>
                   {(hasTarget ? scenarios : scenarios.slice(0, 1)).map((scenario) => {
                     const style = SCENARIO_STYLE[scenario.key];
+                    const portalStyle = PORTAL_SCENARIO_RAIL[scenario.key];
                     const inUse = scenarioInUse(scenario);
                     return (
                       <article
                         key={scenario.key}
                         className={cn(
-                          "flex min-w-0 flex-col border border-slate-200 border-t-[3px] bg-white px-3.5 py-3 transition-colors hover:border-x-orange-200 hover:border-b-orange-200",
-                          style.frame,
-                          inUse && "bg-orange-50/40",
+                          portal
+                            ? "relative flex min-w-0 flex-col border bg-white py-3 pl-4 pr-3.5 transition-colors motion-reduce:transition-none hover:border-[#08111f]"
+                            : "flex min-w-0 flex-col border border-slate-200 border-t-[3px] bg-white px-3.5 py-3 transition-colors hover:border-x-orange-200 hover:border-b-orange-200",
+                          portal ? (inUse ? "border-[#08111f]" : "border-slate-200") : style.frame,
+                          !portal && inUse && "bg-orange-50/40",
                         )}
                       >
+                        {portal ? <span aria-hidden="true" className={cn("absolute inset-y-0 left-0 w-1", portalStyle.rail)} /> : null}
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className={cn("text-phx-sm font-black uppercase tracking-[0.18em]", style.kicker)}>
+                          <p
+                            className={cn(
+                              "text-phx-sm font-black uppercase",
+                              portal ? cn("tracking-[0.1em]", portalStyle.kicker) : cn("tracking-[0.18em]", style.kicker),
+                            )}
+                          >
                             Scenario {scenario.number}
                           </p>
                           {inUse ? (
-                            <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-emerald-700">
+                            <span
+                              className={
+                                portal
+                                  ? cn(PORTAL_STATUS_WORD, "border-emerald-500 text-emerald-700")
+                                  : "border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-emerald-700"
+                              }
+                            >
                               In your forecast
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-0.5 break-words text-sm font-black text-slate-900">{scenario.title}</p>
-                        <p className="mt-2 text-lg font-black tabular-nums text-slate-900">{formatEgpFull(scenario.value)}</p>
+                        <p className={cn("mt-0.5 break-words text-sm font-black", portal ? LANDING_INK : "text-slate-900")}>{scenario.title}</p>
+                        <p className={cn("mt-2 text-lg font-black tabular-nums", portal ? LANDING_INK : "text-slate-900")}>{formatEgpFull(scenario.value)}</p>
                         <div className="mt-1">
                           <AchievementMeter value={scenario.achievement} />
                         </div>
@@ -895,7 +947,10 @@ export function MakeItHappenPlanner({
             ) : null}
             {error ? (
               <p
-                className="mt-3 flex items-start gap-2 border border-red-200 border-l-[3px] border-l-red-500 bg-red-50/40 px-3 py-2 text-sm font-semibold text-red-700"
+                className={cn(
+                  "mt-3 flex items-start gap-2 border border-red-200 border-l-[3px] border-l-red-500 px-3 py-2 text-sm font-semibold text-red-700",
+                  portal ? "bg-white" : "bg-red-50/40",
+                )}
                 role="alert"
               >
                 <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -904,7 +959,10 @@ export function MakeItHappenPlanner({
             ) : null}
             {notice ? (
               <p
-                className="mt-3 flex items-start gap-2 border border-sky-200 border-l-[3px] border-l-sky-500 bg-sky-50/40 px-3 py-2 text-sm font-semibold text-slate-800"
+                className={cn(
+                  "mt-3 flex items-start gap-2 border border-l-[3px] border-l-sky-500 px-3 py-2 text-sm font-semibold text-slate-800",
+                  portal ? "border-slate-200 bg-white" : "border-sky-200 bg-sky-50/40",
+                )}
                 role="status"
               >
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
@@ -1034,12 +1092,16 @@ export function MakeItHappenPlanner({
                   Saving plans is not switched on yet. Your forecast still calculates; it just cannot be kept for now.
                 </p>
               ) : data.plans.length === 0 ? (
-                <div className="flex items-center gap-3 px-4 py-5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200">
-                    <BookmarkCheck className="h-4 w-4" />
-                  </span>
-                  <p className="text-sm text-slate-500">No plans saved for this period yet.</p>
-                </div>
+                portal ? (
+                  <LandingEmpty>No plans saved for this period yet.</LandingEmpty>
+                ) : (
+                  <div className="flex items-center gap-3 px-4 py-5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200">
+                      <BookmarkCheck className="h-4 w-4" />
+                    </span>
+                    <p className="text-sm text-slate-500">No plans saved for this period yet.</p>
+                  </div>
+                )
               ) : (
                 <ul>
                   {data.plans.map((plan) => {
@@ -1050,14 +1112,20 @@ export function MakeItHappenPlanner({
                         className={cn(
                           "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3",
                           TABLE_ROW_CLASS,
-                          active && "bg-orange-50/60 shadow-[inset_3px_0_0_#F97316]",
+                          active && (portal ? "border-l-[3px] border-l-[#08111f] bg-slate-50" : "bg-orange-50/60 shadow-[inset_3px_0_0_#F97316]"),
                         )}
                       >
                         <div className="min-w-0 flex-1 basis-56">
                           <p className="flex flex-wrap items-center gap-2 break-words text-sm font-bold text-slate-900">
                             <span className="min-w-0 break-words">{plan.name}</span>
                             {active ? (
-                              <span className="border border-orange-200 bg-white px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-orange-700">
+                              <span
+                                className={
+                                  portal
+                                    ? cn(PORTAL_STATUS_WORD, "border-[#08111f]", LANDING_INK)
+                                    : "border border-orange-200 bg-white px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-orange-700"
+                                }
+                              >
                                 Open now
                               </span>
                             ) : null}
@@ -1092,7 +1160,8 @@ export function MakeItHappenPlanner({
             // no bottom nav, so it keeps `bottom-0`.
             <div
               className={cn(
-                "sticky z-20 border border-slate-200 border-t-[3px] border-t-orange-500 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:px-6",
+                "sticky z-20 border border-slate-200 border-t-[3px] bg-white px-4 py-3 sm:px-6",
+                portal ? "border-t-[#08111f]" : "border-t-orange-500 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]",
                 surface === "portal" ? "bottom-[calc(env(safe-area-inset-bottom,0px)+4.25rem)] lg:bottom-0" : "bottom-0",
               )}
             >
@@ -1128,12 +1197,24 @@ export function MakeItHappenPlanner({
                     </div>
                   ))}
                   {data.canSave && isDirty ? (
-                    <span className="inline-flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-bold text-amber-700">
+                    <span
+                      className={
+                        portal
+                          ? cn(PORTAL_STATUS_WORD, "gap-1.5 border-amber-500 text-amber-700")
+                          : "inline-flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-bold text-amber-700"
+                      }
+                    >
                       <CircleAlert className="h-3.5 w-3.5 shrink-0" />
                       Not saved yet
                     </span>
                   ) : data.canSave && activePlanId ? (
-                    <span className="inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-bold text-emerald-700">
+                    <span
+                      className={
+                        portal
+                          ? cn(PORTAL_STATUS_WORD, "gap-1.5 border-emerald-500 text-emerald-700")
+                          : "inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-bold text-emerald-700"
+                      }
+                    >
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                       Saved
                     </span>
@@ -1166,6 +1247,7 @@ export function MakeItHappenPlanner({
         </>
       )}
     </div>
+    </PlannerSurface.Provider>
   );
 }
 
@@ -1223,10 +1305,15 @@ function PediaHalvesPanel({
   /** The incentive is a SEMESTER figure: only a semester plan may say what a half will pay. */
   semester: boolean;
 }) {
+  const portal = usePortalPlanner();
   return (
-    <section className={cn(SURFACE_CLASS, "border-l-[3px] border-l-orange-500 px-4 py-4 sm:px-6")}>
-      <p className="text-sm font-black text-slate-900">Pedia is paid on two halves, and Phoenix plans both</p>
-      <p className="mt-0.5 break-words text-phx-xs text-slate-500">
+    <section className={cn(SURFACE_CLASS, "px-4 py-4 sm:px-6", !portal && "border-l-[3px] border-l-orange-500")}>
+      {portal ? (
+        <LandingTitle>Pedia is paid on two halves, and Phoenix plans both</LandingTitle>
+      ) : (
+        <p className="text-sm font-black text-slate-900">Pedia is paid on two halves, and Phoenix plans both</p>
+      )}
+      <p className="phx-header-note mt-0.5 break-words text-phx-xs text-slate-500">
         One month of basic on the Sato products against their own target, one month on the whole line. Other products lift only the
         total half, so Phoenix plans the Sato products to your {goalPct}% goal first. Below 90% a half pays nothing, and the
         Sato half also needs the whole line at {PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}% or more.
@@ -1243,7 +1330,7 @@ function PediaHalvesPanel({
             lineAchievement * 100 < PEDIA_SATO_HALF_MIN_TOTAL_PERCENT;
           return (
             <div key={half.key} className="min-w-0 border border-slate-200 bg-white px-3.5 py-3">
-              <p className="break-words text-xs font-black text-slate-900">{half.label}</p>
+              <p className={cn("break-words text-xs font-black", portal ? LANDING_INK : "text-slate-900")}>{half.label}</p>
               <div className="mt-1.5">
                 <AchievementMeter value={half.achievement} />
               </div>
@@ -1260,7 +1347,7 @@ function PediaHalvesPanel({
                 </div>
                 <div className="min-w-0">
                   <dt className="font-black uppercase tracking-[0.12em] text-slate-500">Forecast</dt>
-                  <dd className="break-words font-bold tabular-nums text-orange-700">{formatEgpFull(half.forecastValue)}</dd>
+                  <dd className={cn("break-words font-bold tabular-nums", portal ? "text-amber-700" : "text-orange-700")}>{formatEgpFull(half.forecastValue)}</dd>
                 </div>
               </dl>
               {half.reachesGoal == null ? null : half.reachesGoal ? (
@@ -1334,7 +1421,7 @@ function FilterBar({
   ) =>
     options.length > 1 ? (
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="w-full text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:w-16">{label}</span>
+        <span className={cn("w-full text-phx-sm font-black uppercase text-slate-500 sm:w-16", surface === "portal" ? "tracking-[0.1em]" : "tracking-[0.14em]")}>{label}</span>
         <div aria-label={`Filter by ${label.toLowerCase()}`} className="flex min-w-0 flex-1 flex-wrap gap-1.5" role="group">
           {options.map((option) => {
             const selected = filters[key].includes(option.value);
@@ -1405,30 +1492,23 @@ function FilterBar({
     <section className={SURFACE_CLASS}>
       <header
         className={cn(
-          "flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4",
-          portal ? "py-4 sm:px-5" : "py-3",
+          "flex flex-wrap items-center justify-between gap-3 border-b px-4",
+          portal ? "border-slate-200 py-2.5 sm:px-4" : "border-slate-100 py-3",
         )}
       >
-        <div className={cn("flex min-w-0 flex-1 basis-64 gap-2.5", portal ? "items-start gap-3" : "items-center")}>
-          <span
-            className={cn(
-              "flex shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100",
-              portal ? "h-9 w-9" : "h-7 w-7",
-            )}
-          >
-            <SlidersHorizontal className={portal ? "h-4 w-4" : "h-3.5 w-3.5"} />
-          </span>
+        <div className={cn("flex min-w-0 flex-1 basis-64 gap-2.5", portal ? "items-center" : "items-center")}>
+          {portal ? null : (
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </span>
+          )}
           <div className="min-w-0">
-            <h2
-              className={
-                portal
-                  ? "break-words text-lg font-black leading-tight tracking-tight text-slate-950 sm:text-xl"
-                  : "text-phx-md font-black tracking-tight text-slate-900"
-              }
-            >
-              Filter and export
-            </h2>
-            <p className={portal ? "mt-1 break-words text-sm font-medium leading-6 text-slate-500" : "break-words text-phx-xs text-slate-500"}>
+            {portal ? (
+              <LandingTitle>Filter and export</LandingTitle>
+            ) : (
+              <h2 className="text-phx-md font-black tracking-tight text-slate-900">Filter and export</h2>
+            )}
+            <p className="phx-header-note break-words text-phx-xs text-slate-500">
               Showing {formatNumber(shownRows)} of {formatNumber(totalRows)} products. The totals above always cover the whole plan;
               a file holds exactly what you see here.
             </p>
@@ -1449,7 +1529,7 @@ function FilterBar({
           {exportButton("pdf")}
         </div>
       </header>
-      <div className="space-y-2.5 bg-slate-50/70 px-4 py-3">
+      <div className={cn("space-y-2.5 px-4 py-3", portal ? "bg-white" : "bg-slate-50/70")}>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <label className="relative block min-w-0">
             <span className="sr-only">Find a product or family</span>
@@ -1476,8 +1556,8 @@ function FilterBar({
             className={cn(
               "flex items-start gap-2 border border-l-[3px] px-3 py-2 text-sm font-semibold",
               exportStatus.ok
-                ? "border-emerald-200 border-l-emerald-500 bg-emerald-50/40 text-emerald-800"
-                : "border-red-200 border-l-red-500 bg-red-50/40 text-red-700",
+                ? cn("border-l-emerald-500 text-emerald-800", portal ? "border-slate-200 bg-white" : "border-emerald-200 bg-emerald-50/40")
+                : cn("border-l-red-500 text-red-700", portal ? "border-slate-200 bg-white" : "border-red-200 bg-red-50/40"),
             )}
             role={exportStatus.ok ? "status" : "alert"}
           >
@@ -1493,6 +1573,15 @@ function FilterBar({
 function TrendBadge({ trend }: { trend: TrendReading }) {
   const style = TREND_STYLE[trend.kind];
   const Icon = style.icon;
+  const portal = usePortalPlanner();
+  if (portal) {
+    return (
+      <span className={cn(PORTAL_STATUS_WORD, "gap-1", PORTAL_TREND_TONE[trend.kind])}>
+        <Icon aria-hidden="true" className="h-3 w-3 shrink-0" />
+        <span className="min-w-0 break-words">{trendLabel(trend)}</span>
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
@@ -1509,13 +1598,14 @@ function TrendBadge({ trend }: { trend: TrendReading }) {
 /** Closed months as small bars — the pace the plan is read from, at a glance. The numbers stay in text beside it. */
 function HistoryBars({ history }: { history: ConcentrationPlanRow["history"] }) {
   const peak = history.reduce((max, point) => Math.max(max, point.units), 0);
+  const portal = usePortalPlanner();
   if (history.length === 0 || peak <= 0) return null;
   return (
     <span aria-hidden className="flex h-5 items-end gap-0.5">
       {history.map((point) => (
         <span
           key={point.period}
-          className="block w-2 bg-orange-400"
+          className={cn("block w-2", portal ? "bg-slate-400" : "bg-orange-400")}
           style={{ height: `${Math.max(12, (Math.max(0, point.units) / peak) * 100)}%` }}
           title={`${point.label} ${formatNumber(point.units)}`}
         />
@@ -1537,6 +1627,7 @@ function UnitsHint({
   invalid: boolean;
   onUse: (units: number) => void;
 }) {
+  const portal = usePortalPlanner();
   if (invalid) return <p className="mt-1 text-right text-phx-sm font-bold text-red-600">Whole units only</p>;
   if (!open) return null;
   const realistic = row.trend.realisticMaxUnits;
@@ -1553,7 +1644,11 @@ function UnitsHint({
   }
   return (
     <button
-      className={cn("mt-1 block w-full text-right text-phx-sm font-bold text-orange-600 underline-offset-2 hover:underline", FOCUS_RING)}
+      className={cn(
+        "mt-1 block w-full text-right text-phx-sm font-bold underline-offset-2 hover:underline",
+        portal ? "text-[#08111f] underline" : "text-orange-600",
+        FOCUS_RING,
+      )}
       onClick={() => onUse(realistic)}
       type="button"
     >
@@ -1585,13 +1680,15 @@ function BrickList({
   openAtFirst: boolean;
 }) {
   const [open, setOpen] = useState(openAtFirst);
+  const portal = usePortalPlanner();
   const held = bricks.filter((brick) => (parseForecastUnits(text[brick.brickId]) ?? 0) > 0).length;
   return (
     <div className="border border-slate-200 bg-white">
       <button
         aria-expanded={open}
         className={cn(
-          "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-orange-50",
+          "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold text-slate-700",
+          portal ? "transition-colors hover:bg-slate-50 motion-reduce:transition-none" : "hover:bg-orange-50",
           FOCUS_RING,
         )}
         onClick={() => setOpen((current) => !current)}
@@ -1601,7 +1698,7 @@ function BrickList({
           By brick · {bricks.length} brick{bricks.length === 1 ? "" : "s"}
           {held > 0 ? <span className="font-normal text-slate-500"> · {held} planned</span> : null}
         </span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform motion-reduce:transition-none", open && "rotate-180")} />
       </button>
       {open ? (
         <>
@@ -1650,7 +1747,7 @@ function BrickList({
                       {bad ? <p className="mt-1 text-right text-phx-sm font-bold text-red-600">Whole units only</p> : null}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums">
-                      <p className={cn("break-words font-bold", units > 0 ? "text-orange-700" : "text-slate-500")}>
+                      <p className={cn("break-words font-bold", units > 0 ? (portal ? "text-amber-700" : "text-orange-700") : "text-slate-500")}>
                         {formatEgpFull(units * price)}
                       </p>
                     </td>
@@ -1704,6 +1801,9 @@ function LineSection({
       ? `Nothing closed yet · forecasting ${line.forecastMonthLabels.join(", ")}${untargetedText}`
       : `Closed ${line.closedMonthLabels.join(", ")} · forecasting ${line.forecastMonthLabels.join(", ")}${untargetedText}`;
   const shownText = rows.length < totalRows ? ` · showing ${rows.length} of ${totalRows} products` : "";
+  const portal = surface === "portal";
+  /** The forecast's own colour: orange on the admin screen, amber in the portal (orange is the tick alone). */
+  const forecastInk = portal ? "text-amber-700" : "text-orange-700";
   const lineGap = line.targetValue == null ? null : line.targetValue - line.gradedValue - forecastValue;
 
   const unitsInput = (row: ConcentrationPlanRow, label: string) => (
@@ -1751,10 +1851,10 @@ function LineSection({
       actions={
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
           <span>
-            Target <b className="tabular-nums text-slate-900">{line.targetValue == null ? "—" : formatEgpFull(line.targetValue)}</b>
+            Target <b className={cn("tabular-nums", portal ? LANDING_INK : "text-slate-900")}>{line.targetValue == null ? "—" : formatEgpFull(line.targetValue)}</b>
           </span>
           <span>
-            Forecast <b className="tabular-nums text-orange-600">{formatEgpFull(forecastValue)}</b>
+            Forecast <b className={cn("tabular-nums", portal ? "text-amber-700" : "text-orange-600")}>{formatEgpFull(forecastValue)}</b>
           </span>
           <span className="flex items-center gap-2">
             <span className="block w-20">
@@ -1796,8 +1896,8 @@ function LineSection({
               const bricks = brickList(row);
               return (
                 <Fragment key={row.productCode}>
-                <tr className={cn(TABLE_ROW_CLASS, "align-top", planned && "bg-orange-50/50")}>
-                  <td className={cn("px-3 py-2.5", planned && "shadow-[inset_3px_0_0_#F97316]")}>
+                <tr className={cn(TABLE_ROW_CLASS, "align-top", planned && (portal ? "bg-slate-50" : "bg-orange-50/50"))}>
+                  <td className={cn("px-3 py-2.5", planned && (portal ? "shadow-[inset_3px_0_0_#08111f]" : "shadow-[inset_3px_0_0_#F97316]"))}>
                     <p className="break-words font-bold text-slate-900">{row.name}</p>
                     <p className="break-words text-phx-xs text-slate-500">
                       {row.family ? `${row.family} · ` : ""}
@@ -1832,7 +1932,7 @@ function LineSection({
                     />
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
-                    <p className={cn("break-words font-bold", planned ? "text-orange-700" : "text-slate-900")}>
+                    <p className={cn("break-words font-bold", planned ? forecastInk : "text-slate-900")}>
                       {formatEgpFull(figures.value)}
                     </p>
                     <p className="text-phx-xs text-slate-500">
@@ -1855,7 +1955,7 @@ function LineSection({
               );
             })}
           </tbody>
-          <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black tabular-nums text-slate-900">
+          <tfoot className={cn("border-t-2 border-slate-200 font-black tabular-nums", portal ? cn("bg-white", LANDING_INK) : "bg-slate-50 text-slate-900")}>
             <tr>
               <td className="px-3 py-3">{line.lineName} total</td>
               <td className="px-3 py-3 text-right">{line.targetValue == null ? "—" : formatEgpFull(line.targetValue)}</td>
@@ -1880,8 +1980,9 @@ function LineSection({
             <div
               key={row.productCode}
               className={cn(
-                "space-y-2.5 px-4 py-3 transition-colors hover:bg-orange-50/40",
-                planned && "bg-orange-50/50 shadow-[inset_3px_0_0_#F97316]",
+                "space-y-2.5 px-4 py-3 transition-colors",
+                portal ? "hover:bg-slate-50 motion-reduce:transition-none" : "hover:bg-orange-50/40",
+                planned && (portal ? "bg-slate-50 shadow-[inset_3px_0_0_#08111f]" : "bg-orange-50/50 shadow-[inset_3px_0_0_#F97316]"),
               )}
             >
               <div className="flex items-start justify-between gap-3">
@@ -1934,7 +2035,7 @@ function LineSection({
                 </label>
                 <div className="text-right text-xs">
                   <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Forecast value</p>
-                  <p className={cn("text-sm font-black tabular-nums", planned ? "text-orange-700" : "text-slate-900")}>
+                  <p className={cn("text-sm font-black tabular-nums", planned ? forecastInk : "text-slate-900")}>
                     {formatEgpFull(figures.value)}
                   </p>
                   <p className="text-slate-500">
@@ -1949,7 +2050,12 @@ function LineSection({
             </div>
           );
         })}
-        <div className="flex items-center justify-between gap-3 border-t-2 border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black tabular-nums text-slate-900">
+        <div
+          className={cn(
+            "flex items-center justify-between gap-3 border-t-2 border-slate-200 px-4 py-3 text-sm font-black tabular-nums",
+            portal ? cn("bg-white", LANDING_INK) : "bg-slate-50 text-slate-900",
+          )}
+        >
           <span className="min-w-0 break-words">
             {line.lineName} forecast {formatEgpFull(forecastValue)}
             <span className="block text-phx-xs font-bold text-slate-500">
@@ -2017,6 +2123,7 @@ function TeamSection({
   const [sort, setSort] = useState<TeamSort>("name");
   const [bucket, setBucket] = useState<TeamBucket>("all");
   const repHref = (key: string) => href({ period: data.periodKey, rep: key });
+  const portal = surface === "portal";
 
   const counts = useMemo(() => {
     const tally: Record<TeamBucket, number> = { all: data.reps.length, ahead: 0, close: 0, behind: 0, none: 0 };
@@ -2048,7 +2155,7 @@ function TeamSection({
       subtitle="At current pace is where each person lands if their own trend simply continues. On track is 100% or more, close is 80 to 99%. Open anyone to see and plan their products."
       title="Your team"
     >
-      <div className={cn(CONTROL_STRIP, "flex flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between")}>
+      <div className={cn(portal ? PORTAL_CONTROL_STRIP : CONTROL_STRIP, "flex flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between")}>
         <div aria-label="Filter the team by pace" className="flex flex-wrap gap-1.5" role="group">
           {TEAM_BUCKETS.map((option) => {
             const selected = bucket === option.value;
@@ -2122,7 +2229,11 @@ function TeamSection({
                   <tr key={rep.key} className={TABLE_ROW_CLASS}>
                     <td className="px-3 py-2.5">
                       <Link
-                        className={cn("break-words font-bold text-slate-900 transition-colors hover:text-orange-600", FOCUS_RING)}
+                        className={cn(
+                          "break-words font-bold transition-colors",
+                          portal ? cn(LANDING_INK, "underline-offset-2 hover:underline motion-reduce:transition-none") : "text-slate-900 hover:text-orange-600",
+                          FOCUS_RING,
+                        )}
                         href={repHref(rep.key)}
                       >
                         {rep.name}
@@ -2151,7 +2262,14 @@ function TeamSection({
           <ul className="divide-y divide-slate-100 lg:hidden">
             {visible.map((rep) => (
               <li key={rep.key}>
-                <Link className={cn("block space-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40", FOCUS_RING)} href={repHref(rep.key)}>
+                <Link
+                  className={cn(
+                    "block space-y-1.5 px-4 py-3 transition-colors",
+                    portal ? "hover:bg-slate-50 motion-reduce:transition-none" : "hover:bg-orange-50/40",
+                    FOCUS_RING,
+                  )}
+                  href={repHref(rep.key)}
+                >
                   <span className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words font-bold text-slate-900">{rep.name}</span>
                     <span className="w-28 shrink-0">
