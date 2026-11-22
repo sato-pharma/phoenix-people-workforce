@@ -592,6 +592,7 @@
   "employee-hr-id-compact-is-lowercase-so-upper-joins-nothing": "payroll",
   "employee-import-blanks-salaries-and-job-title-creates-positions": "employees",
   "employee-import-payroll-ineligible-block-fix": "employees",
+  "employee-master-email-is-final-for-mailboxes": "notifications",
   "employee-nickname-display-audit": "employees",
   "employee-portal-mobile-audit": "portal",
   "employee-residences-were-saved-at-the-egypt-country-centroid": "org",
