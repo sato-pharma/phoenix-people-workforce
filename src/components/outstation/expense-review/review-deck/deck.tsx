@@ -279,6 +279,7 @@ function DeckTrip({
   // share for come from. The findings beside it switch to the photos or the checks in one click.
   const [view, setView] = useState<StageView>("field");
   const duplicateOf = review.duplicateFlags.get(record.tripId);
+  const ticketDuplicateOf = review.ticketDuplicateFlags.get(record.tripId);
   const idle = review.idleByTrip[record.tripId] ?? null;
   const unsaved = isUnsaved(record, review.decisions);
   const { decisionHandlers } = review;
@@ -324,7 +325,14 @@ function DeckTrip({
               </CrmButton>
             </div>
           ) : null}
-          <DeckSubject decision={decision} duplicateOf={duplicateOf} record={record} unsaved={unsaved} valuesOnly={valuesOnly} />
+          <DeckSubject
+            decision={decision}
+            duplicateOf={duplicateOf}
+            record={record}
+            ticketDuplicateOf={ticketDuplicateOf}
+            unsaved={unsaved}
+            valuesOnly={valuesOnly}
+          />
           <DeckFound decision={decision} now={now} onView={setView} record={record} signals={signals} view={view} />
           <DeckAdjust
             canDecide={review.canDecide}

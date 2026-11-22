@@ -34,7 +34,7 @@ import {
   distanceFlag,
   rowApproveBlock,
 } from "./review-model";
-import { DecisionPill, DistanceChip, DuplicateTripFlag, MoneyFigure } from "./review-parts";
+import { DecisionPill, DistanceChip, DuplicateTicketFlag, DuplicateTripFlag, MoneyFigure } from "./review-parts";
 import { ReviewRowDetails, RowExpandToggle } from "./review-row-details";
 
 /** Rows drawn at a time; "Show 20 more" under the list reaches the rest (Place checks pages the same way). */
@@ -50,6 +50,7 @@ type RowActions = {
   canDecide: boolean;
   decisionFor: (record: LoadedRecord) => Decision;
   duplicateFlags: Map<string, string[]>;
+  ticketDuplicateFlags: Map<string, string[]>;
   /** Trips opened in place — every row starts collapsed (owner, 2026-11-09). */
   expanded: ReadonlySet<string>;
   isUnsaved: (record: LoadedRecord) => boolean;
@@ -279,6 +280,7 @@ function FoundCell({ actions, record }: { actions: RowActions; record: LoadedRec
         </span>
       ) : null}
       <DuplicateTripFlag copies={actions.duplicateFlags.get(record.tripId)} />
+      <DuplicateTicketFlag copies={actions.ticketDuplicateFlags.get(record.tripId)} />
     </div>
   );
 }
@@ -382,7 +384,7 @@ function QueueRow({ actions, record }: { actions: RowActions; record: LoadedReco
       {/* Mounted only while open, so a collapsed list fetches no photos. */}
       {open ? (
         <TableRowDetail className="p-0" colSpan={5}>
-          <ReviewRowDetails decision={decision} duplicateOf={actions.duplicateFlags.get(record.tripId)} record={record} unsaved={actions.isUnsaved(record)} />
+          <ReviewRowDetails decision={decision} duplicateOf={actions.duplicateFlags.get(record.tripId)} record={record} ticketDuplicateOf={actions.ticketDuplicateFlags.get(record.tripId)} unsaved={actions.isUnsaved(record)} />
         </TableRowDetail>
       ) : null}
     </Fragment>
@@ -423,7 +425,7 @@ function QueueCard({ actions, record }: { actions: RowActions; record: LoadedRec
         <DecisionCell actions={actions} record={record} />
         {open ? (
           <div className="-mx-4 min-w-0">
-            <ReviewRowDetails decision={decision} duplicateOf={actions.duplicateFlags.get(record.tripId)} record={record} unsaved={actions.isUnsaved(record)} />
+            <ReviewRowDetails decision={decision} duplicateOf={actions.duplicateFlags.get(record.tripId)} record={record} ticketDuplicateOf={actions.ticketDuplicateFlags.get(record.tripId)} unsaved={actions.isUnsaved(record)} />
           </div>
         ) : null}
       </div>

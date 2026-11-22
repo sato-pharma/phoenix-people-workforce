@@ -10,7 +10,7 @@ import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
 import { type Decision, type LoadedRecord, decisionStateLabel } from "../review-model";
-import { DistanceChip, DuplicateTripFlag, capturedLocationConfidenceTone, egp } from "../review-parts";
+import { DistanceChip, DuplicateTicketFlag, DuplicateTripFlag, capturedLocationConfidenceTone, egp } from "../review-parts";
 
 /**
  * The top of the white column: who, which trip, where it stands, and every fact of the claim — dates,
@@ -25,12 +25,14 @@ export function DeckSubject({
   decision,
   duplicateOf,
   record,
+  ticketDuplicateOf,
   unsaved,
   valuesOnly,
 }: {
   decision: Decision;
   duplicateOf?: string[];
   record: LoadedRecord;
+  ticketDuplicateOf?: string[];
   unsaved: boolean;
   valuesOnly: boolean;
 }) {
@@ -65,6 +67,7 @@ export function DeckSubject({
           </CrmPill>
         </div>
         <DuplicateTripFlag copies={duplicateOf} wide />
+        <DuplicateTicketFlag copies={ticketDuplicateOf} wide />
       </div>
 
       <dl className="grid min-w-0 grid-cols-2 border-t border-slate-100 [&>div]:min-w-0" data-deck-facts>

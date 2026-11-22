@@ -18,6 +18,8 @@ export type OutstationLocalDraft = {
   // source. A draft with no source is a live capture — that was the only kind that existed —
   // so readers must default to "live_camera" rather than treating the absence as unknown.
   carEvidenceSource?: OutstationCarEvidenceSource;
+  /** An uploaded arrival photo's own time (photo-file-time.ts); absent on a live capture. */
+  carEvidenceFileTakenAt?: string | null;
   expenseType: OutstationExpenseType;
   goTicketAmount: string;
   hasTicketAttachments: boolean;

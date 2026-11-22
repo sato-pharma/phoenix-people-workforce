@@ -13,7 +13,9 @@
  *
  *   - The window closes at the END OF THE TRIP'S LAST DAY, in Africa/Cairo. After that the
  *     request needs a Super Admin to release it. This stops a request sitting open forever while
- *     nothing chases it.
+ *     nothing chases it. Since 2026-11-22 (owner, after the October audit: "Refuse after last
+ *     day") a photo after the window is REFUSED, the first capture as well as a retake — it used to
+ *     be accepted and only flagged `outside_trip_window`, and 17 of 170 were taken after the trip.
  *
  * A third decision (owner, 2026-09-18) sits beside them in departure-photo-location.ts: a photo
  * with NO position at all is refused before it is stored. That refuses the absence of a location
@@ -118,6 +120,19 @@ export function isWithinDepartureWindow(input: {
     return true;
   }
   return capturedDay <= lastDay;
+}
+
+/**
+ * The refusal for a departure photo after the trip's last Cairo day — the first capture and a
+ * retake alike (owner, 2026-11-22). The service throws it; the portal card shows the same words
+ * instead of a camera (departure-photo-card.tsx, `windowClosed`).
+ */
+export function departurePhotoWindowClosedMessage(tripEndDate: string | null | undefined, isRetake = false) {
+  const lastDay = String(tripEndDate ?? "").slice(0, 10);
+  return (
+    `The departure photo can only be ${isRetake ? "retaken" : "taken"} while the trip is open, and it closed at the end of ${lastDay}. ` +
+    "A photo taken now would not show you leaving the destination, so it is not accepted. HR can release the claim with a reason."
+  );
 }
 
 /**

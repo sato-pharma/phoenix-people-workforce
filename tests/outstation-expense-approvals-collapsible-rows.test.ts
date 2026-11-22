@@ -49,7 +49,12 @@ export function runOutstationExpenseApprovalsCollapsibleRowsTests() {
   assert.ok(expandAll.length > 0 && !/decision|undo|select/i.test(expandAll), "Expand all / Collapse all changes only the open set");
   // The panel is handed values, never a handler: it cannot write a decision even by mistake.
   const props = details.match(/export function ReviewRowDetails\(\{([^}]*)\}/)?.[1] ?? "";
-  assert.equal(props.replace(/\s+/g, ""), "decision,duplicateOf,record,unsaved", "the details panel takes the decision to SHOW it, and no setter");
+  // ticketDuplicateOf (2026-11-23) is the same-ticket flag's pair list: a value to show, never a setter.
+  assert.equal(
+    props.replace(/\s+/g, "").replace(/,$/, ""),
+    "decision,duplicateOf,record,ticketDuplicateOf,unsaved",
+    "the details panel takes the decision to SHOW it, and no setter",
+  );
   assert.doesNotMatch(details, /onChange|onApprove|onReject|onUndo|setDecision|fetch\(/, "the details panel writes and reads nothing of its own");
 
   // ── 5. The house look: square, flat, wraps ──────────────────────────────────────────────────
