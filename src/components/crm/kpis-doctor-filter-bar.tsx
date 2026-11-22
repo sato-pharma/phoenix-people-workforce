@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 const LABEL = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 const SEND =
-  "border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700";
+  "border border-[#08111f] bg-[#08111f] px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:bg-[#13233a]";
 
 type ChipGroup = "bricks" | "statuses" | "seen" | "timing" | "grades" | "specialities";
 
@@ -129,18 +129,18 @@ export function KpisDoctorFilterBar({
 
   return (
     <div className="border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2.5">
         <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           Filter this list
           {activeCount > 0 ? (
-            <span className="ml-2 inline-flex h-4 min-w-4 items-center justify-center bg-orange-600 px-1 text-phx-xs font-black tabular-nums text-white">
+            <span className="ml-2 inline-flex h-4 min-w-4 items-center justify-center bg-[#08111f] px-1 text-phx-xs font-black tabular-nums text-white">
               {activeCount}
             </span>
           ) : null}
         </p>
         <p className="text-phx-sm font-semibold text-slate-500">
-          Showing <span className="tabular-nums text-slate-900">{shown}</span> of{" "}
-          <span className="tabular-nums text-slate-900">{total}</span> doctors
+          Showing <span className="tabular-nums text-[#08111f]">{shown}</span> of{" "}
+          <span className="tabular-nums text-[#08111f]">{total}</span> doctors
           {pending ? " · updating…" : ""}
         </p>
       </div>
@@ -229,7 +229,7 @@ export function KpisDoctorFilterBar({
             </button>
             {active ? (
               <button
-                className="border border-slate-300 bg-white px-4 py-2 text-phx-md font-bold text-slate-600 transition-colors hover:border-rose-400 hover:text-rose-700"
+                className="border border-slate-300 bg-white px-4 py-2 text-phx-md font-bold text-slate-600 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-rose-400 hover:text-rose-700"
                 disabled={pending}
                 onClick={clearAll}
                 type="button"
@@ -257,8 +257,8 @@ export function KpisDoctorFilterBar({
                       <label
                         className={
                           on
-                            ? "inline-flex cursor-pointer items-center gap-1.5 border border-orange-500 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900"
-                            : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors hover:border-slate-400"
+                            ? "inline-flex cursor-pointer items-center gap-1.5 border border-[#08111f] bg-slate-50 px-2 py-1 text-phx-sm font-bold text-[#08111f]"
+                            : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-slate-400"
                         }
                         key={option.value}
                       >
@@ -295,8 +295,8 @@ export function KpisDoctorFilterBar({
                   aria-pressed={on}
                   className={
                     on
-                      ? "border border-orange-500 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900"
-                      : "border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors hover:border-slate-400"
+                      ? "border border-[#08111f] bg-[#08111f] px-2 py-1 text-phx-sm font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
+                      : "border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-slate-400"
                   }
                   disabled={pending}
                   key={sort}

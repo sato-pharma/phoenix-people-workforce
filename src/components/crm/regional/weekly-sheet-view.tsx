@@ -78,7 +78,7 @@ function Figure({ position, target, vacant, value }: { position: WeeklySheetPosi
   return (
     <span className="grid gap-0.5">
       <span className="inline-flex flex-wrap items-center gap-1.5">
-        <span className="text-phx-md font-black tabular-nums text-slate-900">{vacant || target <= 0 ? value : `${value} of ${target}`}</span>
+        <span className="text-phx-md font-black tabular-nums text-[#08111f]">{vacant || target <= 0 ? value : `${value} of ${target}`}</span>
         <Verdict verdict={verdict} />
       </span>
       {gap ? <span className={`text-phx-xs font-semibold ${verdict === "Below" ? "text-amber-800" : "text-slate-500"}`}>{gap}</span> : null}
@@ -88,7 +88,7 @@ function Figure({ position, target, vacant, value }: { position: WeeklySheetPosi
 
 function Depth({ account, family }: { account: WeeklySheetAccount; family: WeeklySheetFamily }) {
   const value = account.depth[family];
-  return <span className={`tabular-nums ${weeklySheetDepthMet(value) ? "font-black text-slate-900" : "font-semibold text-amber-800"}`}>{value}</span>;
+  return <span className={`tabular-nums ${weeklySheetDepthMet(value) ? "font-black text-[#08111f]" : "font-semibold text-amber-800"}`}>{value}</span>;
 }
 
 function Accounts({ rep }: { rep: WeeklySheetRep }) {
@@ -119,7 +119,7 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
         <tbody>
           {accounts.map((account) => (
             <tr className="border-b border-slate-100 align-top text-phx-md last:border-b-0" key={account.customerId}>
-              <td className="break-words px-4 py-2 font-semibold text-slate-900" dir="auto">
+              <td className="break-words px-4 py-2 font-semibold text-[#08111f]" dir="auto">
                 {account.name}
               </td>
               <td className="px-2 py-2 tabular-nums">{account.visits}</td>
@@ -150,7 +150,7 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
         {accounts.map((account) => (
           <div className="grid gap-1 px-4 py-3" key={account.customerId}>
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="min-w-0 break-words text-phx-md font-black text-slate-900" dir="auto">
+              <p className="min-w-0 break-words text-phx-md font-black text-[#08111f]" dir="auto">
                 {account.name}
               </p>
               <AccountState account={account} />
@@ -187,7 +187,7 @@ function RepPerson({ position, rep }: { position: WeeklySheetPosition; rep: Week
   const verdicts = weeklySheetRepVerdicts(rep, position);
   return (
     <>
-      <p className={`break-words text-phx-md font-black ${rep.vacant ? "text-slate-500" : "text-slate-900"}`}>{rep.person}</p>
+      <p className={`break-words text-phx-md font-black ${rep.vacant ? "text-slate-500" : "text-[#08111f]"}`}>{rep.person}</p>
       <p className="break-words text-phx-sm text-slate-500">{weeklySheetRepDaysLine(rep)}</p>
       {!rep.vacant && verdicts.pm === "No working day" ? <p className="text-phx-sm font-semibold text-slate-500">No working day this week, so nothing is graded</p> : null}
     </>
@@ -198,7 +198,7 @@ function RepPharmacies({ rep }: { rep: WeeklySheetRep }) {
   const waiting = weeklySheetWaitingLine(rep.waiting);
   return (
     <>
-      <p className="text-phx-md font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
+      <p className="text-phx-md font-black tabular-nums text-[#08111f]">{rep.pharmacies}</p>
       {waiting ? <p className="text-phx-xs font-semibold text-amber-700">{waiting}</p> : null}
     </>
   );
@@ -206,7 +206,7 @@ function RepPharmacies({ rep }: { rep: WeeklySheetRep }) {
 
 function RepAccountsMet({ rep }: { rep: WeeklySheetRep }) {
   return (
-    <p className="text-phx-md font-black tabular-nums text-slate-900">
+    <p className="text-phx-md font-black tabular-nums text-[#08111f]">
       {rep.accountsMet} of {rep.accounts.length}
     </p>
   );
@@ -297,10 +297,10 @@ function RepCard({ position, rep }: { position: WeeklySheetPosition; rep: Weekly
   }
   return (
     <details className="group scroll-mt-4" id={anchor}>
-      <summary className="grid cursor-pointer list-none gap-2 px-4 py-3 hover:bg-slate-50">
+      <summary className="grid cursor-pointer list-none gap-2 px-4 py-3 transition-colors hover:bg-slate-50 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]">
         {facts}
-        <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show {weeklySheetAccountsWord(rep.accounts.length)}</p>
-        <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-[#08111f] group-open:hidden">Show {weeklySheetAccountsWord(rep.accounts.length)}</p>
+        <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-[#08111f] group-open:block">Hide accounts</p>
       </summary>
       <Accounts rep={rep} />
     </details>
@@ -325,7 +325,7 @@ export function WeeklySheetView({
     <div className="grid gap-4">
       <WeeklySheetToolbar basePath={surface === "admin" ? WEEKLY_SHEET_ADMIN_PATH : WEEKLY_SHEET_PATH} sheet={sheet} show={show} />
       {sheet.targetsUncertain ? (
-        <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-sm font-semibold text-amber-900">
+        <p className="border border-l-[3px] border-slate-200 border-l-amber-500 bg-white px-4 py-2 text-phx-sm font-semibold text-[#08111f]">
           The holiday calendar or approved leave could not be read just now, so a target may be one day too high.
         </p>
       ) : null}

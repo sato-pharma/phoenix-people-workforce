@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
+
 import { listLabel, RepsListListBody } from "@/components/crm/reps-list-board";
 import {
   BackToAllReps,
@@ -154,7 +156,7 @@ function vacancyColumns(basePath: string, board: VacantAreasBoard, largestLeft: 
       cell: (area) =>
         area.status === "list" ? (
           <>
-            <span className="font-black text-slate-900 tabular-nums">{area.holder?.contactCount ?? 0}</span>
+            <span className="font-black text-[#08111f] tabular-nums">{area.holder?.contactCount ?? 0}</span>
             <CardMeter max={largestLeft} value={area.holder?.contactCount ?? 0} />
           </>
         ) : (
@@ -175,12 +177,12 @@ function TeamVacancyLine({ areas }: { areas: readonly VacantArea[] }) {
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="inline-flex items-center gap-1.5">
         <Swatch tone="slate" />
-        <span className="font-black text-slate-900 tabular-nums">{withList}</span> with a list
+        <span className="font-black text-[#08111f] tabular-nums">{withList}</span> with a list
       </span>
       {without > 0 ? (
         <span className="inline-flex items-center gap-1.5">
           <Swatch tone="amber" />
-          <span className="font-black text-slate-900 tabular-nums">{without}</span> with none
+          <span className="font-black text-[#08111f] tabular-nums">{without}</span> with none
         </span>
       ) : null}
     </span>
@@ -243,7 +245,7 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
 
   return (
     <div className="border border-slate-200">
-      <Section description={description} title="Vacant Areas">
+      <Section description={description} meta={syncedAt ? `Refreshed ${cairoStamp(syncedAt)} Cairo` : "Never refreshed"} title="Vacant Areas">
         <RepsListFilters basePath={basePath} options={options} preserve={preserve} selection={selection} withRep={false} />
       </Section>
 
@@ -254,7 +256,7 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
         <Section
           action={
             <Link
-              className="border border-slate-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
+              className={landingActionClassName("outline")}
               href={hrefWithVacancy(basePath, board, null)}
             >
               Back to all vacant areas

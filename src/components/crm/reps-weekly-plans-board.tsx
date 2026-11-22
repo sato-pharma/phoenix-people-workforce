@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { LANDING_FOCUS, landingActionClassName } from "@/components/employee-portal/landing-kit";
+
 import { PlanStatusPicker } from "@/components/crm/plan-status-picker";
 import { PlanWeekPicker } from "@/components/crm/plan-week-picker";
 import { PlanApproveButton } from "@/components/crm/plan-verify-button";
@@ -236,7 +238,7 @@ function planColumns(basePath: string, board: RepsWeeklyPlansBoard, weekIsFuture
     },
     {
       align: "right",
-      cell: (rep) => <span className="font-black text-slate-900 tabular-nums">{rep.contactCount}</span>,
+      cell: (rep) => <span className="font-black text-[#08111f] tabular-nums">{rep.contactCount}</span>,
       key: "contacts",
       label: "Contacts on the list",
       width: "w-[16%]",
@@ -257,15 +259,15 @@ function RegionWeekLine({ members, weekIsFuture }: { members: readonly RepsWeekl
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="inline-flex items-center gap-1.5">
         <Swatch tone="emerald" />
-        <span className="font-black text-slate-900 tabular-nums">{verified}</span> verified
+        <span className="font-black text-[#08111f] tabular-nums">{verified}</span> verified
       </span>
       <span className="inline-flex items-center gap-1.5">
         <Swatch tone="amber" />
-        <span className="font-black text-slate-900 tabular-nums">{waiting}</span> waiting
+        <span className="font-black text-[#08111f] tabular-nums">{waiting}</span> waiting
       </span>
       <span className="inline-flex items-center gap-1.5">
         <Swatch tone={weekIsFuture ? "slate" : "rose"} />
-        <span className="font-black text-slate-900 tabular-nums">{missing}</span> {weekIsFuture ? "not filed yet" : "not filed"}
+        <span className="font-black text-[#08111f] tabular-nums">{missing}</span> {weekIsFuture ? "not filed yet" : "not filed"}
       </span>
     </span>
   );
@@ -324,10 +326,10 @@ function DayStrip({ days }: { days: RepsWeeklyPlansBoard["days"] }) {
           return (
             <li key={day.date}>
               <a
-                className={`flex min-h-11 flex-col justify-center border border-l-[3px] border-slate-200 ${TONE_LEFT_RULE[tone]} bg-white px-3 py-1.5 transition-colors hover:border-y-orange-400 hover:border-r-orange-400 hover:bg-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400`}
+                className={`flex min-h-11 flex-col justify-center border border-l-[3px] border-slate-200 ${TONE_LEFT_RULE[tone]} bg-white px-3 py-1.5 transition-colors motion-reduce:transition-none hover:border-y-slate-400 hover:border-r-slate-400 hover:bg-slate-50 ${LANDING_FOCUS}`}
                 href={`#plan-day-${day.date}`}
               >
-                <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-900">{day.label}</span>
+                <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-[#08111f]">{day.label}</span>
                 <span className="text-phx-xs font-semibold text-slate-500 tabular-nums">{dayStripLine(day)}</span>
               </a>
             </li>
@@ -442,7 +444,7 @@ function PlanPanel({
         className={`mx-5 mt-4 flex flex-wrap items-center justify-between gap-3 border border-l-[3px] border-slate-200 ${TONE_LEFT_RULE[tone]} bg-white px-4 py-3`}
       >
         <div className="min-w-0 flex-1">
-          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">{board.week.label}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]">{board.week.label}</p>
           <p className="mt-0.5 text-phx-sm leading-relaxed text-slate-600">
             {/* Said in words rather than left to the button's absence. A manager who cannot approve
                 is told why here; the decide route refuses the write independently, which is the boundary. */}
@@ -455,7 +457,7 @@ function PlanPanel({
       {/* Two plans for one rep in one week is rare and worth seeing rather than silently picking
           one — it usually means the week was re-filed. Both are offered by name. */}
       {board.plans.length > 1 ? (
-        <div className="mt-4 border-t border-slate-100 px-5 py-3">
+        <div className="mt-4 border-t border-slate-200 px-5 py-3">
           <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             {board.plans.length} plans filed for this week
           </p>
@@ -464,8 +466,8 @@ function PlanPanel({
               <Link
                 className={
                   option.crmPlanId === plan.crmPlanId
-                    ? "inline-flex min-h-11 items-center border border-orange-500 bg-orange-50 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-900 md:min-h-0"
-                    : "inline-flex min-h-11 items-center border border-slate-200 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500 hover:border-orange-400 md:min-h-0"
+                    ? `inline-flex min-h-11 items-center border border-[#08111f] bg-[#08111f] px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white md:min-h-0 ${LANDING_FOCUS}`
+                    : `inline-flex min-h-11 items-center border border-slate-200 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500 transition-colors hover:border-[#08111f] hover:text-[#08111f] motion-reduce:transition-none md:min-h-0 ${LANDING_FOCUS}`
                 }
                 href={hrefWithPlan(basePath, board, option.crmPlanId)}
                 key={option.crmPlanId}
@@ -552,7 +554,7 @@ export function RepsWeeklyPlansBoardView({
 
   return (
     <div className="border border-slate-200">
-      <Section description={description} title="Reps Weekly Plans">
+      <Section description={description} meta={syncedAt ? `Refreshed ${cairoStamp(syncedAt)} Cairo` : "Never refreshed"} title="Reps Weekly Plans">
         <RepsListFilters
           basePath={basePath}
           options={options}
@@ -593,7 +595,7 @@ export function RepsWeeklyPlansBoardView({
         <Section
           action={
             <Link
-              className="border border-slate-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
+              className={landingActionClassName("outline")}
               href={hrefWithRep(basePath, board, null)}
             >
               Back to all reps

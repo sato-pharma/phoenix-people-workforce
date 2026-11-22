@@ -269,15 +269,15 @@ export function KpisFilterBar({
             aria-expanded={open}
             className={
               anyActive
-                ? "inline-flex items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-orange-800"
-                : "inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-slate-400"
+                ? "inline-flex items-center gap-2 border border-[#08111f] bg-slate-50 px-3 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
+                : "inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-slate-700 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-slate-400"
             }
             onClick={() => setOpen((value) => !value)}
             type="button"
           >
             <span>Advanced filters</span>
             {activeCount > 0 ? (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-600 px-1 text-phx-xs font-black tabular-nums text-white">
+              <span className="inline-flex h-4 min-w-4 items-center justify-center bg-[#08111f] px-1 text-phx-xs font-black tabular-nums text-white">
                 {activeCount}
               </span>
             ) : null}
@@ -285,7 +285,7 @@ export function KpisFilterBar({
           </button>
           {anyActive ? (
             <button
-              className="border border-slate-300 bg-white px-3 py-2 text-phx-md font-bold text-slate-600 transition-colors hover:border-rose-400 hover:text-rose-700"
+              className="border border-slate-300 bg-white px-3 py-2 text-phx-md font-bold text-slate-600 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-rose-400 hover:text-rose-700"
               disabled={pending}
               onClick={clearAll}
               type="button"
@@ -295,8 +295,8 @@ export function KpisFilterBar({
           ) : null}
         </div>
         <p className="text-phx-sm font-semibold text-slate-500">
-          Showing <span className="tabular-nums text-slate-900">{visible}</span> of{" "}
-          <span className="tabular-nums text-slate-900">{total}</span> medical reps in your reach
+          Showing <span className="tabular-nums text-[#08111f]">{visible}</span> of{" "}
+          <span className="tabular-nums text-[#08111f]">{total}</span> medical reps in your reach
           {pending ? " · updating…" : ""}
         </p>
       </div>
@@ -323,7 +323,7 @@ export function KpisFilterBar({
                   value={query}
                 />
                 <button
-                  className="border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700"
+                  className="border border-[#08111f] bg-[#08111f] px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:bg-[#13233a]"
                   disabled={pending}
                   type="submit"
                 >
@@ -351,7 +351,7 @@ export function KpisFilterBar({
             <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{primaryRanges.map(rangeBox)}</div>
             {otherRanges.length > 0 ? (
               <details className="mt-3">
-                <summary className="cursor-pointer text-phx-md font-bold text-slate-600 hover:text-slate-900">
+                <summary className="cursor-pointer text-phx-md font-bold text-slate-600 transition-colors hover:text-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]">
                   More columns
                 </summary>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{otherRanges.map(rangeBox)}</div>
@@ -359,14 +359,14 @@ export function KpisFilterBar({
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <button
-                className="border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700"
+                className="border border-[#08111f] bg-[#08111f] px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:bg-[#13233a]"
                 disabled={pending}
                 type="submit"
               >
                 Apply ranges
               </button>
               <button
-                className="border border-slate-300 bg-white px-4 py-2 text-phx-md font-bold text-slate-600 transition-colors hover:border-slate-500"
+                className="border border-slate-300 bg-white px-4 py-2 text-phx-md font-bold text-slate-600 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-slate-500"
                 disabled={pending}
                 onClick={() => {
                   setDraft(draftFrom({}));
@@ -403,8 +403,8 @@ export function KpisFilterBar({
                         <label
                           className={
                             isOn
-                              ? "inline-flex cursor-pointer items-center gap-1.5 border border-orange-500 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900"
-                              : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors hover:border-slate-400"
+                              ? "inline-flex cursor-pointer items-center gap-1.5 border border-[#08111f] bg-slate-50 px-2 py-1 text-phx-sm font-bold text-[#08111f]"
+                              : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] hover:border-slate-400"
                           }
                           key={option.value}
                           title={group.key === "flags" ? kpiFlagHint(option.value as KpiFlag, kpiRules) : undefined}

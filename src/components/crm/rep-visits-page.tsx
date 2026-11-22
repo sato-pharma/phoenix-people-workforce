@@ -20,6 +20,7 @@
 import Link from "next/link";
 
 import { RepVisitsDetail } from "@/components/crm/rep-visits-detail";
+import { LANDING_FOCUS, LANDING_INK } from "@/components/employee-portal/landing-kit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
@@ -158,9 +159,12 @@ export async function RepVisitsPageBody({
 
   if (!board) {
     return (
-      <div className="border border-rose-200 bg-rose-50 px-5 py-4">
-        <p className="text-sm font-bold text-rose-800">These visits could not load.</p>
-        <p className="mt-1 text-xs text-rose-700">{loadError}</p>
+      <div className="flex items-stretch gap-3 border border-slate-200 bg-white px-5 py-4">
+        <span aria-hidden className="w-1 shrink-0 self-stretch bg-rose-600" />
+        <div className="min-w-0">
+          <p className={`text-sm font-bold ${LANDING_INK}`}>These visits could not load.</p>
+          <p className="mt-1 text-xs text-slate-600">{loadError}</p>
+        </div>
       </div>
     );
   }
@@ -174,18 +178,21 @@ export async function RepVisitsPageBody({
     // is would turn the page into an oracle for whether a given key belongs to somebody else's team.
     return (
       <div className="space-y-4">
-        <Link className="text-xs font-bold text-orange-600 hover:underline" href={backHref}>
+        <Link className={`text-xs font-bold underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`} href={backHref}>
           ← Back to Call Rate
         </Link>
-        <div className="border border-amber-200 bg-amber-50 px-5 py-4">
-          <p className="text-sm font-bold text-amber-900">
+        <div className="flex items-stretch gap-3 border border-slate-200 bg-white px-5 py-4">
+          <span aria-hidden className="w-1 shrink-0 self-stretch bg-amber-500" />
+          <div className="min-w-0">
+          <p className={`text-sm font-bold ${LANDING_INK}`}>
             Nobody by that key recorded field work in{" "}
             {board.isWholeMonth ? board.monthLabel : `${board.monthLabel} · ${board.periodLabel}`}.
           </p>
-          <p className="mt-1 text-xs text-amber-800">
+          <p className="mt-1 text-xs text-slate-600">
             Widen the period or pick a different month on the board — one week can be genuinely empty for a rep who was
             on leave, and a rep who joined or left mid-year is absent from the months either side of their own.
           </p>
+          </div>
         </div>
       </div>
     );
@@ -223,7 +230,7 @@ export async function RepVisitsPageBody({
 
   return (
     <div className="space-y-5">
-      <Link className="text-xs font-bold text-orange-600 hover:underline" href={backHref}>
+      <Link className={`text-xs font-bold underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`} href={backHref}>
         ← Back to Call Rate
       </Link>
 
@@ -236,12 +243,12 @@ export async function RepVisitsPageBody({
             {/* The portal shell has already drawn the page's <h1> ("KPIs"), so there the name is the
                 section heading under it, never a second <h1>. */}
             {portal ? (
-              <h2 className="break-words text-xl font-black text-slate-900">{row.repName}</h2>
+              <h2 className={`break-words text-xl font-black ${LANDING_INK}`}>{row.repName}</h2>
             ) : (
-              <h1 className="text-xl font-black text-slate-900">{row.repName}</h1>
+              <h1 className={`text-xl font-black ${LANDING_INK}`}>{row.repName}</h1>
             )}
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-              <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-600">
+              <span className="border-l-2 border-l-slate-300 bg-white px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-600">
                 {roleLabel}
               </span>
               {portal
@@ -256,7 +263,7 @@ export async function RepVisitsPageBody({
               {/* Ruling A1 (owner, 2026-09-21): the same marker as the board, because the rates
                   beside it read "—" for the same reason. */}
               {row.noGpsFeed ? (
-                <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
+                <span className="border-l-2 border-l-amber-500 bg-white px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-amber-800">
                   No GPS feed
                 </span>
               ) : null}
@@ -270,31 +277,31 @@ export async function RepVisitsPageBody({
               at 360–430px. AM, PM and Pharmacy stay three separate figures, AM first. */}
           <div className={portal ? "grid w-full grid-cols-2 gap-x-5 gap-y-3 sm:w-auto sm:grid-cols-4" : "flex flex-wrap gap-5"}>
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                 {row.scored ? `AM of ${row.am.target}` : "AM rate"}
               </p>
-              <p className="text-lg font-black text-slate-900">{row.am.verifiedRate?.toFixed(2) ?? "—"}</p>
+              <p className={`text-lg font-black tabular-nums ${LANDING_INK}`}>{row.am.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                 {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
               </p>
-              <p className="text-lg font-black text-slate-900">{row.pm.verifiedRate?.toFixed(2) ?? "—"}</p>
+              <p className={`text-lg font-black tabular-nums ${LANDING_INK}`}>{row.pm.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             {/* Pharmacies are separate from AM/PM (owner, 2026-09-05) and have no target set yet —
                 see PHARMACY_CALL_RATE_TARGET — so this tile shows the raw rate with no "of N". Zero
                 is a normal reading, not a gap: never badge it the way a zero AM/PM would be. */}
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Pharmacy rate</p>
-              <p className="text-lg font-black text-slate-900">{row.pharmacy.verifiedRate?.toFixed(2) ?? "—"}</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Pharmacy rate</p>
+              <p className={`text-lg font-black tabular-nums ${LANDING_INK}`}>{row.pharmacy.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
-              <p className="text-lg font-black text-slate-900">{row.workingDays}</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Working days</p>
+              <p className={`text-lg font-black tabular-nums ${LANDING_INK}`}>{row.workingDays}</p>
             </div>
           </div>
         </div>
-        <p className="mt-3 text-phx-md text-slate-400">
+        <p className="mt-3 text-phx-md text-slate-500">
           {windowLabel} · {row.workingDays} working {row.workingDays === 1 ? "day" : "days"}
           {board.todayLeftOut ? " · today is not scored until it is over, so its calls are not listed yet" : ""}
           {" · "}every call below is classified by the same rule the rate uses, so these rows and that rate are the
@@ -303,13 +310,13 @@ export async function RepVisitsPageBody({
         {/* THE HOLIDAY CAVEAT, in the KPIs board's own words. A holiday the calendar did not return
             is still a working day in the rate above and an unmarked day in the list below. */}
         {holidaysComplete ? null : (
-          <p className="mt-2 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs font-semibold text-slate-700">
+          <p className="mt-2 border-l-[3px] border-l-amber-500 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
             The national holiday calendar could not be read for this period. Any public holiday it did not return is
             still counted as a working day, so the rates above may be lower than the real figure.
           </p>
         )}
         {row.noGpsFeed ? (
-          <p className="mt-2 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs font-semibold text-slate-700">
+          <p className="mt-2 border-l-[3px] border-l-amber-500 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
             No GPS check-in reached the CRM from this account in {windowLabel}, so none of the visits below could be
             proved. They are real reported calls; the proved rate is left blank rather than read as zero, and this rep
             is left out of the team figures on the board.

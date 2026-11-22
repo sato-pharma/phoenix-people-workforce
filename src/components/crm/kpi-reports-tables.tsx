@@ -149,7 +149,7 @@ const MEASURES = [
 function Tally({ rows }: { rows: ReportRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <dl className="grid grid-cols-1 gap-3 border-t border-slate-100 px-4 py-3 sm:grid-cols-3 sm:px-5">
+    <dl className="grid grid-cols-1 gap-3 border-t border-slate-200 px-4 py-3 sm:grid-cols-3 sm:px-5">
       {MEASURES.map(({ kind, label }) => {
         let met = 0;
         let below = 0;
@@ -163,7 +163,7 @@ function Tally({ rows }: { rows: ReportRow[] }) {
         return (
           <div key={kind}>
             <dt className={CAPTION}>{label}</dt>
-            <dd className="text-sm font-semibold text-slate-900">
+            <dd className="text-sm font-semibold text-[#08111f]">
               <span className="text-emerald-700">{met} met</span>
               <span className="text-slate-300"> · </span>
               <span className="text-rose-700">{below} below</span>
@@ -187,7 +187,7 @@ function Tally({ rows }: { rows: ReportRow[] }) {
 function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeading: string; rows: ReportRow[] }) {
   return (
     <table className="hidden w-full table-fixed md:table">
-      <caption className={`px-4 pb-2 pt-4 text-left text-phx-md font-black uppercase tracking-[0.12em] text-slate-900 sm:px-5`}>
+      <caption className={`px-4 pb-2 pt-4 text-left text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f] sm:px-5`}>
         {caption}
       </caption>
       <colgroup>
@@ -196,7 +196,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
         <col style={{ width: "20%" }} />
         <col style={{ width: "20%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-slate-50">
+      <thead className="border-y border-slate-200 bg-white">
         <tr>
           <th className={TH} scope="col">
             Rep
@@ -221,7 +221,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
           </th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-slate-200">
         {rows.map((row, index) => (
           <tr key={row.repKey ?? `${row.repName}-${index}`}>
             <td className={TD}>
@@ -246,8 +246,8 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
 function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
   return (
     <div className="md:hidden">
-      <p className="px-4 pb-2 pt-4 text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">{caption}</p>
-      <div className="divide-y divide-slate-100 border-t border-slate-100">
+      <p className="px-4 pb-2 pt-4 text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f]">{caption}</p>
+      <div className="divide-y divide-slate-200 border-t border-slate-200">
         {rows.map((row, index) => (
           <div className="px-4 py-3" key={row.repKey ?? `${row.repName}-${index}`}>
             <KpiRepName areaName={row.areaName} hireDate={row.hireDate} jobTitle={row.jobTitle} lineName={row.lineName} name={row.repName} />
@@ -257,19 +257,19 @@ function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
             <dl className="mt-2 grid grid-cols-3 gap-2">
               <div>
                 <dt className={CAPTION}>Call rate</dt>
-                <dd className="text-sm font-semibold tabular-nums text-slate-900">
+                <dd className="text-sm font-semibold tabular-nums text-[#08111f]">
                   {rate(row.block.callRate.perWorkingDay)}
                 </dd>
                 <Verdict block={row.block} kind="callRate" />
               </div>
               <div>
                 <dt className={CAPTION}>Coverage</dt>
-                <dd className="text-sm font-semibold tabular-nums text-slate-900">{pct(row.block.coverage.pct)}</dd>
+                <dd className="text-sm font-semibold tabular-nums text-[#08111f]">{pct(row.block.coverage.pct)}</dd>
                 <Verdict block={row.block} kind="coverage" />
               </div>
               <div>
                 <dt className={CAPTION}>Frequency</dt>
-                <dd className="text-sm font-semibold tabular-nums text-slate-900">{pct(row.block.frequency.pct)}</dd>
+                <dd className="text-sm font-semibold tabular-nums text-[#08111f]">{pct(row.block.frequency.pct)}</dd>
                 <Verdict block={row.block} kind="frequency" />
               </div>
             </dl>
@@ -300,7 +300,7 @@ export function AmPmKpiReportTables({
       <ListCards caption="AM — accounts" rows={amRows} />
       <ListTable caption="AM — accounts" rateHeading="Accounts a working day" rows={amRows} />
       <Tally rows={amRows} />
-      <div className="mt-4 border-t border-slate-100">
+      <div className="mt-4 border-t border-slate-200">
         <ListCards caption="PM — clinics" rows={pmRows} />
         <ListTable caption="PM — clinics" rateHeading="Clinics a working day" rows={pmRows} />
         <Tally rows={pmRows} />

@@ -105,7 +105,7 @@ function Figures({ day }: { day: TeamVisitDay }) {
           return (
             <div className={`min-w-0 px-2 py-1 ${index > 0 ? "border-l border-slate-200" : ""}`} key={cell.key}>
               <dt className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{cell.label}</dt>
-              <dd className={`text-phx-lg font-black leading-tight tabular-nums ${value === 0 ? "text-slate-300" : "text-slate-900"}`}>{value}</dd>
+              <dd className={`text-phx-lg font-black leading-tight tabular-nums ${value === 0 ? "text-slate-300" : "text-[#08111f]"}`}>{value}</dd>
             </div>
           );
         })}
@@ -182,7 +182,7 @@ function VisitLine({ time }: { time: TeamVisitDay["times"][number] }) {
     >
       <span className="text-phx-xs font-semibold tabular-nums text-slate-500">{time.savedAt ?? "No time recorded"}</span>
       <span className="min-w-0">
-        <span className="block break-words text-phx-sm font-semibold text-slate-900">
+        <span className="block break-words text-phx-sm font-semibold text-[#08111f]">
           <bdi>{time.customer ?? "Customer not recorded"}</bdi>
         </span>
         {tagged || note || time.waiting ? (
@@ -226,7 +226,7 @@ function ManagerDayPlan({ day }: { day: TeamVisitManagerDay }) {
     <div className="mb-2 border-b border-sky-200 pb-2">
       <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-sky-800">Day planned · {day.headline}</p>
       {day.halves.map((line) => (
-        <p className="break-words text-phx-sm font-semibold text-slate-900" key={line}>{line}</p>
+        <p className="break-words text-phx-sm font-semibold text-[#08111f]" key={line}>{line}</p>
       ))}
       {day.unsent ? <p className="text-phx-sm font-semibold text-amber-700">Plan not sent yet · {day.unsent}</p> : null}
     </div>
@@ -321,7 +321,7 @@ function FoldedTimes({ day }: { day: TeamVisitDay }) {
   if (day.times.length <= TEAM_VISIT_PHONE_FOLD) return <Times day={day} />;
   return (
     <details className="mt-1.5 border border-slate-200 bg-white">
-      <summary className="cursor-pointer px-2 py-1 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700">Show the {day.times.length} visits</summary>
+      <summary className="cursor-pointer px-2 py-1 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]">Show the {day.times.length} visits</summary>
       <div className="px-2 pb-2">
         <Times day={day} />
       </div>
@@ -349,7 +349,7 @@ function DayCell({ day, fold = false, href, pace = null }: { day: TeamVisitDay; 
       {fold ? <FoldedTimes day={day} /> : <Times day={day} />}
       {href && day.times.length > 0 ? (
         <Link
-          className="mt-2 inline-block border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-800 hover:border-slate-900 hover:bg-slate-50"
+          className="mt-2 inline-block border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-800 transition-colors hover:border-[#08111f] hover:bg-slate-50 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
           href={href}
         >
           Open the day →
@@ -450,7 +450,7 @@ export function TeamVisitsView({
       <TeamVisitsAttentionPanel day={day} report={report} show={show} />
       <TeamVisitsJumpList report={report} />
       {report.leaveUnread || report.activitiesUnread ? (
-        <p className="border border-amber-300 bg-amber-50 p-3 text-phx-md font-semibold text-amber-900">
+        <p className="border border-l-[3px] border-slate-200 border-l-amber-500 bg-white p-3 text-phx-md font-semibold text-[#08111f]">
           {report.leaveUnread ? "Approved leave could not be read just now, so a day on leave may show as no visits. " : ""}
           {report.activitiesUnread ? "Recorded admin work and other day activities could not be read just now." : ""}
         </p>
@@ -501,7 +501,7 @@ export function TeamVisitsView({
                   {reps.map((rep) => (
                     <tr className="scroll-mt-4 border-b border-slate-100 align-top last:border-b-0" id={teamVisitRepAnchor(rep.seatId, "row")} key={rep.seatId}>
                       <td className="break-words px-4 py-3">
-                        <p className="text-phx-md font-black text-slate-900">{rep.person}</p>
+                        <p className="text-phx-md font-black text-[#08111f]">{rep.person}</p>
                         <Hired dates={rep.hireDates} />
                         <p className="text-phx-sm text-slate-500">{rep.territory}</p>
                       </td>
@@ -512,7 +512,7 @@ export function TeamVisitsView({
                   {vacantRows.map((rep) => (
                     <tr className={`border-b border-slate-100 align-top last:border-b-0 ${rep.vacant ? VACANT_ROW : ""}`} key={rep.seatId}>
                       <td className="break-words px-4 py-3">
-                        <p className={rep.vacant ? VACANT_NAME : "text-phx-md font-black text-slate-900"}>{rep.person}</p>
+                        <p className={rep.vacant ? VACANT_NAME : "text-phx-md font-black text-[#08111f]"}>{rep.person}</p>
                         <p className="text-phx-sm text-slate-500">{rep.territory}</p>
                       </td>
                       <td className="px-4 py-3 text-phx-sm font-semibold text-amber-800" colSpan={2}>{TEAM_VISIT_VACANT_CELL}</td>
@@ -535,7 +535,7 @@ export function TeamVisitsView({
                 {reps.map((rep) => (
                   <div className="grid scroll-mt-4 gap-2 p-4" id={teamVisitRepAnchor(rep.seatId, "card")} key={rep.seatId}>
                     <div>
-                      <p className="text-phx-md font-black text-slate-900">{rep.person}</p>
+                      <p className="text-phx-md font-black text-[#08111f]">{rep.person}</p>
                       <Hired dates={rep.hireDates} />
                       <p className="text-phx-sm text-slate-500">{rep.territory}</p>
                     </div>
@@ -547,7 +547,7 @@ export function TeamVisitsView({
                 ))}
                 {vacantRows.map((rep) => (
                   <div className={`grid gap-1 p-4 ${rep.vacant ? VACANT_ROW : ""}`} key={rep.seatId}>
-                    <p className={rep.vacant ? VACANT_NAME : "text-phx-md font-black text-slate-900"}>{rep.person}</p>
+                    <p className={rep.vacant ? VACANT_NAME : "text-phx-md font-black text-[#08111f]"}>{rep.person}</p>
                     <p className="text-phx-sm text-slate-500">{rep.territory}</p>
                     <p className="text-phx-sm font-semibold text-amber-800">{TEAM_VISIT_VACANT_CELL}</p>
                   </div>

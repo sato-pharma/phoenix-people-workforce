@@ -49,8 +49,8 @@ import { regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
  * Plans: flat colour, square corners, hairline borders — no gradient, glow or drop shadow (owner, 22 Oct 2026).
  */
 
-export const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
-export const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white";
+export const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 transition-colors hover:border-[#08111f] hover:bg-slate-50 hover:text-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
+export const LINK_ON = "border border-[#08111f] bg-[#08111f] px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
 export const LABEL = "text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 /**
@@ -74,7 +74,7 @@ export function WeeklySheetToolbar({
     <div className="grid gap-3 border border-slate-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid min-w-0 gap-0.5">
-          <p className="text-phx-md font-black text-slate-900">Week · {sheet.label}</p>
+          <p className="text-phx-md font-black text-[#08111f]">Week · {sheet.label}</p>
           <p className="text-phx-sm font-semibold text-slate-700">{weeklySheetPositionLine(weeklySheetPosition(sheet))}</p>
           <p className="text-phx-sm text-slate-500">{weeklySheetTargetLine()}</p>
           <p className="text-phx-sm text-slate-500">{weeklySheetDepthLine()}</p>
@@ -201,15 +201,15 @@ export function WeeklySheetStandPanel({ sheet }: { sheet: WeeklySheet }) {
 function RepName({ listed, name, rep }: { listed: boolean; name: string; rep: Pick<WeeklySheetRep, "seatId"> }) {
   return listed ? (
     <>
-      <a className="hidden break-words text-phx-md font-black text-slate-900 hover:underline md:inline" href={`#${weeklySheetRepAnchor(rep)}`}>
+      <a className="hidden break-words text-phx-md font-black text-[#08111f] hover:underline md:inline" href={`#${weeklySheetRepAnchor(rep)}`}>
         {name}
       </a>
-      <a className="break-words text-phx-md font-black text-slate-900 hover:underline md:hidden" href={`#${weeklySheetRepAnchor(rep, "card")}`}>
+      <a className="break-words text-phx-md font-black text-[#08111f] hover:underline md:hidden" href={`#${weeklySheetRepAnchor(rep, "card")}`}>
         {name}
       </a>
     </>
   ) : (
-    <span className="break-words text-phx-md font-black text-slate-900">{name}</span>
+    <span className="break-words text-phx-md font-black text-[#08111f]">{name}</span>
   );
 }
 
@@ -291,7 +291,7 @@ export function WeeklySheetAccountsPanel({ sheet }: { sheet: WeeklySheet }) {
           <tbody>
             {rows.map(({ district, totals }) => (
               <tr className="border-b border-slate-100 align-top text-phx-md last:border-b-0" key={weeklySheetDistrictKey(district)}>
-                <td className="break-words px-4 py-2 font-semibold text-slate-900">{regionManagerTitle(district.regionName, district.managerName)}</td>
+                <td className="break-words px-4 py-2 font-semibold text-[#08111f]">{regionManagerTitle(district.regionName, district.managerName)}</td>
                 <td className="px-2 py-2 tabular-nums">{totals.accounts}</td>
                 {WEEKLY_SHEET_ACCOUNT_STATES.map((state) => (
                   <td className="px-2 py-2 tabular-nums" key={state}>
@@ -306,7 +306,7 @@ export function WeeklySheetAccountsPanel({ sheet }: { sheet: WeeklySheet }) {
         <ul className="divide-y divide-slate-100 md:hidden">
           {rows.map(({ district, totals }) => (
             <li className="grid gap-1 px-4 py-3" key={weeklySheetDistrictKey(district)}>
-              <p className="break-words text-phx-md font-black text-slate-900">{regionManagerTitle(district.regionName, district.managerName)}</p>
+              <p className="break-words text-phx-md font-black text-[#08111f]">{regionManagerTitle(district.regionName, district.managerName)}</p>
               <p className="text-phx-sm tabular-nums text-slate-700">
                 {weeklySheetAccountsWord(totals.accounts)} ·{" "}
                 {WEEKLY_SHEET_ACCOUNT_STATES.map((state) => `${WEEKLY_SHEET_ACCOUNT_STATE_LABEL[state]} ${totals.byAccountState[state]}`).join(" · ")}
