@@ -50,6 +50,7 @@ import { ReviewDecision, ReviewEvidence, reviewPhotoAlt } from "@/components/pho
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { integrityBoardRow } from "@/lib/crm-integrity/integrity-board-rows";
+import { earlierDecisionText } from "@/lib/phoenix-crm/earlier-decision";
 import { adviseOnBuilding, adviseOnPlaceInUse, adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteAdviceLabel, placeNoteSubjectKey, type PlaceNoteAdvice } from "@/lib/phoenix-crm/place-note-rules";
 import { sharedPlaceKindLabel, sharedPlaceKindNoun } from "@/lib/phoenix-crm/shared-place-rules";
@@ -223,7 +224,11 @@ function reviewSlide(row: ValidationReviewRow, noteIndex: PlaceNoteIndex): Slide
       <>
         <DeckSubjectHeader
           eyebrow={where}
-          lines={[`${row.repName} · ${row.territory}`, `Captured ${row.createdAtText}`]}
+          lines={[
+            `${row.repName} · ${row.territory}`,
+            `Captured ${row.createdAtText}`,
+            ...(row.earlierDecision ? [earlierDecisionText(row.earlierDecision)] : []),
+          ]}
           pills={
             <>
               {row.listType ? <CrmPill>{row.listType}</CrmPill> : null}

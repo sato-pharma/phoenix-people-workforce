@@ -39,6 +39,7 @@ import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admi
 import { seatedTimetablePill } from "@/lib/phoenix-crm/approved-place-words";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
+import { earlierDecisionText } from "@/lib/phoenix-crm/earlier-decision";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
@@ -100,6 +101,7 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
         {dated} {customer.atText}
       </p>
       {stamp ? <p className="break-words text-xs font-semibold text-slate-700">{stamp}</p> : null}
+      {customer.earlierDecision ? <p className="break-words text-xs font-semibold text-slate-700">{earlierDecisionText(customer.earlierDecision)}</p> : null}
       <div className="flex min-w-0 flex-wrap gap-1">
         {customer.state === "waiting" ? <CrmPill tone="warn">{mode === "team" ? "Still being checked" : decides ? "Waiting for you" : "Waiting for the administrator"}</CrmPill> : null}
         {customer.waitingText ? <CrmPill tone={customer.waitingLong ? "warn" : "neutral"}>{customer.waitingText}</CrmPill> : null}

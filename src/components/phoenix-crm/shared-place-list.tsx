@@ -32,6 +32,7 @@ import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/compone
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
@@ -472,7 +473,8 @@ function NoTimetableDeclaration({ row }: { row: SharedPlaceBoardRow }) {
       await crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/no-timetable", { sharedPlaceId: row.sharedPlaceId, declared: control === "declare" }, "declaration");
       setSavedAs(control);
       setOpen(false);
-      router.refresh();
+      // Through the one re-read, so a decision's timer still waiting is not a second build of the page.
+      placeCheckReread.refreshNow(() => router.refresh());
     } catch (error) {
       setProblem(messageOf(error));
     } finally {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { createSavedMarks, savedMarkKey } from "../src/components/phoenix-crm/place-check-marks.ts";
 import { createPlaceCheckReread, PLACE_CHECK_REREAD_QUIET_MS } from "../src/components/phoenix-crm/place-check-reread.ts";
 
 import {
@@ -73,6 +74,51 @@ function functionBody(source: string, name: string): string {
   const rest = source.slice(start + 1);
   const end = rest.slice(1).search(/\n(?:export )?(?:async )?(?:function|const|type|export \{)/);
   return end < 0 ? rest : rest.slice(0, end + 1);
+}
+
+/**
+ * 4d · The real store of saved marks (22 Nov 2026). Approve and Refuse on one place in use are two controls
+ * keyed by the same row: saving one must redraw the other, and a re-read that only re-words the wait must
+ * still find the mark.
+ */
+function checkSavedMarks() {
+  const marks = createSavedMarks<string>(2);
+  const row = { reviewId: "r1", status: "approved", restorable: false, waitingText: "Waiting 3 hours", waitingLong: false, waitingHours: 3 };
+  const key = savedMarkKey(row);
+  assert.equal(
+    savedMarkKey({ ...row, waitingText: "Waiting 4 hours", waitingLong: true, waitingHours: 4 }),
+    key,
+    "🔴 a re-read that only re-words the wait is the same row — the decided row never comes back with live buttons",
+  );
+  assert.notEqual(savedMarkKey({ ...row, status: "rejected" }), key, "a real change of the row hands it back to the server's own view");
+  assert.notEqual(savedMarkKey({ ...row, restorable: true }), key, "an undo offered on the fresh row is never hidden behind the mark");
+  assert.equal(savedMarkKey({ seated: [{ ...row }] }), savedMarkKey({ seated: [{ ...row, waitingText: "Waiting 9 hours" }] }), "at any depth");
+
+  let approveDrawn = 0;
+  let refuseDrawn = 0;
+  let otherDrawn = 0;
+  const stopApprove = marks.listen(key, () => (approveDrawn += 1));
+  const stopRefuse = marks.listen(key, () => (refuseDrawn += 1));
+  const other = savedMarkKey({ ...row, reviewId: "r2" });
+  const stopOther = marks.listen(other, () => (otherDrawn += 1));
+  assert.equal(marks.savedUnder(key), null, "nothing is saved before a press");
+  marks.remember(key, "refused");
+  assert.equal(refuseDrawn, 1, "the control pressed redraws");
+  assert.equal(approveDrawn, 1, "🔴 and so does its sibling, Approve, on the same row");
+  assert.equal(otherDrawn, 0, "another row's controls are not told");
+  assert.equal(marks.savedUnder(key), "refused");
+  assert.equal(marks.savedUnder(savedMarkKey({ ...row, waitingText: "Waiting 5 hours" })), "refused", "a remount after the wait was re-worded still draws it");
+  stopApprove();
+  marks.remember(key, "already");
+  assert.equal(approveDrawn, 1, "a control that left stops hearing");
+  assert.equal(refuseDrawn, 2);
+  marks.remember(other, "approved");
+  marks.remember(savedMarkKey({ reviewId: "r3" }), "approved");
+  assert.equal(marks.savedUnder(key), null, "past the cap the oldest mark goes");
+  assert.equal(refuseDrawn, 3, "and its controls are told, so they draw the server's row again");
+  assert.equal(marks.savedUnder(other), "approved", "the newer marks stay");
+  stopRefuse();
+  stopOther();
 }
 
 function sources(): DeckSources {
@@ -271,7 +317,7 @@ export function runPlaceReviewDeckTests(): void {
   }
   {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
-    assert.match(functionBody(hook, "usePlaceCheckDone"), /scope\?\.done\(scope\.item, outcome\);\s*placeCheckReread\.ask\(\(\) => router\.refresh\(\)\);/, "outside the review the hook still re-reads the page, through the one shared wait");
+    assert.match(functionBody(hook, "usePlaceCheckDone"), /scope\?\.done\(scope\.item, outcome\);[\s\S]*placeCheckReread\.ask\(\(\) => \{[\s\S]*router\.refresh\(\);\s*\}\);/, "outside the review the hook still re-reads the page, through the one shared wait");
     assert.doesNotMatch(functionBody(hook, "usePlaceCheckDone"), /^\s*router\.refresh\(\);/m, "never a re-read of its own beside it");
   }
 
@@ -337,14 +383,19 @@ export function runPlaceReviewDeckTests(): void {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
     assert.match(functionBody(hook, "usePlaceCheckDone"), /return outcome;/, "the hook hands the outcome back, so a control can mark it saved");
     const savedHook = functionBody(hook, "useSavedOutcome");
-    assert.match(savedHook, /JSON\.stringify\(subject\)/, "the saved outcome is tied to the row as it was when the button was pressed");
-    assert.match(savedHook, /mark\.snapshot === snapshot/, "a re-read that changes the row hands it back to the server's own view, undo included");
+    assert.match(savedHook, /savedMarkKey\(subject\)/, "the saved outcome is tied to the row as it was when the button was pressed");
     // 4c · Stale rows (owner, 2026-11-08: "places checks is stale … many error"). The saved mark was
     // component state, so a list that remounted forgot it and the decided row stood with live buttons
     // until the re-read — the next press answered "This place was already decided".
-    assert.match(savedHook, /SAVED_MARKS\.get\(snapshot\)/, "the saved mark is read from the tab's store, so a remounted list still knows the row was decided");
-    assert.doesNotMatch(savedHook, /useState<\{ outcome/, "never component state again: a tab change or a filter would forget it");
-    assert.match(hook, /^const SAVED_MARKS = new Map</m, "the store lives at module level, outside every control");
+    assert.match(savedHook, /SAVED_MARKS\.savedUnder\(snapshot\)/, "the saved mark is read from the tab's store, so a remounted list still knows the row was decided");
+    assert.doesNotMatch(savedHook, /useState/, "never component state again: a tab change or a filter would forget it");
+    assert.match(hook, /^const SAVED_MARKS = createSavedMarks<PlaceCheckOutcome>\(\);/m, "the store lives at module level, outside every control");
+    // 4d · Approve stood live after Refuse (owner, 22 Nov 2026: "it accept with me … the same place … is as
+    // it is"): the mark redrew only the control that was pressed, never its sibling on the same row.
+    assert.match(savedHook, /useSyncExternalStore\(\s*subscribe,/, "🔴 every control drawing the row reads the store as an external store");
+    assert.match(savedHook, /SAVED_MARKS\.listen\(snapshot, listener\)/, "and listens for its own row's mark");
+    assert.match(savedHook, /SAVED_MARKS\.remember\(snapshot, outcome\)/, "a save goes through the store, which tells them all");
+    checkSavedMarks();
     const already = functionBody(hook, "isAlreadyDecided");
     assert.match(already, /ALREADY_DECIDED_CODES\.has\(code\)/, "an already-decided refusal is read by its code, never its words");
     for (const code of ["phoenix_crm_review_decided", "phoenix_crm_full_name_not_held"]) {
