@@ -11,6 +11,7 @@ import {
   cameraDayAllowance,
   cameraDuration,
   cameraFixGapText,
+  cameraSenderName,
   cameraTakenAt,
   cameraVisitDraft,
   parseCameraCap,
@@ -245,7 +246,7 @@ function theBoardFitsAndSaysNoNumbersToTheRep(): void {
   assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "the columns fill the table exactly");
   assert.ok(board.indexOf("<CrmCardsOnPhone>") < board.indexOf("<CrmTable"), "the phone cards come first");
   assert.match(board, /RefusalReasonField/, "taking back a recorded validation names what is wrong with the photo");
-  assert.match(board, /Test persona/);
+  assert.match(board, /\{row\.isTest \? <CrmPill tone="orange">Test login<\/CrmPill> : null\}/, "a test item wears its tag");
   assert.match(board, /Every check passed/, "a waiting item with no reason says so");
   assert.match(board, /"\/api\/phoenix-crm\/camera-reviews\/day-allowance"/, "the one-day raise is on the board");
   assert.match(board, /The manager's email approval: who approved it and when/);
@@ -273,7 +274,17 @@ function theMigrationIsClosed(): void {
   assert.match(allowances, /primary key \(rep_hr_id, day, is_test\)/, "for one rep and one day only");
 }
 
+/** Owner, 23 Nov 2026: "if a record is done by test account, show that this is the test Ibrahim". */
+function aTestItemIsNamedAfterItsTestLogin(): void {
+  assert.equal(cameraSenderName("Aya Ibrahim", true), "Test · Aya Ibrahim", "a test item names the test login");
+  assert.equal(cameraSenderName("Test · Aya Ibrahim", true), "Test · Aya Ibrahim", "never doubled");
+  assert.equal(cameraSenderName("Mohamed Salah", false), "Mohamed Salah", "a real rep's item keeps his own name");
+  const loader = read("src/lib/phoenix-crm/server/camera-items.ts");
+  assert.match(loader, /repName: cameraSenderName\(nameOf\(names, repHrId, repHrId\), row\.is_test === true\)/, "the page's rows carry it");
+}
+
 export function runPhoenixCrmCameraItemsTests(): void {
+  aTestItemIsNamedAfterItsTestLogin();
   timeComesFromPhoenixFirst();
   arrivalAlwaysWaitsOrArchives();
   capAndDraftParse();
