@@ -15,6 +15,7 @@ import { visitAskDeliveries } from "../src/lib/phoenix-crm/server/notifications.
 import {
   assertVisitAskAnswerer,
   canAnswerVisitAsk,
+  productManagerReachOf,
   raiseVisitAskFromVisit,
   visitAskInboxReach,
   visitAskSavedNote,
@@ -24,8 +25,10 @@ import {
   companionGroupTitle,
   isVisitAskAskableRole,
   isVisitAskOpen,
+  PRODUCT_MANAGER_LAST_KNOWN_MAX_AGE_MS,
   productManagersOfLine,
   raisesVisitAsk,
+  usableLastKnownProducts,
   resolveVisitAskAddressees,
   resolveVisitAskDay,
   VISIT_ASK_ASKABLE_ROLES,
@@ -34,6 +37,7 @@ import {
   VISIT_ASK_MARKETING_MANAGER_LINE_CODES,
   VISIT_ASK_NEXT_STEP,
   VISIT_ASK_PRODUCT_MANAGER_ROLES,
+  VISIT_ASK_TRAINING_MANAGER_ROLE,
   visitAskDayChoices,
   visitAskProductManagerRolesOfLine,
   visitAskInboxText,
@@ -403,6 +407,74 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     for (const role of ["Product Manager", "Group Product Manager", "Marketing Manager"] as const) {
       assert.deepEqual([...(permissionMatrix[role].phoenix_crm ?? [])], ["read"], `${role} still holds phoenix_crm read and nothing else`);
     }
+  }
+
+  // ── 2b. A read that fails for a minute does not drop a product manager ─────────────────────────
+  // Every recorded failure of this read (25 Oct, 28 Oct, 18 Nov 2026) was the whole database timing
+  // out for a minute. Dropping him then took him out of the picker and refused a visit naming him.
+  {
+    const DAY = PRODUCT_MANAGER_LAST_KNOWN_MAX_AGE_MS;
+    const at = (readAt: number) => ({ families: ["Guamusin"], readAt });
+    assert.deepEqual(usableLastKnownProducts(at(1_000), 1_000 + DAY), at(1_000), "a copy read within the day stands in");
+    assert.equal(usableLastKnownProducts(at(1_000), 1_001 + DAY), null, "a copy older than a day never stands in");
+    assert.equal(usableLastKnownProducts(at(5_000), 4_000), null, "a copy from the future never stands in");
+    assert.equal(usableLastKnownProducts(undefined, 1_000), null, "no copy, nothing stands in");
+
+    const holders = [
+      { hrId: "a-8", role: "Group Product Manager" },
+      { hrId: "B-155", role: "Product Manager" },
+      { hrId: "TM-1", role: VISIT_ASK_TRAINING_MANAGER_ROLE },
+    ];
+    const memory = new Map<string, { families: ReadonlyArray<string> | null; readAt: number }>();
+    let clock = 10_000;
+    const now = () => clock;
+    const reads: string[] = [];
+    const good = async (_holder: unknown, hrId: string) => {
+      reads.push(hrId);
+      return hrId === "A-8" ? ["Lacto Advanced"] : null;
+    };
+    const timedOut = async () => {
+      throw new Error("Could not read this login's visibility scope, so nothing was shown: AbortError: Supabase request timed out.");
+    };
+
+    const first = await productManagerReachOf(holders, good, memory, now);
+    assert.deepEqual(first.reach, [
+      { hrId: "A-8", role: "Group Product Manager", families: ["Lacto Advanced"] },
+      { hrId: "B-155", role: "Product Manager", families: null },
+      { hrId: "TM-1", role: VISIT_ASK_TRAINING_MANAGER_ROLE, families: null },
+    ], "a good read offers every one of them");
+    assert.deepEqual([first.stoodIn, first.missed], [[], []], "a good read stands in for nobody and drops nobody");
+    assert.deepEqual(reads, ["A-8", "B-155"], "the Training Manager's products are never read — she owns none");
+    assert.deepEqual(memory.get("A-8"), { families: ["Lacto Advanced"], readAt: 10_000 }, "a good read is kept, under the person key");
+
+    clock += 60_000;
+    const blip = await productManagerReachOf(holders, timedOut, memory, now);
+    assert.deepEqual(blip.reach, first.reach, "a minute the database does not answer offers the same people, with the same products");
+    assert.deepEqual(blip.stoodIn, ["A-8", "B-155"], "and says who stood on his last good read");
+    assert.deepEqual(blip.missed, [], "nobody is dropped");
+    assert.deepEqual(
+      productManagersOfLine(blip.reach, LINE_FAMILIES.Pedia, "pedia").map((entry) => entry.hrId),
+      productManagersOfLine(first.reach, LINE_FAMILIES.Pedia, "pedia").map((entry) => entry.hrId),
+      "so the line offers the rep exactly the product managers it offered before the blip",
+    );
+    assert.equal(memory.get("A-8")?.readAt, 10_000, "a stand-in never refreshes the copy's age");
+
+    clock = 10_001 + DAY;
+    const stale = await productManagerReachOf(holders, timedOut, memory, now);
+    assert.deepEqual(stale.missed, ["A-8", "B-155"], "past a day the copy no longer stands in, and he is left out as before");
+    assert.deepEqual(stale.reach.map((entry) => entry.hrId), ["TM-1"], "only the Training Manager, offered by her role, remains");
+
+    const fresh = await productManagerReachOf(holders, timedOut, new Map(), now);
+    assert.deepEqual(fresh.missed, ["A-8", "B-155"], "a fresh process holds no copy, so a failed read leaves him out exactly as before");
+
+    // The cached list never keeps a read that stood anyone in or left anyone out.
+    const service = source("src/lib/phoenix-crm/server/visit-asks.ts");
+    assert.match(
+      service,
+      /if \(stoodIn\.length > 0 \|\| missed\.length > 0\) serveWithoutCaching\(reach, /,
+      "a list read with a stand-in or a gap is served to this one rep and never cached",
+    );
+    assert.match(service, /productManagerReachOf\(\s*holders\.filter\(/, "the cached list reads each person through the stand-in reader");
   }
 
   // ── 3. The days, and how an ask reads ───────────────────────────────────────────────────────────

@@ -88,14 +88,23 @@ export type PhoenixCrmDecisionCounts = {
   /** How many territories that figure covers, so the sentence can say so. */
   territories: number;
   /**
-   * Places the Google Maps check could not settle, waiting on the deciders' own page — and 0, with no
-   * query at all, for every other viewer, because only the Super Admin and the SFE Manager decide one
-   * (`canDecideValidationReviews`). It is the one count here that is BLOCKED on a decision nobody
-   * else can take, which is why it reaches the decider's own lane rather than the worth-knowing band.
+   * Places the Google Maps check could not settle, waiting on the decider's own page — and 0, with no
+   * query at all, for every other viewer, because only the Super Admin decides one since 19 Nov 2026
+   * (`canDecideValidationReviews`; the SFE Manager recommends). It is the one count here that is BLOCKED
+   * on a decision nobody else can take, which is why it reaches the decider's own lane rather than the
+   * worth-knowing band.
    */
   placeChecks: number;
   /** When the oldest of those was held, so the row can state its age. */
   oldestPlaceCheckAt: string | null;
+  /**
+   * The place checks the SFE Manager has recommended on (22 Nov 2026), which leave Place checks for the SFE
+   * recommendations page and wait on the Super Admin there — counted apart, so `placeChecks` is exactly
+   * what Place checks draws and this exactly what that page draws. 0 with no query for everyone else.
+   */
+  sfeRecommendedChecks: number;
+  /** When the oldest of those was raised, so the row can state its age. */
+  oldestSfeRecommendedAt: string | null;
   /**
    * Customers whose place the Super Admin refused, back under To validate and not captured again yet
    * (added 2026-10-08: measured that day, 0 of 22 had been, the oldest 76.7 hours later). His alone,
@@ -151,7 +160,7 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     // The held-place queue is the Super Admin's alone, so for everybody else it is a TRUE zero and no
     // query is made at all — the gate is the module's own (`canDecideValidationReviews`), never a
     // role test spelled out again here.
-    decidesPlaces ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
+    decidesPlaces ? countValidationReviewsWaiting() : Promise.resolve({ count: 0, oldestAt: null, sfeRecommended: { count: 0, oldestAt: null } }),
     // The same gate for the same reason: only he refuses a place, so only he is told it is not redone.
     decidesPlaces ? countReopenedCustomersWaiting() : Promise.resolve({ count: 0, oldestAt: null }),
     // A recorded visit waits on the Administrator alone, so for everybody else this is a true zero.
@@ -169,6 +178,8 @@ export async function loadPhoenixCrmDecisionCounts(viewer: PhoenixCrmViewer): Pr
     territories: seatIds.length,
     placeChecks: placeCheck.count,
     oldestPlaceCheckAt: placeCheck.oldestAt,
+    sfeRecommendedChecks: placeCheck.sfeRecommended.count,
+    oldestSfeRecommendedAt: placeCheck.sfeRecommended.oldestAt,
     reopenedWaiting: reopened.count,
     oldestReopenedAt: reopened.oldestAt,
     recordedVisits: recorded.count,

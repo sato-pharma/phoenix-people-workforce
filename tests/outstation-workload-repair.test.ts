@@ -155,7 +155,8 @@ export function runOutstationWorkloadRepairTests() {
   const retrySlice = functionSlice(service, "export async function retryOutstationWorkloadCapture");
   assert.match(
     retrySlice,
-    /const release = await captureWorkloadAndReleaseIfReady\(request, access\)/,
+    // No caller access since 21 Nov 2026: the release runs as the system (tests/outstation-stranded-release.test.ts).
+    /const release = await captureWorkloadAndReleaseIfReady\(request\)/,
     "the retry must KEEP the release outcome — discarding it is what left it guessing",
   );
   assert.match(

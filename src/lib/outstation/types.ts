@@ -43,6 +43,13 @@ export type OutstationCarEvidenceMetadata = {
   capturedLocationLabel: string | null;
   capturedLongitude: number;
   employeeHrId: string;
+  /**
+   * An UPLOADED photo's own time, read from the file's EXIF before the canvas re-encode drops it
+   * (src/lib/evidence/photo-file-time.ts, owner 2026-11-23). `null` = the file carried none (a
+   * screenshot, a forwarded copy, a soft-copy ticket); absent on a live capture and on claims
+   * filed before it. Evidence for the approver, never a refusal.
+   */
+  fileTakenAt?: string | null;
   requestDraftId: string | null;
   requestId: string | null;
   source: OutstationCarEvidenceSource;

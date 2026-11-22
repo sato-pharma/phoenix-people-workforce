@@ -172,6 +172,13 @@ import {
   type DuplicateTripExisting,
 } from "@/lib/outstation/duplicate-trip-guard";
 import {
+  duplicateTicketMessage,
+  findDuplicateTicket,
+  type DuplicateTicketCandidate,
+  type DuplicateTicketExisting,
+  type TicketReceiptFile,
+} from "@/lib/outstation/duplicate-ticket-guard";
+import {
   applyCairoNoAllowance,
   cairoTripEarnsNoAllowance,
 } from "@/lib/outstation/cairo-allowance-rule";
@@ -179,6 +186,7 @@ import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { outstationClaimedTotal } from "@/lib/outstation/claimed-total";
 import {
   cairoDateOnly,
+  departurePhotoWindowClosedMessage,
   isWithinDepartureWindow,
   reviewDepartureEvidence,
   type DepartureEvidenceReview,
@@ -246,6 +254,7 @@ import {
   googleGeocodeAddress,
   googleReverseGeocode,
 } from "@/lib/google-maps/server";
+import { selectStrandedAcceptedClaims } from "@/lib/outstation/stranded-release";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -704,6 +713,62 @@ async function assertNoDuplicateTrip(input: DuplicateTripCandidate, excludeReque
 
   const earlier = findDuplicateTrip(input, existing, excludeRequestId);
   if (earlier) throw new Error(duplicateTripMessage(earlier));
+}
+
+/** How far either side of a new claim the same-ticket guard looks for a reused receipt photo. */
+const DUPLICATE_TICKET_LOOKBACK_DAYS = 31;
+
+function shiftIsoDay(isoDay: string, days: number) {
+  const date = new Date(`${isoDay.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDay.slice(0, 10);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function storedReceipts(value: unknown): TicketReceiptFile[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((item) => ({
+      name: typeof item.name === "string" ? item.name : null,
+      size: typeof item.size === "number" ? item.size : Number(item.size ?? 0),
+    }));
+}
+
+/**
+ * Refuses a claim that repeats a ticket, an other cost (parking) or a receipt photo already on
+ * another live claim of the same employee (duplicate-ticket-guard.ts, owner 2026-11-22). Read
+ * fresh, a month either side so a reused receipt is seen. A failed read refuses nothing, like the
+ * same-trip guard: the payroll duplicate hold is still the later net.
+ */
+async function assertNoDuplicateTicket(input: DuplicateTicketCandidate, excludeRequestId?: number) {
+  const start = input.tripStartDate.slice(0, 10);
+  const end = String(input.tripEndDate ?? start).slice(0, 10) || start;
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select(
+      "id, status, employee_hr_id, trip_start_date, trip_end_date, go_ticket_amount, return_ticket_amount, other_amount, to_city, ticket_attachment_metadata",
+    )
+    .ilike("employee_hr_id", input.employeeHrId)
+    .gte("trip_start_date", `${shiftIsoDay(start, -DUPLICATE_TICKET_LOOKBACK_DAYS)}T00:00:00Z`)
+    .lte("trip_start_date", `${shiftIsoDay(end, DUPLICATE_TICKET_LOOKBACK_DAYS)}T23:59:59Z`);
+  if (error || !data) return;
+
+  const existing: DuplicateTicketExisting[] = (data as Array<Record<string, unknown>>).map((row) => ({
+    employeeHrId: String(row.employee_hr_id ?? ""),
+    goTicketAmount: Number(row.go_ticket_amount ?? 0),
+    id: Number(row.id),
+    otherAmount: Number(row.other_amount ?? 0),
+    receipts: storedReceipts(row.ticket_attachment_metadata),
+    returnTicketAmount: Number(row.return_ticket_amount ?? 0),
+    status: String(row.status ?? ""),
+    toCity: typeof row.to_city === "string" ? row.to_city : null,
+    tripEndDate: typeof row.trip_end_date === "string" ? row.trip_end_date : null,
+    tripStartDate: String(row.trip_start_date ?? ""),
+  }));
+
+  const match = findDuplicateTicket(input, existing, excludeRequestId);
+  if (match) throw new Error(duplicateTicketMessage(match));
 }
 
 /**
@@ -2250,6 +2315,18 @@ export async function submitOutstationRequest(
       toCity: calculation.toCity,
       tripStartDate: calculation.tripStartDate,
     });
+    // One ticket, one parking cost and one receipt photo are claimed once (owner, 2026-11-22,
+    // after OUTSTATION-318/320 and 401/402 passed the same-trip guard on differently worded areas).
+    await assertNoDuplicateTicket({
+      employeeHrId: calculation.employeeHrId,
+      goTicketAmount: calculation.noTicketFare ? calculation.noTicketFare.oneWayFare : (input.goTicketAmount ?? 0),
+      otherAmount: input.otherAmount ?? 0,
+      receipts: (options.ticketAttachments ?? []).map((ticket) => ({ name: ticket.fileName, size: ticket.size })),
+      returnTicketAmount: calculation.noTicketFare ? calculation.noTicketFare.oneWayFare : (input.returnTicketAmount ?? 0),
+      toCity: calculation.toCity,
+      tripEndDate: calculation.tripEndDate,
+      tripStartDate: calculation.tripStartDate,
+    });
   }
 
   // A train ticket is read, and its date must be the arrival photo's day (or the day before, a night
@@ -3474,6 +3551,16 @@ export async function submitMedicalRepSimpleExpenseRequest(
     actionKey: "submit",
     expectedNextStatus: "pending",
     status: "draft",
+  });
+
+  // The same-ticket guard, as on the main submit (duplicate-ticket-guard.ts): before any file is stored.
+  await assertNoDuplicateTicket({
+    employeeHrId: identity.employeeHrId,
+    goTicketAmount: normalized.goTicketAmount,
+    receipts: normalized.attachments.map((attachment) => ({ name: attachment.fileName, size: attachment.size })),
+    returnTicketAmount: normalized.returnTicketAmount,
+    tripEndDate: normalized.tripEndDate,
+    tripStartDate: normalized.tripStartDate,
   });
 
   const now = new Date().toISOString();
@@ -5567,6 +5654,60 @@ export async function sendOutstationDeparturePhotoReminder(
   return true;
 }
 
+/**
+ * The morning retry for an ACCEPTED claim that every gate has cleared but no payroll row carries (claims 111 and
+ * 347, 21 Nov 2026). The capture that completes a held claim releases it, and that release never throws — "the next
+ * capture tries again" — but after the departure photo there is no next capture, so one failed release stranded the
+ * money for good. This hands each such claim to the SAME release, as the system: the decision was already made, this
+ * only delivers it, with the figures the release itself works out. A claim still waiting for its photo or workload, a
+ * claim with a payroll row (queued or paid) and anything not accepted are never touched — selectStrandedAcceptedClaims.
+ * A failed read throws, so the job reports a failure and never a zero that reads as "nothing was stranded".
+ */
+export async function releaseStrandedAcceptedOutstationClaims(): Promise<{
+  checked: number;
+  errors: number;
+  released: number;
+  stillHeld: number;
+}> {
+  const supabase = getSupabaseAdmin();
+  const accepted = (
+    await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("outstation_expense_requests").select("*").like("status", "accepted%"),
+      "id",
+    )
+  ).map(mapOutstationRequestRow);
+
+  const tripIds = accepted.map((request) => outstationPayrollTripId(request.id));
+  const payrollTripIds = new Set<string>();
+  for (let start = 0; start < tripIds.length; start += 200) {
+    const { data, error } = await supabase
+      .from("outstation_expenses")
+      .select("trip_id")
+      .in("trip_id", tripIds.slice(start, start + 200));
+    if (error) throw new Error(error.message);
+    for (const row of (data ?? []) as Array<{ trip_id?: unknown }>) payrollTripIds.add(String(row.trip_id ?? ""));
+  }
+
+  const stranded = selectStrandedAcceptedClaims(accepted, payrollTripIds);
+  let released = 0;
+  let stillHeld = 0;
+  let errors = 0;
+  for (const request of stranded) {
+    const release = await releaseOutstationRequestToPayrollIfReady(request.id, systemAccessContext);
+    if (release.released) {
+      released += 1;
+      continue;
+    }
+    stillHeld += 1;
+    if (!release.awaitingDecision) errors += 1;
+    logError("Outstation: an accepted claim with every gate complete is still off payroll after the morning retry", {
+      error: new Error(release.reason),
+      labels: { event: "outstation_stranded_release_held", requestId: String(request.id) },
+    });
+  }
+  return { checked: stranded.length, errors, released, stillHeld };
+}
+
 export async function runOutstationDeparturePhotoReminders(): Promise<{
   processed: number;
   errors: number;
@@ -5758,18 +5899,20 @@ export async function captureOutstationDeparturePhoto(
   //     was still on the trip. After the window it needs a Super Admin, exactly as before.
   //   - Nothing is ever discarded. The superseded capture keeps its own storage object and is
   //     recorded in previousVersions below, so a retake can correct a photo but never erase one.
+  //
+  // The FIRST capture is bounded by the same deadline since 2026-11-22 (owner, after the October
+  // audit: "Refuse after last day"). It used to be accepted late and only flagged
+  // `outside_trip_window`, and 17 of 170 departure photos were taken after the trip had ended — one a
+  // week later, 322 km away in another city — so the photo evidenced where he was when he remembered,
+  // not that he left the destination. A claim whose window closed is released by a Super Admin with a
+  // reason (releaseOutstationRequestWithoutEvidence), exactly as departure-evidence.ts always said.
   const isRetake = Boolean(request.departureEvidenceImagePath);
-  if (isRetake) {
-    const stillOpen = isWithinDepartureWindow({
-      capturedAt: new Date().toISOString(),
-      tripEndDate: request.tripEndDate,
-    });
-    if (!stillOpen) {
-      throw new Error(
-        "The departure photo can only be retaken while the trip window is open, and it closed at the end of " +
-          `${String(request.tripEndDate).slice(0, 10)}. Ask a system administrator if this needs changing.`,
-      );
-    }
+  const stillOpen = isWithinDepartureWindow({
+    capturedAt: new Date().toISOString(),
+    tripEndDate: request.tripEndDate,
+  });
+  if (!stillOpen) {
+    throw new Error(departurePhotoWindowClosedMessage(request.tripEndDate, isRetake));
   }
   if (!request.carEvidenceImagePath) {
     throw new Error(
@@ -5878,7 +6021,7 @@ export async function captureOutstationDeparturePhoto(
   // workload — and then to release the request into payroll if that succeeded. Both steps are
   // best-effort follow-ons: the photo is already saved, and neither a dead CRM nor a payroll
   // hiccup may turn the employee's successful capture into an error he has to retry.
-  await captureWorkloadAndReleaseIfReady(request, access);
+  await captureWorkloadAndReleaseIfReady(request);
 
   return { gateStatus, review };
 }
@@ -6868,11 +7011,13 @@ export async function addOutstationJourneyStopAsAdmin(
  * written, and the claim simply never reached payroll. The admin-triggered callers already surface
  * `release.reason`; these two now at least log it under their own event label.
  */
-async function runAutomaticOutstationRelease(
-  request: OutstationExpenseRequest,
-  access: AccessContext,
-) {
-  const release = await releaseOutstationRequestToPayrollIfReady(request.id, access);
+async function runAutomaticOutstationRelease(request: OutstationExpenseRequest) {
+  // AS THE SYSTEM, never as whoever made the capture (claims 111 and 347, 21 Nov 2026). The claim was
+  // accepted earlier by a Super Admin or the rule; the release only delivers that decision. Run under the
+  // employee's own access, the payroll save asked HIM for expense-approval rights — a District Manager
+  // has none — so "Forbidden: District Manager cannot approve expenses" stranded two accepted claims with
+  // every gate complete. followStopToPayroll does the same, for the same reason.
+  const release = await releaseOutstationRequestToPayrollIfReady(request.id, systemAccessContext);
   if (!release.released) {
     if (release.awaitingDecision) {
       // The employee has captured evidence while the request is still `submitted` — i.e. waiting on
@@ -6912,11 +7057,10 @@ async function runAutomaticOutstationRelease(
  */
 async function captureWorkloadAndReleaseIfReady(
   request: OutstationExpenseRequest,
-  access: AccessContext,
 ): Promise<{ reason: string; released: boolean } | null> {
   try {
     if (request.workloadGateStatus !== "pending_workload") {
-      return await runAutomaticOutstationRelease(request, access);
+      return await runAutomaticOutstationRelease(request);
     }
 
     const capture = await captureOutstationTripWorkload({
@@ -6953,7 +7097,7 @@ async function captureWorkloadAndReleaseIfReady(
       })
       .eq("id", request.id);
 
-    return await runAutomaticOutstationRelease(request, access);
+    return await runAutomaticOutstationRelease(request);
   } catch (error) {
     logError("Outstation workload capture failed after the departure photo (non-blocking)", {
       error,
@@ -7069,6 +7213,8 @@ export type OutstationDeparturePhotoDue = {
   id: number;
   tripEndDate: string;
   tripStartDate: string;
+  /** The trip's last Cairo day has passed, so the photo can no longer be taken (2026-11-22). */
+  windowClosed?: boolean;
 };
 
 /**
@@ -7122,6 +7268,8 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
       id: row.id,
       tripEndDate: row.tripEndDate,
       tripStartDate: row.tripStartDate,
+      // The card says so instead of offering a camera the server would refuse (2026-11-22).
+      windowClosed: !isWithinDepartureWindow({ capturedAt: new Date().toISOString(), tripEndDate: row.tripEndDate }),
     }));
 }
 
@@ -7385,7 +7533,10 @@ function buildMyOutstationSubmission(
       ticketAttachmentCount: ticketPathsOutsideStops(request.ticketAttachmentPaths, journeyStops).length,
       transportationType: request.transportationType,
     }),
-    canCaptureDeparturePhoto: gate.blocker === "departure_photo",
+    // Only while the trip is open: a departure photo after its last Cairo day is refused (2026-11-22).
+    canCaptureDeparturePhoto:
+      gate.blocker === "departure_photo" &&
+      isWithinDepartureWindow({ capturedAt: new Date().toISOString(), tripEndDate: request.tripEndDate }),
     canRetakeDeparturePhoto:
       Boolean(request.departureEvidenceImagePath) &&
       isWithinDepartureWindow({
@@ -7781,7 +7932,7 @@ export async function retryOutstationWorkloadCapture(
     throw new Error("This request is not waiting on its workload.");
   }
 
-  const release = await captureWorkloadAndReleaseIfReady(request, access);
+  const release = await captureWorkloadAndReleaseIfReady(request);
 
   // Re-read rather than infer: captureWorkloadAndReleaseIfReady is best-effort and swallows its
   // own failures, so the only honest answer about what happened is the row itself.

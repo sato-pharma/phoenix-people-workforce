@@ -27,6 +27,19 @@ import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 /** The Super Admin's camera page. */
 export const CAMERA_REVIEWS_PATH = "/admin/field-crm/camera-reviews";
 
+/**
+ * The name a camera item shows for whoever sent it. A test account files under the HR id of the person it
+ * mirrors, so a test item would otherwise read exactly like that person's own work. It is named the way the
+ * test login itself is named, "Test · Aya Ibrahim" (owner, 23 Nov 2026: "if a record is done by test account,
+ * show that this is the test Ibrahim").
+ */
+export const TEST_ACCOUNT_NAME_PREFIX = "Test · ";
+export function cameraSenderName(name: string, isTest: boolean): string {
+  if (!isTest) return name;
+  const bare = name.startsWith(TEST_ACCOUNT_NAME_PREFIX) ? name.slice(TEST_ACCOUNT_NAME_PREFIX.length) : name;
+  return `${TEST_ACCOUNT_NAME_PREFIX}${bare}`;
+}
+
 /** How many camera visits a rep may have approved in one Phoenix day, unless the Super Admin raises that day. */
 export const CAMERA_DAILY_CAP_DEFAULT = 3;
 export const CAMERA_DAILY_CAP_MIN = 1;

@@ -3,11 +3,12 @@
  *
  * Owner, 2026-10-03: an account Google has no listing for is "held for review and only system admin can
  * approve or reject … but do not show the rep that a person is accepting or rejecting — show him that
- * it's automated from system". Widened 2026-10-19 to the SFE Manager, who sees the same page and takes
- * the same decisions. So:
- *   · TWO deciders, one predicate: the Super Admin and the SFE Manager (`canDecideValidationReviews`),
- *     never a test account and never a district manager. The page lives under /admin, a tree a rep
- *     cannot open.
+ * it's automated from system". Widened 2026-10-19 to the SFE Manager, and narrowed back on 19 Nov 2026:
+ * the SFE Manager approved wrong validations, so he only RECOMMENDS, and his recommendations wait on the
+ * SFE recommendations page (owner, 22 Nov 2026: "SFE is no more responsible for validations. He only
+ * recommends."). So:
+ *   · ONE decider, one predicate: the Super Admin (`canDecideValidationReviews`), never the SFE Manager,
+ *     a test account or a district manager. The page lives under /admin, a tree a rep cannot open.
  *   · The rep reads only `locationCheck` on his own list ("checking" / "not_confirmed"), worded as the
  *     system's (google-place-rules.ts). Nothing he receives names who decided, or that anybody did.
  *
@@ -25,10 +26,12 @@ import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
+import { earlierDecisionOf, type EarlierDecision, type EarlierDecisionSource } from "@/lib/phoenix-crm/earlier-decision";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { PLACE_CUSTOMER_STATUS_JOIN, REVIEW_SUBJECTS_SELECT, SIGNBOARD_CHECK_KEYS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
+import { parsePlaceRecommendation } from "@/lib/phoenix-crm/place-note-rules";
 import {
   parseScheduleHeldBecause,
   parseScheduleLegibility,
@@ -51,7 +54,7 @@ import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { followLineTwinCopiesQuietly, shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers, sharedPlaceIsOnTheBoard } from "@/lib/phoenix-crm/server/shared-places";
-import { needsYouDecisionCount } from "@/lib/phoenix-crm/shared-place-groups";
+import { needsYouDecisionCountWithSfe } from "@/lib/phoenix-crm/shared-place-groups";
 import {
   parseSignboardPhotoProblem,
   signboardHoldStillReading,
@@ -73,7 +76,7 @@ import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
-/** Where the Super Admin and the SFE Manager decide them. */
+/** Where the Super Admin decides them (the SFE Manager reads the page and recommends). */
 export const VALIDATION_REVIEWS_PATH = "/admin/field-crm/validation-reviews";
 
 /** How long a decided review stays on the page beside the waiting ones. */
@@ -309,12 +312,23 @@ export async function pendingLocationReviewCustomers(customerIds: ReadonlyArray<
  * 🔴 AND IT COUNTS THE WAY THE NEEDS YOU TAB COUNTS — a building is one decision, held or with anybody
  * waiting behind it (`needsYouDecisionCount`); review rows alone missed every held building.
  *
+ * 🔴 AND WHAT THE SFE MANAGER RECOMMENDED ON IS COUNTED APART (22 Nov 2026, the deep audit). Place checks
+ * hands those to the SFE recommendations page, so counting them here read 25 more than the page drew, on
+ * a row that opened a page where they were nowhere. `sfeRecommended` is that page's own figure, a held
+ * building he recommended on counted once and taken off the board with its customers; they are still
+ * the Super Admin's alone to decide (`needsYouDecisionCountWithSfe`).
+ *
  * Read whole and paged, so PostgREST's 1,000-row ceiling cannot shorten it, with the oldest stamp so the
  * row can state its age. It THROWS on a failed read, and on a read it could not finish: the board turns a
  * rejection into its amber "could not be read" row, and a zero it cannot prove is the one shape that
  * board must never have.
  */
-export async function countValidationReviewsWaiting(): Promise<{ count: number; oldestAt: string | null }> {
+export async function countValidationReviewsWaiting(): Promise<{
+  count: number;
+  oldestAt: string | null;
+  /** The checks the SFE Manager recommended on, waiting on the SFE recommendations page instead. */
+  sfeRecommended: { count: number; oldestAt: string | null };
+}> {
   // 🔴 ONLY WHAT CAN STILL BE DECIDED IS COUNTED (owner, 14 Nov 2026, the items the audit left). A review
   // left pending on a retired place (a rejected building, a place removed from the list) is nobody's to
   // decide and the page no longer lists it (`reviewStillToDecide`), so a head count of every pending
@@ -349,13 +363,20 @@ export async function countValidationReviewsWaiting(): Promise<{ count: number; 
   throwIfError(heldRead.error);
   if (capped || heldRead.capped) throw new Error("The place checks waiting could not be counted whole.");
   // Each place's building comes joined into the same read, over its named key, so no lookup by id waits
-  // behind it (17 Nov 2026).
-  const places = await selectByIds<Row>(
-    "phoenix_crm_places",
-    "id, status, shared_place_id, venue:phoenix_crm_shared_places!phoenix_crm_places_shared_place_id_fkey(id, status, is_test, retired_at)",
-    "id",
-    [...new Set(rows.map((row) => String(row.place_id)))],
-  );
+  // behind it (17 Nov 2026). What the SFE Manager recommended on is read beside it, in the same wave.
+  const placeIds = [...new Set(rows.map((row) => String(row.place_id)))];
+  const [places, sfe] = await Promise.all([
+    selectByIds<Row>(
+      "phoenix_crm_places",
+      "id, status, shared_place_id, venue:phoenix_crm_shared_places!phoenix_crm_places_shared_place_id_fkey(id, status, is_test, retired_at)",
+      "id",
+      placeIds,
+    ),
+    loadSfeRecommendedSubjects(
+      placeIds,
+      heldRead.rows.map((row) => String(row.id)),
+    ),
+  ]);
   const placeById = new Map(places.map((row) => [String(row.id), row]));
   const waiting = rows.filter((row) => reviewStillToDecide(row, placeById));
   const buildingOf = (row: Row) => text(placeById.get(String(row.place_id))?.shared_place_id);
@@ -364,11 +385,34 @@ export async function countValidationReviewsWaiting(): Promise<{ count: number; 
     return isRecord(venue) ? [venue] : [];
   });
   const venuesOnBoard = new Set([...venues, ...heldRead.rows].filter(sharedPlaceIsOnTheBoard).map((row) => String(row.id)));
-  return needsYouDecisionCount({
-    waiting: waiting.map((row) => ({ id: String(row.id), at: String(row.created_at), sharedPlaceId: buildingOf(row) })),
+  return needsYouDecisionCountWithSfe({
+    waiting: waiting.map((row) => ({ id: String(row.id), at: String(row.created_at), placeId: String(row.place_id), sharedPlaceId: buildingOf(row) })),
     heldVenues: heldRead.rows.map((row) => ({ id: String(row.id), at: String(row.created_at) })),
     venuesOnBoard,
+    sfeRecommendedPlaces: sfe.places,
+    sfeRecommendedVenues: sfe.venues,
   });
+}
+
+/**
+ * The waiting places and held buildings the SFE Manager has recommended on — read as the board's own
+ * note index reads them (`loadPlaceNoteIndex`): his rows only, and a recommendation the code does not know
+ * is none, so `sfeRecommendationOf` and this agree on every row. It throws on a failed read, like the count.
+ */
+async function loadSfeRecommendedSubjects(
+  placeIds: ReadonlyArray<string>,
+  venueIds: ReadonlyArray<string>,
+): Promise<{ places: Set<string>; venues: Set<string> }> {
+  const columns = "id, place_id, shared_place_id, recommendation, writer_role";
+  const [onPlaces, onVenues] = await Promise.all([
+    selectByIds<Row>("phoenix_crm_place_recommendations", columns, "place_id", placeIds),
+    selectByIds<Row>("phoenix_crm_place_recommendations", columns, "shared_place_id", venueIds),
+  ]);
+  const bySfeManager = (row: Row) => row.writer_role === "sfe_manager" && parsePlaceRecommendation(row.recommendation) !== null;
+  return {
+    places: new Set(onPlaces.filter(bySfeManager).map((row) => String(row.place_id))),
+    venues: new Set(onVenues.filter(bySfeManager).map((row) => String(row.shared_place_id))),
+  };
 }
 
 /**
@@ -644,6 +688,13 @@ export type ValidationReviewRow = {
    */
   capturedAgain?: boolean;
   /**
+   * A WAITING review only: the customer's latest decision made before this capture, when there is one
+   * (owner, 22 Nov 2026: "the same place that I accepted or rejected is as it is"). A rep told "Validate
+   * again" often captures the same door at once, and the new row read exactly like the one just decided.
+   * Absent on a decided row, on a customer never decided, and when the read of the earlier ones failed.
+   */
+  earlierDecision?: EarlierDecision | null;
+  /**
    * Whether this APPROVAL can still be taken back (owner, 2026-10-15: "make admin able to reject
    * validation even if approved before"): the place it approved is still active, so rejecting it now
    * has something to retire. The mirror image of `restorable`, and the same test the database makes.
@@ -739,6 +790,50 @@ async function markDoorsCapturedAgain(rows: ValidationReviewRow[], reviews: Row[
       row.restorable = false;
       row.capturedAgain = true;
     }
+  }
+}
+
+/**
+ * Every WAITING review learns the customer's latest decision made before it was captured (`earlier-decision.ts`).
+ * One read of the decided reviews of the waiting rows' customers — 58 customers on 22 Nov 2026, so one page.
+ * The decider's name rides only to a viewer who decides (`decides`), like `decidedByName`.
+ *
+ * 🔴 A FAILED READ CHANGES NOTHING — the waiting rows keep everything else and say nothing about the past.
+ */
+async function markEarlierDecisions(rows: ValidationReviewRow[], reviews: Row[], decides: boolean): Promise<void> {
+  const customerByReview = new Map(reviews.map((review) => [String(review.id), String(review.customer_id)]));
+  const waiting = rows.filter((row) => row.status === "pending" && customerByReview.has(row.reviewId));
+  if (waiting.length === 0) return;
+  try {
+    const decided = await selectByIds<Row>(
+      "phoenix_crm_validation_reviews",
+      "id, customer_id, status, decided_at, decided_by_hr_id, refusal_reason",
+      "customer_id",
+      [...new Set(waiting.map((row) => customerByReview.get(row.reviewId)))],
+      (query) => query.in("status", ["approved", "rejected"]).not("decided_at", "is", null),
+    );
+    const names = decides ? await loadPeopleNames(decided.map((row) => text(row.decided_by_hr_id))) : null;
+    const sources: EarlierDecisionSource[] = decided.map((row) => ({
+      customerId: String(row.customer_id),
+      status: row.status === "approved" ? "approved" : "rejected",
+      decidedAt: String(row.decided_at),
+      deciderName: names ? deciderLabel(names, text(row.decided_by_hr_id)) : null,
+      refusalLabel: row.status === "rejected" ? validationRefusalLabel(text(row.refusal_reason)) : null,
+    }));
+    for (const row of waiting) {
+      const earlier = earlierDecisionOf(customerByReview.get(row.reviewId) ?? "", row.createdAt, sources);
+      row.earlierDecision = earlier
+        ? {
+            status: earlier.status,
+            decidedAt: earlier.decidedAt,
+            decidedAtText: formatPhoenixDateTime(earlier.decidedAt),
+            deciderName: earlier.deciderName,
+            refusalLabel: earlier.refusalLabel,
+          }
+        : null;
+    }
+  } catch (error) {
+    logError("Phoenix CRM earlier-decision read failed", { error, labels: { event: "phoenix_crm_earlier_decision_read_failed" } });
   }
 }
 
@@ -943,6 +1038,7 @@ export async function loadValidationReviews(
     };
   });
   await markDoorsCapturedAgain(rows, reviews, placeById);
+  await markEarlierDecisions(rows, reviews, decides);
   // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
   // 14 days is kept only while it can still be taken back — its place still retired. One whose place
   // is active again, or gone, has nothing left to reverse, so it drops back under the ordinary window

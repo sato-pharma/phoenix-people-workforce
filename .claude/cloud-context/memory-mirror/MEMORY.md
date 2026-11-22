@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- 🔴 [Employee Master email is FINAL](employee-master-email-is-final-for-mailboxes.md) - never change it; a missing mailbox is created/restored AT that address.
 
 
 

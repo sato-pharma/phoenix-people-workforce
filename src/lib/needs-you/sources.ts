@@ -69,6 +69,7 @@ import { countOpenDeductionsDisputes } from "@/lib/deductions/comments";
 import { isDeductionsDecisionActor } from "@/lib/deductions/permissions";
 import { countExhaustedDurableEmails } from "@/lib/notifications/durable-email";
 import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-reviews";
+import { SFE_RECOMMENDATIONS_PATH } from "@/lib/phoenix-crm/sfe-recommendations";
 import { VISIT_RECORDING_ADMIN_PATH } from "@/lib/phoenix-crm/visit-recording-rules";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { loadEmployeeSeatDrift } from "@/lib/org/employee-seat-drift";
@@ -972,9 +973,9 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         key: "phoenix-crm-decisions:place-checks",
         sourceId: "phoenix-crm-decisions",
         kind: "approval",
-        // HIS OWN LANE, and the strongest claim to it in this module: only the Super Admin and the SFE
-        // Manager can decide a held place (`canDecideValidationReviews`, which asked for the count), so
-        // nobody below them can clear this row — and either of the two clearing it clears it for both.
+        // HIS OWN LANE, and the strongest claim to it in this module: only the Super Admin decides a
+        // place check (`canDecideValidationReviews`, which asked for the count, since 19 Nov 2026), so
+        // nobody else can clear this row.
         lane: "yours",
         // A count of DECISIONS since 17 Nov 2026 (`countValidationReviewsWaiting`): a building with everybody
         // waiting behind it is one, held or not, so the row says "place checks wait", never "places are held".
@@ -991,6 +992,28 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         ageDays: ageDaysSince(counts.oldestPlaceCheckAt, now),
         overdue: false,
         note: "The system could not confirm the place, so it is waiting on you. Until it is decided the customer stays unvalidated and a visit there scores nothing.",
+      });
+    }
+
+    // 🔴 Added 22 Nov 2026 (the deep audit of Place checks): a check the SFE Manager recommended on leaves
+    // Place checks for its own page (owner, 19 Nov 2026), so the row above no longer counts it — it read 25
+    // more than Place checks showed, and opened a page where those 25 were nowhere. They wait here, on the
+    // page that lists them, and are still his alone to decide.
+    if (counts.sfeRecommendedChecks > 0) {
+      items.push({
+        key: "phoenix-crm-decisions:sfe-recommended-checks",
+        sourceId: "phoenix-crm-decisions",
+        kind: "approval",
+        lane: "yours",
+        label: `${counts.sfeRecommendedChecks} ${plural(counts.sfeRecommendedChecks, "place check the SFE Manager recommended on waits", "place checks the SFE Manager recommended on wait")} for your decision`,
+        count: counts.sfeRecommendedChecks,
+        people: [],
+        href: SFE_RECOMMENDATIONS_PATH,
+        externalUrl: null,
+        oldestAt: counts.oldestSfeRecommendedAt,
+        ageDays: ageDaysSince(counts.oldestSfeRecommendedAt, now),
+        overdue: false,
+        note: "The SFE Manager recommends; only you decide. Until it is decided the customer stays unvalidated and a visit there scores nothing.",
       });
     }
 

@@ -26,6 +26,7 @@ import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/re
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
+import { earlierDecisionText } from "@/lib/phoenix-crm/earlier-decision";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
@@ -90,6 +91,8 @@ function Who({ row }: { row: ValidationReviewRow }) {
       <p className="break-words text-xs text-slate-500">{row.territory}</p>
       <p className="break-words text-xs text-slate-500">Captured {row.createdAtText}</p>
       {row.waitingText ? <CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill> : null}
+      {/* A new capture of a customer already decided says so (owner, 22 Nov 2026), or it reads as the row just decided. */}
+      {row.earlierDecision ? <p className="break-words text-xs font-semibold text-slate-700">{earlierDecisionText(row.earlierDecision)}</p> : null}
       {/* A door signboard hold the system is still re-reading (owner, 2026-10-17); it may still be decided now. */}
       {row.systemStillReading ? <CrmPill tone="info">The system is still reading this sign</CrmPill> : null}
       {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
