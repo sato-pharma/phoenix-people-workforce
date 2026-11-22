@@ -254,7 +254,7 @@ export const LINE_TWIN_SKIP_TEXT: Record<LineTwinSkipReason, string> = {
   drop_requested: "A request to drop this customer waits",
   full_name_held: "The full name waits for the Super Admin",
   needs_full_name: "A PM customer still needs all three names",
-  rejected_capture: "This row's own capture was rejected — the Super Admin confirms the other line's validation himself (Same customer, other line)",
+  rejected_capture: "This row's own capture was rejected — the Super Admin confirms the other line's validation on Same customer, other line",
   two_on_one_line: "Two validated customers of this name on one line",
   two_doctors: "Two different validated customers match this name",
   twice_on_this_list: "On this list twice",

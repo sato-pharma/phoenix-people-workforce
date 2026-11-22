@@ -65,7 +65,7 @@ The validation is recorded in the name of the source's validator. It is never sh
 | Skip reason | Why |
 | --- | --- |
 | `in_review` | his own capture is waiting for the Super Admin — that decision comes first |
-| `rejected_capture` | his own last capture was **rejected** — the Super Admin confirms the other line's validation himself (below) |
+| `rejected_capture` | his own last capture was **rejected** — the Super Admin confirms the other line's validation on Same customer, other line (below) |
 | `drop_requested` | a drop is asked for him |
 | `full_name_held` / `needs_full_name` | his full name is held or still needed |
 | `two_on_one_line` | two different validated doctors of this name on one line — whose place is it? |
