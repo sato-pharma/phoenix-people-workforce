@@ -148,7 +148,7 @@ whole. Routes: `camera-reviews/decide`, `camera-reviews/cap` and `camera-reviews
 **A test account's item names the test login** (owner, 23 Nov 2026: "if a record is done by test account, show that this
 is the test Ibrahim"). A test account files under the HR id of the person it mirrors, so its item read exactly like that
 person's own work. `cameraSenderName` (`camera-item-rules.ts`) prints it as the test login is named, "Test · Aya Ibrahim",
-and the row wears a "Test account" tag; a real rep's item keeps his own name. The same day the six items the Aya Ibrahim
+and the row wears a "Test login" tag (the screens never say "account"); a real rep's item keeps his own name. The same day the six items the Aya Ibrahim
 test login had sent (20–21 Nov) were deleted with their photos, on his word ("Camera items only" — the test visit, places
 and plans it made stay); their rows are kept in `phoenix_crm_backup_20261123.aya_test_camera_items`.
 

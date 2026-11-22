@@ -246,7 +246,7 @@ function theBoardFitsAndSaysNoNumbersToTheRep(): void {
   assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "the columns fill the table exactly");
   assert.ok(board.indexOf("<CrmCardsOnPhone>") < board.indexOf("<CrmTable"), "the phone cards come first");
   assert.match(board, /RefusalReasonField/, "taking back a recorded validation names what is wrong with the photo");
-  assert.match(board, /\{row\.isTest \? <CrmPill tone="orange">Test account<\/CrmPill> : null\}/, "a test item wears its tag");
+  assert.match(board, /\{row\.isTest \? <CrmPill tone="orange">Test login<\/CrmPill> : null\}/, "a test item wears its tag");
   assert.match(board, /Every check passed/, "a waiting item with no reason says so");
   assert.match(board, /"\/api\/phoenix-crm\/camera-reviews\/day-allowance"/, "the one-day raise is on the board");
   assert.match(board, /The manager's email approval: who approved it and when/);
