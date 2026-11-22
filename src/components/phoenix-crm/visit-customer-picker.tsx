@@ -53,6 +53,7 @@ import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { cn } from "@/lib/utils";
 
 /** Which customers a picker offers. */
@@ -301,7 +302,7 @@ export function VisitCustomerPicker({
                         return (
                           <li className="min-w-0" key={customer.customerId}>
                             <button
-                              className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-[#08111f] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-60"
                               disabled={customer.visitedToday || blocked !== null || customer.validateFirst || customer.needsFullName === true}
                               onClick={() => onPick(customer.customerId)}
                               type="button"
@@ -356,7 +357,7 @@ export function VisitCustomerPicker({
                                 <span className="flex min-w-0 flex-wrap items-center gap-2">
                                   {pharmacyDetails ? (
                                     <button
-                                      className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 md:min-h-9"
+                                      className={landingActionClassName("outline", "min-h-11 min-w-0 sm:min-h-11 md:min-h-9")}
                                       onClick={pharmacyDetails}
                                       type="button"
                                     >

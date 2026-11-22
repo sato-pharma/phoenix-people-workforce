@@ -11,6 +11,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
+import { LandingTick } from "@/components/employee-portal/landing-kit";
 import { cairoClock, countText, dayLabel } from "@/components/phoenix-crm/format";
 import { formatVisitReportValue } from "@/components/phoenix-crm/visit-report/visit-report-format";
 import {
@@ -58,14 +59,17 @@ function Detail({ fields, row }: { fields: ReadonlyArray<VisitReportField>; row:
         if (inCategory.length === 0) return null;
         return (
           <section className="min-w-0" key={category.id}>
-            <h4 className="mb-2 text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">{category.label}</h4>
+            <h4 className="mb-2 flex min-w-0 items-center gap-2 break-words text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]">
+              <LandingTick />
+              <span className="min-w-0">{category.label}</span>
+            </h4>
             <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {inCategory.map((field) => {
                 const text = formatVisitReportValue(field, row.values[field.key]);
                 return (
-                  <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2" key={field.key}>
-                    <dt className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{field.label}</dt>
-                    <dd className="mt-0.5 min-w-0 whitespace-pre-line break-words text-xs font-bold text-slate-800">{text}</dd>
+                  <div className="min-w-0 border border-slate-200 bg-white px-2.5 py-2" key={field.key}>
+                    <dt className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{field.label}</dt>
+                    <dd className="mt-0.5 min-w-0 whitespace-pre-line break-words text-xs font-bold text-[#08111f]">{text}</dd>
                   </div>
                 );
               })}
@@ -198,7 +202,7 @@ export function VisitReportTable({
               return (
                 <Fragment key={row.visitId}>
                   <tr
-                    className={row.visitId === highlightId ? "bg-orange-50/60" : "odd:bg-white even:bg-slate-50/50"}
+                    className={row.visitId === highlightId ? "bg-slate-100" : "odd:bg-white even:bg-slate-50/50"}
                     id={`visit-row-${row.visitId}`}
                   >
                     <td className={crmTdClassName}>

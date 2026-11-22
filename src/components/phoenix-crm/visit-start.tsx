@@ -115,7 +115,7 @@ function StartTarget({
         <span className="min-w-0 break-words text-base font-black">{label}</span>
       </span>
       {note ? (
-        <span className={cn("min-w-0 break-words text-xs font-semibold", primary ? "text-orange-50" : "text-slate-500")}>{note}</span>
+        <span className={cn("min-w-0 break-words text-xs font-semibold", primary ? "text-white/70" : "text-slate-500")}>{note}</span>
       ) : null}
     </CrmButton>
   );

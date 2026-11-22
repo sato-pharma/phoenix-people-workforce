@@ -285,9 +285,10 @@ export function CrmLoading({ label = "Loading" }: { label?: string }) {
   return (
     <div aria-busy="true" aria-live="polite" className="grid gap-2 px-4 py-5 sm:px-5">
       <span className="sr-only">{label}</span>
-      <div aria-hidden="true" className="h-4 w-2/5 animate-pulse rounded-none bg-slate-100 motion-reduce:animate-none" />
-      <div aria-hidden="true" className="h-4 w-4/5 animate-pulse rounded-none bg-slate-100 motion-reduce:animate-none" />
-      <div aria-hidden="true" className="h-4 w-3/5 animate-pulse rounded-none bg-slate-100 motion-reduce:animate-none" />
+      {/* The landing kit's own shimmer (`LandingPanelLoading`), so a CRM panel loads like every portal panel. */}
+      <div aria-hidden="true" className="employee-portal-skeleton h-4 w-2/5 rounded-none" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-4 w-4/5 rounded-none" />
+      <div aria-hidden="true" className="employee-portal-skeleton h-4 w-3/5 rounded-none" />
     </div>
   );
 }

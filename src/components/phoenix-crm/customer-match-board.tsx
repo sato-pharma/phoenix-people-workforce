@@ -73,7 +73,7 @@ function MemberCard({ member }: { member: CustomerMember }) {
   return (
     <div className={`min-w-0 space-y-3 border border-l-[3px] border-slate-200 bg-white p-3 ${member.pinOnOther ? "border-l-amber-500" : ""}`}>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="inline-flex min-h-6 items-center justify-center border border-slate-300 bg-slate-50 px-1.5 text-xs font-black text-slate-700">
+        <span className="inline-flex min-h-6 items-center justify-center border border-[#08111f] bg-white px-1.5 text-xs font-black tabular-nums text-[#08111f]">
           Point {member.point_group}
         </span>
         <CrmPill tone={member.agreeing > 1 ? "good" : "neutral"}>

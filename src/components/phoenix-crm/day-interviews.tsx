@@ -41,7 +41,7 @@ function InterviewRow({ interview, onRemove, removing = false }: { interview: Da
       <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-3 sm:col-span-1 sm:justify-end">
         {interview.cvUrl ? (
           <a
-            className="inline-flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-black text-orange-700 underline-offset-2 hover:underline"
+            className="inline-flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-black text-[#08111f] underline underline-offset-2 hover:text-slate-600"
             href={interview.cvUrl}
             rel="noopener noreferrer"
             target="_blank"

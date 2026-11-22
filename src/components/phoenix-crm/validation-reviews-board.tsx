@@ -37,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { useRouter } from "next/navigation";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
+import { LANDING_FOCUS, LandingTick } from "@/components/employee-portal/landing-kit";
 import { useCrmGet } from "@/components/phoenix-crm/api";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { cn } from "@/lib/utils";
@@ -242,8 +243,8 @@ function AdviceSummary({ advice }: { advice: PlaceCheckAdvice[] }) {
     count("look") > 0 ? `looking yourself at ${count("look")}` : null,
   ].filter((part): part is string => part !== null);
   return (
-    <div className="min-w-0 border-l-4 border-orange-500 bg-white px-4 py-3">
-      <p className="break-words text-sm font-black text-slate-900">
+    <div className="min-w-0 border-l-4 border-sky-500 bg-white px-4 py-3">
+      <p className="break-words text-sm font-bold text-[#08111f]">
         Of the {advice.length} waiting, the system recommends {parts.join(", ")}.
       </p>
       <p className="mt-1 break-words text-xs text-slate-600">
@@ -600,13 +601,16 @@ export function ValidationReviewsBoard({
           : null}
         <div className="min-w-0 border border-slate-200 bg-white">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-            <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
+            <h2 className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]">
+              <LandingTick />
+              Filters
+            </h2>
             <div className="flex min-w-0 flex-1 basis-60 flex-wrap items-center gap-1.5">
               {narrowedBy.length === 0 ? (
                 <span className="break-words text-xs font-semibold text-slate-500">Showing everything</span>
               ) : (
                 narrowedBy.map((label) => (
-                  <span key={label} className="break-words border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-orange-800" dir="auto">
+                  <span key={label} className="break-words border border-slate-300 bg-white px-2 py-0.5 text-xs font-bold text-[#08111f]" dir="auto">
                     {label}
                   </span>
                 ))
@@ -775,7 +779,7 @@ export function ValidationReviewsBoard({
         </fieldset>
 
         {bulkRunning ? (
-          <p className="break-words border-l-4 border-orange-500 bg-white px-4 py-2 text-sm font-semibold text-slate-700" role="status">
+          <p className="break-words border-l-4 border-sky-500 bg-white px-4 py-2 text-sm font-semibold text-slate-700" role="status">
             Answering the rows you picked. The tabs, the filters and every other decision wait until it is done.
           </p>
         ) : null}
@@ -853,8 +857,9 @@ export function ValidationReviewsBoard({
                     key={key}
                     aria-pressed={chip === key}
                     className={cn(
-                      "inline-flex min-h-10 min-w-0 items-center gap-2 rounded-none border px-3 py-1.5 text-left text-xs font-black",
-                      chip === key ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                      "inline-flex min-h-10 min-w-0 items-center gap-2 rounded-none border px-3 py-1.5 text-left text-xs font-bold transition-colors motion-reduce:transition-none",
+                      LANDING_FOCUS,
+                      chip === key ? "border-[#08111f] bg-[#08111f] text-white" : "border-slate-200 bg-white text-slate-600 hover:border-[#08111f] hover:text-[#08111f]",
                     )}
                     disabled={bulkRunning}
                     onClick={() => setChip(key)}
@@ -867,7 +872,7 @@ export function ValidationReviewsBoard({
               })}
             </div>
             {seatedInChip > 0 ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-3 border-l-4 border-orange-500 bg-white px-4 py-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-3 border-l-4 border-sky-500 bg-white px-4 py-3">
                 <p className="min-w-0 flex-1 basis-60 break-words text-sm text-slate-700">
                   {seatedInChip} more {seatedInChip === 1 ? "is a customer" : "are customers"} seated in a polyclinic. Their photo is the
                   building&apos;s timetable, shown once on its card.

@@ -277,9 +277,9 @@ export function BulkDecideBar<Row>({
   const toReject = recommended("reject");
 
   return (
-    <div className="min-w-0 space-y-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+    <div className="min-w-0 space-y-2 border-b border-slate-200 bg-white px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+        <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
           {picked.length === 0 ? `Pick rows to answer together (${picks.selectable} here)` : `${picked.length} picked`}
         </p>
         <CrmButton disabled={busy} onClick={() => picks.pickAll()} size="sm" variant="ghost">
