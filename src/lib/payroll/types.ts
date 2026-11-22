@@ -135,6 +135,13 @@ export type ExpenseTripRecord = {
    * split out of the stored notes by parseOutstationDescription so the employee's note holds only
    * the employee's words. Display-only; Phoenix-submitted requests only. */
   allowanceNotices?: string[];
+  /** The go and return ticket amounts as the employee claimed them, the other cost's city, and the
+   * ticket photos' names and sizes — read by the "Same ticket as" flag on Expense Approvals
+   * (duplicate-ticket-guard.ts). Phoenix-submitted requests only; display and review only. */
+  goTicketAmount?: number;
+  returnTicketAmount?: number;
+  ticketReceipts?: Array<{ name: string | null; size: number }>;
+  toCity?: string | null;
   hrId?: string | null;
   from: string;
   hr: string;

@@ -47,12 +47,31 @@ export function RowExpandToggle({ expanded, onToggle, tripId }: { expanded: bool
  * use-expense-review.ts, so collapsing a row can never undo an Approve, a Reject or a typed amount.
  * The day maps, Phoenix CRM and the claim checks stay in "Review", the full-screen reviewer.
  */
-export function ReviewRowDetails({ decision, duplicateOf, record, unsaved }: { decision: Decision; duplicateOf?: string[]; record: LoadedRecord; unsaved: boolean }) {
+export function ReviewRowDetails({
+  decision,
+  duplicateOf,
+  record,
+  ticketDuplicateOf,
+  unsaved,
+}: {
+  decision: Decision;
+  duplicateOf?: string[];
+  record: LoadedRecord;
+  ticketDuplicateOf?: string[];
+  unsaved: boolean;
+}) {
   const valuesOnly = isImportedHistoryTrip(record.date);
   const notices = record.allowanceNotices ?? [];
   return (
     <div className="min-w-0 border-t border-slate-200 bg-white" data-row-details={record.tripId} id={rowDetailsId(record.tripId)}>
-      <DeckSubject decision={decision} duplicateOf={duplicateOf} record={record} unsaved={unsaved} valuesOnly={valuesOnly} />
+      <DeckSubject
+        decision={decision}
+        duplicateOf={duplicateOf}
+        record={record}
+        ticketDuplicateOf={ticketDuplicateOf}
+        unsaved={unsaved}
+        valuesOnly={valuesOnly}
+      />
       {notices.length > 0 || record.employeeNote ? (
         <div className="min-w-0 space-y-3 border-b border-slate-200 px-5 py-3">
           {notices.length > 0 ? (

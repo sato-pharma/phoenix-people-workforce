@@ -22,6 +22,11 @@ export type DeparturePhotoPendingRequest = {
   id: number;
   tripEndDate: string;
   tripStartDate: string;
+  /**
+   * The trip's last Cairo day has passed. The server refuses a departure photo then (2026-11-22), so
+   * the card says what happens instead of offering a camera.
+   */
+  windowClosed?: boolean;
 };
 
 /**
@@ -276,7 +281,7 @@ export function DeparturePhotoCard({
                     {formatPhoenixLongDate(request.tripStartDate)} – {formatPhoenixLongDate(request.tripEndDate)}
                   </p>
                 </div>
-                {!done ? (
+                {!done && !request.windowClosed ? (
                   <button
                     className="inline-flex min-h-11 items-center gap-2 bg-orange-500 px-4 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-60"
                     disabled={
@@ -347,7 +352,13 @@ export function DeparturePhotoCard({
                 </p>
               ) : null}
 
-              {!isActive ? (
+              {request.windowClosed ? (
+                <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-slate-600" data-departure-window-closed>
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+                  The trip ended on {formatPhoenixLongDate(request.tripEndDate)}, so the departure photo can no longer be taken. HR
+                  will release this claim with a reason.
+                </p>
+              ) : !isActive ? (
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
                   <MapPin className="h-3.5 w-3.5" />
                   Your location is recorded with the photo. Without it, the photo is refused.

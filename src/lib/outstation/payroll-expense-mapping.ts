@@ -367,6 +367,15 @@ export function mapOutstationRequestRowToPayrollApproval(
     // The photo evidence is on the photo cards already; the allowance sentences travel on their own.
     employeeNote: notesParts.note ? toText(notesParts.note) : null,
     from: origin || "Residence",
+    // Read by the "Same ticket as" flag on Expense Approvals (duplicate-ticket-guard.ts) only.
+    goTicketAmount: toNumber(row.go_ticket_amount),
+    returnTicketAmount: toNumber(row.return_ticket_amount),
+    ticketReceipts: Array.isArray(row.ticket_attachment_metadata)
+      ? (row.ticket_attachment_metadata as Array<Record<string, unknown>>)
+          .filter((file) => Boolean(file) && typeof file === "object")
+          .map((file) => ({ name: typeof file.name === "string" ? file.name : null, size: toNumber(file.size) }))
+      : [],
+    toCity: toText(row.to_city) || null,
     hr: hrStatus,
     hrApproved: status === "Approved",
     hrComment: toText(row.approval_reason),
