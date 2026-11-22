@@ -616,8 +616,29 @@ function checkWaitsForBuilding() {
   );
 }
 
+/**
+ * 🔴 SFE RECOMMENDATIONS NEVER COMES BACK OLDER THAN THE DECISIONS MADE ON IT (owner, 23 Nov 2026, the audit).
+ * It decides with the board's controls but mounted none of the board's re-read rules. It now mounts
+ * `PlaceCheckPageRead` with its own server stamp, which carries the board's three.
+ * Break direction: drop the mount, its stamp, or any of the three rules, and its assert fails.
+ */
+function checkSfePageRead() {
+  const page = code("app/(admin)/admin/field-crm/sfe-recommendations/page.tsx");
+  assert.ok(page.includes("<PlaceCheckPageRead readAt={readAt} />"), "🔴 SFE recommendations mounts the board's re-read rules");
+  assert.ok(page.includes("const readAt = new Date().toISOString();"), "🔴 with the server's own stamp of the read it draws");
+  const read = code("src/components/phoenix-crm/place-check-page-read.tsx");
+  assert.ok(read.includes("useEffect(() => () => placeCheckReread.cancel(), []);"), "🔴 the re-read dies with the page");
+  assert.ok(read.includes("placeCheckReread.showing(readAt, () => router.refresh());"), "🔴 a decision is owed until a newer page is drawn");
+  assert.ok(read.includes("const stopHearing = hearOtherTabs(() => placeCheckReread.owe());"), "🔴 a decision in another tab owes it a read");
+  assert.ok(
+    /const back = \(\) => \{\s*if \(document\.visibilityState === "visible"\) placeCheckReread\.shownAgain\(shownReadAt\.current, \(\) => router\.refresh\(\)\);\s*\};/.test(read),
+    "🔴 shown or focused again, it reads what is owed",
+  );
+}
+
 export function runPhoenixCrmPlaceChecksAuditFixesTests() {
   checkCounts();
+  checkSfePageRead();
   checkWaitsForBuilding();
   checkDecisionPaths();
   checkWording();
