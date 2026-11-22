@@ -48,6 +48,12 @@ export function parseCarEvidenceMetadata(body: Record<string, unknown>) {
   const requestDraftId =
     typeof raw.requestDraftId === "string" ? raw.requestDraftId : null;
   const requestId = typeof raw.requestId === "string" ? raw.requestId : null;
+  // Only an UPLOAD carries the file's own time; a live capture's time is the shutter itself, and
+  // a value that is not a real time is dropped rather than stored (photo-file-time.ts).
+  const fileTakenAt =
+    source === "upload" && typeof raw.fileTakenAt === "string" && !Number.isNaN(Date.parse(raw.fileTakenAt))
+      ? new Date(raw.fileTakenAt).toISOString()
+      : null;
 
   if (!source || !capturedAt) return undefined;
 
@@ -57,6 +63,7 @@ export function parseCarEvidenceMetadata(body: Record<string, unknown>) {
     capturedLocationLabel,
     capturedLongitude,
     employeeHrId,
+    ...(source === "upload" ? { fileTakenAt } : {}),
     requestDraftId,
     requestId,
     source,

@@ -89,6 +89,26 @@ export function DuplicateTripFlag({ copies, wide = false }: { copies?: string[];
   );
 }
 
+/** "Same ticket as OUTSTATION-318" — the trip flag's twin for a repeated ticket, other cost or receipt photo. */
+export function DuplicateTicketFlag({ copies, wide = false }: { copies?: string[]; wide?: boolean }) {
+  if (!copies || copies.length === 0) return null;
+  return (
+    <p
+      className={cn(
+        "inline-flex max-w-full items-start gap-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-800",
+        wide ? "text-phx-xs" : "text-phx-sm",
+      )}
+      data-duplicate-ticket-flag
+    >
+      <AlertTriangle aria-hidden className="mt-px h-3 w-3 shrink-0" />
+      <span className="min-w-0 break-words">
+        Same ticket as {copies.join(", ")}
+        {wide ? " — the same tickets, other cost or ticket photo on dates that overlap" : ""}
+      </span>
+    </p>
+  );
+}
+
 /** The decision as one pill — Waiting, Approved, Approved · adjusted, Rejected, Before July — and "unsaved". */
 export function DecisionPill({ decision, record, unsaved = false }: { decision: Decision; record: LoadedRecord; unsaved?: boolean }) {
   const state = decisionStateLabel(decision, record);

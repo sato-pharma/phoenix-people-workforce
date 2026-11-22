@@ -3121,6 +3121,7 @@ import { runPlansHistoryReplacedDraftsAndWeekLabelsTests } from "./plans-history
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
+import { runOutstationClaimGuardsTests } from "./outstation-claim-guards.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
 import { runOutstationExpenseApprovalsCollapsibleRowsTests } from "./outstation-expense-approvals-collapsible-rows.test.ts";
@@ -12765,6 +12766,10 @@ await runTest(
 await runTest(
   "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",
   runOutstationDuplicateTripGuardTests,
+);
+await runTest(
+  "the guards from the October expense audit: a ticket, a parking cost or a receipt photo already on a live claim of the same employee (OUTSTATION-318/320, 401/402, 164/175) is refused at submission before any file is stored and flagged as a pair on the approvals screen; a departure photo after the last Cairo day of the trip is refused, first capture and retake alike, and the card says so instead of offering a camera; an uploaded arrival photo carries the EXIF time of the file itself on its watermark and under the photo, or says the file has none",
+  runOutstationClaimGuardsTests,
 );
 await runTest(
   "Expense Approvals reads a multi-day trip as one: the trip length (3 days · 2 nights) is one helper shown on the queue row and the decision panel, each trip day is one folding row whose map is drawn only when opened, nothing is cut off with an ellipsis, and Approve is the panel's pinned last part below the scrolling evidence",
