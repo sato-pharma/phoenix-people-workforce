@@ -145,6 +145,13 @@ name, up to the rep's allowance for that day; **Reject** on an item recorded at 
 whole. Routes: `camera-reviews/decide`, `camera-reviews/cap` and `camera-reviews/day-allowance`, all at
 `phoenix_crm` `update` behind `assertSameOriginMutation`.
 
+**A test account's item names the test login** (owner, 23 Nov 2026: "if a record is done by test account, show that this
+is the test Ibrahim"). A test account files under the HR id of the person it mirrors, so its item read exactly like that
+person's own work. `cameraSenderName` (`camera-item-rules.ts`) prints it as the test login is named, "Test · Aya Ibrahim",
+and the row wears a "Test account" tag; a real rep's item keeps his own name. The same day the six items the Aya Ibrahim
+test login had sent (20–21 Nov) were deleted with their photos, on his word ("Camera items only" — the test visit, places
+and plans it made stay); their rows are kept in `phoenix_crm_backup_20261123.aya_test_camera_items`.
+
 **The update button.** `scripts/phoenix-camera-publish-release.ts` uploads a signed APK under `releases/` in the same
 private bucket and writes one `phoenix_crm_field_camera_releases` row; every pack then carries it as `latestApp` with a
 link that lasts a day. A dry run is the default; publishing reaches every rep's phone and is the owner's word alone.
