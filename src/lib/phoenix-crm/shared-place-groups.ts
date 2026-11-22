@@ -85,6 +85,8 @@ export type SeatedCustomer = ValidationReviewFilterable & {
   earlierDecision?: EarlierDecision | null;
   /** 🔴 The Super Admin approved this seat, so nobody else may reject it (owner, 2026-11-16). */
   lockedBySuperAdmin?: boolean;
+  /** 🔴 Approved, still under To validate until his building is approved (`ValidatedPlaceRow.waitsForBuilding`). */
+  waitsForBuilding?: boolean;
   /** Visits measured against his place, and the places he would keep — only a validated row knows them. */
   visits: number | null;
   otherPlaces: number | null;
@@ -188,6 +190,7 @@ function fromValidated(row: ValidatedPlaceRow, sharedPlaceId: string): SeatedCus
     refusable: false,
     restorable: false,
     lockedBySuperAdmin: row.lockedBySuperAdmin === true,
+    waitsForBuilding: row.waitsForBuilding === true,
     visits: row.visits,
     otherPlaces: row.otherPlaces,
     timetable: row.schedule,

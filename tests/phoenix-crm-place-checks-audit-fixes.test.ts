@@ -5,7 +5,8 @@ import { stripComments } from "./support/comment-strip.ts";
 
 import { createPlaceCheckReread } from "../src/components/phoenix-crm/place-check-reread.ts";
 import { earlierDecisionOf, earlierDecisionText } from "../src/lib/phoenix-crm/earlier-decision.ts";
-import { needsYouDecisionCount, needsYouDecisionCountWithSfe } from "../src/lib/phoenix-crm/shared-place-groups.ts";
+import { needsYouDecisionCount, needsYouDecisionCountWithSfe, seatedCustomersByVenue } from "../src/lib/phoenix-crm/shared-place-groups.ts";
+import type { ValidatedPlaceRow } from "../src/lib/phoenix-crm/server/validation-reviews.ts";
 import { refusalTakeBack } from "../src/lib/phoenix-crm/validation-feedback.ts";
 
 /**
@@ -583,8 +584,41 @@ function checkEarlierDecision() {
   );
 }
 
+/**
+ * 🔴 APPROVED BEHIND A BUILDING STILL BEING CHECKED READS DONE (owner, 2026-11-23, the Place checks audit).
+ * His review is approved and he stays under To validate until the building is approved; the building card
+ * read "Approved" with nothing to say why he still sat under Needs you. He now reads "Approved, waits for
+ * the building" — the building is the one decision left.
+ * Break direction: drop `waitsForBuilding` from `fromValidated` and the first assert fails; set it without
+ * the customer still pending and the server assert fails; drop the pill's words and the last one fails.
+ */
+function checkWaitsForBuilding() {
+  const row = {
+    placeId: "p1", customerId: "c1", customerName: "دكتور", listType: "PM", speciality: null, isTest: false, repName: "Rep",
+    territory: "T", line: null, region: null, validatedAt: "2026-11-20T08:00:00Z", validatedAtText: "20 Nov", placeLabel: null,
+    address: null, brickName: null, areaName: null, point: { lat: 30, lon: 31 }, mapsLink: "", pin: null, photo: null, photoPath: null,
+    visits: 0, otherPlaces: 0, reviewed: true, decidedByName: null, decidedAtText: null, signboard: null, photoKind: "schedule",
+    sharedPlaceName: "B", sharedPlaceId: "v1", schedule: null, waitsForBuilding: true,
+  } as unknown as ValidatedPlaceRow;
+  const seated = seatedCustomersByVenue({ pending: [], decided: [], validated: [row], reopened: [], venueIds: new Set(["v1"]) });
+  assert.equal(seated.get("v1")?.[0]?.waitsForBuilding, true, "🔴 a seated customer carries whether he waits for his building");
+  const again = seatedCustomersByVenue({ pending: [], decided: [], validated: [{ ...row, waitsForBuilding: false }], reopened: [], venueIds: new Set(["v1"]) });
+  assert.equal(again.get("v1")?.[0]?.waitsForBuilding, false, "a validated customer does not");
+  assert.ok(
+    code("src/lib/phoenix-crm/server/validation-reviews.ts").includes(
+      'waitsForBuilding: approvals.has(String(row.id)) && (row.customer as Row | null)?.status === "pending" && text(row.shared_place_id) !== null',
+    ),
+    "🔴 only an APPROVED seat whose customer is still under To validate waits for the building",
+  );
+  assert.ok(
+    code("src/components/phoenix-crm/shared-place-customers.tsx").includes('customer.waitsForBuilding ? "Approved, waits for the building" : "Approved"'),
+    "🔴 the building card says he waits for the building",
+  );
+}
+
 export function runPhoenixCrmPlaceChecksAuditFixesTests() {
   checkCounts();
+  checkWaitsForBuilding();
   checkDecisionPaths();
   checkWording();
   checkBackgroundRuns();
