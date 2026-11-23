@@ -75,7 +75,7 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
   } = board;
   // The one-by-one review's button: beside the waiting number on the Super Admin's board.
   const review =
-    deckInput && reviewDeck ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything }) : null;
+    deckInput && reviewDeck ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything, bare: lanes }) : null;
   // The tabs that read for themselves, or are the page's own, never wait for the click's read.
   const readsItself = view === "samePlace" || view === "sameCustomer" || view === "lineLookalikes" || view.startsWith("slot:");
 

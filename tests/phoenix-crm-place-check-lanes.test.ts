@@ -598,6 +598,12 @@ function runWordingAndFileTests() {
   assert.ok(needs.includes("<details") && reasonsBox.includes("<summary"), "HEADLINE: the reasons above Your call are a closed fold, never an open list above the first row");
   assert.ok(reasonsBox.includes("{reasons[0].count}") && reasonsBox.includes("{reasons[0].because}"), "closed, it still says the commonest reason and how many places it holds");
   assert.ok(reasonsBox.indexOf("</summary>") < reasonsBox.indexOf("reasons.slice(0, REASONS_SHOWN)"), "the full list is inside the fold, under the one line");
+  // 🔴 THE REVIEW BUTTON STANDS BARE IN THE TOP LINE. As a boxed bar with its sentence it wrapped under the
+  // headline and stood 58 px above the first waiting place at 1440 px (measured on the branch, 23 Nov 2026).
+  const deckButton = code("src/components/place-review-deck/review-deck-button.tsx");
+  assert.ok(code(PLACE_CHECK_BOARD_SHELL).includes("retry: reloadEverything, bare: lanes }"), "HEADLINE: the board with lanes asks for the review button bare, inside its top line");
+  assert.ok(deckButton.includes("{rows.bare ? null : ("), "HEADLINE: bare, the button draws no title and no sentence of its own");
+  assert.match(deckButton, /rows\.bare\s+\? "flex min-w-0 max-w-full flex-wrap items-center gap-3"/, "and no box of its own inside the top line's box");
   assert.ok(
     code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",

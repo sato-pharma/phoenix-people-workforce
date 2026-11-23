@@ -23,7 +23,18 @@ import { deckStartOfBoardView, type DeckKind, type DeckTab, type PlaceReviewDeck
  * Whether the board holds every row the review needs (owner, 2026-11-14, "Load lists on demand"): the page
  * sends only what Needs you draws, so the review asks for the rest (`want`) and opens once it is in.
  */
-export type DeckRows = { ready: boolean; want: () => void; error: string | null; retry: () => void };
+export type DeckRows = {
+  ready: boolean;
+  want: () => void;
+  error: string | null;
+  retry: () => void;
+  /**
+   * Inside the Super Admin's top line the button stands bare: no box of its own and no sentence. As a boxed bar
+   * in that line it wrapped under the headline and stood 58 px above the first waiting place (measured at
+   * 1440 on the branch, 23 Nov 2026).
+   */
+  bare?: boolean;
+};
 
 export function PlaceReviewDeckButton({ input, openOn, rows }: { input: PlaceReviewDeckInput; openOn: DeckTab | null; rows: DeckRows }) {
   const [start, setStart] = useState<{ tab: DeckTab; kind: DeckKind } | null>(() => (openOn ? { tab: openOn, kind: "both" } : null));
@@ -50,13 +61,22 @@ export function PlaceReviewDeckButton({ input, openOn, rows }: { input: PlaceRev
 
   return (
     <>
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border border-slate-200 border-l-[3px] border-l-orange-500 bg-white px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-black text-slate-900">Review one by one</p>
-          <p className="break-words text-xs text-slate-500">
-            The photo across the screen, everything to decide on beside it, and the next one slides in once you have decided.
-          </p>
-        </div>
+      <div
+        className={
+          rows.bare
+            ? "flex min-w-0 max-w-full flex-wrap items-center gap-3"
+            : "flex min-w-0 flex-wrap items-center justify-between gap-3 border border-slate-200 border-l-[3px] border-l-orange-500 bg-white px-4 py-3"
+        }
+        data-review-deck-bar={rows.bare ? "bare" : "boxed"}
+      >
+        {rows.bare ? null : (
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-sm font-black text-slate-900">Review one by one</p>
+            <p className="break-words text-xs text-slate-500">
+              The photo across the screen, everything to decide on beside it, and the next one slides in once you have decided.
+            </p>
+          </div>
+        )}
         <CrmButton className="w-full sm:w-auto" onClick={open} variant="primary">
           <GalleryHorizontalEnd aria-hidden className="h-4 w-4 shrink-0" />
           Review one by one

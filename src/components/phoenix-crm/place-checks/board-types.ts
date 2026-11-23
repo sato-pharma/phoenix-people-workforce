@@ -97,7 +97,7 @@ export type PlaceCheckBoardProps = {
    * bundles; the board hands it what each of its tabs holds right now, filters applied, and whether it
    * holds every row yet — the review asks for them (`want`) and opens once they are in (`ready`).
    */
-  reviewDeck?: (input: PlaceReviewDeckInput, everything: { ready: boolean; want: () => void; error: string | null; retry: () => void }) => ReactNode;
+  reviewDeck?: (input: PlaceReviewDeckInput, everything: { ready: boolean; want: () => void; error: string | null; retry: () => void; bare?: boolean }) => ReactNode;
   /**
    * The rule that approves by itself (`sign-wins-rules.ts`), as the page read it. Null is "could not be
    * read", and the header says so; a board that is not the Super Admin's is never handed it.
