@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CheckCircle2, Hourglass, MapPinned, XCircle } from "lucide-react";
 
@@ -5,8 +6,22 @@ import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/c
 import { FarVisitHoldActions } from "@/components/admin/far-visit-hold-actions";
 import { PlaceRecheckActions } from "@/components/admin/place-recheck-actions";
 import { TryLocationsMap } from "@/components/admin/refused-try-map";
+import { phxButtonGhostClassName, phxButtonPrimaryClassName, phxFieldClassName, phxLabelClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import {
+  DEFAULT_HOLD_SORT,
+  FAR_VISIT_HOLDS_PATH,
+  farVisitHoldFilterOptions,
+  filterFarVisitHolds,
+  holdFilterNarrows,
+  HOLD_BASIS_LABELS,
+  HOLD_DISTANCE_LABELS,
+  HOLD_SORT_LABELS,
+  HOLD_STATUS_LABELS,
+  parseFarVisitHoldFilter,
+  type FarVisitHoldFilter,
+} from "@/lib/phoenix-crm/far-visit-hold-filter-rules";
 import { RECHECK_LOOKBACK_DAYS, STUCK_LOOKBACK_DAYS } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import {
@@ -34,6 +49,10 @@ export const dynamic = "force-dynamic";
  * The Super Admin and the SFE Manager only (`canDecideFarVisitHolds`, asked here, in the service and in the
  * route). A held visit counts in nothing until the SFE approves it; a refused one never counts. The map is
  * the refused-readings board's own: where the rep stood beside the customer's saved place.
+ *
+ * Since 23 Nov 2026 (owner: "make me advanced filters top") a GET form above the held visits narrows and
+ * orders them — status, why held, rep, territory, visit days, distance, a name search — through
+ * `far-visit-hold-filter-rules.ts`. It reads nothing new; the cards still count the whole queue.
  */
 function cairo(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -109,7 +128,78 @@ function Decide({ entry }: { entry: FarVisitHoldRow }) {
   return <FarVisitHoldActions isTest={entry.isTest} placeId={entry.placeId} seatId={entry.seatId} spot={entry.spot} visitId={entry.visitId} />;
 }
 
-export default async function PhoenixCrmFarVisitHoldsPage() {
+function entries<K extends string>(labels: Record<K, string>): Array<[K, string]> {
+  return Object.entries(labels) as Array<[K, string]>;
+}
+
+function Choice({ name, label, value, any, options }: { name: string; label: string; value: string | null; any: string; options: ReadonlyArray<readonly [string, string] | string> }) {
+  return (
+    <label className="min-w-0">
+      <span className={phxLabelClassName}>{label}</span>
+      <select name={name} defaultValue={value ?? ""} className={phxSelectClassName}>
+        <option value="">{any}</option>
+        {options.map((option) => {
+          const [optionValue, optionLabel] = typeof option === "string" ? [option, option] : option;
+          return (
+            <option key={optionValue} value={optionValue}>
+              {optionLabel}
+            </option>
+          );
+        })}
+      </select>
+    </label>
+  );
+}
+
+function HoldFilters({ filter, reps, territories }: { filter: FarVisitHoldFilter; reps: string[]; territories: string[] }) {
+  return (
+    <form action={FAR_VISIT_HOLDS_PATH} method="get" className="grid grid-cols-1 gap-3 border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <label className="min-w-0 sm:col-span-2">
+        <span className={phxLabelClassName}>Find a name</span>
+        <input type="search" name="q" defaultValue={filter.q ?? ""} placeholder="Rep, customer or territory" className={phxFieldClassName} />
+      </label>
+      <Choice name="status" label="Status" value={filter.status} any="Every status" options={entries(HOLD_STATUS_LABELS)} />
+      <Choice name="basis" label="Why held" value={filter.basis} any="Every reason" options={entries(HOLD_BASIS_LABELS)} />
+      <Choice name="rep" label="Rep" value={filter.rep} any="Every rep" options={reps} />
+      <Choice name="territory" label="Territory" value={filter.territory} any="Every territory" options={territories} />
+      <label className="min-w-0">
+        <span className={phxLabelClassName}>Visit from</span>
+        <input type="date" name="from" defaultValue={filter.from ?? ""} className={phxFieldClassName} />
+      </label>
+      <label className="min-w-0">
+        <span className={phxLabelClassName}>Visit to</span>
+        <input type="date" name="to" defaultValue={filter.to ?? ""} className={phxFieldClassName} />
+      </label>
+      <Choice name="distance" label="Distance from the saved place" value={filter.distance} any="Any distance" options={entries(HOLD_DISTANCE_LABELS)} />
+      <label className="min-w-0">
+        <span className={phxLabelClassName}>Order</span>
+        <select name="sort" defaultValue={filter.sort} className={phxSelectClassName}>
+          {entries(HOLD_SORT_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex min-w-0 flex-wrap items-end gap-2 sm:col-span-2">
+        <button type="submit" className={phxButtonPrimaryClassName}>
+          Show
+        </button>
+        {holdFilterNarrows(filter) || filter.sort !== DEFAULT_HOLD_SORT ? (
+          <Link href={FAR_VISIT_HOLDS_PATH} className={phxButtonGhostClassName}>
+            Clear
+          </Link>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+export default async function PhoenixCrmFarVisitHoldsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   // Gate one before the organogram: a per-account module lock on Phoenix CRM closes this page as well,
   // which `canDecideFarVisitHolds` alone — a role test — would not.
@@ -117,10 +207,15 @@ export default async function PhoenixCrmFarVisitHoldsPage() {
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canDecideFarVisitHolds(viewer)) redirect("/admin");
 
-  const [holds, recheck] = await Promise.all([loadFarVisitHolds(viewer), loadPlacesToRecheck(viewer)]);
+  const [holds, recheck, params] = await Promise.all([loadFarVisitHolds(viewer), loadPlacesToRecheck(viewer), searchParams]);
   const waiting = holds.filter((entry) => entry.status === "sfe_pending");
   const decided = holds.filter((entry) => entry.status !== "sfe_pending");
   const approved = decided.filter((entry) => entry.status === "approved").length;
+  // The cards above count the whole queue; the filter narrows only the rows drawn below them.
+  const filter = parseFarVisitHoldFilter(params);
+  const options = farVisitHoldFilterOptions(holds);
+  const shown = filterFarVisitHolds(holds, filter);
+  const narrowed = holdFilterNarrows(filter);
 
   return (
     <div className="space-y-5">
@@ -144,8 +239,24 @@ export default async function PhoenixCrmFarVisitHoldsPage() {
         </AdminCallout>
       ) : null}
 
-      {holds.length > 0 ? (
-        <AdminTableShell title="Held visits" description="Waiting first, newest first. Each row's map shows where the rep stood beside the customer's saved place.">
+      {holds.length > 0 ? <HoldFilters filter={filter} reps={options.reps} territories={options.territories} /> : null}
+
+      {holds.length > 0 && shown.length === 0 ? (
+        <AdminCallout tone="neutral">
+          <span>
+            No held visit matches this choice.{" "}
+            <Link href={FAR_VISIT_HOLDS_PATH} className="font-semibold text-slate-900 underline underline-offset-2">
+              Show every held visit
+            </Link>
+          </span>
+        </AdminCallout>
+      ) : null}
+
+      {shown.length > 0 ? (
+        <AdminTableShell
+          title={narrowed ? `Held visits · ${shown.length} of ${holds.length}` : `Held visits · ${holds.length}`}
+          description={`${HOLD_SORT_LABELS[filter.sort]}. Each row's map shows where the rep stood beside the customer's saved place.`}
+        >
           {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
           <div className="hidden lg:block">
             <table className="w-full table-fixed border-collapse">
@@ -162,7 +273,7 @@ export default async function PhoenixCrmFarVisitHoldsPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...waiting, ...decided].map((entry) => (
+                {shown.map((entry) => (
                   <tr key={entry.visitId} className="border-b border-slate-100 align-top even:bg-slate-50/60">
                     <td className="px-5 py-4 text-sm">
                       <div className="font-semibold text-slate-900">{entry.repName}</div>
@@ -186,7 +297,7 @@ export default async function PhoenixCrmFarVisitHoldsPage() {
 
           {/* Mobile: the same visits as cards. */}
           <div className="space-y-3 px-5 py-4 lg:hidden sm:px-6">
-            {[...waiting, ...decided].map((entry) => (
+            {shown.map((entry) => (
               <div key={entry.visitId} className="border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <span className="text-sm font-bold text-slate-900">{entry.repName}</span>
