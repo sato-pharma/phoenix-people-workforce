@@ -357,7 +357,7 @@ function messageOf(error: unknown): string {
   return typeof message === "string" ? message : String(error);
 }
 
-type MergeFacts = { activePlaces: Map<string, number>; visits: Map<string, number>; moves: Map<string, number> };
+type MergeFacts = { activePlaces: Map<string, number>; visits: Map<string, number>; moves: Map<string, number>; ownerSplit: Set<string> };
 
 /**
  * Per-customer counts the keep rule reads: active places, visits and moves.
@@ -371,7 +371,7 @@ type MergeFacts = { activePlaces: Map<string, number>; visits: Map<string, numbe
  * rule judged on missing counts would name the wrong keeper.
  */
 async function loadMergeFacts(ids: readonly string[]): Promise<MergeFacts> {
-  if (ids.length === 0) return { activePlaces: new Map(), visits: new Map(), moves: new Map() };
+  if (ids.length === 0) return { activePlaces: new Map(), visits: new Map(), moves: new Map(), ownerSplit: new Set() };
   let counted: Record<string, unknown> | null;
   try {
     counted = await callPhoenixCrm<Record<string, unknown> | null>("phoenix_crm_customer_merge_counts", {
@@ -390,7 +390,10 @@ async function loadMergeFacts(ids: readonly string[]): Promise<MergeFacts> {
     }
     return counts;
   };
-  return { activePlaces: countsOf("active_places"), visits: countsOf("visits"), moves: countsOf("moves") };
+  // The owner's split of a merge (20261123101851). An older database answers no key, read as none split.
+  const split = counted?.owner_split;
+  const ownerSplit = new Set(split && typeof split === "object" ? Object.keys(split as Record<string, unknown>) : []);
+  return { activePlaces: countsOf("active_places"), visits: countsOf("visits"), moves: countsOf("moves"), ownerSplit };
 }
 
 function mergeCandidateOf(id: string, name: string, row: Row | undefined, facts: MergeFacts): MergeCandidate {
@@ -403,6 +406,7 @@ function mergeCandidateOf(id: string, name: string, row: Row | undefined, facts:
     visits: facts.visits.get(id) ?? 0,
     createdAt: text(row?.created_at),
     hasMoves: (facts.moves.get(id) ?? 0) > 0,
+    ownerSplit: facts.ownerSplit.has(id),
     grade: text(row?.grade) || null,
     potentialGrade: text(row?.potential_grade) || null,
     phone: text(row?.phone) || null,

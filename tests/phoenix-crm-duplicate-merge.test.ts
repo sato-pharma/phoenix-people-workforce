@@ -22,6 +22,7 @@ const row = (overrides: Partial<MergeCandidate> = {}): MergeCandidate => {
     visits: 0,
     createdAt: "2026-10-01T08:00:00Z",
     hasMoves: false,
+    ownerSplit: false,
     grade: null,
     potentialGrade: null,
     phone: null,
@@ -59,6 +60,12 @@ function checkKeepRule(): void {
   assert.ok(!crowded.ok && crowded.refused === "too_many_places", "the five-place cap holds");
   const moved = planMerge([row({ activePlaces: 1, validatedAt: "2026-10-03T08:00:00Z" }), row({ hasMoves: true })]);
   assert.ok(!moved.ok && moved.refused === "loser_has_moves", "move history is never rewritten");
+  // 23 Nov 2026: the two أحمد محمد الصباغ on Aya Ibrahim's list (Kafr El Bagour, Sers El Layan) were
+  // re-merged by the 13 November bulk run a month after the owner split them. His split is final.
+  const split = planMerge([row({ activePlaces: 1, validatedAt: "2026-10-03T08:00:00Z" }), row({ ownerSplit: true })]);
+  assert.ok(!split.ok && split.refused === "owner_split_them", "two people the owner split are never merged again");
+  const splitKeeper = planMerge([row({ activePlaces: 1, validatedAt: "2026-10-03T08:00:00Z", ownerSplit: true }), row()]);
+  assert.ok(!splitKeeper.ok && splitKeeper.refused === "owner_split_them", "whichever of the two would be kept");
   const heldVsValidated = planMerge([row({ activePlaces: 1 }), row({ validatedAt: "2026-10-02T08:00:00Z" })]);
   assert.ok(!heldVsValidated.ok && heldVsValidated.refused === "keeper_not_validated", "no judgement call is made for him");
 }
@@ -75,11 +82,19 @@ function checkWriteAndScript(): void {
   assert.match(body, /revoke execute on function public\.phoenix_crm_merge_duplicate_customer\(jsonb\) from public, anon, authenticated;/);
   assert.ok(!/\bupdate public\.phoenix_crm_customers c\s+set[^;]*\bgrade\s*=/i.test(body), "a grade nobody set is never written onto the keeper");
 
+  // The database refuses it too, so no script or board can re-join them (20261123101851).
+  const guard = readFileSync("supabase/migrations/20261123101851_phoenix_crm_merge_never_rejoins_an_owner_split.sql", "utf8").replace(/--[^\n]*/g, "");
+  assert.ok(guard.includes("phoenix_crm:owner_split_them"), "the write refuses a pair the owner split");
+  assert.match(guard, /event_type = 'customer_restored'[\s\S]*details\s*->>\s*'why'\s*=\s*'merge_reversed'/, "read from his own split event");
+  assert.match(guard, /'owner_split'/, "the counts hand the board and the script the split");
+  assert.match(guard, /revoke execute on function public\.phoenix_crm_merge_duplicate_customer\(jsonb\) from public, anon, authenticated;/);
+
   const script = stripComments(readFileSync("scripts/phoenix-crm-merge-same-seat-duplicates.ts", "utf8"));
   assert.ok(script.includes('if (arg("apply") === null)'), "a dry run is the default");
   assert.ok(script.includes("await verifyPreImage(schema,"), "--apply refuses without a pre-image it has read back");
   assert.ok(script.includes("revoke all on schema ${PRE_IMAGE_SCHEMA} from anon, authenticated;"), "the pre-image is never readable by anon");
   assert.ok(script.includes("groupSameRepDuplicates("), "the set is the duplicates board's own");
+  assert.match(script, /ownerSplit: \(ownerSplits\.get\(id\) \?\? 0\) > 0/, "the bulk script reads the owner's split before it plans");
   assert.ok(!script.includes('"xlsx"') && !script.includes("xlsx/"), "the report lives outside the repository");
 
   const board = readFileSync("app/(admin)/admin/phoenix-crm/duplicates/page.tsx", "utf8");
