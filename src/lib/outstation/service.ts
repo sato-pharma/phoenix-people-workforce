@@ -252,9 +252,12 @@ import { planOutstationRequestDecision } from "@/lib/outstation/expense-approval
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { workflowExpenseReportFileName } from "@/lib/outstation/workflow-expense-report-guard";
 import {
+  validateMedicalRepOtherExpenseInput,
   validateMedicalRepSimpleExpenseInput,
+  type MedicalRepOtherExpenseInput,
   type MedicalRepSimpleExpenseInput,
 } from "@/lib/outstation/medical-rep-expenses";
+import { todayInCairo } from "@/lib/date-only";
 import { assertMedicalRepExpenseRole } from "@/lib/outstation/medical-rep-expense-viewer";
 import {
   googleDirectionsRoute,
@@ -3734,6 +3737,143 @@ export async function submitMedicalRepSimpleExpenseRequest(
     // and the alert that used to fire from inside the approval is raised directly instead, so
     // removing the auto-approval does not silently stop the mail.
     // After the reply (afterResponse): the claim is saved, and the notice swallows its own failures.
+    await afterResponse("outstation_notice:submitted_simple", () =>
+      notifyOutstationSubmitted(submitted, { heldForReview: true }),
+    );
+    return submitted;
+  } catch (error) {
+    await deleteOutstationTicketAttachments(
+      uploadedAttachments.map((attachment) => attachment.path),
+    );
+    throw error;
+  }
+}
+
+/**
+ * A medical rep's OTHER expense — an invoice or any cost he paid and is owed (owner, 2026-11-23).
+ * See the Other section of medical-rep-expenses.ts for the rule.
+ *
+ * Stored as `expense_type = 'other'`, priced on the typed amount alone (`other_amount`), with no
+ * destination, ticket, distance or allowance, and NO residence needed — nothing here travels. It
+ * is inserted `submitted` and nothing approves it here: it waits on Expense Approvals, where a
+ * non-trip claim is never Ready, for the Super Admin to approve or reject. The approval and the
+ * payroll write are the ones every claim already goes through.
+ */
+export async function submitMedicalRepOtherExpenseRequest(
+  access: AccessContext,
+  input: MedicalRepOtherExpenseInput,
+) {
+  const identity = await getMedicalRepExpenseIdentity(access);
+  const normalized = validateMedicalRepOtherExpenseInput(input, todayInCairo());
+
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending",
+    status: "draft",
+  });
+
+  // The same-cost and same-receipt guard every claim goes through (duplicate-ticket-guard.ts):
+  // the same amount on the same day, or the same invoice file, is refused before anything is stored.
+  await assertNoDuplicateTicket({
+    employeeHrId: identity.employeeHrId,
+    otherAmount: normalized.amount,
+    receipts: normalized.attachments.map((attachment) => ({ name: attachment.fileName, size: attachment.size })),
+    tripEndDate: normalized.expenseDate,
+    tripStartDate: normalized.expenseDate,
+  });
+
+  const now = new Date().toISOString();
+  const requestDraftId = `medical-rep-other-${randomUUID()}`;
+  let uploadedAttachments: OutstationTicketAttachmentMetadata[] = [];
+
+  try {
+    uploadedAttachments = await uploadOutstationTicketAttachments(
+      normalized.attachments.map((attachment) => ({
+        ...attachment,
+        employeeHrId: identity.employeeHrId,
+        requestDraftId,
+      })),
+    );
+
+    const residence = identity.residence;
+    const { data, error } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .insert({
+        allowance_amount: 0,
+        allowance_breakdown_json: JSON.stringify({
+          overnightDays: 0,
+          returnDayApplied: false,
+          rows: [],
+          sameDayTrip: true,
+        }),
+        approval_reason: NON_TRAVEL_APPROVAL_REASON,
+        approval_recommendation: "hr_review",
+        area: identity.employeeArea,
+        attachment_count: uploadedAttachments.length,
+        calculation_status: "submitted",
+        captured_accuracy_meters: null,
+        captured_at: now,
+        // NOT NULL columns: the registered residence when there is one, 0 otherwise, under the
+        // no-travel marker — nothing computes from them (the device the wizard's Other uses).
+        captured_latitude: residence?.residenceLatitude ?? 0,
+        captured_location_source: NON_TRAVEL_LOCATION_SOURCE,
+        captured_longitude: residence?.residenceLongitude ?? 0,
+        claimed_total_amount: normalized.amount,
+        distance_from_residence_km: null,
+        distance_km: null,
+        duration_minutes: null,
+        eligibility_reason: NON_TRAVEL_ELIGIBILITY_REASON,
+        eligibility_status: "needs_review",
+        employee_hr_id: identity.employeeHrId,
+        // The employee RECORD name, never the nickname-first display name (outstationRecordName()).
+        employee_name: identity.employeeRecordName,
+        employee_role: "Medical Rep",
+        // No photo step exists for an invoice, so the fail-closed 'pending_arrival_photo' default
+        // would hold an approved claim out of payroll for ever (the 2026-08-08 defect).
+        evidence_gate_status: "grandfathered",
+        expected_total_amount: normalized.amount,
+        expense_type: "other",
+        fuel_amount: 0,
+        go_ticket_amount: 0,
+        line: identity.employeeLine,
+        meeting_amount: 0,
+        minimum_required_distance_km: 0,
+        notes: normalized.notes,
+        offline_captured: false,
+        other_amount: normalized.amount,
+        overnight_days: 0,
+        residence_address: residence?.residenceAddress ?? null,
+        residence_area: residence?.residenceArea ?? null,
+        residence_city: residence?.residenceCity ?? null,
+        residence_latitude: residence?.residenceLatitude ?? null,
+        residence_longitude: residence?.residenceLongitude ?? null,
+        return_ticket_amount: 0,
+        route_polyline: null,
+        same_day_trip: true,
+        status: "submitted",
+        submitted_at: now,
+        ticket_amount: 0,
+        ticket_attachment_metadata: uploadedAttachments,
+        ticket_attachment_paths: uploadedAttachments.map((attachment) => attachment.path),
+        to_area: null,
+        to_city: null,
+        to_label: nonTravelDestinationLabel("other"),
+        to_place_id: null,
+        // NOT NULL with a car/train/bus/other check; "other" is the mode-less value.
+        transportation_type: "other",
+        trip_end_date: normalized.expenseDate,
+        trip_start_date: normalized.expenseDate,
+        updated_at: now,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const submitted = mapOutstationRequestRow(data as Record<string, unknown>);
     await afterResponse("outstation_notice:submitted_simple", () =>
       notifyOutstationSubmitted(submitted, { heldForReview: true }),
     );

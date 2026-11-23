@@ -45,7 +45,10 @@ import { dataUrlToBlob, prepareTicketAttachment } from "@/components/outstation/
 import {
   MEDICAL_REP_MAX_PHOTOS,
   MEDICAL_REP_MIN_PHOTOS,
+  MEDICAL_REP_OTHER_MAX_FILES,
+  medicalRepOtherFileProblem,
   medicalRepPhotoProblem,
+  type MedicalRepExpenseKind,
 } from "@/lib/outstation/medical-rep-expenses";
 
 /** One photo on the form: the shrunk JPEG that is sent, and a local preview of it. */
@@ -63,6 +66,18 @@ async function shrinkPhoto(file: File): Promise<File> {
   return new File([blob], prepared.name, { type: blob.type || "image/jpeg" });
 }
 
+/** One invoice file on the Other form: a shrunk JPEG photo, or a PDF sent as it is. */
+type PickedInvoice = { file: File; isPdf: boolean; key: string; previewUrl: string | null };
+
+/** An Other claim (owner, 2026-11-23): an invoice he paid, with no destination and no tickets. */
+function isOtherRequest(request: OutstationExpenseRequest) {
+  return request.expenseType === "other";
+}
+
+function requestTypeLabel(request: OutstationExpenseRequest) {
+  return isOtherRequest(request) ? "Other" : "Traveling";
+}
+
 function looksLikePhoto(file: File) {
   return file.type.startsWith("image/") || (!file.type && /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name));
 }
@@ -74,6 +89,7 @@ type ExpenseOrder = "newest" | "oldest" | "highest_total" | "lowest_total" | "de
 
 const expenseExcelHeaders = [
   "Request ID",
+  "Type",
   "Employee Name",
   "HR ID",
   "Role",
@@ -162,6 +178,7 @@ function requestFromLabel(request: OutstationExpenseRequest) {
 }
 
 function tripDatesLabel(request: OutstationExpenseRequest) {
+  if (isOtherRequest(request)) return formatDate(request.tripStartDate);
   return `${formatDate(request.tripStartDate)} – ${formatDate(request.tripEndDate)}`;
 }
 
@@ -194,6 +211,7 @@ function rowsForExpenseWorkbook(rows: OutstationExpenseRequest[], fallbackEmploy
     "Role": excelText(request.employeeRole),
     "Status": normalizeStatus(request.status),
     "Submitted At": excelText(formatDate(request.submittedAt || request.createdAt)),
+    "Type": requestTypeLabel(request),
     "To": excelText(request.toLabel ?? ""),
     "To Date": excelText(formatDate(request.tripEndDate)),
     "Total Ticket Amount": requestTotal(request),
@@ -206,7 +224,7 @@ async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbac
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Expense Input");
-  const widths = [14, 28, 14, 18, 34, 34, 14, 14, 18, 20, 20, 14, 18, 42, 16];
+  const widths = [14, 12, 28, 14, 18, 34, 34, 14, 14, 18, 20, 20, 14, 18, 42, 16];
   sheet.columns = expenseExcelHeaders.map((header, index) => ({
     header,
     key: header,
@@ -237,16 +255,28 @@ function tabButtonClassName(active: boolean) {
 
 export function MedicalRepExpensesWorkspace({
   canSubmit,
+  canSubmitOther,
   employeeName,
   initialRequests,
   residenceSummary,
 }: {
+  /** Traveling: the permission AND a home address on file — every trip starts from it. */
   canSubmit: boolean;
+  /** Other: the permission alone — an invoice travels nowhere, so no home address is needed. */
+  canSubmitOther: boolean;
   employeeName: string;
   initialRequests: OutstationExpenseRequest[];
   residenceSummary: string;
 }) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("submit");
+  // Traveling is the form as it always was; Other is an invoice he paid (owner, 2026-11-23).
+  const [kind, setKind] = useState<MedicalRepExpenseKind>("traveling");
+  const [expenseDate, setExpenseDate] = useState("");
+  const [otherAmount, setOtherAmount] = useState("");
+  const [otherNotes, setOtherNotes] = useState("");
+  const [invoices, setInvoices] = useState<PickedInvoice[]>([]);
+  const [invoiceInputKey, setInvoiceInputKey] = useState(0);
+  const [isPreparingInvoices, setIsPreparingInvoices] = useState(false);
   const [requests, setRequests] = useState(initialRequests);
   const [tripStartDate, setTripStartDate] = useState("");
   const [tripEndDate, setTripEndDate] = useState("");
@@ -314,12 +344,75 @@ export function MedicalRepExpensesWorkspace({
   // button never lets through what the server would then send back.
   const photoProblem = medicalRepPhotoProblem(attachments.map((photo) => ({ contentType: photo.file.type })));
 
-  const canSend =
+  const canSendTraveling =
     canSubmit &&
     !isSubmitting &&
     !isPreparingPhotos &&
     !photoProblem &&
     Boolean(tripStartDate && tripEndDate && toLocation.trim() && notes.trim() && ticketTotal > 0);
+
+  // Other: the date, the amount, the comment and the invoice — all four required. The file check is
+  // the same function the server refuses with.
+  const invoiceProblem = medicalRepOtherFileProblem(
+    invoices.map((invoice) => ({ contentType: invoice.file.type, size: invoice.file.size })),
+  );
+  const otherAmountValue = Number(otherAmount || 0);
+  const today = todayInCairo();
+  const canSendOther =
+    canSubmitOther &&
+    !isSubmitting &&
+    !isPreparingInvoices &&
+    !invoiceProblem &&
+    Boolean(expenseDate && expenseDate <= today && otherNotes.trim() && otherAmountValue > 0);
+
+  const canSend = kind === "other" ? canSendOther : canSendTraveling;
+  const formTotal = kind === "other" ? otherAmountValue : ticketTotal;
+
+  /** Adds invoice files — a photo is shrunk to a JPEG, a PDF goes as it is (the wizard's own helper). */
+  async function addInvoices(files: FileList | null) {
+    const picked = files ? Array.from(files) : [];
+    if (picked.length === 0) return;
+    setIsPreparingInvoices(true);
+    setMessage(null);
+    let refusal: string | null = null;
+    const added: PickedInvoice[] = [];
+    try {
+      const room = Math.max(0, MEDICAL_REP_OTHER_MAX_FILES - invoices.length);
+      for (const file of picked) {
+        if (added.length >= room) {
+          refusal ??= `At most ${MEDICAL_REP_OTHER_MAX_FILES} files can be attached. The first ${MEDICAL_REP_OTHER_MAX_FILES} were kept.`;
+          continue;
+        }
+        try {
+          const prepared = await prepareTicketAttachment(file);
+          const blob = dataUrlToBlob(prepared.dataUrl);
+          const isPdf = blob.type === "application/pdf";
+          const ready = new File([blob], prepared.name, { type: blob.type || "image/jpeg" });
+          added.push({
+            file: ready,
+            isPdf,
+            key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            previewUrl: isPdf ? null : URL.createObjectURL(ready),
+          });
+        } catch (error) {
+          refusal ??= error instanceof Error ? error.message : `"${file.name}" could not be added.`;
+        }
+      }
+      setInvoices((current) => [...current, ...added].slice(0, MEDICAL_REP_OTHER_MAX_FILES));
+      setMessage(refusal);
+    } finally {
+      setIsPreparingInvoices(false);
+      setInvoiceInputKey((value) => value + 1);
+    }
+  }
+
+  function removeInvoice(key: string) {
+    setInvoices((current) => {
+      const gone = current.find((invoice) => invoice.key === key);
+      if (gone?.previewUrl) URL.revokeObjectURL(gone.previewUrl);
+      return current.filter((invoice) => invoice.key !== key);
+    });
+  }
 
   /** Adds the picked photos to the ones already on the form — one at a time or several at once. */
   async function addPhotos(files: FileList | null) {
@@ -373,21 +466,32 @@ export function MedicalRepExpensesWorkspace({
     setMessage(null);
 
     if (!canSend) {
-      setMessage(photoProblem ?? "Complete the required fields before submitting.");
+      setMessage(
+        (kind === "other" ? invoiceProblem : photoProblem) ?? "Complete the required fields before submitting.",
+      );
       return;
     }
 
     const formData = new FormData();
-    formData.set("tripStartDate", tripStartDate);
-    formData.set("tripEndDate", tripEndDate);
-    formData.set("toLocation", toLocation);
-    formData.set("toPlaceId", toPlaceId);
-    formData.set("notes", notes);
-    formData.set("goTicketAmount", goTicketAmount);
-    formData.set("returnTicketAmount", returnTicketAmount);
-    formData.set("amWorkload", amWorkload || "0");
-    formData.set("pmWorkload", pmWorkload || "0");
-    attachments.forEach((photo) => formData.append("attachments", photo.file));
+    if (kind === "other") {
+      formData.set("kind", "other");
+      formData.set("expenseDate", expenseDate);
+      formData.set("amount", otherAmount);
+      formData.set("notes", otherNotes);
+      invoices.forEach((invoice) => formData.append("attachments", invoice.file));
+    } else {
+      formData.set("kind", "traveling");
+      formData.set("tripStartDate", tripStartDate);
+      formData.set("tripEndDate", tripEndDate);
+      formData.set("toLocation", toLocation);
+      formData.set("toPlaceId", toPlaceId);
+      formData.set("notes", notes);
+      formData.set("goTicketAmount", goTicketAmount);
+      formData.set("returnTicketAmount", returnTicketAmount);
+      formData.set("amWorkload", amWorkload || "0");
+      formData.set("pmWorkload", pmWorkload || "0");
+      attachments.forEach((photo) => formData.append("attachments", photo.file));
+    }
 
     setIsSubmitting(true);
     try {
@@ -402,6 +506,19 @@ export function MedicalRepExpensesWorkspace({
       }
 
       setRequests((current) => [payload.request as OutstationExpenseRequest, ...current]);
+      if (kind === "other") {
+        setExpenseDate("");
+        setOtherAmount("");
+        setOtherNotes("");
+        invoices.forEach((invoice) => {
+          if (invoice.previewUrl) URL.revokeObjectURL(invoice.previewUrl);
+        });
+        setInvoices([]);
+        setInvoiceInputKey((value) => value + 1);
+        setMessage("Expense submitted. It waits for the system administrator to approve or reject it.");
+        setActiveTab("history");
+        return;
+      }
       setTripStartDate("");
       setTripEndDate("");
       setToLocation("");
@@ -453,9 +570,8 @@ export function MedicalRepExpensesWorkspace({
 
       {activeTab === "submit" ? (
         <PortalSection
-          actions={<Badge variant="neutral">Traveling only</Badge>}
           eyebrow="Submit Expense"
-          title="Traveling request"
+          title={kind === "other" ? "Other expense" : "Traveling request"}
         >
           <form aria-busy={isSubmitting} onSubmit={submitExpense}>
             {/* md, not lg: a tablet (768–1023px) has room for the paired fields, and the same grid
@@ -467,18 +583,166 @@ export function MedicalRepExpensesWorkspace({
                 </FormField>
               </div>
 
+              {/* Traveling or Other (owner, 2026-11-23). Other is an invoice he paid: no destination,
+                  no tickets — a date, the amount, a comment and the file. Two buttons side by side
+                  at every width; they fit a 360px phone. */}
               <div className="md:col-span-3">
+                <FormField label="Type">
+                  <PortalSegmentedTabs className="grid min-h-12 grid-cols-2">
+                    <button
+                      aria-pressed={kind === "traveling"}
+                      className={tabButtonClassName(kind === "traveling")}
+                      onClick={() => {
+                        setKind("traveling");
+                        setMessage(null);
+                      }}
+                      type="button"
+                    >
+                      <MapPin className="h-4 w-4 shrink-0" />
+                      Traveling
+                    </button>
+                    <button
+                      aria-pressed={kind === "other"}
+                      className={tabButtonClassName(kind === "other")}
+                      onClick={() => {
+                        setKind("other");
+                        setMessage(null);
+                      }}
+                      type="button"
+                    >
+                      <FileText className="h-4 w-4 shrink-0" />
+                      Other
+                    </button>
+                  </PortalSegmentedTabs>
+                </FormField>
+              </div>
+
+              {kind === "other" ? (
+                <>
+                  <div className="md:col-span-3">
+                    <FormField label="Date">
+                      <Input
+                        max={today}
+                        onChange={(event) => setExpenseDate(event.target.value)}
+                        required
+                        type="date"
+                        value={expenseDate}
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <FormField label="Amount paid">
+                      <Input
+                        inputMode="decimal"
+                        min="0"
+                        onChange={(event) => setOtherAmount(event.target.value)}
+                        placeholder="EGP"
+                        required
+                        step="0.01"
+                        type="number"
+                        value={otherAmount}
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <FormField label="Invoice or receipt (PDF or photo)">
+                      <label
+                        className={cn(
+                          "flex min-h-12 items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition",
+                          isPreparingInvoices || invoices.length >= MEDICAL_REP_OTHER_MAX_FILES
+                            ? "cursor-not-allowed opacity-70"
+                            : "cursor-pointer hover:bg-orange-100",
+                        )}
+                      >
+                        {isPreparingInvoices ? <LoadingSpinner /> : <Upload className="h-4 w-4" />}
+                        <span className="break-words">
+                          {isPreparingInvoices
+                            ? "Adding files…"
+                            : invoices.length === 0
+                              ? "Upload the invoice — PDF or photo"
+                              : invoices.length >= MEDICAL_REP_OTHER_MAX_FILES
+                                ? `${countLabel(invoices.length, "file", "files")} added`
+                                : `${countLabel(invoices.length, "file", "files")} added — add more`}
+                        </span>
+                        <input
+                          key={invoiceInputKey}
+                          accept="image/*,application/pdf,.pdf"
+                          className="hidden"
+                          disabled={isPreparingInvoices || invoices.length >= MEDICAL_REP_OTHER_MAX_FILES}
+                          multiple
+                          onChange={(event) => void addInvoices(event.target.files)}
+                          type="file"
+                        />
+                      </label>
+                      {invoices.length > 0 ? (
+                        <ul className="mt-2 grid grid-cols-3 gap-2">
+                          {invoices.map((invoice, index) => (
+                            <li className={`grid gap-1 border border-slate-200 bg-white p-1 ${adminSoftDepthClassName}`} key={invoice.key}>
+                              {invoice.previewUrl ? (
+                                /* eslint-disable-next-line @next/next/no-img-element -- a local blob preview, never a remote image */
+                                <img
+                                  alt={`Invoice ${index + 1}`}
+                                  className="aspect-square w-full object-cover"
+                                  src={invoice.previewUrl}
+                                />
+                              ) : (
+                                <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 bg-slate-50 p-2 text-center">
+                                  <FileText className="h-6 w-6 shrink-0 text-orange-500" />
+                                  <span className="break-all text-xs font-semibold text-slate-700">{invoice.file.name}</span>
+                                </div>
+                              )}
+                              <button
+                                className="min-h-8 text-xs font-bold text-orange-700 hover:underline"
+                                onClick={() => removeInvoice(invoice.key)}
+                                type="button"
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <p
+                        className={cn(
+                          "mt-2 text-sm font-semibold",
+                          invoiceProblem ? "text-amber-800" : "text-emerald-700",
+                        )}
+                      >
+                        {invoiceProblem ??
+                          `${countLabel(invoices.length, "file", "files")} ready. You can add up to ${MEDICAL_REP_OTHER_MAX_FILES}.`}
+                      </p>
+                    </FormField>
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <FormField label="Comment">
+                      <textarea
+                        className={cn(phxTextareaClassName, "min-h-40")}
+                        dir="auto"
+                        onChange={(event) => setOtherNotes(event.target.value)}
+                        placeholder="What did you pay for, and why?"
+                        required
+                        value={otherNotes}
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <p className="text-xs font-semibold text-slate-500">
+                      An Other expense has no destination. It waits for the system administrator, who approves or rejects it.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+              <div className="md:col-span-2">
                 <FormField label="From">
                   <ReadOnlyField
                     icon={MapPin}
                     value={residenceSummary || "Residence not configured"}
                   />
-                </FormField>
-              </div>
-
-              <div className="md:col-span-2">
-                <FormField label="Type">
-                  <ReadOnlyField icon={FileText} value="Traveling" />
                 </FormField>
               </div>
 
@@ -675,12 +939,14 @@ export function MedicalRepExpensesWorkspace({
                   </div>
                 </div>
               ) : null}
+                </>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 bg-slate-50 px-4 py-4 sm:px-6">
               <div className="flex min-w-0 items-center gap-3 text-base font-black text-slate-800">
                 <CalendarDays className="h-5 w-5 shrink-0 text-orange-500" />
-                <span>Total: {egp(ticketTotal)}</span>
+                <span>Total: {egp(formTotal)}</span>
               </div>
               <button
                 className={cn(phxButtonAccentClassName, "w-full sm:w-auto sm:min-w-[220px]")}
@@ -805,6 +1071,9 @@ export function MedicalRepExpensesWorkspace({
                         </td>
                         <td className="px-3 py-3">
                           <p className="break-words font-semibold text-slate-900">{tripDatesLabel(request)}</p>
+                          {isOtherRequest(request) ? (
+                            <p className="mt-1 break-words font-semibold text-slate-900">Other expense · no travel</p>
+                          ) : (
                           <p className="mt-1 break-words font-medium text-slate-700">
                             <span dir="auto">{requestFromLabel(request)}</span>
                             <span aria-hidden="true" className="px-1 text-orange-500">→</span>
@@ -813,8 +1082,19 @@ export function MedicalRepExpensesWorkspace({
                               {request.toLabel || "—"}
                             </span>
                           </p>
+                          )}
                         </td>
                         <td className="px-3 py-3">
+                          {isOtherRequest(request) ? (
+                            <dl className="space-y-1">
+                              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                                <dt className="text-xs font-bold text-slate-600">Paid</dt>
+                                <dd className="min-w-0 break-words font-black tabular-nums text-slate-950">
+                                  {egp(requestTotal(request))}
+                                </dd>
+                              </div>
+                            </dl>
+                          ) : (
                           <dl className="space-y-1">
                             <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                               <dt className="text-xs font-semibold text-slate-500">Go</dt>
@@ -835,6 +1115,7 @@ export function MedicalRepExpensesWorkspace({
                               </dd>
                             </div>
                           </dl>
+                          )}
                         </td>
                         <td className="px-3 py-3 font-semibold tabular-nums text-slate-700">
                           {request.attachmentCount}
@@ -858,7 +1139,7 @@ export function MedicalRepExpensesWorkspace({
                       <div className="min-w-0">
                         <p className="font-mono text-xs font-bold text-slate-500">MR-{request.id}</p>
                         <p className="mt-1 break-words font-black text-slate-950" dir="auto">
-                          {request.toLabel}
+                          {isOtherRequest(request) ? "Other expense · no travel" : request.toLabel}
                         </p>
                       </div>
                       <Badge className="shrink-0" variant={statusVariant(request.status)}>
@@ -866,6 +1147,16 @@ export function MedicalRepExpensesWorkspace({
                       </Badge>
                     </div>
                     <p className="mt-2 text-sm font-medium text-slate-600">{tripDatesLabel(request)}</p>
+                    {isOtherRequest(request) ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <p className="text-slate-600">
+                        Paid: <span className="font-bold text-slate-950">{egp(requestTotal(request))}</span>
+                      </p>
+                      <p className="text-slate-600">
+                        Files: <span className="font-bold text-slate-950">{request.attachmentCount}</span>
+                      </p>
+                    </div>
+                    ) : (
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                       <p className="text-slate-600">
                         Go: <span className="font-bold text-slate-950">{egp(request.goTicketAmount)}</span>
@@ -884,6 +1175,7 @@ export function MedicalRepExpensesWorkspace({
                         Files: <span className="font-bold text-slate-950">{request.attachmentCount}</span>
                       </p>
                     </div>
+                    )}
                     {request.notes ? (
                       <p className="mt-3 break-words text-sm font-medium text-slate-700" dir="auto">
                         {request.notes}
