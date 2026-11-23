@@ -310,7 +310,10 @@ system" outranks the house document look for this one export.
 
 1. The route's gate is the one-trip read's own: signed in, the desk's read permission, a real
    session (a preview session is answered 409), and the claim on that person's list (404 before any
-   browser opens).
+   browser opens). View as Seat never reaches the route: the export is on `SEAT_VIEW_REFUSED_READS`
+   (`src/lib/auth/seat-view.ts`), because it signs a browser in as a real account and writes an
+   audit row naming who took the file. `tests/seat-view.test.ts` refuses a GET that writes and is
+   not on that list; the first push of this change was red on exactly that.
 2. Chromium (the PDF printer's own, one of its two slots) signs in as the person who pressed, with a
    180-second session named "Phoenix expense case PDF export". It is revoked when the print ends,
    with reason `expense_case_pdf_export`. So the PDF shows what that person's own screen shows.
