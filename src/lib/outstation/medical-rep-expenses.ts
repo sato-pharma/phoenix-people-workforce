@@ -257,7 +257,7 @@ export function validateMedicalRepOtherExpenseInput(
 
   const amount = roundMoney(numberValue(input.amount));
   if (amount <= 0) {
-    throw new Error("Amount is required — enter what you paid.");
+    throw new Error("Invoice amount is required — enter the amount on the invoice.");
   }
 
   const notes = text(input.notes);
