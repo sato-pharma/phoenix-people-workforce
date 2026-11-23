@@ -328,9 +328,13 @@ export function runSeatViewTests(): void {
       "/api/hiring-pack/x/print",
       "/api/recruitment/hiring-manager/candidates/x/files/y",
       "/api/phoenix-crm/day-interviews/cv",
+      "/api/admin/outstation/approvals/x/pdf",
     ]) {
       assert.equal(seatViewMayRun("GET", path), false, `GET ${path} is refused during a view`);
     }
+    // The export is refused, the reads beside it are not: a view still opens the desk and one claim.
+    assert.equal(seatViewMayRun("GET", "/api/admin/outstation/approvals"), true, "a view still reads the expense desk");
+    assert.equal(seatViewMayRun("GET", "/api/admin/outstation/approvals/x"), true, "a view still reads one expense claim");
     assert.ok(SEAT_VIEW_REFUSED_READS.length >= 8);
   }
 

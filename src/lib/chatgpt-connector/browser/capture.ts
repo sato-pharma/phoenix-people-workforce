@@ -26,8 +26,8 @@ import { loadPuppeteer, resolveChromiumPath, withChromiumSlot } from "@/lib/pdf/
 
 import { connectorOrigin } from "../oauth";
 import { ToolRefusal } from "../types";
-import { classifyCaptureRequest, type FencePolicy, type SideEffectRoutes } from "./fence";
-import { mintCaptureSession, revokeCaptureSession, type CaptureSession } from "./session";
+import { classifyCaptureRequest, type FenceDecision, type FencePolicy, type SideEffectRoutes } from "./fence";
+import { mintCaptureSession, revokeCaptureSession, type CaptureSession, type CaptureSessionMark } from "./session";
 
 export const CAPTURE_VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false },
@@ -35,6 +35,8 @@ export const CAPTURE_VIEWPORTS = {
   mobile: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
 } as const;
 export type CaptureViewport = keyof typeof CAPTURE_VIEWPORTS;
+/** A viewport that is none of the three named ones (the expense case PDF grows its own to the case's height). */
+export type CaptureViewportShape = { width: number; height: number; deviceScaleFactor: number; isMobile: boolean; hasTouch: boolean };
 
 const MOBILE_USER_AGENT =
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
@@ -109,6 +111,8 @@ type CapturePage = {
   goto: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
   waitForNetworkIdle: (options?: Record<string, unknown>) => Promise<void>;
   screenshot: (options: Record<string, unknown>) => Promise<Uint8Array>;
+  pdf: (options: Record<string, unknown>) => Promise<Uint8Array>;
+  emulateMediaType: (type: string) => Promise<void>;
   title: () => Promise<string>;
   url: () => string;
   createCDPSession: () => Promise<CdpSession>;
@@ -120,16 +124,29 @@ type CaptureBrowser = {
   on: (event: string, handler: (target: CaptureTarget) => void) => void;
 };
 
-/** Page-side belt: a beacon or a non-GET fetch never leaves the page, even from a closing one. */
-const PAGE_STUBS = `(() => {
+/**
+ * Page-side belt: a beacon or a non-GET fetch never leaves the page, even from a closing one.
+ *
+ * `passWrites` names address prefixes a caller's OWN fence lets a non-GET reach (the expense case PDF
+ * lets the map's viewport call through to Google, and nothing else). Empty for the connector: every
+ * non-GET fetch is answered 204 in the page. The stub only stops being the first refusal for those
+ * prefixes; the network fence still decides every request.
+ */
+export function pageStubs(passWrites: readonly string[] = []): string {
+  return `(() => {
   try { Object.defineProperty(navigator, "sendBeacon", { value: () => true, configurable: false }); } catch (e) {}
+  const pass = ${JSON.stringify(passWrites)};
   const realFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const method = String((init && init.method) || (input && typeof input === "object" && input.method) || "GET").toUpperCase();
-    if (method !== "GET" && method !== "HEAD") return Promise.resolve(new Response(null, { status: 204 }));
+    if (method !== "GET" && method !== "HEAD") {
+      const target = String((input && typeof input === "object" && input.url) || input);
+      if (!pass.some((prefix) => target.startsWith(prefix))) return Promise.resolve(new Response(null, { status: 204 }));
+    }
     return realFetch(input, init);
   };
 })();`;
+}
 
 /** Scrolls whatever actually scrolls (the window, or the admin shell's own pane) by one step. */
 export const SCROLL_STEP = (fraction: number) => `(() => {
@@ -150,18 +167,36 @@ export const SCROLL_STEP = (fraction: number) => `(() => {
 export type OpenedBrowser = { page: CapturePage; stopped: () => number; finish: () => Promise<void> };
 export type { CapturePage };
 
-/** A film (films/render.ts) holds its session for its own length and adds its masking script to every page. */
-export type OpenPageOptions = { sessionSeconds?: number; initScripts?: string[] };
+/**
+ * A film (films/render.ts) holds its session for its own length and adds its masking script to every page.
+ *
+ * The last four are for a reader that is not the connector — the expense case PDF
+ * (src/lib/outstation/approvals/case-pdf.ts). It opens the app's PUBLIC address (the map's key is
+ * tied to it), brings its OWN fence, which is stricter than the connector's (`decide` then replaces
+ * this file's fence entirely, and `routes` is not read), names its session, and lets the map's one
+ * call to Google through the page stub. Left out, nothing here changes for the connector.
+ */
+export type OpenPageOptions = {
+  sessionSeconds?: number;
+  initScripts?: string[];
+  origin?: string;
+  decide?: (request: { method: string; url: string; headers: Record<string, string> }) => FenceDecision;
+  sessionMark?: CaptureSessionMark;
+  passWrites?: readonly string[];
+};
 
 export async function openSignedInPage(
   ctx: AccessContext,
-  viewport: CaptureViewport,
+  viewport: CaptureViewport | CaptureViewportShape,
   routes: SideEffectRoutes,
   options: OpenPageOptions = {},
 ): Promise<OpenedBrowser> {
   const puppeteer = await loadPuppeteer();
-  const origin = captureOrigin();
+  const origin = options.origin ?? captureOrigin();
   const policy: FencePolicy = { origin, sameAppOrigins: sameAppOrigins(), routes };
+  const decide =
+    options.decide ??
+    ((request: { method: string; url: string; headers: Record<string, string> }) => classifyCaptureRequest(request, policy));
   let session: CaptureSession | null = null;
   let browser: CaptureBrowser | null = null;
   let stopped = 0;
@@ -170,7 +205,7 @@ export async function openSignedInPage(
     await revokeCaptureSession(session);
   };
   try {
-    session = await mintCaptureSession(ctx, options.sessionSeconds);
+    session = await mintCaptureSession(ctx, options.sessionSeconds, options.sessionMark);
     const executablePath = resolveChromiumPath();
     browser = (await puppeteer.launch({
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--hide-scrollbars"],
@@ -190,14 +225,14 @@ export async function openSignedInPage(
       // the fence already refuses every download route; this is a belt
     }
     await page.setBypassServiceWorker(true);
-    const shape = CAPTURE_VIEWPORTS[viewport];
+    const shape: CaptureViewportShape = typeof viewport === "string" ? CAPTURE_VIEWPORTS[viewport] : viewport;
     await page.setViewport({ ...shape });
     if (shape.isMobile) await page.setUserAgent(MOBILE_USER_AGENT);
-    await page.evaluateOnNewDocument(PAGE_STUBS);
+    await page.evaluateOnNewDocument(pageStubs(options.passWrites));
     for (const script of options.initScripts ?? []) await page.evaluateOnNewDocument(script);
     await page.setRequestInterception(true);
     page.on("request", ((request: CaptureRequest) => {
-      const decision = classifyCaptureRequest({ method: request.method(), url: request.url(), headers: request.headers() }, policy);
+      const decision = decide({ method: request.method(), url: request.url(), headers: request.headers() });
       if (decision.allow) {
         request.continue().catch(() => undefined);
         return;
