@@ -440,6 +440,54 @@ manager receives, or in what waits for a decision. What changed because of them:
 Left as it is: with the filters open on a phone and nothing narrowing, the box still heads its fields
 with "Filters · Showing everything". It stands only while he has the boxes open.
 
+## The narrow opening (23 Nov 2026, about 20:15 Cairo: the first list of waiting decisions in 2 seconds)
+
+The change "Not at 2 seconds" named above. No rule of what waits or how it is decided moved.
+
+**Measured before, read-only, against production.** The page's props as JSON: the places waiting
+203 KB (98), the seated decisions 761 KB (404), the seated places in use 724 KB (468), the buildings
+736 KB (433), the customers sent back 247 KB (481), the notes and evidence 66 KB. Four of those, about
+2.5 MB of a 3.6 MB document, were rows the lanes never draw: the lanes need the 10 held buildings, the
+buildings holding one of the waiting seated customers, and the clinic reviews.
+
+**What changed.** The page sends only the buildings that need a decision (`venuesSentWithPage`): held,
+or holding a waiting review, a rejected building included (a rejected building holding a waiting
+customer is still on the board). The decisions, the places in use and the sent-back customers it
+sends are those seated in one of them (`seatedInVenues`). The single clinics' sent-back customers
+and every other building, with its customers, come with the click: the wide read now returns
+`sharedPlaces` and `reopened` too, and the board holds the page's rows and the click's as one list,
+the page's winning where both have a row (`pageRowsThenClick`), because the page's are read again
+after every decision. The Polyclinics tab is read on its press like Not confirmed and History
+(`viewNeedsEverything`), and until every building is in its number is the wide read's
+(`placeChecksSummary`'s `buildings`: every building not rejected, as the board counts with no
+filter), never the few sent. The Figures card still counts every building; the page reads them all.
+
+**Why the waiting number cannot move.** `needsYouDecisionCount` takes the waiting rows, the held
+buildings and the buildings on the board. Every held building is sent, and every building holding a
+waiting customer is sent, so no waiting customer is counted as a single clinic because his building
+was left behind. The test runs the one function on the sent buildings and on every building and
+asserts the same count, and draws the lanes' buildings from both and asserts the same groups.
+
+**Measured after, by the same method (props as JSON, same production data, read-only).** The four
+narrowed props: 2,468 KB before, 308 KB after. Decisions 761 KB to 174 KB (93), places in use 724 KB
+to 70 KB (47), buildings 736 KB to 64 KB (38 of 433), sent-back customers 247 KB to 0. With the waiting
+places and the notes unchanged, what the page sends falls from about 2.8 MB to about 0.6 MB. The
+document itself was not re-measured on production: that needs the merge, so it is read on the live
+page afterwards.
+
+**What still keeps the page above 2 seconds, plainly.** The reads did not change, only what is sent.
+Production's own request log for one load (Railway, 17:37:17 UTC) shows the sign-in reads done about
+1.6 s into the load, the subject reads and their chained pages from about 1.84 s to 3.2 s, and the
+notes and evidence, which wait for the subjects, from 3.80 s to 4.21 s: about 2.8 s of data after
+sign-in. Smaller props shorten the render and the transfer, not those reads. The next lever is the
+chain: the notes and evidence wait for the subject reads because they are asked by the subjects' ids.
+
+**Tests.** `checkOnlyTheBuildingsThatNeedADecision` in `tests/phoenix-crm-place-checks-on-demand.test.ts`.
+Eight breaks were made and each fired: sending every building, dropping a rejected holding building,
+the click's rows winning, the wide read dropping the buildings, the Polyclinics tab not waiting for
+the click, its count read from the page, the page sending every building, and the count taking in
+rejected buildings.
+
 ## What is deliberately not there
 
 - **No "New photo" button and no "Take back" button.** The plan named five verbs. A rejection with

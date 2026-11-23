@@ -35,12 +35,18 @@
  * (`loadValidationReviews`, `seatedDecisionsOnly`), and those two cards are counted by the wide read with
  * every other figure (`decisionFigures`).
  *
+ * 🔴 AND OF THE BUILDINGS, ONLY THE ONES THAT NEED A DECISION (owner, 23 Nov 2026: "first list within 2
+ * seconds"). The page sent all 433 buildings with every customer seated in them, decided or not — 2.5 MB of
+ * its 3.6 MB document — when the lanes draw only the 10 held and the ones holding a waiting customer. It now
+ * sends those buildings (`venuesSentWithPage`) and the customers seated in them; every other building, its
+ * customers and the single clinics' sent-back customers come with the click (`sharedPlaces`, `reopened`),
+ * and the Polyclinics tab is counted by the wide read (`buildings`) until they are in.
  * Pure and screen-free, so the server page and the client board both import it.
  */
 
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { placeCheckScorecard, standingOfPlaceInUse, type PlaceStanding, type RepScore } from "@/lib/phoenix-crm/place-check-scorecard";
-import { withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
+import { narrowVenueGroups, seatedCustomersByVenue, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 import {
   decidedByMatches,
   distinctValues,
@@ -61,6 +67,10 @@ export const PLACE_CHECKS_SUMMARY_ROUTE = "/api/phoenix-crm/validation-reviews/s
 
 export type PlaceChecksEverything = {
   validated: ValidatedPlaceRow[];
+  /** Every building on the board, in the page's own order (`placeChecksBoardSets`); the page sends only `venuesSentWithPage`. */
+  sharedPlaces: SharedPlaceBoardRow[];
+  /** Every customer sent back; the page sends only the ones seated in a building it sends. */
+  reopened: ReopenedCustomerRow[];
   /**
    * Every decision the page did not send: the ones outside the board's default window (`recent` false) and
    * the recent ones of single clinics. A row the page did send may be here too; `mergeDecided` keeps the page's.
@@ -109,12 +119,38 @@ export function mergedNoteIndex(page: PlaceNoteIndex, click: PlaceNoteIndex | nu
 }
 
 /**
- * The decisions the page sends on opening: the recent ones of customers SEATED in a building on the board,
- * because a building's card shows everybody in it. Every other decision waits for the click.
+ * The buildings the page sends on opening: the ones that need a decision — held, or holding a customer
+ * whose review waits — which are exactly the buildings the lanes draw (`venueNeedsDecision`). A building
+ * holding ANY waiting row is sent, retired or not, so no waiting customer is ever moved out from under his
+ * building and counted among the clinics: what waits, and how it is counted, is what it was.
+ */
+export function venuesSentWithPage(sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>, waiting: ReadonlyArray<ValidationReviewRow>): SharedPlaceBoardRow[] {
+  const holdingWaiting = new Set(waiting.flatMap((row) => (row.sharedPlaceId === null ? [] : [row.sharedPlaceId])));
+  return sharedPlaces.filter((venue) => venue.status === "held" || holdingWaiting.has(venue.sharedPlaceId));
+}
+
+/** The rows seated in one of these buildings — a building's card shows everybody in it, so they come with it. */
+export function seatedInVenues<Row extends { sharedPlaceId: string | null }>(rows: ReadonlyArray<Row>, venues: ReadonlyArray<SharedPlaceBoardRow>): Row[] {
+  const venueIds = new Set(venues.map((row) => row.sharedPlaceId));
+  return rows.filter((row) => row.sharedPlaceId !== null && venueIds.has(row.sharedPlaceId));
+}
+
+/**
+ * The decisions the page sends on opening: the recent ones of customers SEATED in a building it sends.
+ * Every other decision waits for the click.
  */
 export function decidedSentWithPage(recentDecided: ReadonlyArray<ValidationReviewRow>, sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>): ValidationReviewRow[] {
-  const venueIds = new Set(sharedPlaces.map((row) => row.sharedPlaceId));
-  return recentDecided.filter((row) => row.sharedPlaceId !== null && venueIds.has(row.sharedPlaceId));
+  return seatedInVenues(recentDecided, sharedPlaces);
+}
+
+/**
+ * The page's rows and the click's as one list: a row in both is the page's, which is read again after every
+ * decision; the click's rows the page did not send follow, in the click's order.
+ */
+export function pageRowsThenClick<Row>(page: ReadonlyArray<Row>, click: ReadonlyArray<Row> | null, keyOf: (row: Row) => string): Row[] {
+  if (!click) return [...page];
+  const seen = new Set(page.map(keyOf));
+  return [...page, ...click.filter((row) => !seen.has(keyOf(row)))];
 }
 
 /** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */
@@ -229,6 +265,8 @@ export type PlaceChecksSummary = {
   history: number;
   /** The number on "Approved by the system". Zero on a board with no lanes, whose History is whole. */
   bySystem: number;
+  /** The number on "Polyclinics and hospitals": the buildings not rejected, as the board counts them with no filter. */
+  buildings: number;
   /** The Figures tab's "Validated, in use": every real place still in use. */
   inUse: number;
   /** The Figures tab's "Never looked at": in use, and no review row of any status. */
@@ -267,12 +305,15 @@ export function placeChecksSummary(input: {
   // The two decided tabs as the board counts them with no filter: single clinics only, the system's apart.
   const clinicDecided = withoutSeated(decided, venueIds);
   const bySystem = input.lanes ? clinicDecided.filter((row) => Boolean(row.approvedByRule)).length : 0;
+  const seated = seatedCustomersByVenue({ pending, decided, validated, reopened, venueIds });
+  const buildings = narrowVenueGroups({ venues: sharedPlaces, seated, filters, cutoff: null }).filter((group) => group.venue.status !== "retired").length;
   return {
     options: placeCheckOptions({ team: input.team, pending, decided, everyDecided, validated, reopened, sharedPlaces }),
     scorecard: placeCheckScorecardOf({ pending, validated, reopened }, filters, null),
     unconfirmed: unconfirmedOpenCount(clinicsInUse(withoutSeated(validated, venueIds), filters, null), filters),
     history: clinicDecided.length - bySystem + withoutSeated(reopened, venueIds).length,
     bySystem,
+    buildings,
     inUse: validated.length,
     // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
     unseen: validated.filter((row) => !row.reviewed).length,
@@ -286,8 +327,7 @@ export function placeChecksSummary(input: {
  * everybody in it. A test building's customers come too — the board drops test rows itself.
  */
 export function seatedPlacesInUse(validated: ReadonlyArray<ValidatedPlaceRow>, sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>): ValidatedPlaceRow[] {
-  const venueIds = new Set(sharedPlaces.map((row) => row.sharedPlaceId));
-  return validated.filter((row) => row.sharedPlaceId !== null && venueIds.has(row.sharedPlaceId));
+  return seatedInVenues(validated, sharedPlaces);
 }
 
 /**
