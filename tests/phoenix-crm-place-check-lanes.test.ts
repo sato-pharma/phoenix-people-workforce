@@ -761,6 +761,25 @@ function runWordingAndFileTests() {
       assert.ok(files.includes(path), `🔴 ${path} is a part of ${file} the source pins do not read: add it to PLACE_CHECK_SPLIT_FILES`);
     }
   }
+
+  // 🔴 A DECISION'S FOLLOW-UP RUNS AFTER THE REPLY, FROM THE DECISION ITSELF (23 Nov 2026, module
+  // phoenix-crm-place-decisions): each `afterResponse` call stayed in the function that held it before the
+  // split, with the same label. Moved into a helper a cron or script calls, it would run inline instead.
+  const reviews = placeCheckSplitSource("validation-reviews", code);
+  const afterReply: ReadonlyArray<readonly [string, string]> = [
+    ["phoenix-crm: share an approved validation across the lines", "export async function decideValidationReview("],
+    ["phoenix-crm: follow a rejected place's line copies", "export async function decideValidationReview("],
+    ["phoenix-crm: share a restored validation across the lines", "export async function restoreValidation("],
+    ["phoenix-crm: share a confirmed validation across the lines", "export async function approveValidatedPlace("],
+    ["phoenix-crm: follow a refused place's line copies", "export async function refuseValidatedPlace("],
+  ];
+  assert.equal(reviews.split("afterResponse(").length - 1, afterReply.length,"five after-reply calls in the reviews, every one named below");
+  for (const [label, owner] of afterReply) {
+    const start = reviews.indexOf(owner);
+    assert.ok(start >= 0, `${owner} is in the reviews`);
+    const body = reviews.slice(start, reviews.indexOf("\n}\n", start));
+    assert.equal(body.split(`afterResponse("${label}"`).length - 1, 1, `🔴 "${label}" runs after the reply, from ${owner.replace("export async function ", "").replace("(", "")}`);
+  }
 }
 
 export function runPhoenixCrmPlaceCheckLanesTests() {
