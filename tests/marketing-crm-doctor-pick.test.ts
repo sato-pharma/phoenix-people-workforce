@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
+  crmCopiedPlace,
   crmDoctorAreaChoices,
   crmDoctorAreaIsFixed,
   crmListFlag,
@@ -209,7 +210,10 @@ export async function runMarketingCrmDoctorPickTests() {
   assert.equal((service.match(/customerCrmListFlag: customerCrmFlagById\.get\(request\.customerId\)/g) ?? []).length, 2, "the inbox row and the history row both carry the flag");
 
   const pickService = code("src/lib/marketing-requests/crm-doctor-pick-service.ts");
-  assert.match(pickService, /\.in\("list_type", \["AM", "PM"\]\)/, "the drop-list holds doctors only, never a pharmacy");
+  assert.match(pickService, /const listTypes = extra\?\.listTypes \?\? \["AM", "PM"\];/, "the doctor drop-list holds doctors only, never a pharmacy");
+  assert.match(pickService, /\.in\("list_type", \[\.\.\.listTypes\]\)/, "the list type is a filter on the read");
+  assert.match(pickService, /loadListRows\(seatIds, \{ listTypes: \["Pharmacy"\] \}\)/, "the pharmacies are their own read, never mixed into the doctors");
+  assert.match(pickService, /\.eq\("status", "active"\)\s*\.is\("retired_at", null\)/, "only a live place is ever copied");
   assert.match(pickService, /\.in\("status", \["active", "pending"\]\)/, "never a dropped or outside customer");
   assert.match(pickService, /\.eq\("is_test", false\)/, "never a test row");
   assert.doesNotMatch(pickService, /\.(insert|update|upsert|delete)\(/, "the pick never writes to Phoenix CRM");
@@ -227,4 +231,43 @@ export async function runMarketingCrmDoctorPickTests() {
   assert.match(form, /<Input className="text-phx-md" disabled placeholder="Customer name" value=\{customer\.name\} \/>/, "a customer on record keeps its locked name");
   assert.match(form, /describeMissingSaveRequirement\(gateCustomers, isDeskMode\)/, "Save reads the gate WITH the doctor pick");
   assert.doesNotMatch(form, /describeMissingSaveRequirement\(customers, isDeskMode\)/, "no gate call without the pick");
+
+  // ── Desk mode copies a picked doctor's or pharmacy's place (owner, 2026-11-23) ──────────────
+  // "if I choose the customer, his location is as if I copy and paste it … and if the pharmacy is
+  // also validated, do the same"; for a pharmacy he chose "Place, else rep's pin".
+  const older = { lat: 30.01, lon: 31.43, address: "Older place", capturedAt: "2026-11-01T08:00:00Z" };
+  const newer = { lat: 30.0172421, lon: 31.4350255, address: "2C9P+68X, New Cairo 1", capturedAt: "2026-11-19T11:00:00Z" };
+  assert.deepEqual(
+    crmCopiedPlace({ kind: "doctor", status: "active", places: [older, newer] }),
+    { lat: 30.0172421, lng: 31.4350255, address: "2C9P+68X, New Cairo 1", source: "place" },
+    "a validated doctor copies his newest live place",
+  );
+  assert.equal(crmCopiedPlace({ kind: "doctor", status: "pending", places: [newer] }), null, "a doctor not validated yet copies nothing");
+  assert.equal(
+    crmCopiedPlace({ kind: "doctor", status: "active", places: [], pin: { lat: 30, lon: 31, address: "pin" } }),
+    null,
+    "a doctor never copies a pharmacy pin",
+  );
+  assert.equal(crmCopiedPlace({ kind: "doctor", status: "active", places: [{ ...newer, lat: null, lon: null }] }), null, "no coordinates, nothing copied");
+  assert.equal(crmCopiedPlace({ kind: "doctor", status: "active", places: [{ ...newer, lat: 0, lon: 0 }] }), null, "0,0 is no place");
+  const pin = { lat: "30.0175", lon: "31.4352", address: "cmc Cmc mall, ١٦٢ N Teseen, New Cairo 1" };
+  assert.deepEqual(
+    crmCopiedPlace({ kind: "pharmacy", status: "pending", places: [], pin }),
+    { lat: 30.0175, lng: 31.4352, address: "cmc Cmc mall, ١٦٢ N Teseen, New Cairo 1", source: "pin" },
+    "a pharmacy with no place copies the rep's pin, validated or not yet",
+  );
+  assert.equal(
+    crmCopiedPlace({ kind: "pharmacy", status: "active", places: [newer], pin })?.source,
+    "place",
+    "a pharmacy's validated place wins over the pin",
+  );
+  assert.equal(crmCopiedPlace({ kind: "pharmacy", status: "dropped", places: [newer], pin }), null, "a dropped pharmacy copies nothing");
+  assert.equal(crmCopiedPlace({ kind: "pharmacy", status: "pending", places: [], pin: null }), null, "no place, no pin, nothing copied");
+
+  assert.match(form, /function copyCrmPlace\(target: LocationTarget, place: CrmCopiedPlace\) \{\s*if \(!isDeskMode\) return;/, "a copy happens in desk mode only — a rep still captures live GPS and a photo");
+  assert.match(form, /if \(doctor\.place\) copyCrmPlace\(target, doctor\.place\);\s*else forgetCopiedPlace\(target\);/, "picking a doctor copies his place, or clears an earlier copy");
+  assert.match(form, /if \(shop\.place\) copyCrmPlace\(target, shop\.place\);\s*else forgetCopiedPlace\(target\);/, "picking a pharmacy copies its place, or clears an earlier copy");
+  assert.match(form, /if \(copiedPlaceRef\.current\.get\(key\) !== token\) return;/, "a slow lookup for an earlier pick never lands on a newer one");
+  assert.match(form, /if \(!copiedPlaceRef\.current\.has\(key\)\) return;/, "only a copied location is ever cleared, never one he searched");
+  assert.match(form, /\{isDeskMode && \(crmPharmacies\[customer\.crmAreaSeatId\] \?\? \[\]\)\.length > 0 \? \(/, "the pharmacy pick shows in desk mode only");
 }

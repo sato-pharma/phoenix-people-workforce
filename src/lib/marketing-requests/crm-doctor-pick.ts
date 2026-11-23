@@ -114,12 +114,79 @@ export type CrmDoctorOption = {
   /** The rep whose list holds him; null when the territory is vacant (the previous rep's list). */
   repName: string | null;
   lineName: string | null;
+  /** His validated place, copied into the desk-mode form when he is picked; null when he has none. */
+  place: CrmCopiedPlace | null;
+};
+
+/** A pharmacy on a rep's Phoenix CRM pharmacy list of the chosen area — the desk-mode venue pick. */
+export type CrmPharmacyOption = {
+  crmCustomerId: string;
+  name: string;
+  repName: string | null;
+  lineName: string | null;
+  place: CrmCopiedPlace | null;
 };
 
 export type CrmDoctorListPayload = {
   area: CrmDoctorAreaChoice;
   doctors: CrmDoctorOption[];
+  pharmacies: CrmPharmacyOption[];
 };
+
+/**
+ * A location Customer Validation copies into the form when a doctor or a pharmacy is picked from a
+ * rep's Phoenix CRM list (owner, 2026-11-23: "if I choose the customer, his location is as if I copy
+ * and paste it … and if the pharmacy is also validated, do the same"). DESK MODE ONLY — the Super
+ * Admin validating on someone's behalf, where the location is a map pick anyway. A rep at the door
+ * still captures GPS and a live photo: venue validation is GPS + a live picture ALWAYS.
+ */
+export type CrmCopiedPlace = {
+  lat: number;
+  lng: number;
+  address: string | null;
+  /** `place`: a validated Phoenix CRM place. `pin`: the pin the rep dropped at the pharmacy. */
+  source: "place" | "pin";
+};
+
+export type CrmPlaceCandidate = { lat: unknown; lon: unknown; address: unknown; capturedAt: unknown };
+
+function usablePoint(lat: unknown, lon: unknown): { lat: number; lng: number } | null {
+  const latitude = typeof lat === "number" ? lat : typeof lat === "string" && lat.trim() ? Number(lat) : Number.NaN;
+  const longitude = typeof lon === "number" ? lon : typeof lon === "string" && lon.trim() ? Number(lon) : Number.NaN;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  if (latitude === 0 && longitude === 0) return null;
+  return { lat: latitude, lng: longitude };
+}
+
+function addressText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Which location a pick copies. A DOCTOR copies only once he is validated (status `active`) — his
+ * newest live place. A PHARMACY copies its newest live place, else the pin the rep dropped at the
+ * shop, validated or not yet (owner, 2026-11-23, "Place, else rep's pin": only three Phoenix CRM
+ * pharmacies are validated, so a validated-only rule would copy almost nothing). `places` are the
+ * customer's non-retired, active places; a point with no usable coordinates is never copied.
+ */
+export function crmCopiedPlace(input: {
+  kind: "doctor" | "pharmacy";
+  status: unknown;
+  places: ReadonlyArray<CrmPlaceCandidate>;
+  pin?: { lat: unknown; lon: unknown; address: unknown } | null;
+}): CrmCopiedPlace | null {
+  if (input.kind === "doctor" && input.status !== "active") return null;
+  if (input.kind === "pharmacy" && input.status !== "active" && input.status !== "pending") return null;
+  const newest = [...input.places]
+    .map((place) => ({ place, point: usablePoint(place.lat, place.lon), at: String(place.capturedAt ?? "") }))
+    .filter((entry) => entry.point)
+    .sort((left, right) => right.at.localeCompare(left.at))[0];
+  if (newest?.point) return { ...newest.point, address: addressText(newest.place.address), source: "place" };
+  if (input.kind !== "pharmacy" || !input.pin) return null;
+  const pinPoint = usablePoint(input.pin.lat, input.pin.lon);
+  return pinPoint ? { ...pinPoint, address: addressText(input.pin.address), source: "pin" } : null;
+}
 
 /** What the save writes for one new customer's pick. */
 export type ResolvedCrmDoctorPick = {
