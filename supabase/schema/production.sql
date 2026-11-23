@@ -68694,6 +68694,8 @@ CREATE TABLE public.phoenix_crm_shared_places (
     daily_cap integer,
     daily_cap_set_by_hr_id text,
     daily_cap_set_at timestamp with time zone,
+    system_advice_at_decision text,
+    system_advice_code_at_decision text,
     CONSTRAINT phoenix_crm_shared_places_accuracy_meters_check CHECK (((accuracy_meters IS NULL) OR (accuracy_meters >= (0)::numeric))),
     CONSTRAINT phoenix_crm_shared_places_address_check CHECK (((address IS NULL) OR (char_length(address) <= 200))),
     CONSTRAINT phoenix_crm_shared_places_brick_lookup_check CHECK ((brick_lookup = ANY (ARRAY['matched'::text, 'none_nearby'::text, 'could_not_look'::text]))),
@@ -68708,6 +68710,7 @@ CREATE TABLE public.phoenix_crm_shared_places (
     CONSTRAINT phoenix_crm_shared_places_point_source_check CHECK ((point_source = ANY (ARRAY['photo'::text, 'pin'::text, 'moved'::text]))),
     CONSTRAINT phoenix_crm_shared_places_refusal_reason_check CHECK (((refusal_reason IS NULL) OR (refusal_reason = ANY (ARRAY['no_signboard'::text, 'wrong_name'::text, 'too_dark'::text, 'not_at_door'::text, 'photo_of_paper'::text, 'point_off'::text, 'schedule_other_name'::text, 'schedule_missing'::text])))),
     CONSTRAINT phoenix_crm_shared_places_status_check CHECK ((status = ANY (ARRAY['active'::text, 'held'::text, 'retired'::text]))),
+    CONSTRAINT phoenix_crm_shared_places_system_advice_check CHECK (((system_advice_at_decision IS NULL) OR (system_advice_at_decision = ANY (ARRAY['approve'::text, 'reject'::text, 'look'::text])))),
     CONSTRAINT phoenix_crm_shared_places_timetable_exempt_pair CHECK (((timetable_exempt_at IS NULL) = (timetable_exempt_by_hr_id IS NULL))),
     CONSTRAINT phoenix_crm_shared_places_zone_check CHECK (((zone IS NULL) OR (char_length(zone) <= 80)))
 );
@@ -68743,6 +68746,18 @@ COMMENT ON COLUMN public.phoenix_crm_shared_places.timetable_exempt_by_hr_id IS 
 --
 
 COMMENT ON COLUMN public.phoenix_crm_shared_places.daily_cap IS 'Owner, 2026-11-02: this venue''s own daily number. The door and the plan hold greatest(shared_place_daily_cap, daily_cap), so a raised venue never falls below the company number. Null is the company number.';
+
+--
+-- Name: COLUMN phoenix_crm_shared_places.system_advice_at_decision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_shared_places.system_advice_at_decision IS 'What the system recommended on this building when it was first decided: approve, reject or look.';
+
+--
+-- Name: COLUMN phoenix_crm_shared_places.system_advice_code_at_decision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_shared_places.system_advice_code_at_decision IS 'The kind of that advice (place-check-advice.ts code, with the building_ prefix).';
 
 --
 -- Name: phoenix_crm_team_start_notices; Type: TABLE; Schema: public; Owner: postgres
@@ -68865,11 +68880,17 @@ CREATE TABLE public.phoenix_crm_validation_reviews (
     decided_at timestamp with time zone,
     decision_note text,
     refusal_reason text,
+    system_advice_at_decision text,
+    system_advice_code_at_decision text,
+    system_approved_rule text,
+    system_approved_at timestamp with time zone,
     CONSTRAINT phoenix_crm_validation_reviews_decided CHECK (((status = 'pending'::text) = (decided_at IS NULL))),
     CONSTRAINT phoenix_crm_validation_reviews_decision_note_check CHECK (((decision_note IS NULL) OR (char_length(decision_note) <= 500))),
     CONSTRAINT phoenix_crm_validation_reviews_kind_check CHECK ((kind = ANY (ARRAY['validation'::text, 'added_place'::text]))),
     CONSTRAINT phoenix_crm_validation_reviews_refusal_reason CHECK (((refusal_reason IS NULL) OR (refusal_reason = ANY (ARRAY['no_signboard'::text, 'wrong_name'::text, 'too_dark'::text, 'not_at_door'::text, 'photo_of_paper'::text, 'point_off'::text, 'schedule_other_name'::text, 'schedule_missing'::text, 'short_name'::text])))),
-    CONSTRAINT phoenix_crm_validation_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))
+    CONSTRAINT phoenix_crm_validation_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text]))),
+    CONSTRAINT phoenix_crm_validation_reviews_system_advice_check CHECK (((system_advice_at_decision IS NULL) OR (system_advice_at_decision = ANY (ARRAY['approve'::text, 'reject'::text, 'look'::text])))),
+    CONSTRAINT phoenix_crm_validation_reviews_system_rule_check CHECK ((((system_approved_rule IS NULL) AND (system_approved_at IS NULL)) OR ((system_approved_rule = 'sign_wins'::text) AND (system_approved_at IS NOT NULL))))
 );
 
 ALTER TABLE public.phoenix_crm_validation_reviews OWNER TO postgres;
@@ -68879,6 +68900,30 @@ ALTER TABLE public.phoenix_crm_validation_reviews OWNER TO postgres;
 --
 
 COMMENT ON COLUMN public.phoenix_crm_validation_reviews.refusal_reason IS 'What is wrong with the PHOTO, chosen by the Super Admin from the closed list in src/lib/phoenix-crm/validation-feedback.ts, and the one thing the rep is ever told. Null on a review decided before 08 Oct 2026, and on every approval. The free-text decision_note beside it is NEVER shown to the rep.';
+
+--
+-- Name: COLUMN phoenix_crm_validation_reviews.system_advice_at_decision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_validation_reviews.system_advice_at_decision IS 'What the system recommended when this review was first decided: approve, reject or look. NULL on a review decided before 23 Nov 2026 or still waiting.';
+
+--
+-- Name: COLUMN phoenix_crm_validation_reviews.system_advice_code_at_decision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_validation_reviews.system_advice_code_at_decision IS 'The kind of that advice (place-check-advice.ts code), which the page counts agreement by.';
+
+--
+-- Name: COLUMN phoenix_crm_validation_reviews.system_approved_rule; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_validation_reviews.system_approved_rule IS 'The rule under which the SYSTEM approved this place itself. sign_wins: only the Google check held it and its sign names the customer.';
+
+--
+-- Name: COLUMN phoenix_crm_validation_reviews.system_approved_at; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_validation_reviews.system_approved_at IS 'When the system approved it under system_approved_rule. Kept when the Super Admin takes the approval back, which is how a take-back is counted.';
 
 --
 -- Name: phoenix_crm_visit_asks; Type: TABLE; Schema: public; Owner: postgres
@@ -86287,6 +86332,12 @@ CREATE UNIQUE INDEX phoenix_crm_validation_reviews_place_idx ON public.phoenix_c
 --
 
 CREATE INDEX phoenix_crm_validation_reviews_seat_idx ON public.phoenix_crm_validation_reviews USING btree (seat_id, created_at DESC);
+
+--
+-- Name: phoenix_crm_validation_reviews_system_rule_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_validation_reviews_system_rule_idx ON public.phoenix_crm_validation_reviews USING btree (system_approved_at) WHERE (system_approved_rule IS NOT NULL);
 
 --
 -- Name: phoenix_crm_visit_archive_agent_date_idx; Type: INDEX; Schema: public; Owner: postgres

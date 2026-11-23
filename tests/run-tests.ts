@@ -2318,6 +2318,7 @@ import { runPhoenixCrmTimetableUploadTests } from "./phoenix-crm-timetable-uploa
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhoenixCrmBuildingSignTests } from "./phoenix-crm-building-sign.test.ts";
+import { runPhoenixCrmSignWinsTests } from "./phoenix-crm-sign-wins.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmPlaceChecksOnDemandTests } from "./phoenix-crm-place-checks-on-demand.test.ts";
@@ -8327,6 +8328,11 @@ await runTest(
 await runTest(
   "the BUILDINGS on the Place checks board (owner, 14 Nov 2026, \"Fix all three\"). Pinned: a building's sign is also held to the Google listing's own quorum — one letter off on a long word, the spaces taken out, the clinic and centre words left out — so \"كفر الدوار\" names \"كفرالدوار\", and only a building, never a customer's place; a sign naming another place stays a flag; a sign only in the other script is never a flag on a building; the board and a new capture judge the stored signs again by today's rules, with the building's brick, and only ever soften; a building is never promised a night read; and a hospital or medical centre is never called a polyclinic",
   runPhoenixCrmBuildingSignTests,
+);
+
+await runTest(
+  "the Phoenix CRM place checks' SIGN WINS rule, the advice a decision keeps, and the 30-day agreement (the rebuild, owner 23 Nov 2026: \"REBUILD FROM SCRATCH\", then \"Yes, the sign wins\"). Pinned: the system approves a place only Google held whose sign names the customer, and never a short-named clinic customer, a place with an open integrity case, one the SFE Manager recommended on, a seating, a sign or timetable hold, a test entry or a place captured before the rule; it only ever approves, through the system's one approve path; it stops after more than 1 take-back in 20 over 30 days and a switch that cannot be read is off; both doors tell him only about a hold the rule left, and run the rule after the door's reading is recorded; the hourly pass rides the roll-up; a decision keeps the advice the page showed, read while the row waits and never overwritten by a take-back; Check it yourself is counted and never scored; a place the system approved is not his agreement until he takes it back; ready asks 19 in 20 over at least 20 decisions",
+  runPhoenixCrmSignWinsTests,
 );
 
 await runTest(

@@ -368,18 +368,25 @@ export type HeldRowEvidence = {
   };
 };
 
-export function adviseOnHeldRow(row: HeldRowEvidence): PlaceCheckAdvice {
+/**
+ * `buildingHasNoTimetable` is the building's own declaration ("this building has no timetable"), which
+ * only a seated customer's row can carry: the decision keeps the advice the building's panel showed.
+ */
+export function adviseOnHeldRow(row: HeldRowEvidence, buildingHasNoTimetable = false): PlaceCheckAdvice {
   if (row.photoKind === "schedule") {
-    return adviseOnTimetable({
-      verdict: row.reason === "schedule_other_name" ? "other_name" : row.reason === "schedule_missing" ? "no_schedule" : "unjudged",
-      scheduleText: row.signText,
-      hoursRead: row.hoursRead,
-      reason: row.evidence.checkReason,
-      legibility: row.evidence.legibility,
-      problem: row.evidence.problem,
-      heldBecause: row.evidence.heldBecause,
-      uploaded: row.evidence.uploaded,
-    });
+    return adviseOnTimetable(
+      {
+        verdict: row.reason === "schedule_other_name" ? "other_name" : row.reason === "schedule_missing" ? "no_schedule" : "unjudged",
+        scheduleText: row.signText,
+        hoursRead: row.hoursRead,
+        reason: row.evidence.checkReason,
+        legibility: row.evidence.legibility,
+        problem: row.evidence.problem,
+        heldBecause: row.evidence.heldBecause,
+        uploaded: row.evidence.uploaded,
+      },
+      buildingHasNoTimetable,
+    );
   }
   // The door held it for what the sign said. The hold's own record is what he is shown, so it speaks
   // even when the place's stored reading has moved on; the kind of problem rides the place's reading.

@@ -159,7 +159,8 @@ function checkTheDoorPaths(): void {
   assert.equal(list.split("signboard.holds").length - 1, 2, "both doors — a first validation and another clinic — hold on the scanner's answer");
   assert.ok(list.includes('holds: action.kind !== "save"'), "and the scanner's answer is its door action, never a second rule");
   assert.equal(list.split("await settleHeldSignboard(").length - 1, 2, "and both re-read it straight after the reply");
-  assert.equal(list.split("&& !signboardHold) {").length - 1, 2, "neither tells the Super Admin at the door: the system has not finished");
+  // Since 23 Nov 2026 the same line also waits on the sign-wins rule (tests/phoenix-crm-sign-wins.test.ts).
+  assert.equal(list.split("&& !signboardHold && !signMayWin) {").length - 1, 2, "neither tells the Super Admin at the door: the system has not finished");
 
   // The re-read runs AFTER the reply and AFTER the door's own verdict is recorded, so its count is 2.
   const validate = list.slice(list.indexOf('afterResponse("phoenix-crm validate: post-save records"'));

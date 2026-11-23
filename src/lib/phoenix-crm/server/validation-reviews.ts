@@ -30,6 +30,8 @@ import { earlierDecisionOf, type EarlierDecision, type EarlierDecisionSource } f
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import type { PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
+import { adviceOnReviewRecord } from "@/lib/phoenix-crm/place-check-stored-advice";
 import { PLACE_CUSTOMER_STATUS_JOIN, REVIEW_SUBJECTS_SELECT, SIGNBOARD_CHECK_KEYS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
 import { parsePlaceRecommendation } from "@/lib/phoenix-crm/place-note-rules";
 import {
@@ -48,6 +50,7 @@ import { approvalLockFor } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
+import { keepReviewAdviceQuietly } from "@/lib/phoenix-crm/server/stored-advice";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
@@ -1066,6 +1069,39 @@ export async function loadValidationReviews(
 // ── The decision ────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The system's advice on a review that is still WAITING, read just before it is decided, so the decision
+ * can keep it (the rebuild, 23 Nov 2026; `place-check-stored-advice.ts`). Built from the review's own
+ * record through the board row's own readers (`signboardOf`, `listingsOf`), so it is the advice the page
+ * showed. Null for a review already decided (a take-back keeps the first advice) and for anything that
+ * could not be read. Never throws: a decision is never refused because its advice could not be worked out.
+ *
+ * Exported so it stands as its own function in this file: the board's read above it is pinned to make no
+ * look-up by id after its pages (`phoenix-crm-place-checks-speed.test.ts`), and this one makes two.
+ */
+export async function adviceOnWaitingReview(reviewId: string): Promise<PlaceCheckAdvice | null> {
+  try {
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("id, status, google, place_id").eq("id", reviewId).maybeSingle();
+    const review = data as Row | null;
+    if (error || !review || review.status !== "pending") return null;
+    const [place] = await selectByIds<Row>("phoenix_crm_places", "id, lat, lon, signboard_check, shared_place_id", "id", [text(review.place_id)]);
+    if (!place) return null;
+    const venueId = text(place.shared_place_id);
+    const [venue] = venueId ? await selectByIds<Row>("phoenix_crm_shared_places", "id, timetable_exempt_at", "id", [venueId]) : [];
+    const google = isRecord(review.google) ? review.google : {};
+    const nearest = listingsOf(google, { lat: numberOrNull(place.lat) ?? 0, lon: numberOrNull(place.lon) ?? 0 })[0];
+    return adviceOnReviewRecord({
+      google,
+      signboard: signboardOf(place.signboard_check),
+      nearestListingMeters: nearest ? nearest.distanceMeters : null,
+      buildingHasNoTimetable: text(venue?.timetable_exempt_at) !== null,
+    });
+  } catch (error) {
+    logError("Phoenix CRM place-check advice could not be read before a decision", { error, labels: { event: "phoenix_crm_place_check_advice_unread" } });
+    return null;
+  }
+}
+
+/**
  * Approve or reject one held place. Approve validates a held customer in the rep's own name; reject
  * retires the place and, when it was his only one, sends him back to To validate.
  *
@@ -1096,10 +1132,13 @@ export async function decideValidationReview(
   if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const reviewId = String(body.reviewId).toLowerCase();
   if (decision === "approve") await refuseApprovalOfShortName(await reviewCustomerId(reviewId));
+  // What the system advised, read while the review still waits, and kept once the decision has landed.
+  const adviceThen = await adviceOnWaitingReview(reviewId);
   // `review_not_found` and `review_decided` come back worded by the module's refusal table (db.ts).
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
     p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision, note: cleanText(body.note, 500), refusal_reason: refusalReason },
   });
+  await keepReviewAdviceQuietly(reviewId, adviceThen);
   // 🔴 A SEND-BACK KEEPS EVERY VISIT'S EARLIER DISTANCE (owner, 19 Nov 2026: "Keep earlier distances").
   // A reject used to measure all of the customer's visits again against whatever places he had left, so
   // a doctor with a second clinic had every visit he was seen at in the first one turned "far" from the
