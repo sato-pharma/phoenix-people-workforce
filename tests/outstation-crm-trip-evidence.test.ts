@@ -219,7 +219,7 @@ export function runOutstationCrmTripEvidenceTests() {
     "a trip the payroll gate would hold carries no reduced amount: it would pay in full on release",
   );
   const bar = stripComments(readFileSync("src/components/outstation/approvals-desk/desk-decision.tsx", "utf8"));
-  assert.ok(bar.includes("onClick={() => onPress([approvePress(claim)], [claim])}"), "Approve is that one press");
+  assert.ok(bar.includes("onClick={() => onPress([edited?.decision ?? approvePress(claim)], [claim])}"), "Approve is that one press");
   assert.ok(bar.includes("cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve"), "and the button names the amount it pays");
   assert.ok(
     bar.includes('data-press="keep-full" onClick={() => onPress([approvePress(claim, { full: true })], [claim])}'),
