@@ -361,8 +361,38 @@ so the keyboard stays inside the reviewer. The note under the bar remembers whic
 (`caseExportNoteOnScreen`): he can walk to the next claim while a PDF is prepared, and the note then
 says "the claim you exported", never "this claim". A failure stays until he closes it.
 
+**What the access review changed** (23 Nov 2026, before the merge). It found nothing that lets the
+print browser write, decide or widen access, and four things to tighten:
+
+1. **The address is trusted, not only configured** (`trustedOriginOf`). The print browser carries a
+   real person's session cookie to the address it opens, so a setting alone is never enough: it must
+   be this box (loopback), or https on a host Phoenix is served from (production's, staging's). A
+   mistyped or hostile `APP_URL` or override is ignored, and plain http never leaves the box. With no
+   trusted address named, production opens its known domain and any other deployment stays on its
+   own loopback port, so staging can never open production.
+2. **A file printed before its pictures arrived says so.** The route answers
+   `X-Phoenix-Case-Settled: no` when the 25 seconds ran out with a photo or a map still arriving;
+   the button reads it and leaves an amber note under the bar (`CASE_PDF_LATE_NOTE`: the file was saved, a photo
+   or a map had not finished loading, export it again if a picture is missing), so an empty box in a document about money is never taken for a
+   missing photo. When time runs out the case is read once more: one that is no longer drawn (a
+   loader, a failed read) is refused, never printed. The list is hidden a second time right before
+   the print.
+3. **One case prints at a time in a server process** (`createCasePdfTurn`), and the route carries the
+   export limit its two spreadsheet siblings share (ten a minute a person). The printer has two
+   Chromium slots for the whole app and a case can hold one for over a minute; two at once would
+   leave an offer letter or a payslip waiting until it failed. The second export is answered 429 in
+   words.
+4. **The sign-in is checked live before a session is made.** A GET may otherwise stand on the
+   ten-minute saved copy during a login-check outage; the route asks again with
+   `allowRecentCopy: false`, as a password change does, so a copy never mints the print session.
+
+Left as they were, with no live path found: a static-looking file name on a page address passes the
+fence, and the memory a very tall case with many photos takes on the one production replica is not
+measured.
+
 Pinned by `tests/expense-case-pdf.test.ts`. Each of its assertions was proven by breaking the fix it
-pins and watching that assertion fire: 46 cases, all fired.
+pins and watching that assertion fire: 46 cases on the first commit, 26 more on the review's fixes,
+all fired.
 
 ### What only time can prove
 

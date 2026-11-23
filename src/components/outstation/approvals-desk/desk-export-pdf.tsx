@@ -3,7 +3,15 @@
 import { FileDown, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type CaseExportNote, caseExportNoteOnScreen, casePdfFilenameFromHeader } from "@/lib/outstation/approvals/case-pdf-plan";
+import {
+  CASE_PDF_LATE_NOTE,
+  CASE_PDF_SETTLED_HEADER,
+  type CaseExportNote,
+  type CaseExportTone,
+  caseExportNoteOnScreen,
+  casePdfFilenameFromHeader,
+  casePdfPrintedLate,
+} from "@/lib/outstation/approvals/case-pdf-plan";
 
 const ROUTE = "/api/admin/outstation/approvals";
 
@@ -39,9 +47,11 @@ export function useCaseExport() {
     setBusy(true);
     setNote({ message: WAITING, requestId, tone: "info" });
     let failure: string | null = null;
+    let late = false;
     try {
       const response = await fetch(`${ROUTE}/${requestId}/pdf`, { cache: "no-store" });
       if (response.ok && (response.headers.get("content-type") ?? "").includes("application/pdf")) {
+        late = casePdfPrintedLate(response.headers.get(CASE_PDF_SETTLED_HEADER));
         const address = URL.createObjectURL(await response.blob());
         const link = document.createElement("a");
         link.href = address;
@@ -61,7 +71,9 @@ export function useCaseExport() {
     running.current = false;
     if (!mounted.current) return;
     setBusy(false);
-    setNote(failure ? { message: failure, requestId, tone: "bad" } : null);
+    // Saved, but printed before every picture had arrived: said, so an empty box is never read as "no photo".
+    if (failure) setNote({ message: failure, requestId, tone: "bad" });
+    else setNote(late ? { message: CASE_PDF_LATE_NOTE, requestId, tone: "warn" } : null);
   }, []);
 
   const dismiss = useCallback(() => setNote(null), []);
@@ -93,24 +105,31 @@ export function DeskExportPdfButton({ busy, onExport }: { busy: boolean; onExpor
   );
 }
 
+/** The desk notices' own colours (desk-undo-bar.tsx): rose for a failure, amber for a caution. */
+const NOTE_TONE: Record<CaseExportTone, string> = {
+  bad: "border-rose-200 border-l-rose-500 bg-rose-50 text-rose-900",
+  info: "border-slate-200 border-l-slate-300 bg-slate-50 text-slate-800",
+  warn: "border-amber-200 border-l-amber-500 bg-amber-50 text-amber-900",
+};
+
 /**
- * Under the bar: that a PDF is being prepared, or why it was not made. Drawn as the desk's own
- * notices are (desk-undo-bar.tsx); a failure stays until he closes it.
+ * Under the bar: that a PDF is being prepared, why it was not made, or that it was saved before every
+ * picture had arrived. Drawn as the desk's own notices are (desk-undo-bar.tsx); a failure and a
+ * caution stay until he closes them.
  */
 export function DeskExportPdfNote({ note, onDismiss, requestId }: { note: CaseExportNote | null; onDismiss: () => void; requestId: number }) {
   const shown = caseExportNoteOnScreen(note, requestId);
   if (!shown) return null;
   const bad = shown.tone === "bad";
+  const stays = shown.tone !== "info";
   return (
     <div
-      className={`flex min-w-0 items-start justify-between gap-x-3 border-b border-l-[3px] px-3 py-2 text-sm sm:px-4 ${
-        bad ? "border-rose-200 border-l-rose-500 bg-rose-50 text-rose-900" : "border-slate-200 border-l-slate-300 bg-slate-50 text-slate-800"
-      }`}
+      className={`flex min-w-0 items-start justify-between gap-x-3 border-b border-l-[3px] px-3 py-2 text-sm sm:px-4 ${NOTE_TONE[shown.tone]}`}
       data-reviewer-export-note={shown.tone}
       role={bad ? "alert" : "status"}
     >
       <p className="min-w-0 flex-1 break-words font-semibold leading-5">{shown.message}</p>
-      {bad ? (
+      {stays ? (
         <button aria-label="Close the note about the PDF" className="inline-flex h-11 w-11 shrink-0 items-center justify-center hover:bg-black/5 md:h-8 md:w-8" onClick={onDismiss} type="button">
           <X aria-hidden className="h-4 w-4" />
         </button>

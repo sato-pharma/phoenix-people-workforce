@@ -7,7 +7,8 @@
  * decision that keeps that print safe and true to the screen is pure and is tested directly:
  *
  *   1. Where the page is opened: the deployment's own public address (the map's key is tied to it),
- *      a laptop's loopback port, never a request header.
+ *      a laptop's loopback port, never a request header, and never a host Phoenix is not served
+ *      from (the browser carries a real session there). One case prints at a time.
  *   2. The fence is an allow-list: the page, its scripts, the case's three reads, pictures and maps
  *      from other sites, and the map's one call to Google. Every write, every Server Action, every
  *      other trip, every other page and the export itself are refused.
@@ -27,22 +28,26 @@ import { pageStubs } from "@/lib/chatgpt-connector/browser/capture";
 import { classifyCaptureRequest, NEVER_TOUCH_API_SHAPES, parseSideEffectRoutes, SIDE_EFFECT_ROUTES_FILE } from "@/lib/chatgpt-connector/browser/fence";
 import {
   CASE_PDF_ISOLATE_SCRIPT,
+  CASE_PDF_LATE_NOTE,
   CASE_PDF_MAX_PAGE_PX,
   CASE_PDF_PAGE,
   CASE_PDF_PASS_WRITES,
   CASE_PDF_SESSION_MARK,
+  CASE_PDF_SETTLED_HEADER,
   CASE_PDF_WIDTH,
   casePdfFilename,
   casePdfFilenameFromHeader,
   casePdfOrigin,
   casePdfPagePath,
   casePdfPageSize,
+  casePdfPrintedLate,
   casePdfPrintOptions,
   casePdfReadingScript,
   casePdfReads,
   casePdfSettled,
   caseExportNoteOnScreen,
   classifyCasePdfRequest,
+  createCasePdfTurn,
   parseCasePdfReading,
 } from "@/lib/outstation/approvals/case-pdf-plan";
 import { findAccessRegistryEntry } from "@/lib/security/access-registry";
@@ -114,6 +119,39 @@ export function runExpenseCasePdfTests() {
   assert.equal(casePdfOrigin({ NODE_ENV: "production", PHOENIX_CASE_PDF_ORIGIN: "http://127.0.0.1:8080/x" }), "http://127.0.0.1:8080", "the override wins");
   assert.equal(casePdfOrigin({ NODE_ENV: "production", PHOENIX_CASE_PDF_ORIGIN: "not an address" }), ORIGIN, "an unreadable override is ignored, never thrown");
   assert.equal(casePdfOrigin({ APP_URL: "javascript:alert(1)", NODE_ENV: "production" }), ORIGIN, "an address that is not http or https is ignored");
+  // The browser carries a real person's session to this address, so a setting alone is never enough.
+  const STAGING = "https://phoenix-people-workforce-staging.up.railway.app";
+  for (const [hostile, why] of [
+    ["https://evil.example", "a host Phoenix is not served from"],
+    ["https://phoenix-hr.satopharma.com.evil.example", "a host that only starts like Phoenix's"],
+    ["https://evil.example/phoenix-hr.satopharma.com", "Phoenix's host in the path, not the host"],
+    ["http://phoenix-hr.satopharma.com", "plain http off the box, even to Phoenix's own host"],
+    ["https://phoenix-hr.satopharma.com:8443", "another port on Phoenix's host"],
+    ["https://user@evil.example", "a host hidden behind a user name"],
+  ] as const) {
+    assert.equal(casePdfOrigin({ APP_URL: hostile, NODE_ENV: "production" }), ORIGIN, `APP_URL: ${why} is never handed the session`);
+    assert.equal(casePdfOrigin({ APP_URL: STAGING, NODE_ENV: "production", PHOENIX_CASE_PDF_ORIGIN: hostile }), STAGING, `the override: ${why} is ignored too`);
+  }
+  assert.equal(casePdfOrigin({ APP_URL: `${ORIGIN}/`, NODE_ENV: "production" }), ORIGIN, "Phoenix's own address over https is used");
+  assert.equal(
+    casePdfOrigin({ APP_ENV: "staging", NODE_ENV: "production", PORT: "8080" }),
+    "http://127.0.0.1:8080",
+    "staging with no address set stays on its own box: it never opens production",
+  );
+  assert.equal(
+    casePdfOrigin({ APP_ENV: "staging", APP_URL: "https://evil.example", NODE_ENV: "production" }),
+    "http://127.0.0.1:3000",
+    "staging with a hostile address stays on its own box too",
+  );
+  assert.equal(casePdfOrigin({ NODE_ENV: "production", PHOENIX_CASE_PDF_ORIGIN: "http://localhost:4000" }), "http://localhost:4000", "the box itself is always trusted");
+
+  // One case at a time in a process: the printer has two slots for the whole app.
+  const turn = createCasePdfTurn();
+  assert.equal(turn.take(), true, "the first export takes the turn");
+  assert.equal(turn.take(), false, "a second while it prints is told to wait");
+  turn.release();
+  assert.equal(turn.take(), true, "and the turn is free again once the first ends");
+  assert.equal(createCasePdfTurn().take(), true, "a turn is its own: a new one starts free");
   assert.equal(casePdfPagePath(TRIP), "/admin/outstation/expense-approvals?trip=341", "the page is the desk itself, opened on the one trip");
 
   // 2. The fence.
@@ -273,14 +311,20 @@ export function runExpenseCasePdfTests() {
       'assertOutstationExpenseApprovalReviewAccess(access, "expense approvals")',
       "parseOutstationRequestId(",
       "isPreviewSession(access)",
+      "resolveSessionState(getCookieValue(request.headers.get(\"cookie\"), phoenixSessionCookieName), { allowRecentCopy: false })",
+      "live.access.loginId !== access.loginId",
+      "status: 409",
+      'assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:outstation" })',
       "loadDeskTripFile(access, requestId, { includeEvidence: false })",
       "status: 404",
       "renderExpenseCasePdf(access, requestId)",
       "writeAuditLog(",
       '"Content-Type": "application/pdf"',
+      '[CASE_PDF_SETTLED_HEADER]: result.settled ? "yes" : "no"',
     ],
-    "the export: signed in, the desk's own read gate, a real session, the claim on this person's list, and only then the browser",
+    "the export: signed in, the desk's own read gate, a real session checked live (never the saved copy), the export limit, the claim on this person's list, and only then the browser",
   );
+  assert.ok(/busy: 429/.test(route) && route.includes("isApiRateLimitError(error)"), "a printer that is taken and a person over the limit are both answered 429");
   assert.equal(/export async function (POST|PUT|PATCH|DELETE)/.test(route), false, "the export is a read");
   assert.equal(route.includes("getSupabaseAdmin"), false, "the route reads nothing itself; the page it prints is read as the person");
   const entry = findAccessRegistryEntry("/api/admin/outstation/approvals/341/pdf", "GET");
@@ -304,8 +348,26 @@ export function runExpenseCasePdfTests() {
   const renderer = code("src/lib/outstation/approvals/case-pdf.ts");
   assertOrder(
     renderer,
-    ["withChromiumSlot(", "openSignedInPage(", "decide: (request) => classifyCasePdfRequest(request, { origin, requestId })", "sessionMark: CASE_PDF_SESSION_MARK", "CASE_PDF_ISOLATE_SCRIPT", 'emulateMediaType("screen")', "page.pdf(", "finally", "opened.finish()"],
-    "the print: one Chromium slot, this export's own fence, a named session, the list hidden, the screen's styles, and the session always revoked",
+    [
+      "if (!turn.take())",
+      'new CasePdfError("busy"',
+      "await printCase(ctx, requestId)",
+      "turn.release()",
+      "withChromiumSlot(",
+      "openSignedInPage(",
+      "decide: (request) => classifyCasePdfRequest(request, { origin, requestId })",
+      "sessionMark: CASE_PDF_SESSION_MARK",
+      "page.evaluate(CASE_PDF_ISOLATE_SCRIPT)",
+      "if (!settled)",
+      'if (last.stage !== "ready")',
+      'new CasePdfError("not-drawn"',
+      "page.evaluate(CASE_PDF_ISOLATE_SCRIPT)",
+      'emulateMediaType("screen")',
+      "page.pdf(",
+      "finally",
+      "opened.finish()",
+    ],
+    "the print: one case at a time, one Chromium slot, this export's own fence, a named session, the list hidden, a case that stopped being drawn never printed, the list hidden again, the screen's styles, and the session always revoked",
   );
   assert.equal(/\.click\(|\.type\(|keyboard|setBypassCSP|x-forwarded|headers\.get\(/.test(renderer), false, "the print browser presses nothing, bypasses no policy and takes no address from a request");
   assert.equal(CASE_PDF_SESSION_MARK.userAgent.includes("ChatGPT"), false, "the session says what it was: an expense case export");
@@ -370,6 +432,23 @@ export function runExpenseCasePdfTests() {
     { message: "The PDF of the claim you exported was not made. The claim took too long to open, so no PDF was made. Try again.", tone: "bad" },
     "a failure follows him to the next claim and says whose it was",
   );
+  // A PDF printed before every picture had arrived says so: an empty box is never read as "no photo".
+  assert.equal(CASE_PDF_SETTLED_HEADER, "X-Phoenix-Case-Settled");
+  assert.equal(casePdfPrintedLate("no"), true, "the server's own \"no\" is a late print");
+  assert.equal(casePdfPrintedLate(" NO "), true);
+  for (const quiet of ["yes", "", null, undefined, "maybe"]) assert.equal(casePdfPrintedLate(quiet), false, `"${quiet}" raises no caution`);
+  const late = { message: CASE_PDF_LATE_NOTE, requestId: 341, tone: "warn" } as const;
+  assert.deepEqual(caseExportNoteOnScreen(late, 341), { message: CASE_PDF_LATE_NOTE, tone: "warn" }, "the caution reads as written on its own claim");
+  assert.deepEqual(
+    caseExportNoteOnScreen(late, 342),
+    { message: `About the claim you exported before this one: ${CASE_PDF_LATE_NOTE}`, tone: "warn" },
+    "and on another claim it says whose file it is about",
+  );
+  assert.ok(CASE_PDF_LATE_NOTE.includes("was saved") && CASE_PDF_LATE_NOTE.includes("export it again"), "it says the file exists and what to do");
+  assert.ok(button.includes("late = casePdfPrintedLate(response.headers.get(CASE_PDF_SETTLED_HEADER))"), "the button reads the server's answer");
+  assert.ok(button.includes('setNote(late ? { message: CASE_PDF_LATE_NOTE, requestId, tone: "warn" } : null)'), "and shows the caution, or nothing when the print was whole");
+  assert.ok(button.includes('const stays = shown.tone !== "info"') && button.includes("{stays ? ("), "a failure and a caution stay until he closes them");
+  assert.ok(button.includes("border-l-amber-500"), "the caution wears the desk notices' amber");
   assert.ok(reviewer.includes("<DeskExportPdfNote note={exporting.note} onDismiss={exporting.dismiss} requestId={requestId} />"), "the note is given the claim on screen and a way to close it");
   assert.ok(button.includes("caseExportNoteOnScreen(note, requestId)"), "and reads through the one rule");
   assert.equal(/rounded-(?!none)|truncate|line-clamp|overflow-x-auto/.test(button), false, "no rounded corner, no cut text, no sideways scroll");

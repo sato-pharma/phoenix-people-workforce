@@ -4,14 +4,17 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { assertOutstationExpenseApprovalReviewAccess } from "@/lib/auth/permissions";
 import { isPreviewSession } from "@/lib/auth/preview-session-guard";
-import { resolveAccessContext } from "@/lib/auth/server";
+import { resolveAccessContext, resolveSessionState } from "@/lib/auth/server";
+import { getCookieValue, phoenixSessionCookieName } from "@/lib/auth/session";
 import { logAppError } from "@/lib/error-monitor/service";
+import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { CasePdfError, type CasePdfFailure, renderExpenseCasePdf } from "@/lib/outstation/approvals/case-pdf";
-import { casePdfFilename } from "@/lib/outstation/approvals/case-pdf-plan";
+import { CASE_PDF_SETTLED_HEADER, casePdfFilename } from "@/lib/outstation/approvals/case-pdf-plan";
 import { deskRouteFailure } from "@/lib/outstation/approvals/route-failure";
 import { loadDeskTripFile } from "@/lib/outstation/approvals/trip-file";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +23,7 @@ export const maxDuration = 120;
 
 const ROUTE = "/api/admin/outstation/approvals/:requestId/pdf";
 
-const FAILURE_STATUS: Record<CasePdfFailure, number> = { "not-drawn": 502, session: 409, "signed-out": 502, "too-slow": 504 };
+const FAILURE_STATUS: Record<CasePdfFailure, number> = { busy: 429, "not-drawn": 502, session: 409, "signed-out": 502, "too-slow": 504 };
 
 /**
  * Expense Approvals — one case as a PDF, looking as it looks on the screen.
@@ -54,6 +57,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ requ
       );
     }
 
+    // The print signs a browser in as this person, so the sign-in is checked LIVE here. A GET may
+    // otherwise stand on the ten-minute saved copy during a login-check outage; a copy never mints a session.
+    const live = await resolveSessionState(getCookieValue(request.headers.get("cookie"), phoenixSessionCookieName), { allowRecentCopy: false });
+    if (!live?.access.loginId || live.access.loginId !== access.loginId) {
+      return NextResponse.json(
+        { error: "case_pdf_session", message: "The export needs your own Phoenix sign-in. Sign in again, then export." },
+        { status: 409 },
+      );
+    }
+    // Ten exports a minute a person, the limit the desk's two spreadsheet exports share.
+    await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:outstation" });
+
     // The claim alone, no evidence: is it on this person's list, and what is the file called?
     const file = await loadDeskTripFile(access, requestId, { includeEvidence: false });
     if (!file) {
@@ -82,14 +97,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ requ
         "Cache-Control": "no-store",
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Content-Type": "application/pdf",
-        // Whether every photo and map had arrived when it was printed; a late one prints as the screen showed it.
-        "X-Phoenix-Case-Settled": result.settled ? "yes" : "no",
+        // Whether every photo and map had arrived when it was printed. The button reads this and says
+        // so under the bar when it is "no", so a picture that had not arrived is never taken for a missing one.
+        [CASE_PDF_SETTLED_HEADER]: result.settled ? "yes" : "no",
       },
     });
   } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json({ error: "rate_limited", message: error.message }, { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 });
+    }
     if (error instanceof CasePdfError) {
       // The person reads the sentence; the cause goes to the app's error table with who it happened to.
-      if (error.failure !== "session") {
+      // A refused sign-in and a printer that is taken are answers, not faults.
+      if (error.failure !== "session" && error.failure !== "busy") {
         await logAppError({
           source: "server",
           route: ROUTE,

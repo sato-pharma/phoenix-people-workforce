@@ -36,6 +36,7 @@ import {
   casePdfReadingScript,
   casePdfSettled,
   classifyCasePdfRequest,
+  createCasePdfTurn,
   parseCasePdfReading,
 } from "./case-pdf-plan";
 
@@ -47,7 +48,10 @@ const DRAW_MS = 60_000;
 const SETTLE_MS = 25_000;
 const SESSION_SECONDS = 180;
 
-export type CasePdfFailure = "session" | "signed-out" | "not-drawn" | "too-slow";
+export type CasePdfFailure = "busy" | "session" | "signed-out" | "not-drawn" | "too-slow";
+
+/** One case at a time in this process (case-pdf-plan.ts, createCasePdfTurn). */
+const turn = createCasePdfTurn();
 
 /** A failure the person should read as it is. `reason` is for the log, never for the screen. */
 export class CasePdfError extends Error {
@@ -93,6 +97,17 @@ async function waitUntilDrawn(page: CapturePage, requestId: number, until: numbe
 }
 
 export async function renderExpenseCasePdf(ctx: AccessContext, requestId: number): Promise<CasePdfResult> {
+  if (!turn.take()) {
+    throw new CasePdfError("busy", "Another claim is being printed right now. Try again when it finishes, in about a minute.");
+  }
+  try {
+    return await printCase(ctx, requestId);
+  } finally {
+    turn.release();
+  }
+}
+
+async function printCase(ctx: AccessContext, requestId: number): Promise<CasePdfResult> {
   const origin = casePdfOrigin();
   const deadline = Date.now() + DEADLINE_MS;
 
@@ -150,9 +165,21 @@ export async function renderExpenseCasePdf(ctx: AccessContext, requestId: number
         size = nextSize;
         if (settled) break;
       }
+      if (!settled) {
+        // Time ran out while something was still arriving. Read once more: a case that is no longer
+        // drawn (a loader, a failed read) is never printed as if it were the claim.
+        const last = await read(page, requestId);
+        if (last.stage !== "ready") {
+          throw new CasePdfError("not-drawn", "The claim changed while it was being printed, so no PDF was made. Try again.", `last stage: ${last.stage}`);
+        }
+        reading = last;
+        size = casePdfPageSize(last);
+      }
       if (size.viewportHeight !== windowHeight) {
         await page.setViewport({ deviceScaleFactor: 1, height: size.viewportHeight, width: CASE_PDF_WIDTH });
       }
+      // Again, right before the print: anything the page added to its body since the first pass.
+      await page.evaluate(CASE_PDF_ISOLATE_SCRIPT);
 
       // The SCREEN's styles: this is the screen on paper, not a print layout.
       await page.emulateMediaType("screen");

@@ -61,30 +61,66 @@ export function casePdfReads(requestId: number): readonly string[] {
   return ["/api/admin/outstation/approvals", `/api/admin/outstation/approvals/${requestId}`, "/api/outstation/visit-workload"];
 }
 
-function originOf(value: string | undefined): string | null {
+/** The hosts Phoenix is served from: production's and staging's. No other host is ever handed the print session. */
+const CASE_PDF_PUBLIC_HOSTS: ReadonlySet<string> = new Set([new URL(systemDeployment.productionUrl).host, "phoenix-people-workforce-staging.up.railway.app"]);
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * An address the print session may be sent to, or null. The browser carries a real person's session
+ * cookie to this address, so a setting alone is never enough (risk review, 23 Nov 2026): it must be
+ * this box itself (loopback), or https on a host Phoenix is served from. A mistyped or hostile
+ * `APP_URL` is ignored, and plain http never leaves the box.
+ */
+function trustedOriginOf(value: string | undefined): string | null {
   const text = (value ?? "").trim();
   if (!text) return null;
   try {
     const url = new URL(text);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (LOOPBACK_HOSTS.has(url.hostname)) return url.origin;
+    return url.protocol === "https:" && CASE_PDF_PUBLIC_HOSTS.has(url.host) ? url.origin : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Where the print browser opens the case. `PHOENIX_CASE_PDF_ORIGIN` wins when set. A deployed server
- * (NODE_ENV production) uses its own public address — APP_URL, which every Railway environment sets,
- * else the production domain. Anything else is a laptop, which uses its own loopback port: a laptop's
- * env file may name the production address, and its session would mean nothing there.
+ * Where the print browser opens the case. `PHOENIX_CASE_PDF_ORIGIN` wins when it names a trusted
+ * address. A deployed server (NODE_ENV production) uses its own public address, APP_URL, when that is
+ * a trusted one. With none: production opens its known domain, and any other deployment (staging)
+ * stays on its own loopback port, so it never opens production. Anything else is a laptop, which uses
+ * its own loopback port: a laptop's env file may name the production address, and its session would
+ * mean nothing there.
  */
 export function casePdfOrigin(env: Record<string, string | undefined> = process.env): string {
-  const chosen = originOf(env.PHOENIX_CASE_PDF_ORIGIN);
+  const ownBox = `http://127.0.0.1:${(env.PORT ?? "").trim() || "3000"}`;
+  const chosen = trustedOriginOf(env.PHOENIX_CASE_PDF_ORIGIN);
   if (chosen) return chosen;
-  if (env.NODE_ENV === "production") {
-    return originOf(env.APP_URL) ?? originOf(env.PHOENIX_APP_URL) ?? new URL(systemDeployment.productionUrl).origin;
-  }
-  return `http://127.0.0.1:${(env.PORT ?? "").trim() || "3000"}`;
+  if (env.NODE_ENV !== "production") return ownBox;
+  const named = trustedOriginOf(env.APP_URL) ?? trustedOriginOf(env.PHOENIX_APP_URL);
+  if (named) return named;
+  // The same reading as isProductionRuntime (src/config/system-settings.ts): staging sets APP_ENV.
+  const runtime = String(env.APP_ENV || env.VERCEL_ENV || env.NODE_ENV || "").trim().toLowerCase();
+  return runtime === "production" ? new URL(systemDeployment.productionUrl).origin : ownBox;
+}
+
+/**
+ * One case is printed at a time in a server process. The PDF printer has two Chromium slots for the
+ * whole app, and a case can hold one for over a minute; two at once would leave an offer letter or a
+ * payslip waiting until it failed (risk review, 23 Nov 2026). The second export is told to try again.
+ */
+export function createCasePdfTurn(): { take: () => boolean; release: () => void } {
+  let taken = false;
+  return {
+    release: () => {
+      taken = false;
+    },
+    take: () => {
+      if (taken) return false;
+      taken = true;
+      return true;
+    },
+  };
 }
 
 // ── The fence ────────────────────────────────────────────────────────────────────────────────────
@@ -275,20 +311,34 @@ export function casePdfPrintOptions(size: CasePdfPageSize): Record<string, unkno
 
 // ── The note under the reviewer's bar ────────────────────────────────────────────────────────────
 
+/** The header the route answers with: "yes" when every photo and map had arrived before the print, else "no". */
+export const CASE_PDF_SETTLED_HEADER = "X-Phoenix-Case-Settled";
+
+/** Said under the bar when the file was saved before every picture had arrived. */
+export const CASE_PDF_LATE_NOTE =
+  "The PDF was saved, but a photo or a map had not finished loading when it was printed. Open the file; if a picture is missing, export it again.";
+
+/** Whether the server printed before the case had stopped changing. Only its own "no" says so. */
+export function casePdfPrintedLate(settledHeader: string | null | undefined): boolean {
+  return (settledHeader ?? "").trim().toLowerCase() === "no";
+}
+
+export type CaseExportTone = "bad" | "info" | "warn";
+
 /** What the export said, and the claim it said it about. */
-export type CaseExportNote = { message: string; requestId: number; tone: "bad" | "info" };
+export type CaseExportNote = { message: string; requestId: number; tone: CaseExportTone };
 
 /**
  * The note as the claim ON SCREEN reads it. One export runs at a time and the reviewer stays open
  * while he walks the lane, so a note can belong to a claim he has already left: it then says so,
  * and never calls another claim "this claim".
  */
-export function caseExportNoteOnScreen(note: CaseExportNote | null, requestId: number): { message: string; tone: "bad" | "info" } | null {
+export function caseExportNoteOnScreen(note: CaseExportNote | null, requestId: number): { message: string; tone: CaseExportTone } | null {
   if (!note) return null;
   if (note.requestId === requestId) return { message: note.message, tone: note.tone };
-  return note.tone === "bad"
-    ? { message: `The PDF of the claim you exported was not made. ${note.message}`, tone: "bad" }
-    : { message: "Still preparing the PDF of the claim you exported. This claim can be exported when it finishes.", tone: "info" };
+  if (note.tone === "bad") return { message: `The PDF of the claim you exported was not made. ${note.message}`, tone: "bad" };
+  if (note.tone === "warn") return { message: `About the claim you exported before this one: ${note.message}`, tone: "warn" };
+  return { message: "Still preparing the PDF of the claim you exported. This claim can be exported when it finishes.", tone: "info" };
 }
 
 /** The page's side: the name the server gave the file, or a plain one when the header is missing. */
