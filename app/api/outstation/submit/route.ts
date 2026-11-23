@@ -6,6 +6,7 @@ import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
 import { submitOutstationRequest } from "@/lib/outstation/service";
+import { OutstationPhotoRefusedError } from "@/lib/outstation/blank-frame";
 import { TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
 import { NoTicketFareUnavailableError } from "@/lib/outstation/train-fare";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
@@ -72,7 +73,7 @@ function outstationSubmitStatus(error: unknown) {
   if (isForbiddenError(error)) {
     return 403;
   }
-  if (error instanceof TrainTicketRefusedError || error instanceof NoTicketFareUnavailableError) {
+  if (error instanceof TrainTicketRefusedError || error instanceof NoTicketFareUnavailableError || error instanceof OutstationPhotoRefusedError) {
     return 400;
   }
   if (isWorkflowRegistryTransitionError(error)) {

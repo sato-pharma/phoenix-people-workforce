@@ -12,6 +12,8 @@
  *   3. The history search box cannot write filter syntax.
  *   4. The reads themselves: no `select("*")`, scope applied in the query AND in memory, history
  *      never read with the queue, and field evidence that could not be read is said, not zero.
+ *   5. (2026-11-23) Two trips of one person on one day name the shared day; the odometer chain finds
+ *      the last reading before a car trip and the driving paid since it.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -19,7 +21,7 @@ import fs from "node:fs";
 import type { ClaimRow } from "@/lib/outstation/approvals/claim-row";
 import { MEETING_ACTIVITY_KEYS, pointOf, visitPeople } from "@/lib/outstation/approvals/field-evidence";
 import { HISTORY_PAGE_SIZE, historyFilterOf, historySearchTerm } from "@/lib/outstation/approvals/history";
-import { findDuplicates } from "@/lib/outstation/approvals/queue";
+import { findDuplicates, findOdometerChains } from "@/lib/outstation/approvals/queue";
 
 const trip = (id: number, over: ClaimRow = {}): ClaimRow => ({
   captured_latitude: 27.1809,
@@ -40,7 +42,7 @@ const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""
 export function runExpenseDeskQueueTests() {
   // 1. Duplicates, in words.
   const found = findDuplicates([trip(293)], [trip(292, { status: "accepted_by_admin" })]);
-  assert.deepEqual(found.get(293), { related: [292], tickets: [], trips: ["the approved claim of 22 Oct"] });
+  assert.deepEqual(found.get(293), { days: [], related: [292], tickets: [], trips: ["the approved claim of 22 Oct"] }, "a copy is not named twice as a shared day");
   assert.equal(findDuplicates([trip(293)], [trip(292, { status: "rejected_by_admin" })]).size, 0, "a rejected claim is no copy");
   assert.equal(findDuplicates([trip(293)], [trip(292, { employee_hr_id: "PD-0099", status: "accepted_by_admin" })]).size, 0, "another employee's claim is never a copy");
   assert.equal(findDuplicates([trip(293)], [trip(292, { status: "accepted_by_admin", trip_end_date: "2026-10-23", trip_start_date: "2026-10-23" })]).size, 0);
@@ -58,6 +60,63 @@ export function runExpenseDeskQueueTests() {
   assert.deepEqual(repeated.get(301)?.trips, []);
   // A meeting or other cost is not a trip, so it is no duplicate trip.
   assert.equal(findDuplicates([trip(310, { expense_type: "meeting" })], [trip(292, { status: "accepted_by_admin" })]).size, 0);
+
+  // 5. A shared trip day (owner, 2026-11-23): the trip inside another trip, flagged on the desk.
+  const sohag = { captured_latitude: 26.5591, captured_longitude: 31.6957, to_area: "Sohag 1", to_city: "Sohag" };
+  const inside = (over: ClaimRow = {}) =>
+    findDuplicates(
+      [trip(402, { ...sohag, trip_end_date: "2026-10-23", trip_start_date: "2026-10-22" })],
+      [trip(401, { status: "accepted_by_admin", trip_end_date: "2026-10-22", trip_start_date: "2026-10-21", ...over })],
+    ).get(402);
+  assert.deepEqual(inside(), { days: ["22 Oct with the approved claim of 21 Oct"], related: [401], tickets: [], trips: [] }, "HEADLINE: the shared day, in words");
+  assert.equal(inside({ status: "rejected_by_admin" }), undefined, "a rejected trip pays no day");
+  assert.equal(inside({ employee_hr_id: "PD-0099" }), undefined, "another employee's trip shares nothing");
+  assert.equal(inside({ expense_type: "meeting" }), undefined, "a meeting cost is not a trip");
+  assert.equal(inside({ trip_end_date: "2026-10-21" }), undefined, "the day before is not a shared day");
+  const long = findDuplicates(
+    [trip(402, { ...sohag, trip_end_date: "2026-10-24", trip_start_date: "2026-10-21" })],
+    [trip(401, { status: "submitted", trip_end_date: "2026-10-23", trip_start_date: "2026-10-22" })],
+  ).get(402);
+  assert.deepEqual(long?.days, ["22 Oct and 23 Oct with the waiting claim of 22 Oct"]);
+
+  // 5. The odometer chain: the last reading before a car trip, and the driving paid since it.
+  const reading = (km: number) => ({ odometer: { km, readAt: "T", status: "read", tripKm: null } });
+  const car = (id: number, date: string, oneWay: number | null, over: ClaimRow = {}): ClaimRow =>
+    trip(id, { distance_from_residence_km: oneWay, transportation_type: "car", trip_end_date: date, trip_start_date: date, ...over });
+  const sally = findOdometerChains(
+    [car(163, "2026-11-11", 180, { car_evidence_metadata: reading(52612) })],
+    [car(162, "2026-11-10", 180, { arrival_odometer: reading(52600).odometer, departure_odometer: reading(52605).odometer, status: "accepted_by_admin" })],
+  );
+  assert.deepEqual(
+    sally.get(163),
+    { anchor: { date: "2026-11-10", km: 52605 }, paidKmSinceAnchor: 360 },
+    "HEADLINE: the departure reading of the trip before, and its way back plus this trip's way out",
+  );
+  // A trip in between with no reading is driven both ways; the anchor is the one before it.
+  const between = findOdometerChains(
+    [car(163, "2026-11-11", 180)],
+    [car(161, "2026-11-08", 50, { arrival_odometer: reading(52000).odometer, departure_odometer: null }), car(162, "2026-11-10", 100)],
+  );
+  assert.deepEqual(between.get(163), { anchor: { date: "2026-11-08", km: 52000 }, paidKmSinceAnchor: 430 });
+  assert.deepEqual(
+    findOdometerChains([car(163, "2026-11-11", 180)], [car(161, "2026-11-08", 50, { car_evidence_metadata: reading(52000) }), car(162, "2026-11-10", null)]).get(163),
+    { anchor: { date: "2026-11-08", km: 52000 }, paidKmSinceAnchor: null },
+    "a distance unknown on the way makes the paid driving unknown, never zero",
+  );
+  // What is never an anchor: a rejected trip, another employee's, a train trip, a later trip.
+  const skipped = findOdometerChains(
+    [car(163, "2026-11-11", 180)],
+    [
+      car(158, "2026-11-01", 40, { car_evidence_metadata: reading(51000) }),
+      car(159, "2026-11-05", 40, { car_evidence_metadata: reading(51500), status: "rejected_by_admin" }),
+      car(160, "2026-11-06", 40, { car_evidence_metadata: reading(51600), employee_hr_id: "PD-0099" }),
+      car(161, "2026-11-07", 40, { car_evidence_metadata: reading(51700), transportation_type: "train" }),
+      car(164, "2026-11-12", 40, { car_evidence_metadata: reading(53000) }),
+    ],
+  );
+  assert.deepEqual(skipped.get(163)?.anchor, { date: "2026-11-01", km: 51000 });
+  assert.deepEqual(findOdometerChains([car(163, "2026-11-11", 180)], []).get(163), { anchor: null, paidKmSinceAnchor: null }, "a first car trip has no anchor");
+  assert.equal(findOdometerChains([trip(170)], []).size, 0, "only a car trip is chained");
 
   // 2. Whose visit a row is.
   assert.deepEqual(

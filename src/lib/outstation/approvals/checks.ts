@@ -28,9 +28,20 @@
 import type { CheckAnswer, CheckKey, ClaimCheck, ClaimPreCut, ClaimVerdict } from "@/lib/outstation/approvals/types";
 import { isOutstationEvidenceWaivedRole, isOutstationTicketWaivedRole } from "@/lib/outstation/evidence-waiver";
 import { idleDayDeductionSuggestions } from "@/lib/outstation/idle-day-deduction";
+import { kmLabel } from "@/lib/outstation/odometer-scan-rules";
+import { blankFrameSentence } from "@/lib/outstation/blank-frame";
+import { returnFareLabel, type ReturnTicketState } from "@/lib/outstation/return-ticket";
 
 /** A departure photo farther than this from the arrival photo is not "around the destination". */
 export const DEPARTURE_MAX_KM_FROM_ARRIVAL = 40;
+
+/**
+ * The odometer must have moved at least this share of the driving paid between two readings (owner,
+ * 2026-11-23). Paid kilometres are the routed one-way distances the fuel was priced on; a car on the
+ * same roads reads about the same, so a tenth covers rounding and a shorter road - never a trip that
+ * did not happen (claim 163: 7 km on the odometer after claim 162).
+ */
+export const ODOMETER_PAID_KM_SHARE = 0.9;
 
 /** A claim for a meeting or another cost is not a trip: it has no trip days, photos or route. */
 const NON_TRIP_TYPES = new Set(["meeting", "other"]);
@@ -41,15 +52,16 @@ export const CHECK_LABEL: Record<CheckKey, string> = {
   departure_photo: "Departure photo",
   duplicate: "Duplicate",
   field_work: "Field work",
+  odometer: "Odometer",
   route: "Route",
   ticket: "Ticket",
 };
 
 /** The order a row prints them in. */
-const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "arrival_photo", "departure_photo", "ticket", "duplicate", "amounts"];
+const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "amounts"];
 
 /** The order the ONE reason of a "Your call" row is picked in: what he rejects for first. */
-const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "amounts", "arrival_photo", "departure_photo", "ticket"];
+const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "odometer", "amounts", "arrival_photo", "departure_photo", "ticket"];
 
 export type FieldWorkDay = {
   /** A visit that day was within reach of the claimed destination. */
@@ -71,6 +83,8 @@ export type FieldWorkReading = {
 };
 
 export type ClaimPhotoFacts = {
+  /** Nothing can be seen in the stored photo (blank-frame.ts); absent when it was never measured. */
+  blank?: boolean;
   /** The Cairo day it was taken; null when the photo carries no time. */
   capturedOn: string | null;
   hasPosition: boolean;
@@ -94,6 +108,8 @@ export type ClaimCheckFacts = {
   duplicateTrips: string[];
   /** Other claims that repeat this claim's ticket, other cost or receipt. */
   duplicateTickets: string[];
+  /** Other claims of this employee that share a trip day with this one: "18 Nov with the waiting claim of 18 Nov". */
+  sharedTripDays?: string[];
   eligibilityReason: string | null;
   eligibilityStatus: string | null;
   evidenceGateStatus: string | null;
@@ -103,11 +119,27 @@ export type ClaimCheckFacts = {
   hasNoTicketFare: boolean;
   /** The stored fare's own line — the stations and the fixed fare — so the approver sees what it was priced on. */
   noTicketFareLine?: string | null;
+  /** A car trip's odometer readings, chained to the employee's earlier car trip; absent before the rule. */
+  odometer?: OdometerFacts;
+  /** The return fare claimed, and whether a return ticket was read (return-ticket.ts). */
+  returnAmount?: number;
+  returnTicket?: ReturnTicketState;
   role: string | null;
   /** Today in Cairo, `YYYY-MM-DD`. */
   today: string;
   transportation: string;
   tripDates: string[];
+};
+
+export type OdometerReadingFact = { km: number | null; status: "read" | "not_read" | "unreadable" };
+
+export type OdometerFacts = {
+  /** The latest earlier car trip of this employee with a reading: its day and its last reading. */
+  anchor: { date: string; km: number } | null;
+  arrival: OdometerReadingFact;
+  departure: OdometerReadingFact | null;
+  /** The kilometres of driving paid between the anchor's reading and this arrival; null when a distance is unknown. */
+  paidKmSinceAnchor: number | null;
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -221,14 +253,17 @@ function arrivalCheck(facts: ClaimCheckFacts): ClaimCheck {
   if (notOwed) return notOwed;
   const photo = facts.arrival;
   if (!photo.onFile) return check("arrival_photo", "fail", "No arrival photo.");
+  if (photo.blank) return check("arrival_photo", "fail", blankFrameSentence("arrival"));
+  // An upload is NEVER Ready (owner, 2026-11-23): still allowed on a train or bus trip (his 5 Aug
+  // rule), but a file from the gallery proves he had a photo, not that he was there when it was taken.
   if (photo.uploaded) {
-    if (photo.fileTakenOn && onTrip(photo.fileTakenOn, facts)) {
-      return check("arrival_photo", "pass", `Uploaded; the file says it was taken on ${shortDay(photo.fileTakenOn)}.`);
-    }
-    if (photo.fileTakenOn) {
+    if (photo.fileTakenOn && !onTrip(photo.fileTakenOn, facts)) {
       return check("arrival_photo", "fail", `Uploaded; the file says it was taken on ${shortDay(photo.fileTakenOn)}, outside the trip.`);
     }
-    return check("arrival_photo", "unknown", "Uploaded, not taken with the live camera, and the file carries no time of its own.");
+    if (photo.fileTakenOn) {
+      return check("arrival_photo", "unknown", `Uploaded from the gallery, not taken live; the file says it was taken on ${shortDay(photo.fileTakenOn)}.`);
+    }
+    return check("arrival_photo", "unknown", "Uploaded from the gallery, not taken live, and the file carries no time of its own.");
   }
   if (!photo.hasPosition) return check("arrival_photo", "fail", "The arrival photo holds no GPS position.");
   if (!onTrip(photo.capturedOn, facts)) {
@@ -253,6 +288,7 @@ function departureCheck(facts: ClaimCheckFacts): ClaimCheck {
       ? check("departure_photo", "unknown", "Not taken yet: the trip is not over.")
       : check("departure_photo", "fail", "No departure photo.");
   }
+  if (photo.blank) return check("departure_photo", "fail", blankFrameSentence("departure"));
   if (!photo.hasPosition) return check("departure_photo", "fail", "The departure photo holds no GPS position.");
   if (photo.flags.includes("outside_trip_window")) {
     return check("departure_photo", "fail", `Taken on ${shortDay(photo.capturedOn)}, after the trip ended.`);
@@ -281,7 +317,21 @@ function ticketCheck(facts: ClaimCheckFacts): ClaimCheck | null {
     const line = facts.noTicketFareLine?.trim();
     return check("ticket", "pass", line ? `No ticket: priced at the fixed train fare. ${line}` : "No ticket: priced at the fixed train fare.");
   }
-  if (facts.attachments > 0) return check("ticket", "pass", `${plural(facts.attachments, "ticket photo")} attached.`);
+  if (facts.attachments > 0) {
+    // A return fare is paid on its ticket, read like the outbound one (owner, 2026-11-23).
+    const fare = returnFareLabel(facts.returnAmount ?? 0);
+    if (facts.returnTicket === "missing") return check("ticket", "fail", `Return ${fare} claimed with no return ticket.`);
+    if (facts.returnTicket === "unread") {
+      return check("ticket", "unknown", `Return ${fare} claimed; the tickets were not read, so the return ticket is not checked.`);
+    }
+    return check(
+      "ticket",
+      "pass",
+      facts.returnTicket === "present"
+        ? `${plural(facts.attachments, "ticket photo")} attached, the return ticket among them.`
+        : `${plural(facts.attachments, "ticket photo")} attached.`,
+    );
+  }
   if (transport === "train" || transport === "bus") {
     return isOutstationTicketWaivedRole(facts.role)
       ? check("ticket", "pass", "This role owes no ticket.")
@@ -297,7 +347,48 @@ function duplicateCheck(facts: ClaimCheckFacts): ClaimCheck {
   if (facts.duplicateTickets.length > 0) {
     return check("duplicate", "fail", `Repeats a ticket, cost or receipt of ${facts.duplicateTickets.join(", ")}.`);
   }
+  // A day is claimed once (owner, 2026-11-23): two trips that share a day pay that day twice. Flagged,
+  // never refused at filing - the same-day guard deliberately stays on the destination.
+  const shared = facts.sharedTripDays ?? [];
+  if (shared.length > 0) return check("duplicate", "fail", `Shares ${shared.join("; ")}.`);
   return check("duplicate", "pass", "No other claim covers this trip.");
+}
+
+/**
+ * Null for anything but a car trip, and for a car trip filed before the odometer was read (owner,
+ * 2026-11-23: no line for a claim the rule never saw).
+ */
+function odometerCheck(facts: ClaimCheckFacts): ClaimCheck | null {
+  if (facts.transportation.trim().toLowerCase() !== "car" || !facts.odometer) return null;
+  const { anchor, arrival, departure, paidKmSinceAnchor } = facts.odometer;
+  if (arrival.status !== "read" || arrival.km === null) {
+    return arrival.status === "unreadable"
+      ? check("odometer", "fail", "The arrival photo does not show a readable odometer.")
+      : check("odometer", "unknown", "The odometer could not be read when the photo was taken, so it is not checked.");
+  }
+  if (departure?.status === "read" && departure.km !== null && departure.km < arrival.km) {
+    return check(
+      "odometer",
+      "fail",
+      `The odometer went down during the trip: ${kmLabel(arrival.km)} km on arrival, ${kmLabel(departure.km)} km at departure.`,
+    );
+  }
+  if (!anchor) return check("odometer", "pass", `First odometer reading on file: ${kmLabel(arrival.km)} km.`);
+  const since = shortDay(anchor.date);
+  if (arrival.km < anchor.km) {
+    return check("odometer", "fail", `The odometer went down: ${kmLabel(arrival.km)} km now, after ${kmLabel(anchor.km)} km on the trip of ${since}.`);
+  }
+  const moved = arrival.km - anchor.km;
+  if (paidKmSinceAnchor === null) return check("odometer", "pass", `${kmLabel(moved)} km on the odometer since the trip of ${since}.`);
+  const paid = Math.round(paidKmSinceAnchor);
+  if (moved < paidKmSinceAnchor * ODOMETER_PAID_KM_SHARE) {
+    return check(
+      "odometer",
+      "fail",
+      `The odometer moved ${kmLabel(moved)} km since the trip of ${since}, but ${kmLabel(paid)} km of driving was paid between them.`,
+    );
+  }
+  return check("odometer", "pass", `${kmLabel(moved)} km on the odometer since the trip of ${since}; ${kmLabel(paid)} km of driving was paid between them.`);
 }
 
 function amountsCheck(facts: ClaimCheckFacts): ClaimCheck {
@@ -316,7 +407,16 @@ function amountsCheck(facts: ClaimCheckFacts): ClaimCheck {
 /** Every check that applies to this claim, in the order a row prints them. */
 export function runClaimChecks(facts: ClaimCheckFacts): ClaimCheck[] {
   const checks: Array<ClaimCheck | null> = isTripClaim(facts.expenseType)
-    ? [fieldWorkCheck(facts), routeCheck(facts), arrivalCheck(facts), departureCheck(facts), ticketCheck(facts), duplicateCheck(facts), amountsCheck(facts)]
+    ? [
+        fieldWorkCheck(facts),
+        routeCheck(facts),
+        arrivalCheck(facts),
+        departureCheck(facts),
+        odometerCheck(facts),
+        ticketCheck(facts),
+        duplicateCheck(facts),
+        amountsCheck(facts),
+      ]
     : [duplicateCheck(facts), amountsCheck(facts)];
   const present = checks.filter((entry): entry is ClaimCheck => entry !== null);
   return present.sort((left, right) => DISPLAY_ORDER.indexOf(left.key) - DISPLAY_ORDER.indexOf(right.key));

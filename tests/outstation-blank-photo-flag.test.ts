@@ -154,6 +154,9 @@ export function runOutstationBlankPhotoFlagTests() {
     "and it must render only on a measured blank — never on unknown",
   );
 
+  // 🔴 Since 23 Nov 2026 the claim form DOES refuse a blank frame where it is taken — the owner's own
+  // decision after the District Manager expense inspection, built in blank-frame.ts with its own
+  // calibration. What stays pinned here is THIS module: the approver's flag never reaches the rep.
   for (const repFacing of [
     "src/components/outstation/mobile-outstation-wizard.tsx",
     "src/lib/outstation/service.ts",

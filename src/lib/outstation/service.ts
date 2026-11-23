@@ -63,6 +63,7 @@ import {
   deleteOutstationCarEvidenceImage,
   deleteOutstationMeetingInvoice,
   deleteOutstationTicketAttachments,
+  parseOutstationCarEvidenceImageDataUrl,
   uploadOutstationCarEvidenceImage,
   uploadOutstationJourneyStopImage,
   uploadOutstationMeetingInvoice,
@@ -70,6 +71,9 @@ import {
   type OutstationTicketAttachmentUploadInput,
 } from "@/lib/outstation/car-evidence-storage";
 import { checkTrainTicketsOnServer, TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
+import { readCarOdometer } from "@/lib/outstation/odometer-scan";
+import { measureEvidencePhoto } from "@/lib/outstation/blank-frame-server";
+import { inspectEvidencePhoto } from "@/lib/outstation/evidence-photo-inspection";
 import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import {
   NoTicketFareUnavailableError,
@@ -130,7 +134,9 @@ import {
   OUTSTATION_NO_TICKET_HOLD_REASON,
   OUTSTATION_OFFLINE_TICKET_HOLD_REASON,
   OUTSTATION_TICKET_EVIDENCE_REQUIRED_REASON,
+  returnTicketAskIsDue,
 } from "@/lib/outstation/missing-ticket";
+import { returnTicketState } from "@/lib/outstation/return-ticket";
 import {
   isNonTravelExpenseType,
   NON_TRAVEL_APPROVAL_REASON,
@@ -145,7 +151,7 @@ import {
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
+import { currentCairoDateOnlyIso, formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   attachOutstationCapturedLocations,
   resolveOutstationCapturedLocation,
@@ -2408,6 +2414,24 @@ export async function submitOutstationRequest(
     throw new Error("The live arrival photo metadata is missing.");
   }
 
+  // The arrival photo is measured and, on a car trip, its odometer read — by the server, never on
+  // the phone's word (owner, 2026-11-23; evidence-photo-inspection.ts). A blank frame and an odometer
+  // the system cannot read are refused with what to do; an offline replay and a role that owes no
+  // photo keep it, marked for the approver.
+  if (!nonTravel && input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {
+    const inspection = await inspectEvidencePhoto({
+      bytes: parseOutstationCarEvidenceImageDataUrl(input.carEvidenceImageDataUrl).bytes,
+      car: calculation.transportationType === "car",
+      mayRefuse: !input.offlineCaptured && !evidencePhotoWaived,
+      measure: measureEvidencePhoto,
+      now: new Date().toISOString(),
+      photo: "arrival",
+      readOdometer: readCarOdometer,
+    });
+    if (inspection.frame) storedCarEvidenceMetadata.frame = inspection.frame;
+    if (inspection.odometer) storedCarEvidenceMetadata.odometer = inspection.odometer;
+  }
+
   // 🔴 A TEST ACCOUNT STOPS HERE (owner, 2026-10-28: "Runs fully, saves nothing"). Every check above
   // has run exactly as for the person it mirrors; everything below — the photo and ticket uploads,
   // the claim row, the payroll release, the emails — would happen AS HER, so none of it may run.
@@ -2666,7 +2690,8 @@ export async function submitOutstationRequest(
     employee_role: calculation.employeeRole,
     expected_total_amount: calculation.expectedTotalAmount,
     fuel_amount: calculation.fuelAmount,
-    kilometer_reading: calculation.kilometerReading,
+    // The odometer the system READ from the arrival photo (owner, 2026-11-23); the typed field is gone.
+    kilometer_reading: storedCarEvidenceMetadata?.odometer?.km ?? calculation.kilometerReading,
     line: calculation.employeeLine,
     medical_trip_hr_id: calculation.medicalTripHrId,
     medical_trip_name: calculation.medicalTripName,
@@ -3349,8 +3374,17 @@ export async function attachMissingTicketsToOwnOutstationRequest(
     throw new Error(OUTSTATION_CLAIM_DECIDED_MESSAGE);
   }
   const existingCount = ticketPathsOutsideStops(existing.ticketAttachmentPaths, existing.journeyStops ?? []).length;
+  // The return ticket of a claim that pays a return fare on the outbound ticket alone (owner, 2026-11-23).
+  const returnMissing =
+    existingCount > 0 &&
+    returnTicketState({
+      returnAmount: existing.returnTicketAmount,
+      tickets: existing.ticketAttachmentMetadata,
+      transportation: existing.transportationType,
+    }) === "missing";
   if (
     !canAttachMissingOutstationTicket({
+      returnTicketMissing: returnMissing,
       status: existing.status,
       ticketAttachmentCount: existingCount,
       transportationType: existing.transportationType,
@@ -3398,7 +3432,7 @@ export async function attachMissingTicketsToOwnOutstationRequest(
     });
     const approvalReason = approvalReasonAfterMissingTicketAttached(
       existing.approvalReason,
-      missingTicketAttachedSentence(formatPhoenixDateTime(now), uploaded.length),
+      missingTicketAttachedSentence(formatPhoenixDateTime(now), uploaded.length, returnMissing ? "return" : "ticket"),
     );
 
     const { data, error } = await getSupabaseAdmin()
@@ -5931,6 +5965,19 @@ export async function captureOutstationDeparturePhoto(
   const locationRefusal = departurePhotoLocationRefusal(input.latitude, input.longitude);
   if (locationRefusal) throw new Error(locationRefusal);
 
+  // Measured and, on a car trip, its odometer read before anything is stored (owner, 2026-11-23;
+  // evidence-photo-inspection.ts): a blank frame and an odometer the system cannot read are refused
+  // with what to do. A role that owes no photo keeps it, marked.
+  const { frame: departureFrame, odometer: departureOdometer } = await inspectEvidencePhoto({
+    bytes: parseOutstationCarEvidenceImageDataUrl(input.imageDataUrl).bytes,
+    car: request.transportationType === "car",
+    mayRefuse: !isOutstationEvidenceWaivedRole(request.employeeRole),
+    measure: measureEvidencePhoto,
+    now: new Date().toISOString(),
+    photo: "departure",
+    readOdometer: readCarOdometer,
+  });
+
   const capturedAt = new Date().toISOString();
   const review = reviewDepartureEvidence({
     arrivalCapturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt,
@@ -5981,7 +6028,9 @@ export async function captureOutstationDeparturePhoto(
     capturedLongitude: typeof input.longitude === "number" ? input.longitude : null,
     distanceFromArrivalKm: review.distanceFromArrivalKm,
     flags: review.flags,
+    ...(departureFrame ? { frame: departureFrame } : {}),
     minutesAfterArrival: review.minutesAfterArrival,
+    ...(departureOdometer ? { odometer: departureOdometer } : {}),
     previousVersions,
     source: "live_camera",
     // The retake count rides in the SUMMARY as well as the structured field, because the summary
@@ -7275,6 +7324,8 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
 
 /** One of the caller's undecided train or bus claims that arrived with no ticket (missing-ticket.ts). */
 export type OutstationMissingTicketDue = OutstationDeparturePhotoDue & {
+  /** Set when it is the RETURN ticket that is asked for: the return fare the claim carries (owner, 2026-11-23). */
+  returnAmount?: number | null;
   transportationType: string;
 };
 
@@ -7306,19 +7357,36 @@ export async function getOwnOutstationRequestsMissingTicket(
     .order("created_at", { ascending: false });
   if (error || !data) return [];
 
+  const today = currentCairoDateOnlyIso();
   return (data as Array<Record<string, unknown>>)
     .map(mapOutstationRequestRow)
     .filter((row) => normalizeHrIdForAccess(row.employeeHrId) === callerHrId)
-    .filter((row) =>
+    .map((row) => {
+      const ticketCount = ticketPathsOutsideStops(row.ticketAttachmentPaths, row.journeyStops ?? []).length;
+      // The return ticket, asked with the departure photo (owner, 2026-11-23). Only once the outbound is
+      // here: a claim with no ticket at all is asked for "the ticket" first.
+      const returnMissing =
+        ticketCount > 0 &&
+        returnTicketState({
+          returnAmount: row.returnTicketAmount,
+          tickets: row.ticketAttachmentMetadata,
+          transportation: row.transportationType,
+        }) === "missing" &&
+        returnTicketAskIsDue({ hasDeparturePhoto: Boolean(row.departureEvidenceImagePath), today, tripEndDate: row.tripEndDate });
+      return { returnMissing, row, ticketCount };
+    })
+    .filter(({ returnMissing, row, ticketCount }) =>
       canAttachMissingOutstationTicket({
+        returnTicketMissing: returnMissing,
         status: row.status,
-        ticketAttachmentCount: ticketPathsOutsideStops(row.ticketAttachmentPaths, row.journeyStops ?? []).length,
+        ticketAttachmentCount: ticketCount,
         transportationType: row.transportationType,
       }),
     )
-    .map((row) => ({
+    .map(({ returnMissing, row }) => ({
       destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
       id: row.id,
+      ...(returnMissing ? { returnAmount: row.returnTicketAmount } : {}),
       transportationType: row.transportationType,
       tripEndDate: row.tripEndDate,
       tripStartDate: row.tripStartDate,

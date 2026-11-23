@@ -150,6 +150,7 @@ const PINNED = [
   "scripts/needs-you.mjs",
   "scripts/new-session.mjs",
   "scripts/normalize-employee-photos.ts",
+  "scripts/outstation/backfill-photo-frames.ts",
   "scripts/outstation/build-train-fares.mjs",
   "scripts/phase19-fixture-cleanup-smoke.ts",
   "scripts/phoenix-camera-publish-release.ts",
