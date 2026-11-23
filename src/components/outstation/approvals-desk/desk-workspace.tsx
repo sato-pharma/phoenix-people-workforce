@@ -7,13 +7,16 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { CrmLoadError, CrmLoading, CrmNote, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { formatNumberValue } from "@/lib/i18n/format";
+import { kindCounts } from "@/lib/outstation/approvals/claim-kind";
 import { DESK_DECISION_LIMIT } from "@/lib/outstation/approvals/decision-body";
 import { DESK_LANES, DESK_LANE_LABEL, DESK_WORDS, type DeskLane, claimsInLane, laneSummaries, readyBatch } from "@/lib/outstation/approvals/desk-view";
 import type { TripStanding } from "@/lib/outstation/approvals/standing";
 import { cn } from "@/lib/utils";
 
 import { DeskHistory } from "./desk-history";
+import { DeskKindFilter } from "./desk-kind-filter";
 import { egp } from "./desk-parts";
+import { DeskPeriodFilter } from "./desk-period-filter";
 import { DeskReviewer } from "./desk-reviewer";
 import { DeskList } from "./desk-row";
 import { DeskTiles, DeskTopLine } from "./desk-tiles";
@@ -35,9 +38,12 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
   const desk = useDesk(initialSearch);
   const { canDecide, lane, load, queue, view } = desk;
 
-  const narrowed = Boolean(view.search.trim()) || view.overSevenDays;
+  const narrowed = Boolean(view.search.trim()) || view.overSevenDays || view.kind !== null || view.from !== null || view.to !== null;
   const lanes = queue ? laneSummaries(queue.claims) : null;
   const laneClaims = queue && lane !== "history" ? claimsInLane(queue.claims, lane, view) : [];
+  // The figure on each kind button: the lane on screen as the search, "over 7 days" and the trip dates
+  // leave it, before the kind narrows it — so a button says what pressing it will show.
+  const kinds = queue && lane !== "history" ? kindCounts(claimsInLane(queue.claims, lane, { ...view, kind: null })) : null;
   const batch = lane === "ready" ? readyBatch(laneClaims, DESK_DECISION_LIMIT) : null;
   const open = (requestId: number) => desk.setView({ trip: requestId });
 
@@ -124,8 +130,13 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
             </label>
           </div>
 
+          <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2" data-desk-filters>
+            <DeskKindFilter counts={kinds} kind={view.kind} onChoose={(kind) => desk.setView({ kind })} />
+            <DeskPeriodFilter onChoose={(period) => desk.setView(period)} period={{ from: view.from, to: view.to }} />
+          </div>
+
           {lane === "history" ? (
-            <DeskHistory choice={view.history} onChoose={(history) => desk.setView({ history })} onOpen={open} search={view.search.trim()} version={desk.historyVersion} />
+            <DeskHistory choice={view.history} from={view.from} kind={view.kind} onChoose={(history) => desk.setView({ history })} onOpen={open} search={view.search.trim()} to={view.to} version={desk.historyVersion} />
           ) : (
             <DeskList
               action={

@@ -16,6 +16,7 @@
  */
 
 import { claimPreCut, isTripClaim, judgeClaim, shortDay, type ClaimCheckFacts, type FieldWorkReading } from "@/lib/outstation/approvals/checks";
+import { claimKindOf } from "@/lib/outstation/approvals/claim-kind";
 import { readTripStanding, type PayoutPeriod } from "@/lib/outstation/approvals/standing";
 import type { ClaimVerdict, DeskClaim } from "@/lib/outstation/approvals/types";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
@@ -23,7 +24,7 @@ import { cairoDateOnly } from "@/lib/outstation/departure-evidence";
 import { resolveOutstationGateState } from "@/lib/outstation/expense-gate";
 import { ticketReceiptFingerprint } from "@/lib/outstation/duplicate-ticket-guard";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
-import { mapOutstationRequestRowToPayrollApproval, outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
+import { mapOutstationRequestRowToPayrollApproval, outstationPayrollTripId, outstationReportOverride } from "@/lib/outstation/payroll-expense-mapping";
 import { odometerFromValue, odometerOfMetadata, type OutstationOdometerRecord } from "@/lib/outstation/odometer-scan-rules";
 import { frameOfMetadata } from "@/lib/outstation/blank-frame";
 import { returnTicketState } from "@/lib/outstation/return-ticket";
@@ -207,6 +208,8 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
     expenseType: text(row.expense_type) || "traveling",
     fieldWork: context.fieldWork ?? null,
     hasNoTicketFare: readNoTicketFare(row.no_ticket_fare) !== null,
+    // The meeting amount as payroll reads it: HR's override when there is one, else the claim's own.
+    meetingCost: outstationReportOverride(row.report_meeting_amount, num(row.meeting_amount) ?? 0),
     noTicketFareLine: text(object(row.no_ticket_fare)?.line) || null,
     odometer:
       odometer.arrival === undefined
@@ -333,6 +336,7 @@ export function buildDeskClaim(input: {
     holdReason: waiting ? holdReasonOfRow(row) : null,
     hrComment: waiting ? "" : approval.hrComment,
     hrId: approval.hrId,
+    kind: claimKindOf(row.expense_type),
     locked: reading.standing === "in_payroll",
     payable: reading.standing === "rejected" ? 0 : payableExpenseAmount(approvedAmount, total),
     payoutMonth,

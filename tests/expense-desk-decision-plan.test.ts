@@ -46,6 +46,7 @@ function claim(over: Partial<DeskClaim> = {}): DeskClaim {
     holdReason: null,
     hrComment: "",
     hrId: "PD-0015",
+    kind: "traveling",
     locked: false,
     payable: 900,
     payoutMonth: 12,

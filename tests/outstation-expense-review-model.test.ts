@@ -50,6 +50,7 @@ function claim(overrides: Partial<DeskClaim> & { requestId: number }): DeskClaim
     holdReason: null,
     hrComment: "",
     hrId: "A-1",
+    kind: "traveling",
     locked: false,
     payable: 1000,
     payoutMonth: 11,

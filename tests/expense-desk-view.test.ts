@@ -62,6 +62,7 @@ function claim(requestId: number, over: Partial<DeskClaim> = {}): DeskClaim {
     holdReason: null,
     hrComment: "",
     hrId: "PD-0015",
+    kind: "traveling",
     locked: false,
     payable: 500,
     payoutMonth: 11,
@@ -128,8 +129,8 @@ export function runExpenseDeskViewTests() {
 
   // 2. The view lives in the address.
   assert.equal(deskViewToSearch(DEFAULT_DESK_VIEW), "", "defaults leave the address clean");
-  const view = { history: "rejected", lane: "your_call", overSevenDays: true, search: "Hossam Adel", trip: 293 } as const;
-  assert.equal(deskViewToSearch(view), "?lane=your_call&q=Hossam+Adel&over7=1&decided=rejected&trip=293");
+  const view = { from: "2026-11-01", history: "rejected", kind: "meeting", lane: "your_call", overSevenDays: true, search: "Hossam Adel", to: "2026-11-30", trip: 293 } as const;
+  assert.equal(deskViewToSearch(view), "?lane=your_call&q=Hossam+Adel&over7=1&kind=meeting&from=2026-11-01&to=2026-11-30&decided=rejected&trip=293");
   assert.deepEqual(deskViewFromSearch(deskViewToSearch(view)), view, "a reload opens the same view");
   assert.deepEqual(deskViewFromSearch("?lane=paid&trip=abc&over7=yes&decided=all&q="), DEFAULT_DESK_VIEW, "junk in the address is ignored");
   assert.deepEqual(deskViewFromSearch(null), DEFAULT_DESK_VIEW);

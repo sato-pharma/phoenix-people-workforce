@@ -72,7 +72,7 @@ and tickets, with Approve, Reduce and Reject pinned.
 
 `approvals/checks.ts` runs seven checks on a trip: field work, route, arrival photo, departure
 photo, ticket, duplicate and amounts. A claim for a meeting or another cost runs two: duplicate and
-amounts. Each check answers pass, fail or "could not check" in one sentence. "Could not check" is
+amounts. A claimed meeting also runs the Thursday check ("Filters and the Thursday flag", below). Each check answers pass, fail or "could not check" in one sentence. "Could not check" is
 never a pass. The system files a claim in a lane and never rejects one.
 
 Each check was built on what the owner had actually decided, read on production on 23 Nov:
@@ -393,6 +393,82 @@ measured.
 Pinned by `tests/expense-case-pdf.test.ts`. Each of its assertions was proven by breaking the fix it
 pins and watching that assertion fire: 46 cases on the first commit, 26 more on the review's fixes,
 all fired.
+
+### Filters and the Thursday flag
+
+His words, 23 Nov 2026: "I want to be able to filter by, for example, meeting, for example, other,
+for example, traveling. And I want you to flag any meeting that is not on Thursday." And a few
+minutes later: "AND FILTER BY PERIOD OR MONTH OR DATE."
+
+**The kind filter.** Under the lanes there are four buttons: All kinds, Traveling, Meeting, Other.
+The kind is the claim's own expense type, the three values Submit Expense offers. Production held
+332 Traveling, 24 Meeting and 7 Other claims that day, and nothing else. A type nobody recognises
+reads as Traveling, so it is checked as a trip and never excused as a cost. On Ready and Your call
+each button carries the number of claims of that kind in the lane. History is read from the server
+50 at a time, so there the buttons carry no number.
+
+**The trip-date filter.** Beside the kinds there are three controls:
+
+- **Trip month** lists this month and the eleven before it. One pick narrows the list to that month.
+- **From** picks one day. With no To chosen, the list shows that one day.
+- **To** turns it into a period. Either end can be left open.
+
+The date is the trip's own, the one each row prints. It is not the day the claim was filed or
+decided. A trip of several days is listed when any of its days is inside the period, so a trip from
+30 Oct to 2 Nov is listed under October and under November. From after To is read the other way
+round. "Clear dates" removes the filter.
+
+Both filters narrow Ready, Your call and History, and both are kept in the address (`kind`, `from`,
+`to`), so a reload or a shared link opens the same list. On a waiting lane the page filters the
+claims it already holds. On History the server filters, because the page holds only one page of it.
+The trip days are stored as midnight UTC (all 363 claims on 23 Nov), so the server asks for trips
+that ended on or after From and began before the day after To.
+
+Read on production on 23 Nov through the app's own data API, with the filter strings the page
+sends, and compared with the database read directly. Every count matched:
+
+| Filter | Claims |
+| --- | --- |
+| Traveling | 332 |
+| Meeting | 24 |
+| Other | 7 |
+| A trip day in November 2026 | 77 |
+| A trip day in October 2026 | 116 |
+| A trip day on 12 Nov 2026 | 3 |
+| Traveling, with a trip day in November 2026 | 73 |
+
+**The Thursday flag.** Meetings are held on a Thursday. `approvals/meeting-day.ts` adds one check,
+"Meeting day", to a claim that claims a meeting:
+
+- a claim filed as Meeting, and
+- a Traveling or Other claim that carries a meeting amount. The amount is the one payroll reads, so
+  a meeting amount already set to zero on review claims no meeting.
+
+A claimed meeting on any other day fails the check, with the day in words: "The meeting was on
+Monday 2 Nov, not a Thursday." A claim of several days does not say which day the meeting was held,
+so it passes when one of its days is a Thursday and fails when none is. A claim with no readable day
+is "could not check", which is never a pass.
+
+The flag is a flag. A failed check files the claim in Your call and never rejects it, changes its
+amount or stops it being filed. The reviewer shows the line with the other checks, and "Not a
+Thursday" is offered as a one-press reason for a rejection or a reduced amount.
+
+What it changes, read on production on 23 Nov:
+
+- A Meeting or Other claim was never Ready, because its amount is the employee's and the invoice
+  has to be read. For those the flag changes the reason the row wears. One Meeting claim waited, on
+  Thursday 12 Nov, and it passes.
+- A Traveling claim with a meeting amount could be Ready. Five such claims waited, none on a
+  Thursday, with meeting amounts of EGP 70 to EGP 150. They are now in Your call.
+- Among the 23 Meeting claims already decided, none of the 8 he rejected was on a Thursday, and 6 of
+  the 15 he approved were.
+
+The rules live in `approvals/claim-kind.ts`, `approvals/trip-period.ts` and
+`approvals/meeting-day.ts`. The screen parts are `desk-kind-filter.tsx` and
+`desk-period-filter.tsx`. Pinned by `tests/expense-desk-kind.test.ts`; eight of its assertions were
+proven by breaking the fix each pins and watching the test fail.
+
+Not seen in a browser before the merge: the dev server shows the live version, never a branch.
 
 ### What only time can prove
 

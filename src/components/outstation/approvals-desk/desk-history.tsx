@@ -8,11 +8,11 @@ import { CrmButton, CrmEmpty, CrmLoadError, CrmLoading, CrmShowMore, CrmTable, c
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { DESK_WORDS, type DeskHistoryChoice } from "@/lib/outstation/approvals/desk-view";
 import type { DeskHistoryPage, SheetTrip } from "@/lib/outstation/approvals/history";
-import type { DeskClaim } from "@/lib/outstation/approvals/types";
+import type { ClaimKind, DeskClaim } from "@/lib/outstation/approvals/types";
 import { displayPlace } from "@/lib/outstation/place-label";
 import { cn } from "@/lib/utils";
 
-import { MoneyCell, PHONE_TARGET, STANDING_RAIL, StandingPill, TripLine, egp, tripDates } from "./desk-parts";
+import { MoneyCell, PHONE_TARGET, STANDING_RAIL, StandingPill, TripLine, egp, kindNote, tripDates } from "./desk-parts";
 
 const ROUTE = "/api/admin/outstation/approvals/history";
 const CHOICES: ReadonlyArray<{ key: DeskHistoryChoice; label: string }> = [
@@ -41,15 +41,23 @@ async function readJson<T>(url: string): Promise<T> {
  */
 export function DeskHistory({
   choice,
+  from,
+  kind,
   onChoose,
   onOpen,
   search,
+  to,
   version,
 }: {
   choice: DeskHistoryChoice;
+  /** The trip dates the desk is narrowed to; null = open. The server filters, like the kind. */
+  from: string | null;
+  /** The kind the desk is narrowed to; null = every kind. The server filters: History is read a page at a time. */
+  kind: ClaimKind | null;
   onChoose: (choice: DeskHistoryChoice) => void;
   onOpen: (requestId: number) => void;
   search: string;
+  to: string | null;
   /** Goes up when a decided claim was changed, so the list reads again. */
   version: number;
 }) {
@@ -60,7 +68,20 @@ export function DeskHistory({
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const key = `${choice}|${term}|${version}`;
+  const key = `${choice}|${kind ?? ""}|${from ?? ""}|${to ?? ""}|${term}|${version}`;
+  /** What every read of this list carries: the decision, the kind, the trip dates and the search. */
+  const query = useCallback(
+    (offset?: number) => {
+      const params = new URLSearchParams({ filter: choice });
+      if (kind) params.set("kind", kind);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      if (term) params.set("search", term);
+      if (offset) params.set("offset", String(offset));
+      return `${ROUTE}?${params.toString()}`;
+    },
+    [choice, from, kind, term, to],
+  );
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState<{ key: string; message: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -68,9 +89,7 @@ export function DeskHistory({
 
   useEffect(() => {
     let cancelled = false;
-    const params = new URLSearchParams({ filter: choice });
-    if (term) params.set("search", term);
-    readJson<DeskHistoryPage>(`${ROUTE}?${params.toString()}`)
+    readJson<DeskHistoryPage>(query())
       .then((page) => {
         if (!cancelled) setLoaded({ ...page, key });
       })
@@ -81,7 +100,7 @@ export function DeskHistory({
       cancelled = true;
     };
     // `attempt` re-runs the same read after a failure.
-  }, [attempt, choice, key, term]);
+  }, [attempt, key, query]);
 
   const page = loaded?.key === key ? loaded : null;
   const error = !page && failed?.key === key ? failed.message : null;
@@ -90,16 +109,14 @@ export function DeskHistory({
     if (!page || page.nextOffset === null) return;
     setMore(true);
     try {
-      const params = new URLSearchParams({ filter: choice, offset: String(page.nextOffset) });
-      if (term) params.set("search", term);
-      const next = await readJson<DeskHistoryPage>(`${ROUTE}?${params.toString()}`);
+      const next = await readJson<DeskHistoryPage>(query(page.nextOffset));
       setLoaded((current) => (current?.key === page.key ? { ...next, claims: [...current.claims, ...next.claims], key: current.key } : current));
     } catch (caught) {
       setFailed({ key, message: caught instanceof Error ? caught.message : "Unable to load the history." });
     } finally {
       setMore(false);
     }
-  }, [choice, key, page, term]);
+  }, [key, page, query]);
 
   return (
     <section aria-labelledby="desk-tab-history" className="min-w-0 overflow-hidden border border-slate-200 bg-white" data-desk-history id="desk-panel-history" role="tabpanel">
@@ -132,7 +149,10 @@ export function DeskHistory({
       ) : !page ? (
         <CrmLoading label="Reading the decided claims" />
       ) : page.claims.length === 0 ? (
-        <CrmEmpty message={term ? "No decided claim matches the search." : "No claim has been decided yet."} title="Nothing here" />
+        <CrmEmpty
+          message={term ? "No decided claim matches the search." : kind || from || to ? "No decided claim matches the kind and the trip dates chosen." : "No claim has been decided yet."}
+          title="Nothing here"
+        />
       ) : (
         <>
           <div className="divide-y divide-slate-100 md:hidden">
@@ -222,7 +242,8 @@ function HistoryCard({ claim, onOpen }: { claim: DeskClaim; onOpen: (requestId: 
         </span>
       </div>
       <p className="mt-0.5 min-w-0 break-words text-xs font-semibold text-slate-500">
-        {tripDates(claim)} · <bdi dir="auto">{displayPlace(claim.to)}</bdi>
+        {tripDates(claim)}
+        {kindNote(claim) ? ` · ${kindNote(claim)}` : ""} · <bdi dir="auto">{displayPlace(claim.to)}</bdi>
       </p>
       <div className="mt-1.5 flex min-w-0 flex-wrap items-center justify-between gap-2">
         <StandingPill standing={claim.standing} />

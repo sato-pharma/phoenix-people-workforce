@@ -25,6 +25,8 @@
  * on behaviour without a database (tests/expense-desk-checks.test.ts).
  */
 
+import { claimKindOf } from "@/lib/outstation/approvals/claim-kind";
+import { meetingDayVerdict } from "@/lib/outstation/approvals/meeting-day";
 import type { CheckAnswer, CheckKey, ClaimCheck, ClaimPreCut, ClaimVerdict } from "@/lib/outstation/approvals/types";
 import { isOutstationEvidenceWaivedRole, isOutstationTicketWaivedRole } from "@/lib/outstation/evidence-waiver";
 import { idleDayDeductionSuggestions } from "@/lib/outstation/idle-day-deduction";
@@ -44,9 +46,6 @@ export const DEPARTURE_MAX_KM_FROM_ARRIVAL = 40;
  */
 export const ODOMETER_PAID_KM_SHARE = 0.9;
 
-/** A claim for a meeting or another cost is not a trip: it has no trip days, photos or route. */
-const NON_TRIP_TYPES = new Set(["meeting", "other"]);
-
 export const CHECK_LABEL: Record<CheckKey, string> = {
   amounts: "Amounts",
   arrival_photo: "Arrival photo",
@@ -54,16 +53,17 @@ export const CHECK_LABEL: Record<CheckKey, string> = {
   distance: "Distance",
   duplicate: "Duplicate",
   field_work: "Field work",
+  meeting_day: "Meeting day",
   odometer: "Odometer",
   route: "Route",
   ticket: "Ticket",
 };
 
 /** The order a row prints them in. */
-const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "distance", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "amounts"];
+const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "distance", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "meeting_day", "amounts"];
 
 /** The order the ONE reason of a "Your call" row is picked in: what he rejects for first. */
-const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "distance", "odometer", "amounts", "arrival_photo", "departure_photo", "ticket"];
+const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "distance", "odometer", "meeting_day", "amounts", "arrival_photo", "departure_photo", "ticket"];
 
 export type FieldWorkDay = {
   /** A visit that day was within reach of the claimed destination. */
@@ -124,6 +124,8 @@ export type ClaimCheckFacts = {
   /** Null when Phoenix CRM could not be read — never the same as "nothing there". */
   fieldWork: FieldWorkReading | null;
   hasNoTicketFare: boolean;
+  /** The meeting amount the claim would be paid; a Traveling or Other claim that carries one is held to the Thursday rule. */
+  meetingCost?: number;
   /** The stored fare's own line — the stations and the fixed fare — so the approver sees what it was priced on. */
   noTicketFareLine?: string | null;
   /** A car trip's odometer readings, chained to the employee's earlier car trip; absent before the rule. */
@@ -170,8 +172,9 @@ function check(key: CheckKey, answer: CheckAnswer, sentence: string): ClaimCheck
   return { answer, key, label: CHECK_LABEL[key], sentence };
 }
 
+/** A claim for a meeting or another cost is not a trip: it has no trip days, photos or route. */
 export function isTripClaim(expenseType: string | null | undefined): boolean {
-  return !NON_TRIP_TYPES.has(String(expenseType ?? "").trim().toLowerCase());
+  return claimKindOf(expenseType) === "traveling";
 }
 
 /** Trip days with no visit and no recorded meeting — measured days only, never a day not yet over. */
@@ -404,6 +407,15 @@ function distanceCheck(facts: ClaimCheckFacts): ClaimCheck | null {
   return verdict ? check("distance", verdict.answer, verdict.sentence) : null;
 }
 
+/**
+ * Meetings are held on a Thursday (owner, 2026-11-23). Null when the claim claims no meeting; a
+ * claimed meeting on another day fails — flagged, never refused (meeting-day.ts).
+ */
+function meetingDayCheck(facts: ClaimCheckFacts): ClaimCheck | null {
+  const verdict = meetingDayVerdict({ dates: facts.tripDates, kind: claimKindOf(facts.expenseType), meetingCost: facts.meetingCost ?? 0 });
+  return verdict ? check("meeting_day", verdict.answer, verdict.sentence) : null;
+}
+
 function amountsCheck(facts: ClaimCheckFacts): ClaimCheck {
   if (!isTripClaim(facts.expenseType)) {
     return facts.attachments > 0
@@ -429,9 +441,10 @@ export function runClaimChecks(facts: ClaimCheckFacts): ClaimCheck[] {
         odometerCheck(facts),
         ticketCheck(facts),
         duplicateCheck(facts),
+        meetingDayCheck(facts),
         amountsCheck(facts),
       ]
-    : [duplicateCheck(facts), amountsCheck(facts)];
+    : [duplicateCheck(facts), meetingDayCheck(facts), amountsCheck(facts)];
   const present = checks.filter((entry): entry is ClaimCheck => entry !== null);
   return present.sort((left, right) => DISPLAY_ORDER.indexOf(left.key) - DISPLAY_ORDER.indexOf(right.key));
 }
