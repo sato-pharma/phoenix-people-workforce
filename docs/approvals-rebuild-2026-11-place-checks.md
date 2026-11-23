@@ -401,7 +401,8 @@ together" 44). A closed clinic card was 189 to 300 px and a closed building 256 
   "Showing everything" in 94 px. It is drawn on a phone only while something narrows the board, so
   what narrows it is never hidden; the button counts it ("Filters (2)"). The boxes open under the
   strip that holds their button. The boxed line draws no second button on that board.
-- **The picker's label is a screen reader's.** Its own option says what it is ("Your call (38)").
+- **The picker's label is a screen reader's.** Its own option says what it is ("Your call (38)"). A
+  board with no lanes (a district manager's) keeps the visible label and its whole filter bar.
 - **A lane's head is two rows.** The title, then the fold and the pick button together (`fold` in
   `place-checks/section.tsx`). Closed, the fold reads "Why: N reasons"; open, it takes a row of
   its own and says its name.
@@ -422,7 +423,22 @@ merge and the phone is scored again from them.
 decisions, the database narrows and the code narrows again, what the narrow read keeps, the four
 cards never a 0, the phone's filters, lane head and closed cards), the on-demand test (the two cards
 by the day decided, the same figures before and after the click) and the lanes test (a closed
-building). 15 of 15 fired when their fixes were broken.
+building). 16 of 16 fired when their fixes were broken.
+
+**What the two reviews of this pull request found.** Neither found a broken rule in access, in what a
+manager receives, or in what waits for a decision. What changed because of them:
+
+- A district manager's phone had lost the visible "Showing" label over its picker, on a board this
+  work said it left alone. It is back; only the Super Admin's board has the picker row with the button.
+- The narrowing query was proven on production with an earlier wording of the code. The committed
+  code was run again, read-only, at about 19:00 Cairo on 23 Nov 2026, before the merge was made. The
+  database accepted it (every request answered 200) and narrowed there: the decided read was one
+  request of 437 rows and 946 KB, with the inner join and the filter in the request and no row
+  without a building. The whole read was two requests, 1,365 rows and 2,887 KB. Both answered the
+  same waiting reviews and the same 404 seated decisions.
+
+Left as it is: with the filters open on a phone and nothing narrowing, the box still heads its fields
+with "Filters · Showing everything". It stands only while he has the boxes open.
 
 ## What is deliberately not there
 

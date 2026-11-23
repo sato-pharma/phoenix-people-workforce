@@ -402,10 +402,15 @@ function checkThePhoneTop() {
   const filterBar = raw("src/components/phoenix-crm/place-checks/filter-bar.tsx");
   assert.match(
     strip,
-    /<div className="flex min-w-0 items-center gap-2 sm:hidden" data-tab-picker>\s*<label className="sr-only" htmlFor="vr-tab-select">\s*Showing\s*<\/label>\s*<div className="min-w-0 flex-1">\s*<CrmSelect/,
-    "🔴 the picker's row on a phone is the picker, named for a screen reader, with room beside it",
+    /\{lanes \? \(\s*<div className="flex min-w-0 items-center gap-2 sm:hidden" data-tab-picker>\s*<label className="sr-only" htmlFor="vr-tab-select">\s*Showing\s*<\/label>\s*<div className="min-w-0 flex-1">\{picker\}<\/div>\s*<PlaceCheckFilterToggle board=\{board\} \/>\s*<\/div>/,
+    "🔴 on the Super Admin's board a phone's row is the picker, named for a screen reader, and the Filters button beside it",
   );
-  assert.ok(strip.includes("{lanes ? <PlaceCheckFilterToggle board={board} /> : null}"), "🔴 on the Super Admin's board the Filters button shares that row");
+  assert.match(
+    strip,
+    /\) : \(\s*<div className="min-w-0 sm:hidden">\s*<CrmField htmlFor="vr-tab-select" label="Showing">\s*\{picker\}\s*<\/CrmField>\s*<\/div>\s*\)\}/,
+    "🔴 a board with no lanes (a district manager's) keeps the picker under its visible label, and gets no button: its filter bar is whole",
+  );
+  assert.equal(strip.split('id="vr-tab-select"').length - 1, 1, "one picker, drawn in whichever row the board has");
   assert.match(
     filterBar,
     /export function PlaceCheckFilterToggle\(\{ board \}: \{ board: PlaceCheckBoard \}\) \{[\s\S]{0,330}aria-expanded=\{filtersOpen\}\s*className="min-h-11 shrink-0"\s*data-filter-toggle\s*onClick=\{\(\) => setFiltersOpen\(\(current\) => !current\)\}/,
