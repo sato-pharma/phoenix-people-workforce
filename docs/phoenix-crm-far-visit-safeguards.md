@@ -23,7 +23,7 @@ afternoon (Dr. Doria Darraz and Dr. Suzan Hamed, to his 13:06 El Raml reading).
 | | What | Where |
 | --- | --- | --- |
 | A | **An impossible reading is refused at validation.** A place reading 3 km or more from the rep's own sharp visit (accuracy 50 m or better) saved in the last hour, at more than 80 km/h, is refused. So is the exact point (the same coordinates to the last decimal) already refused that way in the last 6 hours, because a Wi-Fi guess repeats itself. The rep reads "Your location has not settled yet. Step outside the building…", never a distance or a speed. Filed on the refused-readings board as `impossible_travel`. A photo reading judged impossible beside a good pin is filed too, and the place is saved from the pin. Judged from 10 November 2026 only; no place validated earlier is re-judged. | `judgeImpossibleLocation`, `IMPOSSIBLE_LOCATION_FROM_DAY` |
-| B | **A stuck rep raises an alert.** The fifth sharp far refusal (accuracy 30 m or better) within 50 m of the same spot, on the same customer, on the same visit day tells the Super Admin and the SFE Manager once: in-app, on Telegram and the phone, never by email. Test seats raise nothing. | `stuckAtOneSpot`, `notifyStuckRep`, event `far_visit_stuck` |
+| B | **A stuck rep raises an alert.** The fifth sharp far refusal (accuracy 30 m or better) within 50 m of the same spot, on the same customer, inside seven visit days (since 11 November), the five spread over at least two minutes (since 23 November), tells the Super Admin and the SFE Manager once: in-app, on Telegram and the phone, never by email. Test seats raise nothing. | `stuckAtOneSpot`, `STUCK_MIN_SPAN_SECONDS`, `notifyStuckRep`, event `far_visit_stuck` |
 | C | **Hold, don't refuse.** After those five, the rep's next visit from the same spot is SAVED and held. It counts in nothing (both countable views, `visitCountsInKpi`, the team page, the visit report) until the SFE approves it on **Visits Held for SFE** (`/admin/phoenix-crm/far-visit-holds`, the Super Admin and the SFE Manager only). Refused, it never counts. The SFE can also move the customer's place to where the rep stood, through the ordinary place move (written reason, 10 characters or more). The rep reads "Saved. This visit counts once SFE approves it." A rep who walks somewhere else is refused as before. | `holdInsteadOfRefuse`, `phoenix_crm_far_visit_holds`, `decideFarVisitHold` |
 | D | **A wider line for an account.** An AM customer (a hospital or a pharmacy account) refuses a rep's visit only past 500 m; a PM doctor's clinic keeps the settings' 300 m. Only the refusal reads it: the visit's own location flag and every board keep 300 m, so nothing already measured moves. | `farRefusalLineFor`, `ACCOUNT_FAR_LINE_METERS` |
 
@@ -162,3 +162,35 @@ repair was read back on production.
 - Who stamped the three hospital accounts validated on 29 October with no place and no event.
 - 59 validated places with an unread signboard or timetable and no review were not traced.
 - A before-place hold raises no notice of its own; the SFE finds it on the page and in the nightly check.
+
+## 23 November 2026 — five quick presses no longer hold a visit
+
+**His words:** "Close the gap", answering whether five quick presses should still be enough to put a visit on hold.
+
+**What happened.** On 23 November Esraa Ibrahim's card showed four doctors as not visited this month, although she
+had visited them on 16 November. All four visits had been saved and held as `stuck`, so they counted nowhere. What
+the readings show:
+- She had saved all four places herself (21 October and 2 November), and had logged visits 8, 23, 85 and 235 m from them before, so the places were right.
+- On 16 November she pressed save 37 times between 15:40 and 16:16 Cairo, moving at about 20 km/h, 350–500 m west of the four places.
+- Five presses inside 8 to 21 seconds made her "stuck" at each doctor, and the next press was held.
+
+The Super Admin approved the four visits in chat the same day. They now count.
+
+**The gap.** "Stuck" counted five sharp tries at one spot and never asked when they were made. On production that
+day, 8 of the 13 stuck holds ever written came from tries under two minutes apart: 7 of them hers (10, 15, 17, 21,
+93, 10 and 8 s) and one by Ahmed Shaaban (27 s). The other 5 spanned 136 seconds to three days, which is a rep
+really coming back to a door.
+
+**The rule now.** The five tries must also be spread over at least two minutes, from the first to the last
+(`STUCK_MIN_SPAN_SECONDS = 120`):
+- The time of each try is the refusal's own `refused_at` (`loadRecentFarTries`), plus the save's own time for the try being judged.
+- A try with no time cannot show a spread, so it is never stuck. Places to re-check reads only the count and the centre, so it is unchanged.
+- A stuck spot is preferred over a larger burst elsewhere.
+
+Burst presses are still refused and still filed on the refused-readings board; they just never put a visit on hold
+by themselves. The alert (B) and the hold (C) read the same function, so they move together. Pinned by
+`tests/phoenix-crm-far-visit-safeguards.test.ts`: the 16 November burst, 119 against 120 seconds, untimed tries,
+and the loader reading `refused_at`.
+
+**Still open.** About 89 holds from other reps, and three more of Esraa's (17, 18 and 22 November), wait on
+**Visits Held for SFE**. They were held under the old rule, and nothing here re-decides them.
