@@ -103,6 +103,7 @@ function savedAsAnOtherClaimThatWaits() {
     [/to_label: nonTravelDestinationLabel\("other"\)/, "no destination is chosen"],
     [/to_place_id: null/, "no destination is chosen"],
     [/captured_location_source: NON_TRAVEL_LOCATION_SOURCE/, "no position was taken"],
+    [/captured_accuracy_meters: null,/, "no position, so no accuracy — 0 is the admin manual-entry marker the expense command reads"],
     [/evidence_gate_status: "grandfathered"/, "no photo step exists, so the gate must not hold an approved claim for ever"],
     [/validateMedicalRepOtherExpenseInput\(input, todayInCairo\(\)\)/, "the server judges with the form's own rule and Cairo's day"],
   ] as const) {

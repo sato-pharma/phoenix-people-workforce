@@ -3812,7 +3812,7 @@ export async function submitMedicalRepOtherExpenseRequest(
         area: identity.employeeArea,
         attachment_count: uploadedAttachments.length,
         calculation_status: "submitted",
-        captured_accuracy_meters: 0,
+        captured_accuracy_meters: null,
         captured_at: now,
         // NOT NULL columns: the registered residence when there is one, 0 otherwise, under the
         // no-travel marker — nothing computes from them (the device the wizard's Other uses).

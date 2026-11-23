@@ -58,6 +58,10 @@ const REQUEST_WRITE_PATHS = [
     why: "the medical rep simple form",
   },
   {
+    fn: "submitMedicalRepOtherExpenseRequest",
+    why: "the medical rep's Other expense — an invoice he paid, no destination",
+  },
+  {
     fn: "createManagerExpenseAsAdmin",
     why: "an admin typing a trip in on behalf of an employee",
   },
