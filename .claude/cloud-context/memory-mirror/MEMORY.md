@@ -29,13 +29,6 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [Expense desk: three choices kept as built](expense-desk-three-choices-kept-as-built-2026-11-23.md) - 23 Nov: refuse a reduction on a held trip; full-screen Open (not expand in place); decided trips read-only after Undo.
-- 🔴 ["Convert to Navy identity"](convert-to-navy-identity-means-the-parked-pr-649-look.md) - the PR 649 portal redesign is a parked BACKUP (tag `backup/navy-identity-2026-11-23`); apply per screen ONLY on those words; never merge 649.
-- 🔴 [Ask the sessions holding a module's newest rules BEFORE building in it](ask-the-sessions-holding-a-modules-newest-rules-before-building-in-it.md) - he said it twice on 23 Nov; fit the build to their answer and tell him rule by rule.
-- [Expense capture rules - his 3 picks (23 Nov)](expense-capture-rules-three-choices-2026-11-23.md) - uploaded arrival photo always Your call; return ticket read with the departure photo; odometer READ from the car photo and chained.
-- 🔴 [District Manager trip priced to the FIRST double visit](dm-trip-priced-to-first-double-visit-2026-11-23.md) - 23 Nov: home → first double/chain visit he managed; no visit = capture + Your call; waiting claims only; both distances on Expense Approvals.
-- [His screen is 2,390 CSS px wide](his-screen-is-2390-css-px-wide-measure-there.md) - 1920 at 80% zoom; measure a desktop layout there as well as 1440, on the live page in his Chrome, pressing nothing.
-- [Prove a component on a transpiled test page](prove-a-component-on-a-transpiled-test-page-when-no-dev-server-fits.md) - no dev server fits and the spare is down: transpile the .tsx with the repo's TypeScript, stub imports, drive it on a localhost page in the built-in browser.
 
 
 
