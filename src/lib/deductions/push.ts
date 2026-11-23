@@ -201,6 +201,9 @@ async function pushOneCandidate(input: {
     dates: Array.isArray(row.dates)
       ? (row.dates as unknown[]).filter((day): day is string => typeof day === "string")
       : candidate.dates,
+    // A day pushed by hand from Daily Deductions carries HR's comment as its reason — the employee
+    // reads it on the portal, so the email says it too. Every other category names its reason by type.
+    note: candidate.sourceSystem === "daily_day_review" ? candidate.reason ?? null : null,
   };
 
   // Notification is best-effort by contract (the money is already committed);

@@ -878,6 +878,9 @@ export async function getPrivateCalendarDayEvidence(
         ...managerOwnVisits.items,
         ...plans.items,
         ...trips.items,
+        // Loaded above since 2026-10-29 and then never listed, so a reviewer read a day spent in interviews as
+        // empty. The workspace lists them; this reader now does too (Daily Deductions' day review, 2026-11-23).
+        ...interviews.items,
       ],
       directory,
     ), visitDetails),
