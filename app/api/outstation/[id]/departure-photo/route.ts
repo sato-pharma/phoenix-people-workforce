@@ -7,6 +7,7 @@ import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence"
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { OutstationPhotoRefusedError } from "@/lib/outstation/blank-frame";
 import { parseJsonBody } from "@/lib/http/request-body";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
@@ -38,6 +39,8 @@ const DeparturePhotoBodySchema = z.object({
 
 function departurePhotoStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
+  // A blank frame, or a car photo whose odometer cannot be read (owner, 2026-11-23): take it again.
+  if (error instanceof OutstationPhotoRefusedError) return 400;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   // Already captured: the request is not in a state that accepts another photo. 409 rather than
   // 400 so a double-tap on a slow connection is distinguishable from a bad payload.

@@ -8,6 +8,7 @@ import {
   getCompressedEvidenceCanvasSize,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
+import { measureCanvasFrame } from "@/components/outstation/measure-blank-frame";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import {
@@ -15,6 +16,7 @@ import {
   type DepartureLocationRefusalReason,
 } from "@/lib/outstation/departure-location-refusals";
 import { DEPARTURE_PHOTO_LOCATION_REQUIRED_MESSAGE } from "@/lib/outstation/departure-photo-location";
+import { blankFrameRefusal } from "@/lib/outstation/blank-frame";
 
 /** One request still owing its departure photo. */
 export type DeparturePhotoPendingRequest = {
@@ -176,6 +178,10 @@ export function DeparturePhotoCard({
         const context = canvas.getContext("2d");
         if (!context) throw new Error("This browser could not prepare the photo.");
         context.drawImage(video, 0, 0, width, height);
+        // Nothing to see — a covered lens, a black or white frame — is refused before the stamp is
+        // drawn over it (owner, 2026-11-23; blank-frame.ts). The server measures the stored photo again.
+        const frame = measureCanvasFrame(canvas);
+        if (frame?.blank) throw new Error(blankFrameRefusal("departure", frame));
 
         // No location, no photo (owner ruling, 2026-09-18). A denied permission, location switched
         // off and a fix that does not arrive in 12 seconds all end here, before anything is stamped
@@ -265,6 +271,9 @@ export function DeparturePhotoCard({
         {isRetake
           ? "Take it again while you are still at the destination. The photo you replace is kept and stays visible to your approver, so a retake never hides anything — it just corrects it."
           : `${requests.length === 1 ? "One expense request is" : `${requests.length} expense requests are`} waiting for a departure photo. Capture it before you leave the destination — the request does not reach payroll until it is taken.`}
+      </p>
+      <p className="mt-1 max-w-3xl text-phx-md leading-relaxed text-orange-900">
+        On a car trip, photograph the dashboard with the kilometre number sharp and in view: the system reads it from the photo.
       </p>
 
       <div className="mt-4 space-y-3">

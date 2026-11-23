@@ -6,6 +6,7 @@ import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
 import { submitOutstationRequest } from "@/lib/outstation/service";
+import { OutstationPhotoRefusedError } from "@/lib/outstation/blank-frame";
 import { TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
 import { NoTicketFareUnavailableError } from "@/lib/outstation/train-fare";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
@@ -72,6 +73,8 @@ function outstationSubmitStatus(error: unknown) {
   if (isForbiddenError(error)) {
     return 403;
   }
+  // A blank photo, or a car photo whose odometer cannot be read, is refused with what to do (owner, 2026-11-23).
+  if (error instanceof OutstationPhotoRefusedError) return 400;
   if (error instanceof TrainTicketRefusedError || error instanceof NoTicketFareUnavailableError) {
     return 400;
   }

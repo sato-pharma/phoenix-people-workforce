@@ -108,7 +108,11 @@ export function runExpenseDeskClaimRowTests() {
     [],
     "every column the payroll mapper reads must be in DESK_CLAIM_COLUMNS, or the desk prices the claim without it",
   );
-  for (const column of DECIDED_CLAIM_COLUMNS.split(", ")) assert.ok(desk.includes(column), `${column} is read for a decided claim only`);
+  for (const column of DECIDED_CLAIM_COLUMNS.split(", ")) {
+    // A path read (`alias:column->key`, the two odometer readings) takes one key of a column the desk reads whole.
+    const source = column.includes(":") ? column.slice(column.indexOf(":") + 1).split("->")[0] : column;
+    assert.ok(desk.includes(source), `${column} is read for a decided claim only`);
+  }
   for (const column of ["workload_gate_status", "evidence_gate_status", "system_lane_at_decision", "system_verdict_at_decision"]) {
     assert.ok(desk.includes(column));
   }
