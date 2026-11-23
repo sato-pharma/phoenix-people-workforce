@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * The items the Phoenix CRM validation audit of 14 Nov 2026 left as they were, closed the same day on the
@@ -159,7 +160,7 @@ export function runPhoenixCrmValidationLeftItemsTests(): void {
   assert.ok(raw.includes("phoenix_crm_backup_20261114.left_items_reopen_stamps") && raw.includes("phoenix_crm_backup_20261114.left_items_copied_pins"), "the header names where the pre-image is");
 
   // ── The services carry the wait to the screen ──────────────────────────────────────────────────
-  const reviews = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const reviews = stripComments(placeCheckSplitSource("validation-reviews", read));
   const decideTs = tsFn(reviews, "export async function decideValidationReview(");
   assert.ok(decideTs.includes('const waitingForBuilding = decision === "approve" && result.waiting_for_building === true;'), "the wait is the database's own answer, on an approve only");
   assert.ok(decideTs.includes('return { reviewId, status: decision === "approve" ? "approved" : "rejected", waitingForBuilding, reopened: result.reopened === true };'), "and the decision's answer carries it, with whether the customer went back to To validate (17 Nov 2026)");
@@ -190,7 +191,7 @@ export function runPhoenixCrmValidationLeftItemsTests(): void {
   const queueSource = placeCheckListSource("validation-review-queue", read);
   assert.ok(queueSource.includes('outcomeOf: (answer) => approvalOutcome(answer, "approved"),'), "🔴 a bulk approve reads the server's answer, as one pressed alone does");
   assert.ok(queueSource.includes('outcomeOf: (answer) => approvalOutcome(answer, "restored"),'), "🔴 and so does a bulk approve-after-all");
-  const bar = stripComments(read("src/components/phoenix-crm/place-check-bulk.tsx"));
+  const bar = stripComments(placeCheckSplitSource("place-check-bulk", read));
   assert.ok(bar.includes("landed.push(action.outcomeOf(await action.run(row, { note, reason }), row));"), "the bar keeps what each answer did, not only whether it threw");
   assert.ok(bar.includes("setSummary(landed.length > 0 ? bulkOutcomeSummary(landed) : null);"), "and says it once the run ends");
   const pickedBlockEnd = bar.indexOf("{VALIDATION_REASON_REQUIRED}</p> : null}\n        </>\n      ) : null}");

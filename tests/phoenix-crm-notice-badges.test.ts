@@ -11,6 +11,7 @@ import {
   validateAgainRecordIdOf,
   type PhoenixCrmUnreadNotice,
 } from "../src/lib/phoenix-crm/notice-badge-rules.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — the pulsing "new" badges (owner, 2026-10-08: "show pumping badges beside the thing that
@@ -172,7 +173,7 @@ export function runPhoenixCrmNoticeBadgeTests() {
     const photos = readFileSync("src/lib/phoenix-crm/server/photos.ts", "utf8");
     assert.match(photos, /const mayShow = photoReachOf\(viewer\);\s*for \(const path of paths\) \{\s*if \(!mayShow\(path\)\) throw new ApiError\(403/, "the sign route asks the SAME reach check");
 
-    const reviews = readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8");
+    const reviews = placeCheckSplitSource("validation-reviews");
     assert.match(reviews, /export async function loadValidateAgainPhotoPaths\(/);
     assert.match(reviews, /selectByIds<\{ id: string; photo_path: string \| null \}>\("phoenix_crm_shared_places", "id, photo_path"/, "a refused building's notice carries the building's id — its door photo answers it");
 

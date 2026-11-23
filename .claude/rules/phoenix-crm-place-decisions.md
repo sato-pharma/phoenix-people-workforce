@@ -1,6 +1,7 @@
 ---
 paths:
   - "src/lib/phoenix-crm/server/{validation-reviews,line-twins,shared-places}.ts"
+  - "src/lib/phoenix-crm/server/validation-reviews/**"
   - "src/components/phoenix-crm/{place-check-done,place-check-restore}.tsx"
   - "app/api/phoenix-crm/validation-reviews/**"
   - "tests/phoenix-crm-{refuse-validation,sfe-place-checks,line-twins}*"

@@ -44,6 +44,13 @@ import { PLACE_CHECK_TABLE_FROM_PX, placeCheckLayoutGuess } from "../src/lib/pho
 import { needsYouDecisionCount, type SeatedCustomer, type VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import type { SharedPlaceBoardRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
+import {
+  PLACE_CHECK_SPLIT_FILES,
+  PLACE_CHECK_SPLIT_PART_HOMES,
+  PLACE_CHECK_SPLIT_PATHS,
+  placeCheckSplitSource,
+  type PlaceCheckSplitFile,
+} from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — Place checks, the rebuild of 23 Nov 2026 (`docs/approvals-rebuild-2026-11-place-checks.md`):
@@ -485,7 +492,8 @@ function runAddressTests() {
 /** Every screen of Place checks that draws a word: the board, the lists it holds, the one-by-one review, the page. */
 const PLACE_CHECK_SCREENS: ReadonlyArray<string> = [
   ...PLACE_CHECK_BOARD_FILES,
-  "src/components/phoenix-crm/place-check-bulk.tsx",
+  // The bulk bar is a file and its part since the split of 23 Nov 2026 (the picks moved out): both draw words.
+  ...PLACE_CHECK_SPLIT_FILES["place-check-bulk"],
   "src/components/phoenix-crm/place-check-decides.tsx",
   "src/components/phoenix-crm/place-check-done.tsx",
   "src/components/phoenix-crm/place-check-notes.tsx",
@@ -629,7 +637,7 @@ function runWordingAndFileTests() {
   // still open in the box under the title. Driven in a browser on the two files as they stand (23 Nov 2026):
   // idle, both lines stood in their title rows and no box was drawn; a tick opened the box; Pick all in the
   // title row kept its focus; a run that saved one and failed one drew the box again to say so.
-  const bulkBar = code("src/components/phoenix-crm/place-check-bulk.tsx");
+  const bulkBar = placeCheckSplitSource("place-check-bulk", code);
   assert.ok(
     bulkBar.includes("export const BulkPickLineSlot = createContext<HTMLElement | null | undefined>(undefined);"),
     "HEADLINE: a section hands no slot unless it says so: every other board and panel keeps the bar whole",
@@ -732,6 +740,25 @@ function runWordingAndFileTests() {
     assert.ok(siblings.length >= 2, `${list}: its parts are read from the folder`);
     for (const path of siblings) {
       assert.ok(files.includes(path) || notAPart.has(path), `🔴 ${path} is a part of ${list} the source pins do not read: add it to PLACE_CHECK_LIST_FILES`);
+    }
+  }
+
+  // 🔴 AND FOR THE THREE LONG FILES SPLIT THE SAME DAY — the server's reviews, the bulk bar and the advice
+  // (tests/support/place-check-split-source.ts): every file in a part's home is one the helper names, so a
+  // part added later is read by the thirty tests that pin those files, or this line goes red.
+  for (const file of Object.keys(PLACE_CHECK_SPLIT_FILES) as PlaceCheckSplitFile[]) {
+    const files = PLACE_CHECK_SPLIT_FILES[file];
+    const original = PLACE_CHECK_SPLIT_PATHS[file];
+    const { folder, prefix } = PLACE_CHECK_SPLIT_PART_HOMES[file];
+    assert.equal(files.filter((path) => path === original).length, 1, `${file}: the file at the original path is read, once`);
+    assert.equal(new Set(files).size, files.length, `${file}: no part is listed twice`);
+    for (const path of files) assert.ok(code(path).length > 0, `${path} exists and holds code`);
+    const parts = readdirSync(new URL(`${folder}/`, ROOT))
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => `${folder}/${name}`);
+    assert.ok(parts.length >= 1, `${file}: its parts are read from the folder`);
+    for (const path of parts) {
+      assert.ok(files.includes(path), `🔴 ${path} is a part of ${file} the source pins do not read: add it to PLACE_CHECK_SPLIT_FILES`);
     }
   }
 }

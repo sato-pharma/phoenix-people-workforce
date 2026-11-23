@@ -17,6 +17,7 @@ import {
 } from "../src/lib/phoenix-crm/place-check-advice.ts";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * The system's recommendation on every place check (owner, 2026-10-17: "add system recommendations to
@@ -334,7 +335,7 @@ function checkScreens() {
     assert.match(source, /\.refusal \?\? ""/, `${file}: a reject opens on the recommendation's confident reason, and on nothing otherwise`);
   }
 
-  const bulk = stripComments(read("src/components/phoenix-crm/place-check-bulk.tsx"));
+  const bulk = stripComments(placeCheckSplitSource("place-check-bulk", read));
   assert.match(bulk, /pickWhere: \(test\) =>/, "the bar can tick exactly the rows the system recommends");
   assert.match(bulk, /Pick the \{toApprove\} the system recommends approving/);
   assert.match(bulk, /Pick the \{toReject\} the system recommends rejecting/);

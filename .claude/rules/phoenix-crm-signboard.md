@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/lib/phoenix-crm/{signboard-rules,place-check-advice}.ts"
+  - "src/lib/phoenix-crm/{signboard-rules,place-check-advice,place-check-advice-kinds}.ts"
   - "src/lib/phoenix-crm/server/{signboard-check,signboard-sweep,signboard-holds}.ts"
   - "src/components/phoenix-crm/signboard-retake-screen.tsx"
   - "app/api/phoenix-crm/list/places/signboard/**"

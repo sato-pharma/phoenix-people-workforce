@@ -12,6 +12,7 @@ import {
   approvalLockedFor,
 } from "../src/lib/phoenix-crm/super-admin-approval-rules.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — what the Super Admin approved, only the Super Admin rejects.
@@ -150,7 +151,7 @@ function checkDatabase(): void {
 }
 
 function checkService(): void {
-  const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const service = placeCheckSplitSource("validation-reviews", read);
   const refuse = /export async function refuseValidatedPlace\([\s\S]*?\n\}/.exec(service);
   assert.ok(refuse, "refuseValidatedPlace is still an exported function");
   const body = refuse[0];

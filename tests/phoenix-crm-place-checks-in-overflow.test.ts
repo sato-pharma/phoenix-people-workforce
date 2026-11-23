@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { chunk, dedupeIds, IN_ID_CHUNK, seatScoped } from "@/lib/phoenix-crm/server/db";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckSplitSource, placeCheckSplitSourceAt } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — the Place checks page must survive a field that has grown.
@@ -97,7 +98,7 @@ function checkSelectByIdsShape(): void {
 }
 
 function checkLoadersGoThroughSelectByIds(): void {
-  const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const service = placeCheckSplitSource("validation-reviews", read);
 
   for (const name of ["loadValidatedPlaces", "loadValidationReviews"]) {
     const body = functionBody(service, name);
@@ -129,7 +130,7 @@ function checkLoadersGoThroughSelectByIds(): void {
   );
   assert.doesNotMatch(validated, /\.order\("created_at"/, "no page of the validated-places read sorts on created_at");
   assert.match(validated, /\.sort\(newestValidatedFirst\)/, "the rows are put back newest first in code");
-  const newest = /\nfunction newestValidatedFirst\([\s\S]*?\n\}/.exec(service)?.[0] ?? "";
+  const newest = /\n(?:export )?function newestValidatedFirst\([\s\S]*?\n\}/.exec(service)?.[0] ?? "";
   assert.ok(newest, "newestValidatedFirst is still the function the rows are sorted by");
   assert.match(newest, /right\.created_at/, "the in-code order is by created_at");
   assert.match(newest, /leftId < rightId \? 1 : -1/, "a tie on created_at falls to id, descending");
@@ -156,7 +157,7 @@ function checkSeatScopeIsBoundedWhereItIsApplied(): void {
 
   // Every Place checks read applies the scope through it, and none of them spells the filter inline.
   for (const path of ["src/lib/phoenix-crm/server/validation-reviews.ts", "src/lib/phoenix-crm/server/shared-places.ts"]) {
-    const source = read(path);
+    const source = placeCheckSplitSourceAt(path, read);
     assert.match(source, /seatScoped\(query, seats\)/, `${path} narrows its reads through seatScoped`);
     assert.doesNotMatch(source, /query\.in\("seat_id"/, `${path} does not spell the seat filter inline, where nothing checks its size`);
   }

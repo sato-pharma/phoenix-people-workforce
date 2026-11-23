@@ -21,6 +21,7 @@ import {
   type SignWinsCandidate,
 } from "../src/lib/phoenix-crm/sign-wins-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * "The sign wins", the advice a decision keeps, and the 30-day agreement (the Place checks rebuild,
@@ -252,7 +253,7 @@ function checkTheStoredAdvice() {
   }
 
   // The decisions keep it: read before, written after, only on a waiting row, never overwritten.
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   const decide = reviews.slice(reviews.indexOf("export async function decideValidationReview"), reviews.indexOf("export async function restoreValidation"));
   const readAt = decide.indexOf("const adviceThen = await adviceOnWaitingReview(reviewId);");
   const rpcAt = decide.indexOf('callPhoenixCrm<Row>("phoenix_crm_decide_validation_review"');

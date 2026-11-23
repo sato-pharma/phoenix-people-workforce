@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { compareOldestFirst, WAITING_LONG_HOURS, waitingHours, waitingIsLong, waitingOldestFirst, waitingText } from "../src/lib/phoenix-crm/waiting-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Place checks lists what is WAITING oldest first, and says how long it has waited (owner, 14 Nov 2026).
@@ -77,7 +78,7 @@ export function runPhoenixCrmWaitingOldestFirstTests(): void {
   assert.deepEqual(rows.map((row) => row.id), ["d1", "w-new", "w-mid", "d2", "w-old", "d3"], "the list handed in is not changed");
 
   // ── The reads and the screens ─────────────────────────────────────────────────────────────────
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   assert.ok(reviews.includes("const reviews = [...reviewById.values()].sort(newestValidatedFirst);"), "the merged read keeps its newest-first order");
   assert.match(
     reviews,

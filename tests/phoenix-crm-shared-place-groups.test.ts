@@ -27,6 +27,7 @@ import type {
 } from "../src/lib/phoenix-crm/view-types.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — Place checks, a polyclinic grouped with the customers seated in it (owner, 2026-10-17:
@@ -444,7 +445,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.equal(sharedPlacePassesOutcome({ status: "active", decidedAtText: null }, "rejected"), false, "and a live one is never rejected");
 
   // ── The server hands the board the building each row is seated in ─────────────────────────────
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   // Since 16 Nov 2026 the review read joins its place in (`REVIEW_SUBJECTS_SELECT`), and the signboard comes
   // by the keys the board reads (`SIGNBOARD_CHECK_KEYS_SELECT`) — `tests/phoenix-crm-place-checks-speed.test.ts`.
   const subjects = read("src/lib/phoenix-crm/place-checks-slim-read.ts");
@@ -616,7 +617,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.equal(byKhaled.get("venue-delta")?.[0]?.decidedByName, "Khaled Bedair", "🔴 a customer sent back carries the name of whoever refused it");
   assert.equal(byKhaled.get("venue-delta")?.[0]?.decidedAtText, "19 Oct 2026, 14:44", "and the time");
 
-  const reviewsSource = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviewsSource = placeCheckSplitSource("validation-reviews", read);
   // Since 2026-11-08 the in-use read's review rows come from phoenix_crm_validated_place_facts in one call.
   assert.ok(reviewsSource.includes('rpc("phoenix_crm_validated_place_facts"'), "the in-use read takes its reviews from the one function");
   assert.ok(

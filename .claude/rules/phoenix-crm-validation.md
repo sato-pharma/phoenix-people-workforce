@@ -2,6 +2,7 @@
 paths:
   - "src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,place-match-groups,validation-feedback,duplicate-merge-rules,validation-review-filters,place-photo-size,photo-reading-rules,pm-name-rules,trusted-point-rules,line-twins,line-lookalikes}.ts"
   - "src/lib/phoenix-crm/server/{venue-timetable,signboard-check,signboard-sweep,signboard-holds,schedule-check,shared-places,place-location,place-match-groups,validation-reviews,full-name-reviews,trusted-point,line-twins,line-lookalikes}.ts"
+  - "src/lib/phoenix-crm/server/validation-reviews/**"
   - "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,refusal-reason-field,reopened-customer-list,shared-place-customers,shared-place-list,shared-place-screens,place-match-board,validated-place-list,validation-review-queue,validation-reviews-board,signboard-retake-screen,live-photo-capture,capture-location,full-name-checks,pm-name-fields,trusted-point-screen,line-lookalike-board}.tsx"
   - "src/components/phoenix-crm/{shared-place-customers,shared-place-list,validated-place-list,validation-review-queue}-{evidence,decision}.tsx"
   - "src/components/phoenix-crm/location-receiver.ts"

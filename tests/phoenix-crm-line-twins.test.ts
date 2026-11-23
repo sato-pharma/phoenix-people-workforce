@@ -14,6 +14,7 @@ import {
   type TwinCustomer,
   type TwinPlace,
 } from "../src/lib/phoenix-crm/line-twins.ts";
+import { placeCheckSplitSource, placeCheckSplitSourceAt } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — one doctor on the three lines' lists (owner, 2026-11-12: "if it is one place in the three
@@ -308,7 +309,7 @@ function runSourceTests(): void {
   assert.match(read("src/lib/phoenix-crm/server/db.ts"), /"phoenix_crm_share_line_validation"/, "the RPC is a known Customer 360 writer");
 
   // A copy is never evidence.
-  assert.match(read("src/lib/phoenix-crm/server/validation-reviews.ts"), /\.neq\("point_source", "line_twin"\)/, "Place checks never lists a copy");
+  assert.match(placeCheckSplitSource("validation-reviews", read), /\.neq\("point_source", "line_twin"\)/, "Place checks never lists a copy");
   assert.equal((read("src/lib/phoenix-crm/server/place-match-groups.ts").match(/\.neq\("point_source", "line_twin"\)/g) ?? []).length >= 1, true, "Same place, several reps never reads a copy");
   assert.match(read("src/lib/phoenix-crm/server/customer-match-groups.ts"), /\.neq\("point_source", "line_twin"\)/, "Same customer, several reps never reads a copy");
 
@@ -330,7 +331,7 @@ function runSourceTests(): void {
   // rejection and the refusal carry the copies WITHOUT measuring their doctors' visits again. The mover's
   // removal above still measures them again — it is a change of where the customer is, not a send-back.
   assert.equal(
-    (read("src/lib/phoenix-crm/server/validation-reviews.ts").match(/followLineTwinCopiesQuietly\(\[[a-zA-Z]+\], viewer\.config\.settings, \{ retired: true, keepDistances: true \}\)/g) ?? []).length,
+    (placeCheckSplitSource("validation-reviews", read).match(/followLineTwinCopiesQuietly\(\[[a-zA-Z]+\], viewer\.config\.settings, \{ retired: true, keepDistances: true \}\)/g) ?? []).length,
     2,
     "a rejection and a refusal carry the copies, and keep their visits' distances",
   );
@@ -352,7 +353,7 @@ function runSourceTests(): void {
     "src/lib/phoenix-crm/server/trusted-point.ts",
     "src/lib/phoenix-crm/server/shared-places.ts",
   ]) {
-    assert.match(read(path), /shareAcrossLinesQuietly\(/, `${path} shares a new validation across the lines`);
+    assert.match(placeCheckSplitSourceAt(path, read), /shareAcrossLinesQuietly\(/, `${path} shares a new validation across the lines`);
   }
   assert.match(read("src/lib/phoenix-crm/server/line-twins.ts"), /SIGNBOARD_SYSTEM_ACTOR/, "the system is the actor, never a person");
 }
