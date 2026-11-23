@@ -18,6 +18,8 @@ const ROUTE = "/api/admin/outstation/approvals/history";
  *
  *   ?source=sheets          the trips that came from the expense sheets (values only)
  *   ?filter=&kind=&from=&to=&search=&offset the decided claims employees filed in Phoenix, 50 at a time
+ *   ?count=1&kind=&from=&to=&search=        only how many decided claims those filters match, no rows —
+ *                                            what an empty waiting lane says is in History
  */
 export async function GET(request: Request) {
   let access: Awaited<ReturnType<typeof resolveAccessContext>> | null = null;
@@ -32,6 +34,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ sheets: await loadSheetHistory(access) });
     }
     const page = await loadDeskHistory(access, {
+      countOnly: url.searchParams.get("count") === "1",
       filter: historyFilterOf(url.searchParams.get("filter")),
       from: url.searchParams.get("from"),
       kind: claimKindFromParam(url.searchParams.get("kind")),

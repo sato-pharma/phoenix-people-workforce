@@ -17,9 +17,9 @@
  *      (a rejection's reason is told to the employee; never a reason that is not true of the trip).
  */
 
-import { claimKindFromParam } from "@/lib/outstation/approvals/claim-kind";
+import { CLAIM_KIND_LABEL, claimKindFromParam } from "@/lib/outstation/approvals/claim-kind";
 import { TRIP_STANDINGS, type TripStanding } from "@/lib/outstation/approvals/standing";
-import { claimInPeriod, tripPeriodOf } from "@/lib/outstation/approvals/trip-period";
+import { claimInPeriod, periodMonth, periodWords, tripPeriodOf } from "@/lib/outstation/approvals/trip-period";
 import type {
   ClaimKind,
   DecisionAction,
@@ -124,11 +124,73 @@ export function laneSummaries(claims: ReadonlyArray<DeskClaim>): Record<Exclude<
   return out;
 }
 
-/** The lane the page opens on when the address names none: Ready when it holds a claim, else Your call. */
-export function openingLane(view: DeskView, claims: ReadonlyArray<DeskClaim>): DeskLane {
-  if (view.lane) return view.lane;
-  return laneSummaries(claims).ready.count > 0 ? "ready" : "your_call";
+/**
+ * True when the view is narrowed by something History also reads — the kind, the trip dates or the
+ * search. "Over 7 days" is about waiting, so it alone sends nobody to History.
+ */
+export function narrowsHistory(view: Pick<DeskView, "from" | "kind" | "search" | "to">): boolean {
+  return view.kind !== null || view.from !== null || view.to !== null || Boolean(view.search.trim());
 }
+
+/**
+ * How many claims each waiting lane shows under the view's filters — the figure on its tab. Owner,
+ * 23 Nov 2026, October picked: "I can see nothing. The tab are empty … Of course, there's something
+ * wrong." The tabs went on saying "Ready (15) · Your call (51)" over two empty lists, because they
+ * counted every waiting claim; a tab now counts what pressing it will show.
+ */
+export function filteredLaneCounts(claims: ReadonlyArray<DeskClaim>, view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">): Record<Exclude<DeskLane, "history">, number> {
+  return { ready: claimsInLane(claims, "ready", view).length, your_call: claimsInLane(claims, "your_call", view).length };
+}
+
+/**
+ * The lane the page opens on when the address names none: Ready when it shows a claim, else Your
+ * call — each read under the filters. When neither shows one and the filters are ones History reads,
+ * what they match is decided, so the page opens on History rather than on an empty list (no claim
+ * with an October trip date was waiting on 23 Nov 2026; all 116 were decided).
+ * `claims` is null while the page has not read them yet.
+ */
+export function openingLane(view: DeskView, claims: ReadonlyArray<DeskClaim> | null): DeskLane {
+  if (view.lane) return view.lane;
+  if (!claims) return "your_call";
+  const counts = filteredLaneCounts(claims, view);
+  if (counts.ready > 0) return "ready";
+  if (counts.your_call > 0) return "your_call";
+  return narrowsHistory(view) ? "history" : "your_call";
+}
+
+/** "Meeting claims with a trip day in October 2026 named “Wesam”" — what the filters ask for, in words. */
+export function filterWords(view: Pick<DeskView, "from" | "kind" | "search" | "to">): string {
+  const parts = [view.kind ? `${CLAIM_KIND_LABEL[view.kind]} claims` : "claims"];
+  const period = tripPeriodOf(view.from, view.to);
+  const words = periodWords(period);
+  if (period.from && period.to) parts.push(period.from === period.to ? `on ${words}` : periodMonth(period) ? `with a trip day in ${words}` : `with a trip day from ${words}`);
+  else if (period.from || period.to) parts.push(`with a trip day ${period.from ? "from " : ""}${words}`);
+  const search = view.search.trim();
+  if (search) parts.push(`for “${search}”`);
+  return parts.join(" ");
+}
+
+/**
+ * What an empty waiting lane says when the filters left it empty. `decided` is how many decided
+ * claims the same filters match (History's own count), or null while it is read or could not be.
+ * The page never leaves an empty list without saying where the claims went.
+ */
+export function emptyLaneWords(view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">, decided: number | null): { history: boolean; message: string; title: string } {
+  const asked = filterWords(view);
+  if (!narrowsHistory(view) || decided === null) {
+    return { history: false, message: "Nothing in this lane matches the search and the filters. Clear them to see every waiting claim.", title: "Nothing matches" };
+  }
+  if (decided > 0) {
+    return {
+      history: true,
+      message: `No waiting ${asked}${view.overSevenDays ? ", over 7 days," : ""} are in this lane. ${decided === 1 ? "The 1 already decided is" : `The ${formatCount(decided)} already decided are`} in History.`,
+      title: `${formatCount(decided)} in History`,
+    };
+  }
+  return { history: false, message: `No ${asked}, waiting or decided. Clear the filters to see every waiting claim.`, title: "Nothing matches" };
+}
+
+const formatCount = (value: number) => value.toLocaleString("en-US");
 
 const fold = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase();
 
