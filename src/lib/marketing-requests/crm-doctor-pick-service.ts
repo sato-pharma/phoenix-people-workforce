@@ -5,6 +5,8 @@
  * territories; a District, Regional or National Manager's territories below his seats; the company
  * roles every territory. The doctors are the AM and PM lists of the chosen area's territories inside
  * that reach — active or not validated yet, never a pharmacy, never a dropped or outside customer.
+ * The same area's Pharmacy lists come back beside them for the desk-mode venue pick, each doctor
+ * and pharmacy carrying the place the desk copies (`crmCopiedPlace`, owner 2026-11-23).
  * A vacant territory still offers its list: a list belongs to the seat, not the person.
  *
  * 🔴 Nothing here writes to Phoenix CRM. The pick only READS a rep's list.
@@ -13,6 +15,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import {
+  crmCopiedPlace,
   crmDoctorAreaChoices,
   crmDoctorAreaIsFixed,
   crmSeatsOfArea,
@@ -21,6 +24,8 @@ import {
   type CrmDoctorAreasPayload,
   type CrmDoctorListPayload,
   type CrmDoctorOption,
+  type CrmPharmacyOption,
+  type CrmPlaceCandidate,
   type ResolvedCrmDoctorPick,
   UNPICKED_CRM_DOCTOR,
 } from "@/lib/marketing-requests/crm-doctor-pick";
@@ -47,20 +52,24 @@ export async function loadCrmDoctorAreas(access: AccessContext): Promise<CrmDoct
   return { areas: crmDoctorAreaChoices(reach), areaFixed: crmDoctorAreaIsFixed(access.role) };
 }
 
-async function loadListRows(seatIds: ReadonlyArray<string>, extra?: { ids: ReadonlyArray<string> }): Promise<Row[]> {
+async function loadListRows(
+  seatIds: ReadonlyArray<string>,
+  extra?: { ids?: ReadonlyArray<string>; listTypes?: ReadonlyArray<string> },
+): Promise<Row[]> {
   const rows: Row[] = [];
+  const listTypes = extra?.listTypes ?? ["AM", "PM"];
   for (const part of chunk(dedupeIds(seatIds), 50)) {
     rows.push(
       ...(await fetchAllRowsKeyset<Row>(
         () => {
           let query = getSupabaseAdmin()
             .from("phoenix_crm_customers")
-            .select("id, seat_id, name, speciality, customer_type, list_type, status")
+            .select("id, seat_id, name, speciality, customer_type, list_type, status, pharmacy_pin_lat, pharmacy_pin_lon, pharmacy_pin_address")
             .in("seat_id", part)
             .eq("is_test", false)
             .in("status", ["active", "pending"])
-            .in("list_type", ["AM", "PM"]);
-          if (extra) query = query.in("id", [...extra.ids]);
+            .in("list_type", [...listTypes]);
+          if (extra?.ids) query = query.in("id", [...extra.ids]);
           return query;
         },
         { cursorColumn: "id", cursorOf: (row) => String(row.id) },
@@ -68,6 +77,34 @@ async function loadListRows(seatIds: ReadonlyArray<string>, extra?: { ids: Reado
     );
   }
   return rows;
+}
+
+/**
+ * Each customer's live places, for the desk-mode copy (`crmCopiedPlace`). Only an active,
+ * non-retired place is ever copied. Read in chunks of ids, every page of each.
+ */
+async function loadLivePlaces(customerIds: ReadonlyArray<string>): Promise<Map<string, CrmPlaceCandidate[]>> {
+  const byCustomer = new Map<string, CrmPlaceCandidate[]>();
+  for (const part of chunk(dedupeIds(customerIds), 150)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_places")
+          .select("id, customer_id, lat, lon, address, captured_at")
+          .in("customer_id", part)
+          .eq("status", "active")
+          .is("retired_at", null),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const row of rows) {
+      const customerId = textOrNull(row.customer_id);
+      if (!customerId) continue;
+      const list = byCustomer.get(customerId) ?? [];
+      list.push({ lat: row.lat, lon: row.lon, address: row.address, capturedAt: row.captured_at });
+      byCustomer.set(customerId, list);
+    }
+  }
+  return byCustomer;
 }
 
 function areaOf(seats: ReadonlyArray<OrgSeat>): CrmDoctorAreaChoice {
@@ -80,9 +117,16 @@ export async function loadCrmDoctorsForArea(access: AccessContext, areaSeatId: u
   const reach = await crmDoctorReach(access);
   const seats = crmSeatsOfArea(reach, typeof areaSeatId === "string" ? areaSeatId : null);
   if (!seats || seats.length === 0) throw forbiddenError("Choose one of your own areas.");
-  const [rows, names] = await Promise.all([
-    loadListRows(seats.map((seat) => seat.seatId)),
+  const seatIds = seats.map((seat) => seat.seatId);
+  const [rows, pharmacyRows, names] = await Promise.all([
+    loadListRows(seatIds),
+    loadListRows(seatIds, { listTypes: ["Pharmacy"] }),
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
+  ]);
+  // Only a validated doctor copies a place, so only theirs are read; every listed pharmacy may.
+  const places = await loadLivePlaces([
+    ...rows.filter((row) => row.status === "active").map((row) => String(row.id)),
+    ...pharmacyRows.map((row) => String(row.id)),
   ]);
   const seatById = new Map(seats.map((seat) => [seat.seatId, seat]));
   const doctors = rows
@@ -100,11 +144,34 @@ export async function loadCrmDoctorsForArea(access: AccessContext, areaSeatId: u
           listType,
           repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
           lineName: seat.lineName,
+          place: crmCopiedPlace({ kind: "doctor", status: row.status, places: places.get(crmCustomerId) ?? [] }),
         },
       ];
     })
     .sort((left, right) => left.name.localeCompare(right.name) || (left.repName ?? "").localeCompare(right.repName ?? ""));
-  return { area: areaOf(seats), doctors };
+  const pharmacies = pharmacyRows
+    .flatMap((row): CrmPharmacyOption[] => {
+      const crmCustomerId = textOrNull(row.id);
+      const seat = seatById.get(textOrNull(row.seat_id) ?? "");
+      const name = textOrNull(row.name);
+      if (!crmCustomerId || !seat || !name) return [];
+      return [
+        {
+          crmCustomerId,
+          name,
+          repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
+          lineName: seat.lineName,
+          place: crmCopiedPlace({
+            kind: "pharmacy",
+            status: row.status,
+            places: places.get(crmCustomerId) ?? [],
+            pin: { lat: row.pharmacy_pin_lat, lon: row.pharmacy_pin_lon, address: row.pharmacy_pin_address },
+          }),
+        },
+      ];
+    })
+    .sort((left, right) => left.name.localeCompare(right.name) || (left.repName ?? "").localeCompare(right.repName ?? ""));
+  return { area: areaOf(seats), doctors, pharmacies };
 }
 
 /**

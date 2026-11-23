@@ -85,8 +85,10 @@ import {
   NOT_ON_CRM_LIST_FLAG,
   readTypedCrmDoctorName,
   typedCrmDoctorValue,
+  type CrmCopiedPlace,
   type CrmDoctorAreasPayload,
   type CrmDoctorOption,
+  type CrmPharmacyOption,
 } from "@/lib/marketing-requests/crm-doctor-pick";
 import {
   canSaveMarketingValidation,
@@ -608,6 +610,13 @@ const NOT_ON_CRM_LIST_VALUE = "__not_on_crm_list__";
 function crmDoctorOptionLabel(doctor: CrmDoctorOption): string {
   const rep = doctor.repName ? `${doctor.repName}${doctor.lineName ? ` (${doctor.lineName})` : ""}` : "Vacant territory";
   return [doctor.name, doctor.speciality, doctor.listType, rep].filter(Boolean).join(" · ");
+}
+
+/** A CRM pharmacy row says whose list it is on and whether picking it brings a location. */
+function crmPharmacyOptionLabel(shop: CrmPharmacyOption): string {
+  const rep = shop.repName ? `${shop.repName}${shop.lineName ? ` (${shop.lineName})` : ""}` : "Vacant territory";
+  const where = shop.place ? (shop.place.source === "place" ? "validated place" : "rep's pin") : "no location yet";
+  return [shop.name, rep, where].join(" · ");
 }
 
 function emptyWorkspace(): MarketingValidationWorkspacePayload {
@@ -2074,6 +2083,14 @@ export function MarketingValidationWorkspace() {
   const [crmAreas, setCrmAreas] = useState<CrmDoctorAreasPayload | null>(null);
   const [crmAreasFailed, setCrmAreasFailed] = useState(false);
   const [crmDoctors, setCrmDoctors] = useState<Record<string, CrmDoctorOption[] | "failed">>({});
+  /** The same area's Phoenix CRM pharmacies, for the desk-mode venue pick that copies a shop's place. */
+  const [crmPharmacies, setCrmPharmacies] = useState<Record<string, CrmPharmacyOption[]>>({});
+  /**
+   * The locations a desk-mode pick copied, by target, each with its own token — a later pick (or a
+   * pick of someone with no place) replaces or clears it, and a slow lookup for an earlier pick never
+   * lands on top of a newer one. A location he searched himself is never in here, so never cleared.
+   */
+  const copiedPlaceRef = useRef(new Map<string, number>());
   const crmDoctorFetchesRef = useRef(new Set<string>());
   // Super Admin only. When set, the whole form switches to desk mode: the location comes from map
   // search instead of the phone's GPS, no live photo is required, and the saved customer is owned
@@ -2201,8 +2218,10 @@ export function MarketingValidationWorkspace() {
           });
           const payload = await response.json();
           const doctors = response.ok && Array.isArray(payload?.doctors) ? (payload.doctors as CrmDoctorOption[]) : null;
+          const pharmacies = response.ok && Array.isArray(payload?.pharmacies) ? (payload.pharmacies as CrmPharmacyOption[]) : [];
           if (!doctors) crmDoctorFetchesRef.current.delete(seatId);
           setCrmDoctors((current) => ({ ...current, [seatId]: doctors ?? "failed" }));
+          setCrmPharmacies((current) => ({ ...current, [seatId]: pharmacies }));
         } catch {
           crmDoctorFetchesRef.current.delete(seatId);
           setCrmDoctors((current) => ({ ...current, [seatId]: "failed" }));
@@ -2481,22 +2500,29 @@ export function MarketingValidationWorkspace() {
 
   /** The doctor fills the name, and the speciality when it is one of ours and none was chosen yet. */
   function chooseCrmDoctor(customer: CustomerLine, value: string) {
+    const target: LocationTarget = { customerKey: customer.key };
     if (value === NOT_ON_CRM_LIST_VALUE) {
       updateCustomer(customer.key, { crmCustomerId: "", name: customer.notOnCrmList ? customer.name : "", notOnCrmList: true });
+      forgetCopiedPlace(target);
       return;
     }
     // A name typed over the list: still flagged for every approver, exactly like "Not on the list".
     const typedName = readTypedCrmDoctorName(value);
     if (typedName) {
       updateCustomer(customer.key, { crmCustomerId: "", name: typedName, notOnCrmList: true });
+      forgetCopiedPlace(target);
       return;
     }
     const list = crmDoctors[customer.crmAreaSeatId];
     const doctor = Array.isArray(list) ? list.find((entry) => entry.crmCustomerId === value) ?? null : null;
     if (!doctor) {
       updateCustomer(customer.key, { crmCustomerId: "", name: "", notOnCrmList: false });
+      forgetCopiedPlace(target);
       return;
     }
+    // Desk mode: a validated doctor's own Phoenix CRM place is copied in, as if searched on the map.
+    if (doctor.place) copyCrmPlace(target, doctor.place);
+    else forgetCopiedPlace(target);
     const knownSpeciality = (MARKETING_CUSTOMER_SPECIALITIES as readonly string[]).includes(doctor.speciality ?? "")
       ? (doctor.speciality ?? "")
       : "";
@@ -2745,6 +2771,71 @@ export function MarketingValidationWorkspace() {
     // A desk-picked pin gets the same address + brick/area/region block as a live GPS capture, so
     // the two are comparable on the screen that reviews them.
     resolveStampLines(target, place.lat, place.lng, null);
+  }
+
+  /**
+   * Copy a picked doctor's or pharmacy's Phoenix CRM place into the form (owner, 2026-11-23: "as if
+   * I copy and paste it"). DESK MODE ONLY: on a rep's own screen the location is always his live GPS
+   * and photo, so nothing is copied there. Google's area/governorate and the stamp block come from
+   * the same lookup a live capture uses, so the saved row reads exactly like a map pick.
+   */
+  function copyCrmPlace(target: LocationTarget, place: CrmCopiedPlace) {
+    if (!isDeskMode) return;
+    const key = targetKey(target);
+    const token = (copiedPlaceRef.current.get(key) ?? 0) + 1;
+    copiedPlaceRef.current.set(key, token);
+    patchLocation(target, {
+      accuracy: null,
+      address: place.address || `${place.lat.toFixed(6)}, ${place.lng.toFixed(6)}`,
+      capturedAt: new Date().toISOString(),
+      latitude: place.lat,
+      longitude: place.lng,
+      locationLines: [],
+    });
+    void fetchEvidenceLocation(MARKETING_LOCATION_ENDPOINT, place.lat, place.lng, null).then((result) => {
+      if (copiedPlaceRef.current.get(key) !== token) return;
+      const area = result?.area ?? "";
+      const governorate = result?.governorate ?? result?.city ?? "";
+      const label = result?.label || [area, governorate].filter(Boolean).join(", ");
+      const stamp = readEvidenceLocationStamp(result, place.lat, place.lng, null);
+      // Same rule as a live capture: the place is written only when the lookup answered, so an
+      // unreachable Google never blanks the area. A copied address is kept over Google's label.
+      patchLocation(
+        target,
+        { ...(!place.address && label ? { address: label } : {}), locationLines: stamp.lines },
+        label ? { area, governorate } : undefined,
+      );
+    });
+  }
+
+  /** A new pick with no place to copy clears only a location an earlier pick copied in. */
+  function forgetCopiedPlace(target: LocationTarget) {
+    const key = targetKey(target);
+    if (!copiedPlaceRef.current.has(key)) return;
+    copiedPlaceRef.current.delete(key);
+    const blank = emptyCapture();
+    patchLocation(
+      target,
+      {
+        accuracy: blank.accuracy,
+        address: blank.address,
+        capturedAt: blank.capturedAt,
+        latitude: blank.latitude,
+        longitude: blank.longitude,
+        locationLines: blank.locationLines,
+      },
+      { area: "", governorate: "" },
+    );
+  }
+
+  /** Desk mode: a pharmacy picked from the rep's Phoenix CRM list fills its name and copies its place. */
+  function chooseCrmPharmacy(customer: CustomerLine, pharmacyKey: string, crmCustomerId: string) {
+    const shop = (crmPharmacies[customer.crmAreaSeatId] ?? []).find((entry) => entry.crmCustomerId === crmCustomerId);
+    if (!shop) return;
+    const target: LocationTarget = { customerKey: customer.key, pharmacyKey };
+    updatePharmacy(customer.key, pharmacyKey, { name: shop.name });
+    if (shop.place) copyCrmPlace(target, shop.place);
+    else forgetCopiedPlace(target);
   }
 
   function applyLivePhoto(dataUrl: string, photoCapturedAt: string, photoFix: ShutterFix) {
@@ -3665,6 +3756,23 @@ export function MarketingValidationWorkspace() {
                           </div>
                           ) : (
                           <div className="grid gap-3 md:grid-cols-6">
+                            {isDeskMode && (crmPharmacies[customer.crmAreaSeatId] ?? []).length > 0 ? (
+                              <div className="md:col-span-6">
+                                <Field label="Copy from the rep's CRM pharmacies (name and location)">
+                                  <SelectField
+                                    onChange={(value) => chooseCrmPharmacy(customer, pharmacy.key, value)}
+                                    value=""
+                                  >
+                                    <option value="">Choose the pharmacy</option>
+                                    {(crmPharmacies[customer.crmAreaSeatId] ?? []).map((shop) => (
+                                      <option key={shop.crmCustomerId} value={shop.crmCustomerId}>
+                                        {crmPharmacyOptionLabel(shop)}
+                                      </option>
+                                    ))}
+                                  </SelectField>
+                                </Field>
+                              </div>
+                            ) : null}
                             <div className="md:col-span-2">
                               <Field label="Pharmacy Name">
                                 <Input
