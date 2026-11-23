@@ -71,6 +71,10 @@ export async function readPlaceChecksWide(viewer: PhoenixCrmViewer): Promise<Pla
   return {
     everything: {
       validated,
+      // Every building and every customer sent back: the page sends only the buildings that need a decision
+      // and the customers seated in them (`venuesSentWithPage`); the Polyclinics tab and History draw these.
+      sharedPlaces: sets.sharedPlaces,
+      reopened: reopenedRead.rows,
       // Every decision: the board keeps the page's copy of any row the page also sent (`mergeDecided`), so
       // this read needs no knowledge of what the page chose to send.
       olderDecided: reviews.rows.filter((row) => row.status !== "pending"),

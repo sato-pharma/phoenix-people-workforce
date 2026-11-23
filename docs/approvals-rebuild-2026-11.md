@@ -7,8 +7,9 @@ checks (whether a customer's place is validated). The owner had both audited on 
 then ordered both rebuilt. This is the account of that rebuild. Module rules live in
 `.claude/rules/expenses.md`; this file holds the evidence and the reasons.
 
-Part 1 (Expense Approvals) is written. Part 2 (Place checks) is added by the pull request that
-rebuilds it.
+Part 1 (Expense Approvals) is written here. Part 2 (Place checks) is its own file,
+`docs/approvals-rebuild-2026-11-place-checks.md`, with every speed pass after the rebuild (the last,
+"The narrow opening": the page sends only the buildings that need a decision).
 
 ## His words
 

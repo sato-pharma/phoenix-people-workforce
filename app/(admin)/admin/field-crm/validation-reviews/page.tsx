@@ -12,7 +12,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { placeCheckLayoutGuess } from "@/lib/phoenix-crm/place-check-layout";
 import { placeChecksBoardSets } from "@/lib/phoenix-crm/place-checks-board-sets";
-import { decidedSentWithPage, seatedPlacesInUse } from "@/lib/phoenix-crm/place-checks-on-demand";
+import { decidedSentWithPage, seatedInVenues, seatedPlacesInUse, venuesSentWithPage } from "@/lib/phoenix-crm/place-checks-on-demand";
 import { canRestoreValidation, readsCompanyPlaceChecks, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { SFE_RECOMMENDATIONS_PATH } from "@/lib/phoenix-crm/sfe-recommendations";
 import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
@@ -142,9 +142,16 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // never read them here: the page reads what it sends.
   // 🔴 NOR THE RECENT DECISIONS OF SINGLE CLINICS (23 Nov 2026): only History and "Approved by the system"
   // draw them, so they wait for those tabs. The seated ones go, because a building's card shows everybody.
-  const sentDecided = decidedSentWithPage(decided.filter((row) => row.recent), sharedPlaces);
-  // A place seated in a building that is not on this board is not drawn by it either.
-  const seatedInUse = seatedPlacesInUse(validated, sharedPlaces);
+  // 🔴 AND OF THE BUILDINGS, ONLY THOSE THAT NEED A DECISION (owner, 23 Nov 2026: "first list within 2
+  // seconds"): all 433 buildings went with every customer seated in them, 2.5 MB of the 3.6 MB page, for the
+  // 10 held and the few holding a waiting customer that the lanes draw. Every other building, its customers
+  // and the single clinics' sent-back customers come with the click (`server/place-checks-wide-read.ts`).
+  // The Figures card below still counts every building: this page reads them all, it only sends fewer.
+  const sentVenues = venuesSentWithPage(sharedPlaces, waiting);
+  const sentDecided = decidedSentWithPage(decided.filter((row) => row.recent), sentVenues);
+  // A place seated in a building the page does not send is not drawn by it either.
+  const seatedInUse = seatedPlacesInUse(validated, sentVenues);
+  const sentReopened = seatedInVenues(reopened, sentVenues);
   // The moment this page was read: the board asks for its figures once, and again when this changes.
   const onDemand = { readAt: new Date().toISOString() };
 
@@ -227,9 +234,9 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
           onDemand={onDemand}
           openOn={openOn}
           pending={waiting}
-          reopened={reopened}
+          reopened={sentReopened}
           sfeRecommended={decides ? { count: sfeRecommendedCount, href: SFE_RECOMMENDATIONS_PATH } : undefined}
-          sharedPlaces={sharedPlaces}
+          sharedPlaces={sentVenues}
           signWins={decides ? signWins : undefined}
           slots={slots}
           title={{
