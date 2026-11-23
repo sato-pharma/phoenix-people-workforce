@@ -135,8 +135,10 @@ export function SharedPlaceList({
         {groups.map(({ customers, total, venue: row }) => (
           // Closed until pressed: the building's name, its state and who captured it; its photographs, its
           // decision and everybody seated in it open under it (one building ran 14,000 px drawn whole).
-          <PhoneFold key={row.sharedPlaceId} summary={<VenueHeader mode={mode} row={row} />}>
+          <PhoneFold key={row.sharedPlaceId} summary={<VenueHeader mode={mode} part="summary" row={row} />}>
             <div className="space-y-4 px-4 pt-1">
+              {/* What the closed card leaves out: when it was captured and where it stands. */}
+              <VenueHeader mode={mode} part="rest" row={row} />
               {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                 <SignPhoto headed row={row} />

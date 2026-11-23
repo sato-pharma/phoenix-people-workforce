@@ -151,18 +151,17 @@ export function ValidationReviewQueue({
           <PhoneFold
             key={row.reviewId}
             summary={
-              <>
-                <Who row={row} />
+              <Who part="summary" row={row}>
                 {/* The system's word is the Super Admin's alone, and only on a row that still waits. */}
                 {bulk && section === "waiting" ? (
-                  <div className="mt-1.5">
-                    <CrmPill tone={ADVICE_TONE[adviseOnReview(row).kind]}>System: {PLACE_CHECK_ADVICE_LABEL[adviseOnReview(row).kind]}</CrmPill>
-                  </div>
+                  <CrmPill tone={ADVICE_TONE[adviseOnReview(row).kind]}>System: {PLACE_CHECK_ADVICE_LABEL[adviseOnReview(row).kind]}</CrmPill>
                 ) : null}
-              </>
+              </Who>
             }
           >
             <div className="space-y-3 px-4 pb-4">
+              {/* The lines a closed card leaves out: when it was captured, and the earlier decision in full. */}
+              <Who part="rest" row={row} />
               {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
               <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
               <Evidence row={row} />

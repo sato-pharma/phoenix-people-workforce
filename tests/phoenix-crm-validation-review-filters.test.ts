@@ -168,7 +168,14 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
     "the read behind the page reads every decision, not the 14-day window",
   );
   assert.ok(!page.includes("everyDecision"), "🔴 and the page itself reads the 14-day window alone: every decision was 2,377 rows read before the first waiting place");
-  assert.match(page, /realDecided = real\(decided\)\.filter\(\(row\) => row\.recent\)/, "the 14-day cards still count only the recent decisions");
+  // The two 14-day cards left the page on 23 Nov 2026 ("Fix what is under 9.5"): it reads only the seated
+  // decisions now, so the read behind the page counts them, by the day of the decision.
+  assert.ok(!page.includes("realDecided"), "🔴 the page counts no card from decisions it no longer reads");
+  assert.match(
+    read("src/lib/phoenix-crm/place-checks-on-demand.ts"),
+    /const inWindow = decided\.filter\(\(row\) => isReal\(row\) && row\.decidedAt !== null && Date\.parse\(row\.decidedAt\) >= since\);/,
+    "the 14-day cards count only the decisions of the last 14 days, by the day decided",
+  );
   assert.match(board, /filters\.decider \? everyDecided : everyDecided\.filter\(\(row\) => row\.recent\)/, "the older decisions show only while a decider is chosen");
   assert.match(board, /\{team \? null : \(\s*<CrmField htmlFor="vr-decider"/, "the Decided by box is the company board's alone");
   for (const prop of ["capped={capped}", "decided={sentDecided}", "onDemand={onDemand}", "pending={waiting}", "reopened={reopened}", "sharedPlaces={sharedPlaces}", "validated={seatedInUse}"]) {
