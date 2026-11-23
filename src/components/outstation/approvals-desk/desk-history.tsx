@@ -12,7 +12,7 @@ import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import { displayPlace } from "@/lib/outstation/place-label";
 import { cn } from "@/lib/utils";
 
-import { MoneyCell, STANDING_RAIL, StandingPill, TripLine, egp, tripDates } from "./desk-parts";
+import { MoneyCell, PHONE_TARGET, STANDING_RAIL, StandingPill, TripLine, egp, tripDates } from "./desk-parts";
 
 const ROUTE = "/api/admin/outstation/approvals/history";
 const CHOICES: ReadonlyArray<{ key: DeskHistoryChoice; label: string }> = [
@@ -113,7 +113,7 @@ export function DeskHistory({
             <button
               aria-pressed={choice === entry.key}
               className={cn(
-                "inline-flex min-h-9 items-center border px-3 py-1 text-xs font-black transition",
+                "inline-flex min-h-11 items-center border px-3 py-1 text-xs font-black transition md:min-h-9",
                 choice === entry.key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-slate-500",
               )}
               data-history-choice={entry.key}
@@ -140,7 +140,7 @@ export function DeskHistory({
               <HistoryCard claim={claim} key={claim.requestId} onOpen={onOpen} />
             ))}
           </div>
-          <CrmTable columns={["26%", "17%", null, "14%", "9%"]}>
+          <CrmTable columns={["25%", "16%", null, "13%", "13%"]}>
             <thead>
               <tr>
                 <th className={crmThClassName} scope="col">Employee and trip</th>
@@ -203,7 +203,7 @@ function ReasonText({ claim }: { claim: DeskClaim }) {
 
 function OpenButton({ claim, onOpen }: { claim: DeskClaim; onOpen: (requestId: number) => void }) {
   return (
-    <button className={approvalActionClassName("neutral", "dense")} data-open-trip onClick={() => onOpen(claim.requestId)} type="button">
+    <button className={approvalActionClassName("neutral", "dense", PHONE_TARGET)} data-open-trip onClick={() => onOpen(claim.requestId)} type="button">
       <Eye aria-hidden className="h-3.5 w-3.5 shrink-0" />
       {DESK_WORDS.open}
     </button>

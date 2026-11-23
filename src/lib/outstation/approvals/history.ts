@@ -25,6 +25,7 @@ import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
 import { OUTSTATION_UNDECIDED_STATUSES } from "@/lib/outstation/undecided-claim";
 import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 export const HISTORY_PAGE_SIZE = 50;
 
@@ -81,7 +82,9 @@ export async function loadDeskHistory(
   // Each `or` is its own condition; PostgREST joins them with AND.
   if (filter === "approved") query = query.or(APPROVED_STATUS_FILTER);
   if (filter === "rejected") query = query.or(REJECTED_STATUS_FILTER);
-  if (search) query = query.or(`employee_name.ilike.%${search}%,employee_hr_id.ilike.%${search}%`);
+  // The one builder quotes the term (src/lib/supabase/search-filter.ts); an empty answer means no filter.
+  const searchFilter = search ? ilikeAnyFilter(["employee_name", "employee_hr_id"], search) : "";
+  if (searchFilter) query = query.or(searchFilter);
   if (!accessFilter.all) query = applyEmployeeHrIdInFilter(query, allowed);
 
   const { count, data, error } = await query.range(offset, offset + HISTORY_PAGE_SIZE - 1);

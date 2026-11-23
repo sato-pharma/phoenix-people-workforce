@@ -168,7 +168,7 @@ function DeskTableRow({ canDecide, claim, onOpen, onPress, onTick, ticked }: Row
       </tr>
       {mode !== "idle" ? (
         <TableRowDetail colSpan={5} id={panelId}>
-          <DecisionPanel claim={claim} key={mode} mode={mode} onClose={() => setMode("idle")} onPress={onPress} />
+          <DecisionPanel claim={claim} key={mode} mode={mode} onClose={() => setMode("idle")} onPress={onPress} size="dense" />
         </TableRowDetail>
       ) : null}
     </Fragment>

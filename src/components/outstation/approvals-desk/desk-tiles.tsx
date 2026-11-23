@@ -40,7 +40,7 @@ export function DeskTopLine({ onToggleOld, overOnly, queue }: { onToggleOld: () 
         <button
           aria-pressed={overOnly}
           className={cn(
-            "inline-flex min-h-8 items-center border px-2 py-0.5 text-xs font-black transition",
+            "inline-flex min-h-11 items-center border px-2 py-0.5 text-xs font-black transition md:min-h-8",
             overOnly ? "border-orange-600 bg-orange-600 text-white" : "border-orange-300 bg-orange-50 text-orange-800 hover:border-orange-500",
           )}
           data-over-seven={top.overSevenDays}

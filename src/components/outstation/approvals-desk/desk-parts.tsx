@@ -28,8 +28,26 @@ export function travelLabel(transportation: string): string {
   if (key === "train" || key === "ticket_journey") return "Ticket";
   if (key === "no_ticket") return "No ticket";
   if (key === "bus") return "Bus";
-  return key ? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ") : "";
+  if (key === "other") return "Other transport";
+  // A value this list does not know draws nothing; a stored code is never printed.
+  return "";
 }
+
+/**
+ * What the opened trip says beside a visit whose position needs a second look, or null. Phoenix CRM
+ * stores `ok`, `far`, `weak_gps` and `no_place` (`VisitLocationFlag`). `ok` needs no note, and
+ * `no_place` is about the customer having no saved place, not about this visit, so neither draws a
+ * pill. A value this list does not know draws nothing; the stored code is never printed.
+ */
+export function visitLocationNote(flag: string | null | undefined): string | null {
+  const key = String(flag ?? "").trim().toLowerCase();
+  if (key === "far") return "Far from the saved place";
+  if (key === "weak_gps") return "Weak GPS reading";
+  return null;
+}
+
+/** Added to a dense button drawn on a phone card: 44px tall under `md`, dense from `md` up. */
+export const PHONE_TARGET = "max-md:min-h-11";
 
 export const STANDING_TONE: Record<TripStanding, PillTone> = {
   approved_held: "warn",

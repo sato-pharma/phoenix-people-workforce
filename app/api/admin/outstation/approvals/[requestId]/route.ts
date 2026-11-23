@@ -4,8 +4,9 @@ import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response"
 import { assertOutstationExpenseApprovalReviewAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
-import { deskRouteFailure, positiveInteger } from "@/lib/outstation/approvals/route-failure";
+import { deskRouteFailure } from "@/lib/outstation/approvals/route-failure";
 import { loadDeskTripFile } from "@/lib/outstation/approvals/trip-file";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ requ
     if (unauthenticated) return unauthenticated;
     assertOutstationExpenseApprovalReviewAccess(access, "expense approvals");
 
-    const requestId = positiveInteger((await params).requestId);
+    const requestId = parseOutstationRequestId((await params).requestId);
     if (requestId === null) {
       return NextResponse.json({ error: "invalid_outstation_id", message: "Request id is invalid." }, { status: 400 });
     }

@@ -29,7 +29,7 @@ import { egp } from "./desk-parts";
 /** A row's tick. The label is a 44px-tall target drawn over the row's own padding, so it adds no height. */
 export function TickBox({ checked, name, onChange }: { checked: boolean; name: string; onChange: (checked: boolean) => void }) {
   return (
-    <label className="-my-3 -ml-2 inline-flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center" data-tick>
+    <label className="-my-3 -ml-2 inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center md:w-9" data-tick>
       <span className="sr-only">Tick {name || "this employee"}&apos;s claim</span>
       <input checked={checked} className="h-4 w-4 rounded-none accent-orange-600" onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
@@ -95,7 +95,7 @@ export function SelectionBar({
       </div>
       {leftOut.length > 0 ? (
         <p className="mt-2 min-w-0 break-words border-l-2 border-amber-500 pl-3 text-sm font-semibold text-slate-700" data-needs-opening={leftOut.length}>
-          Not in {DESK_WORDS.approve}: {leftOut.map((claim) => claim.employeeName || claim.tripId).join(", ")}. {leftOut.length === 1 ? "This trip has" : "These trips have"} an idle day and would be held out
+          Not in {DESK_WORDS.approve}: {leftOut.map((claim) => claim.employeeName || "Unassigned").join(", ")}. {leftOut.length === 1 ? "This trip has" : "These trips have"} an idle day and would be held out
           of payroll, so approving {leftOut.length === 1 ? "it" : "them"} pays the idle day in full. {DESK_WORDS.open} {leftOut.length === 1 ? "it" : "each one"} to decide.
         </p>
       ) : null}

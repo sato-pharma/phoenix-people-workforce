@@ -253,4 +253,34 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   const hook = read("use-desk.ts");
   assert.ok(hook.includes("body: JSON.stringify(pressBody(press)),"), "HEADLINE: and that body is exactly what the page sends");
   assert.equal((hook.match(/method: "POST"/g) ?? []).length, 1, "the desk has one write, the press");
+
+  // ── 4. What the look-over of 23 Nov found, before the desk was ever merged ──────────────────
+  const select = read("desk-select.tsx");
+  // History's Open button was clipped between 768 and 1250 px: its column was 9% of the table.
+  assert.ok(history.includes('columns={["25%", "16%", null, "13%", "13%"]}'), "History's last column is wide enough for the Open button on a tablet");
+
+  // On a phone every press target is 44px. A dense button gets it under md only.
+  assert.ok(parts.includes('export const PHONE_TARGET = "max-md:min-h-11";'), "the one phone-target class");
+  assert.ok(history.includes('approvalActionClassName("neutral", "dense", PHONE_TARGET)} data-open-trip'), "History's Open on a phone card is 44px tall");
+  assert.equal((read("desk-rewrite.tsx").match(/"neutral", "dense", PHONE_TARGET\)/g) ?? []).length, 2, "Rewrite formally and its Undo are 44px tall on a phone");
+  assert.ok(select.includes("inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center md:w-9"), "the tick is 44px wide on a phone");
+  assert.ok(tiles.includes("inline-flex min-h-11 items-center border px-2 py-0.5 text-xs font-black transition md:min-h-8"), "the over-7-days switch is 44px tall on a phone");
+  assert.ok(history.includes("inline-flex min-h-11 items-center border px-3 py-1 text-xs font-black transition md:min-h-9"), "History's choices are 44px tall on a phone");
+  assert.ok(read("desk-undo-bar.tsx").includes("inline-flex h-11 w-11 shrink-0 items-center justify-center hover:bg-black/5 md:h-8 md:w-8"), "a notice's close is 44px on a phone");
+
+  // A stored code is never printed: a name, never a trip id; words, never a flag with its underscores swapped.
+  for (const name of readdirSync(dir).filter((entry) => entry.endsWith(".tsx"))) {
+    assert.doesNotMatch(read(name), /\.replace\(\/_\/g/, name + " prints a stored code with its underscores swapped for spaces");
+  }
+  assert.doesNotMatch(select, /employeeName \|\| claim\.tripId/, "a claim with no name reads Unassigned, never its trip id");
+  assert.ok(select.includes('leftOut.map((claim) => claim.employeeName || "Unassigned")'), "the trips a batch leaves out are named the way every row names them");
+  assert.match(parts, /if \(key === "far"\) return "Far from the saved place";\s*if \(key === "weak_gps"\) return "Weak GPS reading";\s*return null;/, 'a visit\'s position note is words; "ok" and "no_place" draw no pill');
+  assert.ok(read("desk-days.tsx").includes("{visitLocationNote(visit.locationFlag) ? <CrmPill"), "the opened trip draws that note, and nothing when there is none");
+  assert.match(parts, /if \(key === "other"\) return "Other transport";\s*return "";/, "a transport value the desk does not know draws nothing");
+
+  // The confirm pair inside a table row is the dense, flat size; a phone card and the opened trip keep the 44px one.
+  assert.match(list, /<TableRowDetail colSpan=\{5\} id=\{panelId\}>\s*<DecisionPanel [^\n]*size="dense" \/>/, "Reduce and Reject confirm flat inside the table");
+  assert.equal((list.match(/<DecisionPanel [^\n]*size="dense"/g) ?? []).length, 1, "only the table row's panel is dense");
+  assert.ok(decision.includes('approvalActionClassName(mode === "reject" ? "reject" : "confirm", size)'), "the confirm button takes the panel's size");
+  assert.match(decision, /onPress,\s*size = "regular",\s*\}: \{\s*claim: DeskClaim;\s*mode: Exclude<DecisionMode, "idle">;/, "and a panel is regular unless the table says otherwise");
 }

@@ -9,7 +9,7 @@ import { tripDayCount } from "@/lib/outstation/approvals/desk-view";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import { displayPlace } from "@/lib/outstation/place-label";
 
-import { egp, travelLabel } from "./desk-parts";
+import { PHONE_TARGET, egp, travelLabel } from "./desk-parts";
 
 /**
  * Only the figures already on the screen are offered to the rewrite, so the note can cite the
@@ -77,13 +77,13 @@ export function RewriteFormally({
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-rewrite-formally>
-      <button className={approvalActionClassName("neutral", "dense")} disabled={busy || !value.trim()} onClick={() => void rewrite()} title="Rewrite this reason as a formal note for the employee" type="button">
+      <button className={approvalActionClassName("neutral", "dense", PHONE_TARGET)} disabled={busy || !value.trim()} onClick={() => void rewrite()} title="Rewrite this reason as a formal note for the employee" type="button">
         {busy ? <LoaderCircle aria-hidden className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <PenLine aria-hidden className="h-3.5 w-3.5 shrink-0" />}
         {busy ? "Rewriting" : "Rewrite formally"}
       </button>
       {previous !== null ? (
         <button
-          className={approvalActionClassName("neutral", "dense")}
+          className={approvalActionClassName("neutral", "dense", PHONE_TARGET)}
           onClick={() => {
             onChange(previous);
             setPrevious(null);

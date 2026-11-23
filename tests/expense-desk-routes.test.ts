@@ -18,7 +18,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { DESK_DECISION_LIMIT, DeskDecideBodySchema } from "@/lib/outstation/approvals/decision-body";
-import { positiveInteger } from "@/lib/outstation/approvals/route-failure";
 import { composeTripFile, TRIP_FILE_SOURCES } from "@/lib/outstation/approvals/trip-file";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import type { CrmTripEvidenceResult } from "@/lib/outstation/crm-trip-evidence-reader";
@@ -104,8 +103,9 @@ export function runExpenseDeskRoutesTests() {
   assert.ok(DeskDecideBodySchema.safeParse(many(DESK_DECISION_LIMIT)).success);
   assert.ok(!DeskDecideBodySchema.safeParse(many(DESK_DECISION_LIMIT + 1)).success, "one request never decides more than the limit");
 
-  assert.equal(positiveInteger("293"), 293);
-  for (const bad of ["0", "-1", "29.5", "293abc", "", null, "1e3", " "]) assert.equal(positiveInteger(bad), null, `"${bad}" is no request id`);
+  // The opened-trip route takes its id through the one outstation parser (tests/outstation-request-id-parse.test.ts).
+  const tripRoute = code("app/api/admin/outstation/approvals/[requestId]/route.ts");
+  assert.match(tripRoute, /const requestId = parseOutstationRequestId\(\(await params\)\.requestId\);\s*if \(requestId === null\)/, "a malformed id answers 400 before any read");
 
   // 4. Its own registry entries.
   const decideEntry = findAccessRegistryEntry("/api/admin/outstation/approvals", "POST");

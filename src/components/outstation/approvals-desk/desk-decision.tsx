@@ -112,7 +112,20 @@ export function DecisionButtons({
 }
 
 /** The second press of a rejection or a reduced amount. Mounted only while one is open. */
-export function DecisionPanel({ claim, mode, onClose, onPress }: { claim: DeskClaim; mode: Exclude<DecisionMode, "idle">; onClose: () => void; onPress: OnPress }) {
+export function DecisionPanel({
+  claim,
+  mode,
+  onClose,
+  onPress,
+  size = "regular",
+}: {
+  claim: DeskClaim;
+  mode: Exclude<DecisionMode, "idle">;
+  onClose: () => void;
+  onPress: OnPress;
+  /** `dense` inside a table row (flat, no lift); `regular` on a phone card and in the opened trip. */
+  size?: "dense" | "regular";
+}) {
   const id = useId();
   const chips = reasonChips(claim);
   const cut = claim.standing === "waiting" ? claim.preCut : null;
@@ -194,7 +207,7 @@ export function DecisionPanel({ claim, mode, onClose, onPress }: { claim: DeskCl
 
       <div className="flex min-w-0 flex-wrap gap-2">
         <button
-          className={approvalActionClassName(mode === "reject" ? "reject" : "confirm", "regular")}
+          className={approvalActionClassName(mode === "reject" ? "reject" : "confirm", size)}
           data-press-confirm={mode}
           disabled={!text || (mode === "reduce" && (figure === null || tooHigh))}
           onClick={() => send(text)}
@@ -202,7 +215,7 @@ export function DecisionPanel({ claim, mode, onClose, onPress }: { claim: DeskCl
         >
           {mode === "reject" ? DESK_WORDS.reject : figure !== null && !tooHigh ? `${DESK_WORDS.reduce} to ${egp(figure)}` : DESK_WORDS.reduce}
         </button>
-        <button className={approvalActionClassName("neutral", "regular")} onClick={onClose} type="button">
+        <button className={approvalActionClassName("neutral", size)} onClick={onClose} type="button">
           Cancel
         </button>
       </div>

@@ -13,6 +13,7 @@ import { tripSpan } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
 import { DeskDayMapBox } from "./desk-day-map";
+import { visitLocationNote } from "./desk-parts";
 
 /**
  * The trip, day by day — Phoenix CRM's reading of each day and that day's own map.
@@ -206,7 +207,7 @@ function DayReading({ day, pins }: { day: CrmDayReading; pins: Array<number | nu
               ) : null}
               {visit.kmFromDestination !== null ? <span className="text-slate-500"> · {km(visit.kmFromDestination)} from destination</span> : null}
               {visit.unplanned ? <CrmPill className="ml-1" tone="warn">Unplanned</CrmPill> : null}
-              {visit.locationFlag ? <CrmPill className="ml-1" tone="warn">Location: {visit.locationFlag.replace(/_/g, " ")}</CrmPill> : null}
+              {visitLocationNote(visit.locationFlag) ? <CrmPill className="ml-1" tone="warn">{visitLocationNote(visit.locationFlag)}</CrmPill> : null}
             </li>
           ))}
         </ul>

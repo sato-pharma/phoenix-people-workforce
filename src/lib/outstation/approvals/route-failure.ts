@@ -43,11 +43,3 @@ export async function deskRouteFailure(input: {
   });
   return NextResponse.json({ error: input.code, message }, { status: 500 });
 }
-
-/** A whole number above zero from a path or query value, or null. */
-export function positiveInteger(value: string | null | undefined): number | null {
-  const text = String(value ?? "").trim();
-  if (!/^\d{1,12}$/.test(text)) return null;
-  const parsed = Number(text);
-  return parsed > 0 ? parsed : null;
-}
