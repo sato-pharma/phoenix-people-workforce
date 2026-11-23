@@ -23,6 +23,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const SERVICE = "src/lib/outstation/service.ts";
 const ATTACHMENTS_ROUTE = "app/api/admin/outstation/[id]/attachments/route.ts";
+const ATTACHMENTS_DATA = "src/lib/outstation/trip-attachments-data.ts";
 const TRIP_ATTACHMENTS = "src/components/outstation/trip-attachments.tsx";
 const EXPENSE_CENTER = "src/components/outstation/outstation-requests-admin.tsx";
 const PHOTOS_COMPONENT = "src/components/outstation/trip-evidence-photos.tsx";
@@ -151,8 +152,11 @@ export function runOutstationApproverTripPhotosTests() {
 
   // ── 6. Expense Approvals, where the approve and reject buttons are ─────────
   const route = code(ATTACHMENTS_ROUTE);
-  assert.match(route, /photos: approverTripPhotos\(requestRow\)/, "the attachments route must send both photos");
-  assert.match(route, /departureEvidenceImageUrl: requestRow\.departureEvidenceImageUrl/);
+  // What the route sends is composed in ATTACHMENTS_DATA since 2026-11-23; the route is its thin caller.
+  const attachmentsData = code(ATTACHMENTS_DATA);
+  assert.match(route, /NextResponse\.json\(await loadTripAttachments\(id\)\)/, "the attachments route sends exactly what the shared read composes");
+  assert.match(attachmentsData, /photos: approverTripPhotos\(requestRow\)/, "the attachments route must send both photos");
+  assert.match(attachmentsData, /departureEvidenceImageUrl: requestRow\.departureEvidenceImageUrl/);
   assert.match(route, /assertOutstationAdminAccess\(access, "approve"\)/, "the photos stay behind the approver's own gate");
 
   const tripAttachments = code(TRIP_ATTACHMENTS);
@@ -211,11 +215,23 @@ export function runOutstationApproverTripPhotosTests() {
   const photosFile = code("src/components/outstation/trip-evidence-photos.tsx");
   assert.match(photosFile, /<div className="relative h-80 w-full bg-slate-900" data-turnable-photo>\s*<ZoomablePhoto\b(?:=>|[^>])*?\brotatable\b/, "HEADLINE: and so can an arrival or departure photo");
   assert.match(attachments, /const uploads = tickets\.length > 0 \? <UploadedPictures large tickets=\{tickets\} \/> : null;/);
-  const signals = code("src/components/outstation/expense-review/review-deck/deck-signals.ts");
-  assert.match(signals, /line: `No trip photos owed · \$\{uploaded\} to look at\.`/, "HEADLINE: the findings count the uploads, never hide them behind Not required");
-  assert.match(signals, /const withUploads = \(line: string\) =>/, "every photo sentence carries the upload count");
-  const fieldWork = code("src/components/outstation/expense-review/review-deck/deck-days.tsx");
-  assert.match(fieldWork, /<UploadedPictures large=\{false\} tickets=\{attachments\.tickets\} \/>/, "HEADLINE: and the view the reviewer opens on shows them too");
+  // Rebuilt 2026-11-23 (approvals-desk/): one trip is ONE scroll, and "Photos and tickets" is always
+  // on it, so the uploads can no longer sit behind a view nobody opens. The findings count them too.
+  const checks = code("src/lib/outstation/approvals/checks.ts");
+  assert.ok(
+    checks.includes('if (isOutstationEvidenceWaivedRole(facts.role)) return check(key, "pass", "This role owes no trip photos.");'),
+    "a role that owes no photo passes the two photo checks in words",
+  );
+  assert.ok(
+    checks.includes('if (facts.attachments > 0) return check("ticket", "pass", `${plural(facts.attachments, "ticket photo")} attached.`);'),
+    "HEADLINE: the findings count the uploads, never hide them behind Not required",
+  );
+  const tripFile = code("src/components/outstation/approvals-desk/desk-trip-file.tsx");
+  assert.ok(
+    tripFile.includes('<Sheet name="attachments" title="Photos and tickets">') &&
+      tripFile.includes("<TripAttachments data={file.attachments} onChanged={readAgain} tripId={claim.tripId} />"),
+    "HEADLINE: and the one scroll the reviewer opens shows them, with the shared photo and ticket parts",
+  );
   assert.doesNotMatch(component, /font-mono/, "no monospace on the photo card");
   assert.match(attachments, /title=\{title\}/, "the stored file name rides in the tooltip");
 }

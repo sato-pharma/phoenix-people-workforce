@@ -12,8 +12,9 @@ import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/adm
  * outlined one there — so the same decision looked different depending on where it was reached.
  *
  * Only the LOOK and the WORDS are shared. Who may decide, which buttons a step offers, and where the
- * decision is posted stay with each module: Expense Approvals keeps its batch save (owner, 14 Nov
- * 2026), and Marketing and Market Awareness keep their own inboxes.
+ * decision is posted stay with each module: on Expense Approvals a press saves at once with Undo
+ * (owner, 23 Nov 2026, lifting his 14 Nov "keep its batch save"), and Marketing and Market Awareness
+ * keep their own inboxes.
  *
  * The rules it carries: square edges (no radius anywhere); a filled action lifts and drops the lift
  * when disabled (tests/approvals-hub-premium-depth.test.ts); 44px tall at the regular size; the

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 /**
  * Per-day field-visit workload for a person across a trip window, read from Phoenix CRM through the
  * CRM visits door (the iReports360 archive only before his team's start). Backs the outstation
- * expense-review "Verify workload" panel and the employee's own trip panel.
+ * old-record panel on Expense Approvals, the Held requests screen and the employee's own trip panel.
  * Counts every field visit where the rep is the primary agent OR the double-visit partner —
  * unlike the double-visit evidence route, which misses solo days and drops partner-side visits
  * whose primary agent has since departed.

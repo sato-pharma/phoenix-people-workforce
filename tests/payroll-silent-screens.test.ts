@@ -7,6 +7,9 @@ import ExcelJS from "exceljs";
 import type { AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import { buildFinanceSheetWorkbook } from "../src/lib/automated-payroll/exports/finance-sheet.ts";
 import type { MonthlySalaryRun } from "../src/lib/automated-payroll/types.ts";
+import { deskDecisionOutcome } from "../src/lib/outstation/approvals/decision-plan.ts";
+import { type DeskPress, pressNotices } from "../src/lib/outstation/approvals/press-queue.ts";
+import type { DeskClaim } from "../src/lib/outstation/approvals/types.ts";
 import { escapeLikePattern } from "../src/lib/payroll/payslip-center.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -150,31 +153,50 @@ export async function runPayrollSilentScreensTests() {
   );
 
   // ==== 47: a warning the server sent and the screen threw away ==================================
-  // Rebuilt 2026-11-07: the save loop is the hook's, the banner is review-banners.tsx.
-  const workspace = stripComments(
-    source("src/components/outstation/expense-review/use-expense-review.ts") +
-      source("src/components/outstation/expense-review/review-banners.tsx"),
+  // Rebuilt 2026-11-23 (approvals-desk/): the desk's own route proves each decision by re-reading the
+  // claim, and the page says every answer that is not a plain "saved". The rule is unchanged: a
+  // decision that did not reach payroll never reads as done.
+  {
+  const queued = { approvedAmount: null, employeeName: "Rep A", payable: 500, requestId: 7, standing: "approved_queued", total: 500 } as unknown as DeskClaim;
+  const held = { approvedAmount: null, employeeName: "Rep A", payable: 500, requestId: 7, standing: "approved_held", total: 500 } as unknown as DeskClaim;
+  const stillWaiting = { approvedAmount: null, employeeName: "Rep A", payable: 500, requestId: 7, standing: "waiting", total: 500 } as unknown as DeskClaim;
+  assert.equal(
+    deskDecisionOutcome({ action: "approve", after: stillWaiting, approved: 500, requestId: 7 }).code,
+    "refused",
+    "HEADLINE: an approval whose claim still reads waiting afterwards is answered as NOT saved, whatever the write's own count said",
   );
-  assert.match(
-    workspace,
-    /const warnings = payload\?\.payrollWarnings;/,
-    "HEADLINE: the screen reads the payroll warnings the route has been sending all along",
+  assert.equal(deskDecisionOutcome({ action: "approve", after: null, approved: 500, requestId: 7 }).code, "refused", "a claim that could not be re-read is not called saved either");
+  assert.equal(deskDecisionOutcome({ action: "approve", after: queued, approved: 500, requestId: 7 }).message, null, "an approval that reached payroll says nothing more");
+  const heldOutcome = deskDecisionOutcome({ action: "approve", after: held, approved: 500, requestId: 7 });
+  assert.equal(heldOutcome.code, "saved");
+  assert.ok(heldOutcome.message?.includes("Held out of payroll"), "HEADLINE: an approval the payroll gate holds says so in words");
+  const carried = deskDecisionOutcome({ action: "approve", after: queued, approved: 500, requestId: 7, skipped: { reason: "payroll row not applied" } });
+  assert.equal(carried.message, "Payroll row not applied.", "and whatever the workflow said about a claim is carried to the page, never dropped");
+
+  const pressed = {
+    claims: [stillWaiting, { ...stillWaiting, employeeName: "Rep B", requestId: 8 }],
+    decisions: [],
+    dueAt: 0,
+    id: 1,
+  } as unknown as DeskPress;
+  const notices = pressNotices(pressed, [{ ...heldOutcome }], "Not saved.");
+  assert.deepEqual(
+    notices.map((notice) => `${notice.requestId}:${notice.tone}`),
+    ["7:warn", "8:bad"],
+    "HEADLINE: every claim of the press is answered — a caution for the held one, and the claim the answer never mentioned is named as not saved",
   );
-  assert.match(
-    workspace,
-    /setSavePayrollWarnings\(\[\.\.\.new Set\(payrollNotApplied\)\]\)/,
-    "and keeps them for the banner rather than dropping them on the floor",
+  const noticeBar = stripComments(source("src/components/outstation/approvals-desk/desk-undo-bar.tsx"));
+  assert.ok(noticeBar.includes("{notices.map((notice) => ("), "HEADLINE: every notice is rendered, not counted");
+  assert.ok(
+    noticeBar.includes('role={notice.tone === "bad" ? "alert" : undefined}') && !/emerald|CheckCircle|Check\b/.test(noticeBar.slice(noticeBar.indexOf("export function DeskNotices"))),
+    "HEADLINE: a decision that did not reach payroll never wears a green tick",
   );
-  assert.match(
-    workspace,
-    /savePayrollWarnings\.map\(\(line\) => \(/,
-    "HEADLINE: every warning is rendered, not counted",
+  const deskHook = stripComments(source("src/components/outstation/approvals-desk/use-desk.ts"));
+  assert.ok(
+    deskHook.includes("setNotices((current) => mergeNotices(current, pressNotices(press, outcomes, DESK_REFUSAL.notSaved)));"),
+    "the page keeps what came back for the banner rather than dropping it on the floor",
   );
-  assert.match(
-    workspace,
-    /saveSkipped\.length > 0 \|\| savePayrollWarnings\.length > 0\s*\?\s*"warning"/,
-    "HEADLINE: a save that did not reach payroll never wears a green tick",
-  );
+  }
 
   // ==== 38: the cover of the document the month is executed from =================================
   // Read from the EMITTED workbook, never from the source: a cover row can be built and still not

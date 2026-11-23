@@ -141,8 +141,13 @@ function wiring() {
   assert.ok(panel.length > 100);
   assert.doesNotMatch(panel, /<input|<InputField|onChange/, "the fixed fare is shown, never typed");
 
-  const deck = code("src/components/outstation/expense-review/review-deck/deck-subject.tsx");
-  assert.match(deck, /record\.noTicketFareLine \? \(\s*<SubjectFact className="col-span-2" label="Fixed train fare">/, "the approvals deck prints the stations line");
+  // The approvals desk (rebuilt 2026-11-23): the stations line rides in the ticket check's sentence.
+  const deskChecks = code("src/lib/outstation/approvals/checks.ts");
+  assert.ok(
+    deskChecks.includes('return check("ticket", "pass", line ? `No ticket: priced at the fixed train fare. ${line}` : "No ticket: priced at the fixed train fare.");'),
+    "the approvals desk prints the stations line",
+  );
+  assert.ok(code("src/lib/outstation/approvals/claim-row.ts").includes("noTicketFareLine"), "and the queue read carries it");
 }
 
 export function runOutstationNoTicketTrainFareTests() {

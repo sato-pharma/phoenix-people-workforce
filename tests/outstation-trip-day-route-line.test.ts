@@ -81,7 +81,7 @@ export function runOutstationTripDayRouteLineTests() {
   assert.equal(approverTripRoute({ ...base, residenceLatitude: null })?.home, null, "no home pin without home coordinates");
 
   // -- the wiring -----------------------------------------------------------------------------------
-  const route = code("app/api/admin/outstation/[id]/attachments/route.ts");
+  const route = code("src/lib/outstation/trip-attachments-data.ts");
   assert.match(route, /tripRoute: approverTripRoute\(requestRow\)/, "the attachments read sends the trip's route");
 
   const map = code("src/components/field-workforce-compliance/field-workforce-route-map.tsx");
@@ -89,9 +89,15 @@ export function runOutstationTripDayRouteLineTests() {
   assert.match(map, /path: tripPath,/, "the map draws the trip's route as its own line");
   assert.match(map, /markers\.some\(\(marker\) => marker\.at\) \? dayRouteLine\(points, markers\) : null/, "timed pins join the day's line");
 
-  const review = code("src/components/outstation/expense-review/review-deck/deck-days.tsx");
-  assert.equal((review.match(/tripRoute=\{routeFor\(/g) ?? []).length, 2, "both day-map mounts receive the trip's route");
-  assert.match(review, /dayKey === firstDay \|\| dayKey === lastDay/, "the way out and back: first and last day");
-  assert.match(review, /\{ at: photo\.capturedAt \?\? null, id: photo\.kind/, "a photo pin carries its time");
-  assert.match(review, /at: stop\.capturedAt,/, "a stop pin carries its time");
+  // The approvals desk (rebuilt 2026-11-23): what a day's map holds is decided in day-map.ts.
+  const dayMap = code("src/lib/outstation/approvals/day-map.ts");
+  assert.ok(dayMap.includes("const tripRoute = input.hasTripRoute && (date === firstDay || date === lastDay);"), "the way out and back: first and last day");
+  assert.ok(dayMap.includes("{ at: photo.capturedAt, id: photo.kind, label, lat: point.lat, lon: point.lon, title: photo.label }"), "a photo pin carries its time");
+  assert.ok(dayMap.includes("{ at: stop.capturedAt, id: `stop-${stop.stopNumber}`, label, lat: point.lat, lon: point.lon, title: name }"), "a stop pin carries its time");
+  const dayBox = code("src/components/outstation/approvals-desk/desk-day-map.tsx");
+  assert.equal((dayBox.match(/<FieldWorkforceRouteMap /g) ?? []).length, 1, "one map a day");
+  assert.ok(
+    dayBox.includes("const tripRoute = map.tripRoute ? routeLine : null;") && dayBox.includes("route={null} tripRoute={tripRoute} />"),
+    "and it receives the trip's route on the days that carry it",
+  );
 }

@@ -24,7 +24,7 @@
  *  - SUBMISSION refuses the copy with words that name the earlier claim (service.ts), checked
  *    before any file is stored. Never a database constraint, never a stored claim auto-rejected.
  *  - The APPROVALS screen flags every pair already stored ("Same ticket as …"), a review signal
- *    only (expense-review/review-parts.tsx). Stored pairs are decided by HR on Expense Approvals.
+ *    only (the duplicate check in approvals/queue.ts). Stored pairs are decided by HR on Expense Approvals.
  *
  * Pure and synchronous: the read that feeds it lives in service.ts.
  */

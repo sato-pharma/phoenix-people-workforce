@@ -1720,6 +1720,14 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses/import", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/admin/outstation/expenses/reports/:id", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/expenses/export", permission: null, guard: "domain-helper" }),
+  // Expense Approvals, rebuilt 2026-11-23. Reading is the Super Admin and the CEO
+  // (assertOutstationExpenseApprovalReviewAccess); deciding is the Super Admin on a real session
+  // (assertSystemAdministratorWorkspaceAccess + assertRealSessionForDecision). Each has its own
+  // entry so none falls through to the /api/admin/outstation/** blanket's `outstation:read`.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/approvals", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/approvals", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/approvals/history", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/approvals/:requestId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/payroll/copilot/start", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/payroll/copilot/:runId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/payroll/copilot/:runId/message", permission: null, guard: "domain-helper", csrfRequired: true }),

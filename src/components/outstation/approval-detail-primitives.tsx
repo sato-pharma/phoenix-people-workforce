@@ -6,9 +6,10 @@ import type { ReactNode } from "react";
  * The Expense Approvals detail layout, shared.
  *
  * Owner request (2026-08-04): a held outstation REQUEST must present its detail exactly as the
- * Expense Approval does. These are the actual components that screen uses, lifted out of
- * the old expense-approvals-workspace.tsx rather than reimplemented — two lookalike copies is precisely
- * how "exactly the same" stops being true after the first edit to one of them.
+ * Expense Approval does. These are the components that screen used, lifted out of it rather than
+ * reimplemented — two lookalike copies is precisely how "exactly the same" stops being true after
+ * the first edit to one of them. Expense Approvals was rebuilt on 2026-11-23 (approvals-desk/);
+ * its old-record sheet and the Held requests screen still draw these.
  *
  * Presentation only. Neither screen's data or decisions live here.
  */
