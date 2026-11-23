@@ -9,7 +9,17 @@ import { CrmLoadError, CrmLoading, CrmNote, crmInputClassName } from "@/componen
 import { formatNumberValue } from "@/lib/i18n/format";
 import { kindCounts } from "@/lib/outstation/approvals/claim-kind";
 import { DESK_DECISION_LIMIT } from "@/lib/outstation/approvals/decision-body";
-import { DESK_LANES, DESK_LANE_LABEL, DESK_WORDS, type DeskLane, claimsInLane, laneSummaries, readyBatch } from "@/lib/outstation/approvals/desk-view";
+import {
+  DESK_LANES,
+  DESK_LANE_LABEL,
+  DESK_WORDS,
+  type DeskLane,
+  claimsInLane,
+  filteredLaneCounts,
+  laneSummaries,
+  narrowsHistory,
+  readyBatch,
+} from "@/lib/outstation/approvals/desk-view";
 import type { TripStanding } from "@/lib/outstation/approvals/standing";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +31,7 @@ import { DeskReviewer } from "./desk-reviewer";
 import { DeskList } from "./desk-row";
 import { DeskTiles, DeskTopLine } from "./desk-tiles";
 import { DeskNotices, DeskUndoBar } from "./desk-undo-bar";
+import { useDecidedCount } from "./use-decided-count";
 import { useDesk } from "./use-desk";
 
 /**
@@ -40,6 +51,11 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
 
   const narrowed = Boolean(view.search.trim()) || view.overSevenDays || view.kind !== null || view.from !== null || view.to !== null;
   const lanes = queue ? laneSummaries(queue.claims) : null;
+  // Each tab counts what pressing it will show (owner, 23 Nov 2026: "The tab are empty … there's
+  // something wrong" — they said 15 and 51 over two empty lists). History's figure is its own count
+  // under the same filters, read only while one of them is set.
+  const shown = queue && narrowed ? filteredLaneCounts(queue.claims, view) : null;
+  const decided = useDecidedCount({ enabled: Boolean(queue) && narrowsHistory(view), from: view.from, kind: view.kind, search: view.search, to: view.to, version: desk.historyVersion });
   const laneClaims = queue && lane !== "history" ? claimsInLane(queue.claims, lane, view) : [];
   // The figure on each kind button: the lane on screen as the search, "over 7 days" and the trip dates
   // leave it, before the kind narrows it — so a button says what pressing it will show.
@@ -111,7 +127,7 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
 
           <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-slate-200">
             <DeskTabs
-              counts={{ ready: lanes?.ready.count ?? 0, your_call: lanes?.your_call.count ?? 0 }}
+              counts={{ history: decided, ready: shown?.ready ?? lanes?.ready.count ?? 0, your_call: shown?.your_call ?? lanes?.your_call.count ?? 0 }}
               lane={lane}
               onChoose={(next) => desk.setView({ lane: next })}
             />
@@ -167,11 +183,14 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
               }
               canDecide={canDecide}
               claims={laneClaims}
+              decided={decided}
               key={lane}
               lane={lane}
               narrowed={narrowed}
               onOpen={open}
               onPress={desk.press}
+              onShowHistory={() => desk.setView({ history: "all", lane: "history" })}
+              view={view}
             />
           )}
 
@@ -198,7 +217,16 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
   );
 }
 
-function DeskTabs({ counts, lane, onChoose }: { counts: Record<Exclude<DeskLane, "history">, number>; lane: DeskLane; onChoose: (lane: DeskLane) => void }) {
+function DeskTabs({
+  counts,
+  lane,
+  onChoose,
+}: {
+  /** History's figure is null when nothing History reads is filtered, or while its count is read. */
+  counts: Record<Exclude<DeskLane, "history">, number> & { history: number | null };
+  lane: DeskLane;
+  onChoose: (lane: DeskLane) => void;
+}) {
   function move(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const last = DESK_LANES.length - 1;
     const target =
@@ -233,7 +261,11 @@ function DeskTabs({ counts, lane, onChoose }: { counts: Record<Exclude<DeskLane,
         >
           <span className="break-words">
             {DESK_LANE_LABEL[key]}
-            {key !== "history" ? <span className="tabular-nums"> ({formatNumberValue(counts[key])})</span> : null}
+            {key !== "history" ? (
+              <span className="tabular-nums"> ({formatNumberValue(counts[key])})</span>
+            ) : counts.history !== null ? (
+              <span className="tabular-nums" data-history-count={counts.history}> ({formatNumberValue(counts.history)})</span>
+            ) : null}
           </span>
         </button>
       ))}
