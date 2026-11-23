@@ -15,6 +15,7 @@ import { runNeedsYouDailyDigest } from "@/lib/needs-you/deliver/daily";
 import { runNeedsYouWeeklyEmail } from "@/lib/needs-you/deliver/weekly";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
+import { priceWaitingDistrictManagerClaims } from "@/lib/outstation/dm-double-visit-distance-server";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import {
   releaseStrandedAcceptedOutstationClaims,
@@ -187,6 +188,9 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
   // no payroll row carries is handed to the same release, as the system (claims 111 and 347, 21 Nov 2026 — the
   // capture's own release had failed, and after the departure photo nothing ever tried again). It decides nothing:
   // the claim was already accepted, and the release works out the same figures it always does.
+  //
+  // Last, every waiting District Manager claim is priced again on the first double visit of its trip
+  // (dm-double-visit-distance-server.ts).
   "outstation-departure-photo": {
     resultName: "outstationDeparturePhotoReminders",
     run: async (_request, onJobFailure) => {
@@ -202,7 +206,17 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
         });
         return { checked: 0, errors: 1, released: 0, stillHeld: 0, detail: clientSafeErrorMessage(error, "The retry did not run.") };
       });
-      return { ...reminders, strandedClaimRelease };
+      // A waiting District Manager claim is priced from his home to the first double visit of the trip (owner,
+      // 2026-11-23): the rep often saves the visit after the manager filed, so it is read again each morning until
+      // the claim is decided. Waiting claims only; a decided claim never moves.
+      const doubleVisitPricing = await priceWaitingDistrictManagerClaims().catch((error: unknown) => {
+        logError("Outstation: the morning pricing of District Manager claims on their first double visit did not run", {
+          error,
+          labels: { event: "outstation_dm_double_visit_run_failed", job: "daily-outstation-departure-photo" },
+        });
+        return { failed: 1, moneyMoved: 0, read: 0, written: 0, detail: clientSafeErrorMessage(error, "The pricing did not run.") };
+      });
+      return { ...reminders, doubleVisitPricing, strandedClaimRelease };
     },
   },
   "resignation-sla": {

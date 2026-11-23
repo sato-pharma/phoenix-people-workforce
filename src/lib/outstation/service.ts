@@ -137,6 +137,7 @@ import {
   returnTicketAskIsDue,
 } from "@/lib/outstation/missing-ticket";
 import { returnTicketState } from "@/lib/outstation/return-ticket";
+import { isDistrictManagerRole } from "@/lib/outstation/dm-double-visit-distance";
 import {
   isNonTravelExpenseType,
   NON_TRAVEL_APPROVAL_REASON,
@@ -1286,7 +1287,7 @@ export async function getOutstationPolicies() {
   }));
 }
 
-async function getActivePolicyForRole(roleName: string) {
+export async function getActivePolicyForRole(roleName: string) {
   const policies = await getOutstationPolicies();
   const exact = policies.find(
     (policy) => policy.active && policy.roleName.toLowerCase() === roleName.toLowerCase(),
@@ -2779,7 +2780,7 @@ export async function submitOutstationRequest(
     }
   }
 
-  const submitted = mapOutstationRequestRow({
+  let submitted = mapOutstationRequestRow({
     ...data,
     car_evidence_image_path: carEvidenceImagePath,
     car_evidence_metadata: persistedCarEvidenceMetadata,
@@ -2791,6 +2792,23 @@ export async function submitOutstationRequest(
         )
       : data.notes,
   });
+  // A District Manager's trip is priced from his home to the first double visit of the trip (owner,
+  // 2026-11-23; dm-double-visit-distance.ts). Priced here, before the notices, so a claim whose visit
+  // is already in lands and is announced at that price; the 07:02 Cairo job prices the rest. Loaded
+  // on demand (it reads this module back). A failure never fails the submission he just made: the
+  // claim stays priced on his capture, and the next morning run tries again.
+  if (!nonTravel && isDistrictManagerRole(calculation.employeeRole)) {
+    try {
+      const { priceClaimOnFirstDoubleVisit } = await import("@/lib/outstation/dm-double-visit-distance-server");
+      const outcome = await priceClaimOnFirstDoubleVisit(submitted.id);
+      if (outcome.result === "written") submitted = (await getOutstationRequestById(submitted.id)) ?? submitted;
+    } catch (priceError) {
+      logError("A District Manager claim could not be priced on its first double visit at submit", {
+        error: priceError,
+        labels: { event: "outstation_dm_double_visit_price_on_submit_failed", requestId },
+      });
+    }
+  }
   // Every submission now WAITS — whether it passed every automated check or was flagged by one
   // (owner decisions 2026-08-08 and 2026-08-09). Nothing is pushed to payroll from here, and
   // nothing is refused from here either; only an explicit human decision in the queue does either,

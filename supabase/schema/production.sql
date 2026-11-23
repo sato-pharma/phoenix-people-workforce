@@ -65823,6 +65823,7 @@ CREATE TABLE public.outstation_expense_requests (
     no_ticket_fare jsonb,
     system_lane_at_decision text,
     system_verdict_at_decision jsonb,
+    distance_basis jsonb,
     CONSTRAINT outstation_evidence_gate_status_check CHECK ((evidence_gate_status = ANY (ARRAY['pending_arrival_photo'::text, 'pending_departure_photo'::text, 'complete'::text, 'grandfathered'::text]))),
     CONSTRAINT outstation_expense_requests_expense_type_check CHECK (((expense_type IS NULL) OR (expense_type = ANY (ARRAY['traveling'::text, 'meeting'::text, 'other'::text])))),
     CONSTRAINT outstation_expense_requests_journey_stops_is_array CHECK ((jsonb_typeof(journey_stops) = 'array'::text)),
@@ -65954,6 +65955,12 @@ COMMENT ON COLUMN public.outstation_expense_requests.system_lane_at_decision IS 
 --
 
 COMMENT ON COLUMN public.outstation_expense_requests.system_verdict_at_decision IS 'The system''s checks as they stood at the decision, with the action taken, the figures and the time. Read by the 30-day agreement meter; never by a pay rule.';
+
+--
+-- Name: COLUMN outstation_expense_requests.distance_basis; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.outstation_expense_requests.distance_basis IS 'District Manager trips only: what the travel is priced on (first_double_visit | no_double_visit | unmeasured), the road km from home to the capture point and to the first double visit, and the figures the system left on the claim. Written by src/lib/outstation/dm-double-visit-distance-server.ts. Null for everyone else.';
 
 --
 -- Name: CONSTRAINT outstation_expense_requests_expense_type_check ON outstation_expense_requests; Type: COMMENT; Schema: public; Owner: postgres
