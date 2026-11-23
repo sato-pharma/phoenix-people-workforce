@@ -65,6 +65,7 @@ The validation is recorded in the name of the source's validator. It is never sh
 | Skip reason | Why |
 | --- | --- |
 | `in_review` | his own capture is waiting for the Super Admin — that decision comes first |
+| `rejected_capture` | his own last capture was **rejected** — the Super Admin confirms the other line's validation on Same customer, other line (below) |
 | `drop_requested` | a drop is asked for him |
 | `full_name_held` / `needs_full_name` | his full name is held or still needed |
 | `two_on_one_line` | two different validated doctors of this name on one line — whose place is it? |
@@ -72,6 +73,24 @@ The validation is recorded in the name of the source's validator. It is never sh
 | `twice_on_this_list` | he is on his own list twice — the same-seat duplicate merge comes first |
 
 The RPC re-checks under the row's lock and answers `{skipped: …}` if the row stopped waiting in the meantime.
+
+### A rejected capture is never undone in silence (owner, 23 November 2026)
+
+> "If this doctor have more than one validation by more than one rep, then check those more validations.
+> Okay, so I must know that this is one customer, but it has those validations."
+
+On 20 Nov (03:20) and 22 Nov (21:04) this rule validated two doctors — جوزيف محروس تادرس on CNS and
+عبد الله على الاسود on Anti Infective — from another line's capture, hours after the Super Admin had rejected
+their own captures (a missing timetable; a photo of paper). Nobody told him. Four more such doctors were his own
+"Same customer" clicks on 19 Nov, and those were his decisions.
+
+So the rule now reads each waiting row's **latest decided validation review** (`kind = 'validation'`,
+approved or rejected). When it is a rejection (`lastRejectedAt`), the rule skips the row
+(`rejected_capture`) and the pair goes on **"Same customer, other line"** as a **Certain** card, with the
+warning "This row's own capture was rejected on … (reason). Judge the other line's validation below before
+confirming." beside the other line's photographs and evidence. Only his **Same customer** validates it
+(`docs/phoenix-crm-line-lookalikes.md`). A row whose latest decision was an approval (then reopened) is
+shared as before.
 
 ## The copy follows its source — `phoenix_crm_places_line_twin_follow`
 

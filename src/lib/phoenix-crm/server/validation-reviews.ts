@@ -1261,6 +1261,12 @@ export type ValidatedPlaceRow = {
    * refuse it (owner, 2026-11-16). Always false for a Super Admin viewer.
    */
   lockedBySuperAdmin?: boolean;
+  /**
+   * 🔴 Approved, and still under To validate: his building is still being checked, and its approval
+   * validates him (migration 20261114062049). The board reads "Approved, waits for the building" —
+   * never a decision still owed on HIM (owner, 2026-11-23, the Place checks audit).
+   */
+  waitsForBuilding?: boolean;
   /** Visits already measured against this place — refusing it un-places every one of them. */
   visits: number;
   /** Other active places this customer has: when there are none, refusing sends him back to To validate. */
@@ -1470,6 +1476,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         photoPath: text(row.photo_path),
         trustedPoint: row.point_source === "trusted",
         lockedBySuperAdmin: lockedFor(approvals.get(String(row.id))?.decided_by_hr_id, row.created_by_hr_id),
+        waitsForBuilding: approvals.has(String(row.id)) && (row.customer as Row | null)?.status === "pending" && text(row.shared_place_id) !== null,
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),

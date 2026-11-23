@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { MessageSquareQuote, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
+import { PlaceCheckPageRead } from "@/components/phoenix-crm/place-check-page-read";
 import { PlaceCheckRestoreProvider } from "@/components/phoenix-crm/place-check-restore";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
@@ -67,9 +68,12 @@ export default async function SfeRecommendationsPage() {
     reject: real(places.reject) + real(buildings.reject),
   };
   const capped = reviews.capped || venues.capped;
+  // The server's own stamp of this read: a decision made on it is owed until a page read after it is drawn.
+  const readAt = new Date().toISOString();
 
   return (
     <div className="space-y-5">
+      <PlaceCheckPageRead readAt={readAt} />
       <AdminPageHero
         eyebrow="CRM"
         title="SFE recommendations"
