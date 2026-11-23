@@ -5,13 +5,13 @@ metadata:
   node_type: memory
   type: project
   originSessionId: d6cd0e8b-e41c-4195-bfe9-3759a7718c37
-  modified: 2026-11-14T01:03:13.365Z
+  modified: 2026-11-23T02:39:24.550Z
 ---
 
 Owner decisions for audit item REC-032 (one approvals interface, notices + screens in ONE PR), 14 Nov 2026 ~03:05 Cairo, by multiple choice:
 
 1. **"Same notices only"** — every module's approval notices move onto the one raising function, but each person receives exactly what they receive today. The known gaps are NOT filled in REC-032: expense claims send no "waiting for you" to the approver and no "approved"; probation and deduction decisions are silent; Market Awareness approval reaches the requester and his manager only as an email Cc. They go on a list for him to decide one by one.
-2. **Expense Approvals "Keep its batch save"** — it wears the shared approval row's look and wording, but claims are still marked on screen and saved together (POST /api/admin/outstation/expenses).
+2. **Expense Approvals "Keep its batch save"** — it wears the shared approval row's look and wording, but claims are still marked on screen and saved together (POST /api/admin/outstation/expenses). 🔴 **LIFTED by him on 23 Nov 2026 (~02:35 Cairo), by multiple choice: "Save at once, with Undo"**, for the Expense Approvals rebuild he ordered that night (pull request 699, branch `codex/expense-decision-desk`; account `docs/approvals-rebuild-2026-11.md` once it merges). Until 699 merges, `main` still batches; after it, there is no Save button and a mark-then-save step must not come back.
 
 Standing scope (from the plan): Marketing keeps its own inbox; who approves does not change.
 
