@@ -62,9 +62,18 @@ function jpegSize(bytes: Uint8Array): { height: number; width: number } | null {
  * or the data URL's label.
  */
 export function ownPictureFromDataUrl(value: string): OwnPicture {
-  const match = /^data:image\/[a-z+.-]+;base64,([A-Za-z0-9+/=\s]+)$/i.exec(value.trim());
-  if (!match) throw new OwnPictureError("The picture could not be read. Choose a PNG or JPEG file.");
-  const bytes = new Uint8Array(Buffer.from(match[1]!.replace(/\s+/g, ""), "base64"));
+  // Never a regular expression over the payload: a picture is millions of characters, and a pattern run
+  // over all of them overflows the stack (it did, on CI, at 11 MB). Only the short head is matched.
+  const text = value.trim();
+  const comma = text.indexOf(",");
+  if (comma < 0 || comma > 64 || !/^data:image\/[a-z+.-]+;base64$/i.test(text.slice(0, comma))) {
+    throw new OwnPictureError("The picture could not be read. Choose a PNG or JPEG file.");
+  }
+  const payload = text.slice(comma + 1);
+  if (Math.floor((payload.length * 3) / 4) - 2 > OWN_PICTURE_MAX_BYTES) {
+    throw new OwnPictureError("The picture is larger than 8 MB. Save it smaller and choose it again.");
+  }
+  const bytes = new Uint8Array(Buffer.from(payload, "base64"));
   if (bytes.length > OWN_PICTURE_MAX_BYTES) throw new OwnPictureError("The picture is larger than 8 MB. Save it smaller and choose it again.");
 
   const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;

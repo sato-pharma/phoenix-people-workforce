@@ -207,6 +207,11 @@ export async function runRecruitmentJobPostWebsiteTests() {
   assert.throws(() => ownPictureFromDataUrl("https://example.com/post.png"), /could not be read/);
   assert.throws(() => ownPictureFromDataUrl(`data:image/png;base64,${"A".repeat(Math.ceil((8 * 1024 * 1024 + 3) / 3) * 4)}`), /larger than 8 MB/);
 
+  // A real-sized picture (the hand-made post is 3.5 MB, about 4.7 MB as text) is read without a stack overflow.
+  const bigPng = new Uint8Array(3_600_000);
+  bigPng.set(pngBytes(2160, 2700));
+  assert.equal(ownPictureFromDataUrl(dataUrl(bigPng)).bytes.length, 3_600_000);
+
   // ...and it goes to the website under its own type and name.
   await withFetch(
     () => Response.json({ data: { id: "c2", slug: "dm-delta-2", status: "OPEN" }, error: null, meta: null }, { status: 201 }),
