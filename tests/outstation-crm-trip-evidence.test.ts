@@ -210,16 +210,16 @@ export function runOutstationCrmTripEvidenceTests() {
   assert.equal(approvePays(idleTrip), 700, "and the button shows what Approve will pay");
   assert.deepEqual(
     approvePress(idleTrip, { full: true }),
-    { action: "approve", requestId: 5, revision: "r5" },
+    { action: "approve", keepFull: true, requestId: 5, revision: "r5" },
     "HEADLINE: Keep full claim sets the pre-cut aside",
   );
   assert.deepEqual(
     approvePress({ ...idleTrip, holdReason: "Photos are missing." } as DeskClaim),
-    { action: "approve", requestId: 5, revision: "r5" },
+    { action: "approve", keepFull: true, requestId: 5, revision: "r5" },
     "a trip the payroll gate would hold carries no reduced amount: it would pay in full on release",
   );
   const bar = stripComments(readFileSync("src/components/outstation/approvals-desk/desk-decision.tsx", "utf8"));
-  assert.ok(bar.includes("onClick={() => onPress([approvePress(claim, { full: decided(claim) })], [claim])}"), "Approve is that one press");
+  assert.ok(bar.includes("onClick={() => onPress([approvePress(claim)], [claim])}"), "Approve is that one press");
   assert.ok(bar.includes("cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve"), "and the button names the amount it pays");
   assert.ok(
     bar.includes('data-press="keep-full" onClick={() => onPress([approvePress(claim, { full: true })], [claim])}'),

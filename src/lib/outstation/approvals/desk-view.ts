@@ -31,11 +31,9 @@ import type {
 export const DESK_WORDS = {
   approve: "Approve",
   approveAll: "Approve all",
-  changeAmount: "Change amount",
   clearTicks: "Clear",
   keepFull: "Keep full claim",
   open: "Open",
-  payInFull: "Pay in full",
   reduce: "Reduce",
   reject: "Reject",
   undo: "Undo",
@@ -153,12 +151,18 @@ export function tripDayCount(claim: Pick<DeskClaim, "tripEnd" | "tripStart">): n
  * What Approve sends for one waiting claim. With idle days and an allowance the button names the cut
  * and sends it; a trip the payroll gate would hold cannot carry a reduced amount, so there the
  * button pays the claim in full and the row says why. `full: true` is "Keep full claim".
+ *
+ * 🔴 Paying an idle day in full is always SAID: wherever the page knows of a cut and the press does
+ * not send it, the press carries `keepFull`. A press with neither an amount nor `keepFull` is paid
+ * in full only while the server finds no cut either (decision-plan.ts), so a page read before the
+ * field work was can never pay an idle day by its silence.
  */
 export function approvePress(claim: DeskClaim, options: { full?: boolean } = {}): DeskDecisionRequest {
   const cut = !options.full && claim.preCut && !claim.holdReason ? claim.preCut : null;
   return {
     action: "approve",
     ...(cut ? { approvedAmount: cut.payable } : {}),
+    ...(!cut && claim.preCut ? { keepFull: true } : {}),
     requestId: claim.requestId,
     revision: claim.revision,
   };
@@ -278,7 +282,8 @@ export function reasonChips(claim: DeskClaim): ReasonChip[] {
 /** What is said before a Reduce press is offered at all; null when the claim can be reduced. */
 export function reduceBlocked(claim: DeskClaim): string | null {
   if (claim.locked) return "A payroll has already taken this trip.";
-  if (claim.standing === "approved_held" || (claim.standing === "waiting" && claim.holdReason)) {
+  if (claim.standing !== "waiting") return "This claim was already decided.";
+  if (claim.holdReason) {
     return "This trip would be held out of payroll for now, and a held trip cannot carry a reduced amount.";
   }
   return null;

@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { AGREEMENT_WINDOW_DAYS, agreementLine, summarizeAgreement, verdictStamp } from "@/lib/outstation/approvals/agreement";
-import { DESK_REFUSAL, decisionLanded, deskDecisionOutcome, planDeskDecision } from "@/lib/outstation/approvals/decision-plan";
+import { amountLanded, DESK_REFUSAL, decisionLanded, deskDecisionOutcome, planDeskDecision } from "@/lib/outstation/approvals/decision-plan";
 import type { ClaimVerdict, DeskClaim, DeskDecisionRequest } from "@/lib/outstation/approvals/types";
 import { OUTSTATION_CLAIM_CHANGED_CODE, OUTSTATION_CLAIM_CHANGED_MESSAGE } from "@/lib/outstation/claim-revision";
 import { planOutstationRequestDecision } from "@/lib/outstation/expense-approval-decisions";
@@ -142,8 +142,20 @@ export function runExpenseDeskDecisionPlanTests() {
   assert.equal(planOf(cut), "approve", "a cut carries its reason, so the workflow does not refuse it as an unexplained deduction");
   const typed = planDeskDecision(withCut, press({ approvedAmount: 750, comment: "Second day at home." }));
   assert.equal(typed.ok && typed.record.hrComment, "Second day at home.", "his own words are never written over");
-  const full = planDeskDecision(withCut, press());
-  assert.equal(full.ok && full.record.approvedAmount, 900, "Keep full claim: an Approve with no amount pays the claim");
+  const full = planDeskDecision(withCut, press({ keepFull: true }));
+  assert.equal(full.ok && full.record.approvedAmount, 900, "Keep full claim, said out loud, pays the claim");
+  // 🔴 A page read before the field work was (Phoenix CRM down when it loaded, or left open past
+  // midnight) sends a plain Approve for a trip the server now finds an idle day on. Its silence
+  // never pays that day in full: the claim goes back with the cut on its button.
+  assert.deepEqual(
+    planDeskDecision(withCut, press()),
+    { code: "changed", message: DESK_REFUSAL.idleDayFound, ok: false },
+    "HEADLINE: an Approve that names no amount and does not say keep-full is not paid in full when the server finds a cut",
+  );
+  assert.deepEqual(planDeskDecision(withCut, press({ keepFull: false })), { code: "changed", message: DESK_REFUSAL.idleDayFound, ok: false });
+  assert.equal(planDeskDecision(claim(), press({ keepFull: true })).ok, true, "keep-full on a trip with no cut is a plain approval");
+  const pennyCut = claim({ preCut: { ...CUT, deduction: 0.2, payable: 899.8 } });
+  assert.equal(planDeskDecision(pennyCut, press()).ok, true, "a cut within half a pound of the claim is the claim: nothing to say out loud");
   assert.deepEqual(planDeskDecision(claim(), press({ approvedAmount: 750 })), { code: "changed", message: DESK_REFUSAL.cutMoved, ok: false });
   assert.deepEqual(planDeskDecision(withCut, press({ approvedAmount: 600 })), { code: "changed", message: DESK_REFUSAL.cutMoved, ok: false });
 
@@ -159,13 +171,34 @@ export function runExpenseDeskDecisionPlanTests() {
     message: DESK_REFUSAL.heldCannotReduce,
     ok: false,
   });
-  assert.deepEqual(planDeskDecision(claim({ standing: "approved_held" }), press({ action: "reduce", approvedAmount: 600, comment: "x" })), {
-    code: "refused",
-    message: DESK_REFUSAL.heldCannotReduce,
-    ok: false,
-  });
   assert.equal(planDeskDecision(claim(willHold), press()).ok, true, "a held trip can still be approved in full");
+  assert.equal(planDeskDecision(claim({ ...willHold, preCut: CUT }), press({ keepFull: true })).ok, true, "and one with an idle day too, when its own row says it pays in full");
   assert.equal(planDeskDecision(claim(willHold), press({ action: "reject", comment: "x" })).ok, true, "and rejected");
+
+  // 4b. 🔴 A DECIDED claim is never pressed again (owner's plan, 23 Nov: "No decided claim's money
+  // moves"). The risk review of the first build traced History → Open → "Pay in full" on a claim he
+  // had approved at EGP 900 of 1,200: it wrote the typed amount to NULL and payroll paid 1,200.
+  // Every press on every decided standing is refused, with the right version and a reason.
+  for (const standing of ["approved_held", "approved_queued", "rejected"] as const) {
+    const decidedClaim = claim({ approvedAmount: standing === "approved_queued" ? 600 : null, standing });
+    for (const attempt of [
+      press(),
+      press({ keepFull: true }),
+      press({ action: "reduce", approvedAmount: 500, comment: "Second look." }),
+      press({ action: "reject", comment: "Second look." }),
+    ]) {
+      assert.deepEqual(
+        planDeskDecision(decidedClaim, attempt),
+        { code: "refused", message: DESK_REFUSAL.decided, ok: false },
+        `HEADLINE: ${attempt.action} on a claim that stands ${standing} is refused`,
+      );
+    }
+    assert.deepEqual(
+      planDeskDecision(decidedClaim, press({ revision: "an-older-version" })),
+      { code: "refused", message: DESK_REFUSAL.decided, ok: false },
+      "and no version of a decided claim gets a different answer",
+    );
+  }
 
   // 5. The answer, read from the claim as stored afterwards.
   assert.equal(decisionLanded("approve", claim({ standing: "approved_queued" })), true);
@@ -173,28 +206,62 @@ export function runExpenseDeskDecisionPlanTests() {
   assert.equal(decisionLanded("approve", claim({ standing: "waiting" })), false);
   assert.equal(decisionLanded("reject", claim({ standing: "approved_queued" })), false);
   assert.equal(decisionLanded("reject", null), false);
-  const saved = deskDecisionOutcome({ action: "approve", after: claim({ standing: "approved_queued" }), requestId: 412 });
+  const saved = deskDecisionOutcome({ action: "approve", after: claim({ standing: "approved_queued" }), approved: 900, requestId: 412 });
   assert.deepEqual({ code: saved.code, message: saved.message }, { code: "saved", message: null });
+
+  // 🔴 An approval is two writes: the claim, then its figure. The state can land while the figure
+  // does not, and then payroll pays MORE than he chose. That is never "saved".
+  assert.equal(amountLanded(900, claim({ standing: "approved_queued" })), true, "in full: no typed amount is stored");
+  assert.equal(amountLanded(600, claim({ approvedAmount: 600, payable: 600, standing: "approved_queued" })), true);
+  assert.equal(amountLanded(600, claim({ approvedAmount: null, standing: "approved_queued" })), false, "HEADLINE: reduced to 600, stored in full");
+  assert.equal(amountLanded(600, claim({ approvedAmount: 650, payable: 650, standing: "approved_queued" })), false, "a different figure is not his figure");
+  assert.equal(amountLanded(900, claim({ approvedAmount: 600, payable: 600, standing: "approved_queued" })), false, "approved in full, stored reduced");
+  assert.equal(amountLanded(null, claim({ standing: "approved_queued" })), false);
+  assert.equal(amountLanded(600, null), false);
+  const lost = deskDecisionOutcome({ action: "reduce", after: claim({ approvedAmount: null, payable: 900, standing: "approved_queued" }), approved: 600, requestId: 412 });
+  assert.deepEqual(
+    { code: lost.code, message: lost.message },
+    { code: "amount_not_saved", message: "Approved, but NOT at EGP 600: that amount was not saved. As it stands this trip pays EGP 900." },
+    "HEADLINE: an approval whose reduced amount did not land says so, with what it pays as it stands",
+  );
+  const lostCut = deskDecisionOutcome({ action: "approve", after: claim({ approvedAmount: null, payable: 900, standing: "approved_held" }), approved: 750, requestId: 412 });
+  assert.equal(lostCut.code, "amount_not_saved", "the idle-day cut is an amount too");
+  assert.match(lostCut.message ?? "", /pays EGP 900 when it is released from its hold\.$/);
+  // 🔴 Two tabs: A approves in full, B reduces. B's write is refused as stale, yet the claim now
+  // reads approved. B did nothing, and must not be told its figure was saved.
+  const twoTabs = deskDecisionOutcome({
+    action: "reduce",
+    after: claim({ standing: "approved_queued" }),
+    approved: 600,
+    requestId: 412,
+    skipped: { code: OUTSTATION_CLAIM_CHANGED_CODE, reason: OUTSTATION_CLAIM_CHANGED_MESSAGE },
+  });
+  assert.equal(twoTabs.code, "changed", "HEADLINE: a press the workflow refused as stale is 'changed', even when the claim now reads approved");
+
   const heldOutcome = deskDecisionOutcome({
     action: "approve",
     after: claim({ standing: "approved_held" }),
+    approved: 900,
     requestId: 412,
     skipped: { reason: "the trip was accepted, but the approval has not reached payroll — it is held out until its photos and workload land" },
   });
   assert.equal(heldOutcome.code, "saved", "an approval that is held DID land; it is said, never reported as a failure");
   assert.match(heldOutcome.message ?? "", /^The trip was accepted, but the approval has not reached payroll.*\.$/);
-  assert.match(deskDecisionOutcome({ action: "approve", after: claim({ standing: "approved_held" }), requestId: 412 }).message ?? "", /Held out of payroll/);
+  assert.match(deskDecisionOutcome({ action: "approve", after: claim({ standing: "approved_held" }), approved: 900, requestId: 412 }).message ?? "", /Held out of payroll/);
   const moved = deskDecisionOutcome({
     action: "approve",
     after: claim(),
+    approved: 900,
     requestId: 412,
     skipped: { code: OUTSTATION_CLAIM_CHANGED_CODE, reason: OUTSTATION_CLAIM_CHANGED_MESSAGE },
   });
   assert.equal(moved.code, "changed");
   assert.equal(moved.claim?.requestId, 412, "the claim comes back with its new figures");
-  const failed = deskDecisionOutcome({ action: "reject", after: claim(), requestId: 412, skipped: { reason: "a rejection reason is required" } });
+  const failed = deskDecisionOutcome({ action: "reject", after: claim(), approved: null, requestId: 412, skipped: { reason: "a rejection reason is required" } });
+  const rejected = deskDecisionOutcome({ action: "reject", after: claim({ payable: 0, standing: "rejected" }), approved: null, requestId: 412 });
+  assert.equal(rejected.code, "saved", "a rejection has no figure to land");
   assert.deepEqual({ code: failed.code, message: failed.message }, { code: "refused", message: "A rejection reason is required." });
-  assert.equal(deskDecisionOutcome({ action: "approve", after: claim(), requestId: 412 }).message, DESK_REFUSAL.notSaved, "nothing landed and nothing was said: never 'saved'");
+  assert.equal(deskDecisionOutcome({ action: "approve", after: claim(), approved: 900, requestId: 412 }).message, DESK_REFUSAL.notSaved, "nothing landed and nothing was said: never 'saved'");
 
   // 6. The verdict kept, and the meter.
   const at = "2026-11-23T08:00:00.000Z";
@@ -236,4 +303,29 @@ export function runExpenseDeskDecisionPlanTests() {
   );
   assert.ok(decide.includes("applyOutstationRequestExpenseDecisions("), "the money moves through the one existing function");
   assert.ok(!/phx_accept_outstation_claim_for_payroll|\.rpc\(/.test(decide), "decide.ts never calls the payroll write itself");
+
+  // 🔴 A batch never pays an idle day in full: refused on the server, counted AFTER a repeated claim
+  // is dropped, and before the plan is even asked.
+  assert.ok(decide.indexOf("presses.push(decision);") < decide.indexOf("const batch = presses.length > 1;"), "a batch is counted in claims, after the repeats are dropped");
+  assert.ok(
+    decide.includes("plan: batch && decision.keepFull === true ? keepFullInBatch : planDeskDecision(before.get(decision.requestId), decision),"),
+    "HEADLINE: keep-full inside a request that decides more than one claim is refused",
+  );
+  assert.ok(decide.includes('const keepFullInBatch: PlannedDeskDecision = { code: "refused", message: DESK_REFUSAL.keepFullAlone, ok: false };'));
+
+  // 🔴 The figure that did not land. The press is sent once more — only for a claim THIS press put
+  // into the next payroll, never for one the workflow refused as stale — and the verdict is kept
+  // only with an answer of "saved".
+  const resend = decide.slice(decide.indexOf("const unfinished = sent.filter("), decide.indexOf("const outcomes: DeskDecisionOutcome[] = [];"));
+  assert.ok(resend.includes('if (entry.decision.action === "reject" || !entry.claim || stored?.standing !== "approved_queued") return false;'), "only an approval that reached the next payroll is sent again");
+  assert.ok(resend.includes("if (skippedByTrip.get(entry.claim.tripId)?.code === OUTSTATION_CLAIM_CHANGED_CODE) return false;"), "HEADLINE: never a press the workflow refused as stale — that claim is somebody else's decision");
+  assert.ok(resend.includes("return !amountLanded(entry.plan.approved, stored);"), "and only where the stored figure is not the one chosen");
+  assert.equal((decide.match(/await applyOutstationRequestExpenseDecisions\(/g) ?? []).length, 2, "the press, and at most one re-send: never a loop");
+  assert.ok(!/\b(while|for\s*\(;;)/.test(resend.replace(/\/\/.*$/gm, "")), "the re-send does not repeat");
+  assert.ok(resend.includes('event: "expense_desk_amount_resent"'), "a re-send is written to the error table");
+  assert.match(
+    decide,
+    /const outcome = deskDecisionOutcome\(\{[\s\S]{0,260}?approved: plan\.approved,[\s\S]{0,260}?\}\);[\s\S]{0,400}?if \(claim && stored && outcome\.code === "saved"\) \{\s*const verdict = await keepVerdict\(/,
+    "HEADLINE: the answer is read against the figure chosen, and the verdict is kept only with a decision that landed whole",
+  );
 }

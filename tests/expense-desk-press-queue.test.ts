@@ -29,6 +29,7 @@ import {
   pressNotices,
   pressSent,
   queueWithPressesOut,
+  readPressAnswer,
   settlePress,
   takeAll,
   takeDue,
@@ -171,6 +172,37 @@ export function runExpenseDeskPressQueueTests() {
     [1, "Saved after all."],
   ]);
 
+  // 5b. 🔴 What the answer to a press means. The first build read every answer that was not a
+  // clean list of outcomes as "the server said no: nothing was written" — but the decide route
+  // answers 500 when it fails AFTER the money moved (the re-read, the verdict stamp), and the page
+  // then told him nothing had changed about a claim that was already in payroll.
+  const outcome = { claim: null, code: "saved" as const, message: null, requestId: 1 };
+  assert.deepEqual(readPressAnswer(200, { outcomes: [outcome], saved: 1 }), { kind: "outcomes", outcomes: [outcome] });
+  for (const status of [500, 502, 503, 504]) {
+    assert.deepEqual(
+      readPressAnswer(status, { error: "expense_approvals_decide_failed", message: "The server failed part-way through." }),
+      { kind: "unknown" },
+      `HEADLINE: a ${status} is never read as "nothing changed": the decision may have landed`,
+    );
+  }
+  assert.deepEqual(readPressAnswer(500, null), { kind: "unknown" }, "a failure with no readable body is unknown too");
+  assert.deepEqual(readPressAnswer(200, null), { kind: "unknown" }, "HEADLINE: a yes whose body cannot be read is unknown, never a refusal");
+  assert.deepEqual(readPressAnswer(200, { saved: 1 }), { kind: "unknown" }, "and so is a yes with no outcomes in it");
+  assert.deepEqual(readPressAnswer(200, { outcomes: "all" }), { kind: "unknown" });
+  assert.deepEqual(readPressAnswer(302, null), { kind: "unknown" }, "a redirect answered nothing");
+  assert.deepEqual(readPressAnswer(403, { error: "forbidden", message: "Only the Super Admin decides." }), { kind: "refused", message: "Only the Super Admin decides." });
+  assert.deepEqual(readPressAnswer(400, { message: "  " }), { kind: "refused", message: null }, "a refusal with no words falls back to the page's own");
+  assert.deepEqual(readPressAnswer(401, null), { kind: "refused", message: null });
+  assert.deepEqual(readPressAnswer(400, { outcomes: [outcome] }), { kind: "refused", message: null }, "a 4xx is never read as outcomes");
+
+  // An approval that landed at a figure he did not choose is said in red, by name.
+  const wrongFigure = pressNotices(
+    press,
+    press.claims.map((entry) => ({ claim: null, code: "amount_not_saved" as const, message: "Approved, but NOT at EGP 600: that amount was not saved.", requestId: entry.requestId })),
+    "Not saved.",
+  );
+  assert.ok(wrongFigure.length > 0 && wrongFigure.every((notice) => notice.tone === "bad" && /NOT at EGP 600/.test(notice.message)), "HEADLINE: amount_not_saved is a red notice with the figure in it");
+
   // 6. The request carries the decisions and nothing else.
   assert.deepEqual(Object.keys(pressBody(press)), ["decisions"]);
   assert.ok(DeskDecideBodySchema.safeParse(pressBody(press)).success, "what a press sends is what the decide route accepts");
@@ -183,4 +215,12 @@ export function runExpenseDeskPressQueueTests() {
   assert.ok(/keepalive:\s*closing/.test(hook), "a closing page sends with keepalive, so the request outlives it");
   assert.ok(hook.includes("takeAll(") && hook.includes("takeDue(") && hook.includes("undoPress("), "the hook runs the pure queue, not its own copy");
   assert.ok(!/localStorage|sessionStorage/.test(hook), "a decision is never parked in the browser's storage");
+  assert.ok(hook.includes("const answer = readPressAnswer(response.status, await response.json().catch(() => null));"), "the hook reads the answer through the one pure function");
+  assert.ok(!/response\.ok/.test(hook.slice(hook.indexOf("const send = useCallback"), hook.indexOf("const flush = useCallback"))), "and never decides what an answer means on its own");
+  assert.match(
+    hook,
+    /if \(answer\.kind === "unknown"\) \{[\s\S]{0,400}?failedPressNotices\(press, UNKNOWN_RESULT\)[\s\S]{0,80}?if \(!closing\) void read\(\);/,
+    "HEADLINE: an unknown answer names every claim of the press and reads the list again",
+  );
+  assert.ok(!/nothing was written|nothing changed/i.test(hook.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")), "the hook never says nothing changed");
 }

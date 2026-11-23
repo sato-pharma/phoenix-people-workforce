@@ -139,11 +139,23 @@ export function runExpenseDeskViewTests() {
   const cut = { deduction: 200, label: "EGP 300 · 1 idle day", payable: 300, reason: "1 of the 2 days had no field activity." };
   assert.deepEqual(approvePress(claim(1)), { action: "approve", requestId: 1, revision: "rev-1" });
   assert.deepEqual(approvePress(yourCall(3, { preCut: cut })), { action: "approve", approvedAmount: 300, requestId: 3, revision: "rev-3" }, "Approve sends the cut its button named");
-  assert.deepEqual(approvePress(yourCall(3, { preCut: cut }), { full: true }), { action: "approve", requestId: 3, revision: "rev-3" }, "Keep full claim sends no amount");
+  assert.deepEqual(
+    approvePress(yourCall(3, { preCut: cut }), { full: true }),
+    { action: "approve", keepFull: true, requestId: 3, revision: "rev-3" },
+    "HEADLINE: Keep full claim sends no amount and SAYS keep-full: the server pays an idle day in full on those words only",
+  );
   const held = yourCall(4, { holdReason: "No departure photo yet.", preCut: cut });
-  assert.deepEqual(approvePress(held), { action: "approve", requestId: 4, revision: "rev-4" }, "a trip that would be held is never sent a cut it could not keep");
+  assert.deepEqual(
+    approvePress(held),
+    { action: "approve", keepFull: true, requestId: 4, revision: "rev-4" },
+    "HEADLINE: a trip that would be held is never sent a cut it could not keep, and its row's Approve says it pays in full",
+  );
+  assert.equal("keepFull" in approvePress(claim(1)), false, "a trip with no idle day has nothing to say");
+  assert.equal("keepFull" in approvePress(yourCall(3, { preCut: cut })), false, "an Approve that sends the cut does not also say keep-full");
   assert.match(reduceBlocked(held) ?? "", /held trip cannot carry a reduced amount/);
-  assert.match(reduceBlocked(claim(5, { standing: "approved_held" })) ?? "", /held/);
+  for (const standing of ["approved_held", "approved_queued", "rejected"] as const) {
+    assert.equal(reduceBlocked(claim(5, { standing })), "This claim was already decided.", `HEADLINE: a claim that stands ${standing} is not offered Reduce`);
+  }
   assert.match(reduceBlocked(claim(6, { locked: true, standing: "in_payroll" })) ?? "", /payroll has already taken/);
   assert.equal(reduceBlocked(yourCall(3, { preCut: cut })), null);
   const batch = readyBatch(claimsInLane(claims, "ready", DEFAULT_DESK_VIEW), 100);
@@ -162,6 +174,7 @@ export function runExpenseDeskViewTests() {
     ],
     "HEADLINE: Approve all sends each row's own Approve — never Keep full claim, and never a held trip's idle day in full",
   );
+  assert.ok(mixed.decisions.every((decision) => !("keepFull" in decision)), "HEADLINE: no batch press carries keep-full — the server refuses one that does");
   assert.deepEqual({ count: mixed.count, left: mixed.left, value: mixed.value }, { count: 2, left: 0, value: 800 }, "HEADLINE: and the total on the button is what those presses pay (300 + 500), not the 1,500 the trips claim");
 
   // 3b. Several claims in one press: the ticked rows.
@@ -265,11 +278,9 @@ export function runExpenseDeskViewTests() {
   assert.deepEqual(DESK_WORDS, {
     approve: "Approve",
     approveAll: "Approve all",
-    changeAmount: "Change amount",
     clearTicks: "Clear",
     keepFull: "Keep full claim",
     open: "Open",
-    payInFull: "Pay in full",
     reduce: "Reduce",
     reject: "Reject",
     undo: "Undo",

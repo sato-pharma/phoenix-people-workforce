@@ -67,6 +67,6 @@ export async function POST(request: Request) {
     const outcomes = await decideDeskClaims(access, parsed.data.decisions);
     return NextResponse.json({ outcomes, saved: outcomes.filter((outcome) => outcome.code === "saved").length });
   } catch (error) {
-    return deskRouteFailure({ access, code: "expense_approvals_decide_failed", error, fallback: "The decision was not saved. Nothing changed.", route: ROUTE });
+    return deskRouteFailure({ access, code: "expense_approvals_decide_failed", error, fallback: "The server failed part-way through. A decision may have been saved: read the list again.", route: ROUTE });
   }
 }

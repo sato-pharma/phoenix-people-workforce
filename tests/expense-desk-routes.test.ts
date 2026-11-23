@@ -8,7 +8,7 @@
  *      session, the body — and only then the write. Nothing is read from the body before the guards.
  *   2. Every read asserts the review permission before it reads; a preview session never sees
  *      buttons it could not use.
- *   3. A press is five fields. An unknown key (a figure smuggled beside it), a batch over the limit
+ *   3. A press is six fields. An unknown key (a figure smuggled beside it), a batch over the limit
  *      or an amount of zero is refused before anything runs.
  *   4. Each route has its own access-registry entry, never the /api/admin/outstation/** blanket.
  *   5. The reviewer's one read: photos and Phoenix CRM stay the approver's; a reader without that
@@ -86,8 +86,11 @@ export function runExpenseDeskRoutesTests() {
     assert.ok(!/export async function (POST|PUT|PATCH|DELETE)/.test(source), `the ${name} route only reads`);
   }
 
-  // 3. A press is five fields.
+  // 3. A press is six fields.
   assert.ok(DeskDecideBodySchema.safeParse({ decisions: [press] }).success);
+  const kept = DeskDecideBodySchema.safeParse({ decisions: [{ ...press, keepFull: true }] });
+  assert.ok(kept.success && kept.data.decisions[0].keepFull === true, "HEADLINE: keep-full reaches the server: without it a stale page's Approve is not paid in full");
+  assert.ok(!DeskDecideBodySchema.safeParse({ decisions: [{ ...press, keepFull: "yes" }] }).success, "and it is a plain yes or no");
   assert.ok(DeskDecideBodySchema.safeParse({ decisions: [{ ...press, action: "reduce", approvedAmount: 300, comment: "One idle day" }] }).success);
   assert.ok(!DeskDecideBodySchema.safeParse({ decisions: [{ ...press, total: 1 }] }).success, "a figure beside the press is refused: every paid figure is read on the server");
   assert.ok(!DeskDecideBodySchema.safeParse({ decisions: [{ ...press, hrApproved: true }] }).success);

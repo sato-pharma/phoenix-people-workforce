@@ -173,7 +173,7 @@ export function runOutstationExpenseReviewModelTests() {
   assert.equal("approvedAmount" in approvePress(cut, { full: true }), false, "and in full only on Keep full claim");
   // Reduce is refused in words where the payroll gate could not carry it.
   assert.equal(reduceBlocked(ready), null);
-  assert.match(String(reduceBlocked(held)), /held trip cannot carry a reduced amount/, "HEADLINE: a held trip is never offered a reduced amount");
+  assert.equal(reduceBlocked(held), "This claim was already decided.", "HEADLINE: a claim already approved and held is decided: it is not offered a reduced amount");
   assert.match(String(reduceBlocked(claim({ holdReason: "The arrival photo is missing.", requestId: 10 }))), /held out of payroll/);
   assert.equal(reduceBlocked(paid), "A payroll has already taken this trip.");
   assert.equal(typedAmount("2,430.50"), 2430.5, "a figure typed the way a person types it");

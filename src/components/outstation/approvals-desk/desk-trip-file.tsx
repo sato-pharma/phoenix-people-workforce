@@ -275,7 +275,7 @@ export function DeskTripFile({
 
       <footer className="min-w-0 border-t border-slate-300 bg-white" data-reviewer-decision>
         <div className="mx-auto w-full max-w-5xl min-w-0 px-3 py-2.5 sm:px-4">
-          {mode !== "idle" && canDecide && !claim.locked && !pressed ? (
+          {mode !== "idle" && canDecide && !claim.locked && claim.standing === "waiting" && !pressed ? (
             <div className="mb-2 max-h-[50vh] min-w-0 overflow-y-auto">
               <DecisionPanel claim={claim} mode={mode} onClose={() => onMode("idle")} onPress={onPress} />
             </div>
@@ -292,6 +292,10 @@ export function DeskTripFile({
             ) : claim.locked ? (
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="locked">
                 A payroll already took this trip, so nothing here can change it.
+              </p>
+            ) : claim.standing !== "waiting" ? (
+              <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="decided">
+                This claim was already decided. It is read here, not changed.
               </p>
             ) : !canDecide ? (
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="read-only">

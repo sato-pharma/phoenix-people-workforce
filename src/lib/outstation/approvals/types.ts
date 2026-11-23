@@ -127,6 +127,11 @@ export type DeskDecisionRequest = {
    */
   approvedAmount?: number | null;
   comment?: string | null;
+  /**
+   * Approve only: "Keep full claim", said out loud. An Approve that names no amount and does not
+   * carry this is paid in full only while the server's own reading finds no idle-day cut.
+   */
+  keepFull?: boolean;
   requestId: number;
   revision: string;
 };
@@ -134,8 +139,12 @@ export type DeskDecisionRequest = {
 export type DeskDecisionOutcome = {
   /** The claim as it reads after the decision; null when it could not be re-read. */
   claim: DeskClaim | null;
-  /** `changed` = the claim moved since he saw it; `refused` = the write said no. */
-  code: "saved" | "changed" | "refused";
+  /**
+   * `changed` = the claim moved since he saw it; `refused` = the write said no;
+   * `amount_not_saved` = it was approved, but NOT at the figure he chose, and the message says
+   * what it pays as it stands.
+   */
+  code: "saved" | "changed" | "refused" | "amount_not_saved";
   message: string | null;
   requestId: number;
 };

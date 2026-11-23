@@ -124,11 +124,27 @@ still inside its window is sent. The server never reverses a decision.
 payroll write, the version check, the evidence gate, the in-payroll lock, the audit row and the
 employee's notice are all inherited. No money rule was written again.
 
-Each claim in a press answers for itself: saved, changed or refused. A claim that changed since it
-was drawn comes back to the list with its new figures and the reason.
+Each claim in a press answers for itself: saved, changed, refused, or approved at a figure that was
+not the one chosen. A claim that changed since it was drawn comes back to the list with its new
+figures and the reason.
+
+An approval is two writes: the claim, then its figure. "Saved" is said only when the claim now
+stands in the state the press meant and at the figure it chose (`amountLanded`). Where the claim
+reached the next payroll and the figure did not follow, `decide.ts` sends the same press once more.
+If the figure still is not there, the answer is `amount_not_saved`: a red line by name that says the
+amount was not saved and what the trip pays as it stands. A press the workflow refused as stale is
+answered "changed" even when the claim now reads approved, because somebody else's press put it
+there. Known limit: the desk has no button that repairs a figure that did not land; the red line and
+the app's error table (`expense_desk_amount_resent`) are what say so.
+
+When the answer itself is unclear, the page does not guess. A 5xx, or a yes whose body cannot be
+read, means the decision may have landed: the page says so and reads the list again
+(`readPressAnswer` in `approvals/press-queue.ts`). Only a 4xx, which is turned away before any claim
+is read, is reported as not saved.
 
 What is refused before anything is written (`approvals/decision-plan.ts`):
 
+- a claim that is already decided, whatever the press and whatever version it carries;
 - a claim a payroll already took;
 - a press made on an older version of the claim;
 - a rejection or a reduced amount with no reason;
@@ -146,11 +162,18 @@ The 7 Nov rule stands: a trip day with no visit and no recorded meeting is idle,
 share of the allowance is cut before he presses, Approve names the cut and pays it, and "Keep full
 claim" is one press. Opening a trip writes nothing. Travel and tickets are never cut.
 
+Paying an idle day in full is always said out loud. Wherever the page knows of a cut and does not
+send it, the press carries `keepFull`. An Approve that names no amount and does not carry it is paid
+in full only while the server's own reading finds no cut either. If the server finds one, the claim
+comes back as changed with the cut on its button. So a page that was read before the field work
+was, or left open past midnight, cannot pay an idle day by its silence.
+
 A batch sends each row's own Approve, so a batch pays the cut where a row names one. One kind of
 trip is held back from every batch: a trip with an idle day that the payroll gate would hold. It
 cannot carry the cut, so its own Approve pays the claim in full and the row says so. "Approve all"
 and "Approve N" leave it out, name it, and keep it ticked so that it is opened and decided by
-itself (`paysIdleDayInFull` in `approvals/desk-view.ts`).
+itself (`paysIdleDayInFull` in `approvals/desk-view.ts`). The server holds the same line: a request
+that decides more than one claim is refused any press that carries `keepFull`.
 
 ### The kept verdict
 
@@ -168,6 +191,30 @@ share approved is shown as a fact and never scored. The meter starts empty.
 The rebuild reads decided claims and never rewrites one. Nothing re-runs the payroll write for a
 claim already decided, changes a payout month, or replaces an amount he typed with the claim's
 total. On the day of the rebuild 26 claims carried his own typed figure.
+
+Only a waiting claim is decided. A claim already approved or rejected draws no decision button
+anywhere on the desk. History and its opened trip read it and say "This claim was already decided.
+It is read here, not changed." The server refuses every press on one, before it even looks at the
+version. After the six seconds of Undo, a decision is not changed on the desk. The 7 Nov screen
+allowed that until a payroll took the trip; whether the desk should offer a guarded way to do it is
+an open question for the owner.
+
+### What the risk review found before the merge
+
+The first build was reviewed for money and access on 23 Nov, before anything was merged, and the
+verdict was not to ship it. Six findings, all fixed in the same pull request:
+
+1. From History, Open offered "Pay in full", "Change amount" and "Reject" on a decided claim. "Pay
+   in full" on a claim approved at EGP 900 of 1,200 wrote the typed amount to nothing and payroll
+   would have paid 1,200. Decided claims are now read-only, on the screen and on the server.
+2. A reduced amount on a rejected trip that would be held lost its figure. Closed by the first fix.
+3. "Saved" was said when the claim was approved and its reduced figure had not landed. Now
+   `amount_not_saved`, after one re-send.
+4. A page read before the field work could approve an idle day in full without saying so. Now
+   `keepFull`, and the server sends a silent Approve back when it finds a cut.
+5. A server failure after the write was shown as "Nothing changed". Now the page says the result is
+   unknown and reads the list again.
+6. The version check on changing a decided claim's amount was weak. Closed by the first fix.
 
 ### What was not carried over
 
@@ -209,7 +256,8 @@ Nine new files pin the desk: `tests/expense-desk-checks.test.ts`, `-claim-row`, 
 `-press-queue`, `-queue`, `-reviewer`, `-routes`, `-standing` and `-view`. The 18 tests that pinned
 the 7 Nov screen were rewritten onto the desk, each keeping the rule it pinned. Every new assertion
 was proven by breaking its fix and watching that assertion fire: 18 domain cases, 13 route cases,
-24 screen cases, 52 carried-over cases and 8 batch cases.
+24 screen cases, 52 carried-over cases and 8 batch cases. The look-over's fixes added 15 cases and
+the risk review's fixes 17; all fired.
 
 ### What only time can prove
 

@@ -18,16 +18,17 @@ import {
   pressSent,
   pressedRequestIds,
   queueWithPressesOut,
+  readPressAnswer,
   settlePress,
   takeAll,
   takeDue,
   undoPress,
 } from "@/lib/outstation/approvals/press-queue";
-import type { DeskClaim, DeskDecisionOutcome, DeskDecisionRequest, DeskQueue } from "@/lib/outstation/approvals/types";
+import type { DeskClaim, DeskDecisionRequest, DeskQueue } from "@/lib/outstation/approvals/types";
 
 const ROUTE = "/api/admin/outstation/approvals";
 const LOAD_FAILED = "Unable to load the expense approvals. Check the connection and try again.";
-const UNKNOWN_RESULT = "The answer never arrived, so the list was read again. If this claim is still here, it was not decided.";
+const UNKNOWN_RESULT = "No clear answer came back, so the list was read again. If this claim is still here, it was not decided.";
 
 type LoadState = { error: string | null; loading: boolean; sessionExpired: boolean };
 
@@ -50,7 +51,7 @@ export function useDesk(initialSearch: string) {
   const [view, setViewState] = useState<DeskView>(() => deskViewFromSearch(initialSearch));
   const [presses, setPresses] = useState<PressQueue>(EMPTY_PRESS_QUEUE);
   const [notices, setNotices] = useState<DeskNotice[]>([]);
-  /** Goes up each time a decision on an already-decided claim is answered, so History reads again. */
+  /** Goes up each time a press is answered, so History, when it is the lane on screen, reads again. */
   const [historyVersion, setHistoryVersion] = useState(0);
   const pressesRef = useRef<PressQueue>(EMPTY_PRESS_QUEUE);
   const viewRef = useRef<DeskView>(view);
@@ -97,7 +98,6 @@ export function useDesk(initialSearch: string) {
 
   const send = useCallback(
     async (press: DeskPress, closing: boolean) => {
-      const touchedHistory = press.claims.some((claim) => claim.standing !== "waiting");
       try {
         const response = await fetch(ROUTE, {
           body: JSON.stringify(pressBody(press)),
@@ -105,22 +105,30 @@ export function useDesk(initialSearch: string) {
           keepalive: closing,
           method: "POST",
         });
-        const payload = (await response.json().catch(() => null)) as { message?: string; outcomes?: DeskDecisionOutcome[] } | null;
-        if (!response.ok || !payload || !Array.isArray(payload.outcomes)) {
-          // The server answered and said no: nothing was written.
-          setNotices((current) => mergeNotices(current, failedPressNotices(press, payload?.message || DESK_REFUSAL.notSaved)));
+        const answer = readPressAnswer(response.status, await response.json().catch(() => null));
+        if (answer.kind === "unknown") {
+          // The server failed part-way, or its answer could not be read: the decision may have
+          // landed before it did. Never "nothing changed" — say so, and read the truth.
+          setNotices((current) => mergeNotices(current, failedPressNotices(press, UNKNOWN_RESULT)));
+          if (!closing) void read();
+          setHistoryVersion((current) => current + 1);
+          return;
+        }
+        if (answer.kind === "refused") {
+          // Turned away at the door (a 4xx), before any claim was read.
+          setNotices((current) => mergeNotices(current, failedPressNotices(press, answer.message || DESK_REFUSAL.notSaved)));
           if (response.status === 401) setLoad({ error: "Your session has expired.", loading: false, sessionExpired: true });
           return;
         }
-        const outcomes = payload.outcomes;
+        const outcomes = answer.outcomes;
         setLoaded((current) => (current ? applyDeskOutcomes(current, outcomes, pressSent(press)) : current));
         setNotices((current) => mergeNotices(current, pressNotices(press, outcomes, DESK_REFUSAL.notSaved)));
-        if (touchedHistory) setHistoryVersion((current) => current + 1);
+        setHistoryVersion((current) => current + 1);
       } catch {
         // No answer at all: the decision may or may not have landed. Say so, and read the truth.
         setNotices((current) => mergeNotices(current, failedPressNotices(press, UNKNOWN_RESULT)));
         if (!closing) void read();
-        if (touchedHistory) setHistoryVersion((current) => current + 1);
+        setHistoryVersion((current) => current + 1);
       } finally {
         setPressQueue(settlePress(pressesRef.current, press.id));
       }

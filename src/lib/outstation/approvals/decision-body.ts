@@ -3,8 +3,9 @@
  *
  * Rebuilt 2026-11-23 (owner: "REBUILD FROM SCRATCH"). The route this replaces took each row WHOLE
  * (`z.looseObject({})`): the trip as the screen had loaded it, figures included, travelled back to
- * the write. Here a press is five fields and nothing else: which claim, which version of it, the
- * action, an amount and a reason. Every figure that is paid is read on the server.
+ * the write. Here a press is six fields and nothing else: which claim, which version of it, the
+ * action, an amount, a reason, and "keep the full claim" said out loud. Every figure that is paid is
+ * read on the server.
  */
 
 import { z } from "zod";
@@ -19,6 +20,7 @@ export const DeskDecideBodySchema = z.strictObject({
         action: z.enum(["approve", "reduce", "reject"]),
         approvedAmount: z.number().finite().positive().max(10_000_000).nullable().optional(),
         comment: z.string().max(2000).nullable().optional(),
+        keepFull: z.boolean().optional(),
         requestId: z.number().int().positive(),
         revision: z.string().min(1).max(200),
       }),

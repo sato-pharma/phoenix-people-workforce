@@ -23,6 +23,10 @@ import { RewriteFormally, noteFacts } from "./desk-rewrite";
  *   Reduce    the amount and its reason, then one press. Not offered on a trip the payroll gate
  *             would hold, and the button says why.
  *
+ * 🔴 Only a WAITING claim is decided. A claim already approved or rejected draws no decision button
+ * anywhere on the desk — History and its opened trip read it and nothing more — and the server
+ * refuses a press on one (decision-plan.ts).
+ *
  * A press is handed to `onPress` and nothing else happens here: the six seconds of Undo and the
  * request live in use-desk.ts. The reason box always opens EMPTY — the system's own sentence is a
  * one-press insert, never a pre-filled reason the employee is then sent.
@@ -30,8 +34,6 @@ import { RewriteFormally, noteFacts } from "./desk-rewrite";
 
 export type DecisionMode = "idle" | "reduce" | "reject";
 export type OnPress = (decisions: DeskDecisionRequest[], claims: DeskClaim[]) => void;
-
-const decided = (claim: DeskClaim) => claim.standing !== "waiting";
 
 export function DecisionButtons({
   canDecide,
@@ -54,26 +56,23 @@ export function DecisionButtons({
   onPress: OnPress;
   size?: "dense" | "regular";
 }) {
-  const acts = canDecide && !claim.locked;
-  const cut = !decided(claim) && claim.preCut && !claim.holdReason ? claim.preCut : null;
+  const acts = canDecide && !claim.locked && claim.standing === "waiting";
+  const cut = claim.preCut && !claim.holdReason ? claim.preCut : null;
   const blocked = reduceBlocked(claim);
-  // A decided claim is offered only what would change it.
-  const offerApprove = !decided(claim) || claim.standing === "rejected" || claim.approvedAmount !== null;
-  const offerReject = claim.standing !== "rejected";
   const toggle = (next: DecisionMode) => onMode(mode === next ? "idle" : next);
 
   return (
     <div className="flex min-w-0 flex-wrap gap-1.5" data-decision-buttons>
-      {acts && offerApprove ? (
+      {acts ? (
         <button
           className={approvalActionClassName("approve", size)}
           data-press="approve"
-          onClick={() => onPress([approvePress(claim, { full: decided(claim) })], [claim])}
+          onClick={() => onPress([approvePress(claim)], [claim])}
           title={cut ? cut.reason : undefined}
           type="button"
         >
           <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />
-          {decided(claim) ? DESK_WORDS.payInFull : cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}
+          {cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}
         </button>
       ) : null}
       {acts && cut ? (
@@ -92,10 +91,10 @@ export function DecisionButtons({
           type="button"
         >
           <Scale aria-hidden className="h-3.5 w-3.5 shrink-0" />
-          {decided(claim) ? DESK_WORDS.changeAmount : DESK_WORDS.reduce}
+          {DESK_WORDS.reduce}
         </button>
       ) : null}
-      {acts && offerReject ? (
+      {acts ? (
         <button aria-expanded={mode === "reject"} className={approvalActionClassName("reject", size)} data-press="reject" onClick={() => toggle("reject")} type="button">
           <X aria-hidden className="h-3.5 w-3.5 shrink-0" />
           {DESK_WORDS.reject}

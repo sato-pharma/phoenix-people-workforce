@@ -157,20 +157,20 @@ export async function runPayrollSilentScreensTests() {
   // claim, and the page says every answer that is not a plain "saved". The rule is unchanged: a
   // decision that did not reach payroll never reads as done.
   {
-  const queued = { employeeName: "Rep A", requestId: 7, standing: "approved_queued" } as unknown as DeskClaim;
-  const held = { employeeName: "Rep A", requestId: 7, standing: "approved_held" } as unknown as DeskClaim;
-  const stillWaiting = { employeeName: "Rep A", requestId: 7, standing: "waiting" } as unknown as DeskClaim;
+  const queued = { approvedAmount: null, employeeName: "Rep A", payable: 500, requestId: 7, standing: "approved_queued", total: 500 } as unknown as DeskClaim;
+  const held = { approvedAmount: null, employeeName: "Rep A", payable: 500, requestId: 7, standing: "approved_held", total: 500 } as unknown as DeskClaim;
+  const stillWaiting = { approvedAmount: null, employeeName: "Rep A", payable: 500, requestId: 7, standing: "waiting", total: 500 } as unknown as DeskClaim;
   assert.equal(
-    deskDecisionOutcome({ action: "approve", after: stillWaiting, requestId: 7 }).code,
+    deskDecisionOutcome({ action: "approve", after: stillWaiting, approved: 500, requestId: 7 }).code,
     "refused",
     "HEADLINE: an approval whose claim still reads waiting afterwards is answered as NOT saved, whatever the write's own count said",
   );
-  assert.equal(deskDecisionOutcome({ action: "approve", after: null, requestId: 7 }).code, "refused", "a claim that could not be re-read is not called saved either");
-  assert.equal(deskDecisionOutcome({ action: "approve", after: queued, requestId: 7 }).message, null, "an approval that reached payroll says nothing more");
-  const heldOutcome = deskDecisionOutcome({ action: "approve", after: held, requestId: 7 });
+  assert.equal(deskDecisionOutcome({ action: "approve", after: null, approved: 500, requestId: 7 }).code, "refused", "a claim that could not be re-read is not called saved either");
+  assert.equal(deskDecisionOutcome({ action: "approve", after: queued, approved: 500, requestId: 7 }).message, null, "an approval that reached payroll says nothing more");
+  const heldOutcome = deskDecisionOutcome({ action: "approve", after: held, approved: 500, requestId: 7 });
   assert.equal(heldOutcome.code, "saved");
   assert.ok(heldOutcome.message?.includes("Held out of payroll"), "HEADLINE: an approval the payroll gate holds says so in words");
-  const carried = deskDecisionOutcome({ action: "approve", after: queued, requestId: 7, skipped: { reason: "payroll row not applied" } });
+  const carried = deskDecisionOutcome({ action: "approve", after: queued, approved: 500, requestId: 7, skipped: { reason: "payroll row not applied" } });
   assert.equal(carried.message, "Payroll row not applied.", "and whatever the workflow said about a claim is carried to the page, never dropped");
 
   const pressed = {

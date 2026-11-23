@@ -139,9 +139,34 @@ export type DeskNotice = {
   message: string;
   name: string;
   requestId: number;
-  /** `bad` = the decision did not land and the claim is back; `warn` = it landed, with a caution. */
+  /**
+   * `bad` = the decision did not land as he made it: the claim is back, or it was approved at a
+   * figure he did not choose. `warn` = it landed, with a caution.
+   */
   tone: "bad" | "warn";
 };
+
+/**
+ * What the answer to a press means.
+ *
+ *   - `outcomes` — the server decided and said what became of each claim;
+ *   - `refused`  — a 4xx: the request was turned away at the door (session, permission, body),
+ *                  before any claim was read. Nothing changed;
+ *   - `unknown`  — the server failed part-way (5xx), or said yes in words that cannot be read. The
+ *                  decision may have landed. 🔴 Never "nothing changed": the list is read again.
+ */
+export type PressAnswer =
+  | { kind: "outcomes"; outcomes: DeskDecisionOutcome[] }
+  | { kind: "refused"; message: string | null }
+  | { kind: "unknown" };
+
+export function readPressAnswer(status: number, payload: unknown): PressAnswer {
+  const body = payload && typeof payload === "object" ? (payload as { message?: unknown; outcomes?: unknown }) : null;
+  const answeredYes = status >= 200 && status < 300;
+  if (answeredYes && body && Array.isArray(body.outcomes)) return { kind: "outcomes", outcomes: body.outcomes as DeskDecisionOutcome[] };
+  if (answeredYes || status < 400 || status >= 500) return { kind: "unknown" };
+  return { kind: "refused", message: typeof body?.message === "string" && body.message.trim() ? body.message : null };
+}
 
 /**
  * What the page says after a press was answered: one line per claim that came back (refused, or
