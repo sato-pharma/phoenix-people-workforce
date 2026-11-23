@@ -298,6 +298,7 @@
   "ask-business-facts-via-xlsx-dropdown-sheet": "global",
   "ask-business-questions-as-in-chat-multiple-choice": "global",
   "ask-deny-strip-is-committed-not-live": "sessions",
+  "ask-the-sessions-holding-a-modules-newest-rules-before-building-in-it": "expenses",
   "assigning-to-groups-in-bash-is-silently-ignored": "sessions",
   "at-slash-lib-shadows-src-lib-via-tsconfig-paths": "engineering",
   "ats-candidate-children-one-has-no-fk-and-one-is-a-view": "recruitment",

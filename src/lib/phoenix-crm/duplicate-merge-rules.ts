@@ -16,6 +16,11 @@
  *   3. More visits saved — the rep's own work stays on the row he will keep seeing.
  *   4. The older row, then the lower id — the same group always resolves the same way.
  *
+ * 🔴 TWO PEOPLE THE OWNER SPLIT ARE NEVER MERGED AGAIN (23 Nov 2026). The 13 November bulk run joined the
+ * two أحمد محمد الصباغ on Aya Ibrahim's list — Kafr El Bagour and Sers El Layan — a month after he had
+ * split them, and both doctors' visits read as one. His split is the `customer_restored` event with
+ * why = merge_reversed; `ownerSplit` carries it, and the RPC refuses it again as phoenix_crm:owner_split_them.
+ *
  * Measured 2026-10-08 this resolves all 172 groups with no judgement call. Two things still REFUSE a
  * group, and the report names each one: rows that disagree on the list type (the board's key makes it
  * impossible, the guard keeps it so), and a keeper that would cross the five-active-place cap.
@@ -38,13 +43,15 @@ export type MergeCandidate = {
   createdAt: string;
   /** Whether the row has a move on record. The RPC refuses such a loser rather than rewrite history. */
   hasMoves: boolean;
+  /** The owner split this row from a merge (customer_restored, why = merge_reversed). Never merged again. */
+  ownerSplit: boolean;
   grade: string | null;
   potentialGrade: string | null;
   phone: string | null;
   primaryPharmacyName: string | null;
 };
 
-export type MergeRefusal = "list_type_differs" | "too_many_places" | "loser_has_moves" | "keeper_not_validated";
+export type MergeRefusal = "owner_split_them" | "list_type_differs" | "too_many_places" | "loser_has_moves" | "keeper_not_validated";
 
 type MergeNotCopied = { field: "grade" | "potential" | "phone" | "primary pharmacy"; fromName: string; value: string };
 
@@ -82,6 +89,7 @@ const FIELDS: ReadonlyArray<[MergeNotCopied["field"], (row: MergeCandidate) => s
 /** The merge for ONE group of the board's duplicates. Pure. */
 export function planMerge(rows: readonly MergeCandidate[]): MergePlan {
   if (rows.length < 2) throw new Error("phoenix-crm: a merge needs at least two rows");
+  if (rows.some((row) => row.ownerSplit)) return { ok: false, refused: "owner_split_them", rows: [...rows] };
   if (new Set(rows.map((row) => row.listType)).size > 1) return { ok: false, refused: "list_type_differs", rows: [...rows] };
   const totalActive = rows.reduce((sum, row) => sum + Math.max(0, row.activePlaces), 0);
   if (totalActive > MERGE_ACTIVE_PLACE_CAP) return { ok: false, refused: "too_many_places", rows: [...rows] };
@@ -107,6 +115,7 @@ export function planMerge(rows: readonly MergeCandidate[]): MergePlan {
 
 /** The refusal, in the report's words. */
 export function mergeRefusalText(refused: MergeRefusal): string {
+  if (refused === "owner_split_them") return "The owner split these as two different people sharing one name, so they are never merged again";
   if (refused === "list_type_differs") return "The rows sit on different lists (AM, PM or pharmacy), so they are not one entry typed twice";
   if (refused === "too_many_places") return `Kept together they would hold more than ${MERGE_ACTIVE_PLACE_CAP} active places`;
   if (refused === "keeper_not_validated") return "The row holding the place is not the validated one, so neither can be kept without a judgement call";
