@@ -146,6 +146,9 @@ export const SEAT_VIEW_REFUSED_READS: readonly RegExp[] = [
   // audit row naming who took it (the two exports are already refused as export paths). The Medical Cover
   // Statement is one person's amounts and writes the same audit row, so it is refused with them.
   /^\/api\/medical-insurance\/(documents\/[^/]+|invoices\/documents\/[^/]+|movement-file|cost-letter)(\/|$)/,
+  // One expense claim printed as a PDF: it signs a print browser in as a real account and writes an audit
+  // row naming who took it. The route refuses a preview session itself; a view never reaches it.
+  /^\/api\/admin\/outstation\/approvals\/[^/]+\/pdf(\/|$)/,
 ];
 
 /** Whether a request with this method and path may run during a seat view. */
