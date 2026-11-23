@@ -5,25 +5,25 @@ import {
   expenseApprovalQueueRank,
   expenseApprovalState,
 } from "../src/lib/outstation/approval-state.ts";
+import { claimsInLane } from "../src/lib/outstation/approvals/desk-view.ts";
+import type { DeskClaim } from "../src/lib/outstation/approvals/types.ts";
 
 /**
  * The Expense Approvals queue is ONE list, not three tabs — owner, 2026-09-08: "i want them in one
  * list not tabs".
  *
- * Two things have to hold for that to be an improvement rather than a wall of 400 rows:
+ * What that rule protects, through two rebuilds (7 Nov 2026, then 23 Nov 2026):
  *
- *  1. THE WORK SURFACES FIRST. Undecided trips sort above decided ones, so opening the page still
- *     lands on what needs a decision. That is what the Pending tab did, and it is the only part of
- *     the tabs worth keeping.
+ *  1. THE WORK SURFACES FIRST. Opening the page lands on what needs a decision. Since 23 Nov the
+ *     page reads ONLY what waits; decided trips are History, read on a press.
  *
- *  2. A ROW DOES NOT MOVE WHEN IT IS DECIDED. The rank is taken from the STORED decision, never
- *     from the one on screen. Ranking the live decision would re-sort the list on every approval —
- *     the row would leave the cursor mid-review, which is the tab behaviour ("it vanished") that
- *     made the owner distrust the screen in the first place. The list settles on the next load,
- *     which is after Save, which is the only moment a reviewer expects movement.
+ *  2. NOTHING RE-SORTS UNDER THE CURSOR. The order is the server's and the browser never re-ranks
+ *     it. Since 23 Nov ("Save at once, with Undo") a press takes its claim off the list — that is
+ *     the decision being made, and Undo puts the claim back in the place it had.
  *
- * Nothing the tabs carried is lost: the three counts live on the stat cards, and an individual
- * trip's state was always on its own row — a coloured spine plus an Approved / Rejected chip.
+ * `expenseApprovalQueueRank` (section 1) is the domain's ranking of a mixed list. No screen calls
+ * it since 23 Nov, because no screen mixes waiting and decided trips any more; it stays pinned so a
+ * list that does mix them again ranks them the way he asked.
  */
 
 function readSource(relativePath: string) {
@@ -73,47 +73,78 @@ export function runExpenseApprovalsOneListTests() {
       "outranks a 50 that still needs a decision",
   );
 
-  // ── 2. The screen ──────────────────────────────────────────────────────────────────────────
-  // Rebuilt from scratch in the Phoenix CRM identity on 2026-11-07 (expense-review/). The page has
-  // tabs again — Needs a look, Clean, Approved and the rest, as Place checks has — but the property
-  // the one list was built for still holds: a trip never leaves the list it is being decided in.
-
-  const model = readSource("../src/components/outstation/expense-review/review-model.ts");
-  const hook = readSource("../src/components/outstation/expense-review/use-expense-review.ts");
-
-  // THE NON-JUMPING PROPERTY, pinned where it is decided. `savedDecision` is the stored row;
-  // `decisionFor` is what is on screen. Filing or ranking by the latter moves a row on every click.
-  const membership = model.match(/export function inReviewTab\([\s\S]*?\n\}/)?.[0];
-  assert.ok(membership, "a tab's membership must be decided in one function");
-  assert.match(membership, /const stored = savedDecision\(record\);/, "HEADLINE: a trip's tab is read from its STORED decision");
-  assert.doesNotMatch(membership, /decisionFor/, "and never from the live one — a row stays put the moment it is decided");
-  const ordering = model.match(/export function tabRows\([\s\S]*?\n\}/)?.[0];
-  assert.ok(ordering, "the tab's rows must be built in one function");
-  assert.match(
-    ordering,
-    /expenseApprovalQueueRank\(expenseApprovalState\(savedDecision\(record\)\)\)/,
-    "HEADLINE: All trips ranks the STORED decision — ranking the live one makes a row jump the moment it is decided",
+  // ── 2. The screen ────────────────────────────────────────────────────────────────────
+  // Rebuilt from scratch on 2026-11-23 (approvals-desk/; owner: "REBUILD FROM SCRATCH", "Save at
+  // once, with Undo"). The page shows what WAITS, in two lanes the server files — Ready and Your
+  // call — and History is its own lane, read on a press. What the one list was built for still
+  // holds, in the shape his new rule gives it:
+  //
+  //   - a claim's lane is the SERVER's verdict and its stored standing, never a mark on screen;
+  //   - a press takes the claim off the list at once and Undo puts it back where it was — nothing
+  //     re-sorts under the cursor, because the order is the server's (oldest first) and is never
+  //     re-ranked in the browser.
+  const lanes = [
+    { daysWaiting: 9, employeeName: "Rep A", from: "Cairo", requestId: 1, standing: "waiting", to: "Aswan", verdict: { lane: "ready" } },
+    { daysWaiting: 2, employeeName: "Rep B", from: "Cairo", requestId: 2, standing: "waiting", to: "Luxor", verdict: { lane: "your_call" } },
+    { daysWaiting: 1, employeeName: "Rep C", from: "Cairo", requestId: 3, standing: "waiting", to: "Qena", verdict: { lane: "ready" } },
+    { daysWaiting: 30, employeeName: "Rep D", from: "Cairo", requestId: 4, standing: "approved_queued", to: "Minya", verdict: { lane: "ready" } },
+  ] as unknown as DeskClaim[];
+  const noNarrowing = { overSevenDays: false, search: "" };
+  assert.deepEqual(
+    claimsInLane(lanes, "ready", noNarrowing).map((claim) => claim.requestId),
+    [1, 3],
+    "HEADLINE: a lane holds the claims still waiting whose server verdict names it, in the order they were sent",
   );
-  assert.doesNotMatch(ordering, /decisionFor/, "and must not reach for the live decision at all while ordering");
-  // The reviewer walks a FROZEN list of ids, so a decided trip keeps its place and Back returns to it.
-  assert.match(hook, /export type DeckState = \{ ids: string\[\]; open: string \| null; tab: TripTab \| "employee" \};/, "the reviewer's walk is frozen when it opens");
-
-  // Select-all is scoped to what can actually be approved, in the tab on screen. Ticking everything
-  // would hand planBulkApproval already-decided rows, and it would answer "N were already decided" —
-  // a wall of noise standing in for a button that did nothing.
-  assert.match(
-    hook,
-    /const selectable = useMemo\(\s*\(\) => rows\.filter\(\(record\) => !isImportedHistoryTrip\(record\.date\) && expenseApprovalState\(decisionFor\(record\)\) === "pending"\),/,
-    "HEADLINE: only a trip still waiting, in the tab on screen, can be ticked",
+  assert.deepEqual(
+    claimsInLane(lanes, "your_call", noNarrowing).map((claim) => claim.requestId),
+    [2],
+    "and Your call holds the rest of what waits: a decided claim is in neither",
   );
-  assert.match(hook, /for \(const record of selectable\) \{/, "and select-all ticks those only");
-
-  // A decided row carries no tick box — offering one invites a click that silently does nothing.
-  const table = readSource("../src/components/outstation/expense-review/review-queue-table.tsx");
-  assert.match(
-    table,
-    // ...and neither does imported history, which is values only (imported-history.ts).
-    /if \(!actions\.canDecide \|\| isImportedHistoryTrip\(record\.date\) \|\| expenseApprovalState\(decision\) !== "pending"\) return null;/,
-    "only an undecided row may show a checkbox",
+  assert.deepEqual(
+    claimsInLane(lanes, "ready", noNarrowing, new Set([1])).map((claim) => claim.requestId),
+    [3],
+    "a claim inside a press is off the list",
   );
+  assert.deepEqual(
+    claimsInLane(lanes, "ready", noNarrowing, new Set()).map((claim) => claim.requestId),
+    [1, 3],
+    "HEADLINE: and Undo puts it back in the place it had: nothing was re-sorted meanwhile",
+  );
+
+  const view = readSource("../src/lib/outstation/approvals/desk-view.ts");
+  const membership = view.match(/export function claimsInLane\([\s\S]*?\n\}/)?.[0];
+  assert.ok(membership, "a lane's membership must be decided in one function");
+  assert.doesNotMatch(membership, /\.sort\(/, "and that function never re-ranks: the order is the server's");
+
+  // The reviewer walks the lane on screen, so Previous and Next are the rows he was reading.
+  const workspace = readSource("../src/components/outstation/approvals-desk/desk-workspace.tsx");
+  assert.ok(
+    workspace.includes("walk={laneClaims.map((claim) => claim.requestId)}"),
+    "the reviewer's walk is the lane on screen, in its order",
+  );
+
+  // Ticks are scoped to what can actually be decided. A reader who cannot decide gets none, and a
+  // claim that was decided meanwhile drops out of the batch rather than being sent again.
+  const row = readSource("../src/components/outstation/approvals-desk/desk-row.tsx");
+  assert.ok(
+    row.includes("onTick: canDecide ? (on: boolean) => tick(claim.requestId, on) : undefined,"),
+    "HEADLINE: a row carries a tick only for someone who can decide",
+  );
+  assert.ok(row.includes("{onTick ? <TickBox checked={ticked} name={claim.employeeName} onChange={onTick} /> : null}"), "and draws none without it");
+  assert.ok(
+    row.includes("const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT);"),
+    "the ticked batch is read against the claims on screen, not kept from an earlier render",
+  );
+  assert.ok(
+    view.includes('const chosen = claims.filter((claim) => claim.standing === "waiting" && ticked.has(claim.requestId));'),
+    "and only a claim still waiting counts",
+  );
+  assert.ok(
+    row.includes("onChange={(on) => setTicked(on ? new Set(page.map((claim) => claim.requestId)) : new Set())}"),
+    "select-all ticks the rows drawn, and nothing behind Show more",
+  );
+
+  // A decided trip carries no tick box: History is read only until a trip is opened.
+  const history = readSource("../src/components/outstation/approvals-desk/desk-history.tsx");
+  assert.ok(!history.includes("TickBox") && !history.includes("SelectionBar"), "History offers no tick: a tick there would invite a press that does nothing");
 }

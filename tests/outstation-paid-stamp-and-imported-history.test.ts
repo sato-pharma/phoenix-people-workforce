@@ -181,23 +181,27 @@ export function runOutstationPaidStampAndImportedHistoryTests() {
   assert.match(countLine, /isImportedHistoryTrip\(expense\.date\)/, "the portal's Expense actions pending never counts imported history");
   assert.doesNotMatch(countLine, /!expense\.hrApproved\)\.length/, "a rejected trip is not an action pending");
 
-  // Rebuilt 2026-11-07 (expense-review/): the reviewer decides, the hook counts.
-  const deck = readFileSync("src/components/outstation/expense-review/review-deck/deck.tsx", "utf8");
-  const workspace = readFileSync("src/components/outstation/expense-review/use-expense-review.ts", "utf8");
-  assert.match(deck, /const valuesOnly = isImportedHistoryTrip\(record\.date\);/, "the reviewer reads imported history as values only");
-  assert.equal(
-    deck.match(/valuesOnly=\{valuesOnly\}/g)?.length,
-    3,
-    "the subject, the reason section and the decision bar are all values only for imported history",
+  // Rebuilt 2026-11-23 (approvals-desk/): the page reads the claims that WAIT from the requests
+  // table, so a sheet trip can never be counted, ticked or approved as awaiting a decision. The
+  // sheet trips are their own read, behind their own press in History, values only.
+  const history = readFileSync("src/lib/outstation/approvals/history.ts", "utf8");
+  assert.ok(
+    history.includes(".filter((row) => outstationRequestIdFromTripId(row.tripId) === null)"),
+    "the sheet trips are the payroll rows no Phoenix claim owns",
   );
-  assert.match(
-    workspace,
-    /pending: undecided\.filter\(\(record\) => !isImportedHistoryTrip\(record\.date\)\)/,
-    "imported history is never counted, selected or bulk-approved as awaiting a decision",
+  const historyScreen = readFileSync("src/components/outstation/approvals-desk/desk-history.tsx", "utf8");
+  const sheetTrips = historyScreen.slice(historyScreen.indexOf("function SheetTrips()"));
+  assert.ok(sheetTrips.length > 500, "History draws the sheet trips in one place");
+  assert.doesNotMatch(
+    sheetTrips,
+    /onOpen|onPress|DecisionButtons|approvalActionClassName|<button/,
+    "the reviewer reads imported history as values only: no row there opens, approves or rejects",
   );
-  assert.match(
-    workspace,
-    /\[\.\.\.pending, \.\.\.undecidedHistory, \.\.\.approved, \.\.\.rejected\]/,
-    "an undecided historical trip still shows its values in the per-employee summary",
+  assert.ok(sheetTrips.includes("Decided on the sheets. Read only here."), "and the heading says so");
+  assert.ok(
+    sheetTrips.includes('return trip.approved ? "Approved" : "Not decided";'),
+    "an undecided historical trip still shows its values, and reads Not decided rather than waiting",
   );
+  const queue = readFileSync("src/lib/outstation/approvals/queue.ts", "utf8");
+  assert.ok(queue.includes('const REQUESTS = "outstation_expense_requests";'), "what waits is read from the claims employees filed in Phoenix, never from the sheets");
 }

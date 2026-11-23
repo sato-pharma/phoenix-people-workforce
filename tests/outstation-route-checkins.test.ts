@@ -100,15 +100,19 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(panel, /×\{fmt\(checkin\.taps \?\? 1\)\} taps/, "a folded stop says its taps");
   assert.match(panel, /if \(\/\^am\$\/i\.test\(value\)\) return "AM list";/, "HEADLINE: AM reads 'AM list' beside the name");
   assert.doesNotMatch(panel, /\{visit\.ampm \? ` · \$\{visit\.ampm\}` : ""\}/, "and never sits beside the saved time as if it were the clock");
-  const review = source("../src/components/outstation/expense-review/review-deck/deck-days.tsx");
-  assert.match(
-    review,
-    /<LegendTable rows=\{legendRows\.slice\(0, legendHalf\)\} \/>\s*\{legendHalf < legendRows\.length \? <LegendTable rows=\{legendRows\.slice\(legendHalf\)\} \/> : null\}/,
-    "HEADLINE: the map legend reads down — the first half fills the left table, the rest the right one",
+  // The approvals desk (rebuilt 2026-11-23): each day's map carries a short legend under it.
+  const dayBox = source("../src/components/outstation/approvals-desk/desk-day-map.tsx");
+  const legendList = dayBox.match(/<ul className="([^"]*)" data-day-map-legend>/)?.[1];
+  assert.ok(legendList, "the day's legend is one list");
+  assert.doesNotMatch(legendList, /grid-cols|columns-/, "HEADLINE: the map legend reads down — one column, never rows that read zig-zag");
+  assert.ok(
+    dayBox.includes('{map.checkins.length === 1 ? "The day\'s visit" : "The day\'s visits, numbered in the order they were saved"}'),
+    "the visits are numbered in the order they were saved, and the legend says so",
   );
-  assert.match(review, /const legendHalf = legendRows\.length > 3 \? Math\.ceil\(legendRows\.length \/ 2\) : legendRows\.length;/);
-  assert.doesNotMatch(review, /<ul className="[^"]*grid[^"]*" data-map-legend/, "never a grid of rows, which reads zig-zag");
-  assert.match(review, /legendTimeline\(legend, checkins\)/, "the photos, stops and check-ins are one time-ordered list");
+  assert.ok(
+    source("../src/lib/outstation/approvals/day-map.ts").includes("const ordered = [...placed].sort((left, right) => left.checkDate.localeCompare(right.checkDate));"),
+    "that order is the saved time on Cairo's clock, decided in one place",
+  );
 
   // 6. Zebra tables (owner, 2026-11-07: "tidy this part by putting in a zebra table, premium polish").
   const zebra = source("../src/components/outstation/evidence-table.tsx");
@@ -122,7 +126,6 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(panel, /label: "Saved", role: "time", width: "4\.25rem"/, "HEADLINE: the visits are a zebra table, the saved time a column of its own");
   assert.match(panel, /label: "Check-in", role: "time", width: "5\.25rem"/, "HEADLINE: the check-ins are a zebra table, the check-in time a column of its own");
   assert.doesNotMatch(panel, /<(ul|ol) className="mt-1 space-y-1">/, "the old bullet lists are gone");
-  assert.match(review, /return <EvidenceTable columns=\{LEGEND_COLUMNS\} rows=\{rows\} \/>;/, "HEADLINE: the map legend is a zebra table");
 
   // 7. Brick · area · region, and the name opens its place (owner, 2026-11-07: "show me brick area and
   //    region and make the dr name clickable to location").
@@ -139,24 +142,30 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(panel, /https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=\$\{encodeURIComponent\(`\$\{lat\},\$\{lon\}`\)\}/);
   assert.match(panel, /if \(!hasPoint\(lat, lon\)\) return <bdi className="font-semibold text-slate-900">\{children\}<\/bdi>;/, "no position, no link — nothing pretends to a pin");
   assert.match(panel, /\{place\.km > 10 \? <span className="font-semibold text-amber-700">nearest brick \{fmt\(place\.km\)\} km away<\/span> : null\}/, "a far brick says so");
-  assert.match(review, /<PlaceLink lat=\{checkins\[row\.index\]\?\.lat\} lon=\{checkins\[row\.index\]\?\.lon\}>/, "and the map legend's check-ins open theirs");
-  assert.match(review, /<CoordinatesLink lat=\{photo\.latitude as number\} lon=\{photo\.longitude as number\} \/>/, "a photo's point is a link on its own line");
+  assert.ok(
+    dayBox.includes("href={mapsHref(line.point.lat, line.point.lon)}") && dayBox.includes("const mapsHref = (lat: number, lon: number) => `https://www.google.com/maps?q=${lat},${lon}`;"),
+    "and on the approvals desk every photo and stop in the map's legend opens its own point",
+  );
 
   // 8. Two views of a trip day (owner, 2026-11-07: "another view … same concept as field activity but
   //    the data up and the map down so I have 2 views").
-  const stage = source("../src/components/outstation/expense-review/review-deck/deck-stage.tsx");
-  const deck = source("../src/components/outstation/expense-review/review-deck/deck.tsx");
   assert.match(panel, /export type DayOrder = "data-first" \| "map-first";/);
   assert.match(panel, /\{order === "data-first" \? \(\s*<>\s*<DayFacts checkins=\{checkins\} visits=\{visits\} \/>\s*\{dayTables\(visits, checkins, day, firstCheckinNumber\)\}\s*\{map\}/, "HEADLINE: data first — the day's facts and tables, the map at the foot");
   assert.match(panel, /\) : \(\s*<>\s*\{map\}\s*\{dayTables\(visits, checkins, day, firstCheckinNumber\)\}/, "HEADLINE: map first stays exactly as it was");
   assert.match(panel, /order=\{dayOrder\}/, "the panel hands the choice to every day");
   assert.match(panel, /\["GPS window", gpsWindow\]/, "the facts read like Field Activity's");
   assert.match(panel, /return first === last \? first : `\$\{first\} to \$\{last\}`;/, "a window of one reading is just that reading");
-  assert.match(stage, /\{ hint: "[^"]+", icon: MapPin, key: "map-first", label: "Map first" \}/, "HEADLINE: the switch offers both views");
-  assert.match(stage, /\{ hint: "[^"]+", icon: List, key: "data-first", label: "Data first" \}/);
-  assert.match(stage, /aria-pressed=\{active\}/, "the chosen view is announced");
-  assert.match(stage, /<DeckFieldWork\s+attachments=\{attachments\}\s+dayOrder=\{dayOrder\}/);
-  assert.match(deck, /const \[dayOrder, setDayOrder\] = useState<DayOrder>\("data-first"\);/, "HEADLINE: the reviewer opens on Data first, and the choice is kept from trip to trip (owner, 2026-11-07: \"make Data first the default view\")");
-  assert.ok(stage.indexOf('key: "data-first"') < stage.indexOf('key: "map-first"'), "the default sits first in the switch");
-  assert.doesNotMatch(stage, /localStorage/, "screen state only — nothing new is stored in the browser");
+  // Rebuilt 2026-11-23 (approvals-desk/): one trip is ONE scroll, data then map for every day, so
+  // the Data first / Map first switch of 7 Nov has nothing left to switch and is retired with the
+  // screen it lived on. The old system's record is still drawn by this panel, data first.
+  const tripFile = source("../src/components/outstation/approvals-desk/desk-trip-file.tsx");
+  const deskDays = source("../src/components/outstation/approvals-desk/desk-days.tsx");
+  assert.match(tripFile, /<TripWorkloadEvidencePanel\s+alwaysOpen\s+dayOrder="data-first"/, "HEADLINE: the reviewer draws the old record data first, the default he chose on 7 Nov");
+  assert.ok(!tripFile.includes("map-first") && !deskDays.includes("map-first"), "and offers no second order: a day reads top to bottom, once");
+  assert.ok(
+    deskDays.indexOf("<DayReading day={day} pins={map.pins} />") > 0 &&
+      deskDays.indexOf("<DayReading day={day} pins={map.pins} />") < deskDays.indexOf("<DeskDayMapBox map={map} routeLine={routeLine} />"),
+    "HEADLINE: on the desk a day is its facts first, then its map",
+  );
+  assert.doesNotMatch(tripFile + deskDays, /localStorage/, "screen state only — nothing new is stored in the browser");
 }

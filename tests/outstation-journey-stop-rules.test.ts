@@ -308,6 +308,6 @@ export function runOutstationJourneyStopRulesTests() {
   assert.match(page, /\.filter\(\(submission\) => submission\.canAddJourneyStop\)/, "and only while a trip can take one");
   const list = readFileSync("src/components/outstation/my-expense-submissions.tsx", "utf8");
   assert.ok(!list.includes("<JourneyStopCard"), "the capture no longer hides inside a closed claim");
-  const attachments = readFileSync("app/api/admin/outstation/[id]/attachments/route.ts", "utf8");
+  const attachments = readFileSync("src/lib/outstation/trip-attachments-data.ts", "utf8");
   assert.match(attachments, /stop\.photoPath \? stopPhotoUrl\.get\(stop\.photoPath\)/, "a stop with no photo signs nothing");
 }

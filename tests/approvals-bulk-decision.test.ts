@@ -10,8 +10,10 @@
 // and only the requests that WERE decided are un-ticked, so a failed one stays selected for a retry.
 //
 // Expense Approvals already had Approve N; the same day it got its twin, Reject N: one written reason
-// for every ticked trip still waiting, marked on screen and committed only by Save, never written over
-// the reviewer's own words or the system's "Journey check:" sentence.
+// for every ticked trip still waiting. The page was rebuilt on 2026-11-23 (owner: "REBUILD FROM
+// SCRATCH"; "Save at once, with Undo") and kept both: the ticked rows go as ONE press, which waits its
+// six seconds of Undo like any other. The system's "Journey check:" sentence is kept at the end of
+// the stored reason by the server (src/lib/outstation/decision-note.ts), not by the screen.
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -24,7 +26,8 @@ import {
   parseBulkDecisionInput,
   type BulkDecisionDeps,
 } from "@/lib/approvals-hub/bulk-decide";
-import { bulkRejectionComment } from "@/components/outstation/expense-review/review-model";
+import { rejectSelection, selectionBatch } from "@/lib/outstation/approvals/desk-view";
+import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import { stripComments } from "./support/comment-strip.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -118,32 +121,32 @@ export async function runApprovalsBulkDecisionTests() {
     "Plans stay one at a time — their stages need decisions the bulk route does not make");
 
   // ── Expense Approvals: Reject N beside Approve N ─────────────────────────
-  assert.equal(bulkRejectionComment("", "  Not an outstation trip "), "Not an outstation trip", "an empty comment takes the batch reason");
-  assert.equal(
-    bulkRejectionComment("Journey check: priced as 2 drives.", "Duplicate of an earlier claim"),
-    "Duplicate of an earlier claim Journey check: priced as 2 drives.",
-    "the system's Journey check sentence stays at the end, after the batch reason",
+  // The rules themselves are pure (desk-view.ts) and proven in tests/expense-desk-view.test.ts; here
+  // the twin stays wired: one reason, nothing without it, and the page's own press (so Undo applies).
+  const waiting = (requestId: number): DeskClaim =>
+    ({ holdReason: null, preCut: null, requestId, revision: `rev-${requestId}`, standing: "waiting", total: 400 }) as DeskClaim;
+  const ticked = selectionBatch([waiting(1), waiting(2), { ...waiting(3), standing: "rejected" }], new Set([1, 2, 3]), 100);
+  assert.deepEqual(ticked.claims.map((claim) => claim.requestId), [1, 2], "a trip already decided is skipped, never re-rejected");
+  assert.deepEqual(rejectSelection(ticked.claims, "  "), [], "a batch rejection with no reason sends nothing");
+  assert.deepEqual(
+    rejectSelection(ticked.claims, " Not an outstation trip ").map((one) => [one.action, one.requestId, one.comment]),
+    [["reject", 1, "Not an outstation trip"], ["reject", 2, "Not an outstation trip"]],
+    "every ticked trip carries the one written reason",
   );
-  assert.equal(
-    bulkRejectionComment("Called him, he agreed. Journey check: priced as 2 drives.", "Duplicate"),
-    "Called him, he agreed. Journey check: priced as 2 drives.",
-    "the reviewer's own words are never written over by the batch reason",
-  );
-  const hook = read("src/components/outstation/expense-review/use-expense-review.ts");
-  const rejectStart = hook.indexOf("const rejectSelected = useCallback(");
-  assert.ok(rejectStart > 0, "use-expense-review.ts: rejectSelected is gone — Expense Approvals has no Reject N");
-  const rejectEnd = hook.indexOf("[bulkPlan, records, selectedVisible]", rejectStart);
-  assert.ok(rejectEnd > rejectStart, "use-expense-review.ts: could not find where rejectSelected ends");
-  const rejectBody = hook.slice(rejectStart, rejectEnd);
-  assert.ok(rejectBody.includes("if (!text)"), "a batch rejection with no reason must mark nothing");
-  assert.ok(rejectBody.includes("notPendingTripIds"), "a trip already decided must be skipped, never re-rejected");
-  assert.ok(rejectBody.includes("status: REJECTED_STATUS") && rejectBody.includes("bulkRejectionComment(base.hrComment, text)"),
-    "a batch rejection writes the single Reject's status, with the reason through bulkRejectionComment");
-  assert.ok(!rejectBody.includes("fetch(") && !rejectBody.includes("save()"),
-    "Reject N saves nothing — Save still commits, so a mis-click stays reversible");
-  const expenseBar = read("src/components/outstation/expense-review/review-bulk-bar.tsx");
-  assert.ok(expenseBar.includes("data-bulk-reject-confirm disabled={!reason.trim()}"),
+  const expenseBar = read("src/components/outstation/approvals-desk/desk-select.tsx");
+  assert.ok(expenseBar.includes("const rejections = rejectSelection(selection.claims, reason);"), "Reject N is built by the one rule");
+  assert.ok(expenseBar.includes("data-reject-ticked-confirm disabled={rejections.length === 0}"),
     "the expense Reject N must not confirm without a written reason");
-  assert.ok(read("src/components/outstation/expense-review/expense-review-workspace.tsx").includes("onReject={review.rejectSelected}"),
-    "the expense workspace must wire Reject N to rejectSelected");
+  assert.ok(
+    expenseBar.includes("data-approve-ticked disabled={selection.approve.length === 0} onClick={() => send(selection.approve, leftOut.map((claim) => claim.requestId))}"),
+    "Approve N sends each ticked row's own Approve, and a trip it leaves out stays ticked",
+  );
+  assert.ok(expenseBar.includes("onPress(decisions, selection.claims);") && !expenseBar.includes("fetch("),
+    "the batch is the page's own press — it waits its Undo and the bar itself saves nothing");
+  const lane = read("src/components/outstation/approvals-desk/desk-row.tsx");
+  assert.ok(lane.includes("const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT);"), "the ticks are read against the claims on screen, capped at one request's limit");
+  assert.ok(lane.includes("{canDecide && selection.count > 0 ? <SelectionBar "), "the bar is drawn only for someone who can decide, with something ticked");
+  assert.ok(lane.includes("onTick: canDecide ? (on: boolean) => tick(claim.requestId, on) : undefined,"), "a reader gets no tick box");
+  assert.ok(read("src/lib/outstation/decision-note.ts").includes('export const JOURNEY_CHECK_MARKER = "Journey check:";'),
+    "the system's Journey check sentence is kept at the end of the reason on the server");
 }

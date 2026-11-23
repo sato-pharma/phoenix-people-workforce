@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 const OUTCOMES: readonly ExpenseNoteOutcome[] = ["adjusted", "approved", "pending", "rejected"];
 
 /**
- * What the review deck's rewrite button sends (deck-decision.tsx): the draft, the trip's facts and the outcome.
+ * What the Expense Approvals rewrite button sends (approvals-desk/desk-rewrite.tsx): the draft, the trip's facts and the outcome.
  * An unreadable body is still null, and an unknown outcome still reads as "pending", exactly as before.
  */
 const NoteAssistBodySchema = z

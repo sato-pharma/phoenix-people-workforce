@@ -65,8 +65,10 @@ which is flat.
 Only the look and the words are shared. Each module still decides who may act and where the decision is
 sent:
 
-- **Expense Approvals keeps its batch save** (owner, 14 Nov 2026). Approve on a row only marks the trip.
-  Save sends the whole batch.
+- **On Expense Approvals a press saves at once, with Undo** (owner, 23 Nov 2026). On 14 Nov he had chosen
+  "Keep its batch save" (Approve only marked the trip and Save sent the batch); he lifted that when the
+  screen was rebuilt as the decision desk. A press waits six seconds, then is sent. Account:
+  `docs/approvals-rebuild-2026-11.md`.
 - **Marketing and Market Awareness keep their own inboxes.**
 
 Pinned by `tests/approvals-one-interface.test.ts`.
