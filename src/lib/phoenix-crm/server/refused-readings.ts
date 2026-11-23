@@ -27,6 +27,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { addDaysIso } from "@/lib/crm/dates";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft, type VisitDraft } from "@/lib/phoenix-crm/entry-rules";
+import { type FarTry } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
 import { type ScheduleRetakeReason } from "@/lib/phoenix-crm/schedule-rules";
 import { type SeatingReading } from "@/lib/phoenix-crm/shared-place-rules";
@@ -632,11 +633,12 @@ export async function loadRecentFarTries(input: {
   visitDate: string;
   /** How many visit days are read, that one included (`STUCK_LOOKBACK_DAYS`). */
   days: number;
-}): Promise<Array<{ lat: number; lon: number; accuracyMeters: number | null }>> {
+}): Promise<FarTry[]> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("phoenix_crm_refused_readings")
-      .select("lat, lon, accuracy_meters")
+      // `refused_at` too: five tries count as stuck only when spread over time (STUCK_MIN_SPAN_SECONDS).
+      .select("lat, lon, accuracy_meters, refused_at")
       .eq("reason", "far_from_place")
       .eq("subject_kind", "visit")
       .eq("seat_id", input.seatId)
@@ -652,11 +654,16 @@ export async function loadRecentFarTries(input: {
       console.error("[phoenix-crm] far tries not read", { seatId: input.seatId, message: error.message });
       return [];
     }
-    const tries: Array<{ lat: number; lon: number; accuracyMeters: number | null }> = [];
+    const tries: FarTry[] = [];
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       if (typeof row.lat !== "number" || typeof row.lon !== "number") continue;
       const accuracy = row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters);
-      tries.push({ lat: row.lat, lon: row.lon, accuracyMeters: accuracy !== null && Number.isFinite(accuracy) ? accuracy : null });
+      tries.push({
+        lat: row.lat,
+        lon: row.lon,
+        accuracyMeters: accuracy !== null && Number.isFinite(accuracy) ? accuracy : null,
+        at: typeof row.refused_at === "string" ? row.refused_at : null,
+      });
     }
     return tries;
   } catch (error) {
