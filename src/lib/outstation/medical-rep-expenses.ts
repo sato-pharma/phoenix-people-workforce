@@ -1,3 +1,5 @@
+import { TICKET_MAX_FILES } from "@/lib/outstation/ticket-attachment-limits";
+
 export type MedicalRepSimpleExpenseAttachment = {
   bytes: Buffer;
   contentType: string;
@@ -154,5 +156,125 @@ export function validateMedicalRepSimpleExpenseInput(
     toPlaceId: text(input.toPlaceId) || null,
     tripEndDate,
     tripStartDate,
+  };
+}
+
+// ─── Other expense ──────────────────────────────────────────────────────────────────────────────
+//
+// Owner, 2026-11-23: "make it possible to choose either traveling as it is now or other. In other,
+// for example, he have an invoice or anything that he paid and need to be paid to him … if other no
+// destination will be chosen, only a field for a comment, and it is required, and date, and upload
+// PDF or image is required, and make this option to pass by approval or rejection from the system
+// administrator."
+//
+// So an Other claim carries: one date, the amount paid, the rep's comment (required) and the
+// invoice — at least one PDF or photo (required). No destination, no tickets, no allowance, no
+// distance. It is stored as `expense_type = 'other'` (the column has allowed it since 2026-09-03),
+// priced on the typed amount alone, and waits for the Super Admin on Expense Approvals, where a
+// non-trip claim is never Ready (approvals/checks.ts reads the invoice as "your call").
+
+/** The two kinds the rep's form offers. Traveling is the form as it was; Other is the invoice claim. */
+export type MedicalRepExpenseKind = "traveling" | "other";
+
+export function isMedicalRepExpenseKind(value: unknown): value is MedicalRepExpenseKind {
+  return value === "traveling" || value === "other";
+}
+
+/** The fewest invoice files an Other claim may carry (owner, 2026-11-23: "upload … is required"). */
+export const MEDICAL_REP_OTHER_MIN_FILES = 1;
+
+/** The most — the same cap the main Submit Expense form puts on an invoice or ticket. */
+export const MEDICAL_REP_OTHER_MAX_FILES = TICKET_MAX_FILES;
+
+/**
+ * The most the files may weigh together. A PDF cannot be shrunk in the browser, and the whole form
+ * travels as one body through the proxy, which Next buffers only up to 10 MB.
+ */
+export const MEDICAL_REP_OTHER_MAX_TOTAL_BYTES = 9 * 1024 * 1024;
+
+/** The invoice types the server stores (car-evidence-storage.ts accepts exactly these three). */
+const MEDICAL_REP_OTHER_CONTENT_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
+
+/**
+ * Whether the invoice files are enough to submit, in words the rep can act on — ONE answer for the
+ * form's Submit button and the server's refusal. Every sentence carries "required" or "must be",
+ * which the route answers as a 400 the form shows as it is.
+ */
+export function medicalRepOtherFileProblem(
+  files: ReadonlyArray<{ contentType: string; size: number }>,
+): string | null {
+  if (files.length < MEDICAL_REP_OTHER_MIN_FILES) {
+    return "The invoice or receipt is required — attach a PDF or a photo.";
+  }
+  if (files.length > MEDICAL_REP_OTHER_MAX_FILES) {
+    return `Files must be ${MEDICAL_REP_OTHER_MAX_FILES} or fewer — remove ${files.length - MEDICAL_REP_OTHER_MAX_FILES}.`;
+  }
+  if (files.some((file) => !MEDICAL_REP_OTHER_CONTENT_TYPES.has(file.contentType))) {
+    return "Every file must be a PDF or a photo (JPG or PNG).";
+  }
+  const total = files.reduce((sum, file) => sum + (Number.isFinite(file.size) ? file.size : 0), 0);
+  if (total > MEDICAL_REP_OTHER_MAX_TOTAL_BYTES) {
+    return "The files must be 9 MB or less together — remove one, or attach a smaller PDF.";
+  }
+  return null;
+}
+
+export type MedicalRepOtherExpenseInput = {
+  amount: number;
+  attachments: MedicalRepSimpleExpenseAttachment[];
+  /** The day the rep paid, as the form's date box sends it (YYYY-MM-DD). */
+  expenseDate: string;
+  notes: string;
+};
+
+export type NormalizedMedicalRepOtherExpenseInput = {
+  amount: number;
+  attachments: MedicalRepSimpleExpenseAttachment[];
+  /** Midnight UTC of the chosen day, the same shape the traveling form stores its dates in. */
+  expenseDate: string;
+  notes: string;
+};
+
+/**
+ * Checks an Other claim. `today` is Cairo's calendar day (YYYY-MM-DD): an invoice is a cost already
+ * paid, so a day after today is refused — the date box on the form stops at today as well.
+ */
+export function validateMedicalRepOtherExpenseInput(
+  input: MedicalRepOtherExpenseInput,
+  today: string,
+): NormalizedMedicalRepOtherExpenseInput {
+  const rawDate = text(input.expenseDate);
+  if (!rawDate) {
+    throw new Error("Date is required.");
+  }
+  const day = rawDate.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(new Date(`${day}T00:00:00Z`).getTime())) {
+    throw new Error("Date is invalid.");
+  }
+  if (today && day > today) {
+    throw new Error("Date must be today or earlier.");
+  }
+
+  const amount = roundMoney(numberValue(input.amount));
+  if (amount <= 0) {
+    throw new Error("Amount is required — enter what you paid.");
+  }
+
+  const notes = text(input.notes);
+  if (!notes) {
+    throw new Error("Comment is required — say what this payment was for.");
+  }
+
+  const attachments = Array.isArray(input.attachments) ? input.attachments : [];
+  const fileProblem = medicalRepOtherFileProblem(attachments);
+  if (fileProblem) {
+    throw new Error(fileProblem);
+  }
+
+  return {
+    amount,
+    attachments,
+    expenseDate: new Date(`${day}T00:00:00Z`).toISOString(),
+    notes,
   };
 }
