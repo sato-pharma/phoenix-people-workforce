@@ -4,7 +4,7 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
-import { tripDayCount, waitLabel } from "@/lib/outstation/approvals/desk-view";
+import { otherFindings, tripDayCount, waitLabel } from "@/lib/outstation/approvals/desk-view";
 import { TRIP_STANDING_LABEL, TRIP_STANDING_MEANING, type TripStanding } from "@/lib/outstation/approvals/standing";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import { displayPlace } from "@/lib/outstation/place-label";
@@ -51,6 +51,7 @@ export const PHONE_TARGET = "max-md:min-h-11";
 
 export const STANDING_TONE: Record<TripStanding, PillTone> = {
   approved_held: "warn",
+  approved_missed: "warn",
   approved_queued: "good",
   in_payroll: "info",
   rejected: "bad",
@@ -59,6 +60,7 @@ export const STANDING_TONE: Record<TripStanding, PillTone> = {
 
 export const STANDING_RAIL: Record<TripStanding, string> = {
   approved_held: "border-l-amber-400",
+  approved_missed: "border-l-amber-600",
   approved_queued: "border-l-emerald-500",
   in_payroll: "border-l-sky-500",
   rejected: "border-l-rose-500",
@@ -107,9 +109,13 @@ export function TripLine({ claim }: { claim: DeskClaim }) {
  * What the system found. A Ready claim says so in one pill. A "Your call" claim wears the ONE
  * sentence that put it there, then the name of every other check that failed or could not be made.
  * A claim whose approval would be held out of payroll says that before the press, not after.
+ *
+ * `compact` is the phone card: the other checks are ONE wrapped line, not a tag each. Five tags
+ * stacked one per line made a card 300 px tall at 375 (23 Nov 2026).
  */
-export function FoundCell({ claim }: { claim: DeskClaim }) {
+export function FoundCell({ claim, compact = false }: { claim: DeskClaim; compact?: boolean }) {
   const others = claim.verdict.checks.filter((check) => check.answer !== "pass" && check.sentence !== claim.verdict.reason);
+  const { failed, notChecked } = otherFindings(claim);
   return (
     <div className="flex min-w-0 flex-col items-start gap-1" data-found>
       {claim.verdict.lane === "ready" ? (
@@ -121,7 +127,14 @@ export function FoundCell({ claim }: { claim: DeskClaim }) {
           {claim.verdict.reason}
         </p>
       )}
-      {others.length > 0 ? (
+      {compact && others.length > 0 ? (
+        <p className="min-w-0 break-words text-xs font-bold leading-5" data-found-others>
+          {failed.length > 0 ? <span className="text-rose-700">Also failed: {failed.join(", ")}</span> : null}
+          {failed.length > 0 && notChecked.length > 0 ? <span className="text-slate-400"> · </span> : null}
+          {notChecked.length > 0 ? <span className="text-amber-800">Not checked: {notChecked.join(", ")}</span> : null}
+        </p>
+      ) : null}
+      {!compact && others.length > 0 ? (
         <div className="flex min-w-0 flex-wrap gap-1">
           {others.map((check) => (
             <span key={check.key} title={check.sentence}>

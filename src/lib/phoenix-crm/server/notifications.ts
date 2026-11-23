@@ -378,8 +378,8 @@ export type PhoenixCrmNotice =
        * wrong with HIS PHOTO, chosen from the closed six-item list in
        * `@/lib/phoenix-crm/validation-feedback` — never the free-text note the Super Admin writes for
        * the record, never who decided, never that anybody decided, never a distance, a reading or a
-       * threshold. In-app only, and push-blocked as well (`PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES`): no
-       * email, no Telegram, no phone, ever.
+       * threshold. In-app, Telegram and the phone (owner, 2026-10-08, asked about it by name), never
+       * email: the channels are the guard's (`phoenixCrmChannels`), and it is not push-blocked.
        */
       kind: "validation_not_confirmed";
       seat: OrgSeat;

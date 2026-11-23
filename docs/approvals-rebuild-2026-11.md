@@ -44,7 +44,7 @@ What the audit found on Expense Approvals, read on production that night:
 
 ### What it is
 
-One line says how many decisions wait. Under it, five tiles that each equal a database count. Then
+One line says how many decisions wait. Under it, six tiles that each equal a database count. Then
 three lanes:
 
 - **Ready**: every check that applies to the claim passed. One button approves the whole lane and
@@ -105,13 +105,49 @@ that could not be read gives "could not check" for every trip, never "idle".
 | --- | --- |
 | Waiting | Not decided. |
 | Approved · held | Accepted, but no payroll row carries it yet. The evidence gate is holding it. |
-| Approved · next payroll | Accepted, a payroll row carries it, no payroll has taken it. |
+| Approved · next payroll | Accepted, a payroll row carries it, and the payroll of its payout month has not run yet. |
+| Approved · payroll already ran | Accepted, a payroll row carries it, the row is not marked paid, and the payroll of its payout month has already run. |
 | In payroll | A payroll took it. Nothing can change it here. |
 | Rejected | Nothing is paid. |
 
 The paid stamp on a payroll row is written only since 12 Sep 2026, and July and August 2026 were
 never backfilled. So a row with no stamp whose payout month is August 2026 or earlier is in a
 payroll, and the page says so.
+
+**Approved · payroll already ran** was added the morning the desk went live (23 Nov 2026). The first
+read of production after the merge found 12 approved trips, 3,869.30 EGP, with payout month September
+(6) or October (6) 2026 and no paid mark, while both payrolls had run. The desk called them "Approved
+· next payroll". That was not true: payroll reads a trip by its own payout month and no later run
+looks back at an earlier one (`src/lib/automated-payroll/late-expenses.ts`), and the switch that
+carries such trips into the next run was off.
+
+Not every such trip is on the payroll Expenses step's list, and the desk does not say it is. That
+list leaves out a person who was held in the month's run (his money is in the held balance that Held
+Salary Release pays) and a trip the month's published figure already covered. Of the 12 trips, 11
+(3,549.30 EGP) belonged to one person held in the September run; one (320.00 EGP, September) belonged
+to another person. The first wording said "it is listed on the payroll Expenses step"; a review the
+same morning found that untrue for the 11, and it was corrected before the label reached production.
+The sentence now says the trip may have been paid another way and names the screen to check before
+anything is paid.
+
+How the state is read: the newest payout month that any payroll row carries a paid stamp for is the
+last payroll that ran (`readLastPaidPayout` in `approvals/queue.ts`, one row). An approved trip
+with a payroll row, no paid mark, and a payout month on or before that one is in this state. The
+page never calls it unpaid, because a missing mark does not prove a missing payment (a stamp can
+fail, and a person's published figure can differ from their approved trips). It says what is known
+and names the screen. The state changes nothing: no payroll row is written and no amount moves.
+
+On production that morning: 64 waiting, 5 held, 104 next payroll (49,710.97 EGP), 12 payroll already
+ran (3,869.30 EGP), 109 in payroll, 64 rejected.
+
+**Visit positions could not be read** was found the same morning, by calling the desk's own loader
+against production. A district manager's own visit carries the screen label `own:<uuid>`; the desk
+sent that label to a uuid column, the database refused the read, and the catch kept no trace. So no
+manager's own visit and no place pin carried a position, and the live page said "visit positions
+could not be read" on every load. Measured with and without the fix on that day's 64 waiting trips:
+the lanes (23 Ready, 8,738.96 EGP; 41 Your call) and every check's answer were the same, because
+the visits' own positions were enough that day. The read now asks by the bare uuid
+(`managerOwnVisitUuid`), and both evidence reads record why they failed.
 
 ### The press
 
@@ -223,7 +259,9 @@ Each of these was on the 7 Nov screen and is not on the desk.
 | Not carried | What is there instead |
 | --- | --- |
 | The Save button, the unsaved count and the draft kept in the browser | A press saves after six seconds of Undo. |
-| Nine tabs and six tiles | Three lanes and five tiles. |
+| Nine tabs and six tiles | Three lanes and six tiles, each counting one state. |
+| On a phone the first claim began 904 px down, under the tiles (measured at 375, 23 Nov 2026) | On a phone the count, the lanes and the list come first; the tiles follow the list. A desktop is unchanged. |
+| On a phone a Your call card ran up to 300 px: every other check that failed or could not be made was a tag on its own line (measured at 375 in the preview of pull request 700, 23 Nov 2026) | A phone card says them in one line ("Also failed: … · Not checked: …", `otherFindings` in `desk-view.ts`). The desktop row keeps a tag for each. |
 | The "By employee" roll-up tab | The search box narrows by employee. |
 | "Unapprove back to waiting" | A decided claim is not reopened here. |
 | Biggest first, and the order remembered for each reviewer | Oldest first, always. |

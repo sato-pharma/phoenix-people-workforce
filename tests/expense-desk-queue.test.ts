@@ -22,6 +22,7 @@ import type { ClaimRow } from "@/lib/outstation/approvals/claim-row";
 import { MEETING_ACTIVITY_KEYS, pointOf, visitPeople } from "@/lib/outstation/approvals/field-evidence";
 import { HISTORY_PAGE_SIZE, historyFilterOf, historySearchTerm } from "@/lib/outstation/approvals/history";
 import { findDuplicates, findOdometerChains } from "@/lib/outstation/approvals/queue";
+import { managerOwnVisitUuid } from "@/lib/phoenix-crm/server/manager-visit-details";
 
 const trip = (id: number, over: ClaimRow = {}): ClaimRow => ({
   captured_latitude: 27.1809,
@@ -154,6 +155,29 @@ export function runExpenseDeskQueueTests() {
   assert.ok(history.includes("applyEmployeeHrIdInFilter(") && history.includes("keepExpenseRowsInScope("));
   assert.ok(!queue.includes("history"), "the queue never reads history: it loads on a press");
   assert.ok(queue.includes("OUTSTATION_UNDECIDED_STATUSES"), "what waits is the one shared list of undecided statuses");
+
+  // 🔴 The newest paid payout month reaches every place a decided trip's standing is read: the tiles,
+  // the claims re-read after a press, and History. Without it a trip its own payroll missed reads
+  // "next payroll" (12 of them on 23 Nov 2026).
+  assert.ok(queue.includes('.or("imported_payroll_batch_id.not.is.null,imported_to_payroll_at.not.is.null")'), "the newest paid month is read from rows that carry a paid stamp");
+  assert.ok(queue.includes("if (error) throw error;\n  return newestPayout("), "a failed read throws; it is never guessed");
+  assert.equal(queue.split("readLastPaidPayout(supabase)").length - 1, 2, "HEADLINE: the page load and the after-press re-read both read it");
+  assert.ok(queue.includes("const standing = standingOfRow(row, stored, lastPaidPayout);"), "HEADLINE: the tiles count a decided trip with it");
+  assert.ok(queue.includes("buildDeskClaim({ context: { lastPaidPayout, today }, ledger: ledgerOf(row), now, row })"), "a claim re-read after a press is told it");
+  assert.ok(history.includes("readLastPaidPayout(supabase)") && history.includes("buildDeskClaim({ context: { lastPaidPayout, today },"), "and so is every row of History");
   assert.ok(evidence.includes('unavailable: ["Phoenix CRM field work"]'), "a failed Phoenix CRM read names itself and gives no reading");
+
+  // 🔴 A manager's own visit is asked for by its stored id. Its screen id is `own:<uuid>`; sent to the
+  // uuid column, the database refused the positions read for the WHOLE page: no manager's own visit
+  // and no place pin carried a position, the page said "visit positions could not be read" on every
+  // load of the live desk (23 Nov 2026), and the catch kept no trace of why.
+  assert.ok(
+    evidence.includes("loadManagerVisitFixes(ownVisits.map((visit) => managerOwnVisitUuid(visit.id)))"),
+    "HEADLINE: the positions of a manager's own visits are read by the bare uuid, never the own: label",
+  );
+  assert.ok(evidence.includes("ownFixes.get(managerOwnVisitUuid(visit.id))"), "HEADLINE: and looked up by the same uuid the read answers with");
+  assert.equal(managerOwnVisitUuid("own:50e1f915-2b7c-4841-a208-147980dffbaf"), "50e1f915-2b7c-4841-a208-147980dffbaf", "the label gives its uuid");
+  assert.equal(evidence.split('event: "expense_desk_evidence_failed"').length - 1, 2, "HEADLINE: both evidence reads record why they failed; neither swallows it");
+  assert.ok(!/} catch {/.test(evidence), "no bare catch is left in the evidence loader");
   assert.ok(evidence.includes('.eq("is_test", false)') && evidence.includes('.is("archived_at", null)'), "test visits and archived copies are never field work");
 }

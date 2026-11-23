@@ -16,7 +16,7 @@
  */
 
 import { claimPreCut, isTripClaim, judgeClaim, shortDay, type ClaimCheckFacts, type FieldWorkReading } from "@/lib/outstation/approvals/checks";
-import { readTripStanding } from "@/lib/outstation/approvals/standing";
+import { readTripStanding, type PayoutPeriod } from "@/lib/outstation/approvals/standing";
 import type { ClaimVerdict, DeskClaim } from "@/lib/outstation/approvals/types";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { cairoDateOnly } from "@/lib/outstation/departure-evidence";
@@ -155,6 +155,8 @@ export type ClaimContext = {
   duplicateTrips?: string[];
   /** undefined = not read for this claim (a decided one); null = Phoenix CRM could not be read. */
   fieldWork?: FieldWorkReading | null;
+  /** The newest payout month a payroll has paid (queue.ts, `readLastPaidPayout`); absent = not read. */
+  lastPaidPayout?: PayoutPeriod | null;
   odometerChain?: OdometerChain;
   sharedTripDays?: string[];
   today: string;
@@ -293,6 +295,7 @@ export function buildDeskClaim(input: {
   const payoutYear = ledger?.payout_year ?? approval.payoutYear;
   const reading = readTripStanding({
     hasPayrollRow: ledger !== null,
+    lastPaidPayout: input.context.lastPaidPayout ?? null,
     payoutMonth,
     payoutYear,
     payrollStamped: Boolean(ledger?.imported_payroll_batch_id || ledger?.imported_to_payroll_at),

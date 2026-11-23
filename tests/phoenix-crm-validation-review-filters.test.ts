@@ -15,6 +15,7 @@ import {
   type ValidationReviewFilterable,
   type ValidationReviewFilters,
 } from "../src/lib/phoenix-crm/validation-review-filters.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — the Place checks filter bar (owner, 2026-10-05: "filter by rep by line by region by
@@ -140,7 +141,7 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   assert.equal(decidedSectionTitle(filtersFor({ decider: "Khaled Bedair" }), true), "Settled in the last 14 days", "a manager's board never names a decider");
 
   // ── The board wires the pure logic, declares the admin surface, and owns the search ──────────────
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.match(board, /from "@\/lib\/phoenix-crm\/validation-review-filters"/, "the board reads its logic from the pure module, never a second copy");
   assert.match(board, /<CrmSurfaceProvider surface="admin">/, "the admin surface turns the filter dropdowns into combo boxes the Super Admin types into");
   assert.match(board, /showSearch=\{false\}/, "the board owns the search, so the validated list's own box is turned off");

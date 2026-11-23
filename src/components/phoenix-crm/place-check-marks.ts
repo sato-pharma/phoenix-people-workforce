@@ -11,8 +11,8 @@
  *
  * 🔴 EVERY CONTROL DRAWING THE ROW REDRAWS WHEN ONE OF THEM IS SAVED (owner, 22 Nov 2026: "it accept with
  * me … the same place … is as it is"). The mark used to redraw only the control that was pressed: on a
- * place in use, Refuse vanished and Approve — its sibling, with no parent to redraw it — stood live beside
- * the refused row until the page's re-read, so the row looked undecided and a press answered "already
+ * place in use, Reject vanished and Approve — its sibling, with no parent to redraw it — stood live beside
+ * the rejected row until the page's re-read, so the row looked undecided and a press answered "already
  * decided". Each control listens for its own row's mark (`listen`), and saving one tells them all.
  */
 

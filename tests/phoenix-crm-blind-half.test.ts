@@ -192,6 +192,14 @@ const BLIND_READERS: ReadonlyArray<string> = [
   // late, so its time is not when he stood there). That can only make the impossible-location refusal rarer;
   // nothing read reaches a payload, and the rep reads the same "location has not settled" sentence either way.
   "src/lib/phoenix-crm/server/far-visit-safeguards.ts",
+  // "The sign wins" (owner, 23 Nov 2026). Before the system approves a place that only the Google check
+  // held, it reads which of those places carry an integrity case nobody has settled, and LEAVES those to
+  // the Super Admin (`signWinsVerdict`, "integrity_case_open"). It reads ids and flags only, and nothing
+  // read reaches a payload, a notice or the rep: a place it leaves stays "being checked", which is where
+  // every held place stood before the rule and where its other reasons (a short name, an SFE
+  // recommendation, a seat in a building) leave one too. A read that fails approves nothing. So the
+  // read can only keep the system from saying yes; nothing here ever says no or tells anybody why.
+  "src/lib/phoenix-crm/server/sign-wins.ts",
 ];
 
 /**

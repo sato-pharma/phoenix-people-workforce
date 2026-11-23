@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { rejectedBuildingsSwitchLabel, seatedRejectWarning } from "@/lib/phoenix-crm/validation-feedback";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Place checks for the SFE Manager (owner, 2026-10-19: "show check place to sfe manager exactly as it
@@ -195,10 +197,10 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   const restoreScreen = read("src/components/phoenix-crm/place-check-restore.tsx");
   assert.ok(restoreScreen.includes("const RestoreContext = createContext(false);"), "🔴 and the screen defaults to NO take-back, so a board that forgets the provider draws none");
   assert.ok(restoreScreen.includes("if (!canRestore || !reviewId) return null;"), "the take-back draws nothing for anybody else");
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   assert.ok(queue.includes('DECIDED_ACTIONS.filter((action) => action.key !== "approve-after-all")'), "the bulk take-back is left out of his bar");
   assert.ok(queue.includes("row.refusable || (canRestore && row.restorable)"), "and he cannot tick a rejected row");
-  const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
+  const venues = placeCheckListSource("shared-place-list", read);
   assert.ok(venues.includes('VENUE_ACTIONS.filter((action) => action.key !== "restore")'), "nor bring a rejected building back in bulk");
   assert.ok(venues.includes("{canRestore ? ("), "nor on its own row");
 
@@ -216,11 +218,11 @@ export function runPhoenixCrmSfePlaceChecksTests() {
     "This retires their seat — the rep captures the customer again from their own list.",
     "🔴 the SFE Manager reads what the rejection costs and no promise of a take-back",
   );
-  const placeBoard = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const placeBoard = placeCheckBoardSource(read);
   assert.ok(placeBoard.includes("const canRestore = useCanRestoreValidation();"), "the board asks who takes a rejection back, from the page's own gate");
   assert.ok(placeBoard.includes("rejectedBuildingsSwitchLabel(rejectedBuildings, { team, canRestore })"), "and words the rejected-buildings switch by the answer");
   assert.ok(!placeBoard.includes("which can be brought back"), "🔴 the promise is written in one place, never again on the board itself");
-  const seated = read("src/components/phoenix-crm/shared-place-customers.tsx");
+  const seated = placeCheckListSource("shared-place-customers", read);
   assert.ok(seated.includes("{seatedRejectWarning(canRestore)}"), "the seated customer's reject warning is worded by the same answer");
   assert.ok(!seated.includes("You can approve it after all"), "🔴 and never promises the take-back to everybody again");
 }

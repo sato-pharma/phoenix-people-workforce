@@ -251,7 +251,19 @@ export function runPortalRepNavigationSpeedTests(): void {
       assertBefore(save, "await afterResponse(", "await recordPlaceSignboard(", `${declaration}: the signboard verdict is kept after the reply`);
       assertBefore(save, "await afterResponse(", "await judgeCaptureForPlace(", `${declaration}: the capture is judged after the reply`);
       const deferred = save.slice(save.indexOf("await afterResponse("), save.indexOf("\n  });", save.indexOf("await afterResponse(")));
-      assert.doesNotMatch(deferred, /notify/i, `${declaration}: a notice is never deferred from here — the notices own their own timing`);
+      // 🔴 ONE NOTICE WAITS, AND ONLY THAT ONE (owner, 23 Nov 2026, "the sign wins"). A place only Google
+      // held, whose sign the door read as naming the customer, may be approved by the system once the
+      // sign is recorded. Telling him at the door would announce a hold that is gone a second later, so
+      // that one hold is told after the rule has LEFT it. Every other notice still owns its own timing.
+      const notices = deferred.match(/\bnotify\w*/gi) ?? [];
+      assert.deepEqual(notices, ["notifyValidationReviewWaiting"], `${declaration}: the only notice after the reply is the hold the sign did not win`);
+      assertBefore(deferred, "await recordPlaceSignboard(", "const won = await signWinsAtTheDoor(heldReviewId);", `${declaration}: the rule runs once the door's reading is recorded`);
+      assertBefore(deferred, "const won = await signWinsAtTheDoor(heldReviewId);", "await notifyValidationReviewWaiting(", `${declaration}: and he is told after it has answered`);
+      assert.ok(
+        deferred.includes("if (signMayWin && heldReviewId) {\n      const won = await signWinsAtTheDoor(heldReviewId);\n      if (!won.approved && !isTest) {\n        await notifyValidationReviewWaiting("),
+        `${declaration}: only when the rule left the place to him`,
+      );
+      assert.ok(save.includes("&& !signboardHold && !signMayWin) {\n    await notifyValidationReviewWaiting("), `${declaration}: every other hold is still told at the door`);
     }
     const validate = functionBody(list, "export async function validateCustomer(");
     assertBefore(validate, "await afterResponse(", "restampVisitLocationsQuietly(", "the restamp of his earlier visits runs after the reply");

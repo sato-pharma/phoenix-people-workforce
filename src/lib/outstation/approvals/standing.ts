@@ -7,13 +7,27 @@
  * already taken. Measured on production that day: 230 "Approved", of which 5 were held and 98 already
  * in a payroll.
  *
- * The five states, and the columns each is read from:
+ * The six states, and the columns each is read from:
  *
  *   waiting          the request is undecided (`submitted`, `needs_review`).
  *   rejected         the request's status says rejected.
  *   approved_held    accepted, but NO payroll row carries it yet — the evidence gate is holding it.
- *   approved_queued  accepted, a payroll row carries it, and no payroll has taken that row.
+ *   approved_queued  accepted, a payroll row carries it, and its payout month's payroll has not run.
+ *   approved_missed  accepted, a payroll row carries it, the row is not marked paid, and the payroll
+ *                    of its payout month HAS already run.
  *   in_payroll       accepted, and a payroll took the row.
+ *
+ * 🔴 `approved_missed` was found the morning the desk went live (23 Nov 2026): 12 approved trips with
+ * payout month September or October 2026, about 3,869 EGP, read "Approved · next payroll" while both
+ * payrolls had run. Payroll reads a trip by its OWN payout month and no later run looks back
+ * (src/lib/automated-payroll/late-expenses.ts), so "the next payroll" is not a true word for them.
+ * UNSTAMPED IS NOT UNPAID, and NOT EVERY ONE IS ON THE EXPENSES STEP'S LIST: that list leaves out a
+ * person held in the month's run (his money is in the held balance Held Salary Release pays) and a
+ * trip the month's published figure covered. 11 of the 12 belonged to one held person. So this state
+ * says exactly what is known — approved, its payroll ran, not marked paid — never "unpaid", never
+ * "listed", and it names the screen to check before anything is paid. "Its payroll ran" is read from
+ * the newest payout month that carries a paid stamp (`lastPaidPayout`); without that reading the
+ * state is never claimed.
  *
  * 🔴 "A payroll took the row" is NOT only the stamp. `imported_payroll_batch_id` /
  * `imported_to_payroll_at` are written by a payroll's publish only since 2026-09-12, and July and
@@ -24,9 +38,12 @@
  * Pure and import-free: the queue read, the tiles and the tests all call this one function.
  */
 
-export type TripStanding = "waiting" | "rejected" | "approved_held" | "approved_queued" | "in_payroll";
+export type TripStanding = "waiting" | "rejected" | "approved_held" | "approved_queued" | "approved_missed" | "in_payroll";
 
-export const TRIP_STANDINGS = ["waiting", "approved_held", "approved_queued", "in_payroll", "rejected"] as const satisfies ReadonlyArray<TripStanding>;
+export const TRIP_STANDINGS = ["waiting", "approved_held", "approved_queued", "approved_missed", "in_payroll", "rejected"] as const satisfies ReadonlyArray<TripStanding>;
+
+/** A payout month, as the payroll row stores it. */
+export type PayoutPeriod = { month: number; year: number };
 
 /** The last payout period whose trips were paid before the paid stamp existed (August 2026). */
 export const LAST_UNSTAMPED_PAYOUT = { month: 8, year: 2026 } as const;
@@ -39,6 +56,11 @@ export type TripStandingInput = {
   payoutYear?: number | null;
   /** True when the row carries either paid stamp. */
   payrollStamped: boolean;
+  /**
+   * The newest payout month any payroll row carries a paid stamp for — the last payroll that ran.
+   * Null or absent when it was not read: `approved_missed` is then never claimed.
+   */
+  lastPaidPayout?: PayoutPeriod | null;
   /** `outstation_expense_requests.status`, exactly as stored. */
   status: string | null | undefined;
 };
@@ -67,6 +89,40 @@ export function paidBeforeStampsWereKept(month: number | null | undefined, year:
   return y < LAST_UNSTAMPED_PAYOUT.year || (y === LAST_UNSTAMPED_PAYOUT.year && m <= LAST_UNSTAMPED_PAYOUT.month);
 }
 
+function period(month: unknown, year: unknown): PayoutPeriod | null {
+  if (month === null || month === undefined || year === null || year === undefined) return null;
+  const m = Number(month);
+  const y = Number(year);
+  return Number.isInteger(m) && Number.isInteger(y) && m >= 1 && m <= 12 ? { month: m, year: y } : null;
+}
+
+/** True when a payroll has already run for this payout month: it is on or before the newest paid one. */
+export function payrollAlreadyRan(
+  month: number | null | undefined,
+  year: number | null | undefined,
+  lastPaidPayout: PayoutPeriod | null | undefined,
+): boolean {
+  const own = period(month, year);
+  const last = period(lastPaidPayout?.month, lastPaidPayout?.year);
+  if (!own || !last) return false;
+  return own.year < last.year || (own.year === last.year && own.month <= last.month);
+}
+
+/** The newest payout month among the rows given; null when none names one. Pure. */
+export function newestPayout(rows: ReadonlyArray<{ payout_month?: unknown; payout_year?: unknown }>): PayoutPeriod | null {
+  let newest: PayoutPeriod | null = null;
+  for (const row of rows) {
+    const own = period(row.payout_month, row.payout_year);
+    if (own && (!newest || own.year > newest.year || (own.year === newest.year && own.month > newest.month))) newest = own;
+  }
+  return newest;
+}
+
+/** True for an approved trip whose payroll row no payroll has taken — queued, or missed by its own month's run. */
+export function awaitsAPayroll(standing: TripStanding): boolean {
+  return standing === "approved_queued" || standing === "approved_missed";
+}
+
 export function readTripStanding(input: TripStandingInput): TripStandingReading {
   const status = String(input.status ?? "").trim().toLowerCase();
   if (UNDECIDED.has(status)) return { standing: "waiting", stampKept: true };
@@ -77,6 +133,7 @@ export function readTripStanding(input: TripStandingInput): TripStandingReading 
   if (!input.hasPayrollRow) return { standing: "approved_held", stampKept: true };
   if (input.payrollStamped) return { standing: "in_payroll", stampKept: true };
   if (paidBeforeStampsWereKept(input.payoutMonth, input.payoutYear)) return { standing: "in_payroll", stampKept: false };
+  if (payrollAlreadyRan(input.payoutMonth, input.payoutYear, input.lastPaidPayout)) return { standing: "approved_missed", stampKept: true };
   return { standing: "approved_queued", stampKept: true };
 }
 
@@ -87,6 +144,7 @@ export function tripStanding(input: TripStandingInput): TripStanding {
 /** The words a row and a tile wear for each state — one vocabulary, pinned by a test. */
 export const TRIP_STANDING_LABEL: Record<TripStanding, string> = {
   approved_held: "Approved · held",
+  approved_missed: "Approved · payroll already ran",
   approved_queued: "Approved · next payroll",
   in_payroll: "In payroll",
   rejected: "Rejected",
@@ -96,6 +154,8 @@ export const TRIP_STANDING_LABEL: Record<TripStanding, string> = {
 /** One sentence saying what the state means for the money. */
 export const TRIP_STANDING_MEANING: Record<TripStanding, string> = {
   approved_held: "Approved, but held out of payroll until its photos and workload land.",
+  approved_missed:
+    "Approved, but the payroll of its payout month has already run and the trip is not marked paid. It may have been paid another way (a held salary released later, or a figure typed in that payroll): check the payroll Expenses step before paying it.",
   approved_queued: "Approved and waiting for the next payroll to take it.",
   in_payroll: "A payroll has taken it.",
   rejected: "Rejected. Nothing is paid.",
@@ -107,6 +167,7 @@ export type TripStandingCounts = Record<TripStanding, { count: number; value: nu
 export function emptyStandingCounts(): TripStandingCounts {
   return {
     approved_held: { count: 0, value: 0 },
+    approved_missed: { count: 0, value: 0 },
     approved_queued: { count: 0, value: 0 },
     in_payroll: { count: 0, value: 0 },
     rejected: { count: 0, value: 0 },
@@ -115,7 +176,7 @@ export function emptyStandingCounts(): TripStandingCounts {
 }
 
 /**
- * The five tiles. `payable` is what the trip pays as it stands: the claim while it waits, the
+ * The six tiles. `payable` is what the trip pays as it stands: the claim while it waits, the
  * approved figure once decided (the amount he typed, when he typed one), and nothing when rejected —
  * a rejected trip is counted and never summed.
  */

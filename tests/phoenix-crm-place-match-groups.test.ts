@@ -27,6 +27,7 @@ import {
   type OneCustomerCandidate,
 } from "../src/lib/phoenix-crm/place-match-groups.ts";
 import { twinNameWords } from "../src/lib/phoenix-crm/line-twins.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — the same place validated by more than one rep, side by side (owner, 2026-10-17: "a place
@@ -485,7 +486,7 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   );
   assert.ok(screen.includes("anyPasses(group.members, filters, cutoff)"), "🔴 a place stays whole when any of its validations passes the shared filters");
 
-  const shell = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const shell = placeCheckBoardSource(read);
   assert.ok(shell.includes("...(team ? [] : [{ key: \"samePlace\" as const"), "🔴 the third tab is not drawn on a manager's board");
   assert.ok(shell.includes("{!team && samePlaceOpened ? ("), "and neither is its panel, or the read behind it");
   assert.ok(shell.includes("<PlaceMatchBoardView filters={filters} />"), "the panel hands it the shared filters");

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * The items the Phoenix CRM validation audit of 14 Nov 2026 left as they were, closed the same day on the
@@ -176,17 +177,17 @@ export function runPhoenixCrmValidationLeftItemsTests(): void {
     done.includes('export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once the building is approved.";'),
     "🔴 and one plain sentence says when he counts — never \"Approved\" over a customer still under To validate",
   );
-  assert.ok(read("src/components/place-review-deck/review-deck.tsx").includes('waiting_building: "Approved, waits for the building",'), "the one-by-one review names it in its summary");
+  assert.ok(placeCheckListSource("review-deck", read).includes('waiting_building: "Approved, waits for the building",'), "the one-by-one review names it in its summary");
   for (const [file, call] of [
     ["src/components/phoenix-crm/validation-review-queue.tsx", 'markSaved(done(decision === "approve" ? approvalOutcome(decided, "approved") : "rejected"));'],
     ["src/components/phoenix-crm/shared-place-customers.tsx", 'markSaved(done(decision === "approve" ? approvalOutcome(decided, "approved") : "rejected"));'],
     ["src/components/phoenix-crm/place-check-restore.tsx", 'markSaved(done(approvalOutcome(restored, "restored")));'],
   ] as const) {
-    assert.ok(read(file).includes(call), `${file} draws what the server answered, not what was pressed`);
+    assert.ok(placeCheckListSourceAt(file, read).includes(call), `${file} draws what the server answered, not what was pressed`);
   }
 
   // ── The bulk bar says it too (owner, 14 Nov 2026: "fix the bulk approve wording") ───────────────
-  const queueSource = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queueSource = placeCheckListSource("validation-review-queue", read);
   assert.ok(queueSource.includes('outcomeOf: (answer) => approvalOutcome(answer, "approved"),'), "🔴 a bulk approve reads the server's answer, as one pressed alone does");
   assert.ok(queueSource.includes('outcomeOf: (answer) => approvalOutcome(answer, "restored"),'), "🔴 and so does a bulk approve-after-all");
   const bar = stripComments(read("src/components/phoenix-crm/place-check-bulk.tsx"));

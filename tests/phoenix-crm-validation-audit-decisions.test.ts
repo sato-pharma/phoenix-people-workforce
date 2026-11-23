@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { DOOR_CAPTURED_AGAIN_METERS, doorCapturedAgain, type DoorPlace } from "@/lib/phoenix-crm/door-captured-again";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * The owner's decisions of 14 Nov 2026 on the Phoenix CRM validation audit, as the database holds them
@@ -103,7 +104,7 @@ export function runPhoenixCrmValidationAuditDecisionsTests(): void {
   assert.match(marked, /row\.restorable = false;\s+row\.capturedAgain = true;/, "🔴 a captured-again row offers no take-back, and says why");
   assertBefore(loader, "await markDoorsCapturedAgain(rows, reviews, placeById);", "row.status === \"rejected\" && row.restorable && decided >= rejectedSince", "it is marked before the 90-day undo window is judged, so it drops back to 14 days");
   for (const screen of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/shared-place-customers.tsx"]) {
-    assert.ok(stripComments(read(screen)).includes("DOOR_CAPTURED_AGAIN_TEXT"), `${screen} draws the reason where the button was`);
+    assert.ok(stripComments(placeCheckListSourceAt(screen, read)).includes("DOOR_CAPTURED_AGAIN_TEXT"), `${screen} draws the reason where the button was`);
   }
   assert.match(stripComments(read("src/lib/phoenix-crm/shared-place-groups.ts")), /capturedAgain: row\.capturedAgain === true,/, "a seated customer carries it too");
 

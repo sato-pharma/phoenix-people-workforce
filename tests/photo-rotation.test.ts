@@ -42,8 +42,10 @@ function tsxUnder(dir: string): string[] {
 const PLACE_CHECKS = new Set([
   "src/components/phoenix-crm/validation-review-queue.tsx",
   "src/components/phoenix-crm/validated-place-list.tsx",
-  "src/components/phoenix-crm/shared-place-list.tsx",
-  "src/components/phoenix-crm/shared-place-customers.tsx",
+  // The polyclinics' two photographs and a seated customer's own copy are drawn by each list's evidence
+  // part since the split of 23 Nov 2026 — the file that draws the photograph is the one named here.
+  "src/components/phoenix-crm/shared-place-list-evidence.tsx",
+  "src/components/phoenix-crm/shared-place-customers-evidence.tsx",
   "src/components/phoenix-crm/place-match-board.tsx",
   "src/components/phoenix-crm/customer-match-board.tsx",
   // PM full names to check, the row opened on its signboard (owner, 2026-11-08) — a Place checks section.

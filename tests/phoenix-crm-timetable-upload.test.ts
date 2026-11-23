@@ -131,8 +131,13 @@ export function runPhoenixCrmTimetableUploadTests() {
   assert.equal(named.kind, "approve", "it names the customer, so the advice is still approve");
   assert.ok(named.reason.endsWith(sentence), "and says how the photo came");
   assert.equal(adviseOnTimetable({ verdict: "match", scheduleText: null, hoursRead: "10-2" }).reason.includes("uploaded"), false, "a capture never says it");
-  const absent = adviseOnTimetable({ verdict: "other_name", scheduleText: "x", hoursRead: null, uploaded: true });
-  assert.equal(absent.refusal, "schedule_other_name", "the mark changes no other part of the advice");
+  // The mark changes the sentence and nothing else: the same answer, reason to open on and kind as a capture's.
+  // (A photo that is not a timetable: the one timetable advice that still opens Reject on a reason, 23 Nov 2026.)
+  const paper = { verdict: "no_schedule" as const, scheduleText: null, hoursRead: null, problem: "not_a_timetable" as const };
+  const absent = adviseOnTimetable({ ...paper, uploaded: true });
+  assert.equal(absent.refusal, "schedule_missing", "the mark changes no other part of the advice");
+  assert.deepEqual({ ...absent, reason: "" }, { ...adviseOnTimetable(paper), reason: "" }, "kind, quote, reason to open on and code are a capture's");
+  assert.ok(absent.reason.endsWith(sentence));
   const heldRow = adviseOnHeldRow({
     evidence: { checkReason: "call_failed", heldBecause: "timetable_unreadable", legibility: null, problem: null, signboard: null, uploaded: true },
     hoursRead: null,

@@ -14,6 +14,7 @@ import {
   type LookalikeInput,
 } from "../src/lib/phoenix-crm/line-lookalikes.ts";
 import type { TwinPlace } from "../src/lib/phoenix-crm/line-twins.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — the same customer on another line, written differently: the Super Admin's confirmation
@@ -281,7 +282,7 @@ function runSourceTests(): void {
   assert.doesNotMatch(screen, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp|text-ellipsis/, "square, no sideways scroll, no ellipsis");
   assert.doesNotMatch(screen.toLowerCase(), /\b(doctor|doctors|account|accounts)\b/, "AM and PM customers — never the old words");
 
-  const shell = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const shell = placeCheckBoardSource(read);
   assert.ok(
     shell.includes('...(!team && canRestore ? [{ key: "lineLookalikes" as const, label: "Same customer, other line"'),
     "🔴 the tab is drawn on the Super Admin's board only",

@@ -2318,6 +2318,7 @@ import { runPhoenixCrmTimetableUploadTests } from "./phoenix-crm-timetable-uploa
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhoenixCrmBuildingSignTests } from "./phoenix-crm-building-sign.test.ts";
+import { runPhoenixCrmSignWinsTests } from "./phoenix-crm-sign-wins.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmPlaceChecksOnDemandTests } from "./phoenix-crm-place-checks-on-demand.test.ts";
@@ -2328,6 +2329,7 @@ import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
 import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
 import { runPhoenixCrmPlaceChecksAuditFixesTests } from "./phoenix-crm-place-checks-audit-fixes.test.ts";
+import { runPhoenixCrmPlaceCheckLanesTests } from "./phoenix-crm-place-check-lanes.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
@@ -8271,6 +8273,11 @@ await runTest(
 );
 
 await runTest(
+  "Place checks, the rebuild of 23 Nov 2026 (lanes, the one waiting number, the address, the verbs): a waiting decision is Ready only when the advice is Approve, that kind of advice is confident and Approve can be pressed; his last 30 days outrank the table once a kind holds 20 decisions; a building is Ready only if everything open in it is; the desk counts decisions, a building as ONE, to the number Needs You shows; Approve all sends each building, then its waiting customers, then the clinics, through the two routes a row's own Approve posts to; no person's name is ever written to the address, rows are capped at 200 and other parameters are left alone; the page's bulk actions are its four verbs and no screen says Refuse; every file of the board is in the list the source pins read",
+  runPhoenixCrmPlaceCheckLanesTests,
+);
+
+await runTest(
   "Phoenix CRM pharmacy calls (owner, 2026-10-02, four rulings of which three REMOVE something a reader would add back by analogy with a doctor: a pharmacy is a THIRD list_type and never a row inside AM or PM, so the binary `=== \"AM\" ? \"AM\" : \"PM\"` that every existing reader uses would file it among the doctors with nothing going red; it is NEVER planned — \"He don't plan it. We don't want extra\" reverses his own earlier \"planned like doctors\", and the 10-a-day cap he set that morning capped PLANNING, so nothing is left for it to limit and a cap on VISITS would be the extra he refused; it is NEVER approved — \"no approval for an unplanned pharmacy visit\", because the off-plan approval protects a figure and a pharmacy has none; and NO KPI reads one — no coverage, frequency, monthly target, call rate or capacity, so the Pharmacies figure stays a plain count and never a rate)",
   runPhoenixCrmPharmacyCallTests,
 );
@@ -8338,6 +8345,11 @@ await runTest(
 await runTest(
   "the BUILDINGS on the Place checks board (owner, 14 Nov 2026, \"Fix all three\"). Pinned: a building's sign is also held to the Google listing's own quorum — one letter off on a long word, the spaces taken out, the clinic and centre words left out — so \"كفر الدوار\" names \"كفرالدوار\", and only a building, never a customer's place; a sign naming another place stays a flag; a sign only in the other script is never a flag on a building; the board and a new capture judge the stored signs again by today's rules, with the building's brick, and only ever soften; a building is never promised a night read; and a hospital or medical centre is never called a polyclinic",
   runPhoenixCrmBuildingSignTests,
+);
+
+await runTest(
+  "the Phoenix CRM place checks' SIGN WINS rule, the advice a decision keeps, and the 30-day agreement (the rebuild, owner 23 Nov 2026: \"REBUILD FROM SCRATCH\", then \"Yes, the sign wins\"). Pinned: the system approves a place only Google held whose sign names the customer, and never a short-named clinic customer, a place with an open integrity case, one the SFE Manager recommended on, a seating, a sign or timetable hold, a test entry or a place captured before the rule; it only ever approves, through the system's one approve path; it stops after more than 1 take-back in 20 over 30 days and a switch that cannot be read is off; both doors tell him only about a hold the rule left, and run the rule after the door's reading is recorded; the hourly pass rides the roll-up; a decision keeps the advice the page showed, read while the row waits and never overwritten by a take-back; Check it yourself is counted and never scored; a place the system approved is not his agreement until he takes it back; ready asks 19 in 20 over at least 20 decisions",
+  runPhoenixCrmSignWinsTests,
 );
 
 await runTest(

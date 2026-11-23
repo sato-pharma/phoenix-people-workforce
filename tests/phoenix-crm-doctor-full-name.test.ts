@@ -23,6 +23,7 @@ import { reasonsFor } from "@/lib/phoenix-crm/validation-feedback";
 import { parseNewCustomer, parseOutsideCustomer } from "@/lib/phoenix-crm/entry-rules";
 import { buildDayCopyPlacements } from "@/lib/phoenix-crm/plan-copy";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
+import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
@@ -251,19 +252,19 @@ function checkPlaceChecksSendsAShortNameBack(): void {
     ["src/components/phoenix-crm/validated-place-list.tsx", 1],
   ];
   for (const [path, count] of approveButtons) {
-    const source = readFileSync(path, "utf8");
+    const source = placeCheckListSourceAt(path);
     assert.equal(source.split("= approvalNeedsFullName(").length - 1, count, `${path} asks the rule on each approve`);
     assert.equal(source.split("|| shortName}").length - 1, count, `${path} disables each Approve`);
     assert.equal(source.split("{APPROVAL_NEEDS_FULL_NAME}").length - 1, count, `${path} says why beside each`);
   }
-  const queue = readFileSync("src/components/phoenix-crm/validation-review-queue.tsx", "utf8");
+  const queue = placeCheckListSource("validation-review-queue");
   assert.ok(queue.includes(`takes: (row) => row.status === "pending" && !approvalNeedsFullName(row)`), "the waiting bulk approve skips him");
   assert.ok(queue.includes("takes: (row) => row.restorable,"), "the bulk take-back is the Super Admin's and takes him as he stands");
   const restoreScreen = readFileSync("src/components/phoenix-crm/place-check-restore.tsx", "utf8");
   assert.ok(!restoreScreen.includes("|| shortName}"), "the take-back is never disabled for a short name");
   assert.ok(restoreScreen.includes("Edit name"), "and offers Edit name beside it");
   assert.ok(queue.includes(`shortName ? "short_name"`), "the refusal opens on the short-name reason");
-  const inUse = readFileSync("src/components/phoenix-crm/validated-place-list.tsx", "utf8");
+  const inUse = placeCheckListSource("validated-place-list");
   assert.ok(inUse.includes("takes: (row) => !approvalNeedsFullName(row)"), "the in-use bulk approve skips him");
 }
 

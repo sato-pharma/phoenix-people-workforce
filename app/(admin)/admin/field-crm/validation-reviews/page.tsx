@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { Building2, CheckCircle2, ChevronDown, EyeOff, Hourglass, MapPinCheck, MessageSquareQuote } from "lucide-react";
+import { Building2, CheckCircle2, ChevronDown, EyeOff, MapPinCheck } from "lucide-react";
 
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
@@ -19,6 +18,8 @@ import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
 import { keepPlaceChecksForTheClick, placeChecksHandoffKey } from "@/lib/phoenix-crm/server/place-checks-handoff";
 import { loadFailingTimetables } from "@/lib/phoenix-crm/server/failing-timetables";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
+import { readSignWinsSwitch } from "@/lib/phoenix-crm/server/sign-wins";
+import { loadPlaceCheckAgreement } from "@/lib/phoenix-crm/server/stored-advice";
 import {
   canDecideValidationReviews,
   loadReopenedCustomers,
@@ -76,7 +77,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     loadValidatedPlaces(viewer),
     loadSharedPlaceBoard(viewer),
   ]);
-  const [[reviews, validatedRead, sharedRead], reopenedRead, failingTimetables, heldFullNames, [notes, integrity]] = await Promise.all([
+  const [[reviews, validatedRead, sharedRead], reopenedRead, failingTimetables, heldFullNames, [notes, integrity], signWins, agreement] = await Promise.all([
     subjectReads,
     loadReopenedCustomers(viewer),
     // Buildings whose timetable was refused on two or more days (owner, 14 Nov 2026) — one small read.
@@ -93,6 +94,10 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
       };
       return Promise.all([loadPlaceNoteIndex(subjects, { viewerHrId: viewer.hrId }), loadPlaceCheckIntegrity(viewer, subjects)]);
     }),
+    // The rule that approves by itself, and how often his decisions matched the advice (the rebuild, 23 Nov
+    // 2026). A read that fails is handed on as null, and the header says it could not be read: never a zero.
+    decides ? readSignWinsSwitch().catch(() => null) : null,
+    decides ? loadPlaceCheckAgreement().catch(() => null) : null,
   ]);
   const validated = validatedRead.rows;
   const reopened = reopenedRead.rows;
@@ -129,7 +134,6 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // data?"): a test entry is nobody's work and the board never draws one, and a rejected building is not
   // a polyclinic in use — the card read 98, four of them test entries and 36 rejected.
   const real = <Row extends { isTest: boolean }>(set: Row[]) => set.filter((row) => !row.isTest);
-  const realWaiting = real(waiting);
   const realDecided = real(decided).filter((row) => row.recent);
   const realValidated = real(validated);
   // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
@@ -156,104 +160,108 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     readAt: new Date().toISOString(),
   };
 
+  // 🔴 NOTHING IS ABOVE THE FIRST WAITING PLACE BUT THE ONE LINE (the rebuild, 23 Nov 2026). The account of the
+  // checks, the figures and the held full names were about 1,700 px of page before the first decision; each
+  // is now a tab of the board (`slots`), drawn here so the board carries none of it into the portal.
+  const heldNames = heldFullNames.filter((row) => !row.isTest).length;
+  const slots = [
+    // Drawn only while a name is held, with its count on the tab.
+    ...(heldNames > 0
+      ? [
+          {
+            key: "names",
+            label: "Full names",
+            count: heldNames,
+            content: <FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} decides={decides} rows={heldFullNames} />,
+          },
+        ]
+      : []),
+    {
+      key: "figures",
+      label: "Figures",
+      count: null,
+      content: (
+        <>
+          <details className="group min-w-0 border border-slate-200 bg-white">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
+              <ChevronDown aria-hidden className="h-3.5 w-3.5 transition group-open:rotate-180" />
+              How the checks work
+            </summary>
+            <p className="break-words border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
+              Every AM customer a rep validates is checked against its own Google Maps listing: the listing must be that customer, and they must
+              have stood within {GOOGLE_MATCH_METERS} m of it. A place that does not match is refused at the door. Every new place also has its
+              signboard read: the sign must name the customer (for an AM customer, the place; for a PM customer, the person). What reaches this
+              page is what the system could not settle — Google had no listing for the customer, its pin is over{" "}
+              {GOOGLE_STALE_PIN_METERS.toLocaleString("en-GB")} m away, or the signboard names somebody else or nobody.
+            </p>
+          </details>
+          {/* The waiting number is the board's one line, in decisions; no card repeats it in another unit. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+            <AdminStatCard
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              label="Approved, last 14 days"
+              value={realDecided.filter((row) => row.status === "approved").length}
+              description="Validated in the rep's own name"
+              tone="emerald"
+              size="compact"
+            />
+            <AdminStatCard
+              icon={<MapPinCheck className="h-5 w-5" />}
+              label="Rejected, last 14 days"
+              value={realDecided.filter((row) => row.status === "rejected").length}
+              description="Sent back to To validate"
+              tone="rose"
+              size="compact"
+            />
+            <AdminStatCard
+              icon={<MapPinCheck className="h-5 w-5" />}
+              label="Validated, in use"
+              value={realValidated.length}
+              description="Every place still in use"
+              tone="blue"
+              size="compact"
+            />
+            <AdminStatCard
+              icon={<EyeOff className="h-5 w-5" />}
+              label="Never looked at"
+              value={unseen}
+              description="In use, and no review of any kind yet"
+              tone="violet"
+              size="compact"
+            />
+            <AdminStatCard
+              icon={<Building2 className="h-5 w-5" />}
+              label="Polyclinics and centres"
+              value={liveVenues.length}
+              description={`${seated} ${seated === 1 ? "customer seated" : "customers seated"} in them${
+                venuesWithoutTimetable > 0 ? `; ${venuesWithoutTimetable} with customers and no timetable on file` : ""
+              }`}
+              tone="blue"
+              size="compact"
+            />
+          </div>
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-5">
-      {/* 🔴 ONE LINE, AND THE REST ONE PRESS AWAY (owner, 17 Nov 2026: "make it easier to use, simple to
-          decide"). The whole account of the checks was a paragraph above every visit to the page. */}
       <AdminPageHero
         eyebrow="CRM"
         title="Place checks"
         description={
           decides
-            ? "The places the system could not settle by itself, each waiting for your decision. The rep is told only that the system is checking."
-            : "The places the system could not settle by itself. Recommend each one to validate or not; the administrator decides. The rep is told only that the system is checking."
+            ? "Decide the places the system could not settle by itself."
+            : "Recommend on the places the system could not settle by itself. The administrator decides."
         }
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
-      <details className="group min-w-0 border border-slate-200 bg-white">
-        <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
-          <ChevronDown aria-hidden className="h-3.5 w-3.5 transition group-open:rotate-180" />
-          How the checks work
-        </summary>
-        <p className="break-words border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
-          Every AM customer a rep validates is checked against its own Google Maps listing: the listing must be that customer, and they must
-          have stood within {GOOGLE_MATCH_METERS} m of it. A place that does not match is refused at the door. Every new place also has its
-          signboard read: the sign must name the customer (for an AM customer, the place; for a PM customer, the person). What reaches this
-          page is what the system could not settle — Google had no listing for the customer, its pin is over{" "}
-          {GOOGLE_STALE_PIN_METERS.toLocaleString("en-GB")} m away, or the signboard names somebody else or nobody.
-        </p>
-      </details>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-        <AdminStatCard
-          icon={<Hourglass className="h-5 w-5" />}
-          label={decides ? "Waiting for you" : "Waiting for a decision"}
-          value={realWaiting.length}
-          description="Saved at the door, not validated yet"
-          tone="orange"
-          size="compact"
-        />
-        <AdminStatCard
-          icon={<CheckCircle2 className="h-5 w-5" />}
-          label="Approved, last 14 days"
-          value={realDecided.filter((row) => row.status === "approved").length}
-          description="Validated in the rep's own name"
-          tone="emerald"
-          size="compact"
-        />
-        <AdminStatCard
-          icon={<MapPinCheck className="h-5 w-5" />}
-          label="Rejected, last 14 days"
-          value={realDecided.filter((row) => row.status === "rejected").length}
-          description="Sent back to To validate"
-          tone="rose"
-          size="compact"
-        />
-        <AdminStatCard
-          icon={<MapPinCheck className="h-5 w-5" />}
-          label="Validated, in use"
-          value={realValidated.length}
-          description="Every place still in use, and refusable below"
-          tone="blue"
-          size="compact"
-        />
-        <AdminStatCard
-          icon={<EyeOff className="h-5 w-5" />}
-          label="Never looked at"
-          value={unseen}
-          description="In use, and no review of any kind yet"
-          tone="violet"
-          size="compact"
-        />
-        <AdminStatCard
-          icon={<Building2 className="h-5 w-5" />}
-          label="Polyclinics and centres"
-          value={liveVenues.length}
-          description={`${seated} ${seated === 1 ? "customer seated" : "customers seated"} in them${
-            venuesWithoutTimetable > 0 ? `; ${venuesWithoutTimetable} with customers and no timetable on file` : ""
-          }`}
-          tone="blue"
-          size="compact"
-        />
-      </div>
-
-      {decides ? (
-        <Link className="block min-w-0 border border-slate-200 bg-white px-4 py-3 hover:border-slate-400" href={SFE_RECOMMENDATIONS_PATH}>
-          <span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900">
-            <MessageSquareQuote aria-hidden className="h-4 w-4 shrink-0" />
-            SFE recommendations: {sfeRecommendedCount} waiting for your decision
-          </span>
-          <span className="mt-0.5 block break-words text-xs text-slate-500">
-            The checks the SFE Manager recommended to validate or not. They wait there, not in Needs you below.
-          </span>
-        </Link>
-      ) : null}
-
-      <FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} decides={decides} rows={heldFullNames} />
 
       {/* Taking a rejection back — the Super Admin alone, never the SFE Manager (owner, 2026-11-10). */}
       <PlaceCheckRestoreProvider canRestore={canRestoreValidation(viewer)}>
         <PlaceChecksWithDeck
+          agreement={agreement}
           capped={capped}
           decides={decides}
           decided={recentDecided}
@@ -263,7 +271,10 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
           openOn={openOn}
           pending={waiting}
           reopened={reopened}
+          sfeRecommended={decides ? { count: sfeRecommendedCount, href: SFE_RECOMMENDATIONS_PATH } : undefined}
           sharedPlaces={sharedPlaces}
+          signWins={decides ? signWins : undefined}
+          slots={slots}
           validated={seatedInUse}
         />
       </PlaceCheckRestoreProvider>

@@ -43,6 +43,7 @@ import {
 } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { PLACE_PHOTO_MAX_LONG_SIDE, placePhotoCanvasSize } from "../src/lib/phoenix-crm/place-photo-size.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — the signboard check (owner, 2026-10-08).
@@ -788,7 +789,7 @@ function checkTwoReaders(): void {
     "src/components/phoenix-crm/validated-place-list.tsx",
     "src/components/phoenix-crm/shared-place-list.tsx",
   ] as const) {
-    const board = readFileSync(file, "utf8");
+    const board = placeCheckListSourceAt(file);
     const map = board.match(/SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = \{([\s\S]*?)\};/);
     assert.ok(map, `${file} must tell the four unjudged answers apart`);
     for (const reason of ["name_unusable", "unconfirmed", "unreadable", "unreadable_final"]) {

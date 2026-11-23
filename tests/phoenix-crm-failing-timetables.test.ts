@@ -11,6 +11,8 @@ import {
   type TimetableRefusal,
 } from "../src/lib/phoenix-crm/failing-timetable-rules.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Timetables that keep failing, and the Super Admin's "This building has no timetable" (owner, 14 Nov
@@ -221,7 +223,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     "both people are named, never shown as a code",
   );
 
-  const list = code("src/components/phoenix-crm/shared-place-list.tsx");
+  const list = placeCheckListSource("shared-place-list", code);
   assert.ok(list.includes('{mode === "team" || !decides ? null : <NoTimetableDeclaration row={row} />}'), "🔴 a district manager's board never draws the declaration, nor the SFE Manager's (owner, 2026-11-19)");
   assert.ok(list.includes("const control = row.noTimetableControl ?? null;"), "the button is the row's own answer");
   assert.ok(list.includes("if (!control) return null;"));
@@ -236,7 +238,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     "it says who took it back and when, and whose declaration that was",
   );
 
-  const board = code("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(code);
   assert.ok(board.includes("{!team && failingTimetables ? ("), "🔴 the list is drawn on the deciders' board only");
   assert.ok(
     board.includes("venues: sharedPlaces.filter((venue) => venue.sharedPlaceId === onlyBuilding), seated, filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null"),

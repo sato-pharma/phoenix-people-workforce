@@ -241,6 +241,19 @@ export function rejectSelection(claims: ReadonlyArray<DeskClaim>, reason: string
   return claims.map((claim) => ({ action: "reject" as const, comment, requestId: claim.requestId, revision: claim.revision }));
 }
 
+/**
+ * Every check that did not pass, other than the one whose sentence the row already wears: the ones
+ * that FAILED, and the ones that could not be made. A row prints them as tags; a phone card prints
+ * them as one line (five tags stacked made a card 300 px tall, measured at 375 on 23 Nov 2026).
+ */
+export function otherFindings(claim: Pick<DeskClaim, "verdict">): { failed: string[]; notChecked: string[] } {
+  const others = claim.verdict.checks.filter((check) => check.answer !== "pass" && check.sentence !== claim.verdict.reason);
+  return {
+    failed: others.filter((check) => check.answer === "fail").map((check) => check.label),
+    notChecked: others.filter((check) => check.answer !== "fail").map((check) => check.label),
+  };
+}
+
 export type ReasonChip = { key: string; label: string; text: string };
 
 /**

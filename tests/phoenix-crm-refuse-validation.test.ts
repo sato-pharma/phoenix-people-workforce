@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — the Super Admin can refuse a validation the Google check never held.
@@ -168,7 +170,7 @@ function checkRestoreService(): void {
 }
 
 function checkRestoreScreen(): void {
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   // The control itself lives in place-check-restore.tsx since 2026-11-10, shared with a seated customer's
   // card, so the take-back is one control for the Super Admin alone wherever it is drawn.
   const control = read("src/components/phoenix-crm/place-check-restore.tsx");
@@ -222,7 +224,7 @@ function checkRejectAfterApproval(): void {
 
   // The screen: the SAME route and the SAME decision the pending row posts, so there is one reject
   // path — and the review row keeps the evidence the system held it on.
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   assert.match(queue, /\{row\.refusable \? <RejectAfterApproval row=\{row\}(?: scope=\{scope\})? \/> : null\}/, "the approved row offers it, only where the server says it still can");
   assert.match(
     queue,
@@ -274,7 +276,7 @@ function checkBulkDecide(): void {
   assert.doesNotMatch(bulk, /rounded-(?!none)/, "square corners only");
 
   // ── The three sections that wire it, each to its own request ───────────────────────────────────
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   assert.match(queue, /section: "waiting" \| "decided"/, "the queue is told which set it is drawing");
   assert.match(queue, /actions=\{section === "waiting" \? WAITING_ACTIONS : decidedActions\}/, "and that decides what a bulk answer can be");
   // The decided set loses its take-back for anybody but the Super Admin (owner, 2026-11-10: "the SFE cannot").
@@ -285,18 +287,18 @@ function checkBulkDecide(): void {
   // 🔴 THE PICK-LIST FOLLOWS THE PHOTOGRAPHS: a timetable refusal is never offered `photo_of_paper`.
   assert.match(queue, /picks\.picked\.every\(\(row\) => row\.photoKind === "schedule"\) \? "schedule" : "signboard"/, "the reasons offered follow what the picked photographs are");
 
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   for (const prop of ['section="waiting"', 'section="decided"']) {
     assert.ok(board.includes(prop), `the board names its sets: ${prop}`);
   }
 
-  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const list = placeCheckListSource("validated-place-list", read);
   assert.match(list, /actions=\{inUseActions\(canRestore\)\}/, "the validated list approves and refuses in bulk through its own two routes");
   assert.match(list, /crmPost<unknown>\("\/api\/phoenix-crm\/validation-reviews\/refuse", \{ placeId: row\.placeId, note: answer\.note, refusalReason: answer\.reason \}/, "with exactly the body one row posts");
   // 🔴 THE PAGE IS WHAT CAN BE PICKED — "Pick all" must never reach rows behind a Show more.
   assert.match(list, /useRowPicks<ValidatedPlaceRow>\(bulk \? shown : \[\]/, "and only the rows actually on screen can be ticked");
 
-  const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
+  const venues = placeCheckListSource("shared-place-list", read);
   assert.match(venues, /actions=\{venueActions\}/, "the polyclinics decide in bulk too");
   assert.match(venues, /const venueActions = canRestore \? VENUE_ACTIONS : VENUE_ACTIONS\.filter/, "and only the Super Admin brings a building back in bulk");
   assert.match(venues, /\{ sharedPlaceId: row\.sharedPlaceId, decision: "reject", note: answer\.note, refusalReason: answer\.reason \}/, "through the venue's own decision route, body for body");
@@ -350,7 +352,7 @@ function checkScreens(): void {
     assert.match(wrapper, /reviewDeck=\{decides \?/, "🔴 and the one-by-one review, which is nothing but decisions, only for the decider (owner, 2026-11-19)");
   }
 
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   // By PROP, not as one line — the same lesson the loop above was rewritten for. This assertion was
   // still a single-line fingerprint and went red on 2026-10-13 when the call gained `mode` and
   // `noteIndex` for the district manager's board, with nothing about the list wrong. What matters is
@@ -361,7 +363,7 @@ function checkScreens(): void {
     assert.ok(validatedCall[0].includes(prop), `the validated list is handed ${prop} — the board owns the search`);
   }
 
-  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const list = placeCheckListSource("validated-place-list", read);
   assert.match(list, /"\/api\/phoenix-crm\/validation-reviews\/refuse"/, "the button posts to the refusal route");
   // Since 2026-10-08 the refusal carries one of six closed reasons the rep is told, beside the note
   // kept for the record (owner: "tell the rep why, from a fixed pick-list, never naming a person").
@@ -380,7 +382,7 @@ function checkScreens(): void {
 }
 
 function checkTheRepReadsNothingAboutAPerson(): void {
-  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const list = placeCheckListSource("validated-place-list", read);
   // The comment reaches the rep and their manager since 2026-11-01, and its label says so; the rep still
   // reads a role and never a name (`placeNoteRepAuthorText`).
   assert.match(list, /\{VALIDATION_NOTE_LABEL\}/, "the comment box says who reads it");

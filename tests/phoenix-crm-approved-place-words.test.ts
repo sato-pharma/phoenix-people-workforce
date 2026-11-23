@@ -8,6 +8,7 @@ import {
   buildingStatusPill,
   seatedTimetablePill,
 } from "../src/lib/phoenix-crm/approved-place-words.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — Place checks: an approved building and an approved seated customer READ as approved.
@@ -55,13 +56,13 @@ export function runPhoenixCrmApprovedPlaceWordsTests(): void {
   assert.equal(seatedTimetablePill({ state: "rejected", reviewStatus: "rejected" }, "other_name", WORDS).text, WORDS.other_name);
 
   // ── 4 · the screens use it ────────────────────────────────────────────────────────────────────────────
-  const list = stripComments(read("src/components/phoenix-crm/shared-place-list.tsx"));
+  const list = stripComments(placeCheckListSource("shared-place-list", read));
   assert.ok(!list.includes("Keep it"), "the building's button no longer reads Keep it");
   assert.ok(!list.includes('"kept"'), "no control reports a building as kept");
   assert.ok(list.includes("buildingStatusPill(row, mode)"), "the building's pill is the approved-aware one");
   assert.ok(list.includes("buildingApproveVariant(row.decidedAtText)"), "the Approve button's look follows the decision");
 
-  const customers = stripComments(read("src/components/phoenix-crm/shared-place-customers.tsx"));
+  const customers = stripComments(placeCheckListSource("shared-place-customers", read));
   assert.ok(customers.includes("seatedTimetablePill("), "the seated customer's timetable pill is the approved-aware one");
   assert.ok(customers.includes('customer.reviewStatus === "approved" && mode !== "team"'), "an approved customer carries an Approved pill on the company board");
 

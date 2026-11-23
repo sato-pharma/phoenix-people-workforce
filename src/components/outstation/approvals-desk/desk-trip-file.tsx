@@ -8,6 +8,7 @@ import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload
 import { CrmLoadError, CrmLoading, CrmNote } from "@/components/phoenix-crm/ui";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import type { DeskNotice } from "@/lib/outstation/approvals/press-queue";
+import { TRIP_STANDING_MEANING } from "@/lib/outstation/approvals/standing";
 import type { ClaimCheck, DeskClaim } from "@/lib/outstation/approvals/types";
 import type { CrmTripReading } from "@/lib/outstation/crm-trip-evidence";
 
@@ -296,7 +297,8 @@ export function DeskTripFile({
               </p>
             ) : claim.standing !== "waiting" ? (
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="decided">
-                This claim was already decided. It is read here, not changed.
+                {/* Where it stands, in words: a pill's tooltip is not readable on a phone. */}
+                {TRIP_STANDING_MEANING[claim.standing]} It is read here, not changed.
               </p>
             ) : !canDecide ? (
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="read-only">
