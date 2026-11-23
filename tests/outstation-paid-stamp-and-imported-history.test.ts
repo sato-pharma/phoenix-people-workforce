@@ -185,9 +185,11 @@ export function runOutstationPaidStampAndImportedHistoryTests() {
   // table, so a sheet trip can never be counted, ticked or approved as awaiting a decision. The
   // sheet trips are their own read, behind their own press in History, values only.
   const history = readFileSync("src/lib/outstation/approvals/history.ts", "utf8");
+  // Since 23 Nov 2026 the list also keeps a payroll row whose request was deleted (9 approved trips
+  // were on no screen): the rule is pinned by tests/expense-desk-orphan-trips.test.ts.
   assert.ok(
-    history.includes(".filter((row) => outstationRequestIdFromTripId(row.tripId) === null)"),
-    "the sheet trips are the payroll rows no Phoenix claim owns",
+    history.includes("return sheetHistoryRows(rows, existing)"),
+    "the sheet trips are the payroll rows no existing Phoenix claim owns",
   );
   const historyScreen = readFileSync("src/components/outstation/approvals-desk/desk-history.tsx", "utf8");
   const sheetTrips = historyScreen.slice(historyScreen.indexOf("function SheetTrips()"));
@@ -199,7 +201,7 @@ export function runOutstationPaidStampAndImportedHistoryTests() {
   );
   assert.ok(sheetTrips.includes("Decided on the sheets. Read only here."), "and the heading says so");
   assert.ok(
-    sheetTrips.includes('return trip.approved ? "Approved" : "Not decided";'),
+    sheetTrips.includes('const decision = trip.rejected ? "Rejected" : trip.approved ? "Approved" : "Not decided";'),
     "an undecided historical trip still shows its values, and reads Not decided rather than waiting",
   );
   const queue = readFileSync("src/lib/outstation/approvals/queue.ts", "utf8");
