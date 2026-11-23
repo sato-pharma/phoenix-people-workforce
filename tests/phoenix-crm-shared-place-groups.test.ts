@@ -5,6 +5,8 @@ import { stripComments } from "./support/comment-strip.ts";
 
 import { decisionStamp } from "../src/lib/phoenix-crm/decision-stamp.ts";
 import {
+  buildingsDrawnByDefault,
+  historyDeckSources,
   narrowVenueGroups,
   waitingSinceOf,
   seatedCustomersByVenue,
@@ -324,6 +326,25 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.deepEqual(withoutSeated([inUse, single], venueIds).map((row) => row.customerName), ["A Clinic"]);
   assert.deepEqual(withoutSeated([sentBack, reopened({ sharedPlaceId: null })], venueIds).length, 1, "a customer sent back for his own place stays in Waiting to be captured again");
 
+  // ── A rejected building's customers stay in History and "Waiting to be captured again" ─────────
+  // (owner, 23 Nov 2026: "I want to reach him in the place checks, but I can't find him" — محمد سعيد الإيمان,
+  // the one doctor of a building he rejected, was on no list until the rejected buildings' switch was ticked.)
+  const drawn = buildingsDrawnByDefault([nile, delta]);
+  assert.deepEqual([...drawn], ["venue-nile"], "a rejected building's card waits behind its switch");
+  assert.deepEqual(
+    withoutSeated([rejected, approved, noVenue], drawn).map((row) => row.customerName),
+    ["Rania Hosny", "Single Clinic"],
+    "🔴 a decision seated in a rejected building is listed in History; one seated in a building on the list is not",
+  );
+  assert.deepEqual(
+    withoutSeated([sentBack], drawn).map((row) => row.customerName),
+    ["Zeinab Ali"],
+    "🔴 and a customer that building's rejection sent back is in Waiting to be captured again",
+  );
+  const deck = historyDeckSources([rejected, noVenue], [{ venue: nile }, { venue: delta }]);
+  assert.deepEqual(deck.venues.map((group) => group.venue.sharedPlaceId), ["venue-delta"], "the review's History holds the rejected building");
+  assert.deepEqual(deck.reviews.map((row) => row.customerName), ["Single Clinic"], "and never a second slide for a customer the building's slide already holds");
+
   // ── The outcome selector means the same thing on a seated customer as on a single clinic ──────
   const byName = (name: string): SeatedCustomer => {
     const found = [...seated.values()].flat().find((customer) => customer.customerName === name);
@@ -478,9 +499,17 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
     "the board opens on what is waiting for a decision: Ready when it holds anything, else what is his call",
   );
   assert.ok(board.includes("const [picked, setPicked] = useState<PlaceCheckView | null>(null);"), "and stands there until he chooses a tab himself");
-  for (const set of ["pending", "decided", "validated", "reopened"]) {
+  for (const set of ["pending", "validated"]) {
     assert.ok(board.includes(`withoutSeated(${set}, venueIds)`), `the clinics view drops ${set} rows seated in a building on the board`);
   }
+  for (const set of ["decided", "reopened"]) {
+    assert.ok(
+      board.includes(`withoutSeated(${set}, drawnVenueIds)`),
+      `🔴 History drops ${set} rows only when their building is drawn by default — a rejected building's customers stay listed`,
+    );
+  }
+  assert.ok(board.includes("buildingsDrawnByDefault(sharedPlaces)"), "and the board takes that set from the pure module");
+  assert.ok(board.includes("historyDeckSources(showDecided ? filteredDecided : [], filteredVenueGroups)"), "the review's History shows each such customer once");
   assert.ok(board.includes("narrowVenueGroups({ venues: sharedPlaces, seated, filters, cutoff })"), "the polyclinics are grouped by the pure module");
   assert.ok(board.includes("{(groups) => <SharedPlaceList groups={groups}"), "and drawn as groups, a page at a time");
   assert.ok(board.includes("filteredVenueGroups.length"), "the heading count is the FILTERED count, like every other section");
