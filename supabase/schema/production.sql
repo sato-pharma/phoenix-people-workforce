@@ -28290,6 +28290,43 @@ ALTER FUNCTION public.phx_crm_open_assignments() OWNER TO postgres;
 COMMENT ON FUNCTION public.phx_crm_open_assignments() IS 'Every open crm_contact_assignments row as one jsonb array of [id, agent_crm_id, agent_hr_id, contact_crm_id, grade, list_type], ordered by id. Read by loadPanelRows (src/lib/crm/rep-kpi-reports-data.ts). See supabase/migrations/20261102010000_phx_crm_board_reads_in_one_statement.sql.';
 
 --
+-- Name: phx_crm_rep_list_summary_groups(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_crm_rep_list_summary_groups() RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_array(g.first_id, g.agent_crm_id, g.agent_hr_id, g.list_type, g.row_count, g.synced_at)
+      order by g.first_id
+    ),
+    '[]'::jsonb
+  )
+  from (
+    select
+      min(a.id) as first_id,
+      a.agent_crm_id,
+      a.agent_hr_id,
+      a.list_type,
+      count(*) as row_count,
+      max(a.updated_at) as synced_at
+    from public.crm_contact_assignments a
+    where a.effective_to is null
+    group by a.agent_hr_id, a.agent_crm_id, a.list_type
+  ) g;
+$$;
+
+ALTER FUNCTION public.phx_crm_rep_list_summary_groups() OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_crm_rep_list_summary_groups(); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_crm_rep_list_summary_groups() IS 'The open crm_contact_assignments rows grouped by (agent_hr_id, agent_crm_id, list_type), as one jsonb array of [first_id, agent_crm_id, agent_hr_id, list_type, rows, synced_at] ordered by first_id. Read by getRepListSummaries (src/lib/crm/contact-lists.ts). See supabase/migrations/20261123160756_crm_rep_contact_list_summaries_in_one_statement.sql.';
+
+--
 -- Name: phx_custody_item_values_valid(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -102917,6 +102954,13 @@ GRANT ALL ON FUNCTION public.phx_crm_contact_visit_months(p_contact_crm_ids bigi
 
 REVOKE ALL ON FUNCTION public.phx_crm_open_assignments() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_crm_open_assignments() TO service_role;
+
+--
+-- Name: FUNCTION phx_crm_rep_list_summary_groups(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_crm_rep_list_summary_groups() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_crm_rep_list_summary_groups() TO service_role;
 
 --
 -- Name: FUNCTION phx_custody_item_values_valid(v jsonb); Type: ACL; Schema: public; Owner: postgres
