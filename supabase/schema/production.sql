@@ -37732,6 +37732,29 @@ $$;
 ALTER FUNCTION public.phx_outstation_medical_trip_hr_id_canonical() OWNER TO postgres;
 
 --
+-- Name: phx_outstation_requests_never_deleted(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_outstation_requests_never_deleted() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+begin
+  raise exception 'expense requests are never deleted; reject the request instead (a rejected request stays on the record)'
+    using errcode = 'P0001',
+          hint = 'Owner rule, 24 Nov 2026: never delete an expense request. Reject it.';
+end;
+$$;
+
+ALTER FUNCTION public.phx_outstation_requests_never_deleted() OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_outstation_requests_never_deleted(); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_outstation_requests_never_deleted() IS 'Refuses every DELETE and TRUNCATE on outstation_expense_requests. Owner, 24 Nov 2026: "never delete any expense request. If rejected, keep them as rejected, but never delete."';
+
+--
 -- Name: phx_page_timings_record(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -89299,6 +89322,18 @@ CREATE TRIGGER phx_employees_salary_change_log AFTER INSERT OR UPDATE OF base_sa
 CREATE TRIGGER phx_outstation_medical_trip_hr_id_canonical BEFORE INSERT OR UPDATE OF medical_trip_hr_id ON public.outstation_expense_requests FOR EACH ROW EXECUTE FUNCTION public.phx_outstation_medical_trip_hr_id_canonical();
 
 --
+-- Name: outstation_expense_requests phx_outstation_requests_never_deleted; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER phx_outstation_requests_never_deleted BEFORE DELETE ON public.outstation_expense_requests FOR EACH ROW EXECUTE FUNCTION public.phx_outstation_requests_never_deleted();
+
+--
+-- Name: outstation_expense_requests phx_outstation_requests_never_truncated; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER phx_outstation_requests_never_truncated BEFORE TRUNCATE ON public.outstation_expense_requests FOR EACH STATEMENT EXECUTE FUNCTION public.phx_outstation_requests_never_deleted();
+
+--
 -- Name: salary_batches phx_prevent_closed_salary_batch_delete; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -103928,6 +103963,13 @@ GRANT ALL ON FUNCTION public.phx_office_region_share(p_period text) TO service_r
 REVOKE ALL ON FUNCTION public.phx_outstation_medical_trip_hr_id_canonical() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_outstation_medical_trip_hr_id_canonical() TO service_role;
 GRANT ALL ON FUNCTION public.phx_outstation_medical_trip_hr_id_canonical() TO authenticated;
+
+--
+-- Name: FUNCTION phx_outstation_requests_never_deleted(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_outstation_requests_never_deleted() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_outstation_requests_never_deleted() TO service_role;
 
 --
 -- Name: FUNCTION phx_page_timings_record(p_rows jsonb); Type: ACL; Schema: public; Owner: postgres

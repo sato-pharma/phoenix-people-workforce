@@ -2679,6 +2679,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // owner_split true for both doctors, and a merge of the pair inside a rolled-back block raised
   // phoenix_crm:owner_split_them. Re-applying is a no-op (`create or replace`, same signatures, same grants).
   "20261123101851_phoenix_crm_merge_never_rejoins_an_owner_split.sql",
+  // An expense request is never deleted (owner, 24 Nov 2026: "never delete any expense request. If rejected, keep
+  // them as rejected, but never delete."). supabase-staging's apply_migration answered "Migration was declined", so
+  // on the owner's word ("apply the trigger through apply-sql-file on staging", then "Apply on production") it was
+  // applied 2026-11-24 through scripts/apply-sql-file.mjs, staging then production, which writes NO ledger row.
+  // Read back on cifwmndunmlxjhyjugxa and on ozucdzovmcqvepbozvqf (project name Phoenix HR) straight after:
+  // pg_trigger holds phx_outstation_requests_never_deleted (BEFORE DELETE, FOR EACH ROW) and
+  // phx_outstation_requests_never_truncated (BEFORE TRUNCATE, FOR EACH STATEMENT), both enabled; the function's ACL
+  // is postgres and service_role only. Inside a rolled-back block a delete and a truncate were both refused with
+  // "expense requests are never deleted…", rows unchanged (68 staging, 364 production). Re-applying is a no-op
+  // (`create or replace`, `drop trigger if exists` then create).
+  "20261124000433_outstation_requests_never_deleted.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
