@@ -19195,12 +19195,6 @@ CREATE FUNCTION public.phoenix_crm_seat_reference(p_seat_ids text[], p_is_test b
       and s.seat_tier = 'REP'
       and nullif(trim(o.occupant_hr_id), '') is not null
   ),
-  -- 🔴 THE CUSTOMER BEHIND AN ENTRY IS FOUND BY THE ID THE ASSIGNMENT CARRIES, which for a doctor the rep
-  -- added himself is his OWN id (the refresh keys on coalesce(reference_contact_crm_id, own_contact_crm_id)).
-  -- Matching the vendor id alone returned NULL for him, and a NULL customer is what
-  -- phoenix_crm_ensure_reference_customers mints a pending copy for -- a second live row for one doctor.
-  -- One row per entry: when a seat already holds a pair (an original and its copy), the live one wins,
-  -- then the active one, then the earliest. Picked ONCE per seat and id, not once per entry.
   seat_customer as (
     select distinct on (c.seat_id, coalesce(c.reference_contact_crm_id, c.own_contact_crm_id))
       c.seat_id,
@@ -19219,15 +19213,12 @@ CREATE FUNCTION public.phoenix_crm_seat_reference(p_seat_ids text[], p_is_test b
       c.created_at asc,
       c.id asc
   ),
-  -- 🔴 A PHOENIX_CRM ASSIGNMENT IS ONLY A MIRROR OF A CUSTOMER ON THE SEAT: the hourly refresh (pass 5b)
-  -- opens one for every customer it finds there. Every key a customer of the seat carries, live, test or
-  -- dropped, so a mirror row with none behind it can be told apart from the vendor list.
   seat_mirror as (
     select distinct c.seat_id || '|' || coalesce(c.reference_contact_crm_id, c.own_contact_crm_id)::text as seat_key
     from public.phoenix_crm_customers c
     join seats s on s.seat_id = c.seat_id
+    where p_is_test or c.is_test = false
   ),
-  -- A pending drop names either the customer, or -- for an entry never minted -- only the contact.
   pending_drop_customer as (
     select distinct q.seat_id, q.customer_id
     from public.phoenix_crm_list_requests q
@@ -19304,9 +19295,6 @@ CREATE FUNCTION public.phoenix_crm_seat_reference(p_seat_ids text[], p_is_test b
    and drop_by_contact.reference_contact_crm_id = a.contact_crm_id
   left join seat_mirror mirror
     on mirror.seat_key = ch.seat_id || '|' || a.contact_crm_id::text
-  -- A mirror row with no customer of the seat behind it is a leftover of a customer who has since moved
-  -- away; read as a list entry, phoenix_crm_ensure_reference_customers would mint a pending copy of him
-  -- back onto this list. Every other source (the vendor list) reads exactly as before.
   where a.source is distinct from 'phoenix_crm'
      or mirror.seat_key is not null;
 $$;
@@ -37740,9 +37728,12 @@ CREATE FUNCTION public.phx_outstation_requests_never_deleted() RETURNS trigger
     SET search_path TO 'public'
     AS $$
 begin
-  raise exception 'expense requests are never deleted; reject the request instead (a rejected request stays on the record)'
+  if tg_op = 'DELETE' and coalesce(current_setting('phx.owner_request_delete', true), '') = 'on' then
+    return old;
+  end if;
+  raise exception 'expense requests are never deleted automatically; only the Super Admin deletes one, from the app'
     using errcode = 'P0001',
-          hint = 'Owner rule, 24 Nov 2026: never delete an expense request. Reject it.';
+          hint = 'Owner rule, 24 Nov 2026: only he deletes an expense request, by his own press. Reject it otherwise.';
 end;
 $$;
 
@@ -37752,7 +37743,34 @@ ALTER FUNCTION public.phx_outstation_requests_never_deleted() OWNER TO postgres;
 -- Name: FUNCTION phx_outstation_requests_never_deleted(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_outstation_requests_never_deleted() IS 'Refuses every DELETE and TRUNCATE on outstation_expense_requests. Owner, 24 Nov 2026: "never delete any expense request. If rejected, keep them as rejected, but never delete."';
+COMMENT ON FUNCTION public.phx_outstation_requests_never_deleted() IS 'Refuses every DELETE on outstation_expense_requests except through phx_owner_delete_outstation_request, and every TRUNCATE. Owner, 24 Nov 2026: "never delete automatic only i from system can delete".';
+
+--
+-- Name: phx_owner_delete_outstation_request(bigint); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) RETURNS integer
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_deleted integer;
+begin
+  perform set_config('phx.owner_request_delete', 'on', true);
+  delete from public.outstation_expense_requests where id = p_request_id;
+  get diagnostics v_deleted = row_count;
+  perform set_config('phx.owner_request_delete', '', true);
+  return v_deleted;
+end;
+$$;
+
+ALTER FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_owner_delete_outstation_request(p_request_id bigint); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) IS 'The one door an expense request leaves through. Called only by deleteOutstationRequestAsAdmin after assertOwnerDeletesRequest (the Super Admin''s own press).';
 
 --
 -- Name: phx_page_timings_record(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
@@ -103970,6 +103988,13 @@ GRANT ALL ON FUNCTION public.phx_outstation_medical_trip_hr_id_canonical() TO au
 
 REVOKE ALL ON FUNCTION public.phx_outstation_requests_never_deleted() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_outstation_requests_never_deleted() TO service_role;
+
+--
+-- Name: FUNCTION phx_owner_delete_outstation_request(p_request_id bigint); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) TO service_role;
 
 --
 -- Name: FUNCTION phx_page_timings_record(p_rows jsonb); Type: ACL; Schema: public; Owner: postgres
