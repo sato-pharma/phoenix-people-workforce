@@ -31,6 +31,7 @@ import { usePlaceCheckRows } from "@/components/phoenix-crm/place-checks/use-boa
 import { usePlaceChecksEverything, viewNeedsEverything } from "@/components/phoenix-crm/place-checks/use-everything";
 import { laneOfReviewRow, laneOfVenueGroup, openCaseSubjects, PLACE_CHECK_LANE_LABEL } from "@/lib/phoenix-crm/place-check-lanes";
 import { mergedNoteIndex, unconfirmedOpenCount, type UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
+import { historyDeckSources } from "@/lib/phoenix-crm/shared-place-groups";
 import {
   decidedSectionTitle,
   EMPTY_VALIDATION_REVIEW_FILTERS,
@@ -159,7 +160,7 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
                   ? { reviews: callReviews, venues: callGroups }
                   : { reviews: showWaiting ? filteredPending : [], venues: needsGroups },
             unconfirmed: { places: filteredValidated, venues: buildingGroups.filter((group) => group.venue.status === "active") },
-            history: { reviews: showDecided ? filteredDecided : [], venues: filteredVenueGroups.filter((group) => group.venue.status === "retired") },
+            history: historyDeckSources(showDecided ? filteredDecided : [], filteredVenueGroups),
             lookup: { reviews: [...pending, ...decided], places: validated, venues: everyVenueGroup },
           }
         : null,

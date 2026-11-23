@@ -233,6 +233,23 @@ function checkTheDecisionsThatWait() {
   assert.equal(summary.history, 3, "🔴 and History: two single clinics' recent decisions by a person, and one customer sent back");
   const whole = placeChecksSummary({ team: false, pending: [waiting], decided: everyDecision, validated, reopened, sharedPlaces: [venue, testVenue] });
   assert.deepEqual([whole.history, whole.bySystem], [4, 0], "a board with no lanes is not told which approvals were the system's: its History is whole");
+  // A rejected building waits behind its switch, so the decision seated in it is in History (23 Nov 2026).
+  const rejectedVenue = { ...venue, sharedPlaceId: "venue-rejected", status: "retired" } as unknown as SharedPlaceBoardRow;
+  const inRejected = review("d-rejected-building", "2026-11-12T06:00:00.000Z", {
+    status: "rejected",
+    sharedPlaceId: "venue-rejected",
+    evidence: { checkReason: null, legibility: null, problem: null, heldBecause: null },
+  } as unknown as Partial<ValidationReviewRow>);
+  const withRejected = placeChecksSummary({
+    team: false,
+    lanes: true,
+    pending: [waiting],
+    decided: [...everyDecision, inRejected],
+    validated,
+    reopened,
+    sharedPlaces: [venue, testVenue, rejectedVenue],
+  });
+  assert.equal(withRejected.history, summary.history + 1, "🔴 a decision seated in a rejected building is counted in History, as the board lists it");
 
   // The board after the click, by the board's own steps (use-board-rows.ts): the same two numbers.
   const afterTheClick = withoutSeated(mergeDecided(sent, left).filter(isReal).filter((row) => row.recent), new Set(["venue-1"]));

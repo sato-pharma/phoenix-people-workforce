@@ -46,7 +46,7 @@
 
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { placeCheckScorecard, standingOfPlaceInUse, type PlaceStanding, type RepScore } from "@/lib/phoenix-crm/place-check-scorecard";
-import { narrowVenueGroups, seatedCustomersByVenue, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
+import { buildingsDrawnByDefault, narrowVenueGroups, seatedCustomersByVenue, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 import {
   decidedByMatches,
   distinctValues,
@@ -303,7 +303,9 @@ export function placeChecksSummary(input: {
   const sharedPlaces = input.sharedPlaces.filter(isReal);
   const venueIds = new Set(sharedPlaces.map((row) => row.sharedPlaceId));
   // The two decided tabs as the board counts them with no filter: single clinics only, the system's apart.
-  const clinicDecided = withoutSeated(decided, venueIds);
+  // A rejected building's customers stay in History, as the board lists them (`buildingsDrawnByDefault`).
+  const drawnVenueIds = buildingsDrawnByDefault(sharedPlaces);
+  const clinicDecided = withoutSeated(decided, drawnVenueIds);
   const bySystem = input.lanes ? clinicDecided.filter((row) => Boolean(row.approvedByRule)).length : 0;
   const seated = seatedCustomersByVenue({ pending, decided, validated, reopened, venueIds });
   const buildings = narrowVenueGroups({ venues: sharedPlaces, seated, filters, cutoff: null }).filter((group) => group.venue.status !== "retired").length;
@@ -311,7 +313,7 @@ export function placeChecksSummary(input: {
     options: placeCheckOptions({ team: input.team, pending, decided, everyDecided, validated, reopened, sharedPlaces }),
     scorecard: placeCheckScorecardOf({ pending, validated, reopened }, filters, null),
     unconfirmed: unconfirmedOpenCount(clinicsInUse(withoutSeated(validated, venueIds), filters, null), filters),
-    history: clinicDecided.length - bySystem + withoutSeated(reopened, venueIds).length,
+    history: clinicDecided.length - bySystem + withoutSeated(reopened, drawnVenueIds).length,
     bySystem,
     buildings,
     inUse: validated.length,
