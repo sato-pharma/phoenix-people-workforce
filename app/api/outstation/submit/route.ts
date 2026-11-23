@@ -73,7 +73,9 @@ function outstationSubmitStatus(error: unknown) {
   if (isForbiddenError(error)) {
     return 403;
   }
-  if (error instanceof TrainTicketRefusedError || error instanceof NoTicketFareUnavailableError || error instanceof OutstationPhotoRefusedError) {
+  // A blank photo, or a car photo whose odometer cannot be read, is refused with what to do (owner, 2026-11-23).
+  if (error instanceof OutstationPhotoRefusedError) return 400;
+  if (error instanceof TrainTicketRefusedError || error instanceof NoTicketFareUnavailableError) {
     return 400;
   }
   if (isWorkflowRegistryTransitionError(error)) {

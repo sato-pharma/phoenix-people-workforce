@@ -317,21 +317,16 @@ function ticketCheck(facts: ClaimCheckFacts): ClaimCheck | null {
     const line = facts.noTicketFareLine?.trim();
     return check("ticket", "pass", line ? `No ticket: priced at the fixed train fare. ${line}` : "No ticket: priced at the fixed train fare.");
   }
-  if (facts.attachments > 0) {
-    // A return fare is paid on its ticket, read like the outbound one (owner, 2026-11-23).
-    const fare = returnFareLabel(facts.returnAmount ?? 0);
-    if (facts.returnTicket === "missing") return check("ticket", "fail", `Return ${fare} claimed with no return ticket.`);
-    if (facts.returnTicket === "unread") {
-      return check("ticket", "unknown", `Return ${fare} claimed; the tickets were not read, so the return ticket is not checked.`);
-    }
-    return check(
-      "ticket",
-      "pass",
-      facts.returnTicket === "present"
-        ? `${plural(facts.attachments, "ticket photo")} attached, the return ticket among them.`
-        : `${plural(facts.attachments, "ticket photo")} attached.`,
-    );
+  // A return fare is paid on its ticket, read like the outbound one (owner, 2026-11-23).
+  const fare = returnFareLabel(facts.returnAmount ?? 0);
+  if (facts.attachments > 0 && facts.returnTicket === "missing") return check("ticket", "fail", `Return ${fare} claimed with no return ticket.`);
+  if (facts.attachments > 0 && facts.returnTicket === "unread") {
+    return check("ticket", "unknown", `Return ${fare} claimed; the tickets were not read, so the return ticket is not checked.`);
   }
+  if (facts.attachments > 0 && facts.returnTicket === "present") {
+    return check("ticket", "pass", `${plural(facts.attachments, "ticket photo")} attached, the return ticket among them.`);
+  }
+  if (facts.attachments > 0) return check("ticket", "pass", `${plural(facts.attachments, "ticket photo")} attached.`);
   if (transport === "train" || transport === "bus") {
     return isOutstationTicketWaivedRole(facts.role)
       ? check("ticket", "pass", "This role owes no ticket.")

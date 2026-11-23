@@ -60,6 +60,8 @@ export type OutstationOdometerRecord = {
 const MAX_ODOMETER_KM = 999_999;
 
 const wholeKm = (value: unknown): number | null => {
+  // Nothing is not zero: an empty value never becomes a 0 km reading.
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
   const number = typeof value === "number" ? value : Number(String(value ?? "").replace(/[,\s]/g, ""));
   return Number.isFinite(number) && number >= 0 && number <= MAX_ODOMETER_KM ? Math.round(number) : null;
 };

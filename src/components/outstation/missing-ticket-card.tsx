@@ -22,8 +22,8 @@ import { cn } from "@/lib/utils";
 export type MissingTicketRequest = {
   destination: string;
   id: number;
-  /** Set when it is the RETURN ticket that is asked for — the claim pays this return fare (owner, 2026-11-23). */
-  returnAmount?: number | null;
+  /** True when it is the RETURN ticket that is asked for — the claim pays a return fare (owner, 2026-11-23). */
+  returnTicket?: boolean;
   transportationType: string;
   tripEndDate: string;
   tripStartDate: string;
@@ -63,7 +63,7 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
           {requests.length === 1
             ? "One train or bus claim pays a return fare without the return ticket."
             : `${requests.length} train or bus claims pay a return fare without the return ticket.`}{" "}
-          Attach a photo or PDF of the ticket you came back on. No amount changes. The ticket is read when you
+          Attach a photo or PDF of the ticket you came back on. Nothing else on the claim changes. The ticket is read when you
           choose it, and its travel date must match your departure photo.
         </p>
       ) : (
@@ -86,7 +86,7 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
 }
 
 function isReturnAsk(request: MissingTicketRequest): boolean {
-  return typeof request.returnAmount === "number" && request.returnAmount > 0;
+  return request.returnTicket === true;
 }
 
 /** A train ticket's verdict: the server's, against this claim's own arrival and departure photos. */
@@ -188,7 +188,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
         </p>
         {isReturn ? (
           <p className="mt-1 text-phx-md leading-relaxed text-orange-900">
-            Return EGP {Math.round(Number(request.returnAmount) * 100) / 100} is claimed. Attach the ticket you came back on.
+            This claim pays a return fare. Attach the ticket you came back on.
           </p>
         ) : null}
       </div>

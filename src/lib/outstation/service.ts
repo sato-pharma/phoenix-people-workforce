@@ -7324,8 +7324,8 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
 
 /** One of the caller's undecided train or bus claims that arrived with no ticket (missing-ticket.ts). */
 export type OutstationMissingTicketDue = OutstationDeparturePhotoDue & {
-  /** Set when it is the RETURN ticket that is asked for: the return fare the claim carries (owner, 2026-11-23). */
-  returnAmount?: number | null;
+  /** True when it is the RETURN ticket that is asked for: the claim pays a return fare (owner, 2026-11-23). */
+  returnTicket?: boolean;
   transportationType: string;
 };
 
@@ -7386,7 +7386,7 @@ export async function getOwnOutstationRequestsMissingTicket(
     .map(({ returnMissing, row }) => ({
       destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
       id: row.id,
-      ...(returnMissing ? { returnAmount: row.returnTicketAmount } : {}),
+      ...(returnMissing ? { returnTicket: true } : {}),
       transportationType: row.transportationType,
       tripEndDate: row.tripEndDate,
       tripStartDate: row.tripStartDate,
