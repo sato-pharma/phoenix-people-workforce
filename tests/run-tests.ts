@@ -3205,6 +3205,7 @@ import { runRollupExecBufferTests } from "./rollup-exec-buffer.test.ts";
 import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold.test.ts";
 import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
 import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
+import { runPhoenixCrmPlanReviewItemsTests } from "./phoenix-crm-plan-review-items.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
 import { runTabletFleetWatchTests } from "./tablet-fleet-watch.test.ts";
@@ -12866,6 +12867,10 @@ await runTest(
 await runTest(
   "Phoenix CRM territory bundle and the heavy pages remembered (2 Nov 2026, the speed root cause, Stage 2): the List, Add Visit, the planners and the call prep read a seat's customers, places and venues from one function and the call prep reads its whole day from another, each with the keyset reads kept only for a database without it and both doors folded by one fold; the month planner reads two waves, not four; the edit requests and the returns ride the bundle; the Ranks board draws each insignia once and is remembered per window until the nightly compute drops it; Weekly Stock is remembered per scope and filters, never per viewer, and dropped by every weekly write and a price edit",
   runPhoenixCrmTerritoryBundleTests,
+);
+await runTest(
+  "Phoenix CRM plan reviews in one request (23 Nov 2026, the slow Field CRM board): phoenix_crm_plan_review_items answers the week's and the month's review items as one jsonb value with exactly REVIEW_ITEM_COLUMNS' keys, read-only and service-role only; both review loaders read through loadReviewItemRows, a bounded group of plans per call, and only a database without the function falls back to the paged read",
+  runPhoenixCrmPlanReviewItemsTests,
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);

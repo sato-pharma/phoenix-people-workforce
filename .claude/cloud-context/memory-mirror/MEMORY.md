@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [The portal frame is not the portal's 2 s](the-portal-frame-is-not-the-portals-two-seconds.md) - measured 23 Nov: frame ~0.1-0.2 s on production; the 2 s is the phone's connection + page content. Rule fix rides in the Field CRM board speed PR.
 
 
 

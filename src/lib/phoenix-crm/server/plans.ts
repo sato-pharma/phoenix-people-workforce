@@ -32,6 +32,7 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { afterResponse } from "@/lib/http/after-response";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -252,6 +253,32 @@ export async function loadPlanItemRows(planIds: ReadonlyArray<string>, columns: 
     ),
   );
   return pages.flat();
+}
+
+/** How many plans one `phoenix_crm_plan_review_items` call answers (~70 items a plan, ~260 ms on production). */
+export const REVIEW_ITEM_PLANS_PER_CALL = 125;
+
+/**
+ * The review lists' items — the week's and the month's — in ONE request per 125 plans, all in flight at
+ * once (23 Nov 2026, "fix the slow Field CRM board"). `loadPlanItemRows` read them 50 plans a chunk and
+ * each chunk 1,000 rows a page, one page after another, so the Super Admin's week waited 4 waves and his
+ * month 6, each wave paying the edge's ~450 ms. `phoenix_crm_plan_review_items` (20261123204236) returns
+ * the same rows in the `REVIEW_ITEM_COLUMNS` shape, in id order, as one jsonb value. Until it is applied
+ * (PGRST202) the old read stands, unchanged.
+ */
+export async function loadReviewItemRows(planIds: ReadonlyArray<string>): Promise<Row[]> {
+  const ids = [...new Set(planIds)];
+  if (ids.length === 0) return [];
+  let missing = false;
+  const answers = await mapWithConcurrency(chunk(ids, REVIEW_ITEM_PLANS_PER_CALL), PLAN_READ_CONCURRENCY, async (part) => {
+    const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_plan_review_items", { p_plan_ids: part });
+    if (!error) return Array.isArray(data) ? data.map((item) => record(item)) : [];
+    if (!isMissingCrmRpcError(error)) throwIfError(error);
+    missing = true;
+    return [];
+  });
+  if (missing) return loadPlanItemRows(ids, REVIEW_ITEM_COLUMNS);
+  return answers.flat();
 }
 
 /**
@@ -1221,10 +1248,7 @@ export async function loadPlanReviews(
 
   // iReports360 was retired on 6 November 2026: an old-CRM week is no longer reviewed here.
   const [itemRows, names] = await Promise.all([
-    loadPlanItemRows(
-      weekPlans.map((row) => String(row.id)),
-      REVIEW_ITEM_COLUMNS,
-    ),
+    loadReviewItemRows(weekPlans.map((row) => String(row.id))),
     loadPeopleNames([...territoryPeople(viewer.org, rowSeats), ...planPeople(weekPlans)]),
   ]);
   const itemsByPlan = new Map<string, Row[]>();
