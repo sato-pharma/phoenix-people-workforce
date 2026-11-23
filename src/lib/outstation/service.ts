@@ -267,6 +267,7 @@ import {
 import { selectStrandedAcceptedClaims } from "@/lib/outstation/stranded-release";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertOwnerDeletesRequest } from "@/lib/outstation/request-delete-guard";
 import type {
   EmployeeResidenceLocation,
   ManagerExpenseAdminInput,
@@ -5629,9 +5630,119 @@ export async function applyOutstationRequestExpenseDecisions(input: {
   return { applied, skipped };
 }
 
-// 🔴 An expense request is never deleted (owner, 24 Nov 2026: "never delete any expense request. If rejected,
-// keep them as rejected, but never delete."). The admin delete that stood here is gone, and the trigger
-// phx_outstation_requests_never_deleted refuses a DELETE or TRUNCATE in the database. Reject instead.
+export async function deleteOutstationRequestAsAdmin(
+  requestId: number,
+  access: AccessContext,
+) {
+  await assertOutstationAdminAccess(access, "delete");
+  // 🔴 Only the owner deletes a request, by his own press; the system never does (owner, 24 Nov 2026).
+  assertOwnerDeletesRequest(access);
+
+  const existing = await getOutstationRequestById(requestId);
+  if (!existing) throw new Error("Outstation request was not found.");
+
+  // Only the hr id is canonicalised; `system` is a marker, not a person, and must survive.
+  const actor = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+  const expenseTripId = outstationPayrollTripId(existing.id);
+  const supabase = getSupabaseAdmin();
+
+  const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
+    .from("outstation_expenses")
+    .select(
+      `id,imported_payroll_batch_id,imported_to_payroll_at,report_id,${EXPENSE_DECISION_SELECT}`,
+    )
+    .eq("trip_id", expenseTripId);
+
+  if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
+    throw new Error(linkedPayrollError.message);
+  }
+
+  const linkedRows = (linkedPayrollRows ?? []) as Array<Record<string, unknown>>;
+  const addedToPayroll = linkedRows.some(
+    (row) => row.imported_payroll_batch_id != null || row.imported_to_payroll_at != null,
+  );
+  if (addedToPayroll) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be deleted.");
+  }
+
+  await assertOutstationExpenseWorkflowTransition({
+    access,
+    actionKey: "delete_before_payroll",
+    expectedNextStatus: "deleted",
+    status: existing.status,
+  });
+
+  let deletedPayrollRows = 0;
+  const linkedReportIds = Array.from(
+    new Set(
+      linkedRows
+        .map((row) => row.report_id ? String(row.report_id) : null)
+        .filter(Boolean),
+    ),
+  );
+
+  if (linkedRows.length > 0) {
+    const { count, error: deletePayrollError } = await supabase
+      .from("outstation_expenses")
+      .delete({ count: "exact" })
+      .eq("trip_id", expenseTripId);
+
+    if (deletePayrollError) throw new Error(deletePayrollError.message);
+    deletedPayrollRows = count ?? linkedRows.length;
+
+    // Same reason as the rejection path: a confirmed Expenses step keeps paying a deleted trip.
+    await resyncPayrollExpenseStepForRemovedTrips(linkedRows);
+
+    for (const reportId of linkedReportIds) {
+      const { count: remainingRows, error: remainingRowsError } = await supabase
+        .from("outstation_expenses")
+        .select("id", { count: "exact", head: true })
+        .eq("report_id", reportId);
+
+      if (remainingRowsError) throw new Error(remainingRowsError.message);
+      if ((remainingRows ?? 0) > 0) continue;
+
+      const { error: deleteReportError } = await supabase
+        .from("outstation_expense_reports")
+        .delete()
+        .eq("id", reportId);
+
+      if (deleteReportError) throw new Error(deleteReportError.message);
+    }
+  }
+
+  await deleteOutstationCarEvidenceImage(existing.carEvidenceImagePath);
+  await deleteOutstationTicketAttachments(existing.ticketAttachmentPaths);
+
+  // The one door a request row leaves through: a plain DELETE is refused by the trigger
+  // phx_outstation_requests_never_deleted, so nothing automatic can remove one.
+  const { error } = await supabase.rpc("phx_owner_delete_outstation_request", { p_request_id: requestId });
+
+  if (error) throw new Error(error.message);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? actor,
+    entityId: String(existing.id),
+    entityType: "outstation_request",
+    oldValues: {
+      employeeHrId: existing.employeeHrId,
+      expenseTripId,
+      status: existing.status,
+      toLabel: existing.toLabel,
+      tripEndDate: existing.tripEndDate,
+      tripStartDate: existing.tripStartDate,
+    },
+    summary: `Admin deleted outstation request ${existing.id}.`,
+  });
+
+  return {
+    linkedPayroll: {
+      deletedRows: deletedPayrollRows,
+      expenseTripId,
+    },
+    request: existing,
+  };
+}
 
 
 /**

@@ -16,9 +16,11 @@ import {
   type DeskLane,
   claimsInLane,
   filteredLaneCounts,
+  filteredTiles,
   laneSummaries,
   narrowsHistory,
   readyBatch,
+  tilesFilterWords,
 } from "@/lib/outstation/approvals/desk-view";
 import type { TripStanding } from "@/lib/outstation/approvals/standing";
 import { cn } from "@/lib/utils";
@@ -66,6 +68,10 @@ function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
   // something wrong" — they said 15 and 51 over two empty lists). History's figure is its own count
   // under the same filters, read only while one of them is set.
   const shown = queue && narrowed ? filteredLaneCounts(queue.claims, view) : null;
+  // The cards follow the same filters (owner, 24 Nov 2026: "make the key cards in expense approvals follow
+  // the filter and show the real filtered count"), and say so in one line while they do.
+  const tiles = queue ? filteredTiles(queue, view) : null;
+  const tileWords = tilesFilterWords(view);
   const decided = useDecidedCount({ enabled: Boolean(queue) && narrowsHistory(view), from: view.from, kind: view.kind, search: view.search, to: view.to, version: desk.historyVersion });
   const laneClaims = queue && lane !== "history" ? claimsInLane(queue.claims, lane, view) : [];
   // The figure on each kind button: the lane on screen as the search, "over 7 days" and the trip dates
@@ -126,7 +132,7 @@ function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
           {/* A desktop reads the tiles first. On a phone they stood between the count and the first
               claim, which began 904 px down (measured at 375, 23 Nov 2026), so there they are drawn
               after the list: the one line above already says what waits. */}
-          <DeskTiles className="hidden md:block" onOpen={openTile} queue={queue} />
+          <DeskTiles className="hidden md:block" filterWords={tileWords} onOpen={openTile} queue={queue} tiles={tiles ?? queue.tiles} />
 
           {queue.unavailable.length > 0 ? (
             <CrmNote title="Some of the checks could not be made just now" tone="warn">
@@ -205,7 +211,7 @@ function DeskWorkspaceBody({ initialSearch }: { initialSearch: string }) {
             />
           )}
 
-          <DeskTiles className="md:hidden" onOpen={openTile} queue={queue} />
+          <DeskTiles className="md:hidden" filterWords={tileWords} onOpen={openTile} queue={queue} tiles={tiles ?? queue.tiles} />
 
           <DeskUndoBar onUndo={desk.undo} presses={desk.presses} />
         </>

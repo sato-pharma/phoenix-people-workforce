@@ -109,7 +109,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
       workspace.indexOf('<DeskTiles className="md:hidden"') < workspace.indexOf("<DeskUndoBar"),
     "HEADLINE: on a phone the tiles come after the list, so the first claim is on the first screen",
   );
-  assert.ok(tiles.includes('<div className={cn("min-w-0", className)} data-desk-tiles>'), "and the tiles wear the width rule they are given");
+  assert.ok(tiles.includes('<div className={cn("min-w-0", className)} data-desk-tiles '), "and the tiles wear the width rule they are given");
   assert.match(workspace, /\bcompact\n\s*description=\{/, "HEADLINE: the hero is compact — one sentence, never a band of its own");
   assert.match(workspace, /Export XLSX/);
   assert.match(workspace, /className="min-w-0 space-y-3" data-expense-desk/, "and the parts sit close");
@@ -128,7 +128,10 @@ export function runOutstationExpenseApprovalsLayoutTests() {
 
   // Six tiles, one per place a trip can stand — never a count that includes another tile's trips.
   assert.ok(tiles.includes("{TRIP_STANDINGS.map((standing) => {"), "HEADLINE: one tile per standing, from the one list of standings");
-  assert.ok(tiles.includes("const tile = queue.tiles[standing];"), "each reading the server's own count");
+  // Each reads the count it is given: the server's own, or the same count under the filters (owner, 24 Nov
+  // 2026: "make the key cards in expense approvals follow the filter and show the real filtered count").
+  assert.ok(tiles.includes("const tile = tiles[standing];"), "each reading the count it is given");
+  assert.ok(workspace.includes("filteredTiles(queue, view)"), "which follows the filters");
   assert.ok(tiles.includes("onClick={() => onOpen(standing)}"), "and a tile opens its trips");
   assert.match(tiles, /grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6/, "one slim strip: two across on a phone, six on a desktop");
   assert.ok(tiles.includes("data-desk-agreement"), "under them, how often the system's lane matched his answer");

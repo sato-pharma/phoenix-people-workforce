@@ -66,9 +66,8 @@ export async function runOutstationAdminApproveOutcomeTests() {
   const actingStarts = source.match(/setActing\(\{ action: "(approve|delete|fill-distance|reject)", id: /g) ?? [];
   assert.equal(
     actingStarts.length,
-    3,
-    // No delete since 24 Nov 2026: an expense request is never deleted (tests/expense-requests-never-deleted.test.ts).
-    "expected approve / fill-distance / reject to be the three actions that mark a "
+    4,
+    "expected approve / delete / fill-distance / reject to be the four actions that mark a "
       + "request busy — a new one must be added HERE too, or the pairing check below silently "
       + "stops covering it",
   );

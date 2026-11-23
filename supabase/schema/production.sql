@@ -37728,9 +37728,12 @@ CREATE FUNCTION public.phx_outstation_requests_never_deleted() RETURNS trigger
     SET search_path TO 'public'
     AS $$
 begin
-  raise exception 'expense requests are never deleted; reject the request instead (a rejected request stays on the record)'
+  if tg_op = 'DELETE' and coalesce(current_setting('phx.owner_request_delete', true), '') = 'on' then
+    return old;
+  end if;
+  raise exception 'expense requests are never deleted automatically; only the Super Admin deletes one, from the app'
     using errcode = 'P0001',
-          hint = 'Owner rule, 24 Nov 2026: never delete an expense request. Reject it.';
+          hint = 'Owner rule, 24 Nov 2026: only he deletes an expense request, by his own press. Reject it otherwise.';
 end;
 $$;
 
@@ -37740,7 +37743,34 @@ ALTER FUNCTION public.phx_outstation_requests_never_deleted() OWNER TO postgres;
 -- Name: FUNCTION phx_outstation_requests_never_deleted(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_outstation_requests_never_deleted() IS 'Refuses every DELETE and TRUNCATE on outstation_expense_requests. Owner, 24 Nov 2026: "never delete any expense request. If rejected, keep them as rejected, but never delete."';
+COMMENT ON FUNCTION public.phx_outstation_requests_never_deleted() IS 'Refuses every DELETE on outstation_expense_requests except through phx_owner_delete_outstation_request, and every TRUNCATE. Owner, 24 Nov 2026: "never delete automatic only i from system can delete".';
+
+--
+-- Name: phx_owner_delete_outstation_request(bigint); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) RETURNS integer
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_deleted integer;
+begin
+  perform set_config('phx.owner_request_delete', 'on', true);
+  delete from public.outstation_expense_requests where id = p_request_id;
+  get diagnostics v_deleted = row_count;
+  perform set_config('phx.owner_request_delete', '', true);
+  return v_deleted;
+end;
+$$;
+
+ALTER FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phx_owner_delete_outstation_request(p_request_id bigint); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) IS 'The one door an expense request leaves through. Called only by deleteOutstationRequestAsAdmin after assertOwnerDeletesRequest (the Super Admin''s own press).';
 
 --
 -- Name: phx_page_timings_record(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
@@ -103958,6 +103988,13 @@ GRANT ALL ON FUNCTION public.phx_outstation_medical_trip_hr_id_canonical() TO au
 
 REVOKE ALL ON FUNCTION public.phx_outstation_requests_never_deleted() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_outstation_requests_never_deleted() TO service_role;
+
+--
+-- Name: FUNCTION phx_owner_delete_outstation_request(p_request_id bigint); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_owner_delete_outstation_request(p_request_id bigint) TO service_role;
 
 --
 -- Name: FUNCTION phx_page_timings_record(p_rows jsonb); Type: ACL; Schema: public; Owner: postgres

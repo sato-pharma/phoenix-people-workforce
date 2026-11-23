@@ -42,7 +42,8 @@ import {
 } from "@/lib/outstation/approvals/claim-row";
 import { loadFieldEvidence, pointOf, type FieldEvidence, type FieldEvidenceTrip } from "@/lib/outstation/approvals/field-evidence";
 import { countTripStandings, newestPayout, readTripStanding, type PayoutPeriod, type TripStanding } from "@/lib/outstation/approvals/standing";
-import type { DeskClaim, DeskQueue } from "@/lib/outstation/approvals/types";
+import { claimKindOf } from "@/lib/outstation/approvals/claim-kind";
+import type { DeskClaim, DeskQueue, DeskTally } from "@/lib/outstation/approvals/types";
 import { flagDuplicateTicketRows } from "@/lib/outstation/duplicate-ticket-guard";
 import { flagDuplicateTripRows } from "@/lib/outstation/duplicate-trip-guard";
 import { withLiveOutstationEmployeeNames } from "@/lib/outstation/employee-name";
@@ -358,17 +359,27 @@ export async function loadDeskQueue(access: AccessContext, options: { canDecide:
   const heldPayable = new Map(
     held.map((row) => [requestIdOfRow(row), buildDeskClaim({ context: { today }, ledger: null, now, row }).payable]),
   );
-  const tiles = countTripStandings([
-    ...claims.map((claim) => ({ payable: claim.payable, standing: claim.standing })),
-    ...decidedRows
-      .filter((row) => !unlistedIds.has(requestIdOfRow(row)))
-      .map((row) => {
-        const stored = ledgerOf(row);
-        const standing = standingOfRow(row, stored, lastPaidPayout);
-        const payable = stored ? payableExpenseAmount(stored.approved_amount, stored.total) : (heldPayable.get(requestIdOfRow(row)) ?? 0);
-        return { payable, standing };
-      }),
-  ]);
+  // One slim line per decided trip, so the page can count the tiles under its filters (owner, 24 Nov
+  // 2026: "make the key cards in expense approvals follow the filter and show the real filtered count").
+  // The tiles below are counted from these same lines, so unfiltered the two can never disagree.
+  const decided: DeskTally[] = decidedRows
+    .filter((row) => !unlistedIds.has(requestIdOfRow(row)))
+    .map((row) => {
+      const stored = ledgerOf(row);
+      const dates = tripDatesOfRow(row);
+      return {
+        // The stored name and hr id, as History searches them, so a tile counts what History lists.
+        employeeName: String(row.employee_name ?? "").trim(),
+        hrId: String(row.employee_hr_id ?? "").trim() || null,
+        kind: claimKindOf(row.expense_type),
+        payable: stored ? payableExpenseAmount(stored.approved_amount, stored.total) : (heldPayable.get(requestIdOfRow(row)) ?? 0),
+        requestId: requestIdOfRow(row),
+        standing: standingOfRow(row, stored, lastPaidPayout),
+        tripEnd: dates[dates.length - 1] ?? "",
+        tripStart: dates[0] ?? "",
+      };
+    });
+  const tiles = countTripStandings([...claims.map((claim) => ({ payable: claim.payable, standing: claim.standing })), ...decided]);
 
   return {
     agreement: summarizeAgreement(
@@ -378,6 +389,7 @@ export async function loadDeskQueue(access: AccessContext, options: { canDecide:
     canDecide: options.canDecide,
     // Oldest first: the claim that has waited longest is the one to decide.
     claims: claims.sort((left, right) => String(left.submittedAt ?? "").localeCompare(String(right.submittedAt ?? ""))),
+    decided,
     overSevenDays: claims.filter((claim) => claim.daysWaiting > 7).length,
     tiles,
     unavailable: evidence.unavailable,
