@@ -459,6 +459,17 @@ function checkOnlyTheBuildingsThatNeedADecision() {
   const b = { sharedPlaceId: "b", tag: "click" };
   assert.deepEqual(pageRowsThenClick([a1], [a2, b], (row) => row.sharedPlaceId), [a1, b], "🔴 a row in both is the page's, read again after every decision");
   assert.deepEqual(pageRowsThenClick([a1], null, (row) => row.sharedPlaceId), [a1], "before the click, the page's rows alone");
+  // Code review, 24 Nov 2026: a building approved since the click left the page's held read, and the click's
+  // older held copy came back until the click was read again. The page sends every held building, so a held
+  // copy the page no longer holds is dropped.
+  const onPage = { sharedPlaceId: "a", status: "held" };
+  const heldCopy = { sharedPlaceId: "b", status: "held" };
+  const quietCopy = { sharedPlaceId: "c", status: "approved" };
+  assert.deepEqual(
+    pageRowsThenClick([onPage], [heldCopy, quietCopy], (row) => row.sharedPlaceId, (row) => row.status === "held"),
+    [onPage, quietCopy],
+    "🔴 a held building the page no longer sends was decided — its old held copy is never drawn",
+  );
 
   const page = stripComments(read("app/(admin)/admin/field-crm/validation-reviews/page.tsx"));
   assert.ok(page.includes("const sentVenues = venuesSentWithPage(sharedPlaces, waiting);"), "the page picks the buildings it sends by the waiting rows");
@@ -476,6 +487,7 @@ function checkOnlyTheBuildingsThatNeedADecision() {
       board.includes("pageRowsThenClick(reopenedRows.filter(isReal), everything ? everything.reopened.filter(isReal) : null"),
     "and the board holds the page's buildings and the click's as one list",
   );
+  assert.ok(board.includes('(row) => row.sharedPlaceId, (row) => row.status === "held")'), "🔴 the board drops a decided building's held copy from the click");
 }
 
 export async function runPhoenixCrmPlaceChecksOnDemandTests() {

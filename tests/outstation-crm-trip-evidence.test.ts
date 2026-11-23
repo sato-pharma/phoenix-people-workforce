@@ -270,8 +270,14 @@ export function runOutstationCrmTripEvidenceTests() {
   );
   // A list row and the batch follow the same rule: every Approve on the page is `approvePress`.
   const view = stripComments(readFileSync("src/lib/outstation/approvals/desk-view.ts", "utf8"));
-  assert.ok(view.includes("approve: sendable.map((claim) => approvePress(claim)),"), "HEADLINE: a ticked batch sends each row's own Approve");
-  assert.ok(view.includes("decisions: taken.map((claim) => approvePress(claim)),"), "and so does Approve all");
+  // Since 24 Nov 2026 a row he typed an amount into sends that box's press instead (`batchPress`);
+  // a row he left alone still sends its own Approve.
+  assert.ok(
+    view.includes("if (!entry || entry.revision !== claim.revision) return { decision: approvePress(claim), pays: approvePays(claim) };"),
+    "HEADLINE: a ticked batch sends each row's own Approve",
+  );
+  assert.ok(view.includes("press: paysIdleDayInFull(claim) ? null : batchPress(claim, typed)"), "Approve N goes through that one press");
+  assert.ok(view.includes("const presses = taken.map((claim) => batchPress(claim, typed)!);"), "and so does Approve all");
   const ticked = selectionBatch([idleTrip, { ...idleTrip, preCut: null, requestId: 6, revision: "r6" }], new Set([5, 6]), 50);
   assert.deepEqual(
     ticked.approve.map((entry) => entry.approvedAmount ?? null),

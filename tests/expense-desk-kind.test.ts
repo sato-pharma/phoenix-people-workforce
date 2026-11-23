@@ -319,7 +319,10 @@ export function runExpenseDeskKindTests() {
   assert.match(history, /query = query\.or\(kindFilter\.or\)/);
   assert.match(history, /query = query\.ilike\(kindFilter\.column, kindFilter\.pattern\)/);
   assert.match(history, /const period = tripPeriodOf\(options\.from, options\.to\);/);
-  assert.match(history, /if \(period\.from\) query = query\.gte\("trip_end_date", period\.from\);/, "a trip is in the period when it ENDED on or after From");
+  assert.ok(
+    history.includes("if (period.from) query = query.or(`trip_end_date.gte.${period.from},and(trip_end_date.is.null,trip_start_date.gte.${period.from})`);"),
+    "a trip is in the period when it ENDED on or after From — and a trip with no end date is its start day (code review, 24 Nov 2026)",
+  );
   assert.match(history, /if \(period\.to\) query = query\.lt\("trip_start_date", dayAfter\(period\.to\)\);/, "and BEGAN on or before To");
   const route = code("app/api/admin/outstation/approvals/history/route.ts");
   assert.match(route, /kind: claimKindFromParam\(url\.searchParams\.get\("kind"\)\)/);

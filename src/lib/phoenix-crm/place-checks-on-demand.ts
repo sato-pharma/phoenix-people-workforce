@@ -145,12 +145,19 @@ export function decidedSentWithPage(recentDecided: ReadonlyArray<ValidationRevie
 
 /**
  * The page's rows and the click's as one list: a row in both is the page's, which is read again after every
- * decision; the click's rows the page did not send follow, in the click's order.
+ * decision; the click's rows the page did not send follow, in the click's order. `pageSends` names the rows
+ * the page ALWAYS sends (every held building): one of those the page no longer holds was decided since the
+ * click, so the click's older copy is dropped rather than drawn as still held until the click is read again.
  */
-export function pageRowsThenClick<Row>(page: ReadonlyArray<Row>, click: ReadonlyArray<Row> | null, keyOf: (row: Row) => string): Row[] {
+export function pageRowsThenClick<Row>(
+  page: ReadonlyArray<Row>,
+  click: ReadonlyArray<Row> | null,
+  keyOf: (row: Row) => string,
+  pageSends: (row: Row) => boolean = () => false,
+): Row[] {
   if (!click) return [...page];
   const seen = new Set(page.map(keyOf));
-  return [...page, ...click.filter((row) => !seen.has(keyOf(row)))];
+  return [...page, ...click.filter((row) => !seen.has(keyOf(row)) && !pageSends(row))];
 }
 
 /** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */

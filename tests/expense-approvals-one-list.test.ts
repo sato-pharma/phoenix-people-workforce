@@ -132,7 +132,7 @@ export function runExpenseApprovalsOneListTests() {
   );
   assert.ok(row.includes("{onTick ? <TickBox checked={ticked} name={claim.employeeName} onChange={onTick} /> : null}"), "and draws none without it");
   assert.ok(
-    row.includes("const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT);"),
+    row.includes("const selection = selectionBatch(claims, ticked, DESK_DECISION_LIMIT, typed);"),
     "the ticked batch is read against the claims on screen, not kept from an earlier render",
   );
   assert.ok(
