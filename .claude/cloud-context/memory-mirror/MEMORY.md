@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [a moved-back customer leaves the receiving rep's assignment open](a-moved-back-customer-leaves-the-receiving-reps-assignment-open.md) - the mint re-adds a pending copy; close the rows and prove the mint returns 0
 
 
 

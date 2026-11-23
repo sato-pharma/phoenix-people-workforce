@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: fec79187-477a-4fee-951b-cd4da7bc020f
-  modified: 2026-11-23T06:04:06.038Z
+  modified: 2026-11-23T19:21:27.288Z
 ---
 
 On 23 Nov 2026, about 07:40 Cairo, the owner answered three multiple-choice questions about the rebuilt
@@ -27,4 +27,12 @@ confirmed each rather than have it changed back.
 **How to apply:** do not "fix" any of the three back (no expand-in-place under a row, no reduction
 accepted on a held trip, no edit of a decided trip from the desk) unless he asks in his own words. A
 carry-over or a guarded change of a decided claim touches the payroll path: design it and show him first.
+
+**Choice 3 was LIFTED the same day, about 21:05 Cairo**, in his own words: "make me able to reject even
+if approved in history. Make me easily able to approve or reject." Since then a decided claim takes ONE
+press on its History row and in its opened trip: an approved claim no payroll has taken → Reject (with a
+reason); a rejected claim → Approve in full. Still closed: approving an approved claim again, keeping it
+full or reducing it (the press that lost his typed figure), and any change to a claim in payroll or whose
+payout month's payroll already ran. The rule lives in `.claude/rules/expenses.md` ("A DECIDED CLAIM IS
+CHANGED ON ITS HISTORY ROW"). Choices 1 and 2 still stand.
 Related: [[the-next-step-box-must-not-manufacture-the-next-task]], [[fix-means-fix-no-unrequested-work]].
