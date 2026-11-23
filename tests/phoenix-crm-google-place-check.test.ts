@@ -222,7 +222,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.ok(list.includes("placeCheckHold: null,"), "every request starts without a hold");
   assert.ok(list.includes("const heldRequests = await withPlaceCheckHolds("), "the List tab asks it");
   const team = stripComments(readFileSync("src/lib/phoenix-crm/server/team.ts", "utf8"));
-  assert.ok(team.includes("const heldRequests = await withPlaceCheckHolds("), "and so does the Team tab");
+  assert.ok(team.includes("withPlaceCheckHolds(viewer, isTest, drafts)"), "and so does the Team tab");
   const reviewsRead = stripComments(placeCheckSplitSource("validation-reviews"));
   const batch = /export async function pendingLocationReviewCustomers\([\s\S]*?\n\}/.exec(reviewsRead)?.[0] ?? "";
   assert.ok(batch.includes('.eq("status", "pending")'), "the batch reads the same waiting reviews as the single check");
