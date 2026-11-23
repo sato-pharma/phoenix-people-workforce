@@ -622,6 +622,45 @@ function runWordingAndFileTests() {
   assert.ok(filterBar.includes('lanes && !filtersOpen && "sm:hidden"'), "HEADLINE: closed, the boxed Filters bar leaves a desktop on a board with lanes");
   assert.ok(filterBar.includes('"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", lanes && "sm:hidden"'), "open, the box holds the fields alone: the line is never drawn twice on a desktop");
   assert.equal(filterBar.split("<PlaceCheckFilterLine board={board} />").length - 1, 1, "a phone, and a board with no lanes, still read the line in the bar");
+  // 🔴 A LANE'S "PICK ROWS" LINE STANDS IN ITS SECTION'S TITLE ROW (owner, 23 Nov 2026: "Add Pick rows to
+  // 707"). As a box of its own it stood 61 px between the section's title and the first waiting place. The
+  // bar draws its ONE line into the slot the section hands it; the reason, the note and the action buttons
+  // still open in the box under the title. Driven in a browser on the two files as they stand (23 Nov 2026):
+  // idle, both lines stood in their title rows and no box was drawn; a tick opened the box; Pick all in the
+  // title row kept its focus; a run that saved one and failed one drew the box again to say so.
+  const bulkBar = code("src/components/phoenix-crm/place-check-bulk.tsx");
+  assert.ok(
+    bulkBar.includes("export const BulkPickLineSlot = createContext<HTMLElement | null | undefined>(undefined);"),
+    "HEADLINE: a section hands no slot unless it says so: every other board and panel keeps the bar whole",
+  );
+  assert.ok(
+    bulkBar.includes("const lineInPlace = !inTitleRow ? line : lineSlot ? createPortal(line, lineSlot) : null;"),
+    "HEADLINE: the bar draws its line into the title row's slot, and a slot not on the page yet draws nothing, so the line never stands in the old place first",
+  );
+  assert.equal(bulkBar.split("Pick rows to answer together").length - 1, 1, "🔴 the line is written once: the title row holds the bar's own line, never a second copy");
+  assert.equal(bulkBar.split("onClick={() => picks.pickAll()}").length - 1, 1, "🔴 and one Pick all: never a second way to pick");
+  assert.equal(bulkBar.split("{lineInPlace}").length - 1, 1, "the box draws the line once, where it is not in a title row");
+  assert.ok(
+    bulkBar.includes("if (inTitleRow && picked.length === 0 && !lastRunSaid) return lineInPlace;"),
+    "HEADLINE: with nothing ticked and nothing said the bar draws no box, so the first waiting place stands under the title",
+  );
+  assert.ok(
+    bulkBar.includes("const lastRunSaid = (summary !== null && running === null) || failures.length > 0;"),
+    "🔴 what the last run saved, and every row that was not answered, still open the box: a run clears the ticks",
+  );
+  assert.ok(bulkBar.includes('inTitleRow && "sm:justify-end"'), "in the title row the line ends the row on a desktop, and starts it on a phone");
+  assert.ok(
+    needs.includes("action={lanes && reviews.length > 0 ? <div className=\"min-w-0\" data-pick-line-slot ref={setClinicsLine} /> : undefined}") &&
+      needs.includes("action={lanes && buildings.length > 0 ? <div className=\"min-w-0\" data-pick-line-slot ref={setBuildingsLine} /> : undefined}"),
+    "HEADLINE: each lane's section holds the slot in its title row, and only while it has rows to pick",
+  );
+  assert.ok(
+    needs.includes("<BulkPickLineSlot.Provider value={lanes ? clinicsLine : undefined}>") && needs.includes("<BulkPickLineSlot.Provider value={lanes ? buildingsLine : undefined}>"),
+    "HEADLINE: only a board with lanes hands its lists a slot; the SFE Manager's and a district manager's board keep the bar whole",
+  );
+  // 🔴 NO WIDTH CAP ON THE SLOT. Set on the live page's own elements (23 Nov 2026): a 576 or 672 px cap gave
+  // back 41 px on his own screen where none gives 61, and COST 35 px in a 900 px column with one quick pick.
+  assert.ok(!/className="[^"]*max-w-[^"]*" data-pick-line-slot/.test(needs), "🔴 the slot carries no width cap");
   assert.ok(
     code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",

@@ -223,8 +223,23 @@ Two reviews read the pull request before any merge was asked for (23 Nov 2026).
   the last tabs (a 1,126 px column with no filter on) and 39 px where it takes a row of its own (his
   screen, and any filter on); it is never taller than the bar it replaced. Read by setting the same
   layout on the live page's own elements, nothing pressed. The branch itself was not opened in a
-  browser: this laptop's free memory fell to 1,553 MB while the page compiled. Still standing above the
-  first place: the section head and the "Pick rows" line.
+  browser: this laptop's free memory fell to 1,553 MB while the page compiled.
+- **The "Pick rows" line stands in the section's title row** (owner, 23 Nov 2026: "Add Pick rows to
+  707"). On a board with lanes each list's bar draws its first line into a slot in its section's title
+  row (`BulkPickLineSlot`); with nothing ticked and nothing said by the last run the bar draws no box.
+  Set on the live page's own elements, nothing pressed, against the 61 px box it replaces: his own
+  screen (1,760 px column) 61 px given back with none, one or two quick picks (737 → 676 px); a
+  1,126 px column 37 px, because the description takes one more line beside the buttons, and 9 px
+  with two quick picks, which wrap under the title; 900 px 37 px with none, 9 px with one or two;
+  700 px 9 px. Never a loss. A 576 or 672 px cap on the slot was measured and refused: 41 px on his
+  screen and a 35 px LOSS at 900 px with one quick pick. The two files were then run as they stand in a
+  browser on a test page (React 18.3.1, stand-in buttons and rows, so its pixels are not the page's):
+  idle, both lines stood in their title rows and no box was drawn; a tick opened the box with the
+  reason, the note and the buttons; Pick all pressed in the title row kept its focus; Clear closed the
+  box; a run that saved one row and failed one drew the box again with both lines; a board with no
+  lanes drew the bar whole and no slot; at 375 px nothing scrolled sideways. The branch inside the real
+  app has still not been opened in a browser. Still standing above the first place: the section head
+  (101 px on his screen) and the table head (39 px).
 - **A table's own panel has no table.** The four panels use a titled card (`place-checks/section.tsx`)
   and each list inside owns its table and its phone cards. The lanes test proves the phone cards on
   each of those lists, because the table ratchet reads files with a table in them.

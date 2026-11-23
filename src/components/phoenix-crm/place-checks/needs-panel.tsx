@@ -13,7 +13,10 @@
  * checked" and never whose decision it is.
  */
 
+import { useState } from "react";
+
 import { AdminCallout } from "@/components/admin/admin-design-system";
+import { BulkPickLineSlot } from "@/components/phoenix-crm/place-check-bulk";
 import { PAGE_BUILDINGS, PAGE_LANE, PAGE_ROWS, Paged } from "@/components/phoenix-crm/place-checks/paged";
 import { ReadyLaneBar } from "@/components/phoenix-crm/place-checks/ready-lane-bar";
 import { PlaceCheckSection } from "@/components/phoenix-crm/place-checks/section";
@@ -60,6 +63,11 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
   const nothing = named !== null && !drawClinics && !drawBuildings;
   const rowsPage = lanes ? PAGE_LANE : PAGE_ROWS;
   const buildingsPage = lanes ? PAGE_LANE : PAGE_BUILDINGS;
+  // 🔴 A LANE'S "PICK ROWS" LINE STANDS IN ITS SECTION'S TITLE ROW (owner, 23 Nov 2026). As a box of its own
+  // it stood 61 px between the title and the first waiting place. Each list's bar draws its line into the
+  // slot its section hands it (`BulkPickLineSlot`); a board with no lanes hands none and keeps the bar whole.
+  const [clinicsLine, setClinicsLine] = useState<HTMLDivElement | null>(null);
+  const [buildingsLine, setBuildingsLine] = useState<HTMLDivElement | null>(null);
 
   return (
     <>
@@ -108,7 +116,11 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
       ) : null}
 
       {drawClinics ? (
-        <PlaceCheckSection title={clinicsTitle} description={clinicsSaid}>
+        <PlaceCheckSection
+          action={lanes && reviews.length > 0 ? <div className="min-w-0" data-pick-line-slot ref={setClinicsLine} /> : undefined}
+          description={clinicsSaid}
+          title={clinicsTitle}
+        >
           {reviews.length === 0 ? (
             <div className="px-4 py-4">
               <AdminCallout tone="success">
@@ -122,15 +134,21 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
               </AdminCallout>
             </div>
           ) : (
-            <Paged key={pageKey} initial={rowsShown} noun="places" onLimit={setRowsShown} rows={reviews} size={rowsPage}>
-              {(rows) => <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={rows} section="waiting" />}
-            </Paged>
+            <BulkPickLineSlot.Provider value={lanes ? clinicsLine : undefined}>
+              <Paged key={pageKey} initial={rowsShown} noun="places" onLimit={setRowsShown} rows={reviews} size={rowsPage}>
+                {(rows) => <ValidationReviewQueue mode={mode} noteIndex={noteIndex} rows={rows} section="waiting" />}
+              </Paged>
+            </BulkPickLineSlot.Provider>
           )}
         </PlaceCheckSection>
       ) : null}
 
       {drawBuildings ? (
-        <PlaceCheckSection title={buildingsTitle} description={buildingsSaid}>
+        <PlaceCheckSection
+          action={lanes && buildings.length > 0 ? <div className="min-w-0" data-pick-line-slot ref={setBuildingsLine} /> : undefined}
+          description={buildingsSaid}
+          title={buildingsTitle}
+        >
           {buildings.length === 0 ? (
             <div className="px-4 py-4">
               <AdminCallout tone="success">
@@ -138,9 +156,11 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
               </AdminCallout>
             </div>
           ) : (
-            <Paged key={pageKey} noun="buildings" rows={buildings} size={buildingsPage}>
-              {(groups) => <SharedPlaceList groups={groups} mode={mode} noteIndex={noteIndex} />}
-            </Paged>
+            <BulkPickLineSlot.Provider value={lanes ? buildingsLine : undefined}>
+              <Paged key={pageKey} noun="buildings" rows={buildings} size={buildingsPage}>
+                {(groups) => <SharedPlaceList groups={groups} mode={mode} noteIndex={noteIndex} />}
+              </Paged>
+            </BulkPickLineSlot.Provider>
           )}
         </PlaceCheckSection>
       ) : null}
