@@ -76,8 +76,11 @@ export function runPhoenixCrmSfeRecommendationsTests() {
   assert.ok(sfePage.includes("if (!viewer || !canDecideValidationReviews(viewer)) redirect(\"/admin\");"), "🔴 and its second is the decider");
   assert.ok(sfePage.includes("splitBySfeRecommendation("), "it takes its rows through the shared rule");
   const placeChecks = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.ok(placeChecks.includes("withoutSfeRecommended("), "and the Place checks board takes the same rows out through it");
-  assert.ok(/decides \? withoutSfeRecommended\(/.test(placeChecks), "only for the decider — the SFE Manager still sees every check he can recommend on");
+  // The page and the read behind it sort their rows by one function since 23 Nov 2026, so the rule is in it.
+  const boardSets = read("src/lib/phoenix-crm/place-checks-board-sets.ts");
+  assert.ok(placeChecks.includes("placeChecksBoardSets({ decides, reviews: reviews.rows, sharedPlaces: sharedRead.rows, notes })"), "the Place checks page sorts its rows by the shared function");
+  assert.ok(boardSets.includes("withoutSfeRecommended("), "and the Place checks board takes the same rows out through it");
+  assert.ok(/decides \? withoutSfeRecommended\(/.test(boardSets), "only for the decider — the SFE Manager still sees every check he can recommend on");
   assert.ok(placeChecks.includes("SFE_RECOMMENDATIONS_PATH"), "the board links the Super Admin to the page");
 
   // ── 4 · THE SIDEBAR CARD ──────────────────────────────────────────────────────────────────────

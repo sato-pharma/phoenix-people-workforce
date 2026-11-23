@@ -30,7 +30,7 @@ import { usePlaceCheckLanes } from "@/components/phoenix-crm/place-checks/use-bo
 import { usePlaceCheckRows } from "@/components/phoenix-crm/place-checks/use-board-rows";
 import { usePlaceChecksEverything, viewNeedsEverything } from "@/components/phoenix-crm/place-checks/use-everything";
 import { laneOfReviewRow, laneOfVenueGroup, openCaseSubjects, PLACE_CHECK_LANE_LABEL } from "@/lib/phoenix-crm/place-check-lanes";
-import { unconfirmedOpenCount, type UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
+import { mergedNoteIndex, unconfirmedOpenCount, type UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
 import {
   decidedSectionTitle,
   EMPTY_VALIDATION_REVIEW_FILTERS,
@@ -45,7 +45,7 @@ const filterKeyOf = (filters: ValidationReviewFilters) =>
   `${filters.outcome}|${filters.rep}|${filters.line}|${filters.region}|${filters.area}|${filters.list}|${filters.period}|${filters.decider}|${filters.text}`;
 
 export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
-  const { agreement = null, capped, failingTimetables, mode, noteIndex, onDemand, reviewDeck, sfeRecommended, signWins, slots = [] } = props;
+  const { agreement = null, failingTimetables, mode, onDemand, reviewDeck, sfeRecommended, signWins, slots = [] } = props;
 
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
   // The eight boxes fold away under a one-line summary of what is narrowing the board (17 Nov 2026).
@@ -80,12 +80,25 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
   const lanes = decides && !team;
 
   const filtering = hasActiveValidationReviewFilter(filters) || filters.outcome !== "all";
-  const { askForDeck, complete, everything, everythingRead, reloadEverything, wanted } = usePlaceChecksEverything({
+  const { askForDeck, complete, everything, everythingRead, reloadEverything, reloadSummary, summary, summaryError, summaryStale, wanted } = usePlaceChecksEverything({
     filtering,
     onDemand,
     view: picked ?? "needs",
   });
-  const rows = usePlaceCheckRows({ chip, complete, everything, filtering, filters, onlyBuilding, props, showRejectedBuildings, team });
+  // 🔴 THE NOTES COME WITH THE ROWS (23 Nov 2026): the page reads the comments, recommendations and evidence
+  // of the rows it sends and no others, so a single clinic's arrive with the click and the two are one index.
+  const clickNotes = everything?.noteIndex ?? null;
+  const noteIndex = useMemo(() => mergedNoteIndex(props.noteIndex, clickNotes), [props.noteIndex, clickNotes]);
+  // A wide read that stopped at its ceiling says so, whichever of the two brought it.
+  const capped = useMemo(
+    () => ({
+      ...props.capped,
+      reviews: props.capped.reviews || Boolean(summary?.capped.reviews) || Boolean(everything?.capped.reviews),
+      validated: props.capped.validated || Boolean(summary?.capped.validated) || Boolean(everything?.capped.validated),
+    }),
+    [props.capped, summary, everything],
+  );
+  const rows = usePlaceCheckRows({ chip, complete, everything, filtering, filters, noteIndex, onlyBuilding, props, showRejectedBuildings, summary, team });
   const {
     buildingGroups,
     decided,
@@ -156,12 +169,27 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
   const readyCount = readyReviews.length + readyGroups.length;
   const callCount = callReviews.length + callGroups.length;
   const historyCount = (showDecided ? historyDecided.length : 0) + (showReopened ? filteredReopened.length : 0);
-  const unconfirmedCount = complete ? unconfirmedOpenCount(inUse, filters) : onDemand && !filtering ? onDemand.summary.unconfirmed : null;
+  // 🔴 A COUNT THE BOARD CANNOT STAND BEHIND IS NO COUNT (23 Nov 2026). Until the click's read is in, the
+  // board holds only the places and decisions seated in a building, so Not confirmed, History and "Approved
+  // by the system" show the figures' read (`summary`), and nothing at all until that read answers: never a
+  // number taken from the seated few.
+  const counted = !complete && !filtering ? summary : null;
+  const unconfirmedCount = complete ? unconfirmedOpenCount(inUse, filters) : counted ? counted.unconfirmed : null;
   // While the click's read is on its way under a filter, no tab shows a count it cannot stand behind.
   const shown = (count: number) => (reading && filtering ? null : count);
   // 🔴 THE TWO DECIDED TABS ARE COUNTED BY THE SERVER UNTIL THEIR ROWS ARE IN (23 Nov 2026): the page no
   // longer sends the single clinics' decisions, so before the click the board holds only the seated ones.
-  const decidedCounts = !complete && onDemand && !filtering ? onDemand.summary : null;
+  const decidedCount = (own: number, server: (figures: NonNullable<typeof counted>) => number) => (complete ? shown(own) : counted ? server(counted) : null);
+  // The Figures tab's two "in use" cards: from the rows once they are in, else from the figures' read.
+  const inUseFigures = useMemo(
+    () =>
+      everything
+        ? { inUse: validated.length, unseen: validated.filter((row) => !row.reviewed).length }
+        : summary
+          ? { inUse: summary.inUse, unseen: summary.unseen }
+          : null,
+    [everything, validated, summary],
+  );
   const decidedTitle = decidedSectionTitle(filters, team);
 
   const filterKey = filterKeyOf(filters);
@@ -180,8 +208,8 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
   // 🔴 THE COMPARISON TABS ARE THE COMPANY BOARD'S ALONE: a manager's board is `mode="team"` and is never
   // handed the tab, the panel or the read (the route refuses a manager as well).
   const decidedTabs: PlaceCheckTab[] = [
-    { key: "history", label: "History", count: decidedCounts ? decidedCounts.history : shown(historyCount) },
-    ...(lanes ? [{ key: "bySystem" as const, label: "Approved by the system", count: decidedCounts ? decidedCounts.bySystem : shown(bySystemRows.length) }] : []),
+    { key: "history", label: "History", count: decidedCount(historyCount, (figures) => figures.history) },
+    ...(lanes ? [{ key: "bySystem" as const, label: "Approved by the system", count: decidedCount(bySystemRows.length, (figures) => figures.bySystem) }] : []),
   ];
   const tabs: ReadonlyArray<PlaceCheckTab> = [
     ...(lanes ? [{ key: "ready" as const, label: PLACE_CHECK_LANE_LABEL.ready, count: shown(readyCount) }] : []),
@@ -278,6 +306,7 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     filters,
     filtersOpen,
     historyDecided,
+    inUseFigures,
     lanes,
     lineLookalikesOpened,
     mode,
@@ -289,6 +318,7 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     pageKey,
     reading,
     reloadEverything,
+    reloadSummary,
     reviewDeck,
     rowsShown,
     sameCustomerOpened,
@@ -306,6 +336,8 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     signWins,
     slots,
     stayOnView,
+    summaryError,
+    summaryStale,
     tabs,
     team,
     validatedKey,

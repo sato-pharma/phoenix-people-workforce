@@ -123,11 +123,15 @@ function checkLoadersGoThroughSelectByIds(): void {
   // Production read audit, 28 Oct 2026: there is no index on `created_at`, so ordering the pages by it
   // made every page scan and sort the whole table. The pages walk the primary key; the board's
   // newest-first order is made in code, after the read.
+  // Since 23 Nov 2026 the page opening asks for the seated places alone (`seatedOnly`), so the seat-scoped
+  // query may carry one more filter before its order: the order is still the primary key, and the only one.
+  assert.match(validated, /seatScoped\(query, seats\)/, "the validated-places pages are seat-scoped");
   assert.match(
     validated,
-    /seatScoped\(query, seats\)\.order\("id", \{ ascending: false \}\)/,
+    /\)\.order\("id", \{ ascending: false \}\);/,
     "the validated-places pages are ordered by the primary key alone",
   );
+  assert.equal(validated.split(".order(").length - 1, 1, "the validated-places read orders its pages once, by id");
   assert.doesNotMatch(validated, /\.order\("created_at"/, "no page of the validated-places read sorts on created_at");
   assert.match(validated, /\.sort\(newestValidatedFirst\)/, "the rows are put back newest first in code");
   const newest = /\n(?:export )?function newestValidatedFirst\([\s\S]*?\n\}/.exec(service)?.[0] ?? "";

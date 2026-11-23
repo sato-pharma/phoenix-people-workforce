@@ -160,7 +160,14 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   // 🔴 THE 14-DAY READ WOULD HAVE HIDDEN 86 OF HIS 480 DECISIONS: the Super Admin's page reads every
   // decision, its cards count only the recent ones, and the board shows the older ones only while a
   // decider is chosen. The manager's box is never drawn.
-  assert.match(page, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "the page reads every decision, not the 14-day window");
+  // Since 23 Nov 2026 ("Fix speed next") every decision is read behind the page, once the board is on
+  // screen, and no longer by the page before it draws a row: "Decided by" still answers for all of them.
+  assert.match(
+    read("src/lib/phoenix-crm/server/place-checks-wide-read.ts"),
+    /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/,
+    "the read behind the page reads every decision, not the 14-day window",
+  );
+  assert.ok(!page.includes("everyDecision"), "🔴 and the page itself reads the 14-day window alone: every decision was 2,377 rows read before the first waiting place");
   assert.match(page, /realDecided = real\(decided\)\.filter\(\(row\) => row\.recent\)/, "the 14-day cards still count only the recent decisions");
   assert.match(board, /filters\.decider \? everyDecided : everyDecided\.filter\(\(row\) => row\.recent\)/, "the older decisions show only while a decider is chosen");
   assert.match(board, /\{team \? null : \(\s*<CrmField htmlFor="vr-decider"/, "the Decided by box is the company board's alone");
