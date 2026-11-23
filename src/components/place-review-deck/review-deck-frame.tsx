@@ -22,6 +22,7 @@ function DeckHeader({
   chooseKind,
   chooseTab,
   counts,
+  held,
   kind,
   onClose,
   position,
@@ -34,6 +35,8 @@ function DeckHeader({
   chooseKind: (next: DeckKind) => void;
   chooseTab: (next: DeckTab) => void;
   counts: Record<DeckTab, number | null>;
+  /** What is held for his decision, by the tab it stands in (`deckHeldSplit`). */
+  held: { readable: number; unreadable: number };
   kind: DeckKind;
   onClose: () => void;
   position: number;
@@ -51,6 +54,12 @@ function DeckHeader({
           <h2 className="break-words text-base font-black text-white lg:text-lg" id={titleId}>
             Review one by one
           </h2>
+          {/* The whole number, because Waiting for you leaves out the ones in Not readable. */}
+          {held.unreadable > 0 ? (
+            <p className="break-words text-xs font-semibold text-slate-300" data-deck-held>
+              {held.readable + held.unreadable} wait for you · {held.unreadable} of them in {TAB_LABELS.unreadable}
+            </p>
+          ) : null}
         </div>
         {total > 0 && !waitingForCases ? (
           <p className="shrink-0 text-sm font-black tabular-nums text-white">
@@ -127,10 +136,21 @@ function DeckMessage({ children, lines, title }: { children?: ReactNode; lines: 
 }
 
 /** The other tabs, each with what it holds, from the panel that closes one. */
-function OtherTabs({ counts, current, onChoose }: { counts: Record<DeckTab, number | null>; current: DeckTab; onChoose: (tab: DeckTab) => void }) {
+function OtherTabs({
+  counts,
+  current,
+  onChoose,
+  skip,
+}: {
+  counts: Record<DeckTab, number | null>;
+  current: DeckTab;
+  onChoose: (tab: DeckTab) => void;
+  /** A tab the panel already points at with a button of its own. */
+  skip?: DeckTab | null;
+}) {
   return (
     <div className="flex min-w-0 flex-wrap justify-center gap-2">
-      {DECK_TABS.filter((one) => one !== current && counts[one] !== 0).map((one) => (
+      {DECK_TABS.filter((one) => one !== current && one !== skip && counts[one] !== 0).map((one) => (
         <CrmButton key={one} onClick={() => onChoose(one)} size="sm">
           {TAB_LABELS[one]}
           {counts[one] === null ? "" : ` (${counts[one]})`}

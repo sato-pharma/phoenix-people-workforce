@@ -257,10 +257,12 @@ export function runPortalRepNavigationSpeedTests(): void {
       // that one hold is told after the rule has LEFT it. Every other notice still owns its own timing.
       const notices = deferred.match(/\bnotify\w*/gi) ?? [];
       assert.deepEqual(notices, ["notifyValidationReviewWaiting"], `${declaration}: the only notice after the reply is the hold the sign did not win`);
-      assertBefore(deferred, "await recordPlaceSignboard(", "const won = await signWinsAtTheDoor(heldReviewId);", `${declaration}: the rule runs once the door's reading is recorded`);
-      assertBefore(deferred, "const won = await signWinsAtTheDoor(heldReviewId);", "await notifyValidationReviewWaiting(", `${declaration}: and he is told after it has answered`);
+      // The door reads no sign for a place Google holds, so the rule's call reads it first (23 Nov 2026).
+      const ruleCall = `const won = await signWinsAfterGoogleHold(heldReviewId, ${declaration.includes("validateCustomer") ? "validated" : "added"}.placeId);`;
+      assertBefore(deferred, "await recordPlaceSignboard(", ruleCall, `${declaration}: the rule runs once the door's record is on the place`);
+      assertBefore(deferred, ruleCall, "await notifyValidationReviewWaiting(", `${declaration}: and he is told after it has answered`);
       assert.ok(
-        deferred.includes("if (signMayWin && heldReviewId) {\n      const won = await signWinsAtTheDoor(heldReviewId);\n      if (!won.approved && !isTest) {\n        await notifyValidationReviewWaiting("),
+        deferred.includes(`if (signMayWin && heldReviewId) {\n      ${ruleCall}\n      if (!won.approved && !isTest) {\n        await notifyValidationReviewWaiting(`),
         `${declaration}: only when the rule left the place to him`,
       );
       assert.ok(save.includes("&& !signboardHold && !signMayWin) {\n    await notifyValidationReviewWaiting("), `${declaration}: every other hold is still told at the door`);

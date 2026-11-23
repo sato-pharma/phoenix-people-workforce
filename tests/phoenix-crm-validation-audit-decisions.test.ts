@@ -102,7 +102,7 @@ export function runPhoenixCrmValidationAuditDecisionsTests(): void {
   const marked = loader.slice(loader.indexOf("async function markDoorsCapturedAgain("), loader.indexOf("export async function loadValidationReviews("));
   assert.ok(marked.includes('query.eq("status", "active")'), "the customer's ACTIVE places are what the door is compared with");
   assert.match(marked, /row\.restorable = false;\s+row\.capturedAgain = true;/, "🔴 a captured-again row offers no take-back, and says why");
-  assertBefore(loader, "await markDoorsCapturedAgain(rows, reviews, placeById);", "row.status === \"rejected\" && row.restorable && decided >= rejectedSince", "it is marked before the 90-day undo window is judged, so it drops back to 14 days");
+  assertBefore(loader, "await Promise.all([markDoorsCapturedAgain(rows, reviews, placeById), markEarlierDecisions(rows, reviews, decides)]);", "row.status === \"rejected\" && row.restorable && decided >= rejectedSince", "it is marked before the 90-day undo window is judged, so it drops back to 14 days");
   for (const screen of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/shared-place-customers.tsx"]) {
     assert.ok(stripComments(placeCheckListSourceAt(screen, read)).includes("DOOR_CAPTURED_AGAIN_TEXT"), `${screen} draws the reason where the button was`);
   }

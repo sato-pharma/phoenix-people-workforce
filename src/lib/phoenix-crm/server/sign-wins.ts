@@ -23,6 +23,7 @@ import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { selectByIds } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { approveHeldSignboardBySystem, SIGNBOARD_SYSTEM_ACTOR } from "@/lib/phoenix-crm/server/signboard-holds";
+import { readPlaceSignboardNow } from "@/lib/phoenix-crm/server/signboard-sweep";
 import {
   GOOGLE_HOLD_REASONS,
   SIGN_WINS_NOTE,
@@ -184,6 +185,19 @@ export async function signWinsAtTheDoor(reviewId: string): Promise<SignWinsOutco
     logError("Phoenix CRM sign-wins check failed at the door", { error, labels: { event: "phoenix_crm_sign_wins_failed" } });
     return { approved: false, because: "not_read" };
   }
+}
+
+/**
+ * The door's call for a place GOOGLE held: read its sign now, then ask the rule.
+ *
+ * 🔴 THE DOOR READS NO SIGN FOR A PLACE GOOGLE HOLDS (`held_elsewhere`), so `signWinsAtTheDoor` alone
+ * could never approve one: the stored reading it asks for did not exist until the 03:35 pass. This makes
+ * that one read first (`readPlaceSignboardNow`, the night's own read of one place, never a second
+ * one). A read that gave no answer leaves the place to him and to the night, as before. Never throws.
+ */
+export async function signWinsAfterGoogleHold(reviewId: string, placeId: string): Promise<SignWinsOutcome> {
+  await readPlaceSignboardNow(placeId);
+  return signWinsAtTheDoor(reviewId);
 }
 
 export type SignWinsSweepResult = {

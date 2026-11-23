@@ -42,6 +42,7 @@ export const PLACE_CHECK_BOARD_FILES: ReadonlyArray<string> = [
   `${DIR}/paged.tsx`,
   `${DIR}/phone-fold.tsx`,
   `${DIR}/section.tsx`,
+  `${DIR}/layout.tsx`,
 ];
 
 /** Every file of the board, one after another, each read by the caller's own reader (raw by default). */

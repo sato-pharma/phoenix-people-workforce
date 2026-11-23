@@ -58,6 +58,7 @@ import {
   DECK_TABS,
   deckAdviceRanker,
   deckArrowStep,
+  deckHeldSplit,
   deckSourcesOf,
   deckTabNeedsCases,
   slideIsSettled,
@@ -111,6 +112,8 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
     for (const one of DECK_TABS) result[one] = deckTabNeedsCases(one) && casesForSlides === null ? null : buildDeckSlides(one, kind, sources).length;
     return result;
   }, [kind, sources, casesForSlides]);
+  // Everything held for him, as the review opened: Waiting for you and the held ones in Not readable.
+  const held = useMemo(() => deckHeldSplit(frozen, kind), [frozen, kind]);
   // "All" waits for the cases rather than listing without them and then shifting every History slide.
   const waitingForCases = needsCases && cases.first === null && cases.status !== "failed";
 
@@ -230,6 +233,22 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
 
   if (!hydrated) return null;
 
+  // 🔴 FINISHING "WAITING FOR YOU" IS NOT FINISHING: the held photographs nobody could read are in Not
+  // readable, so the panel that closes the first tab says how many and takes him there in one press.
+  const onToUnreadable =
+    tab === "waiting" && held.unreadable > 0 ? (
+      <div className="flex min-w-0 flex-col items-center gap-2" data-deck-on-to-unreadable>
+        <p className="max-w-xl break-words text-sm font-black text-white">
+          {held.unreadable} more {held.unreadable === 1 ? "waits" : "wait"} for you in {TAB_LABELS.unreadable}: the photos the system could not read.
+        </p>
+        <CrmButton onClick={() => chooseTab("unreadable")} variant="primary">
+          Go on to {TAB_LABELS.unreadable}
+          {counts.unreadable === null ? "" : ` (${counts.unreadable})`}
+        </CrmButton>
+      </div>
+    ) : null;
+  const skipTab = onToUnreadable ? "unreadable" : null;
+
   const body = (() => {
     if (waitingForCases) {
       return <DeckMessage lines={["The open cases are read the first time this tab is opened."]} title="Reading the cases" />;
@@ -246,7 +265,8 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
     if (total === 0) {
       return (
         <DeckMessage lines={[`Nothing ${kind === "both" ? "" : `among the ${KIND_LABELS[kind].toLowerCase()} `}is in ${TAB_LABELS[tab]} with the board's filters as they are.`]} title="Nothing here">
-          <OtherTabs counts={counts} current={tab} onChoose={chooseTab} />
+          {onToUnreadable}
+          <OtherTabs counts={counts} current={tab} onChoose={chooseTab} skip={skipTab} />
         </DeckMessage>
       );
     }
@@ -264,10 +284,11 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
           ) : (
             <p className="break-words text-sm text-slate-400">Nothing was decided in this review.</p>
           )}
-          <OtherTabs counts={counts} current={tab} onChoose={chooseTab} />
+          {onToUnreadable}
+          <OtherTabs counts={counts} current={tab} onChoose={chooseTab} skip={skipTab} />
           <div className="flex min-w-0 flex-wrap justify-center gap-2">
             <CrmButton onClick={() => move(-1)}>Back to the last one</CrmButton>
-            <CrmButton onClick={onClose} variant="primary">
+            <CrmButton onClick={onClose} variant={onToUnreadable ? "secondary" : "primary"}>
               Close the review
             </CrmButton>
           </div>
@@ -277,6 +298,43 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
     const enter = cn(
       "motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300",
       direction === 1 ? "motion-safe:slide-in-from-right-8" : "motion-safe:slide-in-from-left-8",
+    );
+    // 🔴 WHAT A PHONE KEEPS PINNED. Back / Next always. A held place's decision too (`pinOnPhone`): it is
+    // the comment link and Approve beside Reject since 23 Nov 2026, and the list of reasons Reject opens
+    // scrolls inside 40% of the screen. Every other slide's decision follows the facts, as on 2026-10-19,
+    // when a 330 px decision pinned covered 426 of the 603 px under the photo (375 x 812).
+    const decideAndMove = (
+      <>
+        {view.footer ? (
+          <div className="min-w-0 border-t border-slate-200 bg-white lg:shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)]">
+            <div
+              className={cn(
+                "min-w-0 px-5 py-3 lg:max-h-[45vh] lg:overflow-y-auto",
+                view.wideButtons ? "[&_button]:w-full" : null,
+                view.pinOnPhone ? "max-h-[40svh] overflow-y-auto [&_[data-decide-pair]]:grid-cols-2" : null,
+              )}
+            >
+              {view.footer}
+            </div>
+          </div>
+        ) : null}
+        <nav
+          aria-label="Move between photos"
+          className="sticky bottom-0 z-10 flex min-w-0 items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-2.5 shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)] lg:static lg:shadow-none"
+        >
+          <CrmButton aria-keyshortcuts="ArrowLeft" disabled={position === 0} onClick={() => move(-1)} size="sm">
+            <ArrowLeft aria-hidden className="h-4 w-4" />
+            Back
+          </CrmButton>
+          <p className="min-w-0 flex-1 break-words text-center text-xs font-black tabular-nums text-slate-500">
+            {position + 1} of {total}
+          </p>
+          <CrmButton aria-keyshortcuts="ArrowRight" onClick={() => move(1)} size="sm" variant="primary">
+            Next
+            <ArrowRight aria-hidden className="h-4 w-4" />
+          </CrmButton>
+        </nav>
+      </>
     );
     // Every control on the slide reports what it saved to `record`; a polyclinic's building and each of
     // its customers narrow the item with their own `PlaceCheckDoneItem`.
@@ -299,31 +357,14 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
               ) : null}
               {view.column}
             </div>
-            {/* On a wide screen the decision is pinned under the facts, as on the Screening review. On a
-                phone it follows the facts and only Back / Next is pinned: a held place's decision is
-                about 330 px, and pinned it covered 426 of the 603 px under the photo (measured
-                2026-10-19, 375 x 812). */}
-            {view.footer ? (
-              <div className="min-w-0 border-t border-slate-200 bg-white lg:shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)]">
-                <div className={cn("min-w-0 px-5 py-3 lg:max-h-[45vh] lg:overflow-y-auto", view.wideButtons ? "[&_button]:w-full" : null)}>{view.footer}</div>
+            {/* On a wide screen the decision is pinned under the facts, as on the Screening review. */}
+            {view.pinOnPhone ? (
+              <div className="sticky bottom-0 z-10 min-w-0 shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)] lg:static lg:shadow-none" data-pinned-decision>
+                {decideAndMove}
               </div>
-            ) : null}
-            <nav
-              aria-label="Move between photos"
-              className="sticky bottom-0 z-10 flex min-w-0 items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-2.5 shadow-[0_-10px_30px_-12px_rgba(15,23,42,0.25)] lg:static lg:shadow-none"
-            >
-              <CrmButton aria-keyshortcuts="ArrowLeft" disabled={position === 0} onClick={() => move(-1)} size="sm">
-                <ArrowLeft aria-hidden className="h-4 w-4" />
-                Back
-              </CrmButton>
-              <p className="min-w-0 flex-1 break-words text-center text-xs font-black tabular-nums text-slate-500">
-                {position + 1} of {total}
-              </p>
-              <CrmButton aria-keyshortcuts="ArrowRight" onClick={() => move(1)} size="sm" variant="primary">
-                Next
-                <ArrowRight aria-hidden className="h-4 w-4" />
-              </CrmButton>
-            </nav>
+            ) : (
+              decideAndMove
+            )}
           </aside>
         </div>
       </PlaceCheckDoneProvider>
@@ -333,7 +374,7 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
   return createPortal(
     <CrmSurfaceProvider surface="admin">
       <div aria-labelledby={titleId} aria-modal="true" className="fixed inset-0 z-[200] flex flex-col bg-slate-950 text-white" ref={dialogRef} role="dialog">
-        <DeckHeader chooseKind={chooseKind} chooseTab={chooseTab} counts={counts} kind={kind} onClose={onClose} position={position} progress={progress} tab={tab} titleId={titleId} total={total} waitingForCases={waitingForCases} />
+        <DeckHeader chooseKind={chooseKind} chooseTab={chooseTab} counts={counts} held={held} kind={kind} onClose={onClose} position={position} progress={progress} tab={tab} titleId={titleId} total={total} waitingForCases={waitingForCases} />
         {tab === "integrity" && cases.capped ? (
           <div className="px-4 py-2 lg:px-6">
             <CrmNote tone="warn">There are more open cases than one read can hold: these are the strongest and newest.</CrmNote>

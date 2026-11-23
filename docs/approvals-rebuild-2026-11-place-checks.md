@@ -78,8 +78,9 @@ had said. The page reads its own agreement over the last 30 days from those valu
 yourself" is counted and never scored. A place the system approved by itself is not his agreement.
 
 **The sign wins** (`sign-wins-rules.ts`, `server/sign-wins.ts`). The system approves a place that
-only the Google check held when the photographed sign names the customer: at the door once the sign
-is recorded, and hourly for the ones the door left (at most 25 a run). It never takes a clinic
+only the Google check held when the photographed sign names the customer: after the door's reply,
+once the sign is read (see "The pass to 9.5" below: as first built the door could never do this), and
+hourly for the ones the door left (at most 25 a run). It never takes a clinic
 customer short of a full name, a place with an open integrity case, a place the SFE Manager
 recommended on, a customer seated in a building, a hold the sign or the timetable raised, a test
 entry, or anything already decided. It approves through the same path the held-signboard re-read
@@ -155,6 +156,76 @@ that pinned a rule by reading one of those files now read the list through
 `tests/support/place-check-list-source.ts`, and a new part file the helper does not name fails the
 lanes test.
 
+## The pass to 9.5 (owner, 23 Nov 2026, 14:40 Cairo: "Fix them")
+
+The page was scored again on production after pull requests 700 and 707 were live. The module read
+7.3 out of 10. He asked for every item under 9.5 that code can fix, in one pull request. What that
+pull request changes, each with the figure that showed the fault:
+
+- **The system approved nothing on its first day, because the door never read the sign.** This
+  account said the rule ran "at the door once the sign is recorded". That path could not happen: the
+  door reads no sign for a place Google already holds (`held_elsewhere`, `signboardCheckForSave`), so
+  the only reader of such a place was the 03:35 pass. All 4 Google holds of 23 Nov carried
+  `unjudged / held_elsewhere`, and the rule approved 0. After its reply the door now makes the
+  night's own read of that one place (`readPlaceSignboardNow`: the night's query plus the place's id,
+  the night's own body) and then asks the rule (`signWinsAfterGoogleHold`). It is the night's next
+  read of that place made early, never one more (his word of 18 Oct 2026): a verdict takes the place
+  out of the night's backlog, and an answer the night would have read again the night after (a lost
+  call, a flag the second reading did not confirm, a fallback reader's "unreadable") is read again by
+  the night, one try sooner, under the same count of tries. Known limit: nothing claims a place
+  between this read and a pass already running, so a capture made during the few minutes of the 03:35
+  pass could be read by both.
+- **Reject is two presses.** With no reason chosen it was three: open the list, choose, Reject.
+  Reject now opens the reasons as buttons and the one pressed is the rejection, sent with that
+  reason. A reason the advice already chose still rejects in one press. The same on a waiting clinic,
+  a building and a building's customer.
+- **The first waiting place stands higher.** A lane's head was a title over a sentence (81 px) with a
+  38 px line above it. The title, that line and the Pick rows slot now stand in one row, and the
+  page's title band is drawn around the board's top line, so the waiting number is beside the title.
+  Set on the live page's own elements with nothing pressed: 546 px to 376 px at 1440 by 900, and
+  637 px to 326 px on his 2,390 px screen, where Approve went from 918 px to 525 px. The plan's
+  400 px is reached in that measurement. The branch itself has not been opened in a browser.
+- **A building's customers are rows of the building's table.** They were a table nested in the
+  building's cell, each customer's photograph over his timetable: one polyclinic's row was 8,410 px
+  tall at 1440 (9,956 px on his screen). Each customer is now a row under the building's row, his
+  photograph and his timetable side by side.
+- **A list draws its table or its cards, not both.** Both were always in the page, one hidden by its
+  width class: 5,937 KB of HTML, about 7,600 elements and 118 photographs for 16 waiting places and
+  their buildings. The page guesses the layout from the request and the browser corrects it from its
+  own width. Only the Super Admin's page is handed a guess; a district manager's page and every other
+  screen draw both, as before.
+- **The decisions of single clinics wait for the click.** Of the 991 decisions of the last 14 days,
+  609 were single clinics', drawn only by History and Approved by the system; 382 were seated in a
+  building. The page sends the 382-kind (recent, seated in a building on the board), the server
+  counts the two tabs, and their rows come with the click.
+- **The server reads more of its lists together.** The reopened customers, the held full names and
+  the two passes that mark earlier captures each ran one after another; each pair now runs together.
+  The seated customer's timetable thumbnail is fetched when it nears the screen.
+- **The review says everything held.** "Waiting for you" leaves out the held photographs nobody can
+  read, which stand in Not readable by his word of 19 Oct 2026. The review's header now says the
+  whole number and how many stand there, and the end of the first tab points at the second. On a
+  phone only a place still waiting pins its decision bar.
+
+**Corrections to the re-score itself.** The search box, the rep and the decider are kept out of the
+address by rule (`PLACE_CHECK_PRIVATE_FILTERS`: no person's name is written to it), so "What the page
+remembers" was marked down for something it does on purpose. A filter kept in the address has still
+not been checked on the live page. The review's Not readable tab is his own word, not a fault.
+
+**What this pull request does not do, and why.**
+
+- **No file is split.** `server/validation-reviews.ts` is 2,059 lines, read by path by 26 tests and
+  imported by 20 files; `place-check-bulk.tsx` and `place-check-advice.ts` are 429 and 430. Moving
+  them with no typecheck on this laptop risks a red required check for nothing he would see. Code
+  health stays under 9.5 and is its own piece of work.
+- **Two pending reviews of a retired place are not closed.** Rejecting a building retires its seats,
+  but `phoenix_crm_decide_shared_place` never closes the reviews still pending on them (2 real rows:
+  19 Nov 11:37 and 21 Nov 20:21 Cairo; one of them is the only real row over 72 hours). That is a
+  database function change and its own piece of work.
+- **Photo signing was already one batch.** One call per territory, 120 paths, a 30 ms window.
+- **Not built:** streaming the page in parts, and narrowing the private-notes index.
+- **Only time can lift:** the waiting time (median 143 hours), the advice agreeing with him over 30
+  days, and the take-back share of the sign-wins rule.
+
 ## What is deliberately not there
 
 - **No "New photo" button and no "Take back" button.** The plan named five verbs. A rejection with
@@ -214,7 +285,7 @@ Two reviews read the pull request before any merge was asked for (23 Nov 2026).
 - **Three items only time can prove.** The advice agreeing with him, the take-back share of the
   sign-wins rule, and the waiting time. The page carries the meter for the first two; the third
   depends on the page being opened.
-- **The first waiting place is not inside 400 px.** The plan said 400 px on a 1440-wide page; the
+- **The first waiting place was not inside 400 px until the pass to 9.5 (above).** The plan said 400 px on a 1440-wide page; the
   rebuild left it at 660 px. On the live page on 23 Nov 2026, on the Super Admin's own screen
   (2,390 px wide), it stood at 737 px: the shell 104, the title 77, the top line 77, the boxed Filters
   bar 62 and its 20 px gap, the tabs 44, "Why these are your call" 48, the section head 101, the
@@ -252,6 +323,11 @@ Two reviews read the pull request before any merge was asked for (23 Nov 2026).
   address, the four verbs, the phone cards, and that every file of the board is in the list the
   source pins read (`tests/support/place-check-board-source.ts`).
 - Each new assertion was proven by breaking its fix: 21 of 21, 43 of 43 and 49 of 49 fired.
+- The pass to 9.5: `tests/phoenix-crm-place-checks-on-demand.test.ts` (what the page sends and the two
+  server counts), `tests/place-review-deck.test.ts` (the held split, the pinned bar),
+  `tests/phoenix-crm-shared-place-groups.test.ts` (a building's rows), `tests/phoenix-crm-validation-feedback.test.ts`
+  (Reject in two presses), and the lanes and sign-wins tests above (the lane head, the layout guess,
+  one layout drawn, the sign read after the door). 14 of 14 fired when their fixes were broken.
 
 ## Migration
 

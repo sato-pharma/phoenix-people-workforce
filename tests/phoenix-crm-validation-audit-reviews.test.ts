@@ -316,7 +316,7 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     const reopened = fn(reviews, "export async function loadReopenedCustomers(");
     assert.ok(reopened.includes("if (!current || decidedLater(review.decided_at, current.decided_at)) latest.set(customerId, review);"), "the board reads the same instant for a customer's own refusals");
     assert.ok(
-      reopened.includes("const viaVenue = await loadSharedPlaceRefusalsForCustomers(customers.map((row) => String(row.id)));"),
+      reopened.includes("const customerIds = customers.map((row) => String(row.id));") && reopened.includes("    loadSharedPlaceRefusalsForCustomers(customerIds),\n  ]);"),
       "🔴 the building's refusal is asked for EVERY reopened customer",
     );
     assert.ok(!reopened.includes("!latest.has(id)"), "no longer only for the ones with no refused review of their own");

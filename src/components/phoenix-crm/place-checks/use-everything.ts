@@ -18,6 +18,11 @@ import type { PlaceCheckBoardProps, PlaceCheckView } from "@/components/phoenix-
 import { hearOtherTabs, placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { PLACE_CHECKS_EVERYTHING_ROUTE, type PlaceChecksEverything } from "@/lib/phoenix-crm/place-checks-on-demand";
 
+/** The tabs whose rows the page does not send: the places in use, and the decisions of single clinics. */
+export function viewNeedsEverything(view: PlaceCheckView): boolean {
+  return view === "unconfirmed" || view === "history" || view === "bySystem";
+}
+
 export function usePlaceChecksEverything({
   filtering,
   onDemand,
@@ -34,13 +39,13 @@ export function usePlaceChecksEverything({
   useEffect(() => () => placeCheckReread.cancel(), []);
 
   // ── The rows the page did not send (`onDemand`) ──────────────────────────────────────────────────
-  // Asked for once, on the first click that needs them — Not confirmed, any filter or outcome, a tapped
-  // count (it sets the rep), or the review — and then kept for the visit: a re-read of the page reads them
+  // Asked for once, on the first click that needs them — Not confirmed, History, "Approved by the system",
+  // any filter or outcome, a tapped count (it sets the rep), or the review — and then kept for the visit: a re-read of the page reads them
   // again behind the rows on screen (`readAt`), and clearing the filters never throws them away.
   const [deckAsked, setDeckAsked] = useState(false);
   const askForDeck = useCallback(() => setDeckAsked(true), []);
   const [wanted, setWanted] = useState(false);
-  if (onDemand && !wanted && (view === "unconfirmed" || filtering || deckAsked)) setWanted(true);
+  if (onDemand && !wanted && (viewNeedsEverything(view) || filtering || deckAsked)) setWanted(true);
   const everythingRead = useCrmGet<PlaceChecksEverything>(onDemand && wanted ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything");
   const readAt = onDemand?.readAt ?? null;
   // 🔴 THE PAGE HE COMES BACK TO IS NEVER OLDER THAN HIS DECISIONS (owner, 22 Nov 2026: "I come back. I

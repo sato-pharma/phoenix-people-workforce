@@ -28,7 +28,7 @@ import {
 import { usePlaceCheckAddress } from "@/components/phoenix-crm/place-checks/use-board-address";
 import { usePlaceCheckLanes } from "@/components/phoenix-crm/place-checks/use-board-lanes";
 import { usePlaceCheckRows } from "@/components/phoenix-crm/place-checks/use-board-rows";
-import { usePlaceChecksEverything } from "@/components/phoenix-crm/place-checks/use-everything";
+import { usePlaceChecksEverything, viewNeedsEverything } from "@/components/phoenix-crm/place-checks/use-everything";
 import { laneOfReviewRow, laneOfVenueGroup, openCaseSubjects, PLACE_CHECK_LANE_LABEL } from "@/lib/phoenix-crm/place-check-lanes";
 import { unconfirmedOpenCount, type UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
 import {
@@ -120,7 +120,7 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
 
   const view: PlaceCheckView = picked ?? (lanes && (desk?.ready ?? 0) > 0 ? "ready" : "needs");
   /** The board is waiting for the click's read: what it would draw needs rows it does not hold yet. */
-  const reading = !complete && (filtering || view === "unconfirmed");
+  const reading = !complete && (filtering || viewNeedsEverything(view));
 
   // 🔴 WHAT THE SYSTEM APPROVED BY ITSELF IS LISTED APART (the rebuild, 23 Nov 2026): on the Super Admin's
   // board History is the decisions a person made, and "Approved by the system" is the rule's, each with its
@@ -159,6 +159,9 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
   const unconfirmedCount = complete ? unconfirmedOpenCount(inUse, filters) : onDemand && !filtering ? onDemand.summary.unconfirmed : null;
   // While the click's read is on its way under a filter, no tab shows a count it cannot stand behind.
   const shown = (count: number) => (reading && filtering ? null : count);
+  // 🔴 THE TWO DECIDED TABS ARE COUNTED BY THE SERVER UNTIL THEIR ROWS ARE IN (23 Nov 2026): the page no
+  // longer sends the single clinics' decisions, so before the click the board holds only the seated ones.
+  const decidedCounts = !complete && onDemand && !filtering ? onDemand.summary : null;
   const decidedTitle = decidedSectionTitle(filters, team);
 
   const filterKey = filterKeyOf(filters);
@@ -177,8 +180,8 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
   // 🔴 THE COMPARISON TABS ARE THE COMPANY BOARD'S ALONE: a manager's board is `mode="team"` and is never
   // handed the tab, the panel or the read (the route refuses a manager as well).
   const decidedTabs: PlaceCheckTab[] = [
-    { key: "history", label: "History", count: shown(historyCount) },
-    ...(lanes ? [{ key: "bySystem" as const, label: "Approved by the system", count: shown(bySystemRows.length) }] : []),
+    { key: "history", label: "History", count: decidedCounts ? decidedCounts.history : shown(historyCount) },
+    ...(lanes ? [{ key: "bySystem" as const, label: "Approved by the system", count: decidedCounts ? decidedCounts.bySystem : shown(bySystemRows.length) }] : []),
   ];
   const tabs: ReadonlyArray<PlaceCheckTab> = [
     ...(lanes ? [{ key: "ready" as const, label: PLACE_CHECK_LANE_LABEL.ready, count: shown(readyCount) }] : []),

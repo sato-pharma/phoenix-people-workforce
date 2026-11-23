@@ -39,10 +39,12 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
   const clinicsTitle = named
     ? `${named}: clinics (${reviews.length})`
     : team ? `Still being checked (${reviews.length})` : `Waiting for your decision (${reviews.length})`;
+  // 🔴 A LANE SAYS ONE SHORT LINE BESIDE ITS TITLE (`PlaceCheckSection`'s `lane`). What Approve and Reject do
+  // is said on each row's own buttons and warnings, so Your call no longer repeats it above the list.
   const clinicsSaid = named
     ? ready
       ? "Held by the system, with evidence of the kind you approve. Approve them together above, or one by one here."
-      : "Approve validates the place in the rep's name. Reject retires it, and the rep reads the reason as the system's answer."
+      : "Each row says why it is yours."
     : team
       ? "The places the system could not settle by itself: Google has no listing it is sure is the customer, its pin is far from where the rep stood, or the signboard names somebody else — or nobody. Each one's evidence is below, and the rep knows only that the system is checking."
       : `Approve validates the place in the rep's name, and a customer already on the rep's list starts counting. ${PLACE_APPROVAL_IS_NOT_A_LIST_ADD} Reject retires the place; a customer left without one goes back to To validate. The rep reads either as the system's answer.`;
@@ -52,7 +54,7 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
   const buildingsSaid = named
     ? ready
       ? "A building held at its door, or customers waiting behind one, where nothing open is in doubt."
-      : "A building held at its door, or a customer seated in it whose timetable does not name them or could not be read. Each building is shown whole."
+      : "A building held at its door, or a customer in it the timetable could not answer for. Each customer has a row under the building."
     : team
       ? "A building held at its door, or a customer seated in it whose timetable could not answer for them."
       : "A building held at its door, or a customer seated in it whose timetable does not name them or could not be read. Each building is shown whole, with its sign, its timetable and everybody seated in it.";
@@ -69,39 +71,45 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
   const [clinicsLine, setClinicsLine] = useState<HTMLDivElement | null>(null);
   const [buildingsLine, setBuildingsLine] = useState<HTMLDivElement | null>(null);
 
+  // 🔴 "WHY THESE ARE YOUR CALL" STANDS IN THE FIRST LIST'S OWN HEAD (23 Nov 2026). As a band of its own
+  // it stood 38 px, and a gap, above the first waiting place. One line until it is pressed: the commonest
+  // reason, then the rest; open, the list drops under the title and each row still says its own.
+  const why =
+    lanes && !ready && reasons.length > 0 ? (
+      <details className="group min-w-0" data-your-call-reasons>
+        <summary className="flex min-h-11 min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-700 md:min-h-7 [&::-webkit-details-marker]:hidden">
+          <span className="font-black text-slate-900">Why these are your call</span>
+          <span className="min-w-0 flex-1 basis-60 break-words group-open:hidden">
+            <span className="font-black tabular-nums">{reasons[0].count}</span> · {reasons[0].because}
+          </span>
+          {reasons.length > 1 ? (
+            <span className="shrink-0 text-xs font-black text-orange-700">
+              <span className="group-open:hidden">All {reasons.length} reasons</span>
+              <span className="hidden group-open:inline">Close</span>
+            </span>
+          ) : null}
+        </summary>
+        <ul className="mt-1 space-y-0.5 pb-1 text-sm text-slate-700">
+          {reasons.slice(0, REASONS_SHOWN).map(({ because, count }) => (
+            <li key={because} className="break-words">
+              <span className="font-black tabular-nums">{count}</span> · {because}
+            </li>
+          ))}
+        </ul>
+        {reasons.length > REASONS_SHOWN ? (
+          <p className="mt-1 break-words pb-1 text-xs text-slate-500">
+            And {reasons.length - REASONS_SHOWN} more {reasons.length - REASONS_SHOWN === 1 ? "reason" : "reasons"}. Each row says its own.
+          </p>
+        ) : null}
+      </details>
+    ) : null;
+  // The fold rides the first list the lane draws; the other list says its own short line.
+  const whyOnClinics = why !== null && drawClinics;
+  const laneLine = (said: string, withWhy: boolean) => (lanes ? (withWhy ? why : said) : undefined);
+
   return (
     <>
       {ready ? <ReadyLaneBar board={board} /> : null}
-      {lanes && !ready && reasons.length > 0 ? (
-        // One line until it is pressed: the commonest reason, then the rest. Open, it stood about 130 px
-        // above the first waiting place (measured at 1440 in the preview, 23 Nov 2026), and each row says its own.
-        <details className="group min-w-0 border-l-4 border-orange-500 bg-white px-4 py-2" data-your-call-reasons>
-          <summary className="flex min-h-11 min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-700 md:min-h-8 [&::-webkit-details-marker]:hidden">
-            <span className="font-black text-slate-900">Why these are your call</span>
-            <span className="min-w-0 flex-1 basis-60 break-words group-open:hidden">
-              <span className="font-black tabular-nums">{reasons[0].count}</span> · {reasons[0].because}
-            </span>
-            {reasons.length > 1 ? (
-              <span className="shrink-0 text-xs font-black text-orange-700">
-                <span className="group-open:hidden">All {reasons.length} reasons</span>
-                <span className="hidden group-open:inline">Close</span>
-              </span>
-            ) : null}
-          </summary>
-          <ul className="mt-1 space-y-0.5 pb-1 text-sm text-slate-700">
-            {reasons.slice(0, REASONS_SHOWN).map(({ because, count }) => (
-              <li key={because} className="break-words">
-                <span className="font-black tabular-nums">{count}</span> · {because}
-              </li>
-            ))}
-          </ul>
-          {reasons.length > REASONS_SHOWN ? (
-            <p className="mt-1 break-words pb-1 text-xs text-slate-500">
-              And {reasons.length - REASONS_SHOWN} more {reasons.length - REASONS_SHOWN === 1 ? "reason" : "reasons"}. Each row says its own.
-            </p>
-          ) : null}
-        </details>
-      ) : null}
 
       {nothing ? (
         <AdminCallout tone="success">
@@ -119,6 +127,7 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
         <PlaceCheckSection
           action={lanes && reviews.length > 0 ? <div className="min-w-0" data-pick-line-slot ref={setClinicsLine} /> : undefined}
           description={clinicsSaid}
+          lane={laneLine(clinicsSaid, whyOnClinics)}
           title={clinicsTitle}
         >
           {reviews.length === 0 ? (
@@ -147,6 +156,7 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
         <PlaceCheckSection
           action={lanes && buildings.length > 0 ? <div className="min-w-0" data-pick-line-slot ref={setBuildingsLine} /> : undefined}
           description={buildingsSaid}
+          lane={laneLine(buildingsSaid, why !== null && !whyOnClinics)}
           title={buildingsTitle}
         >
           {buildings.length === 0 ? (
