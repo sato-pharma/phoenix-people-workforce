@@ -2259,6 +2259,7 @@ import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
 import { runPhoenixCrmSuperAdminApprovalIsFinalTests } from "./phoenix-crm-super-admin-approval-is-final.test.ts";
+import { runPhoenixCrmBuildingRejectClosesReviewsTests } from "./phoenix-crm-building-reject-closes-reviews.test.ts";
 import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
 import { runPhoenixCrmPlaceChecksSpeedTests } from "./phoenix-crm-place-checks-speed.test.ts";
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
@@ -8752,6 +8753,11 @@ await runTest(
 await runTest(
   "Phoenix CRM keeps what the Super Admin approved final (owner, 2026-11-16, after the SFE Manager refused three of his trusted-point validations for a missing signboard): only an active, non-test Super Admin counts and a failed read of them throws; both database decisions refuse a reject of his approval, or of a place he created, for anyone but a Super Admin, with the helper closed to the browser roles; the refuse service asks before the upsert that would wipe who approved; the refusal reaches the screen as a 403 with one plain sentence; and the buildings board, the validated places, the reviews queue, the seated customers and the review deck draw that sentence instead of Reject, with bulk reject skipping locked rows",
   runPhoenixCrmSuperAdminApprovalIsFinalTests,
+);
+
+await runTest(
+  "Phoenix CRM closes the reviews a rejected building strands (Place checks, the pass to 9.5, 23 Nov 2026: two real reviews sat pending on retired places, counted in \"over 72 hours\" with nothing left to decide): the reject loop closes a review still pending on the place it just retired — that place only, never by customer — as the building's own decision with one validation_review_rejected event and no notice of its own; taking the rejection back reopens exactly those reviews, stamped at the building's retired_at by its decider with no stored advice, before the holds are read; both functions stay SECURITY DEFINER and service-role only",
+  runPhoenixCrmBuildingRejectClosesReviewsTests,
 );
 
 await runTest(

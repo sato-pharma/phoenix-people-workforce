@@ -1196,6 +1196,11 @@ const LATER_MIGRATIONS = [
   // MANAGERS VIA EMAIL AND SYSTEM ADMIN WILL UPDATE IT FOR THIS DAY ONLY"): one NEW table,
   // phoenix_crm_camera_day_allowances, service role only. It replaces nothing.
   "supabase/migrations/20261121012152_phoenix_crm_camera_day_allowances.sql",
+  // Rejecting a building closes the reviews still waiting on the places it retires, and taking it back reopens them
+  // (Place checks, the pass to 9.5, 23 Nov 2026): phoenix_crm_decide_shared_place and phoenix_crm_restore_shared_place
+  // REPLACED, each from the body production held that day, and the last replacer of both. It replaces nothing save_visit
+  // depends on.
+  "supabase/migrations/20261123153104_phoenix_crm_building_reject_closes_its_reviews.sql",
 ];
 
 /**
