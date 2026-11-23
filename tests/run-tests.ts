@@ -3073,6 +3073,7 @@ import { runManagerOwnVisitsEverywhereTests } from "./manager-own-visits-everywh
 import { runPrivateCalendarDayTileTests } from "./private-calendar-day-tile.test.ts";
 import { runPrivateCalendarPlanActualTests } from "./private-calendar-plan-actual.test.ts";
 import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-period.test.ts";
+import { runPrivateCalendarReadsStartTogetherTests } from "./private-calendar-reads-start-together.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
 import { runPhoenixCrmReturnForCommentTests } from "./phoenix-crm-return-for-comment.test.ts";
@@ -12265,6 +12266,10 @@ await runTest(
 await runTest(
   "A notice period is still work (owner, 2026-10-23: \"drop after his resignation date not submission date\"): the Private Calendar reads a departed employee until the day AFTER the later of his last working and resignation dates — employment_status flips to resigned the moment a resignation is SUBMITTED, which took a rep off the calendar on 18 October for a last working day of 31 October while she logged 10 and 12 visits — a departed row with neither date is never kept, the day-evidence door writes NO entry for an employee its loaders never read instead of a confident empty day, and the no-activity engine behind Deductions stays active-only on purpose",
   runPrivateCalendarNoticePeriodTests,
+);
+await runTest(
+  "The private calendar starts every read together (owner, 2026-11-23: \"fix the calendar\"): the accepted deduction disputes and the reply threads under the review requests start with the sources (the threads chained on the dispute read) instead of being awaited one after the other once every source has finished",
+  runPrivateCalendarReadsStartTogetherTests,
 );
 await runTest(
   "The private calendar's day tile is a summary (owner, 2026-10-23, in Phoenix words 2026-10-29): a visit entry reads \"Double visit with Hana Abdelaziz\" (one kind per companion, never Regular or Campaign), planned or unplanned where a Phoenix visit says it, the figures as one plain line \"AM 1 · PM 7 · PH 0\" with no violet, and the brick and area, each read from a structured field and never parsed out of the text lines; no customer or per-visit row is in the tile, the details read in the Daily Timeline table, and the page is square-edged and flat",
