@@ -6,10 +6,16 @@
  *
  * The eight boxes fold away under a one-line summary of what is narrowing the board (owner, 17 Nov 2026:
  * "simple to decide"). It is an admin surface, so each dropdown is a combo box he types into.
+ *
+ * On the Super Admin's board, on a desktop, the one-line summary sits at the end of the tab strip's last
+ * row (`PlaceCheckFilterLine`, drawn by `tab-strip.tsx`): as a boxed bar of its own it stood 82 px, the
+ * bar and its gap, above the first waiting place (the live page, 23 Nov 2026). Beside the last tabs the
+ * line costs nothing; on a row of its own, 44 px. The boxes still open here.
  */
 
 import type { PlaceCheckBoard } from "@/components/phoenix-crm/place-checks/use-place-check-board";
 import { CrmButton, CrmField, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
+import { cn } from "@/lib/utils";
 import {
   EMPTY_VALIDATION_REVIEW_FILTERS,
   type ValidationReviewFilters,
@@ -53,36 +59,51 @@ export function filterSummary(filters: ValidationReviewFilters): string[] {
   return labels;
 }
 
-export function PlaceCheckFilterBar({ board }: { board: PlaceCheckBoard }) {
-  const { anyFilter, areas, deciders, filters, filtersOpen, lines, lists, narrowedBy, regions, reps, set, setFilters, setFiltersOpen, team } = board;
+/**
+ * The folded line: what is narrowing the board, Clear, and the button that opens the boxes. In the tab
+ * strip (`inStrip`) it takes only the width its words need, so it shares the last row of tabs whenever
+ * it fits there; with the bar's 240 px floor under the labels it never fitted (measured, 23 Nov 2026).
+ */
+export function PlaceCheckFilterLine({ board, inStrip = false }: { board: PlaceCheckBoard; inStrip?: boolean }) {
+  const { anyFilter, filters, filtersOpen, narrowedBy, setFilters, setFiltersOpen } = board;
   return (
-    <div className="min-w-0 border border-slate-200 bg-white">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
-        <div className="flex min-w-0 flex-1 basis-60 flex-wrap items-center gap-1.5">
-          {narrowedBy.length === 0 ? (
-            <span className="break-words text-xs font-semibold text-slate-500">Showing everything</span>
-          ) : (
-            narrowedBy.map((label) => (
-              <span key={label} className="break-words border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-orange-800" dir="auto">
-                {label}
-              </span>
-            ))
-          )}
-        </div>
-        <div className="flex min-w-0 flex-wrap gap-2">
-          {anyFilter || filters.outcome !== "all" ? (
-            <CrmButton onClick={() => setFilters(EMPTY_VALIDATION_REVIEW_FILTERS)} size="sm" variant="ghost">
-              Clear filters
-            </CrmButton>
-          ) : null}
-          <CrmButton aria-controls={filtersOpen ? "vr-filter-fields" : undefined} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
-            {filtersOpen ? "Hide filters" : "Show filters"}
+    <>
+      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
+      <div className={cn("flex min-w-0 flex-wrap items-center gap-1.5", !inStrip && "flex-1 basis-60")}>
+        {narrowedBy.length === 0 ? (
+          <span className="break-words text-xs font-semibold text-slate-500">Showing everything</span>
+        ) : (
+          narrowedBy.map((label) => (
+            <span key={label} className="break-words border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-orange-800" dir="auto">
+              {label}
+            </span>
+          ))
+        )}
+      </div>
+      <div className={cn("flex min-w-0 flex-wrap gap-2", inStrip && "shrink-0")}>
+        {anyFilter || filters.outcome !== "all" ? (
+          <CrmButton onClick={() => setFilters(EMPTY_VALIDATION_REVIEW_FILTERS)} size="sm" variant="ghost">
+            Clear filters
           </CrmButton>
-        </div>
+        ) : null}
+        <CrmButton aria-controls={filtersOpen ? "vr-filter-fields" : undefined} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
+          {filtersOpen ? "Hide filters" : "Show filters"}
+        </CrmButton>
+      </div>
+    </>
+  );
+}
+
+export function PlaceCheckFilterBar({ board }: { board: PlaceCheckBoard }) {
+  const { areas, deciders, filters, filtersOpen, lanes, lines, lists, regions, reps, set, team } = board;
+  return (
+    // With lanes, a desktop draws the line in the tab strip: closed, this box is the phone's alone.
+    <div className={cn("min-w-0 border border-slate-200 bg-white", lanes && !filtersOpen && "sm:hidden")} data-filter-bar={lanes ? "line-in-strip" : "whole"}>
+      <div className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", lanes && "sm:hidden")}>
+        <PlaceCheckFilterLine board={board} />
       </div>
       {filtersOpen ? (
-        <div className="border-t border-slate-100 px-4 pb-4 pt-3" id="vr-filter-fields">
+        <div className={cn("border-t border-slate-100 px-4 pb-4 pt-3", lanes && "sm:border-t-0")} id="vr-filter-fields">
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <CrmField htmlFor="vr-outcome" label="Outcome">
               <CrmSelect id="vr-outcome" onChange={(event) => set("outcome", event.target.value as ValidationReviewOutcome)} value={filters.outcome}>

@@ -604,6 +604,24 @@ function runWordingAndFileTests() {
   assert.ok(code(PLACE_CHECK_BOARD_SHELL).includes("retry: reloadEverything, bare: lanes }"), "HEADLINE: the board with lanes asks for the review button bare, inside its top line");
   assert.ok(deckButton.includes("{rows.bare ? null : ("), "HEADLINE: bare, the button draws no title and no sentence of its own");
   assert.match(deckButton, /rows\.bare\s+\? "flex min-w-0 max-w-full flex-wrap items-center gap-3"/, "and no box of its own inside the top line's box");
+  // 🔴 THE FOLDED FILTERS LINE ENDS THE TAB STRIP'S LAST ROW ON HIS BOARD. As a boxed bar of its own it stood
+  // 82 px, the bar and its gap, above the first waiting place (the live page, 23 Nov 2026). The boxes still
+  // open in their own panel, a phone keeps the bar, and a board with no lanes keeps it whole.
+  const strip = code(`${dir}/tab-strip.tsx`);
+  const filterBar = code(`${dir}/filter-bar.tsx`);
+  assert.ok(strip.includes("{lanes ? (") && strip.includes("<PlaceCheckFilterLine board={board} inStrip />"), "HEADLINE: on a board with lanes the tab strip draws the folded Filters line");
+  // 🔴 IN THE STRIP THE LINE TAKES ONLY THE WIDTH ITS WORDS NEED. With the bar's `flex-1 basis-60` under the
+  // labels, or a `flex-1` on the line itself, it never fitted beside the last tabs: it took a row of its own
+  // and the strip grew (headless, the same classes in a 1,126 px column, 23 Nov 2026: 144 px against 88).
+  // Set on the live page's own elements, it gives back 82 px beside the last tabs and 39 px on its own row.
+  assert.ok(filterBar.includes('!inStrip && "flex-1 basis-60"'), "HEADLINE: in the strip the labels drop the bar's 240 px floor, so the line fits beside the last tabs");
+  assert.ok(filterBar.includes('inStrip && "shrink-0"'), "and the buttons never shrink there, so their words never wrap and raise the row");
+  assert.ok(strip.includes('className="ml-auto flex min-w-0 max-w-full items-center gap-x-3 py-1 pl-3" data-filters-in-strip'), "the line asks for no width of its own, ends the row, and stands no taller than a tab (36 + 8 = 44 px)");
+  assert.ok(strip.includes('className="contents" role="tablist"'), "the tab list is `contents`, so the tabs and the line wrap as one row");
+  assert.ok(strip.indexOf("data-filters-in-strip") > strip.indexOf('role="tab"'), "and the line stands after the tabs: it is no tab");
+  assert.ok(filterBar.includes('lanes && !filtersOpen && "sm:hidden"'), "HEADLINE: closed, the boxed Filters bar leaves a desktop on a board with lanes");
+  assert.ok(filterBar.includes('"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", lanes && "sm:hidden"'), "open, the box holds the fields alone: the line is never drawn twice on a desktop");
+  assert.equal(filterBar.split("<PlaceCheckFilterLine board={board} />").length - 1, 1, "a phone, and a board with no lanes, still read the line in the bar");
   assert.ok(
     code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",

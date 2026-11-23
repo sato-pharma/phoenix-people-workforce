@@ -214,6 +214,17 @@ Two reviews read the pull request before any merge was asked for (23 Nov 2026).
 - **Three items only time can prove.** The advice agreeing with him, the take-back share of the
   sign-wins rule, and the waiting time. The page carries the meter for the first two; the third
   depends on the page being opened.
+- **The first waiting place is not inside 400 px.** The plan said 400 px on a 1440-wide page; the
+  rebuild left it at 660 px. On the live page on 23 Nov 2026, on the Super Admin's own screen
+  (2,390 px wide), it stood at 737 px: the shell 104, the title 77, the top line 77, the boxed Filters
+  bar 62 and its 20 px gap, the tabs 44, "Why these are your call" 48, the section head 101, the
+  "Pick rows to answer together" line 61 and the table head 39. The folded Filters line now ends the
+  tab strip (`PlaceCheckFilterLine` with `inStrip`). That gives back 82 px where the line fits beside
+  the last tabs (a 1,126 px column with no filter on) and 39 px where it takes a row of its own (his
+  screen, and any filter on); it is never taller than the bar it replaced. Read by setting the same
+  layout on the live page's own elements, nothing pressed. The branch itself was not opened in a
+  browser: this laptop's free memory fell to 1,553 MB while the page compiled. Still standing above the
+  first place: the section head and the "Pick rows" line.
 - **A table's own panel has no table.** The four panels use a titled card (`place-checks/section.tsx`)
   and each list inside owns its table and its phone cards. The lanes test proves the phone cards on
   each of those lists, because the table ratchet reads files with a table in them.
