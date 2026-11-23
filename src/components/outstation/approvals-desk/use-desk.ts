@@ -197,7 +197,7 @@ export function useDesk(initialSearch: string) {
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${deskViewToSearch(next)}${window.location.hash}`);
   }, []);
 
-  const lane: DeskLane = openingLane(view, queue?.claims ?? []);
+  const lane: DeskLane = openingLane(view, queue?.claims ?? null);
 
   return {
     canDecide: Boolean(queue?.canDecide),

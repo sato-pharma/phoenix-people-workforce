@@ -6,7 +6,7 @@ import { CrmEmpty, CrmShowMore, CrmTable, crmTdClassName, crmThClassName } from 
 import { TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatNumberValue } from "@/lib/i18n/format";
 import { DESK_DECISION_LIMIT } from "@/lib/outstation/approvals/decision-body";
-import { DESK_LANE_LABEL, DESK_LANE_MEANING, selectionBatch, waitLabel, type DeskLane } from "@/lib/outstation/approvals/desk-view";
+import { DESK_LANE_LABEL, DESK_LANE_MEANING, emptyLaneWords, selectionBatch, waitLabel, type DeskLane, type DeskView } from "@/lib/outstation/approvals/desk-view";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
 import { displayPlace } from "@/lib/outstation/place-label";
 import { cn } from "@/lib/utils";
@@ -39,19 +39,27 @@ export function DeskList({
   action,
   canDecide,
   claims,
+  decided,
   lane,
   narrowed,
   onOpen,
   onPress,
+  onShowHistory,
+  view,
 }: {
   /** The lane's own one-press action ("Approve all"), drawn in the heading. */
   action?: ReactNode;
   canDecide: boolean;
   claims: DeskClaim[];
+  /** How many DECIDED claims the same filters match; null when not read (use-decided-count.ts). */
+  decided: number | null;
   lane: Exclude<DeskLane, "history">;
   narrowed: boolean;
   onOpen: (requestId: number) => void;
   onPress: OnPress;
+  /** Opens History with the same filters. */
+  onShowHistory: () => void;
+  view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">;
 }) {
   const [shown, setShown] = useState(PAGE_ROWS);
   const [ticked, setTicked] = useState<ReadonlySet<number>>(() => new Set());
@@ -91,10 +99,11 @@ export function DeskList({
       </div>
       {canDecide && selection.count > 0 ? <SelectionBar onClear={() => setTicked(new Set())} onKeep={(requestIds) => setTicked(new Set(requestIds))} onPress={onPress} selection={selection} /> : null}
       {claims.length === 0 ? (
-        <CrmEmpty
-          message={narrowed ? "Nothing in this lane matches the search and the filters. Clear them to see every waiting claim." : lane === "ready" ? "No claim has passed every check and is still waiting." : "Nothing unclear is waiting for you."}
-          title={narrowed ? "Nothing matches" : `Nothing in ${DESK_LANE_LABEL[lane]}`}
-        />
+        narrowed ? (
+          <NarrowedEmpty decided={decided} onShowHistory={onShowHistory} view={view} />
+        ) : (
+          <CrmEmpty message={lane === "ready" ? "No claim has passed every check and is still waiting." : "Nothing unclear is waiting for you."} title={`Nothing in ${DESK_LANE_LABEL[lane]}`} />
+        )
       ) : (
         <>
           <div className="divide-y divide-slate-100 md:hidden">
@@ -122,6 +131,34 @@ export function DeskList({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * A waiting lane the filters left empty says where the claims went (owner, 23 Nov 2026, October
+ * picked: "I can see nothing … Of course, there's something wrong" — all 116 October claims were
+ * decided, and the lane only said "Nothing matches"). When decided claims match, one press opens
+ * them in History with the same filters.
+ */
+function NarrowedEmpty({ decided, onShowHistory, view }: { decided: number | null; onShowHistory: () => void; view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to"> }) {
+  const words = emptyLaneWords(view, decided);
+  return (
+    <CrmEmpty
+      action={
+        words.history ? (
+          <button
+            className="inline-flex min-h-11 items-center gap-2 border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-black text-white transition hover:bg-slate-800"
+            data-show-history={decided ?? 0}
+            onClick={onShowHistory}
+            type="button"
+          >
+            Show them in History
+          </button>
+        ) : undefined
+      }
+      message={words.message}
+      title={words.title}
+    />
   );
 }
 

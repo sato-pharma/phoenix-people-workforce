@@ -64,7 +64,22 @@ export function historyFilterOf(value: string | null | undefined): DeskHistoryFi
 
 export async function loadDeskHistory(
   access: AccessContext,
-  options: { filter?: DeskHistoryFilter; from?: string | null; kind?: ClaimKind | null; now?: Date; offset?: number; search?: string | null; to?: string | null } = {},
+  options: {
+    /**
+     * Only how many decided claims the filters match, no rows: what an empty waiting lane says is
+     * in History (owner, 23 Nov 2026, October picked: "I can see nothing … Of course, there's
+     * something wrong" — every October claim was decided, and the lane never said where they were).
+     * The same query with the same filters, asked for its count alone, so the two can never disagree.
+     */
+    countOnly?: boolean;
+    filter?: DeskHistoryFilter;
+    from?: string | null;
+    kind?: ClaimKind | null;
+    now?: Date;
+    offset?: number;
+    search?: string | null;
+    to?: string | null;
+  } = {},
 ): Promise<DeskHistoryPage> {
   const now = options.now ?? new Date();
   const offset = Math.max(0, Math.trunc(Number(options.offset) || 0));
@@ -78,7 +93,7 @@ export async function loadDeskHistory(
 
   let query = supabase
     .from("outstation_expense_requests")
-    .select(DESK_CLAIM_COLUMNS, { count: "exact" })
+    .select(DESK_CLAIM_COLUMNS, { count: "exact", head: options.countOnly === true })
     .not("status", "in", UNDECIDED_LIST)
     .order("updated_at", { ascending: false })
     .order("id", { ascending: false });
@@ -102,6 +117,7 @@ export async function loadDeskHistory(
 
   const { count, data, error } = await query.range(offset, offset + HISTORY_PAGE_SIZE - 1);
   if (error) throw error;
+  if (options.countOnly === true) return { claims: [], nextOffset: null, total: count ?? 0 };
   const read = (data ?? []) as unknown as ClaimRow[];
   const rows = keepExpenseRowsInScope(read, accessFilter, "employee_hr_id");
 
