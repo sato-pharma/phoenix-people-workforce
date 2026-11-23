@@ -2668,6 +2668,16 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   "20261119132423_outstation_accept_claim_for_payroll_atomically.sql",
   "20261119143529_outstation_release_claim_to_payroll_atomically.sql",
   "20261119163918_late_expense_reservations_replace_atomically.sql",
+  // A duplicate merge never joins two people the owner split (owner, 23 Nov 2026: the 13 November bulk merge
+  // re-joined the two أحمد محمد الصباغ on Aya Ibrahim's list, El Bagour and Sers El Layan, a month after his split).
+  // Applied 2026-11-23 through scripts/apply-sql-file.mjs, staging then production — the standing route, since the
+  // merge body contains `delete` — which writes NO ledger row. Read back on ozucdzovmcqvepbozvqf (project name
+  // Phoenix HR) and on cifwmndunmlxjhyjugxa straight after, md5(prosrc) equal to the file's bodies as-is LF on
+  // both: phoenix_crm_merge_duplicate_customer 0c6726313cd0b049921640759d50289d, phoenix_crm_customer_merge_counts
+  // f8743b27591c606550aeb042807f34d0; each executable by service_role only. On production the counts answered
+  // owner_split true for both doctors, and a merge of the pair inside a rolled-back block raised
+  // phoenix_crm:owner_split_them. Re-applying is a no-op (`create or replace`, same signatures, same grants).
+  "20261123101851_phoenix_crm_merge_never_rejoins_an_owner_split.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

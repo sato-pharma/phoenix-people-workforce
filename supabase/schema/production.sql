@@ -9200,6 +9200,16 @@ CREATE FUNCTION public.phoenix_crm_customer_merge_counts(p_customer_ids uuid[]) 
         where m.customer_id = any (p_customer_ids)
         group by m.customer_id
       ) counted
+    ), '{}'::jsonb),
+    'owner_split', coalesce((
+      select jsonb_object_agg(split.customer_id, true)
+      from (
+        select distinct r.customer_id
+        from public.phoenix_crm_list_events r
+        where r.customer_id = any (p_customer_ids)
+          and r.event_type = 'customer_restored'
+          and r.details ->> 'why' = 'merge_reversed'
+      ) split
     ), '{}'::jsonb)
   );
 $$;
@@ -13243,6 +13253,17 @@ begin
     end if;
     if exists (select 1 from public.phoenix_crm_customer_moves m where m.customer_id = v_loser.id) then
       raise exception 'phoenix_crm:loser_has_moves';
+    end if;
+    -- Two different people the owner split after a merge are never merged again (23 Nov 2026: the
+    -- 13 November bulk run joined the two أحمد محمد الصباغ — Kafr El Bagour and Sers El Layan — a month
+    -- after he had split them). His split is the customer_restored event with why = merge_reversed.
+    if exists (
+      select 1 from public.phoenix_crm_list_events r
+      where r.customer_id in (v_loser.id, v_keeper.id)
+        and r.event_type = 'customer_restored'
+        and r.details ->> 'why' = 'merge_reversed'
+    ) then
+      raise exception 'phoenix_crm:owner_split_them';
     end if;
 
     -- The four unique keys a repoint could collide on. Each measured 0 on 2026-10-08; each still
