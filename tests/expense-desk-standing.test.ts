@@ -138,6 +138,12 @@ export function runExpenseDeskStandingTests() {
   ]);
   assert.deepEqual(withMissed.approved_missed, { count: 2, value: 590.4 }, "HEADLINE: missed trips are counted in their own tile");
   assert.deepEqual(withMissed.approved_queued, { count: 1, value: 70 }, "and never inside 'next payroll'");
-  assert.ok(/has already run/.test(TRIP_STANDING_MEANING.approved_missed) && /Expenses step/.test(TRIP_STANDING_MEANING.approved_missed), "its sentence says the payroll ran and names the screen that lists it");
+  assert.ok(/has already run/.test(TRIP_STANDING_MEANING.approved_missed) && /Expenses step/.test(TRIP_STANDING_MEANING.approved_missed), "its sentence says the payroll ran and names the screen to check");
+  // 🔴 It never promises the trip IS on that screen's list: the list leaves out a person held in the
+  // month's run and a trip the published figure covered (late-expenses.ts). On 23 Nov 2026, 11 of the
+  // 12 such trips belonged to one held person, and "it is listed" sent the reader to a list without them.
+  assert.ok(!/\bis listed\b|\bare listed\b/.test(TRIP_STANDING_MEANING.approved_missed), "HEADLINE: the sentence never says the trip is listed on the Expenses step");
+  assert.ok(/may have been paid another way/.test(TRIP_STANDING_MEANING.approved_missed), "HEADLINE: it says the trip may already have been paid another way");
+  assert.ok(!/No later payroll/.test(TRIP_STANDING_MEANING.approved_missed), "and makes no promise about later payrolls: the carry switch can change that");
   assert.ok(!/unpaid|not paid\b/i.test(TRIP_STANDING_MEANING.approved_missed.replace("not marked paid", "")), "and never calls it unpaid: unstamped is not unpaid");
 }

@@ -96,6 +96,20 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   const order = ["<AdminPageHero", "<DeskTopLine", "<DeskTiles", "<DeskTabs", "<DeskList", "<DeskUndoBar", "<DeskReviewer"];
   const at = order.map((tag) => workspace.indexOf(tag));
   assert.ok(at.every((index, i) => index > 0 && (i === 0 || index > at[i - 1])), `HEADLINE: the page reads top to bottom ${order.join(" → ")}`);
+  // 🔴 On a phone the first claim began 904 px down, under the tiles (measured at 375, 23 Nov 2026).
+  // The tiles are drawn twice: above the lanes from a tablet up, after the list on a phone.
+  assert.equal((workspace.match(/<DeskTiles /g) ?? []).length, 2, "the tiles are drawn in two places, one per width");
+  assert.ok(
+    workspace.indexOf('<DeskTiles className="hidden md:block"') > workspace.indexOf("<DeskTopLine") &&
+      workspace.indexOf('<DeskTiles className="hidden md:block"') < workspace.indexOf("<DeskTabs"),
+    "HEADLINE: the tiles above the lanes are hidden on a phone",
+  );
+  assert.ok(
+    workspace.indexOf('<DeskTiles className="md:hidden"') > workspace.indexOf("<DeskList") &&
+      workspace.indexOf('<DeskTiles className="md:hidden"') < workspace.indexOf("<DeskUndoBar"),
+    "HEADLINE: on a phone the tiles come after the list, so the first claim is on the first screen",
+  );
+  assert.ok(tiles.includes('<div className={cn("min-w-0", className)} data-desk-tiles>'), "and the tiles wear the width rule they are given");
   assert.match(workspace, /\bcompact\n\s*description=\{/, "HEADLINE: the hero is compact — one sentence, never a band of its own");
   assert.match(workspace, /Export XLSX/);
   assert.match(workspace, /className="min-w-0 space-y-3" data-expense-desk/, "and the parts sit close");

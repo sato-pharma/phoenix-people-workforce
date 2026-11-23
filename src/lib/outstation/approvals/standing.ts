@@ -20,11 +20,14 @@
  * 🔴 `approved_missed` was found the morning the desk went live (23 Nov 2026): 12 approved trips with
  * payout month September or October 2026, about 3,869 EGP, read "Approved · next payroll" while both
  * payrolls had run. Payroll reads a trip by its OWN payout month and no later run looks back
- * (src/lib/automated-payroll/late-expenses.ts), so "the next payroll" takes none of them by itself:
- * they are listed on the payroll Expenses step, and paid only when a run carries them. UNSTAMPED IS
- * NOT UNPAID there either, so this state says exactly what is known — approved, its payroll ran, not
- * marked paid — and never "unpaid". "Its payroll ran" is read from the newest payout month that
- * carries a paid stamp (`lastPaidPayout`); without that reading the state is never claimed.
+ * (src/lib/automated-payroll/late-expenses.ts), so "the next payroll" is not a true word for them.
+ * UNSTAMPED IS NOT UNPAID, and NOT EVERY ONE IS ON THE EXPENSES STEP'S LIST: that list leaves out a
+ * person held in the month's run (his money is in the held balance Held Salary Release pays) and a
+ * trip the month's published figure covered. 11 of the 12 belonged to one held person. So this state
+ * says exactly what is known — approved, its payroll ran, not marked paid — never "unpaid", never
+ * "listed", and it names the screen to check before anything is paid. "Its payroll ran" is read from
+ * the newest payout month that carries a paid stamp (`lastPaidPayout`); without that reading the
+ * state is never claimed.
  *
  * 🔴 "A payroll took the row" is NOT only the stamp. `imported_payroll_batch_id` /
  * `imported_to_payroll_at` are written by a payroll's publish only since 2026-09-12, and July and
@@ -152,7 +155,7 @@ export const TRIP_STANDING_LABEL: Record<TripStanding, string> = {
 export const TRIP_STANDING_MEANING: Record<TripStanding, string> = {
   approved_held: "Approved, but held out of payroll until its photos and workload land.",
   approved_missed:
-    "Approved, but the payroll of its payout month has already run and it is not marked paid. No later payroll takes it by itself: it is listed on the payroll Expenses step.",
+    "Approved, but the payroll of its payout month has already run and the trip is not marked paid. It may have been paid another way (a held salary released later, or a figure typed in that payroll): check the payroll Expenses step before paying it.",
   approved_queued: "Approved and waiting for the next payroll to take it.",
   in_payroll: "A payroll has taken it.",
   rejected: "Rejected. Nothing is paid.",

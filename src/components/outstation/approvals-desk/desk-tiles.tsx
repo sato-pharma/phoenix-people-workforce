@@ -55,9 +55,9 @@ export function DeskTopLine({ onToggleOld, overOnly, queue }: { onToggleOld: () 
   );
 }
 
-export function DeskTiles({ onOpen, queue }: { onOpen: (standing: TripStanding) => void; queue: DeskQueue }) {
+export function DeskTiles({ className, onOpen, queue }: { className?: string; onOpen: (standing: TripStanding) => void; queue: DeskQueue }) {
   return (
-    <div className="min-w-0" data-desk-tiles>
+    <div className={cn("min-w-0", className)} data-desk-tiles>
       <div className="grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6">
         {TRIP_STANDINGS.map((standing) => {
           const tile = queue.tiles[standing];
