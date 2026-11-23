@@ -16,7 +16,9 @@
  * docs/phoenix-crm-line-lookalikes.md.
  *
  * 🔴 ONLY WHAT THE RULE DID NOT ALREADY PAIR — a pair `areLineTwins` accepts is the rule's to share, never
- * this list's.
+ * this list's. ONE EXCEPTION: a waiting row whose own capture was rejected (`lastRejectedAt`). The rule
+ * no longer shares onto it (owner, 2026-11-23: "I must know that this is one customer, but it has those
+ * validations"), so the pair is listed here as Certain, and the card says the capture was rejected.
  * 🔴 ONLY CERTAIN AND VERY LIKELY — a looser match (two common names one letter apart, a family name
  * shared by many doctors, a known speciality against it) never reaches the list.
  * 🔴 ONLY A ROW THAT COULD BE VALIDATED — still waiting, no place, nothing waiting on it, and a clinic
@@ -423,8 +425,11 @@ function comparable(waiting: LookalikeCustomer, source: LookalikeCustomer): bool
 
 type Judged = Omit<LineLookalike, "key" | "waitingCustomerId" | "sourceCustomerId" | "listType" | "twiceOnWaitingList" | "sourcePlaceIds">;
 
-/** How sure the list is that two comparable rows are one customer; null below Very likely. */
-function judge(index: Indexed, waiting: LookalikeCustomer, source: LookalikeCustomer): Judged | null {
+/**
+ * How sure the list is that two comparable rows are one customer; null below Very likely. A pair the
+ * three-lines rule itself accepts (`rulePairs`) is Certain: the rule would have validated it unasked.
+ */
+function judge(index: Indexed, waiting: LookalikeCustomer, source: LookalikeCustomer, rulePairs = false): Judged | null {
   const leftWords = index.words.get(waiting.id) ?? [];
   const rightWords = index.words.get(source.id) ?? [];
   const samePhone = phoneKey(waiting.phone) !== null && phoneKey(waiting.phone) === phoneKey(source.phone);
@@ -433,6 +438,7 @@ function judge(index: Indexed, waiting: LookalikeCustomer, source: LookalikeCust
   const leftFamily = specialityFamily(waiting.speciality);
   const rightFamily = specialityFamily(source.speciality);
   const specialityDiffers = leftFamily !== null && rightFamily !== null && leftFamily !== rightFamily;
+  if (rulePairs) return { confidence: "certain", nameKind, samePhone, sameOldCrmContact, specialityDiffers };
   let tier: Tier | null = null;
 
   if (waiting.listType === "PM") {
@@ -504,8 +510,10 @@ export function planLineLookalikes(input: LookalikeInput): LineLookalike[] {
       if (!comparable(waiting, source)) continue;
       // Answered EITHER way round: a join card stores (joining, anchor), so when the anchor later waits the key is reversed.
       if (answeredEitherWay(input.notSame, waiting.id, source.id)) continue;
-      if (areLineTwins(waiting, source, index.liveWords.get(waiting.id) ?? [], index.liveWords.get(source.id) ?? [])) continue;
-      const judged = judge(index, waiting, source);
+      const rulePairs = areLineTwins(waiting, source, index.liveWords.get(waiting.id) ?? [], index.liveWords.get(source.id) ?? []);
+      // The rule's own pair is listed only when the rule refuses it: his own capture was rejected.
+      if (rulePairs && !waiting.lastRejectedAt) continue;
+      const judged = judge(index, waiting, source, rulePairs);
       if (!judged) continue;
       const sourcePlaceIds = pickSharePlaces(index.ownPlaces.get(source.id) ?? []).map((place) => place.id);
       if (sourcePlaceIds.length === 0) continue;
@@ -557,7 +565,9 @@ export function planLookalikeConfirm(input: LookalikeInput, waitingCustomerId: s
   if (!comparable(waiting, source)) return { ok: false, refusal: "not_comparable" };
   if (waiting.listType === "AM" && !sameFacilityKind(waiting.name, source.name)) return { ok: false, refusal: "not_comparable" };
   if (answeredEitherWay(input.notSame, waiting.id, source.id)) return { ok: false, refusal: "answered_not_same" };
-  if (areLineTwins(waiting, source, index.liveWords.get(waiting.id) ?? [], index.liveWords.get(source.id) ?? [])) return { ok: false, refusal: "rule_pairs_them" };
+  if (!waiting.lastRejectedAt && areLineTwins(waiting, source, index.liveWords.get(waiting.id) ?? [], index.liveWords.get(source.id) ?? [])) {
+    return { ok: false, refusal: "rule_pairs_them" };
+  }
   const sourcePlaceIds = pickSharePlaces(index.ownPlaces.get(source.id) ?? []).map((place) => place.id);
   if (sourcePlaceIds.length === 0) return { ok: false, refusal: "source_not_validated" };
   return { ok: true, sourcePlaceIds, validatedByHrId: source.validatedByHrId, waiting, source };
