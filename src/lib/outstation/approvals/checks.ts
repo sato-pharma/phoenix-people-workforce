@@ -31,6 +31,7 @@ import { idleDayDeductionSuggestions } from "@/lib/outstation/idle-day-deduction
 import { kmLabel } from "@/lib/outstation/odometer-scan-rules";
 import { blankFrameSentence } from "@/lib/outstation/blank-frame";
 import { returnFareLabel, type ReturnTicketState } from "@/lib/outstation/return-ticket";
+import { distanceBasisVerdict, isDistrictManagerRole, type DistanceBasis } from "@/lib/outstation/dm-double-visit-distance";
 
 /** A departure photo farther than this from the arrival photo is not "around the destination". */
 export const DEPARTURE_MAX_KM_FROM_ARRIVAL = 40;
@@ -50,6 +51,7 @@ export const CHECK_LABEL: Record<CheckKey, string> = {
   amounts: "Amounts",
   arrival_photo: "Arrival photo",
   departure_photo: "Departure photo",
+  distance: "Distance",
   duplicate: "Duplicate",
   field_work: "Field work",
   odometer: "Odometer",
@@ -58,10 +60,10 @@ export const CHECK_LABEL: Record<CheckKey, string> = {
 };
 
 /** The order a row prints them in. */
-const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "amounts"];
+const DISPLAY_ORDER: CheckKey[] = ["field_work", "route", "distance", "arrival_photo", "departure_photo", "odometer", "ticket", "duplicate", "amounts"];
 
 /** The order the ONE reason of a "Your call" row is picked in: what he rejects for first. */
-const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "odometer", "amounts", "arrival_photo", "departure_photo", "ticket"];
+const REASON_ORDER: CheckKey[] = ["duplicate", "field_work", "route", "distance", "odometer", "amounts", "arrival_photo", "departure_photo", "ticket"];
 
 export type FieldWorkDay = {
   /** A visit that day was within reach of the claimed destination. */
@@ -108,6 +110,11 @@ export type ClaimCheckFacts = {
   duplicateTrips: string[];
   /** Other claims that repeat this claim's ticket, other cost or receipt. */
   duplicateTickets: string[];
+  /**
+   * A District Manager trip's pricing on its first double visit (dm-double-visit-distance.ts); null when
+   * the rule has not priced it yet, undefined when the field was never read.
+   */
+  distanceBasis?: DistanceBasis | null;
   /** Other claims of this employee that share a trip day with this one: "18 Nov with the waiting claim of 18 Nov". */
   sharedTripDays?: string[];
   eligibilityReason: string | null;
@@ -386,6 +393,17 @@ function odometerCheck(facts: ClaimCheckFacts): ClaimCheck | null {
   return check("odometer", "pass", `${kmLabel(moved)} km on the odometer since the trip of ${since}; ${kmLabel(paid)} km of driving was paid between them.`);
 }
 
+/**
+ * A District Manager trip is priced from his home to the first double visit of the trip (owner,
+ * 2026-11-23). Null for anyone else: the rule is his alone. "No double visit on this trip" is his
+ * call, and a first double visit under the minimum distance fails — flagged, never refused.
+ */
+function distanceCheck(facts: ClaimCheckFacts): ClaimCheck | null {
+  if (!isDistrictManagerRole(facts.role) || facts.distanceBasis === undefined) return null;
+  const verdict = distanceBasisVerdict({ basis: facts.distanceBasis, waiting: true });
+  return verdict ? check("distance", verdict.answer, verdict.sentence) : null;
+}
+
 function amountsCheck(facts: ClaimCheckFacts): ClaimCheck {
   if (!isTripClaim(facts.expenseType)) {
     return facts.attachments > 0
@@ -405,6 +423,7 @@ export function runClaimChecks(facts: ClaimCheckFacts): ClaimCheck[] {
     ? [
         fieldWorkCheck(facts),
         routeCheck(facts),
+        distanceCheck(facts),
         arrivalCheck(facts),
         departureCheck(facts),
         odometerCheck(facts),

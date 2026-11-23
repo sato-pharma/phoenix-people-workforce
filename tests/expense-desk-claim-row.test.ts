@@ -44,6 +44,17 @@ function row(over: ClaimRow = {}): ClaimRow {
     car_evidence_image_path: "evidence/412-arrival.jpg",
     car_evidence_metadata: { capturedAt: "2026-11-09T07:00:00.000Z", capturedLatitude: 27.18, capturedLongitude: 31.18, source: "camera" },
     created_at: "2026-11-10T08:00:00.000Z",
+    // Priced from his home to the first double visit of the trip (owner, 2026-11-23; dm-double-visit-distance.ts).
+    distance_basis: {
+      basis: "first_double_visit",
+      capturedKm: 130,
+      held: null,
+      minimumKm: 60,
+      pricedAt: "2026-11-10T08:05:00.000Z",
+      pricedKm: 128,
+      visit: { capturedAt: "2026-11-09T08:00:00.000Z", id: "v-412", kind: "double", km: 128, lat: 27.18, lon: 31.18, repHrId: "PD-0101", repName: "Rep Name", visitDate: "2026-11-09" },
+      written: { distanceKm: 128, travelCost: 600 },
+    },
     departure_evidence_image_path: "evidence/412-departure.jpg",
     departure_evidence_metadata: {
       capturedAt: "2026-11-10T14:00:00.000Z",
@@ -146,6 +157,11 @@ export function runExpenseDeskClaimRowTests() {
   const ready = buildDeskClaim({ context: { fieldWork: fieldWork(3), today: TODAY }, ledger: null, now: NOW, row: row() });
   assert.equal(ready.verdict.lane, "ready");
   assert.equal(ready.preCut, null, "no idle day, no cut");
+  // A District Manager trip not yet priced on its first double visit is "could not check" — never Ready.
+  const unpriced = buildDeskClaim({ context: { fieldWork: fieldWork(3), today: TODAY }, ledger: null, now: NOW, row: row({ distance_basis: null }) });
+  assert.equal(unpriced.verdict.lane, "your_call");
+  assert.equal(unpriced.verdict.reason, "Not priced on the first double visit yet; the next morning run prices it.");
+  assert.deepEqual(ready.distance, { basis: "first_double_visit", capturedKm: 130, visitKm: 128, visitWords: "with Rep Name on 9 Nov" });
   // A pending payroll row left under a waiting claim decides nothing.
   const shadowed = buildDeskClaim({ context: { fieldWork: fieldWork(3), today: TODAY }, ledger: ledger({ approved_amount: 10, total: 10 }), now: NOW, row: row() });
   assert.equal(shadowed.standing, "waiting");
