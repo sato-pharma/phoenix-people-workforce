@@ -136,7 +136,19 @@ export function DeskWorkspace({ initialSearch }: { initialSearch: string }) {
           </div>
 
           {lane === "history" ? (
-            <DeskHistory choice={view.history} from={view.from} kind={view.kind} onChoose={(history) => desk.setView({ history })} onOpen={open} search={view.search.trim()} to={view.to} version={desk.historyVersion} />
+            <DeskHistory
+              canDecide={canDecide}
+              choice={view.history}
+              from={view.from}
+              kind={view.kind}
+              onChoose={(history) => desk.setView({ history })}
+              onOpen={open}
+              onPress={desk.press}
+              pressed={desk.pressed}
+              search={view.search.trim()}
+              to={view.to}
+              version={desk.historyVersion}
+            />
           ) : (
             <DeskList
               action={

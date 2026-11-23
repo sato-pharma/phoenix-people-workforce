@@ -188,6 +188,15 @@ export function approvePress(claim: DeskClaim, options: { full?: boolean } = {})
 }
 
 /**
+ * Approve on a claim that was REJECTED (History, and its opened trip): the claim in full. It names
+ * no amount and never the idle-day cut, which is read for a waiting claim only, and the server
+ * refuses an approval of a rejected claim that names one (`decided-change.ts`).
+ */
+export function approveRejectedPress(claim: DeskClaim): DeskDecisionRequest {
+  return { action: "approve", requestId: claim.requestId, revision: claim.revision };
+}
+
+/**
  * True on the one waiting claim whose own Approve pays an idle day in full: the trip has an idle
  * day and an allowance, and the payroll gate would hold it, so it cannot carry the cut. Its row
  * says so and he may still press it — but no batch sends it (owner, 2026-11-07: a batch approve

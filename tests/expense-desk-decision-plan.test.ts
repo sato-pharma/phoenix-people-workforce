@@ -176,29 +176,24 @@ export function runExpenseDeskDecisionPlanTests() {
   assert.equal(planDeskDecision(claim({ ...willHold, preCut: CUT }), press({ keepFull: true })).ok, true, "and one with an idle day too, when its own row says it pays in full");
   assert.equal(planDeskDecision(claim(willHold), press({ action: "reject", comment: "x" })).ok, true, "and rejected");
 
-  // 4b. 🔴 A DECIDED claim is never pressed again (owner's plan, 23 Nov: "No decided claim's money
-  // moves"). The risk review of the first build traced History → Open → "Pay in full" on a claim he
-  // had approved at EGP 900 of 1,200: it wrote the typed amount to NULL and payroll paid 1,200.
-  // Every press on every decided standing is refused, with the right version and a reason.
-  for (const standing of ["approved_held", "approved_queued", "rejected"] as const) {
+  // 4b. 🔴 A DECIDED claim takes two presses and no other (owner, 23 Nov, about 21:05 Cairo: "make
+  // me able to reject even if approved in history. Make me easily able to approve or reject"): an
+  // approved claim no payroll took can be REJECTED, a rejected claim APPROVED IN FULL. The risk
+  // review of the first build traced History → Open → "Pay in full" on a claim he had approved at
+  // EGP 900 of 1,200: it wrote the typed amount to NULL and payroll paid 1,200. So approving an
+  // approved claim again, keeping it full or reducing it stays refused. The whole table is pinned
+  // in tests/expense-desk-decided-change.test.ts; these are the presses that once moved money.
+  assert.ok(!("decided" in DESK_REFUSAL), "the blanket refusal is gone: each refusal now says what CAN be pressed");
+  for (const standing of ["approved_held", "approved_queued"] as const) {
     const decidedClaim = claim({ approvedAmount: standing === "approved_queued" ? 600 : null, standing });
-    for (const attempt of [
-      press(),
-      press({ keepFull: true }),
-      press({ action: "reduce", approvedAmount: 500, comment: "Second look." }),
-      press({ action: "reject", comment: "Second look." }),
-    ]) {
+    for (const attempt of [press(), press({ keepFull: true }), press({ action: "reduce", approvedAmount: 500, comment: "Second look." })]) {
       assert.deepEqual(
         planDeskDecision(decidedClaim, attempt),
-        { code: "refused", message: DESK_REFUSAL.decided, ok: false },
+        { code: "refused", message: DESK_REFUSAL.approvedOnlyReject, ok: false },
         `HEADLINE: ${attempt.action} on a claim that stands ${standing} is refused`,
       );
     }
-    assert.deepEqual(
-      planDeskDecision(decidedClaim, press({ revision: "an-older-version" })),
-      { code: "refused", message: DESK_REFUSAL.decided, ok: false },
-      "and no version of a decided claim gets a different answer",
-    );
+    assert.equal(planDeskDecision(decidedClaim, press({ action: "reject", comment: "Second look." })).ok, true, `HEADLINE: a claim that stands ${standing} can be rejected`);
   }
 
   // 5. The answer, read from the claim as stored afterwards.
@@ -332,7 +327,7 @@ export function runExpenseDeskDecisionPlanTests() {
   assert.ok(resend.includes('event: "expense_desk_amount_resent"'), "a re-send is written to the error table");
   assert.match(
     decide,
-    /const outcome = deskDecisionOutcome\(\{[\s\S]{0,260}?approved: plan\.approved,[\s\S]{0,260}?\}\);[\s\S]{0,400}?if \(claim && stored && outcome\.code === "saved"\) \{\s*const verdict = await keepVerdict\(/,
-    "HEADLINE: the answer is read against the figure chosen, and the verdict is kept only with a decision that landed whole",
+    /const outcome = deskDecisionOutcome\(\{[\s\S]{0,260}?approved: plan\.approved,[\s\S]{0,260}?\}\);[\s\S]{0,400}?if \(claim && stored && outcome\.code === "saved" && claim\.standing === "waiting"\) \{\s*const verdict = await keepVerdict\(/,
+    "HEADLINE: the answer is read against the figure chosen, and the verdict is kept only with a decision that landed whole, on a claim that was waiting",
   );
 }

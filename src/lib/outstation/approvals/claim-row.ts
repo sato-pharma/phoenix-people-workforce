@@ -307,10 +307,13 @@ export function buildDeskClaim(input: {
   });
   const waiting = reading.standing === "waiting";
   const verdict = waiting ? judgeClaim(claimFactsFromRow(row, input.context)) : storedVerdictOfRow(row);
-  // The stored row is the truth of a DECIDED claim: its own total and the amount he typed. A claim
-  // still waiting reads its live figures — a payroll row left pending under it decides nothing.
-  const total = waiting ? approval.total : (ledger?.total ?? approval.total);
-  const approvedAmount = waiting ? null : (ledger?.approved_amount ?? null);
+  // The stored row is the truth of an APPROVED claim: its own total and the amount he typed. A claim
+  // still waiting reads its live figures — a payroll row left pending under it decides nothing — and
+  // so does a REJECTED one: rejecting a waiting claim leaves its row behind, and approving it again
+  // writes the row from the claim as it is now. "Approve EGP X" must name what payroll will pay.
+  const live = waiting || reading.standing === "rejected";
+  const total = live ? approval.total : (ledger?.total ?? approval.total);
+  const approvedAmount = live ? null : (ledger?.approved_amount ?? null);
   const tripDates = tripDatesOfRow(row);
   const preCut =
     waiting && isTripClaim(text(row.expense_type)) && verdict.idleDates.length > 0

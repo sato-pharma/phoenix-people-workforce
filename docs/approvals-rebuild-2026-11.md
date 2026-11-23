@@ -229,12 +229,63 @@ The rebuild reads decided claims and never rewrites one. Nothing re-runs the pay
 claim already decided, changes a payout month, or replaces an amount he typed with the claim's
 total. On the day of the rebuild 26 claims carried his own typed figure.
 
-Only a waiting claim is decided. A claim already approved or rejected draws no decision button
-anywhere on the desk. History and its opened trip read it and say "This claim was already decided.
-It is read here, not changed." The server refuses every press on one, before it even looks at the
-version. After the six seconds of Undo, a decision is not changed on the desk. The 7 Nov screen
-allowed that until a payroll took the trip; whether the desk should offer a guarded way to do it is
-an open question for the owner.
+Only a waiting claim takes the desk's four presses (Approve, Keep full claim, Reduce, Reject).
+
+### Changing a decided claim, from History
+
+The owner answered the open question the same evening (23 Nov 2026, about 21:05 Cairo): "make me
+able to reject even if approved in history. Make me easily able to approve or reject." A decided
+claim now takes one press of its own, on its History row and in its opened trip:
+
+| Where the claim stands | What can be pressed | What happens |
+| --- | --- | --- |
+| Approved, held out of payroll | Reject, with a reason | The workflow's own reject-before-payroll step. The employee is told the reason. |
+| Approved, waiting for the next payroll | Reject, with a reason | The same. Its payroll row is taken out, and a confirmed Expenses step is read again. |
+| Rejected | Approve EGP (the claim's total) | The claim is approved in full through the same payroll gate as any approval. Nobody is told. |
+| Approved, but its payout month's payroll already ran | Nothing | Not marked paid is not the same as not paid. The row says to check the payroll Expenses step. |
+| In payroll | Nothing | A payroll took it. The money has moved. |
+
+What stays closed, and why:
+
+- An approved claim is never approved again, kept full or reduced. That was the press the risk
+  review traced below. To pay less on an approved claim: reject it, then approve it.
+- A rejected claim is approved at its total only. Its idle days and its payroll hold are read for
+  a waiting claim only, so no other figure can be trusted for it. The reason kept on it is his own,
+  or "Approved after an earlier rejection." so the old rejection reason does not read as the
+  reason it was approved.
+- A change keeps the verdict of the first decision for the agreement meter. A claim decided before
+  the checks were kept has none, and stamping one now would put a made-up reading into the meter.
+- The pre-July sheet trips stay read-only. They were decided on the sheets.
+
+The standing is read from the paid stamps, and a payroll run can hold a trip before it stamps it.
+So both presses are also asked of the payout month's own payroll run, read on the server just
+before anything is written (the risk review of this change, 23 Nov 2026):
+
+| The payout month's run | Both presses |
+| --- | --- |
+| Not started, or in its first part | Open |
+| Second part confirmed | Refused: its expense figures are frozen. A rejection there deleted the payroll row, the re-sync was skipped, and publishing still paid the trip, while the employee was told "rejected". The message names Automated Payroll, where the second part is reopened. |
+| Published | Refused: no later run pays an earlier payout month. |
+| August 2026 or before | Refused: paid before the stamps were kept. |
+| Could not be read, or no payout month | Refused: money is not moved on a guess. |
+
+A rejected claim's figure on the button is the claim as it is now, never the payroll row its
+rejection left behind, because approving it again writes the row from the claim.
+
+One notice had to change with it. Approving a rejected claim used to send the "submitted and
+requires your review" alert, written for a claim the SYSTEM had rejected at filing. It now goes for
+a system rejection only. Read on production that day: 66 claims stood rejected by the Super Admin,
+none by the system, and 4 of the 66 had never been sent that alert, so approving them would have
+mailed the employee, the manager and the Super Admins.
+
+The rule is `decidedChange` in `src/lib/outstation/approvals/decided-change.ts`, read by the screen
+and by `planDeskDecision`; the run is asked through `decidedChangeRunRefusal` in the same file, from
+`decide.ts`. Pinned by `tests/expense-desk-decided-change.test.ts`.
+
+Left as they were, and reported: a second rejection after reject, approve and reject again is not
+told to the employee (the rejection notice is sent once per claim); approving a claim the SYSTEM
+rejected still sends the submission alert, as designed; and an older half-step stays, where a
+rejection deletes the payroll row and then the status write fails.
 
 ### What the risk review found before the merge
 
@@ -243,7 +294,9 @@ verdict was not to ship it. Six findings, all fixed in the same pull request:
 
 1. From History, Open offered "Pay in full", "Change amount" and "Reject" on a decided claim. "Pay
    in full" on a claim approved at EGP 900 of 1,200 wrote the typed amount to nothing and payroll
-   would have paid 1,200. Decided claims are now read-only, on the screen and on the server.
+   would have paid 1,200. Decided claims were made read-only, on the screen and on the server.
+   (Later that evening the owner asked for two presses on one; neither is that press. See
+   "Changing a decided claim, from History".)
 2. A reduced amount on a rejected trip that would be held lost its figure. Closed by the first fix.
 3. "Saved" was said when the claim was approved and its reduced figure had not landed. Now
    `amount_not_saved`, after one re-send.
@@ -264,7 +317,7 @@ Each of these was on the 7 Nov screen and is not on the desk.
 | On a phone the first claim began 904 px down, under the tiles (measured at 375, 23 Nov 2026) | On a phone the count, the lanes and the list come first; the tiles follow the list. A desktop is unchanged. |
 | On a phone a Your call card ran up to 300 px: every other check that failed or could not be made was a tag on its own line (measured at 375 in the preview of pull request 700, 23 Nov 2026) | A phone card says them in one line ("Also failed: … · Not checked: …", `otherFindings` in `desk-view.ts`). The desktop row keeps a tag for each. |
 | The "By employee" roll-up tab | The search box narrows by employee. |
-| "Unapprove back to waiting" | A decided claim is not reopened here. |
+| "Unapprove back to waiting" | A decided claim never goes back to waiting. From History an approved claim can be rejected and a rejected one approved. |
 | Biggest first, and the order remembered for each reviewer | Oldest first, always. |
 | The Data first / Map first switch | One scroll: the data, then each day's map. |
 | "Expand all / Collapse all" and the details panel inside the row | Open shows the trip on the full screen. |

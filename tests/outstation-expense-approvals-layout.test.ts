@@ -147,7 +147,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.ok(list.includes("<TripLine claim={claim} />"), "a desktop row prints the trip's dates and route");
   assert.equal((parts.match(/\{displayPlace\(claim\.(?:from|to)\)\}/g) ?? []).length, 2, "HEADLINE: From and To in words, never the plus-code prefix");
   assert.ok(list.includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "HEADLINE: the phone card prints the place in words too");
-  assert.ok(history.includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "and so does History's");
+  assert.ok(read("desk-history-row.tsx").includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "and so does History's");
   // 🔴 A phone card says the other checks in ONE line. A tag each, one per line, made a Your call card
   // 300 px tall at 375 (measured in the preview of pull request 700, 23 Nov 2026).
   assert.ok(list.includes("<FoundCell claim={claim} compact />"), "HEADLINE: the phone card asks for the one-line form of the other checks");
@@ -231,7 +231,8 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.ok(decision.includes("data-reason-chip={chip.key}"), "HEADLINE: the reasons the system found are one-press chips");
   assert.ok(decision.includes('onClick={() => (mode === "reject" ? send(chip.text) : setReason(chip.text))}'), "HEADLINE: a rejection is sent by the chip itself — the second press");
   assert.ok(decision.includes('disabled={!text || (mode === "reduce" && (figure === null || tooHigh))}'), "HEADLINE: no rejection and no reduced amount goes without a reason");
-  assert.ok(decision.includes('hint={mode === "reject" ? "The employee is told this reason." : "Kept on the claim. The employee is not told about a reduced amount."}'), "and the box says who will read it");
+  assert.ok(decision.includes('? "Kept on the claim. The employee is not told about a reduced amount."'), "and the box says who will read it: a reduced amount is not told");
+  assert.ok(decision.includes('? "The employee is told this reason."'), "and a rejection is");
   assert.doesNotMatch(screen, /Sparkles/, "nothing designed looks machine-made — the rewrite carries a pen");
 
   // Undo stays in reach while the list scrolls.
@@ -277,11 +278,12 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   // ── 4. What the look-over of 23 Nov found, before the desk was ever merged ──────────────────
   const select = read("desk-select.tsx");
   // History's Open button was clipped between 768 and 1250 px: its column was 9% of the table.
-  assert.ok(history.includes('columns={["25%", "16%", null, "13%", "13%"]}'), "History's last column is wide enough for the Open button on a tablet");
+  // 23 Nov, later: the column also holds Reject or Approve (decided claims are changed on the row).
+  assert.ok(history.includes('columns={["24%", "15%", null, "12%", "22%"]}'), "History's last column is wide enough for its decision button and Open on a tablet");
 
   // On a phone every press target is 44px. A dense button gets it under md only.
   assert.ok(parts.includes('export const PHONE_TARGET = "max-md:min-h-11";'), "the one phone-target class");
-  assert.ok(history.includes('approvalActionClassName("neutral", "dense", PHONE_TARGET)} data-open-trip'), "History's Open on a phone card is 44px tall");
+  assert.ok(read("desk-history-row.tsx").includes('<RowDecision {...props} mode={mode} onMode={setMode} size="regular" />'), "History's buttons on a phone card are the regular size: 44px tall");
   assert.equal((read("desk-rewrite.tsx").match(/"neutral", "dense", PHONE_TARGET\)/g) ?? []).length, 2, "Rewrite formally and its Undo are 44px tall on a phone");
   assert.ok(select.includes("inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center md:w-9"), "the tick is 44px wide on a phone");
   assert.ok(tiles.includes("inline-flex min-h-11 items-center border px-2 py-0.5 text-xs font-black transition md:min-h-8"), "the over-7-days switch is 44px tall on a phone");

@@ -330,7 +330,7 @@ export function runExpenseDeskKindTests() {
   assert.match(workspace, /<DeskKindFilter counts=\{kinds\} kind=\{view\.kind\} onChoose=\{\(kind\) => desk\.setView\(\{ kind \}\)\} \/>/);
   assert.match(workspace, /<DeskPeriodFilter onChoose=\{\(period\) => desk\.setView\(period\)\} period=\{\{ from: view\.from, to: view\.to \}\} \/>/);
   assert.match(workspace, /kindCounts\(claimsInLane\(queue\.claims, lane, \{ \.\.\.view, kind: null \}\)\)/);
-  assert.match(workspace, /<DeskHistory choice=\{view\.history\} from=\{view\.from\} kind=\{view\.kind\} .* to=\{view\.to\} /);
+  assert.match(workspace, /<DeskHistory\s[\s\S]{0,60}?choice=\{view\.history\}\s+from=\{view\.from\}\s+kind=\{view\.kind\}\s[\s\S]{0,260}?\sto=\{view\.to\}\s/);
   const historyScreen = code("src/components/outstation/approvals-desk/desk-history.tsx");
   for (const param of ['params.set("kind", kind)', 'params.set("from", from)', 'params.set("to", to)']) {
     assert.ok(historyScreen.includes(param), `the History read carries ${param}`);

@@ -7,6 +7,7 @@ import { type AttachmentsData, TripAttachments } from "@/components/outstation/t
 import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
 import { CrmLoadError, CrmLoading, CrmNote } from "@/components/phoenix-crm/ui";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
+import { decidedChange } from "@/lib/outstation/approvals/decided-change";
 import type { DeskNotice } from "@/lib/outstation/approvals/press-queue";
 import { TRIP_STANDING_MEANING } from "@/lib/outstation/approvals/standing";
 import type { ClaimCheck, DeskClaim } from "@/lib/outstation/approvals/types";
@@ -120,6 +121,9 @@ export function DeskTripFile({
   const claim = file.claim;
   const waiting = claim.standing === "waiting";
   const cut = waiting && claim.preCut && !claim.holdReason ? claim.preCut : null;
+  // A decided claim: the one press still open on it (Reject an approval, Approve a rejection), or why none.
+  const change = decidedChange(claim);
+  const again = canDecide ? change.offer : null;
   // Days Phoenix CRM cannot speak for: before the team moved to it, or a trip it holds no person for.
   const daysBeforePhoenix = file.crm?.reading?.days.filter((day) => day.beforePhoenix).length ?? 0;
   const oldRecord = claim.declaredWorkload && (daysBeforePhoenix > 0 || (file.crm !== null && !file.crm.reading)) ? claim.declaredWorkload : null;
@@ -278,7 +282,7 @@ export function DeskTripFile({
 
       <footer className="min-w-0 border-t border-slate-300 bg-white" data-reviewer-decision>
         <div className="mx-auto w-full max-w-5xl min-w-0 px-3 py-2.5 sm:px-4">
-          {mode !== "idle" && canDecide && !claim.locked && claim.standing === "waiting" && !pressed ? (
+          {mode !== "idle" && canDecide && !claim.locked && (waiting || again === "reject") && !pressed ? (
             <div className="mb-2 max-h-[50vh] min-w-0 overflow-y-auto">
               <DecisionPanel claim={claim} mode={mode} onClose={() => onMode("idle")} onPress={onPress} />
             </div>
@@ -296,10 +300,10 @@ export function DeskTripFile({
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="locked">
                 A payroll already took this trip, so nothing here can change it.
               </p>
-            ) : claim.standing !== "waiting" ? (
+            ) : !waiting && !again ? (
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="decided">
                 {/* Where it stands, in words: a pill's tooltip is not readable on a phone. */}
-                {TRIP_STANDING_MEANING[claim.standing]} It is read here, not changed.
+                {TRIP_STANDING_MEANING[claim.standing]} {change.why ?? "It is read here, not changed."}
               </p>
             ) : !canDecide ? (
               <p className="min-w-0 break-words text-sm font-bold text-slate-600" data-decision-state="read-only">
