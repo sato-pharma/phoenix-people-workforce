@@ -145,6 +145,66 @@ outside. Change the page, and bump the version in its URI.
 by the `Dockerfile`). `PHOENIX_CAPTURE_ORIGIN` overrides the loopback address. When ffmpeg is missing,
 the video tool says so and the screenshot tool still works.
 
+## Films (20 Nov 2026)
+
+The owner asked for narrated films of Phoenix to brand the system, up to twenty minutes each. First an
+at-a-glance overview, then one episode per module (Recruitment, Sales, and so on). His choices were
+masked data (made-up names and numbers, safe to post), a voice-over with captions, and episodes up to
+twenty minutes. **ChatGPT writes the script and calls the tool. Phoenix renders the film in the
+background and returns a private link.** No one in Phoenix makes the film by hand.
+
+- **`phoenix_make_film`** takes `{ title, language? (en|ar), voice?, tone?, viewport?, scenes[1..80] }`.
+  Each scene is a **title** card (the Phoenix black ground, the heading, the narration read over it) or a
+  **page** (a live Phoenix page opened read-only and scrolled while the narration is read). A scene
+  has a heading, up to 1,500 characters of narration, and for a page its `path`. `seconds` (3 to 180)
+  is optional and sets how long the scene lasts at least. Before anything is queued, every page scene
+  must name a page. Each `path` goes through the same capture fence as the screenshots (its refusal goes
+  back to ChatGPT word for word). The whole film must fit in twenty minutes by a reading estimate
+  (2.5 words a second in English, 2.1 in Arabic). The tool then returns at once with a job id.
+- **`phoenix_film_status`** takes `{ job_id? }` (the latest film when left out) and says queued,
+  rendering (scene N of M), failed (and why), or ready with the link, the length and the size.
+
+**Where it renders.** A timer on the **worker** service (`films/worker.ts`, started from
+`instrumentation.ts`) takes one queued film at a time every 20 seconds. It runs only in a production build,
+on Railway (`RAILWAY_ENVIRONMENT_NAME` set), on a process that runs background jobs
+(`PHOENIX_PROCESS_ROLE` worker, or unset). Never on the page server, and never on a laptop's `next dev`,
+whose `.env.local` points at production. On start it logs one `[films]` line saying whether it started
+and, if not, why. Each film is rendered as the person who asked, re-checked live first (still active,
+same role, same `session_version`). A password change or a sign-out everywhere stops a queued film.
+A film that has not ended in 75 minutes is stopped. A job left rendering for 90 minutes is marked failed.
+Each person may have 3 films waiting at once.
+
+**How it is made** (`films/render.ts`).
+1. **Voice.** Each scene's narration is read aloud through the one AI door (`createOpenAiSpeech` in
+   `src/lib/ai/openai-client.ts`) before the browser opens. If no voice can be had, the film is made
+   with captions only and the status says so.
+2. **Pictures.** Each scene is filmed in the capture browser behind the GET-only fence, at up to 14
+   frames a second. Each frame is held until the next one (`frameConcatList`) and written at 24 frames a
+   second.
+3. **Captions.** The narration is cut into cues of two lines at most (90 characters), by sentence,
+   then at commas, then between words. Each cue is on screen for its share of the spoken length, and the
+   last one ends with the voice (`splitCaptionCues`).
+4. **Masking** (`films/page-script.ts`, `MASK_CORE`). Before a page's own code runs, every text it
+   shows is rewritten, and rewritten again whenever the page changes it:
+   - **Names:** every name of two words or more that Phoenix holds (`connector_film_mask_names()`) is
+     swapped for a made-up name in the same script, the same one every time.
+   - **Emails:** swapped for `personNNNN@example.com`.
+   - **Numbers:** every run of three digits or more gets new digits, the same way every time.
+   - Kept as they are: dates, times and years (1900–2099).
+   - Staff photos are blurred.
+   - **Not reached:** a chart drawn on a canvas and text inside a picture. The tool says so, so watch
+     the film before posting it.
+5. **The file.** One MP4 is stored like every connector file: a `connector_files` row, a link only
+   the same signed-in person opens, for 7 days.
+
+**Downloading a big file.** A film can run to hundreds of megabytes. The download route hands any file
+over `CONNECTOR_STREAM_DIRECT_BYTES` (24 MB, `files.ts`) by a ten-minute signed storage address (a 303),
+after the same owner and expiry checks, instead of streaming it through the server's memory. Smaller
+files stream as before.
+
+**What it changes.** A film queues one `connector_film_jobs` row (migration `20261120123519`) and, when
+done, one file. It changes no business data, sends nothing and publishes nothing.
+
 ## The kill switch
 
 To end every ChatGPT connection at once, run this on production:
@@ -170,8 +230,9 @@ connection. Removing the connector in ChatGPT does too.
 | The tools, module by module | `src/lib/chatgpt-connector/tools/` |
 | The sheet and PDF tools | `src/lib/chatgpt-connector/files.ts` |
 | Screenshots and videos (fence, session, browser, viewer) | `src/lib/chatgpt-connector/browser/`, `tools/screens.ts` |
-| Tables | `supabase/migrations/20261117130928_chatgpt_connector_oauth.sql`, `20261120111031_chatgpt_connector_capture_file_kinds.sql` |
-| Tests | `tests/chatgpt-connector-oauth.test.ts`, `tests/chatgpt-connector-tools.test.ts`, `tests/chatgpt-connector-capture.test.ts` |
+| Films (script, masking, render, queue, worker) | `src/lib/chatgpt-connector/films/`, `tools/films.ts` |
+| Tables | `supabase/migrations/20261117130928_chatgpt_connector_oauth.sql`, `20261120111031_chatgpt_connector_capture_file_kinds.sql`, `20261120123519_connector_film_jobs.sql` |
+| Tests | `tests/chatgpt-connector-oauth.test.ts`, `tests/chatgpt-connector-tools.test.ts`, `tests/chatgpt-connector-capture.test.ts`, `tests/chatgpt-connector-films.test.ts` |
 
 To add a tool, put it in the right `tools/<module>.ts` file and use `defineTool`. Assert the page's own
 permission, narrow the rows with the page's scope helper, and return `{ summary, data }`. Never add a

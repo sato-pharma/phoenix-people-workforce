@@ -10,15 +10,13 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { JOB_EXPORTS_BUCKET } from "@/lib/background-jobs/service";
-import { CONNECTOR_FILE_CONTENT_TYPES, type ConnectorFileKind } from "@/lib/chatgpt-connector/files";
+import { CONNECTOR_FILE_CONTENT_TYPES, connectorFileGoesBySignedAddress, type ConnectorFileKind } from "@/lib/chatgpt-connector/files";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Above this a file (a long film) is handed over by a signed storage address, never through this server. */
-export const CONNECTOR_STREAM_DIRECT_BYTES = 24 * 1024 * 1024;
 const CONNECTOR_SIGNED_URL_SECONDS = 600;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,7 +51,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   // A film can run to hundreds of megabytes: rather than pass it through this server's memory, hand the
   // browser a ten-minute signed address to the stored file, after the same owner and expiry checks.
-  if (Number(row.size_bytes ?? 0) > CONNECTOR_STREAM_DIRECT_BYTES) {
+  if (connectorFileGoesBySignedAddress(row.size_bytes)) {
     const { data: signed, error: signError } = await db.storage
       .from(JOB_EXPORTS_BUCKET)
       .createSignedUrl(String(row.storage_path), CONNECTOR_SIGNED_URL_SECONDS);
