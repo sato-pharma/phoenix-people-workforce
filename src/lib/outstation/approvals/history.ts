@@ -28,6 +28,7 @@ import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
 import { OUTSTATION_UNDECIDED_STATUSES } from "@/lib/outstation/undecided-claim";
 import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 export const HISTORY_PAGE_SIZE = 50;
@@ -147,17 +148,67 @@ export type SheetTrip = {
   payoutMonth: number;
   payoutYear: number;
   rejected: boolean;
+  /**
+   * Filed in Phoenix, but its request was deleted after payroll took it: the payroll row is all
+   * that is left, so it is listed here, said so, rather than nowhere.
+   */
+  requestDeleted: boolean;
   to: string;
   total: number;
   tripDate: string;
   tripId: string;
 };
 
+/**
+ * Which payroll rows the sheet list shows: every row that did not come from a request, and every
+ * row whose request no longer exists. A row whose request still exists is shown by the desk
+ * itself, so it is left out here and never listed twice. Pure.
+ *
+ * Owner, 23 Nov 2026: "Expense page is not showing all the expenses … Where are the rest of the
+ * requests of the people?" — read that night: 9 approved trips (April to June 2026, three people)
+ * stood in payroll as `OUTSTATION-<id>` with their request deleted. The desk could not show them
+ * (no request) and this list dropped them (a request's trip id), so they were on no screen at all.
+ */
+export function sheetHistoryRows<T extends { tripId: string }>(
+  rows: ReadonlyArray<T>,
+  existingRequestIds: ReadonlySet<number>,
+): Array<{ requestDeleted: boolean; row: T }> {
+  const kept: Array<{ requestDeleted: boolean; row: T }> = [];
+  for (const row of rows) {
+    const requestId = outstationRequestIdFromTripId(row.tripId);
+    if (requestId === null) kept.push({ requestDeleted: false, row });
+    else if (!existingRequestIds.has(requestId)) kept.push({ requestDeleted: true, row });
+  }
+  return kept;
+}
+
+/**
+ * The request ids that still exist, out of the ones the payroll rows name. Ids only: the rows
+ * asking were already narrowed to the reader's scope by `listPayrollExpenses`, so the plain
+ * client reads nothing they could not see — and a request hidden from a narrower client must
+ * never read as deleted and be listed twice. A failed read throws rather than guessing.
+ */
+async function readExistingRequestIds(ids: number[]): Promise<Set<number>> {
+  const existing = new Set<number>();
+  if (ids.length === 0) return existing;
+  const supabase = getSupabaseAdmin();
+  for (let start = 0; start < ids.length; start += 500) {
+    const { data, error } = await supabase.from("outstation_expense_requests").select("id").in("id", ids.slice(start, start + 500));
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ id: number | string }>) existing.add(Number(row.id));
+  }
+  return existing;
+}
+
 export async function loadSheetHistory(access: AccessContext): Promise<SheetTrip[]> {
   const rows = await listPayrollExpenses(undefined, undefined, undefined, access);
-  return rows
-    .filter((row) => outstationRequestIdFromTripId(row.tripId) === null)
-    .map((row) => ({
+  const requestIds = Array.from(
+    new Set(rows.map((row) => outstationRequestIdFromTripId(row.tripId)).filter((id): id is number => id !== null)),
+  );
+  const existing = await readExistingRequestIds(requestIds);
+  return sheetHistoryRows(rows, existing)
+    .map(({ requestDeleted, row }) => ({
+      requestDeleted,
       approved: Boolean(row.hrApproved),
       employeeName: row.specialist,
       from: row.from,
