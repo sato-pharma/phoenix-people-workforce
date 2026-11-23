@@ -7,8 +7,9 @@ import fs from "node:fs";
 // decided: the request pages (DecisionActions), the weekly-plan and manager-plan panels, the Action
 // Center's inline row and the Expense Approvals queue. Before this the same Reject was a filled red
 // rounded button in one place and a rose outline in the next.
-// Expense Approvals keeps its batch save (owner, 14 Nov 2026): the row wears the look, and its
-// decisions are still marked on screen and saved together.
+// Expense Approvals kept its batch save on 14 Nov 2026; the owner lifted that on 23 Nov 2026 ("Save
+// at once, with Undo") when the page was rebuilt. Its decisions now wear the look AND save by
+// themselves: a press goes to the page, waits six seconds of Undo, and is sent (use-desk.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const KIT = "src/components/approvals-hub/approval-action-kit.tsx";
@@ -19,7 +20,7 @@ const SCREENS = [
   "src/components/approvals-hub/plan-decision-actions.tsx",
   "src/components/approvals-hub/manager-plan-decision-actions.tsx",
   "src/components/action-center/action-center-hub.tsx",
-  "src/components/outstation/expense-review/review-queue-table.tsx",
+  "src/components/outstation/approvals-desk/desk-decision.tsx",
 ];
 
 export function runApprovalsOneInterfaceTests() {
@@ -57,9 +58,23 @@ export function runApprovalsOneInterfaceTests() {
   assert.doesNotMatch(row, /className="[^"]*\b(bg-emerald|bg-rose|bg-amber|bg-slate-700|bg-sky)/, "no decision button in the Action Center is hand-coloured");
   assert.match(hub, /function hubActionTone\(/, "leave and resignation actions take their tone from the kit");
 
-  // Expense Approvals keeps its batch save: the row marks the decision on screen and never posts it.
-  const queue = read("src/components/outstation/expense-review/review-queue-table.tsx");
-  assert.match(queue, /className=\{approvalActionClassName\("approve", "dense"\)\}\s*data-quick-approve/, "the row's Approve wears the shared look");
-  assert.match(queue, /onClick=\{\(\) => actions\.onQuickApprove\(record\)\}/, "the row's Approve still only marks the trip on screen");
-  assert.doesNotMatch(queue, /\bfetch\(/, "the expense row saves nothing itself — Save commits the batch");
+  // Expense Approvals: the decision is drawn ONCE (desk-decision.tsx) and used by the list row, the
+  // phone card and the reviewer. It wears the shared look, and a press is handed to the page — the
+  // buttons themselves never post.
+  const decision = read("src/components/outstation/approvals-desk/desk-decision.tsx");
+  assert.match(decision, /className=\{approvalActionClassName\("approve", size\)\}\s*data-press="approve"/, "the row's Approve wears the shared look");
+  assert.ok(decision.includes('className={approvalActionClassName("reject", size)} data-press="reject"'), "and so does Reject");
+  assert.ok(decision.includes("onClick={() => onPress([approvePress(claim, { full: decided(claim) })], [claim])}"), "Approve is one press, handed to the page");
+  assert.ok(!decision.includes("fetch("), "the buttons save nothing themselves: the page sends the press after its Undo window");
+  for (const screen of ["desk-row.tsx", "desk-trip-file.tsx"]) {
+    const source = read(`src/components/outstation/approvals-desk/${screen}`);
+    assert.ok(source.includes("<DecisionButtons "), `${screen} draws the one decision`);
+    assert.ok(
+      !source.includes('approvalActionClassName("approve"') && !source.includes('approvalActionClassName("reject"'),
+      `${screen} never draws an Approve or Reject of its own`,
+    );
+  }
+  const hookFile = read("src/components/outstation/approvals-desk/use-desk.ts");
+  assert.ok(hookFile.includes("const next = addPress(pressesRef.current, { claims, decisions, now: Date.now() });"), "a press joins the Undo queue");
+  assert.ok(hookFile.includes("body: JSON.stringify(pressBody(press)),"), "and is sent by itself when the window ends: there is no Save button");
 }

@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 
 import {
   applyDeskOutcomes,
+  approvePays,
   approvePress,
   claimsInLane,
   DEFAULT_DESK_VIEW,
@@ -34,6 +35,8 @@ import {
   readyBatch,
   reasonChips,
   reduceBlocked,
+  rejectSelection,
+  selectionBatch,
   tripDayCount,
   typedAmount,
   waitLabel,
@@ -147,6 +150,34 @@ export function runExpenseDeskViewTests() {
   assert.ok(batch.decisions.every((decision) => decision.action === "approve" && decision.approvedAmount === undefined));
   assert.deepEqual({ count: readyBatch(claims, 1).count, left: readyBatch(claims, 1).left }, { count: 1, left: 2 }, "a lane over the limit says how many are left");
 
+  // 3b. Several claims in one press: the ticked rows.
+  const lane = [yourCall(3, { preCut: cut }), yourCall(4, { holdReason: "No departure photo yet.", preCut: cut }), yourCall(7, { total: 120, payable: 120 })];
+  assert.equal(approvePays(lane[0]), 300, "a row's Approve pays the cut its button names");
+  assert.equal(approvePays(lane[1]), 500, "a trip that would be held pays in full: it cannot carry a cut");
+  const ticked = selectionBatch([...lane, claim(8, { standing: "rejected" })], new Set([3, 4, 8, 99]), 100);
+  assert.deepEqual(ticked.claims.map((entry) => entry.requestId), [3, 4], "HEADLINE: only a claim still waiting on screen is in the batch — a tick on a decided or vanished claim is forgotten");
+  assert.deepEqual(
+    ticked.approve,
+    [
+      { action: "approve", approvedAmount: 300, requestId: 3, revision: "rev-3" },
+      { action: "approve", requestId: 4, revision: "rev-4" },
+    ],
+    "HEADLINE: Approve N sends each row's own Approve — a batch never pays an idle day in full",
+  );
+  assert.deepEqual({ count: ticked.count, left: ticked.left, value: ticked.value }, { count: 2, left: 0, value: 800 }, "and the button's figure is the sum of what those buttons say");
+  const capped = selectionBatch(lane, new Set([3, 4, 7]), 2);
+  assert.deepEqual({ count: capped.count, left: capped.left }, { count: 2, left: 1 }, "over one request's limit, the rest stay ticked");
+  assert.deepEqual(selectionBatch(lane, new Set(), 100).approve, [], "nothing ticked, nothing sent");
+  assert.deepEqual(rejectSelection(ticked.claims, "   "), [], "HEADLINE: Reject N sends nothing without a written reason");
+  assert.deepEqual(
+    rejectSelection(ticked.claims, "  The same trip was claimed twice.  "),
+    [
+      { action: "reject", comment: "The same trip was claimed twice.", requestId: 3, revision: "rev-3" },
+      { action: "reject", comment: "The same trip was claimed twice.", requestId: 4, revision: "rev-4" },
+    ],
+    "every ticked claim carries the one reason, and the version he saw",
+  );
+
   assert.equal(typedAmount("2,430.50"), 2430.5);
   assert.equal(typedAmount(" EGP 300 "), 300);
   for (const bad of ["", "0", "-5", "12.345", "abc", "1e3", "300 EGP x"]) assert.equal(typedAmount(bad), null, `"${bad}" is no amount`);
@@ -219,6 +250,7 @@ export function runExpenseDeskViewTests() {
     approve: "Approve",
     approveAll: "Approve all",
     changeAmount: "Change amount",
+    clearTicks: "Clear",
     keepFull: "Keep full claim",
     open: "Open",
     payInFull: "Pay in full",
@@ -230,4 +262,6 @@ export function runExpenseDeskViewTests() {
   assert.equal(pressLabel([approvePress(claims[0])], claims), "Hossam Adel: approved");
   assert.equal(pressLabel([{ action: "reject", requestId: 3, revision: "r" }], claims), "Mona Samir: rejected");
   assert.equal(pressLabel(batch.decisions, claims), "2 claims approved");
+  assert.equal(pressLabel(rejectSelection(ticked.claims, "Twice."), ticked.claims), "2 claims rejected", "HEADLINE: the Undo bar never says approved over a batch of rejections");
+  assert.equal(pressLabel([approvePress(claims[0]), { action: "reject", requestId: 3, revision: "r" }], claims), "2 claims decided");
 }

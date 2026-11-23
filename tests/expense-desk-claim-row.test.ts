@@ -227,6 +227,14 @@ export function runExpenseDeskClaimRowTests() {
   assert.equal(stored.departure.kmFromArrival, 0.4);
   assert.equal(stored.attachments, 3);
   assert.equal(stored.fieldWork, null);
+  assert.equal(stored.noTicketFareLine, null);
+  assert.equal(claimFactsFromRow(row({ no_ticket_fare: { line: " Cairo → Asyut · EGP 420 there and back " } }), { today: TODAY }).noTicketFareLine, "Cairo → Asyut · EGP 420 there and back", "the stored fare's own line reaches the ticket check");
+  // What the old system's record is read against, for a trip from before Phoenix CRM.
+  assert.deepEqual(
+    buildDeskClaim({ context: { today: TODAY }, ledger: null, now: NOW, row: row({ am_workload: 2, pharmacy_workload: 1, pm_workload: 5, workload_match_status: "matched" }) }).declaredWorkload,
+    { am: 2, matchStatus: "matched", pharmacies: 1, pm: 5 },
+    "HEADLINE: the claim carries the declared visits and the verdict stamped at submission",
+  );
   assert.equal(receiptPrintsOfRow(row({ ticket_attachment_metadata: [{ name: "go.jpg", size: 1200 }] })).length, 1);
 
   assert.equal(claimInWords(row(), "approved"), "the approved claim of 9 Nov");

@@ -4,6 +4,7 @@ import { Check, HelpCircle, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { type AttachmentsData, TripAttachments } from "@/components/outstation/trip-attachments";
+import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
 import { CrmLoadError, CrmLoading, CrmNote } from "@/components/phoenix-crm/ui";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import type { DeskNotice } from "@/lib/outstation/approvals/press-queue";
@@ -40,6 +41,10 @@ const CHECK_LOOK: Record<ClaimCheck["answer"], { icon: typeof Check; text: strin
  * trip day by day, each day on its own map; the photos and the tickets. The decision is pinned at
  * the foot and is the row's own (desk-decision.tsx). Mounted once per trip (keyed by the reviewer),
  * so a new trip starts empty and a slow answer for the trip before can never be drawn on this one.
+ *
+ * A trip with days from before its team moved to Phoenix CRM also draws the OLD system's record of
+ * those days (the shared verified-workload panel, which reads it in one more request) — otherwise a
+ * claim for an October trip would open with no field work on it at all.
  *
  * A reader who is not the approver gets the claim and its checks; the photos and the Phoenix CRM
  * reading are withheld by the server and the page says so, rather than drawing empty sections.
@@ -113,6 +118,9 @@ export function DeskTripFile({
   const claim = file.claim;
   const waiting = claim.standing === "waiting";
   const cut = waiting && claim.preCut && !claim.holdReason ? claim.preCut : null;
+  // Days Phoenix CRM cannot speak for: before the team moved to it, or a trip it holds no person for.
+  const daysBeforePhoenix = file.crm?.reading?.days.filter((day) => day.beforePhoenix).length ?? 0;
+  const oldRecord = claim.declaredWorkload && (daysBeforePhoenix > 0 || (file.crm !== null && !file.crm.reading)) ? claim.declaredWorkload : null;
 
   return (
     <>
@@ -236,6 +244,27 @@ export function DeskTripFile({
                 {file.crm && !file.crm.reading ? <p className="mb-2 text-sm text-slate-600">Phoenix CRM holds no employee or no dates to read this trip against, so only the photos and stops are drawn.</p> : null}
                 <DeskDays attachments={file.attachments} reading={file.crm?.reading ?? null} tripEnd={claim.tripEnd} tripStart={claim.tripStart} />
               </Sheet>
+              {oldRecord ? (
+                <Sheet name="old-record" title="Before Phoenix CRM: the old system's record">
+                  <p className="mb-2 min-w-0 break-words text-sm text-slate-600">
+                    {daysBeforePhoenix > 0
+                      ? `${formatNumberValue(daysBeforePhoenix)} ${daysBeforePhoenix === 1 ? "day of this trip was" : "days of this trip were"} before this team moved to Phoenix CRM.`
+                      : "Phoenix CRM has no reading of this trip."}{" "}
+                    These are the visits and check-ins the old system holds for it.
+                  </p>
+                  <TripWorkloadEvidencePanel
+                    alwaysOpen
+                    dayOrder="data-first"
+                    declaredAm={oldRecord.am}
+                    declaredPharmacies={oldRecord.pharmacies}
+                    declaredPm={oldRecord.pm}
+                    hrId={claim.hrId}
+                    storedMatchStatus={oldRecord.matchStatus}
+                    tripEndDate={claim.tripEnd}
+                    tripStartDate={claim.tripStart}
+                  />
+                </Sheet>
+              ) : null}
               <Sheet name="attachments" title="Photos and tickets">
                 <TripAttachments data={file.attachments} onChanged={readAgain} tripId={claim.tripId} />
               </Sheet>

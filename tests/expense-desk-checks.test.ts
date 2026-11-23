@@ -150,6 +150,12 @@ export function runExpenseDeskChecksTests() {
   assert.equal(answerOf(facts({ transportation: "train" }), "ticket")?.answer, "fail");
   assert.equal(answerOf(facts({ attachments: 2, transportation: "train" }), "ticket")?.sentence, "2 ticket photos attached.");
   assert.equal(answerOf(facts({ hasNoTicketFare: true, transportation: "no_ticket" }), "ticket")?.answer, "pass");
+  assert.equal(
+    answerOf(facts({ hasNoTicketFare: true, noTicketFareLine: " Cairo → Asyut · EGP 420 there and back ", transportation: "no_ticket" }), "ticket")?.sentence,
+    "No ticket: priced at the fixed train fare. Cairo → Asyut · EGP 420 there and back",
+    "HEADLINE: a no-ticket trip says the stations and the fare it was priced on",
+  );
+  assert.equal(answerOf(facts({ noTicketFareLine: "Cairo → Asyut", transportation: "no_ticket" }), "ticket")?.answer, "unknown", "a line with no fare on file proves nothing");
 
   // 5. The one reason: what he rejects for first.
   const many = judgeClaim(

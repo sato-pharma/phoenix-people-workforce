@@ -101,6 +101,8 @@ export type ClaimCheckFacts = {
   /** Null when Phoenix CRM could not be read — never the same as "nothing there". */
   fieldWork: FieldWorkReading | null;
   hasNoTicketFare: boolean;
+  /** The stored fare's own line — the stations and the fixed fare — so the approver sees what it was priced on. */
+  noTicketFareLine?: string | null;
   role: string | null;
   /** Today in Cairo, `YYYY-MM-DD`. */
   today: string;
@@ -275,9 +277,9 @@ function ticketCheck(facts: ClaimCheckFacts): ClaimCheck | null {
   const transport = facts.transportation.trim().toLowerCase();
   if (transport === "car") return null;
   if (transport === "no_ticket") {
-    return facts.hasNoTicketFare
-      ? check("ticket", "pass", "No ticket: priced at the fixed train fare.")
-      : check("ticket", "unknown", "A no-ticket trip with no fixed fare on file.");
+    if (!facts.hasNoTicketFare) return check("ticket", "unknown", "A no-ticket trip with no fixed fare on file.");
+    const line = facts.noTicketFareLine?.trim();
+    return check("ticket", "pass", line ? `No ticket: priced at the fixed train fare. ${line}` : "No ticket: priced at the fixed train fare.");
   }
   if (facts.attachments > 0) return check("ticket", "pass", `${plural(facts.attachments, "ticket photo")} attached.`);
   if (transport === "train" || transport === "bus") {

@@ -56,6 +56,11 @@ export type DeskClaim = {
   approvedAmount: number | null;
   daysWaiting: number;
   decidedAt: string | null;
+  /**
+   * The visits the employee declared, and the verdict stamped at submission — what the old system's
+   * record is read against, for a trip with days before the team moved to Phoenix CRM.
+   */
+  declaredWorkload?: { am: number; matchStatus: string | null; pharmacies: number | null; pm: number } | null;
   employeeName: string;
   employeeNote: string | null;
   employeeRole: string | null;

@@ -32,6 +32,7 @@ export const DESK_WORDS = {
   approve: "Approve",
   approveAll: "Approve all",
   changeAmount: "Change amount",
+  clearTicks: "Clear",
   keepFull: "Keep full claim",
   open: "Open",
   payInFull: "Pay in full",
@@ -174,6 +175,46 @@ export function readyBatch(claims: ReadonlyArray<DeskClaim>, limit: number): { c
   };
 }
 
+/** What a waiting claim's own Approve pays: the idle-day cut where the button names one, else the claim. */
+export function approvePays(claim: DeskClaim): number {
+  return claim.preCut && !claim.holdReason ? claim.preCut.payable : claim.total;
+}
+
+export type DeskSelection = {
+  /** "Approve N": each ticked row's OWN Approve — a cut named on a row is the cut that is paid. */
+  approve: DeskDecisionRequest[];
+  claims: DeskClaim[];
+  count: number;
+  /** Ticked beyond one request's limit; they stay ticked for the next press. */
+  left: number;
+  /** What "Approve N" pays in all. */
+  value: number;
+};
+
+/**
+ * The ticked rows of a waiting lane, as one press. Only a claim still waiting on screen counts: a
+ * tick on a claim that was decided, or left the lane, is forgotten rather than sent. A batch never
+ * pays an idle day in full — it sends what each row's own Approve button says.
+ */
+export function selectionBatch(claims: ReadonlyArray<DeskClaim>, ticked: ReadonlySet<number>, limit: number): DeskSelection {
+  const chosen = claims.filter((claim) => claim.standing === "waiting" && ticked.has(claim.requestId));
+  const taken = chosen.slice(0, Math.max(0, limit));
+  return {
+    approve: taken.map((claim) => approvePress(claim)),
+    claims: taken,
+    count: taken.length,
+    left: chosen.length - taken.length,
+    value: money(taken.reduce((sum, claim) => sum + approvePays(claim), 0)),
+  };
+}
+
+/** What "Reject N" sends: every ticked claim with the ONE written reason. Nothing without a reason. */
+export function rejectSelection(claims: ReadonlyArray<DeskClaim>, reason: string): DeskDecisionRequest[] {
+  const comment = reason.trim();
+  if (!comment) return [];
+  return claims.map((claim) => ({ action: "reject" as const, comment, requestId: claim.requestId, revision: claim.revision }));
+}
+
 export type ReasonChip = { key: string; label: string; text: string };
 
 /**
@@ -281,7 +322,12 @@ export function deskTopLine(queue: Pick<DeskQueue, "overSevenDays" | "tiles">): 
 
 /** What the Undo bar says about a press that has not been sent yet. */
 export function pressLabel(decisions: ReadonlyArray<DeskDecisionRequest>, claims: ReadonlyArray<DeskClaim>): string {
-  if (decisions.length > 1) return `${decisions.length} claims approved`;
+  if (decisions.length > 1) {
+    // A batch says what was done to it — "approved" over a batch of rejections would be a lie
+    // sitting beside the Undo button.
+    const word = decisions.every((one) => one.action === "reject") ? "rejected" : decisions.every((one) => one.action !== "reject") ? "approved" : "decided";
+    return `${decisions.length} claims ${word}`;
+  }
   const [decision] = decisions;
   const name = claims.find((claim) => claim.requestId === decision?.requestId)?.employeeName ?? "The claim";
   if (decision?.action === "reject") return `${name}: rejected`;
