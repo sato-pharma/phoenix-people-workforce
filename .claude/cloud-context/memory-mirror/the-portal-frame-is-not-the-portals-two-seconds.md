@@ -1,6 +1,6 @@
 ---
 name: the-portal-frame-is-not-the-portals-two-seconds
-description: "Measured 23 Nov 2026 — every employee-portal page reads ~2 s in page_timings, but the portal frame costs ~0.1-0.2 s on production; the rest is the phone's connection and each page's own content. A docs fix to the private-calendar rule saying otherwise is PARKED on branch codex/portal-frame-speed."
+description: "Measured 23 Nov 2026 — every employee-portal page reads ~2 s in page_timings, but the portal frame costs ~0.1-0.2 s on production; the rest is the phone's connection and each page's own content. The private-calendar rule line saying otherwise was corrected in the Field CRM board speed PR (branch codex/field-crm-board-speed)."
 metadata:
   node_type: memory
   type: project
@@ -21,6 +21,5 @@ calls behind a function are listed by wrapping `fetch` in a script run on the sp
 Changing it anyway would have been unrequested work.
 
 **How to apply:** PR 723 merged a line in `.claude/rules/private-calendar.md` blaming the frame. The
-correction is committed on the pushed, PR-less branch `codex/portal-frame-speed` (commit c2f570a25 plus a
-mirror refresh). Carry it into the next PR that touches the private calendar or the portal, instead of
-opening a docs-only PR. Related: [[the-spare-laptop-was-reinstalled-2026-11-20]].
+correction (c2f570a25) rides in the Field CRM board speed PR, branch `codex/field-crm-board-speed`;
+the parked branch `codex/portal-frame-speed` holds nothing else. Related: [[the-spare-laptop-was-reinstalled-2026-11-20]].
