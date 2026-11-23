@@ -104,6 +104,14 @@ clinics, through the two routes a row's own Approve already posts to.
 approved by itself, the places in use, the buildings, the comparisons and the held full names are
 tabs. On a phone the tabs are one dropdown and a lane shows ten at a time.
 
+**On a phone a waiting place is closed until it is pressed.** The first build of the rebuild paged the
+lanes by ten and stopped there. Measured at 375 px in the preview of pull request 700 (23 Nov 2026) the
+page was still 50,990 px long, the first Approve sat 2,432 px down and one polyclinic ran 14,000 px,
+because every card drew its photographs, its evidence and its controls whole. A card now says who and
+what in a few lines (`place-checks/phone-fold.tsx`), and a press opens the same evidence and the same
+controls under it. Nothing is drawn a second way, so there is still one way to decide. A closed card's
+photographs are not fetched. The desktop table is unchanged.
+
 **The address remembers the view** (`place-check-address.ts`). The tab, the filters and how far a
 list was opened are in the address, so a reload, the Back button and a shared link open the same
 view. No person's name is written to it: the rep, the decider and the search box stay in the

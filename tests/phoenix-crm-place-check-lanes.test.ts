@@ -574,6 +574,23 @@ function runWordingAndFileTests() {
   for (const list of lists) {
     assert.ok(code(`src/components/phoenix-crm/${list}.tsx`).includes("CrmCardsOnPhone"), `🔴 ${list}.tsx is drawn on the board and has no cards for a phone`);
   }
+  // 🔴 A WAITING PLACE ON A PHONE IS CLOSED UNTIL IT IS PRESSED. Measured at 375 px in the preview of the
+  // rebuild (23 Nov 2026): the page was 50,990 px long and one polyclinic ran 14,000 px, because every
+  // card drew its photographs, evidence and controls whole. The two lists the lanes draw fold each card.
+  const fold = code(`${dir}/phone-fold.tsx`);
+  assert.ok(fold.includes("<details") && fold.includes("<summary") && fold.includes("{children}"), "HEADLINE: the fold is the browser's own details: closed, and what is inside is drawn once");
+  assert.ok(fold.includes("min-h-11"), "its press target is 44px tall");
+  const clinicCards = code("src/components/phoenix-crm/validation-review-queue.tsx");
+  const buildingCards = code("src/components/phoenix-crm/shared-place-list.tsx");
+  for (const [name, source] of [["validation-review-queue", clinicCards], ["shared-place-list", buildingCards]] as const) {
+    const cards = source.slice(source.indexOf("<CrmCardsOnPhone>"), source.indexOf("</CrmCardsOnPhone>"));
+    assert.ok(cards.includes("<PhoneFold"), `HEADLINE: ${name}.tsx folds each phone card`);
+    assert.ok(!source.slice(source.indexOf("</CrmCardsOnPhone>")).includes("<PhoneFold"), `${name}.tsx: the desktop table is never folded`);
+    assert.ok(cards.indexOf("<PhoneFold") < cards.indexOf("<LastColumn"), `HEADLINE: ${name}.tsx keeps the decision controls inside the fold, so there is one way to decide`);
+    assert.equal(cards.split("<LastColumn").length - 1, 1, `${name}.tsx: the controls are drawn once per card`);
+  }
+  assert.ok(clinicCards.includes('{bulk && section === "waiting" ? ('), "HEADLINE: the system's word on a closed card is the Super Admin's alone, and only on a row that waits");
+  assert.ok(buildingCards.includes("summary={<VenueHeader mode={mode} row={row} />}"), "a closed building says its name, its state and who captured it");
   assert.ok(
     code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",

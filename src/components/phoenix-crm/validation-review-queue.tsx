@@ -24,10 +24,11 @@ import { approvalOutcome } from "@/components/phoenix-crm/place-check-done";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { CrmCardsOnPhone, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { PhoneFold } from "@/components/phoenix-crm/place-checks/phone-fold";
+import { CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { Decision, LastColumn } from "@/components/phoenix-crm/validation-review-queue-decision";
 import { Evidence, PHOTO_CLASS, photoAlt, Who } from "@/components/phoenix-crm/validation-review-queue-evidence";
-import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
+import { adviseOnReview, PLACE_CHECK_ADVICE_LABEL, type PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
 import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import type { PlaceNoteIndex, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 
@@ -40,6 +41,9 @@ import type { PlaceNoteIndex, ValidationReviewRow } from "@/lib/phoenix-crm/view
  * `decided` takes a settled decision BACK — each action filtered to the rows the server says it can
  * still reach (`refusable` / `restorable`), with the count it will answer in the button.
  */
+/** The colour of the system's word on a closed phone card: the same three the full advice block wears. */
+const ADVICE_TONE: Record<PlaceCheckAdviceKind, PillTone> = { approve: "good", look: "warn", reject: "bad" };
+
 const bulkDecide = (row: ValidationReviewRow, decision: "approve" | "reject", note: string, reason: string) =>
   crmPost<unknown>(
     "/api/phoenix-crm/validation-reviews",
@@ -139,13 +143,28 @@ export function ValidationReviewQueue({
       ) : null}
       <CrmCardsOnPhone>
         {rows.map((row) => (
-          <div key={row.reviewId} className="space-y-3 px-4 py-4">
-            {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
-            <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
-            <Who row={row} />
-            <Evidence row={row} />
-            <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
-          </div>
+          // Closed until pressed: who and what, then the photograph, the evidence and the controls under it.
+          <PhoneFold
+            key={row.reviewId}
+            summary={
+              <>
+                <Who row={row} />
+                {/* The system's word is the Super Admin's alone, and only on a row that still waits. */}
+                {bulk && section === "waiting" ? (
+                  <div className="mt-1.5">
+                    <CrmPill tone={ADVICE_TONE[adviseOnReview(row).kind]}>System: {PLACE_CHECK_ADVICE_LABEL[adviseOnReview(row).kind]}</CrmPill>
+                  </div>
+                ) : null}
+              </>
+            }
+          >
+            <div className="space-y-3 px-4 pb-4">
+              {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
+              <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+              <Evidence row={row} />
+              <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
+            </div>
+          </PhoneFold>
         ))}
       </CrmCardsOnPhone>
       <CrmTable columns={["30%", "18%", "28%", "24%"]}>

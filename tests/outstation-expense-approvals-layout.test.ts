@@ -148,6 +148,12 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.equal((parts.match(/\{displayPlace\(claim\.(?:from|to)\)\}/g) ?? []).length, 2, "HEADLINE: From and To in words, never the plus-code prefix");
   assert.ok(list.includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "HEADLINE: the phone card prints the place in words too");
   assert.ok(history.includes('<bdi dir="auto">{displayPlace(claim.to)}</bdi>'), "and so does History's");
+  // 🔴 A phone card says the other checks in ONE line. A tag each, one per line, made a Your call card
+  // 300 px tall at 375 (measured in the preview of pull request 700, 23 Nov 2026).
+  assert.ok(list.includes("<FoundCell claim={claim} compact />"), "HEADLINE: the phone card asks for the one-line form of the other checks");
+  assert.ok(list.includes("<FoundCell claim={claim} />"), "and the desktop row keeps a tag for each");
+  assert.ok(parts.includes("{compact && others.length > 0 ? (") && parts.includes("{!compact && others.length > 0 ? ("), "HEADLINE: one line or the tags, never both");
+  assert.ok(parts.includes('Not checked: {notChecked.join(", ")}') && parts.includes('Also failed: {failed.join(", ")}'), "the line tells a failed check from one that could not be made");
   assert.match(history, /md:hidden[\s\S]*?<CrmTable /, "History is a fitted table with cards on a phone");
   assert.ok(parts.includes("${formatNumberValue(days)} days`"), "HEADLINE: a trip over more than one day says how many days, beside its dates");
   // The heading of the list is one line: the lane, its count, its meaning, the ticks and the lane's press.

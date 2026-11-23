@@ -34,6 +34,7 @@ import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decid
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { PhoneFold } from "@/components/phoenix-crm/place-checks/phone-fold";
 import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
 import { Decision, LastColumn } from "@/components/phoenix-crm/shared-place-list-decision";
 import { SignPhoto, signboardText, TimetablePhoto, VenueHeader, Where } from "@/components/phoenix-crm/shared-place-list-evidence";
@@ -128,12 +129,11 @@ export function SharedPlaceList({
       ) : null}
       <CrmCardsOnPhone>
         {groups.map(({ customers, total, venue: row }) => (
-          <div key={row.sharedPlaceId} className="space-y-3 border-t-4 border-slate-200 first:border-t-0">
-            <div className="space-y-4 px-4 pt-4">
-              <div className="flex min-w-0 items-start gap-3">
-                {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
-                <VenueHeader mode={mode} row={row} />
-              </div>
+          // Closed until pressed: the building's name, its state and who captured it; its photographs, its
+          // decision and everybody seated in it open under it (one building ran 14,000 px drawn whole).
+          <PhoneFold key={row.sharedPlaceId} summary={<VenueHeader mode={mode} row={row} />}>
+            <div className="space-y-4 px-4 pt-1">
+              {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                 <SignPhoto headed row={row} />
                 <TimetablePhoto customers={customers} headed mode={mode} row={row} />
@@ -141,10 +141,10 @@ export function SharedPlaceList({
               <Where row={row} />
               <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="cards" />
             </div>
-            <div className="border-t border-slate-100 bg-slate-50/60 pb-2">
+            <div className="mt-3 border-t border-slate-100 bg-slate-50/60 pb-2">
               <SeatedCustomers customers={customers} layout="cards" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
             </div>
-          </div>
+          </PhoneFold>
         ))}
       </CrmCardsOnPhone>
       <CrmTable columns={["34%", "17%", "17%", "15%", "17%"]}>

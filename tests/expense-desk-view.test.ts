@@ -34,6 +34,7 @@ import {
   paysIdleDayInFull,
   pressLabel,
   readyBatch,
+  otherFindings,
   reasonChips,
   reduceBlocked,
   rejectSelection,
@@ -273,6 +274,12 @@ export function runExpenseDeskViewTests() {
   assert.deepEqual(reasonChips(many).map((chip) => chip.key), ["duplicate", "ticket"], "a check that could not be read is never offered as a reason");
   assert.equal(reasonChips(many)[0].text, "This trip was already claimed. Same day and destination as the approved claim of 22 Oct.");
   for (const chip of [...reasonChips(many), ...reasonChips(yourCall(3))]) assert.match(chip.text, /^[A-Z0-9].*\.$/, "every chip is a finished sentence");
+
+  // 5b. The other findings a phone card prints as ONE line (five stacked tags made a card 300 px tall).
+  assert.deepEqual(otherFindings(many), { failed: ["duplicate", "ticket"], notChecked: ["route"] }, "HEADLINE: failed and not-checked are told apart, a passed check is never listed");
+  const worn = claim(8, { verdict: { ...many.verdict, reason: "A train trip with no ticket attached." } });
+  assert.deepEqual(otherFindings(worn), { failed: ["duplicate"], notChecked: ["route"] }, "HEADLINE: the check whose sentence the row already wears is not said twice");
+  assert.deepEqual(otherFindings(claim(1)), { failed: [], notChecked: [] }, "a Ready claim has none");
 
   // 6. One vocabulary.
   assert.deepEqual(DESK_WORDS, {

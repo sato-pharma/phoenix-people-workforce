@@ -261,6 +261,7 @@ Each of these was on the 7 Nov screen and is not on the desk.
 | The Save button, the unsaved count and the draft kept in the browser | A press saves after six seconds of Undo. |
 | Nine tabs and six tiles | Three lanes and six tiles, each counting one state. |
 | On a phone the first claim began 904 px down, under the tiles (measured at 375, 23 Nov 2026) | On a phone the count, the lanes and the list come first; the tiles follow the list. A desktop is unchanged. |
+| On a phone a Your call card ran up to 300 px: every other check that failed or could not be made was a tag on its own line (measured at 375 in the preview of pull request 700, 23 Nov 2026) | A phone card says them in one line ("Also failed: … · Not checked: …", `otherFindings` in `desk-view.ts`). The desktop row keeps a tag for each. |
 | The "By employee" roll-up tab | The search box narrows by employee. |
 | "Unapprove back to waiting" | A decided claim is not reopened here. |
 | Biggest first, and the order remembered for each reviewer | Oldest first, always. |

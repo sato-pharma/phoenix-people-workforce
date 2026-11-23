@@ -195,7 +195,7 @@ function DeskCard({ canDecide, claim, onOpen, onPress, onTick, ticked }: RowProp
       </p>
       {claim.verdict.lane === "your_call" || claim.holdReason ? (
         <div className="mt-1 min-w-0">
-          <FoundCell claim={claim} />
+          <FoundCell claim={claim} compact />
         </div>
       ) : null}
       <div className="mt-2 min-w-0">
