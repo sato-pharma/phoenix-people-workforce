@@ -113,6 +113,8 @@ export type DeskDistance = {
   capturedKm: number | null;
   /** Road km from home to the first double visit; null when there is none or it was not measured. */
   visitKm: number | null;
+  /** The trip minimum the distances are held against, so a km under it never prints rounded up to it. */
+  minimumKm: number | null;
   /** "with Ahmed Ali on 18 Nov"; null when there is no visit. */
   visitWords: string | null;
 };

@@ -38,6 +38,7 @@ import {
   type DoubleVisitRow,
   type FirstDoubleVisit,
 } from "@/lib/outstation/dm-double-visit-distance";
+import { tripKmText } from "@/lib/outstation/trip-km";
 import { resolveNoTicketFare } from "@/lib/outstation/train-fare";
 import { OUTSTATION_UNDECIDED_STATUSES } from "@/lib/outstation/undecided-claim";
 
@@ -249,6 +250,19 @@ export function runDmDoubleVisitDistanceTests() {
   const fail = distanceBasisVerdict({ basis: short, waiting: true });
   assert.equal(fail?.answer, "fail", "a first double visit under the minimum distance fails — flagged for the approver, never refused");
   assert.match(fail?.sentence ?? "", /2 km from home, under the 40 km minimum/);
+  // A km just under the minimum never reads rounded up to it (claim 335, 23 Nov 2026: 59.75 km printed as
+  // "60 km from home, under the 60 km minimum"). Whole km everywhere else.
+  const justUnder: DistanceBasis = { ...basis, visit: basis.visit ? { ...basis.visit, km: 39.75 } : null };
+  const justUnderVerdict = distanceBasisVerdict({ basis: justUnder, waiting: true });
+  assert.equal(justUnderVerdict?.answer, "fail", "39.75 km is under the 40 km minimum");
+  assert.match(justUnderVerdict?.sentence ?? "", /is 39\.75 km from home, under the 40 km minimum/, "the exact km, never rounded up to the minimum");
+  assert.doesNotMatch(justUnderVerdict?.sentence ?? "", /is 40 km from home/, "a trip under the minimum never prints AS the minimum");
+  assert.equal(tripKmText(59.75, 60), "59.75 km", "the opened trip's figure keeps the shortfall too");
+  assert.equal(tripKmText(59.999, 60), "59.99 km", "cut, never rounded, so it stays under");
+  assert.equal(tripKmText(55.97, 60), "56 km", "whole km when rounding stays under the minimum");
+  assert.equal(tripKmText(60.4, 60), "60 km", "whole km at or over the minimum");
+  assert.equal(tripKmText(59.75, null), "60 km", "no minimum, nothing to hide: whole km");
+  assert.equal(tripKmText(null, 60), "an unknown distance");
   const noVisit = distanceBasisVerdict({ basis: none.write.distance_basis, waiting: true });
   assert.equal(noVisit?.answer, "unknown");
   assert.equal(noVisit?.sentence, "No double visit on this trip. Priced on the 61 km from home to the capture point.");
@@ -272,7 +286,7 @@ export function runDmDoubleVisitDistanceTests() {
     expense_type: "traveling",
     ...over,
   });
-  assert.deepEqual(deskDistanceOfRow(deskRow() as never), { basis: "first_double_visit", capturedKm: 61, visitKm: 46, visitWords: "with Esraa Fotooh on 18 Nov" });
+  assert.deepEqual(deskDistanceOfRow(deskRow() as never), { basis: "first_double_visit", capturedKm: 61, visitKm: 46, minimumKm: 40, visitWords: "with Esraa Fotooh on 18 Nov" });
   assert.equal(deskDistanceOfRow(deskRow({ employee_role: "Medical Rep" }) as never), null);
   assert.equal(deskDistanceOfRow(deskRow({ expense_type: "meeting" }) as never), null);
   assert.equal(deskDistanceOfRow(deskRow({ distance_basis: null }) as never), null);
@@ -281,6 +295,8 @@ export function runDmDoubleVisitDistanceTests() {
   assert.match(tripFile, /Home to the capture point/, "the opened trip shows home → capture point");
   assert.match(tripFile, /home to the first double visit/i, "beside home → the first double visit");
   assert.match(tripFile, /No double visit on this trip/);
+  assert.match(tripFile, /tripKmText\(km, minimumKm\)/, "the opened trip prints its km through the one rule that never rounds up to the minimum");
+  assert.doesNotMatch(tripFile, /Math\.round\(km\)/, "no km rounded on its own in the opened trip");
 
   // ── 8. The wiring ───────────────────────────────────────────────────────────────────────────
   const service = read("src/lib/outstation/service.ts");
