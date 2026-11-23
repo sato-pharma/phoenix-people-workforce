@@ -502,7 +502,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
             viewer.config.settings,
           ),
           loadExemptVisitIds(unplannedRows.map((row) => String(row.visit_id))),
-        ]),
+          // A tuple, so each of the three keeps its own type inside the outer wave.
+        ] as const),
       ),
       // What the request cards say beside their Approve. A name is display only, so the rows alone decide it.
       requestRowsRead.then((rows) =>
