@@ -78,6 +78,7 @@ function queueOf(claims: DeskClaim[]): DeskQueue {
     agreement: { ready: { approved: 0, decided: 0 }, windowDays: 30, yourCall: { approved: 0, decided: 0 } },
     canDecide: true,
     claims,
+    decided: [],
     overSevenDays: claims.filter((one) => one.standing === "waiting" && one.daysWaiting > 7).length,
     tiles: countTripStandings(claims),
     unavailable: [],

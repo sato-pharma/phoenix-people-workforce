@@ -55,12 +55,34 @@ export function DeskTopLine({ onToggleOld, overOnly, queue }: { onToggleOld: () 
   );
 }
 
-export function DeskTiles({ className, onOpen, queue }: { className?: string; onOpen: (standing: TripStanding) => void; queue: DeskQueue }) {
+/**
+ * `tiles` are what the cards show: the server's own count, or the same count under the filters
+ * (`filteredTiles`, owner, 24 Nov 2026: "make the key cards in expense approvals follow the filter and
+ * show the real filtered count"). `filterWords` says what a narrowed card counts; null when nothing is filtered.
+ */
+export function DeskTiles({
+  className,
+  filterWords,
+  onOpen,
+  queue,
+  tiles,
+}: {
+  className?: string;
+  filterWords: string | null;
+  onOpen: (standing: TripStanding) => void;
+  queue: DeskQueue;
+  tiles: DeskQueue["tiles"];
+}) {
   return (
-    <div className={cn("min-w-0", className)} data-desk-tiles>
+    <div className={cn("min-w-0", className)} data-desk-tiles data-tiles-filtered={filterWords ? "true" : undefined}>
+      {filterWords ? (
+        <p className="mb-1.5 min-w-0 break-words text-xs font-bold text-orange-800" data-tiles-filter-words>
+          {filterWords}
+        </p>
+      ) : null}
       <div className="grid min-w-0 grid-cols-2 border border-slate-200 bg-white sm:grid-cols-3 xl:grid-cols-6">
         {TRIP_STANDINGS.map((standing) => {
-          const tile = queue.tiles[standing];
+          const tile = tiles[standing];
           return (
             <button
               aria-label={`${TRIP_STANDING_LABEL[standing]}: ${tile.count}. ${TRIP_STANDING_MEANING[standing]}`}

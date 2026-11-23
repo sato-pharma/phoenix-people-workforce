@@ -68,12 +68,12 @@ export const DESK_CLAIM_COLUMNS = [
 ].join(", ");
 
 /**
- * What the tiles, the duplicate check, the odometer chain and the agreement meter need of a DECIDED
+ * What the tiles (and their filters: the name, kind and trip dates), the duplicate check, the odometer chain and the agreement meter need of a DECIDED
  * claim. The two odometer readings are read out of the photo metadata by path, so the rest of that
  * JSON (positions, retakes, summaries) is not pulled for every claim ever decided.
  */
 export const DECIDED_CLAIM_COLUMNS = [
-  "id", "status", "created_at", "updated_at", "trip_start_date", "trip_end_date", "employee_hr_id",
+  "id", "status", "created_at", "updated_at", "trip_start_date", "trip_end_date", "employee_hr_id", "employee_name",
   "to_label", "to_area", "to_city", "captured_latitude", "captured_longitude", "expense_type",
   "go_ticket_amount", "return_ticket_amount", "other_amount", "report_other_amount", "ticket_attachment_metadata",
   "transportation_type", "distance_km", "distance_from_residence_km",

@@ -134,11 +134,20 @@ export type DeskAgreement = {
   windowDays: number;
 };
 
+/** One trip as the tiles count it: where it stands, what it pays, and what the filters read. */
+export type DeskTally = Pick<DeskClaim, "employeeName" | "hrId" | "kind" | "payable" | "requestId" | "standing" | "tripEnd" | "tripStart">;
+
 export type DeskQueue = {
   agreement: DeskAgreement;
   /** Could the caller decide, or only read? The CEO reads. */
   canDecide: boolean;
   claims: DeskClaim[];
+  /**
+   * Every DECIDED trip the tiles count, one slim line each, so the tiles can follow the filters
+   * (owner, 24 Nov 2026: "make the key cards in expense approvals follow the filter and show the
+   * real filtered count"). Unfiltered, they and the waiting claims add up to `tiles` exactly.
+   */
+  decided: DeskTally[];
   /** Sources that could not be read; the page names them rather than showing a clean pass. */
   unavailable: string[];
   /** How many waiting claims are older than seven days. */
