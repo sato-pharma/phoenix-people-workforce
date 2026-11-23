@@ -401,7 +401,8 @@ async function cleanup() {
     await safeDeleteIlike("outstation_expense_reports", "file_name", fileName);
   }
   await safeDelete("outstation_location_audit_logs", "expense_request_id", Array.from(tracked.outstationRequestIds));
-  await safeDelete("outstation_expense_requests", "id", Array.from(tracked.outstationRequestIds));
+  // 🔴 The fixture expense requests are kept: an expense request is never deleted (owner, 24 Nov 2026), and the
+  // trigger phx_outstation_requests_never_deleted refuses the DELETE. Reject a fixture request instead.
   await safeDelete("sales_audit_logs", "batch_id", Array.from(tracked.salesBatchIds));
   await safeDelete("sales_records", "batch_id", Array.from(tracked.salesBatchIds));
   await safeDelete("sales_import_batches", "id", Array.from(tracked.salesBatchIds));

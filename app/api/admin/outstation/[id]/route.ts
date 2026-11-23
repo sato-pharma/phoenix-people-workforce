@@ -8,9 +8,9 @@ import {
   isOutstationClaimChangedError,
 } from "@/lib/outstation/claim-revision";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
+import { outstationRequestNeverDeletedBody } from "@/lib/outstation/never-delete";
 import {
   approveOutstationRequestForPayroll,
-  deleteOutstationRequestAsAdmin,
   getOutstationRequestById,
   rejectOutstationRequestAsAdmin,
 } from "@/lib/outstation/service";
@@ -251,41 +251,12 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  let access: Awaited<ReturnType<typeof resolveAccessContext>> | null = null;
-  let requestId: string | null = null;
-  try {
-    const csrfError = assertSameOriginMutation(request);
-    if (csrfError) return csrfError;
-
-    access = await resolveAccessContext(request);
-    await assertOutstationAdminAccess(access, "delete");
-    const { id: rawId } = await params;
-    requestId = rawId;
-    const id = parseOutstationRequestId(rawId);
-    if (id === null) {
-      return NextResponse.json(
-        { error: "invalid_outstation_id", message: "Request id is invalid." },
-        { status: 400 },
-      );
-    }
-
-    const deleted = await deleteOutstationRequestAsAdmin(id, access);
-
-    return NextResponse.json({
-      linkedPayroll: deleted.linkedPayroll,
-      message: "Outstation expense deleted.",
-      success: true,
-    });
-  } catch (error) {
-    const message = clientSafeErrorMessage(error, "Unable to delete outstation request.");
-    await recordOutstationDecisionFailure({ access, action: "delete", error, requestId });
-    return NextResponse.json(
-      { error: isForbiddenError(error) ? "forbidden" : "outstation_delete_failed", message, success: false },
-      { status: outstationWorkflowStatus(error) },
-    );
-  }
+/**
+ * 🔴 An expense request is never deleted (owner, 24 Nov 2026). A DELETE is refused, whoever sends it;
+ * reject the request instead. The database trigger phx_outstation_requests_never_deleted refuses it too.
+ */
+export async function DELETE(request: Request) {
+  const csrfError = assertSameOriginMutation(request);
+  if (csrfError) return csrfError;
+  return NextResponse.json(outstationRequestNeverDeletedBody(), { status: 405 });
 }

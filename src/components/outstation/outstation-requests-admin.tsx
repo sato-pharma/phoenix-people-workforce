@@ -16,7 +16,6 @@ import {
   PlusCircle,
   Search,
   ShieldAlert,
-  Trash2,
   XCircle,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -60,7 +59,8 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 
 
-type AdminAction = "approve" | "delete" | "fill-distance" | "reject";
+// 🔴 No "delete": an expense request is never deleted (owner, 24 Nov 2026); a rejected one stays as rejected.
+type AdminAction = "approve" | "fill-distance" | "reject";
 
 type ActionPayload = {
   error?: string;
@@ -197,7 +197,6 @@ function RequestActionButtons({
   actionRequestId,
   canApprove,
   onApprove,
-  onDelete,
   onReject,
   request,
 }: {
@@ -207,7 +206,6 @@ function RequestActionButtons({
   actionRequestId: number | null;
   canApprove: boolean;
   onApprove: (request: OutstationExpenseRequest) => void;
-  onDelete: (request: OutstationExpenseRequest) => void;
   onReject: (request: OutstationExpenseRequest) => void;
   request: OutstationExpenseRequest;
 }) {
@@ -215,7 +213,6 @@ function RequestActionButtons({
   // Show the outcome once the action has SETTLED, which is exactly when `busy` goes false.
   const settled = !busy && actionRequestId === request.id;
   const approving = busy && acting?.action === "approve";
-  const deleting = busy && acting?.action === "delete";
   const rejecting = busy && acting?.action === "reject";
   // Super-Admin override: a system-rejected request can still be accepted, and an
   // accepted one can still be rejected — only disable the action that matches the
@@ -244,19 +241,9 @@ function RequestActionButtons({
           {rejecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
           Reject
         </Button>
-        <Button
-          className="gap-2 rounded-xl border border-[#FECACA] bg-white px-4 py-2 text-xs font-black text-[#B91C1C] hover:bg-[#FEF2F2]"
-          disabled={!canApprove || busy}
-          onClick={() => onDelete(request)}
-          title="Delete this expense if it has not been imported into a payroll batch."
-          type="button"
-        >
-          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-          Delete expense
-        </Button>
       </div>
       {isAccepted ? (
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Accepted - payroll import lock checked before delete</p>
+        <p className="text-xs font-black uppercase tracking-[0.12em] text-[#047857]">Accepted for payroll</p>
       ) : null}
       {request.status.includes("reject") ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">Rejected by admin review</p>
@@ -277,7 +264,6 @@ function RequestDetailsModal({
   canApprove,
   onApprove,
   onClose,
-  onDelete,
   onReject,
   request,
 }: {
@@ -288,7 +274,6 @@ function RequestDetailsModal({
   canApprove: boolean;
   onApprove: (request: OutstationExpenseRequest) => void;
   onClose: () => void;
-  onDelete: (request: OutstationExpenseRequest) => void;
   onReject: (request: OutstationExpenseRequest) => void;
   request: OutstationExpenseRequest;
 }) {
@@ -634,7 +619,7 @@ function RequestDetailsModal({
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Admin decision</p>
-              <p className="mt-1 text-sm font-semibold text-phx-ink-2">Approve, reject, edit, or delete before the expense is added to payroll.</p>
+              <p className="mt-1 text-sm font-semibold text-phx-ink-2">Approve, reject or edit before the expense is added to payroll. A request is never deleted: a rejected one stays as rejected.</p>
             </div>
             <RequestActionButtons
               actionError={actionError}
@@ -643,7 +628,6 @@ function RequestDetailsModal({
               actionRequestId={actionRequestId}
               canApprove={canApprove}
               onApprove={onApprove}
-              onDelete={onDelete}
               onReject={onReject}
               request={request}
             />
@@ -969,35 +953,6 @@ export function OutstationRequestsAdmin({
       setActionError(
         error instanceof Error ? error.message : "Unable to recalculate the distance.",
       );
-    } finally {
-      setActing(null);
-    }
-  }
-
-  async function deleteRequest(request: OutstationExpenseRequest) {
-    const confirmed = window.confirm(
-      `Delete outstation expense ${request.id}? This permanently removes the request, stored evidence files, and any linked expense row that has not been imported into payroll.`,
-    );
-    if (!confirmed) return;
-
-    setActing({ action: "delete", id: request.id });
-    setActionRequestId(request.id);
-    setActionError(null);
-    setActionMessage(null);
-    try {
-      const response = await fetch(`/api/admin/outstation/${request.id}`, { method: "DELETE" });
-      const payload = await response.json().catch(() => null) as ActionPayload | null;
-      if (!response.ok) {
-        throw new Error(payload?.message ?? "Unable to delete outstation request.");
-      }
-
-      const remaining = localRequests.filter((candidate) => candidate.id !== request.id);
-      setLocalRequests(remaining);
-      if (selectedId === request.id) setSelectedId(remaining[0]?.id ?? null);
-      if (detailRequestId === request.id) setDetailRequestId(null);
-      setActionMessage(payload?.message ?? "Outstation expense deleted.");
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Unable to delete outstation request.");
     } finally {
       setActing(null);
     }
@@ -1393,7 +1348,6 @@ export function OutstationRequestsAdmin({
           canApprove={canApprove}
           onApprove={(request) => void approveRequest(request)}
           onClose={() => setDetailRequestId(null)}
-          onDelete={(request) => void deleteRequest(request)}
           onReject={(request) => void rejectRequest(request)}
           request={detailRequest}
         />

@@ -5,12 +5,6 @@ import {
   type AccessContext,
   type PermissionAction,
 } from "@/lib/auth/permissions";
-import {
-  deleteOutstationRequestAsAdmin,
-  getOutstationRequestById,
-} from "@/lib/outstation/service";
-import { outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mapping";
-import { isPayrollExpensesSchemaMissing } from "@/lib/outstation/expenses";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteVacationRequestAsAdmin } from "@/lib/vacation/service";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -18,9 +12,11 @@ import { hrIdForStorage } from "@/lib/hr-id";
 export const SYSTEM_CLEANUP_MAX_BULK = 25;
 const SYSTEM_CLEANUP_PAGE_SIZE = 1000;
 
+// 🔴 Expense requests are never deleted (owner, 24 Nov 2026, about 00:05 Cairo: "never delete any expense request. If
+// rejected, keep them as rejected, but never delete."). They left this center that night, and the
+// database refuses a delete of one (phx_outstation_requests_never_deleted).
 const systemCleanupModuleKeys = [
   "vacation_requests",
-  "outstation_expenses",
   "weekly_plans",
 ] as const;
 
@@ -117,7 +113,6 @@ type CleanupModuleDefinition = {
 };
 
 const moduleLabels: Record<SystemCleanupModuleKey, string> = {
-  outstation_expenses: "Outstation expenses",
   vacation_requests: "Vacation requests",
   weekly_plans: "Weekly/monthly plans",
 };
@@ -339,48 +334,6 @@ async function selectChildren(table: string, column: string, value: string | num
   return (data ?? []) as unknown as JsonRecord[];
 }
 
-async function getPayrollExpenseRows(tripIds: string[]) {
-  const byTrip = new Map<string, JsonRecord[]>();
-  if (tripIds.length === 0) return byTrip;
-
-  // PostgREST folds every .in() value into the request URL; batch since tripIds comes from an
-  // unbounded, fully-paginated scan of every outstation_expense_requests row ever created.
-  for (let i = 0; i < tripIds.length; i += 100) {
-    const batch = tripIds.slice(i, i + 100);
-    const { data, error } = await getSupabaseAdmin()
-      .from("outstation_expenses")
-      .select("id, imported_payroll_batch_id, imported_to_payroll_at, report_id, trip_id")
-      .in("trip_id", batch);
-
-    if (error) {
-      if (isPayrollExpensesSchemaMissing(error)) return byTrip;
-      throw new Error(error.message);
-    }
-
-    for (const row of (data ?? []) as unknown as JsonRecord[]) {
-      const tripId = text(row.trip_id);
-      if (!tripId) continue;
-      byTrip.set(tripId, [...(byTrip.get(tripId) ?? []), row]);
-    }
-  }
-  return byTrip;
-}
-
-function payrollLockState(payrollRows: JsonRecord[]) {
-  const locked = payrollRows.some(
-    (row) => row.imported_payroll_batch_id != null || row.imported_to_payroll_at != null,
-  );
-  return locked
-    ? {
-        blockReason: "This outstation expense is already linked to an imported payroll batch.",
-        safetyState: "payroll_locked" as const,
-      }
-    : {
-        blockReason: null,
-        safetyState: "safe" as const,
-      };
-}
-
 function vacationRecord(row: JsonRecord): SystemCleanupRecord {
   const startDate = dateOnly(row.start_date);
   const endDate = dateOnly(row.end_date);
@@ -446,86 +399,6 @@ async function loadVacationCleanupRecord(recordId: string): Promise<LoadedCleanu
     events: events.length,
     evidenceReviews: evidenceReviews.length,
     requestTable: "v2_vacation_requests",
-  };
-
-  return {
-    ...record,
-    impactSummary,
-    snapshot,
-  };
-}
-
-function outstationRecord(row: JsonRecord, payrollRows: JsonRecord[] = []): SystemCleanupRecord {
-  const tripId = outstationPayrollTripId(text(row.id));
-  const { blockReason, safetyState } = payrollLockState(payrollRows);
-  const startDate = dateOnly(row.trip_start_date);
-  const endDate = dateOnly(row.trip_end_date);
-  const linkedPayrollRows = payrollRows.length;
-
-  return {
-    blockReason,
-    canDelete: safetyState === "safe",
-    createdAt: isoOrNull(row.created_at),
-    dateLabel: startDate && endDate ? `${startDate} to ${endDate}` : startDate || endDate || "No trip date",
-    employeeHrId: nullableText(row.employee_hr_id),
-    employeeName: nullableText(row.employee_name),
-    impact: [
-      "Delete outstation expense request",
-      "Remove evidence/ticket attachments through existing outstation service",
-      linkedPayrollRows > 0
-        ? `Delete ${linkedPayrollRows} pre-payroll expense row(s) if still unlocked`
-        : `Check payroll trip ${tripId} before deletion`,
-    ],
-    moduleKey: "outstation_expenses",
-    moduleLabel: moduleLabels.outstation_expenses,
-    recordId: text(row.id),
-    safetyState,
-    status: normalizeStatus(row.status),
-    title: `${text(row.expense_type) || "Outstation"} - ${text(row.to_label) || text(row.to_city) || "destination pending"}`,
-  };
-}
-
-async function listOutstationCleanupRecords() {
-  const rows = await selectRows("outstation_expense_requests");
-  const tripIds = rows.map((row) => outstationPayrollTripId(text(row.id))).filter(Boolean);
-  const payrollRowsByTrip = await getPayrollExpenseRows(tripIds);
-
-  return rows.map((row) => {
-    const tripId = outstationPayrollTripId(text(row.id));
-    return outstationRecord(row, payrollRowsByTrip.get(tripId) ?? []);
-  });
-}
-
-async function loadOutstationCleanupRecord(recordId: string): Promise<LoadedCleanupRecord> {
-  const requestId = Number(recordId);
-  if (!Number.isInteger(requestId) || requestId <= 0) {
-    return missingRecord("outstation_expenses", recordId);
-  }
-
-  const [requestRow, serviceRecord] = await Promise.all([
-    selectMaybeSingle("outstation_expense_requests", recordId),
-    getOutstationRequestById(requestId),
-  ]);
-  if (!requestRow || !serviceRecord) {
-    return missingRecord("outstation_expenses", recordId);
-  }
-
-  const tripId = outstationPayrollTripId(requestId);
-  const payrollRows = await getPayrollExpenseRows([tripId]);
-  const linkedPayrollRows = payrollRows.get(tripId) ?? [];
-  const record = outstationRecord(requestRow, linkedPayrollRows);
-  const snapshot = {
-    payrollRows: linkedPayrollRows,
-    request: requestRow,
-    serviceRecord,
-  };
-  const impactSummary = {
-    carEvidenceImagePath: nullableText(requestRow.car_evidence_image_path),
-    linkedPayrollRows: linkedPayrollRows.length,
-    payrollTripId: tripId,
-    ticketAttachmentCount: Array.isArray(serviceRecord.ticketAttachmentPaths)
-      ? serviceRecord.ticketAttachmentPaths.length
-      : 0,
   };
 
   return {
@@ -656,14 +529,6 @@ async function deleteWeeklyPlanAsAdmin(input: {
 }
 
 const cleanupModuleRegistry: Record<SystemCleanupModuleKey, CleanupModuleDefinition> = {
-  outstation_expenses: {
-    deleteRecord: async ({ access, loaded }) => {
-      await deleteOutstationRequestAsAdmin(Number(loaded.recordId), access);
-    },
-    label: moduleLabels.outstation_expenses,
-    listRecords: listOutstationCleanupRecords,
-    loadRecord: loadOutstationCleanupRecord,
-  },
   vacation_requests: {
     deleteRecord: async ({ access, loaded }) => {
       await deleteVacationRequestAsAdmin(access, loaded.recordId);
