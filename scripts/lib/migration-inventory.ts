@@ -2690,6 +2690,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // "expense requests are never deleted…", rows unchanged (68 staging, 364 production). Re-applying is a no-op
   // (`create or replace`, `drop trigger if exists` then create).
   "20261124000433_outstation_requests_never_deleted.sql",
+  // Only the owner deletes an expense request, by his own press (owner, 24 Nov 2026, about 01:20 Cairo: "leave the
+  // delete the button i meant u never delete automatic only i from system can delete"). Applied 2026-11-24 through
+  // scripts/apply-sql-file.mjs, staging then production, the same route as the file above, which writes NO ledger
+  // row. Read back on cifwmndunmlxjhyjugxa and on ozucdzovmcqvepbozvqf (project name Phoenix HR) straight after:
+  // phx_owner_delete_outstation_request and phx_outstation_requests_never_deleted each executable by postgres and
+  // service_role only; both triggers still in place. Inside a rolled-back block a plain delete and a truncate were
+  // refused, the door deleted 1 row and left phx.owner_request_delete empty, and a plain delete after it was refused
+  // again; rows unchanged (68 staging, 364 production). Re-applying is a no-op (`create or replace`, same grants).
+  "20261124011438_outstation_request_delete_owner_only.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -57,9 +57,9 @@ export function runSystemCleanupCenterTests() {
 
   assert.match(service, /cleanupModuleRegistry/, "cleanup modules must be routed through an internal registry");
   assert.match(service, /deleteVacationRequestAsAdmin/, "vacation cleanup must reuse existing vacation delete service");
-  // 🔴 An expense request is never deleted (owner, 24 Nov 2026): the cleanup center no longer offers it.
-  assert.doesNotMatch(service, /"outstation_expenses"/, "the cleanup center must not list expense requests: they are never deleted");
-  assert.doesNotMatch(service, /deleteOutstationRequestAsAdmin/, "the cleanup center must not reach an expense-request delete");
+  assert.match(service, /deleteOutstationRequestAsAdmin/, "outstation cleanup must reuse existing outstation delete service");
+  assert.match(service, /outstationPayrollTripId/, "outstation cleanup must use canonical payroll trip ids");
+  assert.match(service, /imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/, "payroll-linked outstation rows must be blocked");
 
   assert.match(service, /selectRows\("employee_plan_headers"\)/, "weekly cleanup must list modern weekly/monthly plan headers");
   assert.match(service, /selectMaybeSingle\("employee_plan_headers"/, "weekly cleanup must snapshot modern plan headers");

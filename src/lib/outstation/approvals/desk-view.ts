@@ -18,7 +18,7 @@
  */
 
 import { CLAIM_KIND_LABEL, claimKindFromParam } from "@/lib/outstation/approvals/claim-kind";
-import { TRIP_STANDINGS, type TripStanding } from "@/lib/outstation/approvals/standing";
+import { TRIP_STANDINGS, countTripStandings, type TripStanding } from "@/lib/outstation/approvals/standing";
 import { claimInPeriod, periodMonth, periodWords, tripPeriodOf } from "@/lib/outstation/approvals/trip-period";
 import type {
   ClaimKind,
@@ -28,6 +28,7 @@ import type {
   DeskDecisionRequest,
   DeskLaneSummary,
   DeskQueue,
+  DeskTally,
 } from "@/lib/outstation/approvals/types";
 
 /** The one vocabulary. Pinned by tests/expense-desk-view.test.ts. */
@@ -140,6 +141,74 @@ export function narrowsHistory(view: Pick<DeskView, "from" | "kind" | "search" |
  */
 export function filteredLaneCounts(claims: ReadonlyArray<DeskClaim>, view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">): Record<Exclude<DeskLane, "history">, number> {
   return { ready: claimsInLane(claims, "ready", view).length, your_call: claimsInLane(claims, "your_call", view).length };
+}
+
+/**
+ * The six tiles under the view's filters (owner, 24 Nov 2026: "make the key cards in expense approvals
+ * follow the filter and show the real filtered count"). They had counted every trip whatever was filtered.
+ *
+ *   - Waiting counts what the two waiting lanes show under every filter, "over 7 days" included.
+ *   - A decided tile counts what History lists under the same filters: the kind, the trip dates and
+ *     the employee's name or hr id, read as History reads them. "Over 7 days" is about waiting, so
+ *     it narrows Waiting alone.
+ *
+ * With no filter set these are the server's own tiles, unchanged.
+ */
+export function filteredTiles(
+  queue: Pick<DeskQueue, "claims" | "decided" | "tiles">,
+  view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">,
+): DeskQueue["tiles"] {
+  if (!tilesNarrowed(view)) return queue.tiles;
+  const waiting = [...claimsInLane(queue.claims, "ready", view), ...claimsInLane(queue.claims, "your_call", view)];
+  const period = tripPeriodOf(view.from, view.to);
+  const term = historySearchTerm(view.search).toLowerCase();
+  const decided = queue.decided.filter(
+    (trip) =>
+      (!view.kind || trip.kind === view.kind) &&
+      claimInPeriod(trip, period) &&
+      (!term || trip.employeeName.toLowerCase().includes(term) || String(trip.hrId ?? "").toLowerCase().includes(term)),
+  );
+  return countTripStandings([...waiting, ...decided]);
+}
+
+/** Do the tiles count less than every trip? Any filter does, "over 7 days" included. */
+export function tilesNarrowed(view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">): boolean {
+  return narrowsHistory(view) || view.overSevenDays;
+}
+
+/** The line under narrowed tiles, saying what they count. Null when nothing is filtered. */
+export function tilesFilterWords(view: Pick<DeskView, "from" | "kind" | "overSevenDays" | "search" | "to">): string | null {
+  if (!tilesNarrowed(view)) return null;
+  const parts: string[] = [];
+  if (narrowsHistory(view)) parts.push(`These cards count only ${filterWords(view)}.`);
+  if (view.overSevenDays) parts.push("Waiting counts only the claims waiting over 7 days.");
+  return parts.join(" ");
+}
+
+/** A trip as the tiles count it, from a claim the server just answered. */
+export function tallyOf(claim: DeskClaim): DeskTally {
+  return {
+    employeeName: claim.employeeName,
+    hrId: claim.hrId,
+    kind: claim.kind,
+    payable: claim.payable,
+    requestId: claim.requestId,
+    standing: claim.standing,
+    tripEnd: claim.tripEnd,
+    tripStart: claim.tripStart,
+  };
+}
+
+/**
+ * A search box's words, made safe for a filter string: letters of any script, digits, spaces and
+ * hyphens survive, everything a filter could read as syntax is dropped. Pure.
+ */
+export function historySearchTerm(value: string | null | undefined): string {
+  return String(value ?? "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
 }
 
 /**
@@ -495,6 +564,8 @@ export function applyDeskOutcomes(
   const tiles = Object.fromEntries(TRIP_STANDINGS.map((key) => [key, { ...queue.tiles[key] }])) as DeskQueue["tiles"];
   const agreement = { ...queue.agreement, ready: { ...queue.agreement.ready }, yourCall: { ...queue.agreement.yourCall } };
   const claims = new Map(queue.claims.map((claim) => [claim.requestId, claim]));
+  // The decided trips the filtered tiles count follow the press too, so a filtered tile moves as the plain one does.
+  const decided = new Map(queue.decided.map((trip) => [trip.requestId, trip]));
   const order = queue.claims.map((claim) => claim.requestId);
 
   const move = (from: { payable: number; standing: TripStanding }, to: { payable: number; standing: TripStanding }) => {
@@ -511,9 +582,11 @@ export function applyDeskOutcomes(
     move(was.claim, now);
     if (now.standing === "waiting") {
       claims.set(now.requestId, now);
+      decided.delete(now.requestId);
       if (!order.includes(now.requestId)) order.push(now.requestId);
     } else {
       claims.delete(now.requestId);
+      decided.set(now.requestId, tallyOf(now));
     }
     if (outcome.code === "saved" && was.claim.standing === "waiting") {
       const bucket = was.claim.verdict.lane === "ready" ? agreement.ready : agreement.yourCall;
@@ -523,7 +596,7 @@ export function applyDeskOutcomes(
   }
 
   const list = order.map((id) => claims.get(id)).filter((claim): claim is DeskClaim => Boolean(claim));
-  return { ...queue, agreement, claims: list, overSevenDays: list.filter((claim) => claim.daysWaiting > 7).length, tiles };
+  return { ...queue, agreement, claims: list, decided: Array.from(decided.values()), overSevenDays: list.filter((claim) => claim.daysWaiting > 7).length, tiles };
 }
 
 /** The top line: how many decisions wait, what they are worth, how many are old. One unit, one function. */

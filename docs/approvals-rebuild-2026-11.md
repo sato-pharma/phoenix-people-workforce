@@ -524,6 +524,33 @@ proven by breaking the fix each pins and watching the test fail.
 
 Not seen in a browser before the merge: the dev server shows the live version, never a branch.
 
+### Deleting an expense request: the owner's press only
+
+Owner, 24 Nov 2026, about 00:05 Cairo: "never delete any expense request. If rejected, keep them as rejected, but
+never delete." PR 736 removed every delete. About 01:20 he corrected it: "leave the delete the button i meant u
+never delete automatic only i from system can delete". PR 739 put the delete back for him alone:
+
+- **What stays:** the Delete expense button on Outstation Requests, both admin DELETE routes
+  (`app/api/admin/outstation/[id]` and `manager-expenses/[id]`) and the expense requests entry in the System
+  Cleanup Center.
+- **Who may delete:** `deleteOutstationRequestAsAdmin` first runs `assertOwnerDeletesRequest`
+  (`src/lib/outstation/request-delete-guard.ts`). It allows only a real signed-in Super Admin session. A system
+  context (a cron, a job, a script), a dev-preview, a View as Seat and a test account are refused.
+- **The database door:** the row then leaves through `phx_owner_delete_outstation_request(bigint)`, which only
+  `service_role` may call. That function opens the setting `phx.owner_request_delete` for its own one-row
+  delete and closes it again. The trigger `phx_outstation_requests_never_deleted` lets a DELETE through only
+  while that setting is open. Any other DELETE is refused for every role, and so is every TRUNCATE
+  (`phx_outstation_requests_never_truncated`).
+- **Applied** through `scripts/apply-sql-file.mjs`, on staging and then on production. It was proven on both
+  inside a rolled-back block:
+  - a plain delete and a truncate were refused;
+  - the door deleted 1 row and closed the setting again;
+  - a plain delete after it was refused.
+- **Earlier deletions:** the six requests deleted before the rule (7 Jun to 10 Oct 2026) keep their "Request
+  deleted" notice, read from their audit rows.
+- **Fixture scripts** never delete their requests: they reject them.
+- **Not covered:** `expense_claims` (the hourly mirror rebuilds it) and the imported payroll sheet reports.
+
 ### What only time can prove
 
 Three items of the audit cannot be scored on the day the page ships:

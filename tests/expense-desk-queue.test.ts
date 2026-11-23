@@ -172,7 +172,7 @@ export function runExpenseDeskQueueTests() {
   assert.ok(queue.includes('.or("imported_payroll_batch_id.not.is.null,imported_to_payroll_at.not.is.null")'), "the newest paid month is read from rows that carry a paid stamp");
   assert.ok(queue.includes("if (error) throw error;\n  return newestPayout("), "a failed read throws; it is never guessed");
   assert.equal(queue.split("readLastPaidPayout(supabase)").length - 1, 2, "HEADLINE: the page load and the after-press re-read both read it");
-  assert.ok(queue.includes("const standing = standingOfRow(row, stored, lastPaidPayout);"), "HEADLINE: the tiles count a decided trip with it");
+  assert.ok(queue.includes("standing: standingOfRow(row, stored, lastPaidPayout),"), "HEADLINE: the tiles count a decided trip with it");
   assert.ok(queue.includes("buildDeskClaim({ context: { lastPaidPayout, today }, ledger: ledgerOf(row), now, row })"), "a claim re-read after a press is told it");
   assert.ok(history.includes("readLastPaidPayout(supabase)") && history.includes("buildDeskClaim({ context: { lastPaidPayout, today },"), "and so is every row of History");
   assert.ok(evidence.includes('unavailable: ["Phoenix CRM field work"]'), "a failed Phoenix CRM read names itself and gives no reading");

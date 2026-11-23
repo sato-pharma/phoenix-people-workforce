@@ -19,6 +19,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { claimKindFilter } from "@/lib/outstation/approvals/claim-kind";
 import { buildDeskClaim, DESK_CLAIM_COLUMNS, requestIdOfRow, type ClaimRow } from "@/lib/outstation/approvals/claim-row";
+import { historySearchTerm } from "@/lib/outstation/approvals/desk-view";
 import { readLastPaidPayout, readLedger, withLiveNames } from "@/lib/outstation/approvals/queue";
 import { dayAfter, tripPeriodOf } from "@/lib/outstation/approvals/trip-period";
 import type { ClaimKind, DeskClaim } from "@/lib/outstation/approvals/types";
@@ -47,17 +48,8 @@ const UNDECIDED_LIST = `(${OUTSTATION_UNDECIDED_STATUSES.join(",")})`;
 const APPROVED_STATUS_FILTER = "status.ilike.%accept%,status.ilike.%approve%,status.ilike.%confirm%";
 const REJECTED_STATUS_FILTER = "status.ilike.%reject%,status.ilike.%declin%";
 
-/**
- * A search box's words, made safe for a filter string: letters of any script, digits, spaces and
- * hyphens survive, everything a filter could read as syntax is dropped. Pure.
- */
-export function historySearchTerm(value: string | null | undefined): string {
-  return String(value ?? "")
-    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60);
-}
+// The search term lives with the desk view, so the tiles filter the decided trips exactly as this read does.
+export { historySearchTerm };
 
 export function historyFilterOf(value: string | null | undefined): DeskHistoryFilter {
   return value === "approved" || value === "rejected" ? value : "all";
