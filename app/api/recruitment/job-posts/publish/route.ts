@@ -10,6 +10,7 @@ import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { canPublishJobPosts } from "@/lib/recruitment/access";
+import { OwnPictureError, ownPictureFromDataUrl } from "@/lib/recruitment/job-posts/own-picture";
 import { JobPostTooLongError, renderJobPostPng } from "@/lib/recruitment/job-posts/render";
 import { getJobPostTitle, saveJobPostTitleArabic } from "@/lib/recruitment/job-posts/service";
 import { JOB_POST_CAREERS, jobPostFileStem, jobPostForArea } from "@/lib/recruitment/job-posts/templates";
@@ -30,7 +31,9 @@ function text(value: unknown): string {
  * applicant badge expects. `mode: "preview"` only draws the picture for the dialog.
  *
  * SUPER ADMIN ONLY, and only a person's press reaches this (owner: he still presses publish). The picture
- * comes from renderJobPostPng, the same as the download, and a post too long to fit is refused in words.
+ * comes from renderJobPostPng, the same as the download, and a post too long to fit is refused in words —
+ * unless the person chose their own picture in the dialog (`ownPicture`, a PNG or JPEG data URL, 4:5),
+ * which then goes on the card instead (owner, 2026-11-24, the hand-made Delta 2 post).
  *
  * THE ARABIC IS SAVED FIRST, so a refusal from the website never costs the person their typing. It is
  * saved on the title, so a whole-row save from the editor can never wipe it. The press is safe to repeat:
@@ -88,15 +91,21 @@ export async function POST(request: Request) {
     const violations = publishCardViolations(card);
     if (violations.length) return recruitmentProblem(violations.join(" "), 400);
 
-    const picture = await renderJobPostPng(one, template);
+    const own = typeof body.ownPicture === "string" && body.ownPicture ? ownPictureFromDataUrl(body.ownPicture) : null;
+    const picture = own ? own.bytes : await renderJobPostPng(one, template);
     await saveJobPostTitleArabic(saved.id, { descriptionAr: descAr, titleAr }, access.hrId ?? null);
-    const published = await publishJobCardToWebsite(card, picture, `${jobPostFileStem(one, area)}.png`);
+    const published = await publishJobCardToWebsite(
+      card,
+      picture,
+      `${jobPostFileStem(one, area)}.${own ? own.extension : "png"}`,
+      own ? own.contentType : "image/png",
+    );
 
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: published.id,
       entityType: "job_post_publish",
-      newValues: { action: "publish", area, design: template, location: card.location, slug: published.slug, title: card.titleEn },
+      newValues: { action: "publish", area, design: own ? "own picture" : template, location: card.location, slug: published.slug, title: card.titleEn },
       summary: `Published “${card.titleEn}” to the careers page`,
     });
 
@@ -104,6 +113,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof WebsiteCareersError) return recruitmentProblem(error.message, error.status);
     if (error instanceof JobPostTooLongError) return recruitmentProblem(error.message, 422);
+    if (error instanceof OwnPictureError) return recruitmentProblem(error.message, 400);
     if (error instanceof ChromiumUnavailableError) {
       return recruitmentProblem("This server cannot draw the post right now. Try again in a minute.", 503);
     }
