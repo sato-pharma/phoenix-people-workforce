@@ -692,8 +692,8 @@ export const MODULES = [
     title: "Phoenix CRM — the Place checks page: groups, the same-place comparison and the decisions",
     scope: "What the Place checks page draws and how the Super Admin decides on it and the SFE Manager recommends — the polyclinics tab and its groups, the same-place comparison between reps, the bulk answers, a rejection taken back, the comments and a district manager's read-only board.",
     globs: [
-      "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,waiting-rules}.ts",
-      "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts",
+      "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,place-checks-board-sets,waiting-rules}.ts",
+      "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff,place-checks-wide-read}.ts",
       // The reviews' parts since the split of 23 Nov 2026: `validation-reviews.ts` re-exports them.
       "src/lib/phoenix-crm/server/validation-reviews/**",
       "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx",
@@ -711,7 +711,7 @@ export const MODULES = [
       "src/components/crm-integrity/integrity-review-slide.tsx",
       "app/api/admin/phoenix-crm/integrity/cases/**",
       "tests/place-review-deck*",
-      "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks,place-checks-on-demand,waiting-oldest-first,validation-left-items}*",
+      "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks,place-checks-on-demand,place-checks-first-read,waiting-oldest-first,validation-left-items}*",
       // The Master List (owner, 2026-10-26): one profile per real place, by region, area, brick and speciality.
       "src/lib/phoenix-crm/master-list.ts",
       "src/lib/phoenix-crm/server/master-list.ts",

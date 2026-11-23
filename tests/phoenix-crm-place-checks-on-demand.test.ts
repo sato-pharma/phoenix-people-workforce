@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  decidedLeftForTheClick,
   decidedSentWithPage,
   isReal,
   mergeDecided,
@@ -205,13 +204,22 @@ function checkTheDecisionsThatWait() {
 
   const sent = decidedSentWithPage(everyDecision.filter((row) => row.recent), [venue]);
   assert.deepEqual(sent.map((row) => row.reviewId), ["d-seated"], "🔴 the page sends only the recent decisions seated in a building on the board");
-  const left = decidedLeftForTheClick(everyRow, sent);
-  assert.deepEqual(
-    left.map((row) => row.reviewId),
-    ["d-clinic", "d-system", "d-elsewhere", "d-old", "d-test"],
-    "🔴 every other decision waits for the click, and a waiting place is never one of them",
+  // The click answers EVERY decision since 23 Nov 2026 (the wide read does not know what the page chose to
+  // send), and the board keeps the page's copy of a row in both: no decision is lost and none is drawn twice.
+  assert.match(
+    read("src/lib/phoenix-crm/server/place-checks-wide-read.ts"),
+    /olderDecided: reviews\.rows\.filter\(\(row\) => row\.status !== "pending"\),/,
+    "🔴 the click answers every decision, and a waiting place is never one of them",
   );
-  assert.equal(sent.length + left.length, everyDecision.length, "sent or left: no decision is lost and none is in both");
+  const left = everyRow.filter((row) => row.status !== "pending");
+  const pageCopy = { ...seated, decisionNote: "the page's copy" };
+  const merged = mergeDecided([pageCopy], left);
+  assert.deepEqual(
+    merged.map((row) => row.reviewId).sort(),
+    ["d-clinic", "d-elsewhere", "d-old", "d-seated", "d-system", "d-test"],
+    "🔴 every decision is on the board once after the click: none lost, none twice",
+  );
+  assert.equal(merged.find((row) => row.reviewId === "d-seated")?.decisionNote, "the page's copy", "🔴 a row in both is the page's, the newer read");
 
   const summary = placeChecksSummary({ team: false, lanes: true, pending: [waiting], decided: everyDecision, validated, reopened, sharedPlaces: [venue, testVenue] });
   assert.equal(summary.bySystem, 1, "🔴 the server counts what the system approved, a tab whose rows the page no longer sends");
@@ -228,7 +236,14 @@ function checkTheDecisionsThatWait() {
 
 function checkTheWiring() {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(page, /placeChecksSummary\(\{ team: false, lanes: decides, pending: waiting, decided, validated, reopened, sharedPlaces \}\)/, "🔴 the figures are counted from every row the page read");
+  // Since 23 Nov 2026 the figures are counted by the read behind the page (`place-checks-wide-read.ts`),
+  // from every row THAT read made; `tests/phoenix-crm-place-checks-first-read.test.ts` pins the rest of it.
+  const wide = read("src/lib/phoenix-crm/server/place-checks-wide-read.ts");
+  assert.match(
+    wide,
+    /placeChecksSummary\(\{ team: false, lanes: decides, pending: sets\.waiting, decided: sets\.decided, validated, reopened: reopenedRead\.rows, sharedPlaces: sets\.sharedPlaces, capped \}\)/,
+    "🔴 the figures are counted from every row the wide read made",
+  );
   for (const prop of ["validated={seatedInUse}", "decided={sentDecided}", "onDemand={onDemand}"]) {
     assert.ok(page.includes(prop), `the page hands the board ${prop}`);
   }
@@ -245,17 +260,18 @@ function checkTheWiring() {
   const firstRow = handler.indexOf("takePlaceChecksForTheClick(placeChecksHandoffKey(viewer)) ?? (await readEverything(viewer))");
   assert.ok(gate > 0 && decider > gate && firstRow > decider, "🔴 the route asks `approve`, then the board's reader, before a row is taken or read — the page's own two gates");
   assert.match(
-    page,
-    /keepPlaceChecksForTheClick\(placeChecksHandoffKey\(viewer\), \{ validated, olderDecided: decidedLeftForTheClick\(reviews\.rows, sentDecided\) \}\)/,
-    "the page leaves what it read for the click, under the same person's key",
+    read("app/api/phoenix-crm/validation-reviews/summary/route.ts"),
+    /keepPlaceChecksForTheClick\(placeChecksHandoffKey\(viewer\), wide\.everything, startedAt\)/,
+    "the figures' read leaves what it read for the click, under the same person's key",
   );
-  assert.match(route, /olderDecided: reviews\.rows\.filter\(\(row\) => row\.status !== "pending"\)/, "reading for itself it answers every decision; the board keeps the page's copy of one it already holds");
+  assert.match(route, /return \(await readPlaceChecksWide\(viewer\)\)\.everything;/, "reading for itself, the click's route makes the same wide read");
+  assert.match(wide, /olderDecided: reviews\.rows\.filter\(\(row\) => row\.status !== "pending"\)/, "which answers every decision; the board keeps the page's copy of one it already holds");
   assert.match(route, /NextResponse\.json\(\{ everything, success: true \}\)/, "under the key the board reads");
 
   const board = placeCheckBoardSource(read);
   assert.ok(
-    board.includes('useCrmGet<PlaceChecksEverything>(onDemand && wanted ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything")'),
-    "🔴 the board reads by the key the route answers under, and only once it is wanted",
+    board.includes('useCrmGet<PlaceChecksEverything>(onDemand && wanted && summarySettled ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything")'),
+    "🔴 the board reads by the key the route answers under, only once it is wanted, and only once the figures' read has ended",
   );
   assert.match(board, /if \(onDemand && !wanted && \(viewNeedsEverything\(view\) \|\| filtering \|\| deckAsked\)\) setWanted\(true\);/, "a tab whose rows wait, any filter or the review asks for the rest");
   assert.match(
@@ -266,9 +282,9 @@ function checkTheWiring() {
   assert.match(board, /if \(wanted\) reloadEverything\(\);/, "a re-read of the page reads the rest again");
   assert.match(board, /complete \? placeCheckScorecardOf\(/, "🔴 the board counts the scorecard only once it holds every row");
   assert.match(board, /const reading = !complete && \(filtering \|\| viewNeedsEverything\(view\)\);/, "it knows when a tab would draw part of a list");
-  assert.match(board, /const decidedCounts = !complete && onDemand && !filtering \? onDemand\.summary : null;/, "until the rows are in, the two decided tabs show the server's count");
+  assert.match(board, /const counted = !complete && !filtering \? summary : null;/, "until the rows are in, the two decided tabs show the server's count");
   assert.ok(
-    board.includes('count: decidedCounts ? decidedCounts.history : shown(historyCount) }') && board.includes("count: decidedCounts ? decidedCounts.bySystem : shown(bySystemRows.length) }"),
+    board.includes("count: decidedCount(historyCount, (figures) => figures.history) }") && board.includes("count: decidedCount(bySystemRows.length, (figures) => figures.bySystem) }"),
     "🔴 never the count of the few seated decisions the board holds before the click",
   );
   for (const view of ["needs", "unconfirmed", "polyclinics", "history", "bySystem"]) {
@@ -277,8 +293,13 @@ function checkTheWiring() {
   assert.ok(board.includes("<ReadingEverything error={everythingRead.error} onRetry={reloadEverything} />"), "it says what it is reading, and offers Try again when the read fails");
 
   const button = read("src/components/place-review-deck/review-deck-button.tsx");
-  assert.ok(button.includes("{start && ready ? <PlaceReviewDeck"), "🔴 the review opens only on every row");
-  assert.match(button, /if \(start && !ready\) want\(\);/, "and asks for them when it is to open, `?review=` included");
+  // Since 23 Nov 2026 the review opens on the press, on what waits; the tabs built from every place in use
+  // are listed once the rest is in (`deckTabNeedsEveryPlace`, pinned in tests/place-review-deck.test.ts).
+  assert.ok(
+    button.includes("{start ? <PlaceReviewDeck input={input} onClose={close} rest={{ ready, error: rows.error, retry: rows.retry }} start={start} /> : null}"),
+    "🔴 the review opens at once, and is told whether the board holds every row yet",
+  );
+  assert.match(button, /if \(start && !ready\) want\(\);/, "and asks for the rest when it is to open, `?review=` included");
 
   const portal = read("app/employee-portals/place-checks/page.tsx");
   assert.ok(!portal.includes("onDemand"), "a district manager's board is still handed its whole team, as before");
@@ -287,13 +308,18 @@ function checkTheWiring() {
 function checkTheHandoff() {
   const omar = placeChecksHandoffKey({ hrId: "B-10", role: "Super Admin", isTestPersona: false } as never);
   const sfe = placeChecksHandoffKey({ hrId: "SFE-1", role: "SFE Manager", isTestPersona: false } as never);
-  const rows = (tag: string) => ({ validated: [inUse(tag, "Rep")], olderDecided: [] });
+  const rows = (tag: string) => ({
+    validated: [inUse(tag, "Rep")],
+    olderDecided: [],
+    noteIndex: { notes: {}, recommendations: {}, integrity: {} } as unknown as PlaceNoteIndex,
+    capped: { reviews: false, validated: false },
+  });
   const t0 = 1_000_000;
 
   keepPlaceChecksForTheClick(omar, rows("first"), t0);
   keepPlaceChecksForTheClick(omar, rows("second"), t0 + 10);
   assert.equal(takePlaceChecksForTheClick(sfe, t0 + 20), null, "🔴 one person never takes another's rows");
-  assert.equal(takePlaceChecksForTheClick(omar, t0 + 20)?.validated[0].placeId, "second", "the click takes the newest read of the page");
+  assert.equal(takePlaceChecksForTheClick(omar, t0 + 20)?.validated[0].placeId, "second", "the click takes the newest read");
   assert.equal(takePlaceChecksForTheClick(omar, t0 + 30), null, "🔴 taken once: a second click reads for itself");
 
   keepPlaceChecksForTheClick(omar, rows("late"), t0);

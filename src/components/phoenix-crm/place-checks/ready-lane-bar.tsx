@@ -113,10 +113,18 @@ export function ReadyLaneBar({ board }: { board: PlaceCheckBoard }) {
   return (
     <div className="min-w-0 space-y-2 border border-l-4 border-slate-200 border-l-emerald-600 bg-white px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <p className="min-w-0 flex-1 basis-60 break-words text-sm text-slate-700">
-          {decisions > 0
-            ? "Every check passed on these, and you have approved this kind of evidence at least 19 times in 20. Nothing is approved until you press."
-            : "Nothing is left in this lane."}
+        {/* A phone keeps the half that is a rule (23 Nov 2026): the whole sentence was four lines above the first waiting place. */}
+        <p className="min-w-0 flex-1 basis-40 break-words text-sm text-slate-700 sm:basis-60">
+          {decisions > 0 ? (
+            <>
+              <span className="max-sm:hidden">
+                Every check passed on these, and you have approved this kind of evidence at least 19 times in 20. Nothing is approved until you press.
+              </span>
+              <span className="sm:hidden">Nothing is approved until you press.</span>
+            </>
+          ) : (
+            "Nothing is left in this lane."
+          )}
         </p>
         {decisions > 0 || running ? (
           <CrmButton busy={running} disabled={anyRunGoing} onClick={() => void approveAll()} variant="primary">

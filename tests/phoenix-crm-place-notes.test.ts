@@ -152,7 +152,8 @@ function checkTeamScope(): void {
     // Through `seatScoped`, which is where the scope's size is checked against the `.in()` cliff —
     // never spelled inline, where nothing would check it. `tests/phoenix-crm-place-checks-in-overflow`
     // owns that bound; what matters here is that the narrowing happens in the QUERY and not after it.
-    assert.match(body, /return seatScoped\(query, seats\)/, `${name} narrows the QUERY to those seats`);
+    // (`const scoped =` since 23 Nov 2026: the places in use can be narrowed once more, to the seated ones, on the same query.)
+    assert.match(body, /(?:return|const scoped =) seatScoped\(query, seats\)/, `${name} narrows the QUERY to those seats`);
   }
 }
 
@@ -420,6 +421,7 @@ function checkPrivateAdminNotesStayOffAManagersScreen(): void {
       "app/(admin)/admin/field-crm/sfe-recommendations/page.tsx",
       "app/(admin)/admin/field-crm/validation-reviews/page.tsx",
       "app/employee-portals/place-checks/page.tsx",
+      "src/lib/phoenix-crm/server/place-checks-wide-read.ts",
       "src/lib/phoenix-crm/server/place-notes.ts",
     ],
     "a new caller of the note index must choose its audience here",
@@ -432,6 +434,33 @@ function checkPrivateAdminNotesStayOffAManagersScreen(): void {
     /loadPlaceNoteIndex\(subjects, \{ viewerHrId: viewer\.hrId \}\)/,
     "and so does the SFE recommendations page",
   );
+  // The read behind the company page (23 Nov 2026) answers the same two readers and nobody else: its two
+  // routes ask `approve` and `readsCompanyPlaceChecks` before they call it (tests/phoenix-crm-place-checks-first-read.test.ts).
+  const wideRead = read("src/lib/phoenix-crm/server/place-checks-wide-read.ts");
+  assert.ok(wideRead.includes("loadPlaceNoteIndex(subjects, { viewerHrId: viewer.hrId })"), "and so does the read behind the company page");
+  assert.ok(!wideRead.includes("managerBoard"), "which is never a manager's");
+  const wideCallers = [...sourceFilesUnder("app"), ...sourceFilesUnder("src")].filter((path) => read(path).includes("readPlaceChecksWide(")).sort();
+  assert.deepEqual(
+    wideCallers,
+    [
+      "app/api/phoenix-crm/validation-reviews/everything/route.ts",
+      "app/api/phoenix-crm/validation-reviews/summary/route.ts",
+      "src/lib/phoenix-crm/server/place-checks-wide-read.ts",
+    ],
+    "🔴 the wide read is reached through its two gated routes and nowhere else: a new caller must gate on the company board's readers first",
+  );
+  // In each route's handler the gate stands before the first line that reads a row or takes a kept one.
+  const firstRow: Record<string, string> = {
+    "app/api/phoenix-crm/validation-reviews/everything/route.ts": "takePlaceChecksForTheClick(",
+    "app/api/phoenix-crm/validation-reviews/summary/route.ts": "readPlaceChecksWide(viewer)",
+  };
+  for (const [route, rowLine] of Object.entries(firstRow)) {
+    const source = read(route);
+    const handler = source.slice(source.indexOf("export async function GET("));
+    const gate = handler.indexOf("if (!readsCompanyPlaceChecks(viewer)) throw forbiddenError(");
+    const row = handler.indexOf(rowLine);
+    assert.ok(gate > 0 && row > gate, `${route} turns away everybody but the company board's readers before a row is read or taken`);
+  }
   // 🔴 THE SFE MANAGER'S WORD NEVER REACHES A DISTRICT MANAGER'S BOARD, which names nobody above him.
   assert.match(load, /\.filter\(\(row\) => !options\.managerBoard \|\| writerRoleOf\(row\.writer_role\) === "district_manager"\)/, "the manager's board drops the SFE Manager's recommendations");
   assert.ok(!company.includes("managerBoard"), "and never narrows it: the one-by-one review sorts on these notes");
@@ -586,13 +615,17 @@ function checkDecisionCommentReachesTheRep(): void {
   const board = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   // The place rows go through the one helper, which the board also runs on the older decisions it reads on
   // the click (`place-checks-on-demand.ts`, 2026-11-14) — one rule, never a second copy.
-  assert.match(board, /withoutDecisionNotesThatAreComments\(reviews\.rows, notes\.notes\)/);
+  // Since 23 Nov 2026 the page and the read behind the click sort their rows by one function
+  // (`place-checks-board-sets.ts`), so the rule is there, once, for both.
+  const sets = read("src/lib/phoenix-crm/place-checks-board-sets.ts");
+  assert.match(board, /placeChecksBoardSets\(\{ decides, reviews: reviews\.rows, sharedPlaces: sharedRead\.rows, notes \}\)/);
+  assert.match(sets, /withoutDecisionNotesThatAreComments\(input\.reviews, notes\.notes\)/);
   assert.match(
     read("src/lib/phoenix-crm/place-checks-on-demand.ts"),
     /decisionNoteIsAComment\(row\.decisionNote, notes\[placeNoteSubjectKey\("place", row\.placeId\)\]/,
   );
   assert.match(placeCheckBoardSource(read), /withoutDecisionNotesThatAreComments\(everything\.olderDecided/);
-  assert.match(board, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("shared_place", row\.sharedPlaceId\)\]/);
+  assert.match(sets, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("shared_place", row\.sharedPlaceId\)\]/);
 
   // The rep's list carries both shapes: on a customer's card, and for an empty building inside To validate only.
   const list = read("src/lib/phoenix-crm/server/list.ts");
@@ -659,7 +692,10 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   // The company board's readers keep all of it: their page admits nobody else, so `decides` is true for every row it reads.
   const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.match(company, /if \(!viewer \|\| !readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\)/, "the company page gates on the same predicate");
-  assert.match(company, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "and reads through the same loaders");
+  assert.match(company, /loadValidationReviews\(viewer\),\s*loadValidatedPlaces\(viewer, \{ seatedOnly: true \}\),/, "and reads through the same loaders");
+  // The read behind the page (23 Nov 2026) is reached only through two routes with the same two gates.
+  const wide = read("src/lib/phoenix-crm/server/place-checks-wide-read.ts");
+  assert.match(wide, /loadValidationReviews\(viewer, \{ everyDecision: true \}\),\s*loadValidatedPlaces\(viewer\),/, "the read behind it too");
   // The board's filter lists are built by `placeCheckOptions`, which the page also runs on the server to
   // count the opening figures (2026-11-14, "Load lists on demand") — one list, never a second copy.
   const board = placeCheckBoardSource(read);

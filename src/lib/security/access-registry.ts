@@ -1167,6 +1167,9 @@ export const accessRegistry = [
   // only gate one. GET is read when the tab is first opened; POST stores his "same place or different
   // places" answer on the ordered pair, or takes it back.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/everything", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
+  // The figures on the Place checks tabs, counted over every place in use and asked for once the board is on
+  // screen (owner, 23 Nov 2026, "Fix speed next"). The same two gates as the route above, the same readers.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/summary", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-customer", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),

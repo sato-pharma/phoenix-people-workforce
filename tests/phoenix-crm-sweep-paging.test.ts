@@ -401,7 +401,10 @@ export async function runPhoenixCrmSweepPagingTests(): Promise<void> {
     const validated = reviews.slice(validatedStart, reviews.indexOf("\n}\n", validatedStart));
     assert.ok(validated.includes('rpc("phoenix_crm_validated_place_facts"'), "RED the four lookups behind the validated places are one database call");
     assert.equal(validated.includes('selectByIds<Row>("phoenix_crm_visits"'), false, "and the visit count is not read in 150-id chunks again");
-    assert.ok(validated.includes("concurrentPages: seats ? 1 : 8"), "the active places are read eight pages at a time for the company, one for a team whose places fit in one page");
+    assert.ok(
+      validated.includes("concurrentPages: seats || seatedOnly ? 1 : 8"),
+      "the active places are read eight pages at a time for the company, one for a team or for the seated places alone, which fit in one page",
+    );
     const facts = sql("supabase/migrations/20261108200549_phoenix_crm_validated_place_facts.sql");
     assert.ok(facts.includes("revoke execute on function public.phoenix_crm_validated_place_facts(uuid[], uuid[]) from public, anon, authenticated"), "and its function is the service role's alone");
     const notes = source("src/lib/phoenix-crm/server/place-notes.ts");
