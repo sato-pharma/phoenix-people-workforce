@@ -50,6 +50,7 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
 import { scheduleOf, signboardOf } from "@/lib/phoenix-crm/server/validation-reviews";
+import { validationRefusalLabel } from "@/lib/phoenix-crm/validation-feedback";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -231,7 +232,12 @@ export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<
       pair.sameOldCrmContact ? "The same contact in the old CRM" : null,
       pair.nameKind ? LOOKALIKE_NAME_TEXT[pair.nameKind] : null,
     ].filter((reason): reason is string => reason !== null);
+    const rejectedLabel = waiting.lastRejectedAt ? validationRefusalLabel(waiting.lastRejectedReason ?? null) : null;
     const warnings = [
+      // 🔴 Owner, 2026-11-23: "I must know that this is one customer, but it has those validations".
+      waiting.lastRejectedAt
+        ? `This row's own capture was rejected on ${formatPhoenixDateTime(waiting.lastRejectedAt)}${rejectedLabel ? ` (${rejectedLabel})` : ""}. Judge the other line's validation below before confirming.`
+        : null,
       pair.specialityDiffers ? `The specialities differ: ${waiting.speciality} / ${source.speciality}` : null,
       pair.twiceOnWaitingList ? "This rep's list holds this customer twice — confirm only the right row" : null,
     ].filter((warning): warning is string => warning !== null);

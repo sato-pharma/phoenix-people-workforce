@@ -108,7 +108,11 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
         {customer.state === "rejected" ? <CrmPill tone="bad">{mode === "team" ? "Settled" : "Rejected"}</CrmPill> : null}
         {customer.state === "sent_back" ? <CrmPill tone="neutral">Waiting to be captured again</CrmPill> : null}
         {customer.state === "in_use" && !customer.reviewed ? <CrmPill tone="info">Never looked at</CrmPill> : null}
-        {customer.state === "in_use" && customer.reviewStatus === "approved" && mode !== "team" ? <CrmPill tone="good">Approved</CrmPill> : null}
+        {customer.state === "in_use" && customer.reviewStatus === "approved" && mode !== "team" ? (
+          // 🔴 Owner, 2026-11-23 (the Place checks audit): approved behind a building still being checked, he
+          // is no decision still owed — the building's approval validates him.
+          <CrmPill tone="good">{customer.waitsForBuilding ? "Approved, waits for the building" : "Approved"}</CrmPill>
+        ) : null}
         {customer.isTest ? <CrmPill>Test entry</CrmPill> : null}
       </div>
     </div>

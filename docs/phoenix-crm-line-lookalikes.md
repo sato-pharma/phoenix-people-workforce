@@ -36,7 +36,10 @@ A pair is one waiting row and one validated row when ALL of these hold:
 - the waiting row could be validated now (`waitingRefusal` — still waiting, no active place, no review or
   drop waiting, its full name not held; a PM customer written with all three names);
 - **the rule does not already pair them** — a pair `areLineTwins` accepts is the rule's to share, never this
-  list's;
+  list's. **Except a waiting row whose own last capture was rejected** (owner, 23 Nov 2026: "I must know that
+  this is one customer, but it has those validations"): the rule no longer shares onto it, so the rule's pair
+  is listed here as **Certain**, and the card warns "This row's own capture was rejected on … (reason)".
+  Confirming it is allowed — `planLookalikeConfirm` drops `rule_pairs_them` for such a row;
 - the Super Admin has not answered the pair **Not the same**;
 - the match is **Certain** or **Very likely**. Anything looser never reaches the list.
 
