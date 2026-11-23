@@ -26,7 +26,8 @@ export function runWorkflowRegistryEnforcementTests() {
   assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "approve"/);
   assert.match(outstationService, /actionKey: existing\.status\.startsWith\("accepted"\) \? "reject_before_payroll" : "reject"/);
   assert.match(outstationService, /actionKey: "edit_before_payroll"/);
-  assert.match(outstationService, /assertOutstationExpenseWorkflowTransition\(\{[\s\S]*actionKey: "delete_before_payroll"/);
+  // An expense request is never deleted (owner, 24 Nov 2026): the request delete and its transition are gone.
+  assert.doesNotMatch(outstationService, /actionKey: "delete_before_payroll"/);
   assert.match(outstationService, /already been added to payroll and cannot be edited/);
 
   const payrollRegistry = source("src/lib/payroll/workflow-registry.ts");

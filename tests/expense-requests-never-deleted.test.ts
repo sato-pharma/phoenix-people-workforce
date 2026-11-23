@@ -75,11 +75,13 @@ export async function runExpenseRequestsNeverDeletedTests() {
     const text = code(source(route));
     const del = text.slice(text.indexOf("export async function DELETE("));
     assert.ok(text.includes("export async function DELETE("), `${route}: the DELETE handler must answer, not 404`);
-    assert.match(
-      del.slice(0, 300),
-      /^export async function DELETE\(request: Request\) \{\s*const csrfError = assertSameOriginMutation\(request\);\s*if \(csrfError\) return csrfError;\s*return NextResponse\.json\(outstationRequestNeverDeletedBody\(\), \{ status: 405 \}\);\s*\}/,
-      `${route}: DELETE must refuse with 405, touching nothing`,
-    );
+    const handler = del.split(/\n\}\n/)[0];
+    const csrfAt = handler.indexOf("assertSameOriginMutation(request)");
+    const accessAt = handler.indexOf('assertOutstationAdminAccess(await resolveAccessContext(request), "delete")');
+    const refusalAt = handler.indexOf("NextResponse.json(outstationRequestNeverDeletedBody(), { status: 405 })");
+    assert.ok(csrfAt >= 0 && accessAt > csrfAt, `${route}: DELETE must refuse a cross-site call, then a caller without access (401/403), first`);
+    assert.ok(refusalAt > accessAt, `${route}: DELETE must then refuse with 405, touching nothing`);
+    assert.doesNotMatch(handler, /from "@\/lib\/outstation\/service"|\.delete\(|getSupabaseAdmin/, `${route}: DELETE must touch nothing`);
     assert.doesNotMatch(text, /deleteOutstationRequestAsAdmin/, `${route}: must not reach a delete`);
   }
 

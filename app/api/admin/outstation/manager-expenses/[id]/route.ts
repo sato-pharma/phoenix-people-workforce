@@ -108,5 +108,15 @@ export async function PATCH(
 export async function DELETE(request: Request) {
   const csrfError = assertSameOriginMutation(request);
   if (csrfError) return csrfError;
+  // Who may not act here is refused first (401/403), exactly as before; only then the refusal itself.
+  try {
+    await assertOutstationAdminAccess(await resolveAccessContext(request), "delete");
+  } catch (error) {
+    const forbidden = isForbiddenError(error);
+    return NextResponse.json(
+      { error: forbidden ? "forbidden" : "outstation_access_failed", message: forbidden ? "You cannot act on expense requests." : "Access could not be checked.", success: false },
+      { status: forbidden ? 403 : 500 },
+    );
+  }
   return NextResponse.json(outstationRequestNeverDeletedBody(), { status: 405 });
 }
