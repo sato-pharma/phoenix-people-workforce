@@ -533,8 +533,29 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.match(customersSource, /disabled=\{reason === "" \|\| saving\}/, "and cannot be armed before a reason is chosen");
   assert.doesNotMatch(customersSource, /note\.trim\(\)\.length === 0/, "never gated on the free-text note — it is optional");
   assert.match(customersSource, /mode === "team" \|\| !decides \? null : <Decision customer=\{customer\} noTimetable=\{noTimetable\} scope=\{scope\} \/>/, "🔴 a manager's board renders no decision control, nor the SFE Manager's (owner, 2026-11-19)");
-  assert.ok(customersSource.includes("<CrmCardsOnPhone") && !customersSource.includes("<CrmTable") && !/colSpan/.test(customersSource), "phone cards, then plain blocks inside the building's own cell — never a table nested in a table");
-  assert.ok(!/colSpan/.test(list) && (list.match(/<tbody/g) ?? []).length === 1, "🔴 one row per building: the header and its seated customers sit in the first cell, no second row");
+  // 🔴 ON A DESKTOP EACH CUSTOMER IS A ROW OF THE BUILDING'S OWN TABLE (owner, 23 Nov 2026: "Fix them"). Stacked
+  // in the building's first cell (34% of the table) a customer stood 693 px tall and a building of seven was
+  // 8,410 px on a 1440 page. Still never a table nested in a table: the rows stand in the building's own body.
+  assert.ok(customersSource.includes("<CrmCardsOnPhone") && !customersSource.includes("<CrmTable") && !/<table\b|<tbody\b/.test(customersSource), "phone cards, then rows — never a table nested in a table");
+  assert.ok(customersSource.includes("export const SEATED_TABLE_COLUMNS = 5;") && list.includes('<CrmTable columns={["34%", "17%", "17%", "15%", "17%"]}>'), "the customers' rows span the building table's own five columns");
+  assert.match(
+    customersSource,
+    /<tr key=\{customer\.key\} className="bg-slate-50\/60" data-seated-row>\s*<td className=\{crmTdClassName\}>\s*<Who [^>]*\/>\s*<\/td>\s*<td className=\{crmTdClassName\} colSpan=\{2\}>\s*<Timetable [^>]*\/>\s*<\/td>\s*<td className=\{crmTdClassName\} colSpan=\{2\}>\s*<LastColumn [^>]*scope="table" \/>/,
+    "🔴 who, the timetable and the decision stand side by side in one row, 1 · 2 · 2 of the five columns",
+  );
+  assert.ok(customersSource.includes('<tr className="bg-slate-50" data-seated-heading>') && customersSource.includes("colSpan={SEATED_TABLE_COLUMNS}"), "one line across the table says who is seated");
+  // It heads the customers' rows, so it is a header cell. A <td colSpan> opening a row is a hand-written
+  // panel row, which tests/table-row-detail-joined.test.ts counts (it read this one as the 73rd).
+  assert.match(customersSource, /data-seated-heading>[\s\S]{0,200}?<th [^>]*colSpan=\{SEATED_TABLE_COLUMNS\} scope="rowgroup">/, "🔴 the line over a building's customers is a header cell of that group of rows");
+  assert.doesNotMatch(customersSource, /<tr[^>]*>s*<td[^>]*colSpan/, "and no row of the building's customers opens on a spanning data cell");
+  assert.ok(!/layout = "both"|layout\?: /.test(customersSource) && customersSource.includes('layout: "cards" | "table";'), "the caller says which of the two it draws; the customers are never drawn twice by default");
+  assert.ok((list.match(/<tbody/g) ?? []).length === 1, "one table, one body");
+  assert.match(
+    list,
+    /<tr className="border-t-2 border-slate-200" data-building-row>[\s\S]*?<\/tr>\s*<SeatedCustomers customers=\{customers\} layout="table" [^>]*\/>\s*<\/Fragment>/,
+    "🔴 the building's row, then its customers' rows, in the same body — nothing seated inside the building's first cell",
+  );
+  assert.ok(!/<td className=\{crmTdClassName\}>[^]*?<SeatedCustomers[^]*?<\/td>/.test(list.slice(list.indexOf("data-building-row"), list.indexOf("</Fragment>"))), "no cell of the building's row holds the customers");
   assert.doesNotMatch(customersSource, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp|text-ellipsis/, "square, no sideways scroll, no ellipsis");
   assert.doesNotMatch(customersSource.toLowerCase(), /\b(doctor|doctors|account|accounts)\b/, "AM and PM customers — never the old words");
   for (const forbidden of ["waiting for approval", "pending approval", "awaiting a decision", "sent to the administrator"]) {

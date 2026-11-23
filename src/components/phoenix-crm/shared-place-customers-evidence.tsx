@@ -163,7 +163,7 @@ function Timetable({
         </p>
       ) : null}
       {customer.state === "rejected" && customer.reasonLabel ? <p className="break-words text-xs text-slate-600">The rep was told: {customer.reasonLabel}.</p> : null}
-      {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} className="h-32 w-32" path={own} rotatable /> : null}
+      {own ? <CrmPhotoThumb alt={`Timetable photo for ${customer.customerName}`} className="h-32 w-32" lazy path={own} rotatable /> : null}
       {sameAsBuilding ? <p className="break-words text-xs text-slate-500">The same photograph as the building&apos;s timetable.</p> : null}
     </div>
   );

@@ -71,7 +71,27 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   const venueServer = stripComments(readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8"));
   assert.ok(venueServer.includes("buildingRefusalReason(body.refusalReason)"), "the venue decision parses through the building list");
   const venueScreen = placeCheckListSource("shared-place-list");
-  assert.equal(venueScreen.split(`kind="building"`).length - 1, 2, "the venue row and its bulk bar offer the building list");
+  assert.equal(venueScreen.split(`kind="building"`).length - 1, 3, "the venue row's box, its list to press and its bulk bar offer the building list");
+  // 🔴 REJECT IS TWO PRESSES, NEVER THREE (owner, 23 Nov 2026: "Fix them", after the re-score counted them). A
+  // waiting row with no reason chosen needed the list opened, a reason chosen and then Reject. Reject now
+  // opens the reasons and the reason pressed sends it; a reason the system already chose still rejects in one.
+  for (const list of ["validation-review-queue", "shared-place-list", "shared-place-customers"] as const) {
+    const source = placeCheckListSource(list);
+    assert.ok(
+      source.includes('onClick={() => (reason === "" ? setPicking(true) : void decide("reject"))}'),
+      "🔴 " + list + ": Reject with no reason chosen opens the list, and with one chosen it rejects at once",
+    );
+    assert.match(
+      source,
+      /<RefusalReasonPick[\s\S]{0,300}?onPick=\{\(next\) => \{\s*setReason\(next\);\s*setPicking\(false\);\s*void decide\("reject", next\);\s*\}\}/,
+      list + ": the reason pressed is the rejection, sent with that reason",
+    );
+    assert.match(source, /\{(?:row\.lockedBySuperAdmin \|\| )?reason === "" \|\| picking \? null : (?:\(\s*)?<RefusalReasonField/, list + ": the reason box is drawn only once a reason is chosen, never beside the list");
+  }
+  const reasonField = stripComments(readFileSync("src/components/phoenix-crm/refusal-reason-field.tsx", "utf8"));
+  assert.ok(reasonField.includes('export const REFUSAL_PICK_HINT = "Press what is wrong. That rejects it and tells the rep.";'), "the list says a press is the rejection");
+  assert.match(reasonField, /reasonsFor\(kind, \{ buildingHasNoTimetable \}\)\.map\(\(reason\) => \([\s\S]{0,700}?onClick=\{\(\) => onPick\(reason\.key\)\}/, "it is the same closed list the box offers, one button per reason");
+  assert.ok(reasonField.includes("Back, reject nothing") && reasonField.includes("onClick={onBack}"), "and the list can be closed with nothing rejected");
   assert.ok(reasonsFor("signboard").some((reason) => reason.key === "short_name"), "a customer's own signboard can be sent back for a short name");
   assert.ok(reasonsFor("schedule").some((reason) => reason.key === "short_name"), "and so can a seated customer's timetable");
 

@@ -176,25 +176,45 @@ function checkTheServer() {
   const approve = holds.slice(holds.indexOf("export async function approveHeldSignboardBySystem"), holds.indexOf("export async function settleHeldSignboard"));
   assert.ok(approve.indexOf("heldReviewNeedsFullName(reviewId)") < approve.indexOf("phoenix_crm_decide_validation_review"), "and still asks the short-name gate before approving");
 
-  // Both doors: told only if the rule left it, and the rule runs after the door's reading is recorded.
+  // Both doors: told only if the rule left it, and the rule runs after the door's record is on the place.
+  //
+  // 🔴 THE DOOR READS NO SIGN FOR A PLACE GOOGLE HOLDS, so the condition must name that state and the
+  // sign must be read after the reply. On the rule's first day (23 Nov 2026) the condition asked for a
+  // door reading of "match", which a Google hold can never carry: all four Google holds of the day were
+  // `held_elsewhere` and the system approved none.
   const list = code("src/lib/phoenix-crm/server/list.ts");
+  assert.match(list, /const check = heldElsewhere\s+\? signboardUnjudged\("held_elsewhere"\)/, "a place Google holds is given held_elsewhere at the door, with no read");
   for (const [who, name] of [
     ["validated", "validateCustomer"],
     ["added", "the second place's door"],
   ] as const) {
-    const may = `const signMayWin = ${who}.held && !heldBySignboard && heldReviewId !== null && signboard?.check.verdict === "match";`;
-    assert.ok(list.includes(may), `${name} offers the rule only a Google hold whose door reading names the customer`);
+    const may = `const signMayWin = ${who}.held && !heldBySignboard && heldReviewId !== null && signboard?.check.reason === "held_elsewhere";`;
+    assert.ok(list.includes(may), `${name} offers the rule every place Google held whose sign the door did not read`);
+    assert.ok(!list.includes(`const signMayWin = ${who}.held && !heldBySignboard && heldReviewId !== null && signboard?.check.verdict === "match";`), `${name} never waits for a door reading a Google hold cannot have`);
     assert.ok(list.includes(`if (${who}.held && !isTest && !signboardHold && !signMayWin) {`), `${name} does not tell him at once about a hold the rule may clear`);
     const body = list.slice(list.indexOf(may));
     const record = body.indexOf(`recordPlaceSignboard(${who}.placeId, keptSignboard.check)`);
-    const win = body.indexOf("const won = await signWinsAtTheDoor(heldReviewId);");
-    assert.ok(record > 0 && win > record, `${name} runs the rule after its own reading is on the place`);
+    const win = body.indexOf(`const won = await signWinsAfterGoogleHold(heldReviewId, ${who}.placeId);`);
+    assert.ok(record > 0 && win > record, `${name} reads the sign and runs the rule after its own record is on the place`);
     const after = body.slice(win, win + 400);
     assert.ok(
       after.includes("if (!won.approved && !isTest) {") && after.includes(`notifyValidationReviewWaiting({ customerName: ${who}.customerName, seat, repHrId: viewer.hrId, reviewId: heldReviewId })`),
       `${name} tells him about every hold the rule left`,
     );
   }
+  assert.ok(!list.includes("signWinsAtTheDoor("), "no door asks the rule without reading the sign first");
+  const afterHold = server.slice(server.indexOf("export async function signWinsAfterGoogleHold"), server.indexOf("export type SignWinsSweepResult"));
+  assert.ok(
+    afterHold.indexOf("await readPlaceSignboardNow(placeId);") > 0 && afterHold.indexOf("await readPlaceSignboardNow(placeId);") < afterHold.indexOf("return signWinsAtTheDoor(reviewId);"),
+    "the sign is read before the rule is asked",
+  );
+  // The read is the night's own, for one place: same backlog test, same step, so a photo is paid for once.
+  const sweep = code("src/lib/phoenix-crm/server/signboard-sweep.ts");
+  const now = sweep.slice(sweep.indexOf("export async function readPlaceSignboardNow"), sweep.indexOf("export async function runPhoenixCrmSignboardSweep"));
+  assert.ok(now.includes("const [place] = await loadBacklog(1, placeId);") && now.includes("return place ? await readRecordAndFlag(place) : null;"), "one place is read through the night's backlog test and the night's step");
+  assert.ok(sweep.includes("      const check = await readRecordAndFlag(place);"), "and the night runs that same step");
+  const rereads = sweep.slice(sweep.indexOf("export const SIGNBOARD_REREAD_REASONS = ["), sweep.indexOf("] as const;", sweep.indexOf("export const SIGNBOARD_REREAD_REASONS = [")));
+  assert.ok(rereads.includes(`"held_elsewhere"`), "a place the door left unread is one the pass reads");
 
   const cron = code("app/api/cron/phoenix-crm-visit-rollup/route.ts");
   assert.ok(cron.includes('await afterResponse("phoenix_crm_sign_wins_sweep", async () => {') && cron.includes("await runSignWinsSweep();"), "the hourly pass rides the roll-up, after the reply");

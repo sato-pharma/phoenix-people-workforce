@@ -71,6 +71,63 @@ export function RefusalReasonField({
   );
 }
 
+/** Said over the list of reasons: a press on one is the rejection itself. */
+export const REFUSAL_PICK_HINT = "Press what is wrong. That rejects it and tells the rep.";
+
+/**
+ * The same closed list, drawn as a list to PRESS: choosing a reason IS the rejection.
+ *
+ * 🔴 REJECT IS TWO PRESSES, NEVER THREE (owner, 23 Nov 2026: "Fix them", after the re-score counted
+ * them). A waiting row with no confident reason used to need the pick-list opened, a reason chosen and
+ * then Reject. Reject now opens this list and the reason sends it. A row whose reason the system is
+ * confident of still rejects in ONE press, on the reason already in `RefusalReasonField`. Only the
+ * three WAITING decisions use it (a held place, a building, a customer seated in one); rejecting a
+ * validation already in use still arms first, because that one costs visits.
+ */
+export function RefusalReasonPick({
+  buildingHasNoTimetable = false,
+  disabled,
+  kind = "signboard",
+  onBack,
+  onPick,
+}: {
+  kind?: ValidationPickKind;
+  buildingHasNoTimetable?: boolean;
+  disabled?: boolean;
+  /** Close the list with nothing rejected. */
+  onBack: () => void;
+  onPick: (reason: ValidationRefusalReason) => void;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5" data-reason-pick>
+      <p className="break-words text-xs font-black uppercase tracking-[0.12em] text-slate-500">{VALIDATION_REASON_LABEL}</p>
+      <p className="break-words text-xs text-slate-600">{REFUSAL_PICK_HINT}</p>
+      <ul className="min-w-0 space-y-1">
+        {reasonsFor(kind, { buildingHasNoTimetable }).map((reason) => (
+          <li key={reason.key}>
+            <button
+              className="flex min-h-10 w-full min-w-0 items-center rounded-none border border-rose-200 bg-white px-3 py-1.5 text-left text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-9"
+              disabled={disabled}
+              onClick={() => onPick(reason.key)}
+              type="button"
+            >
+              <span className="min-w-0 break-words">{reason.label}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        className="inline-flex min-h-9 items-center rounded-none text-xs font-black text-slate-600 underline-offset-2 hover:underline disabled:text-slate-400"
+        disabled={disabled}
+        onClick={onBack}
+        type="button"
+      >
+        Back, reject nothing
+      </button>
+    </div>
+  );
+}
+
 /** Under the note box on both screens, so the split between what he reads and what is kept is stated. */
 export function RefusalNoteHint() {
   return <p className="break-words text-xs text-slate-500">{VALIDATION_NOTE_HINT}</p>;

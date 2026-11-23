@@ -394,6 +394,8 @@ export function ZoomablePhoto({
       alt={alt}
       aria-hidden={ariaHidden ? "true" : undefined}
       className={cn(className, "cursor-zoom-in")}
+      // A lazy thumbnail is one of a long list: it is decoded off the main thread, so a scroll never waits on it.
+      decoding={lazy ? "async" : undefined}
       loading={lazy ? "lazy" : undefined}
       onClick={(event) => {
         // A photo often sits inside a clickable row or a link. Opening the viewer must not also

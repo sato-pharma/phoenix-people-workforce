@@ -109,6 +109,11 @@ export type PlaceCheckBoardProps = {
   sfeRecommended?: { count: number; href: string };
   /** Tabs the page draws itself, after the board's own. */
   slots?: ReadonlyArray<PlaceCheckSlot>;
+  /**
+   * The page's own title band, drawn around the board's top line (`PlaceCheckTop`). The Super Admin's
+   * page hands it; a board handed none draws its top line by itself, under whatever title its page drew.
+   */
+  hero?: (line: ReactNode) => ReactNode;
 };
 
 /** One tab of the strip. `open` is the "N waiting" pill, drawn only on a board with no lanes. */

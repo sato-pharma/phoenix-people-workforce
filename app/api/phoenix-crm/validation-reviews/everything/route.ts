@@ -13,8 +13,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // GET = the part of Place checks that waits for the click (owner, 2026-11-14, "Load lists on demand"):
-// every place in use and every decision older than the 14-day window, read when he opens Not confirmed,
-// picks a filter or a decider, taps a count, or opens the one-by-one review — never with the page, which
+// every place in use and every decision the page did not send, read when he opens Not confirmed, History
+// or "Approved by the system", picks a filter or a decider, taps a count, or opens the one-by-one review — never with the page, which
 // used to send all of it (12.5 MB) and froze the server building it (`place-checks-on-demand.ts`).
 // The Super Admin and the SFE Manager, exactly as the page: `approve` is gate one and
 // `readsCompanyPlaceChecks` gate two, both before a row is read. It READS — the SFE Manager reads the
@@ -22,8 +22,9 @@ export const dynamic = "force-dynamic";
 // whole by its own page and never asks this route.
 async function readEverything(viewer: PhoenixCrmViewer): Promise<PlaceChecksEverything> {
   const [reviews, validated] = await Promise.all([loadValidationReviews(viewer, { everyDecision: true }), loadValidatedPlaces(viewer)]);
-  // A waiting place is always `recent`, so these are decided rows only.
-  return { validated: validated.rows, olderDecided: reviews.rows.filter((row) => !row.recent) };
+  // Every decision: the board keeps the page's copy of any row the page also sent (`mergeDecided`), so
+  // this read needs no knowledge of what the page chose to send.
+  return { validated: validated.rows, olderDecided: reviews.rows.filter((row) => row.status !== "pending") };
 }
 
 export async function GET(request: Request) {

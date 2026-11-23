@@ -31,6 +31,7 @@ import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decid
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
+import { usePlaceCheckLayout } from "@/components/phoenix-crm/place-checks/layout";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
   CrmCardsOnPhone,
@@ -127,6 +128,8 @@ export function ValidatedPlaceList({
   // row on screen, and "Pick all" that reached 600 places behind a Show more would be a trap.
   const picks = useRowPicks<ValidatedPlaceRow>(bulk ? shown : [], (row) => row.placeId);
   const kind = picks.picked.length > 0 && picks.picked.every((row) => row.photoKind === "schedule") ? "schedule" : "signboard";
+  // One of the two layouts on the Super Admin's page, both everywhere else (place-checks/layout.tsx).
+  const layout = usePlaceCheckLayout();
 
   return (
     <div className="min-w-0 space-y-3">
@@ -164,6 +167,7 @@ export function ValidatedPlaceList({
               picks={picks}
             />
           ) : null}
+          {layout === "table" ? null : (
           <CrmCardsOnPhone>
             {shown.map((row) => (
               <div key={row.placeId} className="space-y-3 px-4 py-4">
@@ -176,6 +180,8 @@ export function ValidatedPlaceList({
               </div>
             ))}
           </CrmCardsOnPhone>
+          )}
+          {layout === "cards" ? null : (
           <CrmTable columns={["36%", "20%", "24%", "20%"]}>
             <thead>
               <tr>
@@ -207,6 +213,7 @@ export function ValidatedPlaceList({
               ))}
             </tbody>
           </CrmTable>
+          )}
           <div className="px-4 pb-4">
             <CrmShowMore left={found.length - shown.length} onMore={() => setPage((current) => current + 1)} page={PAGE} />
           </div>

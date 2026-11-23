@@ -32,13 +32,15 @@
  * surface rule): the board declares `surface="admin"` around itself.
  */
 
+import { useState } from "react";
+
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { CustomerMatchBoardView } from "@/components/phoenix-crm/customer-match-board";
 import { LineLookalikeBoardView } from "@/components/phoenix-crm/line-lookalike-board";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import type { PlaceCheckBoardProps } from "@/components/phoenix-crm/place-checks/board-types";
 import { PlaceChecksBuildingsPanel } from "@/components/phoenix-crm/place-checks/buildings-panel";
-import { PlaceCheckDeskHeader } from "@/components/phoenix-crm/place-checks/desk-header";
+import { PlaceCheckDeskHeader, PlaceCheckTop } from "@/components/phoenix-crm/place-checks/desk-header";
 import { PlaceCheckFilterBar } from "@/components/phoenix-crm/place-checks/filter-bar";
 import { PlaceChecksBySystemPanel, PlaceChecksHistoryPanel } from "@/components/phoenix-crm/place-checks/history-panel";
 import { PlaceChecksInUsePanel } from "@/components/phoenix-crm/place-checks/in-use-panel";
@@ -76,6 +78,11 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
   // The one-by-one review's button: beside the waiting number on the Super Admin's board.
   const review =
     deckInput && reviewDeck ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything, bare: lanes }) : null;
+  // 🔴 A TAB THE PAGE HANDS IN IS DRAWN FROM ITS FIRST OPENING ON, never before (23 Nov 2026). Each stayed
+  // mounted from the start, hidden, so "Full names" and "Figures" were in the HTML and in the page of
+  // somebody who opened Your call. Once opened it stays, so a name half corrected is still there.
+  const [slotsOpened, setSlotsOpened] = useState<ReadonlyArray<string>>([]);
+  if (view.startsWith("slot:") && !slotsOpened.includes(view)) setSlotsOpened([...slotsOpened, view]);
   // The tabs that read for themselves, or are the page's own, never wait for the click's read.
   const readsItself = view === "samePlace" || view === "sameCustomer" || view === "lineLookalikes" || view.startsWith("slot:");
 
@@ -83,7 +90,7 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
     <CrmSurfaceProvider surface="admin">
       <div className="space-y-5">
         <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
-          {lanes ? <PlaceCheckDeskHeader board={board} review={review} /> : review}
+          <PlaceCheckTop hero={props.hero}>{lanes ? <PlaceCheckDeskHeader board={board} review={review} /> : review}</PlaceCheckTop>
           <PlaceCheckFilterBar board={board} />
 
           {capped.reviews || capped.validated || capped.reopened || capped.sharedPlaces ? (
@@ -165,12 +172,14 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
             </div>
           ) : null}
 
-          {/* What the page hands in stays mounted, so a name half corrected is still there when he comes back to its tab. */}
-          {slots.map((slot) => (
-            <div key={slot.key} aria-labelledby={`vr-tab-slot:${slot.key}`} className="space-y-5" hidden={view !== `slot:${slot.key}`} id={`vr-panel-slot:${slot.key}`} role="tabpanel">
-              {slot.content}
-            </div>
-          ))}
+          {/* What the page hands in stays mounted once opened, so a name half corrected is still there when he comes back to its tab. */}
+          {slots
+            .filter((slot) => view === `slot:${slot.key}` || slotsOpened.includes(`slot:${slot.key}`))
+            .map((slot) => (
+              <div key={slot.key} aria-labelledby={`vr-tab-slot:${slot.key}`} className="space-y-5" hidden={view !== `slot:${slot.key}`} id={`vr-panel-slot:${slot.key}`} role="tabpanel">
+                {slot.content}
+              </div>
+            ))}
 
           {!reading && view === "bySystem" ? (
             <div aria-labelledby="vr-tab-bySystem" className="space-y-5" id="vr-panel-bySystem" role="tabpanel">
