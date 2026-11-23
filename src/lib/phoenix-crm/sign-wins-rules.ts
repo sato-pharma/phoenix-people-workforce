@@ -32,9 +32,14 @@ export const SIGN_WINS_RULE = "sign_wins";
 export const GOOGLE_HOLD_REASONS = ["no_confident_listing", "lookup_failed", "listing_far", "listing_off"] as const;
 
 /**
- * 🔴 ONLY A PLACE CAPTURED FROM THIS INSTANT ON. The rule is not a pass over what waited before he
- * chose it: on the day none did (read on production, 23 Nov 2026), and an older backlog would be a
- * bulk change to announce to him first, never something an hourly job does on its own.
+ * 🔴 ONLY A PLACE CAPTURED FROM THIS INSTANT ON: the start of the day he chose the rule. It is not a
+ * pass over what waited before that day (none of those was in the group, read on production, 23 Nov
+ * 2026), and an older backlog would be a bulk change to announce to him first, never something an
+ * hourly job does on its own.
+ *
+ * 🔴 IT IS NOT THE DEPLOY INSTANT. A place captured from this instant on that is still waiting when the
+ * rule goes live is approved by the first hourly runs, at most `SIGN_WINS_SWEEP_LIMIT` a run. That
+ * count is read on production and put to him before the merge (0 on 23 Nov 2026, 07:26 Cairo).
  */
 export const SIGN_WINS_STARTED_AT = "2026-11-23T00:00:00+02:00";
 

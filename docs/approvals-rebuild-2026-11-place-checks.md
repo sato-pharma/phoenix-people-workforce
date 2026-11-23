@@ -89,7 +89,9 @@ than 30 days.
 
 **Two lanes and one number** (`place-check-lanes.ts`). A waiting decision is Ready only when the
 advice is Approve, that kind is confident, and Approve can be pressed. Everything else is Your call,
-with the one reason it is his. Once a kind has 20 of his decisions in the last 30 days, those
+with the one reason it is his. A place or a building with an integrity case nobody has settled is
+never Ready, whatever the advice says: one press on the lane never approves what the sign-wins rule
+itself would leave. Once a kind has 20 of his decisions in the last 30 days, those
 outrank the table. A building is one decision however many customers wait behind it, and it is
 Ready only if everything open in it is. The header, the lanes, the review button and Needs You read
 the same count.
@@ -142,7 +144,10 @@ lanes test.
 - **No pass over what waited before.** The sign-wins rule takes only a place captured from 23 Nov
   2026 on (`SIGN_WINS_STARTED_AT`). On the day he chose it, none of the waiting places was in the
   group, so nothing was approved in bulk. An older backlog would be a bulk change to announce to him
-  first.
+  first. The start is that day's midnight, not the deploy instant: a place captured from then that
+  still waits when the rule goes live is approved by the first hourly runs. That count is read on
+  production and put to him before the merge (0 at 07:26 Cairo on 23 Nov 2026; the 8 Google holds
+  then waiting were all older, and none of them had a sign naming the customer).
 
 ## What stays exactly as it was
 
@@ -159,6 +164,22 @@ own photo. Photo rotation. The trusted point and "Validate with my photo".
   company board. It still heads a district manager's board.
 - 17 Oct 2026, "the system's recommendation decides nothing": still true for everything except the
   sign-wins group he chose on 23 Nov.
+
+## What the reviews found, and what changed
+
+Two reviews read the pull request before any merge was asked for (23 Nov 2026).
+
+- **The Ready lane ignored open integrity cases.** The system's own rule left such a place to him; the
+  lane did not, so one press could have approved it. Fixed: it is his call, with the reason.
+- **The Ready sentence said "19 times in 20" as a fixed figure.** It now says "at least".
+- **An approval whose mark failed was invisible to the switch.** The mark is now written up to three
+  times before it is logged as missing.
+- **The start date is a midnight, not the deploy instant.** Kept, and said plainly above and in the
+  rule, with the count read on production.
+- **Left as it is:** if the work after a rep's reply is cut off before the rule is asked (the server
+  stopping mid-request), the place waits with no notice sent to him. It is still on the page and in
+  the Needs You count, and the hourly run meets it again. A held signboard has always had the same
+  gap.
 
 ## Honest limits
 

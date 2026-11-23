@@ -21,11 +21,13 @@ import {
   deskMakeUp,
   deskUnitsOf,
   LANE_NO_REVIEW_ROW,
+  LANE_OPEN_CASE,
   LANE_SHORT_NAME,
   laneOf,
   laneOfBuilding,
   laneOfReviewRow,
   laneOfVenueGroup,
+  openCaseSubjects,
   PLACE_CHECK_LANE_LABEL,
   PLACE_CHECK_RETIRED_VERBS,
   PLACE_CHECK_VERBS,
@@ -37,6 +39,7 @@ import {
   type LaneSubject,
 } from "../src/lib/phoenix-crm/place-check-lanes.ts";
 import { AGREEMENT_READY_MIN_DECISIONS, placeCheckAgreement, type AgreementDecision } from "../src/lib/phoenix-crm/place-check-stored-advice.ts";
+import { placeNoteSubjectKey } from "../src/lib/phoenix-crm/place-note-rules.ts";
 import { needsYouDecisionCount, type SeatedCustomer, type VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import type { SharedPlaceBoardRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
@@ -270,6 +273,47 @@ function runLaneTests() {
     "your_call",
     "🔴 a building declared to have no timetable is his own exception: never Ready",
   );
+
+  // 🔴 NOTHING WITH AN UNSETTLED INTEGRITY CASE IS READY (the CRM review of pull request 700, 23 Nov 2026).
+  // The sign-wins rule leaves such a place to him; the lane's one press must not approve it for him.
+  const openCases = openCaseSubjects({
+    [placeNoteSubjectKey("place", "place-1")]: [{ settledText: "Settled by Omar Gawish, 1 Nov 2026" }, { settledText: null }],
+    [placeNoteSubjectKey("place", "place-2")]: [{ settledText: "Settled by Omar Gawish, 1 Nov 2026" }],
+    [placeNoteSubjectKey("place", "place-3")]: [],
+    [placeNoteSubjectKey("shared_place", "v-case")]: [{ settledText: null }],
+    [placeNoteSubjectKey("place", "place-seat-case")]: [{ settledText: null }],
+  });
+  assert.deepEqual(
+    [...openCases].sort(),
+    [placeNoteSubjectKey("place", "place-1"), placeNoteSubjectKey("place", "place-seat-case"), placeNoteSubjectKey("shared_place", "v-case")].sort(),
+    "a subject is open while ANY of its cases has no settlement; one whose cases are all settled, or that has none, is not",
+  );
+  assert.deepEqual(
+    laneOfReviewRow(review({}), null, openCases),
+    { lane: "your_call", because: LANE_OPEN_CASE },
+    "🔴 a clinic whose sign names the customer is NOT Ready while a case on its place is unsettled",
+  );
+  assert.equal(laneOfReviewRow(review({ placeId: "place-2" }), null, openCases).lane, "ready", "a settled case holds nothing back");
+  assert.equal(laneOf({ ...subject("approve", true), openCase: true }, promoted).lane, "your_call", "🔴 and no 30-day count opens it");
+  assert.equal(
+    laneOf({ ...subject("approve", true, "sign_match", true), openCase: true }).because,
+    LANE_SHORT_NAME,
+    "a short name is said first: it is the one Approve itself refuses",
+  );
+  assert.equal(
+    laneOfVenueGroup(group(venue({ sharedPlaceId: "v-case" }), [seated({ sharedPlaceId: "v-case" })]), promoted, openCases).because,
+    `The building: ${LANE_OPEN_CASE}`,
+    "🔴 a case on the building keeps the whole building his, in use or held",
+  );
+  const caseBehind = laneOfVenueGroup(group(venue({}), [seated({ placeId: "place-seat-case" })]), promoted, openCases);
+  assert.equal(caseBehind.lane, "your_call", "🔴 and so does a case on one customer waiting in it");
+  assert.ok(caseBehind.because?.endsWith(LANE_OPEN_CASE));
+  assert.equal(laneOfVenueGroup(group(venue({}), [seated({})]), promoted, openCases).lane, "ready", "a building with no case on it or behind it is still Ready");
+  assert.equal(
+    placeCheckDesk(deskUnitsOf({ clinics: [review({}), review({ placeId: "place-2" })], groups: [] }, null, openCases)).ready,
+    1,
+    "🔴 the header's Ready count leaves the open case out too",
+  );
 }
 
 function runDeskTests() {
@@ -502,8 +546,15 @@ function runWordingAndFileTests() {
   // The board's tabs are named by the lanes' own labels.
   const board = placeCheckBoardSource(code);
   assert.ok(board.includes("label: PLACE_CHECK_LANE_LABEL.ready"), "the Ready tab reads the lane's label");
-  assert.ok(board.includes("placeCheckDesk(deskUnitsOf({ clinics: clinicPending, groups: everyVenueGroup }, agreement))"), "🔴 the header counts the rows BEFORE the filters, so its number never moves with one");
+  assert.ok(board.includes("placeCheckDesk(deskUnitsOf({ clinics: clinicPending, groups: everyVenueGroup }, agreement, openCases))"), "🔴 the header counts the rows BEFORE the filters, so its number never moves with one");
   assert.ok(board.includes("readyLaneRequests({ reviews: readyReviews, groups: readyGroups })"), "and the lane's one press sends what the pure function lists");
+  // 🔴 EVERY SORT OF THE BOARD IS HANDED THE OPEN CASES: the lanes, the header's count, and the lane a
+  // tapped count opens. One call without them would put an unsettled case back in Ready.
+  assert.ok(board.includes("const openCases = useMemo(() => openCaseSubjects(noteIndex.integrity), [noteIndex.integrity]);"), "read from the cases the board already draws beside each row");
+  assert.equal(board.split("laneOfReviewRow(row, agreement, openCases)").length - 1, 2, "both sorts of a waiting clinic");
+  assert.equal(board.split("laneOfVenueGroup(group, agreement, openCases)").length - 1, 2, "and both sorts of a building");
+  assert.ok(!board.includes("laneOfReviewRow(row, agreement)") && !board.includes("laneOfVenueGroup(group, agreement)"), "🔴 never a sort that leaves them out");
+  assert.ok(board.includes("at least 19 times in 20. Nothing is approved until you press."), "the lane says AT LEAST 19 in 20: the figure is a floor, never the count");
 
   // 🔴 A PANEL DRAWS NO TABLE: THE LIST IT HOLDS OWNS THE TABLE AND THE PHONE CARDS (`place-checks/section.tsx`).
   // Every list a panel imports from the module is read here for both, so "a table has a phone layout" is

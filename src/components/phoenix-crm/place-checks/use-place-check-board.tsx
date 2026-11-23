@@ -29,7 +29,7 @@ import { usePlaceCheckAddress } from "@/components/phoenix-crm/place-checks/use-
 import { usePlaceCheckLanes } from "@/components/phoenix-crm/place-checks/use-board-lanes";
 import { usePlaceCheckRows } from "@/components/phoenix-crm/place-checks/use-board-rows";
 import { usePlaceChecksEverything } from "@/components/phoenix-crm/place-checks/use-everything";
-import { laneOfReviewRow, laneOfVenueGroup, PLACE_CHECK_LANE_LABEL } from "@/lib/phoenix-crm/place-check-lanes";
+import { laneOfReviewRow, laneOfVenueGroup, openCaseSubjects, PLACE_CHECK_LANE_LABEL } from "@/lib/phoenix-crm/place-check-lanes";
 import { unconfirmedOpenCount, type UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
 import {
   decidedSectionTitle,
@@ -104,6 +104,8 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     validated,
     waitingOf,
   } = rows;
+  // The integrity cases the board already draws beside each row: one nobody has settled keeps its row out of Ready.
+  const openCases = useMemo(() => openCaseSubjects(noteIndex.integrity), [noteIndex.integrity]);
   const laneSets = usePlaceCheckLanes({
     agreement,
     clinicPending: rows.clinicPending,
@@ -111,6 +113,7 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     filteredPending,
     lanes,
     needsGroups,
+    openCases,
     showWaiting,
   });
   const { callGroups, callReviews, desk, readyGroups, readyReviews } = laneSets;
@@ -209,8 +212,8 @@ export function usePlaceCheckBoard(props: PlaceCheckBoardProps) {
     if (place.view !== "needs" || !lanes) return place;
     const waiting = waitingOf(rep);
     const hisCall =
-      waiting.reviews.some((row) => laneOfReviewRow(row, agreement).lane === "your_call") ||
-      waiting.groups.some((group) => laneOfVenueGroup(group, agreement).lane === "your_call");
+      waiting.reviews.some((row) => laneOfReviewRow(row, agreement, openCases).lane === "your_call") ||
+      waiting.groups.some((group) => laneOfVenueGroup(group, agreement, openCases).lane === "your_call");
     return hisCall || waiting.reviews.length + waiting.groups.length === 0 ? place : { view: "ready", chip: null };
   };
   // A tapped count opens exactly its rows: that rep (or every rep), the tab and narrowing that hold them,

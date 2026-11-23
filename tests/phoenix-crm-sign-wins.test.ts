@@ -155,6 +155,12 @@ function checkTheServer() {
   assert.ok(mark.includes('.eq("status", "approved")') && mark.includes('.eq("decided_by_hr_id", SIGNBOARD_SYSTEM_ACTOR)'), "his own decision is never marked as the rule's");
   assert.ok(server.includes(`storedAdviceOf({ kind: "approve", code: GOOGLE_SIGN_MATCH_CODE })`), "the mark keeps the advice the system acted on");
   assert.equal(GOOGLE_SIGN_MATCH_CODE, "google_sign_match");
+  // 🔴 THE MARK IS WRITTEN AGAIN WHEN IT FAILS: the switch counts marked rows only, so an approval left
+  // unmarked is one whose take-back could never stop the rule (the CRM review of pull request 700).
+  assert.ok(server.includes("const SIGN_WINS_MARK_ATTEMPTS = 3;"), "three tries");
+  const tries = server.slice(server.indexOf("for (let attempt = 1; attempt <= SIGN_WINS_MARK_ATTEMPTS; attempt += 1) {"), server.indexOf("Phoenix CRM sign-wins approval was not marked"));
+  assert.ok(tries.includes("system_approved_rule: SIGN_WINS_RULE") && tries.includes("if (!error) break;"), "the same guarded write each time, and it stops at the first one that lands");
+  assert.ok(tries.includes("system_approved_at: approvedAt"), "one instant for every try, so a second write never moves when it was approved");
   // A take-back is the row turned rejected with its mark still on it.
   assert.ok(server.includes('takeBacks: read.rows.filter((row) => row.status === "rejected").length'), "a take-back is counted from the review's own status");
 

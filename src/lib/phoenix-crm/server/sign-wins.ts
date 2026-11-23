@@ -45,6 +45,9 @@ const REVIEW_COLUMNS = "id, status, is_test, google, created_at, place_id, custo
 /** The most rows either read below may hold. Far above a month of this rule; a bound on memory only. */
 const SIGN_WINS_READ_MAX = 2_000;
 
+/** How many times the mark is written before the approval is left unmarked and logged. */
+const SIGN_WINS_MARK_ATTEMPTS = 3;
+
 function isRecord(value: unknown): value is Row {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -129,16 +132,26 @@ async function approveUnderTheRule(reviewId: string): Promise<boolean> {
   if (!(await approveHeldSignboardBySystem(reviewId, SIGN_WINS_NOTE))) return false;
   // The mark, and the advice the system acted on, so the 30-day switch and the meter can read them.
   // Only on the row the system itself just approved: his own decision is never marked as the rule's.
-  const { error } = await getSupabaseAdmin()
-    .from("phoenix_crm_validation_reviews")
-    .update({
-      system_approved_rule: SIGN_WINS_RULE,
-      system_approved_at: new Date().toISOString(),
-      ...storedAdviceOf({ kind: "approve", code: GOOGLE_SIGN_MATCH_CODE }),
-    })
-    .eq("id", reviewId)
-    .eq("status", "approved")
-    .eq("decided_by_hr_id", SIGNBOARD_SYSTEM_ACTOR);
+  //
+  // 🔴 THE MARK IS TRIED AGAIN, because the switch counts marked rows only: an approval left unmarked
+  // would be one a take-back of could never stop the rule. The same guarded write each time, so a try
+  // that did land is simply written again.
+  const approvedAt = new Date().toISOString();
+  let error: unknown = null;
+  for (let attempt = 1; attempt <= SIGN_WINS_MARK_ATTEMPTS; attempt += 1) {
+    const written = await getSupabaseAdmin()
+      .from("phoenix_crm_validation_reviews")
+      .update({
+        system_approved_rule: SIGN_WINS_RULE,
+        system_approved_at: approvedAt,
+        ...storedAdviceOf({ kind: "approve", code: GOOGLE_SIGN_MATCH_CODE }),
+      })
+      .eq("id", reviewId)
+      .eq("status", "approved")
+      .eq("decided_by_hr_id", SIGNBOARD_SYSTEM_ACTOR);
+    error = written.error;
+    if (!error) break;
+  }
   if (error) {
     // The approval stands and reads "the system" on the board; it is only missing from the rule's count.
     logError("Phoenix CRM sign-wins approval was not marked", { error, labels: { event: "phoenix_crm_sign_wins_mark_failed" } });

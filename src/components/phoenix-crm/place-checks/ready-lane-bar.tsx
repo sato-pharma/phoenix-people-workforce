@@ -115,7 +115,7 @@ export function ReadyLaneBar({ board }: { board: PlaceCheckBoard }) {
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <p className="min-w-0 flex-1 basis-60 break-words text-sm text-slate-700">
           {decisions > 0
-            ? "Every check passed on these, and you have approved this kind of evidence 19 times in 20. Nothing is approved until you press."
+            ? "Every check passed on these, and you have approved this kind of evidence at least 19 times in 20. Nothing is approved until you press."
             : "Nothing is left in this lane."}
         </p>
         {decisions > 0 || running ? (

@@ -13,6 +13,10 @@
  * 🔴 READY NEEDS ALL THREE: the advice is Approve, that kind of advice is confident, and Approve can be
  * pressed (a customer still short of a full name is never approved, so it is never Ready).
  *
+ * 🔴 AND NOTHING ON IT IS STILL UNREAD: a place or a building with an integrity case nobody has settled
+ * is his call whatever the advice says (`openCaseSubjects`). It is the line `sign-wins-rules.ts` draws
+ * for the system's own approvals, so one press on the lane can never approve what the system would not.
+ *
  * 🔴 THE 30-DAY COUNT OUTRANKS THE TABLE. `confident` on an advice is where the kind stood on his first
  * 2,353 decisions. Once a kind has 20 decisions of his in the last 30 days, the page believes those: a
  * kind he now agrees with 19 times in 20 becomes Ready, and one he stopped agreeing with leaves it.
@@ -26,6 +30,7 @@
 
 import { adviseOnBuilding, adviseOnReview, adviseOnTimetable, type PlaceCheckAdvice, type PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
 import { AGREEMENT_READY_MIN_DECISIONS, type PlaceCheckAgreement } from "@/lib/phoenix-crm/place-check-stored-advice";
+import { placeNoteSubjectKey, type PlaceNoteSubjectKind } from "@/lib/phoenix-crm/place-note-rules";
 import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { venueNeedsDecision, type VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import { WAITING_LONG_HOURS } from "@/lib/phoenix-crm/waiting-rules";
@@ -65,7 +70,30 @@ export type LaneSubject = {
   advice: Pick<PlaceCheckAdvice, "kind" | "code" | "confident">;
   /** A clinic customer still short of a full name: Approve is refused for it everywhere. */
   needsFullName: boolean;
+  /** An integrity case on this place or building that nobody has settled. */
+  openCase?: boolean;
 };
+
+/**
+ * The subjects of the page that carry an integrity case nobody has settled, by the notes index's own key
+ * (`placeNoteSubjectKey`). The board hands it the cases it already draws beside each row, so the lanes
+ * read no table of their own. A case is open until it has a settlement to show (`settledText`).
+ */
+export type OpenCases = ReadonlySet<string>;
+
+export const NO_OPEN_CASES: OpenCases = new Set<string>();
+
+export function openCaseSubjects(casesBySubject: Readonly<Record<string, ReadonlyArray<{ settledText: string | null }>>>): Set<string> {
+  const open = new Set<string>();
+  for (const [key, cases] of Object.entries(casesBySubject)) {
+    if (cases.some((one) => one.settledText === null)) open.add(key);
+  }
+  return open;
+}
+
+function hasOpenCase(openCases: OpenCases, kind: PlaceNoteSubjectKind, id: string | null | undefined): boolean {
+  return typeof id === "string" && id.length > 0 && openCases.has(placeNoteSubjectKey(kind, id));
+}
 
 export type LaneReading = {
   lane: PlaceCheckLane;
@@ -93,9 +121,13 @@ const LEAN: Record<PlaceCheckAdviceKind, string> = {
 
 export const LANE_SHORT_NAME = "The name on file is not a full name yet, so it cannot be approved.";
 
+/** Said of a place or a building the system filed evidence on that nobody has settled. Never Ready. */
+export const LANE_OPEN_CASE = "The system filed evidence on it that is not settled yet. Read it before you decide.";
+
 /** The lane of one clinic, or of one thing inside a building. */
 export function laneOf(subject: LaneSubject, agreement: ReadyKinds = null): LaneReading {
   if (subject.needsFullName) return { lane: "your_call", because: LANE_SHORT_NAME };
+  if (subject.openCase === true) return { lane: "your_call", because: LANE_OPEN_CASE };
   if (subject.advice.kind === "approve" && adviceIsConfidentNow(subject.advice, agreement)) return { lane: "ready", because: null };
   return { lane: "your_call", because: LEAN[subject.advice.kind] };
 }
@@ -124,11 +156,11 @@ export function laneOfBuilding(group: LaneBuilding, agreement: ReadyKinds = null
 
 // ── The board's own rows ────────────────────────────────────────────────────────────────────────
 
-type ReviewRow = Parameters<typeof adviseOnReview>[0] & { listType: unknown; customerName: unknown };
+type ReviewRow = Parameters<typeof adviseOnReview>[0] & { listType: unknown; customerName: unknown; placeId?: string | null };
 
 /** One waiting clinic as the board holds it: the advice the row itself draws, and whether Approve is open. */
-export function laneOfReviewRow(row: ReviewRow, agreement: ReadyKinds = null): LaneReading {
-  return laneOf({ advice: adviseOnReview(row), needsFullName: approvalNeedsFullName(row) }, agreement);
+export function laneOfReviewRow(row: ReviewRow, agreement: ReadyKinds = null, openCases: OpenCases = NO_OPEN_CASES): LaneReading {
+  return laneOf({ advice: adviseOnReview(row), needsFullName: approvalNeedsFullName(row), openCase: hasOpenCase(openCases, "place", row.placeId) }, agreement);
 }
 
 /** A customer waiting behind a door with no review row to answer on: one press cannot settle him. */
@@ -139,15 +171,19 @@ export const LANE_NO_REVIEW_ROW = "A customer waiting in it has no review to ans
  * it is HELD; each customer waiting behind it is read against the building's one timetable, exactly as
  * his own row reads it.
  */
-export function laneOfVenueGroup(group: Pick<VenueGroup, "venue" | "customers">, agreement: ReadyKinds = null): LaneReading {
+export function laneOfVenueGroup(group: Pick<VenueGroup, "venue" | "customers">, agreement: ReadyKinds = null, openCases: OpenCases = NO_OPEN_CASES): LaneReading {
   const waiting = group.customers.filter((customer) => customer.state === "waiting");
   if (waiting.some((customer) => customer.reviewId === null)) return { lane: "your_call", because: LANE_NO_REVIEW_ROW };
+  // A case on the building itself keeps the whole building his, held or in use: the customers behind it
+  // stand on that building's point.
+  if (hasOpenCase(openCases, "shared_place", group.venue.sharedPlaceId)) return { lane: "your_call", because: `The building: ${LANE_OPEN_CASE}` };
   return laneOfBuilding(
     {
       building: group.venue.status === "held" ? { advice: adviseOnBuilding(group.venue), needsFullName: false } : null,
       waiting: waiting.map((customer) => ({
         advice: adviseOnTimetable(customer.timetable, group.venue.timetableExempt !== null),
         needsFullName: approvalNeedsFullName(customer),
+        openCase: hasOpenCase(openCases, "place", customer.placeId),
       })),
     },
     agreement,
@@ -164,10 +200,11 @@ type WaitingClinic = ReviewRow & { waitingLong?: boolean };
 export function deskUnitsOf(
   input: { clinics: ReadonlyArray<WaitingClinic>; groups: ReadonlyArray<Pick<VenueGroup, "venue" | "customers">> },
   agreement: ReadyKinds = null,
+  openCases: OpenCases = NO_OPEN_CASES,
 ): DeskUnit[] {
   const clinics = input.clinics.map<DeskUnit>((row) => ({
     kind: "clinic",
-    lane: laneOfReviewRow(row, agreement).lane,
+    lane: laneOfReviewRow(row, agreement, openCases).lane,
     customersBehind: 0,
     waitingLong: row.waitingLong === true,
   }));
@@ -175,7 +212,7 @@ export function deskUnitsOf(
     const waiting = group.customers.filter((customer) => customer.state === "waiting");
     return {
       kind: "building",
-      lane: laneOfVenueGroup(group, agreement).lane,
+      lane: laneOfVenueGroup(group, agreement, openCases).lane,
       customersBehind: waiting.length,
       waitingLong: group.venue.status === "held" ? group.venue.waitingLong === true : waiting.some((customer) => customer.waitingLong === true),
     };
