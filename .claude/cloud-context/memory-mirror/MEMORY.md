@@ -30,6 +30,7 @@
 
 ## Inbox — new notes land here
 - 🔴 [Employee Master email is FINAL](employee-master-email-is-final-for-mailboxes.md) - never change it; a missing mailbox is created/restored AT that address.
+- 🔴 ["Convert to Navy identity"](convert-to-navy-identity-means-the-parked-pr-649-look.md) - the PR 649 portal redesign is a parked BACKUP (tag `backup/navy-identity-2026-11-23`); apply per screen ONLY on those words; never merge 649.
 
 
 
