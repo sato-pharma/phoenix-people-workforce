@@ -264,7 +264,8 @@ export async function farVisitOutcome(input: {
     visitDate,
     days: STUCK_LOOKBACK_DAYS,
   });
-  const reading = { lat: input.visit.lat, lon: input.visit.lon, accuracyMeters: input.visit.accuracyMeters };
+  // Its time rides along: the alert below counts this try in the two-minute spread (STUCK_MIN_SPAN_SECONDS).
+  const reading = { lat: input.visit.lat, lon: input.visit.lon, accuracyMeters: input.visit.accuracyMeters, at: now.toISOString() };
   const verdict = holdInsteadOfRefuse(earlier, reading);
   if (verdict.hold) {
     const held = await writeHold({

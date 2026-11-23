@@ -11,6 +11,7 @@ import {
   RECHECK_MIN_FAR_VISITS,
   RECHECK_MIN_TRIES,
   STUCK_LOOKBACK_DAYS,
+  STUCK_MIN_SPAN_SECONDS,
   farRefusalLineFor,
   holdInsteadOfRefuse,
   impossibleLocationApplies,
@@ -139,17 +140,45 @@ export function runPhoenixCrmFarVisitSafeguardsTests() {
 
   // ── B and C · a rep stuck at one spot ───────────────────────────────────────────────────────────
   {
-    const at = (metres: number, accuracyMeters: number | null = 8): FarTry => ({ ...north(metres), accuracyMeters });
-    const four = [at(0), at(5), at(10), at(15)];
+    // A try refused `minutes` before NOW, `metres` north of the clinic. Tries a minute apart, so five span four.
+    const tryAt = (metres: number, minutes: number, accuracyMeters: number | null = 8): FarTry => ({
+      ...north(metres),
+      accuracyMeters,
+      at: minutesBefore(minutes),
+    });
+    const at = (metres: number, accuracyMeters: number | null = 8): FarTry => tryAt(metres, 0, accuracyMeters);
+    const four = [tryAt(0, 5), tryAt(5, 4), tryAt(10, 3), tryAt(15, 2)];
     assert.equal(stuckAtOneSpot(four).stuck, false, "four refusals are not yet stuck");
-    const five = [...four, at(20)];
+    const five = [...four, tryAt(20, 1)];
     const verdict = stuckAtOneSpot(five);
-    assert.equal(verdict.stuck, true, "five refusals from one spot are");
+    assert.equal(verdict.stuck, true, "five refusals from one spot, spread over four minutes, are");
     assert.equal(verdict.tries, 5);
     assert.ok(verdict.centre && distanceMeters(verdict.centre, north(10)) < 1, "the spot's centre is the middle of the tries — where the place should probably be");
-    assert.equal(stuckAtOneSpot([...four, at(20, 40)]).stuck, false, "a rough try (over 30 m) is no proof of where he stood");
-    assert.equal(stuckAtOneSpot([...four, at(20, null)]).stuck, false, "nor a try of unknown accuracy");
-    assert.equal(stuckAtOneSpot([at(0), at(30), at(60), at(90), at(120)]).stuck, false, "five tries spread over 120 m are a rep walking about, not one spot");
+    assert.equal(stuckAtOneSpot([...four, tryAt(20, 1, 40)]).stuck, false, "a rough try (over 30 m) is no proof of where he stood");
+    assert.equal(stuckAtOneSpot([...four, tryAt(20, 1, null)]).stuck, false, "nor a try of unknown accuracy");
+    assert.equal(stuckAtOneSpot([tryAt(0, 5), tryAt(30, 4), tryAt(60, 3), tryAt(90, 2), tryAt(120, 1)]).stuck, false, "five tries spread over 120 m are a rep walking about, not one spot");
+
+    // 🔴 Close the gap (owner, 23 Nov 2026): five presses seconds apart prove nothing about the place.
+    assert.equal(STUCK_MIN_SPAN_SECONDS, 120, "the tries must be spread over at least two minutes");
+    const seconds = (s: number) => new Date(NOW.getTime() - s * 1000).toISOString();
+    const burst = [0, 3, 6, 9, 15].map((s, index) => ({ ...north(index * 5), accuracyMeters: 8, at: seconds(s) }));
+    const burstVerdict = stuckAtOneSpot(burst);
+    assert.equal(burstVerdict.stuck, false, "🔴 five presses in 15 seconds from one spot are NOT stuck — the 16 Nov burst");
+    assert.equal(burstVerdict.tries, 5, "they are still counted as five tries at the spot");
+    assert.equal(holdInsteadOfRefuse(burst, at(12)).hold, false, "🔴 so the next press after a burst is refused, not held");
+    const justUnder = [0, 30, 60, 90, 119].map((s, index) => ({ ...north(index * 5), accuracyMeters: 8, at: seconds(s) }));
+    assert.equal(stuckAtOneSpot(justUnder).stuck, false, "119 seconds is still a burst");
+    const justOver = [0, 30, 60, 90, 120].map((s, index) => ({ ...north(index * 5), accuracyMeters: 8, at: seconds(s) }));
+    assert.equal(stuckAtOneSpot(justOver).stuck, true, "two minutes from the first try to the fifth is stuck");
+    const untimed = five.map((entry) => ({ lat: entry.lat, lon: entry.lon, accuracyMeters: entry.accuracyMeters }));
+    assert.equal(stuckAtOneSpot(untimed).stuck, false, "tries with no time cannot show they were spread over time");
+    assert.equal(stuckAtOneSpot(untimed).tries, 5, "but Places to re-check still reads their count and their centre");
+    const burstThenLater = [...burst, tryAt(10, 5)];
+    assert.equal(stuckAtOneSpot(burstThenLater).stuck, true, "a burst and one more try minutes later IS stuck — he came back to the door");
+    const wideSlow = [tryAt(300, 10), tryAt(305, 9), tryAt(310, 8), tryAt(315, 7), tryAt(320, 6)];
+    const preferStuck = stuckAtOneSpot([...wideSlow, ...[0, 2, 4, 6, 8, 10].map((s, index) => ({ ...north(index * 3), accuracyMeters: 8, at: seconds(s) }))]);
+    assert.equal(preferStuck.stuck, true, "a stuck spot wins over a larger burst somewhere else");
+    assert.ok(preferStuck.centre && distanceMeters(preferStuck.centre, north(310)) < 1, "and the centre is the stuck spot's");
 
     const hold = holdInsteadOfRefuse(five, at(12));
     assert.equal(hold.hold, true, "🔴 the next visit from the same spot is SAVED and held, not refused");
@@ -326,6 +355,13 @@ export function runPhoenixCrmFarVisitSafeguardsTests() {
     const tries = functionBody(stripComments(read("src/lib/phoenix-crm/server/refused-readings.ts")), /export async function loadRecentFarTries\(/);
     assert.match(tries, /\.gte\("visit_date", addDaysIso\(input\.visitDate, -\(Math\.max\(1, Math\.floor\(input\.days\)\) - 1\)\)\)/, "🔴 the rep who gives up at three and comes back tomorrow is counted");
     assert.match(tries, /\.lte\("visit_date", input\.visitDate\)/);
+    assert.match(tries, /\.select\("lat, lon, accuracy_meters, refused_at"\)/, "🔴 the loader reads when each try was refused — without it no try is ever stuck");
+    assert.match(tries, /at: typeof row\.refused_at === "string" \? row\.refused_at : null,/, "and hands that time to the rule");
+    assert.match(
+      functionBody(server, /export async function farVisitOutcome\(/),
+      /accuracyMeters: input\.visit\.accuracyMeters, at: now\.toISOString\(\) \};/,
+      "this try carries its own time into the alert's spread",
+    );
 
     assert.equal(RECHECK_MIN_TRIES, 3);
     assert.equal(RECHECK_MIN_FAR_VISITS, 2);

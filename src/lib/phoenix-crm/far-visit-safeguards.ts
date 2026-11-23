@@ -13,7 +13,8 @@
  *
  *   A · REFUSE IMPOSSIBLE LOCATIONS — a place reading the rep could not have reached from his own last
  *       saved visit, or one that repeats a point already refused as impossible, is refused at validation.
- *   B · ALERT ON A STUCK REP — five far refusals from one tight spot on one customer in one day tell the
+ *   B · ALERT ON A STUCK REP — five far refusals from one tight spot on one customer inside seven days, spread
+ *       over at least two minutes (23 Nov 2026), tell the
  *       Super Admin and the SFE Manager, once, in-app and on Telegram, never by email.
  *   C · HOLD, DON'T REFUSE — after those five, the next visit from the same spot is SAVED and held for the
  *       SFE: it counts in nothing until the SFE approves it. This bends his 2026-10-20 refuse rule.
@@ -188,7 +189,19 @@ const STUCK_SPREAD_METERS = 50;
 /** Only a sharp try counts towards being stuck — a rough reading is no proof of where he stood. */
 const STUCK_MAX_ACCURACY_METERS = 30;
 
-export type FarTry = { lat: number; lon: number; accuracyMeters: number | null };
+/**
+ * 🔴 THE FIVE TRIES MUST BE SPREAD OVER AT LEAST TWO MINUTES (owner, 23 Nov 2026: "Close the gap"). Five
+ * presses seconds apart prove nothing about the place: on 16 Nov a rep pressed save five times in 15
+ * seconds from a moving car 350–500 m from four doctors whose places she had saved herself and visited
+ * at before, and each of the four visits was saved and held. Measured that day on production: 8 of the 13
+ * visits ever held this way came from presses under two minutes apart (7 of them hers); the other 5 came
+ * from tries minutes or days apart — a rep really standing at a door. Burst presses are still refused
+ * and still filed; they simply never make him stuck on their own.
+ */
+export const STUCK_MIN_SPAN_SECONDS = 120;
+
+/** `at` is when the try was refused; a try with no time cannot show the tries were spread over time. */
+export type FarTry = { lat: number; lon: number; accuracyMeters: number | null; at?: string | null };
 
 export type StuckVerdict = {
   stuck: boolean;
@@ -197,6 +210,15 @@ export type StuckVerdict = {
   /** The middle of the spot — where the rep stands, which is where the place should probably be. */
   centre: { lat: number; lon: number } | null;
 };
+
+/** Seconds between the earliest and the latest timed try of a group; 0 when fewer than two carry a time. */
+function spanSeconds(group: readonly FarTry[]): number {
+  const times = group
+    .map((entry) => (entry.at ? Date.parse(entry.at) : Number.NaN))
+    .filter((value) => Number.isFinite(value));
+  if (times.length < 2) return 0;
+  return (Math.max(...times) - Math.min(...times)) / 1000;
+}
 
 function sharp(entry: FarTry): boolean {
   return (
@@ -208,22 +230,29 @@ function sharp(entry: FarTry): boolean {
 }
 
 /**
- * Is the rep stuck at one spot? The largest group of sharp tries that sit within 50 m of one of them
- * decides: five or more is stuck. Pure, so the alert (B) and the hold (C) can never disagree about it.
+ * Is the rep stuck at one spot? A group is the sharp tries within 50 m of one of them; five or more,
+ * spread over at least `STUCK_MIN_SPAN_SECONDS`, is stuck. A stuck group wins over a larger one that is
+ * not, then the larger group. Pure, so the alert (B) and the hold (C) can never disagree about it.
+ * (Places to re-check reads only `tries` and `centre`, never `stuck`.)
  */
 export function stuckAtOneSpot(tries: readonly FarTry[]): StuckVerdict {
   const usable = tries.filter(sharp);
   let best: FarTry[] = [];
+  let bestStuck = false;
   for (const candidate of usable) {
     const group = usable.filter((entry) => distanceMeters(candidate, entry) <= STUCK_SPREAD_METERS);
-    if (group.length > best.length) best = group;
+    const groupStuck = group.length >= STUCK_MIN_TRIES && spanSeconds(group) >= STUCK_MIN_SPAN_SECONDS;
+    if ((groupStuck && !bestStuck) || (groupStuck === bestStuck && group.length > best.length)) {
+      best = group;
+      bestStuck = groupStuck;
+    }
   }
   if (best.length === 0) return { stuck: false, tries: 0, centre: null };
   const centre = {
     lat: best.reduce((sum, entry) => sum + entry.lat, 0) / best.length,
     lon: best.reduce((sum, entry) => sum + entry.lon, 0) / best.length,
   };
-  return { stuck: best.length >= STUCK_MIN_TRIES, tries: best.length, centre };
+  return { stuck: bestStuck, tries: best.length, centre };
 }
 
 /**
