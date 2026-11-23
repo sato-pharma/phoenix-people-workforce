@@ -19141,61 +19141,174 @@ CREATE FUNCTION public.phoenix_crm_seat_reference(p_seat_ids text[], p_is_test b
     SET search_path TO 'public'
     AS $$
   with seats as (
-    select distinct s.seat_id from unnest(p_seat_ids) as s (seat_id) where s.seat_id is not null
+    select distinct s.seat_id
+    from unnest(p_seat_ids) as s (seat_id)
+    where s.seat_id is not null
   ),
   candidates as (
-    select o.seat_id, upper(trim(o.occupant_hr_id)) as hr_id, o.effective_to is null as is_current, o.effective_from, o.effective_to
-    from au.occupancy_history o join seats s on s.seat_id = o.seat_id
-    where o.node_type = 'person' and nullif(trim(o.occupant_hr_id), '') is not null
+    select
+      o.seat_id,
+      upper(trim(o.occupant_hr_id)) as hr_id,
+      o.effective_to is null as is_current,
+      o.effective_from,
+      o.effective_to
+    from au.occupancy_history o
+    join seats s on s.seat_id = o.seat_id
+    where o.node_type = 'person'
+      and nullif(trim(o.occupant_hr_id), '') is not null
   ),
   with_list as (
-    select c.* from candidates c
-    where exists (select 1 from public.crm_contact_assignments a where a.effective_to is null and a.agent_hr_id = c.hr_id and a.list_type in ('AM', 'PM') and a.contact_crm_id <> 100000)
-      and (c.is_current or not exists (
-          select 1 from au.occupancy_history other join au.seats other_seat on other_seat.seat_id = other.seat_id
-          where other.node_type = 'person' and upper(trim(other.occupant_hr_id)) = c.hr_id and other.seat_id <> c.seat_id
-            and other_seat.seat_tier = 'REP' and (other.effective_to is null or other.effective_from > c.effective_from)))
+    select c.*
+    from candidates c
+    where exists (
+        select 1
+        from public.crm_contact_assignments a
+        where a.effective_to is null
+          and a.agent_hr_id = c.hr_id
+          and a.list_type in ('AM', 'PM')
+          and a.contact_crm_id <> 100000
+      )
+      and (
+        c.is_current
+        or not exists (
+          select 1
+          from au.occupancy_history other
+          join au.seats other_seat on other_seat.seat_id = other.seat_id
+          where other.node_type = 'person'
+            and upper(trim(other.occupant_hr_id)) = c.hr_id
+            and other.seat_id <> c.seat_id
+            and other_seat.seat_tier = 'REP'
+            and (other.effective_to is null or other.effective_from > c.effective_from)
+        )
+      )
   ),
   chosen as (
-    select distinct on (w.seat_id) w.seat_id, w.hr_id, w.is_current from with_list w
+    select distinct on (w.seat_id) w.seat_id, w.hr_id, w.is_current
+    from with_list w
     order by w.seat_id, w.is_current desc, w.effective_to desc nulls first, w.effective_from desc
   ),
   rep_spells as (
     select upper(trim(o.occupant_hr_id)) as hr_id, o.seat_id, o.effective_from, o.effective_to
-    from au.occupancy_history o join au.seats s on s.seat_id = o.seat_id
-    where o.node_type = 'person' and s.seat_tier = 'REP' and nullif(trim(o.occupant_hr_id), '') is not null
+    from au.occupancy_history o
+    join au.seats s on s.seat_id = o.seat_id
+    where o.node_type = 'person'
+      and s.seat_tier = 'REP'
+      and nullif(trim(o.occupant_hr_id), '') is not null
   ),
+  -- 🔴 THE CUSTOMER BEHIND AN ENTRY IS FOUND BY THE ID THE ASSIGNMENT CARRIES, which for a doctor the rep
+  -- added himself is his OWN id (the refresh keys on coalesce(reference_contact_crm_id, own_contact_crm_id)).
+  -- Matching the vendor id alone returned NULL for him, and a NULL customer is what
+  -- phoenix_crm_ensure_reference_customers mints a pending copy for -- a second live row for one doctor.
+  -- One row per entry: when a seat already holds a pair (an original and its copy), the live one wins,
+  -- then the active one, then the earliest. Picked ONCE per seat and id, not once per entry.
   seat_customer as (
     select distinct on (c.seat_id, coalesce(c.reference_contact_crm_id, c.own_contact_crm_id))
-      c.seat_id, coalesce(c.reference_contact_crm_id, c.own_contact_crm_id) as contact_crm_id,
-      c.seat_id || '|' || coalesce(c.reference_contact_crm_id, c.own_contact_crm_id)::text as seat_key, c.id, c.status
-    from public.phoenix_crm_customers c join seats s on s.seat_id = c.seat_id
+      c.seat_id,
+      coalesce(c.reference_contact_crm_id, c.own_contact_crm_id) as contact_crm_id,
+      c.seat_id || '|' || coalesce(c.reference_contact_crm_id, c.own_contact_crm_id)::text as seat_key,
+      c.id,
+      c.status
+    from public.phoenix_crm_customers c
+    join seats s on s.seat_id = c.seat_id
     where c.is_test = p_is_test
-    order by c.seat_id, coalesce(c.reference_contact_crm_id, c.own_contact_crm_id), (c.status <> 'dropped') desc, (c.status = 'active') desc, c.created_at asc, c.id asc
+    order by
+      c.seat_id,
+      coalesce(c.reference_contact_crm_id, c.own_contact_crm_id),
+      (c.status <> 'dropped') desc,
+      (c.status = 'active') desc,
+      c.created_at asc,
+      c.id asc
   ),
+  -- 🔴 A PHOENIX_CRM ASSIGNMENT IS ONLY A MIRROR OF A CUSTOMER ON THE SEAT: the hourly refresh (pass 5b)
+  -- opens one for every customer it finds there. Every key a customer of the seat carries, live, test or
+  -- dropped, so a mirror row with none behind it can be told apart from the vendor list.
+  seat_mirror as (
+    select distinct c.seat_id || '|' || coalesce(c.reference_contact_crm_id, c.own_contact_crm_id)::text as seat_key
+    from public.phoenix_crm_customers c
+    join seats s on s.seat_id = c.seat_id
+  ),
+  -- A pending drop names either the customer, or -- for an entry never minted -- only the contact.
   pending_drop_customer as (
-    select distinct q.seat_id, q.customer_id from public.phoenix_crm_list_requests q join seats s on s.seat_id = q.seat_id
-    where q.kind = 'drop' and q.status = 'pending' and q.is_test = p_is_test and q.customer_id is not null
+    select distinct q.seat_id, q.customer_id
+    from public.phoenix_crm_list_requests q
+    join seats s on s.seat_id = q.seat_id
+    where q.kind = 'drop'
+      and q.status = 'pending'
+      and q.is_test = p_is_test
+      and q.customer_id is not null
   ),
   pending_drop_contact as (
-    select distinct q.seat_id, q.reference_contact_crm_id from public.phoenix_crm_list_requests q join seats s on s.seat_id = q.seat_id
-    where q.kind = 'drop' and q.status = 'pending' and q.is_test = p_is_test and q.customer_id is null and q.reference_contact_crm_id is not null
+    select distinct q.seat_id, q.reference_contact_crm_id
+    from public.phoenix_crm_list_requests q
+    join seats s on s.seat_id = q.seat_id
+    where q.kind = 'drop'
+      and q.status = 'pending'
+      and q.is_test = p_is_test
+      and q.customer_id is null
+      and q.reference_contact_crm_id is not null
   )
-  select ch.seat_id, ch.hr_id, ch.is_current, a.contact_crm_id, a.list_type,
-    case when upper(trim(a.grade)) in ('A', 'B', 'C') then upper(trim(a.grade)) when upper(trim(a.grade)) = 'A+' then 'A' else null end,
-    coalesce(nullif(trim(contact.name), ''), 'Unnamed customer'), nullif(trim(contact.speciality), ''), nullif(trim(contact.address), ''),
-    nullif(trim(contact.city), ''), nullif(trim(contact.zone), ''), contact.brick_id, contact.last_visited_on, customer.id,
-    case when customer.status = 'dropped' then 'dropped' when customer.status = 'active' then 'validated'
-      when drop_by_customer.seat_id is not null or drop_by_contact.seat_id is not null then 'drop_pending' else 'open' end
+  select
+    ch.seat_id,
+    ch.hr_id,
+    ch.is_current,
+    a.contact_crm_id,
+    a.list_type,
+    case
+      when upper(trim(a.grade)) in ('A', 'B', 'C') then upper(trim(a.grade))
+      when upper(trim(a.grade)) = 'A+' then 'A'
+      else null
+    end,
+    coalesce(nullif(trim(contact.name), ''), 'Unnamed customer'),
+    nullif(trim(contact.speciality), ''),
+    nullif(trim(contact.address), ''),
+    nullif(trim(contact.city), ''),
+    nullif(trim(contact.zone), ''),
+    contact.brick_id,
+    contact.last_visited_on,
+    customer.id,
+    case
+      when customer.status = 'dropped' then 'dropped'
+      when customer.status = 'active' then 'validated'
+      when drop_by_customer.seat_id is not null or drop_by_contact.seat_id is not null then 'drop_pending'
+      else 'open'
+    end
   from chosen ch
   join public.crm_contact_assignments a
-    on a.effective_to is null and a.agent_hr_id = ch.hr_id and a.list_type in ('AM', 'PM', 'Pharmacy') and a.contact_crm_id <> 100000
-   and (exists (select 1 from rep_spells mine where mine.hr_id = ch.hr_id and mine.seat_id = ch.seat_id and a.effective_from >= mine.effective_from and (mine.effective_to is null or a.effective_from < mine.effective_to))
-     or not exists (select 1 from rep_spells any_seat where any_seat.hr_id = ch.hr_id and a.effective_from >= any_seat.effective_from and (any_seat.effective_to is null or a.effective_from < any_seat.effective_to)))
+    on a.effective_to is null
+   and a.agent_hr_id = ch.hr_id
+   and a.list_type in ('AM', 'PM', 'Pharmacy')
+   and a.contact_crm_id <> 100000
+   and (
+     exists (
+       select 1 from rep_spells mine
+       where mine.hr_id = ch.hr_id
+         and mine.seat_id = ch.seat_id
+         and a.effective_from >= mine.effective_from
+         and (mine.effective_to is null or a.effective_from < mine.effective_to)
+     )
+     or not exists (
+       select 1 from rep_spells any_seat
+       where any_seat.hr_id = ch.hr_id
+         and a.effective_from >= any_seat.effective_from
+         and (any_seat.effective_to is null or a.effective_from < any_seat.effective_to)
+     )
+   )
   left join public.crm_contacts contact on contact.contact_crm_id = a.contact_crm_id
-  left join seat_customer customer on customer.seat_key = ch.seat_id || '|' || a.contact_crm_id::text
-  left join pending_drop_customer drop_by_customer on drop_by_customer.seat_id = ch.seat_id and drop_by_customer.customer_id = customer.id
-  left join pending_drop_contact drop_by_contact on drop_by_contact.seat_id = ch.seat_id and drop_by_contact.reference_contact_crm_id = a.contact_crm_id;
+  left join seat_customer customer
+    on customer.seat_key = ch.seat_id || '|' || a.contact_crm_id::text
+  left join pending_drop_customer drop_by_customer
+    on drop_by_customer.seat_id = ch.seat_id
+   and drop_by_customer.customer_id = customer.id
+  left join pending_drop_contact drop_by_contact
+    on drop_by_contact.seat_id = ch.seat_id
+   and drop_by_contact.reference_contact_crm_id = a.contact_crm_id
+  left join seat_mirror mirror
+    on mirror.seat_key = ch.seat_id || '|' || a.contact_crm_id::text
+  -- A mirror row with no customer of the seat behind it is a leftover of a customer who has since moved
+  -- away; read as a list entry, phoenix_crm_ensure_reference_customers would mint a pending copy of him
+  -- back onto this list. Every other source (the vendor list) reads exactly as before.
+  where a.source is distinct from 'phoenix_crm'
+     or mirror.seat_key is not null;
 $$;
 
 ALTER FUNCTION public.phoenix_crm_seat_reference(p_seat_ids text[], p_is_test boolean) OWNER TO postgres;
@@ -50655,6 +50768,87 @@ CREATE TABLE au.bak_20261117_cns_kfs2_line_area_map (
 );
 
 ALTER TABLE au.bak_20261117_cns_kfs2_line_area_map OWNER TO postgres;
+
+--
+-- Name: bak_20261123_handover_leftover_assignments; Type: TABLE; Schema: au; Owner: postgres
+--
+
+CREATE TABLE au.bak_20261123_handover_leftover_assignments (
+    id bigint,
+    contact_crm_id bigint,
+    agent_crm_id bigint,
+    agent_hr_id text,
+    list_type text,
+    grade text,
+    effective_from date,
+    effective_to date,
+    last_seen_on date,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    source text,
+    agent_seat_id text
+);
+
+ALTER TABLE au.bak_20261123_handover_leftover_assignments OWNER TO postgres;
+
+--
+-- Name: bak_20261123_handover_leftover_copies; Type: TABLE; Schema: au; Owner: postgres
+--
+
+CREATE TABLE au.bak_20261123_handover_leftover_copies (
+    id uuid,
+    seat_id text,
+    line_code text,
+    list_type text,
+    name text,
+    speciality text,
+    grade text,
+    origin text,
+    reference_contact_crm_id bigint,
+    status text,
+    validated_at timestamp with time zone,
+    validated_by_hr_id text,
+    dropped_reason text,
+    dropped_note text,
+    status_changed_at timestamp with time zone,
+    created_by_hr_id text,
+    is_test boolean,
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    primary_pharmacy_name text,
+    potential_grade text,
+    phone text,
+    intake_where text,
+    intake_note text,
+    intake_timings jsonb,
+    own_contact_crm_id bigint,
+    reopened_at timestamp with time zone,
+    pharmacy_pin_lat double precision,
+    pharmacy_pin_lon double precision,
+    pharmacy_pin_accuracy_meters numeric,
+    pharmacy_pin_captured_at timestamp with time zone,
+    pharmacy_pin_captured_by_hr_id text,
+    pharmacy_pin_address text,
+    pharmacy_pin_governorate text,
+    pharmacy_pin_area_code text,
+    pharmacy_pin_area_name text,
+    pharmacy_pin_brick_id text,
+    pharmacy_pin_brick_name text,
+    pharmacy_pin_brick_distance_km numeric,
+    pharmacy_pin_brick_lookup text,
+    imported_from_ireports360_at timestamp with time zone,
+    campaign_visit_holder boolean,
+    full_name_held text,
+    full_name_held_at timestamp with time zone,
+    full_name_held_by_hr_id text,
+    full_name_held_score smallint,
+    full_name_held_board jsonb,
+    full_name_refused_at timestamp with time zone,
+    full_name_refused_name text,
+    customer_type text
+);
+
+ALTER TABLE au.bak_20261123_handover_leftover_copies OWNER TO postgres;
 
 --
 -- Name: canonical_areas; Type: TABLE; Schema: au; Owner: postgres
