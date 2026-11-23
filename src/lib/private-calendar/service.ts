@@ -459,7 +459,27 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, attendancePolicyRows, disputesByEmployee, visitDetails] =
+  // STARTED WITH THE SOURCES, NOT AFTER THEM (2026-11-23, "fix the calendar"): the reply threads need only the
+  // disputes' ids, so they chain on the dispute read instead of waiting for every source; and the accepted
+  // deduction disputes depend on nothing loaded here. Both used to run one after the other once the whole
+  // batch below had finished — two extra waits (the deduction one alone is a company-wide event read plus a
+  // second wave) on every calendar load. Both stay best-effort exactly as before.
+  const disputesPromise = Promise.all(
+    scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
+  );
+  const messagesPromise = disputesPromise
+    .then((disputes) => listMessagesForDisputes(disputes.flat().map((dispute) => dispute.id)))
+    .catch(() => new Map<string, PrivateCalendarReviewMessage[]>());
+  // An accepted deduction dispute fixes the calendar too (owner, 2026-11-13): each of its days gets the same
+  // verified entry as an accepted whole-day review request. Best-effort and display-only.
+  const deductionCorrectionsPromise = loadAcceptedDeductionCorrections({
+    categoryLabel: (category) => deductionsCategoryLabel(category as DeductionsCategory),
+    end,
+    scopeHrIds,
+    start,
+  });
+
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, attendancePolicyRows, disputesByEmployee, visitDetails, deductionCorrections, messagesByDispute] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
@@ -489,12 +509,12 @@ export async function getPrivateCalendarWorkspace(input: {
       // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a dispute is read by
       // employee and date range alone — nothing loaded beside it feeds it — so it loads with the
       // sources instead of after them. Each employee's read still falls back to none on failure.
-      Promise.all(
-        scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
-      ),
+      disputesPromise,
       // EVERY Phoenix CRM visit in full, not only a manager's own (owner, 2026-10-21: "everyone, exactly as Mina
       // Farouk") — hung on the entry that already counts it, never an entry of its own. Best-effort: none on failure.
       loadPrivateCalendarVisitDetails(scopeHrIds, start, end),
+      deductionCorrectionsPromise,
+      messagesPromise,
     ]);
 
   const allItems = attachVisitDetails(decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
@@ -544,26 +564,16 @@ export async function getPrivateCalendarWorkspace(input: {
 
   const employeeDisputes = disputesByEmployee.flat();
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
-  // An accepted deduction dispute fixes the calendar too (owner, 2026-11-13): each of its days gets the same
-  // verified entry as an accepted whole-day review request. Best-effort and display-only.
-  const deductionCorrections = await loadAcceptedDeductionCorrections({
-    categoryLabel: (category) => deductionsCategoryLabel(category as DeductionsCategory),
-    end,
-    scopeHrIds,
-    start,
-  });
-  // An accepted whole-day request is an entry of its own, and the day it verifies stops reading "No Activity Recorded".
+  // `deductionCorrections` was read with the sources above. An accepted whole-day request is an entry of its own, and the day it verifies stops reading "No Activity Recorded".
   const correctionItems = decorateItemsWithEmployeeMetadata(
     buildAcceptedCorrectionItems([...employeeDisputes, ...deductionCorrections]),
     employees,
   );
   const exceptionsWithStatuses = appendDisputeStatusExceptions(withoutCorrectedDayFindings(exceptions, correctionItems), employeeDisputes, items);
 
-  // The reply thread under each request. One batched read for the whole month, and best-effort: a
-  // thread that fails to load must leave the calendar itself intact, so it falls back to none — the
-  // same contract the dispute read above already has.
-  const messagesByDispute = await listMessagesForDisputes(employeeDisputes.map((dispute) => dispute.id))
-    .catch(() => new Map<string, PrivateCalendarReviewMessage[]>());
+  // The reply thread under each request (`messagesByDispute`, read above as soon as the disputes arrived). One
+  // batched read for the whole month, and best-effort: a thread that fails to load must leave the calendar
+  // itself intact, so it falls back to none — the same contract the dispute read already has.
   const reviewRequests: PrivateCalendarReviewRequest[] = employeeDisputes
     .map((dispute) => ({
       claimSourceText: dispute.claimSourceText,
