@@ -167,6 +167,8 @@ function checkTheReadThatStartedLaterIsKept() {
   const person = placeChecksHandoffKey({ hrId: "FIRST-READ-1", role: "Super Admin", isTestPersona: false } as never);
   const rows = (tag: string) => ({
     validated: [{ placeId: tag } as unknown as ValidatedPlaceRow],
+    sharedPlaces: [],
+    reopened: [],
     olderDecided: [],
     decisionFigures: { approved: 0, rejected: 0 },
     noteIndex: { notes: {}, recommendations: {}, integrity: {} } as unknown as PlaceNoteIndex,
