@@ -112,6 +112,22 @@ what in a few lines (`place-checks/phone-fold.tsx`), and a press opens the same 
 controls under it. Nothing is drawn a second way, so there is still one way to decide. A closed card's
 photographs are not fetched. The desktop table is unchanged.
 
+**The top of the page is shorter on a desktop.** Measured at 1440 px in the same preview, the first
+waiting place sat 775 px down: the page title 75, the top line 107, the filters 50, the tabs 70, the
+"Why these are your call" box 123, then the section head, the pick bar and the table head. Two of those
+are trimmed. The reasons box is one line until it is pressed (the commonest reason and its count, then
+"All N reasons"), and the sentence about the SFE Manager's recommendations sits beside the headline on a
+wide screen instead of in a band of its own. The plan's figure of 400 px is not reached: the page title,
+the filters and two rows of tabs alone end at 474 px, and those are the sibling pages' own look.
+
+**The sign wins never approves a place with no photograph.** The Phoenix Camera rules of 20 to 23 Nov
+2026 were read before the merge (eleven rules, all live, none of them on this page's code). The one that
+binds this page is his "must have a photo except i tell u": a sign reading can only come off a
+photograph today, and `signWinsVerdict` now says so in its own line (`hasPhoto`, read from the place),
+so no later source of a sign reading can make the system approve a place nobody photographed. A
+trusted-point place has no photograph and stays his alone. A place validated with his own upload or a
+sealed Phoenix Camera photo raises no review, so the rule never meets one.
+
 **The address remembers the view** (`place-check-address.ts`). The tab, the filters and how far a
 list was opened are in the address, so a reload, the Back button and a shared link open the same
 view. No person's name is written to it: the rep, the decider and the search box stay in the

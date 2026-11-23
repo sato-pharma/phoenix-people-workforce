@@ -65,9 +65,22 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
     <>
       {ready ? <ReadyLaneBar board={board} /> : null}
       {lanes && !ready && reasons.length > 0 ? (
-        <div className="min-w-0 border-l-4 border-orange-500 bg-white px-4 py-3">
-          <p className="break-words text-sm font-black text-slate-900">Why these are your call</p>
-          <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+        // One line until it is pressed: the commonest reason, then the rest. Open, it stood about 130 px
+        // above the first waiting place (measured at 1440 in the preview, 23 Nov 2026), and each row says its own.
+        <details className="group min-w-0 border-l-4 border-orange-500 bg-white px-4 py-2" data-your-call-reasons>
+          <summary className="flex min-h-11 min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-700 md:min-h-8 [&::-webkit-details-marker]:hidden">
+            <span className="font-black text-slate-900">Why these are your call</span>
+            <span className="min-w-0 flex-1 basis-60 break-words group-open:hidden">
+              <span className="font-black tabular-nums">{reasons[0].count}</span> · {reasons[0].because}
+            </span>
+            {reasons.length > 1 ? (
+              <span className="shrink-0 text-xs font-black text-orange-700">
+                <span className="group-open:hidden">All {reasons.length} reasons</span>
+                <span className="hidden group-open:inline">Close</span>
+              </span>
+            ) : null}
+          </summary>
+          <ul className="mt-1 space-y-0.5 pb-1 text-sm text-slate-700">
             {reasons.slice(0, REASONS_SHOWN).map(({ because, count }) => (
               <li key={because} className="break-words">
                 <span className="font-black tabular-nums">{count}</span> · {because}
@@ -75,11 +88,11 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
             ))}
           </ul>
           {reasons.length > REASONS_SHOWN ? (
-            <p className="mt-1 break-words text-xs text-slate-500">
+            <p className="mt-1 break-words pb-1 text-xs text-slate-500">
               And {reasons.length - REASONS_SHOWN} more {reasons.length - REASONS_SHOWN === 1 ? "reason" : "reasons"}. Each row says its own.
             </p>
           ) : null}
-        </div>
+        </details>
       ) : null}
 
       {nothing ? (

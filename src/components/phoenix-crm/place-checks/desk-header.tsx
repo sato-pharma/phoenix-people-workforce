@@ -41,16 +41,18 @@ export function PlaceCheckDeskHeader({ board, review }: { board: PlaceCheckBoard
           {said ? <p className="mt-0.5 break-words text-sm text-slate-600">{said}</p> : null}
           {long ? <p className="mt-0.5 break-words text-sm font-black text-orange-800">{long}</p> : null}
         </div>
+        {/* Beside the headline on a wide screen, under it on a narrow one: as a band of its own it stood
+            40 px above the first waiting place (measured at 1440 in the preview, 23 Nov 2026). */}
+        {sfeRecommended && sfeRecommended.count > 0 ? (
+          <p className="min-w-0 max-w-full flex-1 basis-64 break-words text-sm text-slate-700" data-desk-sfe>
+            {sfeRecommended.count} more {sfeRecommended.count === 1 ? "waits" : "wait"} on the SFE Manager&apos;s recommendation, on their own page.{" "}
+            <Link className="font-black text-slate-900 underline underline-offset-2" href={sfeRecommended.href}>
+              Open SFE recommendations
+            </Link>
+          </p>
+        ) : null}
         {review}
       </div>
-      {sfeRecommended && sfeRecommended.count > 0 ? (
-        <p className="mt-2 break-words border-t border-slate-100 pt-2 text-sm text-slate-700">
-          {sfeRecommended.count} more {sfeRecommended.count === 1 ? "waits" : "wait"} on the SFE Manager&apos;s recommendation, on their own page.{" "}
-          <Link className="font-black text-slate-900 underline underline-offset-2" href={sfeRecommended.href}>
-            Open SFE recommendations
-          </Link>
-        </p>
-      ) : null}
       {rule ? <p className="mt-2 break-words border-t border-slate-100 pt-2 text-sm text-slate-700">{rule}</p> : null}
     </div>
   );

@@ -84,7 +84,7 @@ export async function readSignWinsSwitch(now: number = Date.now()): Promise<Sign
 async function loadCandidates(reviews: ReadonlyArray<Row>): Promise<Map<string, SignWinsCandidate>> {
   const placeIds = reviews.map((row) => String(row.place_id));
   const [places, customers, cases, recommendations] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_places", "id, status, shared_place_id, signboard_check", "id", placeIds),
+    selectByIds<Row>("phoenix_crm_places", "id, status, shared_place_id, photo_path, signboard_check", "id", placeIds),
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type", "id", reviews.map((row) => String(row.customer_id))),
     // The yes/no of a settlement goes through `isSettledIntegrityRow`, as every reader of this table does.
     selectByIds<Row>("phoenix_crm_location_integrity", "id, subject_id, flags, settled_at, settled_by, settled_note, settled_flags", "subject_id", placeIds, (query) =>
@@ -115,6 +115,7 @@ async function loadCandidates(reviews: ReadonlyArray<Row>): Promise<Map<string, 
       createdAt: text(review.created_at),
       placeStatus: text(place.status),
       sharedPlaceId: text(place.shared_place_id),
+      hasPhoto: text(place.photo_path) !== null,
       signVerdict: text(sign.verdict),
       needsFullName: approvalNeedsFullName({ listType: customer.list_type, customerName: customer.name }),
       openIntegrityCase: openCase.has(String(review.place_id)),

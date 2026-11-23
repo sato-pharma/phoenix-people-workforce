@@ -15,6 +15,9 @@
  *   - a place the SFE Manager recommended on (those wait on the SFE recommendations page, 19 Nov 2026);
  *   - a customer seated in a polyclinic (a building and its timetable are his alone, 2026-10-17);
  *   - a hold the sign or the timetable raised (the system already re-reads those, `signboard-holds.ts`);
+ *   - a place with no photograph on file (owner, 20 Nov 2026: "must have a photo except i tell u"). A
+ *     sign can only have been read off a photo, so this never fires today; it is written down so that no
+ *     later source of a sign reading can make the system approve a place nobody photographed;
  *   - a test entry, and anything already decided.
  *
  * 🔴 IT ONLY EVER SAYS YES. Nothing here rejects, and nothing tells the rep anything a person's approval
@@ -65,6 +68,8 @@ export type SignWinsCandidate = {
   placeStatus: string | null;
   /** The building the place is seated in, when it is. */
   sharedPlaceId: string | null;
+  /** The place has a photograph on file. A trusted point has none, and is the Super Admin's alone. */
+  hasPhoto: boolean;
   /** The place's own stored reading of its sign. */
   signVerdict: string | null;
   /** A clinic customer with one or two names (`approvalNeedsFullName`). */
@@ -82,6 +87,7 @@ export type SignWinsLeftBecause =
   | "before_the_rule"
   | "place_not_in_use"
   | "seated_in_a_building"
+  | "no_photo"
   | "sign_does_not_name_the_customer"
   | "short_name"
   | "integrity_case_open"
@@ -104,6 +110,7 @@ export function signWinsVerdict(row: SignWinsCandidate): { applies: true } | { a
   if (!Number.isFinite(created) || created < Date.parse(SIGN_WINS_STARTED_AT)) return left("before_the_rule");
   if (row.placeStatus !== "active") return left("place_not_in_use");
   if (row.sharedPlaceId !== null) return left("seated_in_a_building");
+  if (!row.hasPhoto) return left("no_photo");
   if (row.signVerdict !== "match") return left("sign_does_not_name_the_customer");
   if (row.needsFullName) return left("short_name");
   if (row.openIntegrityCase) return left("integrity_case_open");

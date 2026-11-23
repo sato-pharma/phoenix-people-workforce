@@ -59,6 +59,7 @@ function candidate(overrides: Partial<SignWinsCandidate> = {}): SignWinsCandidat
     createdAt: "2026-11-24T09:00:00+02:00",
     placeStatus: "active",
     sharedPlaceId: null,
+    hasPhoto: true,
     signVerdict: "match",
     needsFullName: false,
     openIntegrityCase: false,
@@ -91,6 +92,12 @@ function checkTheRule() {
   assert.equal(left({ createdAt: "not a date" }), "before_the_rule");
   assert.equal(left({ createdAt: SIGN_WINS_STARTED_AT }), "approved", "the instant the rule began is inside it");
   assert.equal(left({ placeStatus: "retired" }), "place_not_in_use", "a place no longer in use is nobody's to approve");
+  // Owner, 20 Nov 2026: "must have a photo except i tell u". A sign reading with no photograph behind it approves nothing.
+  assert.equal(left({ hasPhoto: false }), "no_photo", "the system never approves a place nobody photographed, whatever its sign reading says");
+  assert.ok(
+    code("src/lib/phoenix-crm/server/sign-wins.ts").includes("hasPhoto: text(place.photo_path) !== null"),
+    "the photograph is read from the place itself, and an empty path is no photograph",
+  );
   assert.equal(left({ sharedPlaceId: "b0b0b0b0-0000-4000-8000-000000000001" }), "seated_in_a_building", "a customer seated in a building is his alone");
   for (const sign of ["other_name", "no_name", "unjudged", null]) {
     assert.equal(left({ signVerdict: sign }), "sign_does_not_name_the_customer", `only a sign that names the customer wins (${String(sign)})`);

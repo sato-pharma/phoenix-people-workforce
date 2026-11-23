@@ -591,6 +591,13 @@ function runWordingAndFileTests() {
   }
   assert.ok(clinicCards.includes('{bulk && section === "waiting" ? ('), "HEADLINE: the system's word on a closed card is the Super Admin's alone, and only on a row that waits");
   assert.ok(buildingCards.includes("summary={<VenueHeader mode={mode} row={row} />}"), "a closed building says its name, its state and who captured it");
+  // 🔴 "WHY THESE ARE YOUR CALL" IS ONE LINE UNTIL IT IS PRESSED. Open, it stood about 130 px above the
+  // first waiting place at 1440 px (measured in the preview, 23 Nov 2026), and every row says its own reason.
+  const needs = code(`${dir}/needs-panel.tsx`);
+  const reasonsBox = needs.slice(needs.indexOf("data-your-call-reasons"), needs.indexOf("</details>"));
+  assert.ok(needs.includes("<details") && reasonsBox.includes("<summary"), "HEADLINE: the reasons above Your call are a closed fold, never an open list above the first row");
+  assert.ok(reasonsBox.includes("{reasons[0].count}") && reasonsBox.includes("{reasons[0].because}"), "closed, it still says the commonest reason and how many places it holds");
+  assert.ok(reasonsBox.indexOf("</summary>") < reasonsBox.indexOf("reasons.slice(0, REASONS_SHOWN)"), "the full list is inside the fold, under the one line");
   assert.ok(
     code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",
