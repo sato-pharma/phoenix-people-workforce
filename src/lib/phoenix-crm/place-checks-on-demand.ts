@@ -21,6 +21,14 @@
  * `PLACE_CHECKS_EVERYTHING_ROUTE` on the first click that needs it: Not confirmed, any filter, a decider,
  * a tapped count, or the one-by-one review.
  *
+ * 🔴 AND THE PAGE NO LONGER READS WHAT IT DOES NOT SEND (owner, 23 Nov 2026: "Fix speed next"). It still
+ * read every place in use and every decision ever made, to count those figures, before it could draw the
+ * first waiting place: 12.2 s to the first row on production, 9.75 s of it those two reads. Now the page
+ * reads what it sends, and the board asks `PLACE_CHECKS_SUMMARY_ROUTE` for the figures once it is on
+ * screen. That read is the wide one (`server/place-checks-wide-read.ts`): it counts the summary and leaves
+ * its rows for the click, so the click still reads nothing again. Until it answers, a tab whose count
+ * needs it shows no count — never one taken from the seated places alone.
+ *
  * Pure and screen-free, so the server page and the client board both import it.
  */
 
@@ -42,6 +50,9 @@ import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, Validate
 /** The read behind the click: every place in use, and every decision older than the 14-day window. */
 export const PLACE_CHECKS_EVERYTHING_ROUTE = "/api/phoenix-crm/validation-reviews/everything";
 
+/** The opening figures, counted over every place in use: asked for once the board is on screen. */
+export const PLACE_CHECKS_SUMMARY_ROUTE = "/api/phoenix-crm/validation-reviews/summary";
+
 export type PlaceChecksEverything = {
   validated: ValidatedPlaceRow[];
   /**
@@ -49,7 +60,27 @@ export type PlaceChecksEverything = {
    * the recent ones of single clinics. A row the page did send may be here too; `mergeDecided` keeps the page's.
    */
   olderDecided: ValidationReviewRow[];
+  /**
+   * The comments, recommendations and evidence on these rows. The page reads them for the rows it sends
+   * and no others (23 Nov 2026), so a single clinic's come with its row; `mergedNoteIndex` makes the two one.
+   */
+  noteIndex: PlaceNoteIndex;
+  /** Whether either of the two wide reads stopped at its ceiling, so the board says so. */
+  capped: { reviews: boolean; validated: boolean };
 };
+
+/**
+ * The page's notes and the click's as one index. A subject in both is the page's: the page is read again
+ * after every decision, and the click's rows only once that re-read has asked for them.
+ */
+export function mergedNoteIndex(page: PlaceNoteIndex, click: PlaceNoteIndex | null): PlaceNoteIndex {
+  if (!click) return page;
+  return {
+    notes: { ...click.notes, ...page.notes },
+    recommendations: { ...click.recommendations, ...page.recommendations },
+    integrity: { ...click.integrity, ...page.integrity },
+  };
+}
 
 /**
  * The decisions the page sends on opening: the recent ones of customers SEATED in a building on the board,
@@ -58,12 +89,6 @@ export type PlaceChecksEverything = {
 export function decidedSentWithPage(recentDecided: ReadonlyArray<ValidationReviewRow>, sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>): ValidationReviewRow[] {
   const venueIds = new Set(sharedPlaces.map((row) => row.sharedPlaceId));
   return recentDecided.filter((row) => row.sharedPlaceId !== null && venueIds.has(row.sharedPlaceId));
-}
-
-/** Every decision the page read and did not send, for the click. A waiting place is never one of them. */
-export function decidedLeftForTheClick(everyRow: ReadonlyArray<ValidationReviewRow>, sent: ReadonlyArray<ValidationReviewRow>): ValidationReviewRow[] {
-  const sentIds = new Set(sent.map((row) => row.reviewId));
-  return everyRow.filter((row) => row.status !== "pending" && !sentIds.has(row.reviewId));
 }
 
 /** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */
@@ -178,6 +203,12 @@ export type PlaceChecksSummary = {
   history: number;
   /** The number on "Approved by the system". Zero on a board with no lanes, whose History is whole. */
   bySystem: number;
+  /** The Figures tab's "Validated, in use": every real place still in use. */
+  inUse: number;
+  /** The Figures tab's "Never looked at": in use, and no review row of any status. */
+  unseen: number;
+  /** Whether a read these figures were counted from stopped at its ceiling. */
+  capped: { reviews: boolean; validated: boolean };
 };
 
 /**
@@ -193,6 +224,7 @@ export function placeChecksSummary(input: {
   validated: ReadonlyArray<ValidatedPlaceRow>;
   reopened: ReadonlyArray<ReopenedCustomerRow>;
   sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>;
+  capped?: { reviews: boolean; validated: boolean };
 }): PlaceChecksSummary {
   const filters = EMPTY_VALIDATION_REVIEW_FILTERS;
   const pending = input.pending.filter(isReal);
@@ -211,6 +243,10 @@ export function placeChecksSummary(input: {
     unconfirmed: unconfirmedOpenCount(clinicsInUse(withoutSeated(validated, venueIds), filters, null), filters),
     history: clinicDecided.length - bySystem + withoutSeated(reopened, venueIds).length,
     bySystem,
+    inUse: validated.length,
+    // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
+    unseen: validated.filter((row) => !row.reviewed).length,
+    capped: input.capped ?? { reviews: false, validated: false },
   };
 }
 

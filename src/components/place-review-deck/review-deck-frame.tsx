@@ -135,6 +135,51 @@ function DeckMessage({ children, lines, title }: { children?: ReactNode; lines: 
   );
 }
 
+/** The end of Waiting for you: how many held photographs nobody could read stand in Not readable, and the press that goes there. */
+function OnToUnreadable({ held, listed, onGo }: { held: number; listed: number | null; onGo: () => void }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-2" data-deck-on-to-unreadable>
+      <p className="max-w-xl break-words text-sm font-black text-white">
+        {held} more {held === 1 ? "waits" : "wait"} for you in {TAB_LABELS.unreadable}: the photos the system could not read.
+      </p>
+      <CrmButton onClick={onGo} variant="primary">
+        Go on to {TAB_LABELS.unreadable}
+        {listed === null ? "" : ` (${listed})`}
+      </CrmButton>
+    </div>
+  );
+}
+
+/** Whether the board holds every place in use yet, and what to say and press when their read failed. */
+type DeckRest = { ready: boolean; error: string | null; retry: () => void };
+
+/**
+ * What a tab built from every place in use says while they are still being read behind the page (owner,
+ * 23 Nov 2026: "Fix speed next"): what it waits for, and the way to the tab that needs none of them.
+ */
+function DeckRestMessage({ onWaiting, rest, tab, waiting }: { onWaiting: () => void; rest: DeckRest; tab: DeckTab; waiting: number | null }) {
+  return rest.error ? (
+    <DeckMessage lines={[rest.error, `${TAB_LABELS.waiting} needs none of them and is ready.`]} title="The places in use could not be read">
+      <div className="flex min-w-0 flex-wrap justify-center gap-2">
+        <CrmButton onClick={rest.retry} variant="primary">
+          Try again
+        </CrmButton>
+        <CrmButton onClick={onWaiting}>{TAB_LABELS.waiting}</CrmButton>
+      </div>
+    </DeckMessage>
+  ) : (
+    <DeckMessage
+      lines={[`${TAB_LABELS[tab]} is listed as soon as every place in use is read. ${TAB_LABELS.waiting} needs none of them and is ready now.`]}
+      title="Reading the places in use"
+    >
+      <CrmButton onClick={onWaiting} variant="primary">
+        {TAB_LABELS.waiting}
+        {waiting === null ? "" : ` (${waiting})`}
+      </CrmButton>
+    </DeckMessage>
+  );
+}
+
 /** The other tabs, each with what it holds, from the panel that closes one. */
 function OtherTabs({
   counts,
@@ -160,4 +205,4 @@ function OtherTabs({
   );
 }
 
-export { DeckHeader, DeckMessage, OtherTabs };
+export { DeckHeader, DeckMessage, DeckRestMessage, OnToUnreadable, OtherTabs, type DeckRest };

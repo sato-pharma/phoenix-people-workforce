@@ -7,7 +7,8 @@ import type { PlaceChecksEverything } from "@/lib/phoenix-crm/place-checks-on-de
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { placeChecksHandoffKey, takePlaceChecksForTheClick } from "@/lib/phoenix-crm/server/place-checks-handoff";
 import { phoenixCrmFailure } from "@/lib/phoenix-crm/server/http";
-import { loadValidatedPlaces, loadValidationReviews, readsCompanyPlaceChecks } from "@/lib/phoenix-crm/server/validation-reviews";
+import { readPlaceChecksWide } from "@/lib/phoenix-crm/server/place-checks-wide-read";
+import { readsCompanyPlaceChecks } from "@/lib/phoenix-crm/server/validation-reviews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +21,11 @@ export const dynamic = "force-dynamic";
 // `readsCompanyPlaceChecks` gate two, both before a row is read. It READS — the SFE Manager reads the
 // company board and recommends, the Super Admin alone decides (owner, 2026-11-19). A district manager's board is drawn
 // whole by its own page and never asks this route.
+//
+// Since 23 Nov 2026 the rows are left by the summary's read, not by the page (`summary/route.ts`): the page
+// no longer reads what it does not send. The comments and the evidence on these rows come with them.
 async function readEverything(viewer: PhoenixCrmViewer): Promise<PlaceChecksEverything> {
-  const [reviews, validated] = await Promise.all([loadValidationReviews(viewer, { everyDecision: true }), loadValidatedPlaces(viewer)]);
-  // Every decision: the board keeps the page's copy of any row the page also sent (`mergeDecided`), so
-  // this read needs no knowledge of what the page chose to send.
-  return { validated: validated.rows, olderDecided: reviews.rows.filter((row) => row.status !== "pending") };
+  return (await readPlaceChecksWide(viewer)).everything;
 }
 
 export async function GET(request: Request) {
@@ -33,8 +34,8 @@ export async function GET(request: Request) {
     await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     if (!readsCompanyPlaceChecks(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager read this.");
-    // The rows the page read for this person a moment ago, when they are still there (`place-checks-handoff.ts`);
-    // otherwise the same two reads the page makes.
+    // The rows the summary read for this person a moment ago, when they are still there
+    // (`place-checks-handoff.ts`); otherwise the same wide read.
     const everything: PlaceChecksEverything = takePlaceChecksForTheClick(placeChecksHandoffKey(viewer)) ?? (await readEverything(viewer));
     return NextResponse.json({ everything, success: true });
   } catch (error) {

@@ -15,6 +15,7 @@
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { PlaceCheckScorecard } from "@/components/phoenix-crm/place-check-scorecard";
+import { ScorecardBeingCounted } from "@/components/phoenix-crm/place-checks/in-use-figures";
 import type { PlaceCheckBoard } from "@/components/phoenix-crm/place-checks/use-place-check-board";
 import { CrmPill } from "@/components/phoenix-crm/ui";
 import type { PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
@@ -61,10 +62,12 @@ function AgreementMeter({ agreement }: { agreement: PlaceCheckAgreement | null }
 }
 
 export function PlaceChecksScorecardPanel({ board }: { board: PlaceCheckBoard }) {
-  const { agreement, filters, lanes, mode, openScore, scorecard, set, team } = board;
+  const { agreement, filters, lanes, mode, openScore, reading, scorecard, set, summaryError, team } = board;
   return (
     <>
       {lanes ? <AgreementMeter agreement={agreement} /> : null}
+      {/* Before its figures are in the tab says so (23 Nov 2026). Under a filter the board's own reading notice stands; a failed read has its notice above the tabs. */}
+      {!scorecard && !reading && !summaryError ? <ScorecardBeingCounted /> : null}
       {scorecard ? (
         <PlaceCheckScorecard
           mode={mode}

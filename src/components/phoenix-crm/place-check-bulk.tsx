@@ -79,6 +79,8 @@ export function BulkDecideBar<Row>({
   const [done, setDone] = useState(0);
   const [failures, setFailures] = useState<ReadonlyArray<{ name: string; problem: string }>>([]);
   const [summary, setSummary] = useState<string | null>(null);
+  // Whether a phone has opened the line that stands in a title row (see `line` below).
+  const [lineOpen, setLineOpen] = useState(false);
 
   const picked = picks.picked;
   const needsReason = actions.some((action) => action.needsReason);
@@ -164,8 +166,19 @@ export function BulkDecideBar<Row>({
 
   // The bar's first line. In a section's title row it ends the row on a desktop and stands under the title on a phone.
   const inTitleRow = lineSlot !== undefined;
+  // 🔴 ON A PHONE THE LINE IN A TITLE ROW IS ONE BUTTON UNTIL IT IS PRESSED (owner, 23 Nov 2026: "Fix speed
+  // next"). Its label and its three quick picks wrapped into four rows there, most of a lane head 241 px
+  // tall above the first waiting place (measured at 375 on the live page). A desktop draws the line whole,
+  // as before; so does a phone once anything is ticked.
+  const foldedOnPhone = inTitleRow && picked.length === 0 && !lineOpen;
   const line = (
     <div className={cn("flex min-w-0 flex-wrap items-center gap-2", inTitleRow && "sm:justify-end")}>
+      {inTitleRow && picked.length === 0 ? (
+        <CrmButton aria-expanded={lineOpen} className="min-h-11 sm:hidden" data-pick-line-toggle disabled={busy} onClick={() => setLineOpen(!lineOpen)} size="sm">
+          {lineOpen ? "Close picking" : `Answer several together (${picks.selectable})`}
+        </CrmButton>
+      ) : null}
+      <div className={foldedOnPhone ? "hidden sm:contents" : "contents"} data-pick-line-body>
       <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
         {picked.length === 0 ? `Pick rows to answer together (${picks.selectable} here)` : `${picked.length} picked`}
       </p>
@@ -187,6 +200,7 @@ export function BulkDecideBar<Row>({
           Clear
         </CrmButton>
       ) : null}
+      </div>
     </div>
   );
   // The SAME element, in the title row's slot when the section has one. A slot not on the page yet draws

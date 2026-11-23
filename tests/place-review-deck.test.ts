@@ -30,6 +30,7 @@ import {
   type DeckSources,
   type PlaceReviewDeckInput,
 } from "../src/lib/place-review-deck/slides.ts";
+import { deckRankerOpenedThenWhole, deckSourcesOpenedThenWhole, deckTabNeedsEveryPlace } from "../src/lib/place-review-deck/opened-then-whole.ts";
 import { standingOfPlaceInUse } from "../src/lib/phoenix-crm/place-check-scorecard.ts";
 import { parsePlaceNoteAdvice, placeNoteAdviceLabel } from "../src/lib/phoenix-crm/place-note-rules.ts";
 import type { VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
@@ -235,6 +236,34 @@ export function runPlaceReviewDeckTests(): void {
     const held = deckHeldSplit(input, "both");
     assert.equal(held.readable, split.waitingReviews.length + split.waitingVenues.length, "🔴 the readable number is the Waiting tab's own");
     assert.equal(held.unreadable, split.unreadableReviews.length + split.unreadableVenues.filter((id) => id === "v-seat").length, "and the unreadable number is the held part of Not readable");
+
+    // 🔴 THE REVIEW OPENS AT ONCE ON WHAT WAITS (owner, 23 Nov 2026: "Fix speed next"). It stayed shut for
+    // 3.1 s on production until every place in use was read, for a tab that needs none of them.
+    assert.deepEqual(
+      DECK_TABS.filter((tab) => !deckTabNeedsEveryPlace(tab)),
+      ["waiting", "integrity"],
+      "🔴 Waiting for you and Integrity cases are listed from what the page sent; every other tab waits for the places in use",
+    );
+    // The board as the review opened: the places waiting and the buildings, and no place in use yet.
+    const opened = { ...input, unconfirmed: { places: [], venues: [venues.clear] }, lookup: { reviews, places: [], venues: [venues.seat, venues.clear] } } as unknown as PlaceReviewDeckInput;
+    // The board once the rest was in: he has decided r-clear meanwhile, and a new place was captured.
+    const whole = { ...input, waiting: { reviews: [review("r-new", {}), ...reviews.slice(1)], venues: [venues.clear] } } as unknown as PlaceReviewDeckInput;
+    const atOpening = deckSourcesOpenedThenWhole(opened, null, []);
+    assert.deepEqual(atOpening, deckSourcesOf(opened, []), "until the rest is in, the review is the board as it opened");
+    assert.deepEqual(deckSourcesOpenedThenWhole(opened, opened, []), atOpening, "a board that was whole when the review opened is taken once, as it opened");
+    const later = deckSourcesOpenedThenWhole(opened, whole, []);
+    assert.deepEqual(
+      [later.waitingReviews, later.waitingVenues, later.unreadableReviews],
+      [atOpening.waitingReviews, atOpening.waitingVenues, atOpening.unreadableReviews],
+      "🔴 what was held for him at opening is the same slides in the same order when the rest arrives: nothing he decided leaves, nothing new slides in",
+    );
+    assert.ok(!later.waitingReviews.includes("r-new") && later.waitingReviews.includes("r-clear"), "the new capture waits for the next opening, and the decided one keeps its slide");
+    assert.deepEqual(
+      [later.unconfirmedPlaces, later.unreadablePlaces, later.newPhotoPlaces],
+      [split.unconfirmedPlaces, split.unreadablePlaces, split.newPhotoPlaces],
+      "🔴 and the tabs built from the places in use are listed from the whole board",
+    );
+    assert.deepEqual(atOpening.unconfirmedPlaces, [], "which at opening held none of them");
   }
 
   // The switch (owner, 2026-10-18: "view polyclinics only, or places only, or both").
@@ -632,7 +661,32 @@ export function runPlaceReviewDeckTests(): void {
     assert.doesNotMatch(repRead.slice(0, repRead.indexOf("\nexport ", 1)), /advice/, "the rep's own read never names it");
 
     const deck = stripComments(placeCheckListSource("review-deck", read));
-    assert.match(deck, /const rankSlide = useMemo\(\(\) => deckAdviceRanker\(frozen\), \[frozen\]\);/, "the order is taken from the notes as the review opened, so a slide never jumps under his finger");
+    assert.match(
+      deck,
+      /const rankSlide = useMemo\(\(\) => deckRankerOpenedThenWhole\(frozen, whole\), \[frozen, whole\]\);/,
+      "the order is taken from the notes as the review opened, so a slide never jumps under his finger",
+    );
+    // 🔴 A slide held at opening keeps the rank it opened with when the rest of the board arrives with newer notes.
+    {
+      const heldReview = { reviewId: "r-held", placeId: "p-reject" };
+      const openedBoard = { noteIndex, lookup, waiting: { reviews: [heldReview], venues: [] } } as unknown as PlaceReviewDeckInput;
+      const newerNotes = { ...noteIndex, notes: { ...noteIndex.notes, "place:p-reject": [note("approve", "written after opening")], "place:p-late": [note("approve", "only")] } } as unknown as PlaceNoteIndex;
+      const wholeBoard = { ...openedBoard, noteIndex: newerNotes, lookup: { ...lookup, places: [{ placeId: "p-late" }] } } as unknown as PlaceReviewDeckInput;
+      const heldSlide = { key: "review:r-held", kind: "review" as const, polyclinic: false };
+      const lateSlide = { key: "place:p-late", kind: "place" as const, polyclinic: false };
+      const before = deckRankerOpenedThenWhole(openedBoard, null);
+      const after = deckRankerOpenedThenWhole(openedBoard, wholeBoard);
+      assert.equal(before(heldSlide), deckAdviceRank("reject"), "at opening the held place ranks by the advice it opened with");
+      assert.equal(after(heldSlide), before(heldSlide), "🔴 and keeps that rank once the rest is in, whatever was written since");
+      assert.equal(after(lateSlide), deckAdviceRank("approve"), "a place in use, which arrived with the rest, ranks by the whole board's notes");
+      assert.equal(before(lateSlide), deckAdviceRank(null), "which the board at opening did not hold");
+    }
+    assert.match(deck, /const sources = useMemo\(\(\) => deckSourcesOpenedThenWhole\(frozen, whole, casesForSlides\), \[frozen, whole, casesForSlides\]\);/, "the tabs are sourced the same way: held as opened, the rest once whole");
+    assert.match(deck, /const \[whole, setWhole\] = useState<PlaceReviewDeckInput \| null>\(\(\) => \(rest\.ready \? input : null\)\);\s*if \(rest\.ready && whole === null\) setWhole\(input\);/, "🔴 the whole board is taken ONCE, at the first moment it holds every row");
+    assert.match(deck, /const waitingForRest = whole === null && deckTabNeedsEveryPlace\(tab\);/, "a tab built from every place in use lists nothing until they are in");
+    assert.match(deck, /const slides = useMemo\(\(\) => \(waitingForRest \? \[\] : buildDeckSlides\(tab, kind, sources, rankSlide\)\)/, "🔴 never part of a list");
+    assert.match(deck, /\(whole === null && deckTabNeedsEveryPlace\(one\)\);\s*result\[one\] = unknown \? null : /, "🔴 and such a tab shows no count until then, never the count of the seated few");
+    assert.ok(deck.includes('title="Reading the places in use"') && deck.includes('title="The places in use could not be read"'), "it says what it is reading, and when the read failed it says so and offers Try again");
     assert.match(deck, /buildDeckSlides\(tab, kind, sources, rankSlide\)/, "the slides he moves through are the ranked ones");
     assert.match(
       functionBody(deck, "reviewSlide"),

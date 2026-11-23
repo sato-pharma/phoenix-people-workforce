@@ -1,29 +1,23 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { Building2, CheckCircle2, ChevronDown, EyeOff, MapPinCheck } from "lucide-react";
+import { Building2, CheckCircle2, ChevronDown, MapPinCheck } from "lucide-react";
 
 import { AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
 import { FullNameChecks } from "@/components/phoenix-crm/full-name-checks";
 import { PlaceCheckRestoreProvider } from "@/components/phoenix-crm/place-check-restore";
+import { PlaceChecksInUseFigures } from "@/components/phoenix-crm/place-checks/in-use-figures";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
-import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { placeCheckLayoutGuess } from "@/lib/phoenix-crm/place-check-layout";
-import {
-  decidedLeftForTheClick,
-  decidedSentWithPage,
-  placeChecksSummary,
-  seatedPlacesInUse,
-  withoutDecisionNotesThatAreComments,
-} from "@/lib/phoenix-crm/place-checks-on-demand";
+import { placeChecksBoardSets } from "@/lib/phoenix-crm/place-checks-board-sets";
+import { decidedSentWithPage, seatedPlacesInUse } from "@/lib/phoenix-crm/place-checks-on-demand";
 import { canRestoreValidation, readsCompanyPlaceChecks, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { SFE_RECOMMENDATIONS_PATH, sfeRecommendationOf, withoutSfeRecommended } from "@/lib/phoenix-crm/sfe-recommendations";
+import { SFE_RECOMMENDATIONS_PATH } from "@/lib/phoenix-crm/sfe-recommendations";
 import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
-import { keepPlaceChecksForTheClick, placeChecksHandoffKey } from "@/lib/phoenix-crm/server/place-checks-handoff";
 import { loadFailingTimetables } from "@/lib/phoenix-crm/server/failing-timetables";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
 import { readSignWinsSwitch } from "@/lib/phoenix-crm/server/sign-wins";
@@ -78,11 +72,16 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // (owner, 2026-11-08: "places checks is … slow"). They used to wait for all five reads — the reopened
   // customers and the held full names too, which name no subject — and only then begin, one wave after
   // the other. The district manager's page has started them this way since 2026-10-31.
+  // 🔴 THE PAGE READS WHAT IT SENDS, AND NOTHING ELSE (owner, 23 Nov 2026: "Fix speed next"). It read every
+  // decision ever made (2,377) and every place in use (7,124, 13 MB) before it drew a row, to count the
+  // figures on the tabs: 12.2 s to the first waiting place on production, 9.75 s of it those two reads. So:
+  // the places waiting and the decisions of the last 14 days; the places SEATED in a building, which are the
+  // only places in use the board draws on opening; and the buildings. The wide read is asked for by the
+  // board once it is on screen (`server/place-checks-wide-read.ts`): it counts those figures, and "Decided
+  // by" still answers for every decision, from the rows it leaves for the click.
   const subjectReads = Promise.all([
-    // Every decision, so "Decided by" can answer for all of them; the cards and the board's default stay
-    // on the recent ones (`recent`).
-    loadValidationReviews(viewer, { everyDecision: true }),
-    loadValidatedPlaces(viewer),
+    loadValidationReviews(viewer),
+    loadValidatedPlaces(viewer, { seatedOnly: true }),
     loadSharedPlaceBoard(viewer),
   ]);
   const [[reviews, validatedRead, sharedRead], reopenedRead, failingTimetables, heldFullNames, [notes, integrity], signWins, agreement] = await Promise.all([
@@ -116,36 +115,15 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     sharedPlaces: sharedRead.capped,
   };
   const noteIndex = { ...notes, integrity };
-  // A comment written with a decision is on the row as a comment too (`tellDecisionComment`), so it is
-  // drawn there, under "The rep can read this", and not a second time beside the decision.
-  const rows = withoutDecisionNotesThatAreComments(reviews.rows, notes.notes);
-  const everySharedPlace = sharedRead.rows.map((row) =>
-    decisionNoteIsAComment(row.decisionNote, notes.notes[placeNoteSubjectKey("shared_place", row.sharedPlaceId)] ?? []) ? { ...row, decisionNote: null } : row,
-  );
-  // 🔴 WHAT THE SFE MANAGER RECOMMENDED WAITS ON ITS OWN PAGE, NOT HERE (owner, 2026-11-19) — for the Super
-  // Admin. The SFE Manager keeps every row, so he can see and change what he recommended.
-  const everyWaiting = rows.filter((row) => row.status === "pending");
-  const waiting = decides ? withoutSfeRecommended(everyWaiting, (row) => placeNoteSubjectKey("place", row.placeId), notes.recommendations) : everyWaiting;
-  const heldVenues = everySharedPlace.filter((row) => row.status === "held");
-  const keptHeldVenues = new Set(
-    (decides ? withoutSfeRecommended(heldVenues, (row) => placeNoteSubjectKey("shared_place", row.sharedPlaceId), notes.recommendations) : heldVenues).map(
-      (row) => row.sharedPlaceId,
-    ),
-  );
-  const sharedPlaces = everySharedPlace.filter((row) => row.status !== "held" || keptHeldVenues.has(row.sharedPlaceId));
-  // The real checks on the SFE recommendations page — the same rule that took them out above.
-  const sfeRecommendedCount =
-    everyWaiting.filter((row) => !row.isTest && sfeRecommendationOf(notes.recommendations, placeNoteSubjectKey("place", row.placeId)) !== null).length +
-    heldVenues.filter((row) => !row.isTest && sfeRecommendationOf(notes.recommendations, placeNoteSubjectKey("shared_place", row.sharedPlaceId)) !== null).length;
-  const decided = rows.filter((row) => row.status !== "pending");
+  // 🔴 WHAT THE SFE MANAGER RECOMMENDED WAITS ON ITS OWN PAGE, NOT HERE (owner, 2026-11-19), which building
+  // is still held, and which decision note is already drawn as a comment: one rule, in
+  // `place-checks-board-sets.ts`, which the read behind the click sorts its rows by as well.
+  const { waiting, decided, sharedPlaces, sfeRecommendedCount } = placeChecksBoardSets({ decides, reviews: reviews.rows, sharedPlaces: sharedRead.rows, notes });
   // 🔴 THE CARDS COUNT WHAT THE BOARD DRAWS (owner, 2026-10-17: "is this a report that really shows me
   // data?"): a test entry is nobody's work and the board never draws one, and a rejected building is not
   // a polyclinic in use — the card read 98, four of them test entries and 36 rejected.
   const real = <Row extends { isTest: boolean }>(set: Row[]) => set.filter((row) => !row.isTest);
   const realDecided = real(decided).filter((row) => row.recent);
-  const realValidated = real(validated);
-  // Nobody has ever looked at these — no review row of any status (598 of the first 643, 2026-10-08).
-  const unseen = realValidated.filter((row) => !row.reviewed).length;
   const liveVenues = real(sharedPlaces).filter((row) => row.status !== "retired");
   // Customers seated across every live venue. The 3-a-day cap is about the DAY, never about this number.
   const seated = liveVenues.reduce((total, row) => total + row.seated, 0);
@@ -156,19 +134,17 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // 🔴 THE BOARD OPENS ON WHAT NEEDS YOU DRAWS, AND THE REST WAITS FOR THE CLICK (owner, 2026-11-14, "Load
   // lists on demand"; `place-checks-on-demand.ts`). The 5,807 places in use and the decisions older than 14
   // days were 8.7 of the page's 12.5 MB and froze the server building it. Every figure counted over them is
-  // counted here, by the board's own functions, and the board reads the rows themselves from
-  // `PLACE_CHECKS_EVERYTHING_ROUTE` when he opens Not confirmed, picks a filter, or opens the review.
-  // Never hand the board `validated` or every decision again.
+  // counted by the board's own functions in the read behind `PLACE_CHECKS_SUMMARY_ROUTE`, and the board
+  // reads the rows themselves from `PLACE_CHECKS_EVERYTHING_ROUTE` when he opens Not confirmed, picks a
+  // filter, or opens the review. Never hand the board every place in use or every decision again, and
+  // never read them here: the page reads what it sends.
   // 🔴 NOR THE RECENT DECISIONS OF SINGLE CLINICS (23 Nov 2026): only History and "Approved by the system"
   // draw them, so they wait for those tabs. The seated ones go, because a building's card shows everybody.
   const sentDecided = decidedSentWithPage(decided.filter((row) => row.recent), sharedPlaces);
-  // What it read and does not send waits two minutes for the click, so the click reads nothing again.
-  keepPlaceChecksForTheClick(placeChecksHandoffKey(viewer), { validated, olderDecided: decidedLeftForTheClick(reviews.rows, sentDecided) });
+  // A place seated in a building that is not on this board is not drawn by it either.
   const seatedInUse = seatedPlacesInUse(validated, sharedPlaces);
-  const onDemand = {
-    summary: placeChecksSummary({ team: false, lanes: decides, pending: waiting, decided, validated, reopened, sharedPlaces }),
-    readAt: new Date().toISOString(),
-  };
+  // The moment this page was read: the board asks for its figures once, and again when this changes.
+  const onDemand = { readAt: new Date().toISOString() };
 
   // 🔴 NOTHING IS ABOVE THE FIRST WAITING PLACE BUT THE ONE LINE (the rebuild, 23 Nov 2026). The account of the
   // checks, the figures and the held full names were about 1,700 px of page before the first decision; each
@@ -223,22 +199,9 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
               tone="rose"
               size="compact"
             />
-            <AdminStatCard
-              icon={<MapPinCheck className="h-5 w-5" />}
-              label="Validated, in use"
-              value={realValidated.length}
-              description="Every place still in use"
-              tone="blue"
-              size="compact"
-            />
-            <AdminStatCard
-              icon={<EyeOff className="h-5 w-5" />}
-              label="Never looked at"
-              value={unseen}
-              description="In use, and no review of any kind yet"
-              tone="violet"
-              size="compact"
-            />
+            {/* "Validated, in use" and "Never looked at" are counted over every place in use, which this
+                page no longer reads: the board's own summary read fills them (`in-use-figures.tsx`). */}
+            <PlaceChecksInUseFigures />
             <AdminStatCard
               icon={<Building2 className="h-5 w-5" />}
               label="Polyclinics and centres"

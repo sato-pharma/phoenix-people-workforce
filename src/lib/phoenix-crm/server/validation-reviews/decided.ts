@@ -39,9 +39,18 @@ import type { ValidatedPlaceRow, ValidationBoardRead } from "@/lib/phoenix-crm/s
  * in `created_at desc, id desc` by `newestValidatedFirst`, so the board shows exactly the order it did.
  * At the ceiling the read keeps the first 10,000 by id rather than the newest — with the whole table
  * under half of that, today's answer is the same, and `capped` still says when it happens.
+ *
+ * 🔴 `seatedOnly` IS THE SUPER ADMIN'S PAGE OPENING (owner, 23 Nov 2026: "Fix speed next"). The page draws
+ * only the places seated in a building — a building's card shows everybody in it — and used to read every
+ * place in use to send those: 7,124 places and 13 MB read for the 513 it sent, most of the 12 seconds
+ * before the first waiting place was on screen. With `seatedOnly` the database answers the seated ones
+ * alone, one page; every place in use is the read behind the click (`server/place-checks-wide-read.ts`).
  */
-export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
+export type ValidatedPlacesRead = { seatedOnly?: boolean };
+
+export async function loadValidatedPlaces(viewer: PhoenixCrmViewer, options?: ValidatedPlacesRead): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
   const seats = placeChecksSeatScope(viewer);
+  const seatedOnly = options?.seatedOnly === true;
   const decides = readsCompanyPlaceChecks(viewer);
   const read = await readEveryPage<Row>(
     () => {
@@ -63,7 +72,8 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         // counts): 77 places of dropped customers were counted there, 63 of them under "Never looked at".
         // His place stays active for the day he is brought back; it is simply nobody's work here.
         .neq("customer.status", "dropped");
-      return seatScoped(query, seats).order("id", { ascending: false });
+      const scoped = seatScoped(query, seats);
+      return (seatedOnly ? scoped.not("shared_place_id", "is", null) : scoped).order("id", { ascending: false });
     },
     // Four pages at once (2026-11-08): ~5,400 active places are six pages, and one after another they
     // were four seconds of the page on their own. Eight since 16 Nov 2026: 6,558 places are seven pages,
@@ -75,7 +85,8 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
       whenFull: "stop",
       what: "The validated places in use",
       uniqueBy: (row) => String(row.id),
-      concurrentPages: seats ? 1 : 8,
+      // The seated places are one page too (513 on 23 Nov 2026), so that read never sends seven empty ones.
+      concurrentPages: seats || seatedOnly ? 1 : 8,
     },
   );
   throwIfError(read.error);

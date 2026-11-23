@@ -54,7 +54,8 @@ export function PlaceCheckSection({
           <span className="h-2 w-2 shrink-0 bg-phx-accent" />
           <h2 className="min-w-0 break-words text-base font-black tracking-tight text-slate-900">{title}</h2>
         </div>
-        <div className="min-w-0 flex-1 basis-60 break-words text-sm text-slate-600">{lane}</div>
+        {/* A lane's plain sentence is a desktop's: on a phone the row's own buttons say it, and it stood three lines above the first place. A lane's fold ("Why these are your call") is one row there and stays. */}
+        <div className={typeof lane === "string" ? "min-w-0 flex-1 basis-60 break-words text-sm text-slate-600 max-sm:hidden" : "min-w-0 flex-1 basis-60 break-words text-sm text-slate-600"}>{lane}</div>
         {action ? <div className="w-full min-w-0 sm:w-auto">{action}</div> : null}
       </div>
       {children}

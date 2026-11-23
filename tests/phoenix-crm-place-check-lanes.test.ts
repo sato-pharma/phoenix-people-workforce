@@ -685,7 +685,7 @@ function runWordingAndFileTests() {
   // on a 1440 page (637 to 326 on his own screen).
   assert.match(
     section,
-    /<div className="flex min-w-0 flex-wrap items-center [^"]*" data-lane-head>[\s\S]*?<h2 [^>]*>\{title\}<\/h2>[\s\S]*?<div className="min-w-0 flex-1 [^"]*">\{lane\}<\/div>\s*\{action \? <div [^>]*>\{action\}<\/div> : null\}/,
+    /<div className="flex min-w-0 flex-wrap items-center [^"]*" data-lane-head>[\s\S]*?<h2 [^>]*>\{title\}<\/h2>[\s\S]*?<div className=\{typeof lane === "string" \? "min-w-0 flex-1 [^"]*" : "min-w-0 flex-1 [^"]*"\}>\{lane\}<\/div>\s*\{action \? <div [^>]*>\{action\}<\/div> : null\}/,
     "🔴 a lane's title, its line and its action stand in one row",
   );
   assert.ok(!/\{description\}/.test(section.slice(section.indexOf("data-lane-head"))), "a lane's head carries no second sentence under the title");

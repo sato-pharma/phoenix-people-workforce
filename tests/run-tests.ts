@@ -2262,6 +2262,7 @@ import { runPhoenixCrmSuperAdminApprovalIsFinalTests } from "./phoenix-crm-super
 import { runPhoenixCrmBuildingRejectClosesReviewsTests } from "./phoenix-crm-building-reject-closes-reviews.test.ts";
 import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
 import { runPhoenixCrmPlaceChecksSpeedTests } from "./phoenix-crm-place-checks-speed.test.ts";
+import { runPhoenixCrmPlaceChecksFirstReadTests } from "./phoenix-crm-place-checks-first-read.test.ts";
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
@@ -8733,6 +8734,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Place checks reads only what it draws, in as few requests as it can (owner, 16 Nov 2026: \"fix the place checks slowness\"): both board reads ask for the six keys of signboard_check the board reads and never the whole column (7.7 of the 18 MB the places in use weighed), held against every reader of the check — the ones in signboard-rules.ts by watching which keys they touch, signboardOf by the keys its body reads — so a key a reader starts using cannot quietly read as absent; each decision's customer and place come joined into its own row over the two named foreign keys, so no id lookup follows the pages, and every decision's pages are asked for together; and the three Cairo date formatters are built once, counted by wrapping Intl.DateTimeFormat, with the owner's exact stamp unchanged",
   runPhoenixCrmPlaceChecksSpeedTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks reads what it sends, and the wide read comes after the first row (owner, 23 Nov 2026, \"Fix speed next\": 12.2 s to the first waiting place, 9.75 s of it two reads made only to count the tabs): the page reads the 14-day reviews, the places seated in a building and the buildings, never every decision or every place in use, and counts no figure over rows it does not read; the figures route asks approve and then the board reader before a row is read, reads the clock before the read starts, keeps the rows for the click and sends only the figures; of two wide reads in flight the one that started later is kept, whichever finishes last; the click waits for the figures read to end so one wide read serves both; a single clinic comment and integrity case arrive with its row and a subject in both is the page own; the page and the read behind it sort rows by one function (what the SFE Manager recommended on leaves the Super Admin board and stays on his own, a decision note that is already a comment is drawn once); no tab shows a count before the figures answer and no card shows a zero for a number it does not hold; and on a phone the pick line folds to one button, the lane sentences and the title sentence wait for a desktop, and the hairline rule keeps its one pixel",
+  runPhoenixCrmPlaceChecksFirstReadTests,
 );
 
 await runTest(

@@ -20,8 +20,13 @@ import { CrmButton } from "@/components/phoenix-crm/ui";
 import { deckStartOfBoardView, type DeckKind, type DeckTab, type PlaceReviewDeckInput } from "@/lib/place-review-deck/slides";
 
 /**
- * Whether the board holds every row the review needs (owner, 2026-11-14, "Load lists on demand"): the page
- * sends only what Needs you draws, so the review asks for the rest (`want`) and opens once it is in.
+ * Whether the board holds every row the review's other tabs need (owner, 2026-11-14, "Load lists on
+ * demand"): the page sends only what Needs you draws, so the review asks for the rest (`want`).
+ *
+ * 🔴 IT OPENS AT ONCE, ON WHAT WAITS (owner, 23 Nov 2026: "Fix speed next"). Until that day the button
+ * waited for every place in use before the review opened at all: 3.1 s on production, for a tab that needs
+ * none of them. The review now opens on the press; the tabs built from the places in use say they are
+ * being read and are listed when the rest is in (`deckTabNeedsEveryPlace`).
  */
 export type DeckRows = {
   ready: boolean;
@@ -39,8 +44,9 @@ export type DeckRows = {
 export function PlaceReviewDeckButton({ input, openOn, rows }: { input: PlaceReviewDeckInput; openOn: DeckTab | null; rows: DeckRows }) {
   const [start, setStart] = useState<{ tab: DeckTab; kind: DeckKind } | null>(() => (openOn ? { tab: openOn, kind: "both" } : null));
   const waiting = input.waiting.reviews.length + input.waiting.venues.length;
-  // 🔴 THE REVIEW NEVER OPENS ON PART OF THE BOARD: its Not confirmed slides and its look-up after a decision
-  // need every place in use, so it waits for them rather than open on the seated few the page sent.
+  // 🔴 NO TAB OF THE REVIEW IS EVER LISTED FROM PART OF THE BOARD: Not confirmed, Not readable, New photo
+  // asked, History and All need every place in use, so the review asks for them the moment it opens and
+  // lists those tabs only once they are in. Waiting for you is whole in what the page sent.
   const { ready, want } = rows;
   useEffect(() => {
     if (start && !ready) want();
@@ -82,20 +88,8 @@ export function PlaceReviewDeckButton({ input, openOn, rows }: { input: PlaceRev
           Review one by one
           {waiting > 0 ? <span className="bg-white/20 px-1.5 py-0.5 text-phx-2xs tabular-nums">{waiting} waiting</span> : null}
         </CrmButton>
-        {start && !ready ? (
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-3">
-            <p className="min-w-0 flex-1 basis-60 break-words text-xs font-semibold text-slate-600">
-              {rows.error ?? "Reading every place in use — the review opens as soon as they are in."}
-            </p>
-            {rows.error ? (
-              <CrmButton onClick={rows.retry} size="sm">
-                Try again
-              </CrmButton>
-            ) : null}
-          </div>
-        ) : null}
       </div>
-      {start && ready ? <PlaceReviewDeck input={input} onClose={close} start={start} /> : null}
+      {start ? <PlaceReviewDeck input={input} onClose={close} rest={{ ready, error: rows.error, retry: rows.retry }} start={start} /> : null}
     </>
   );
 }

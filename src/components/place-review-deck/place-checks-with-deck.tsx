@@ -24,6 +24,27 @@ type BoardProps = Omit<ComponentProps<typeof ValidationReviewsBoard>, "mode" | "
 type Title = { eyebrow: string; title: string; description: string; icon: ReactNode };
 
 /**
+ * The title band around the board's one line.
+ *
+ * 🔴 ON A PHONE IT IS THE TITLE AND THAT LINE (owner, 23 Nov 2026: "Fix speed next"). The sentence under
+ * the title was two wrapped lines above the first waiting place, and the line beside it already says what
+ * waits; a desktop draws the sentence as before. The classes reach the title row alone (the band's first
+ * child): its second child is the hairline rule, which must keep its one pixel.
+ */
+function PlaceChecksTitle({ line, title }: { line: ReactNode; title: Title }) {
+  return (
+    <AdminPageHero
+      actions={line ?? undefined}
+      className="max-sm:[&_h1+p]:hidden max-sm:[&>div:first-child]:gap-2 max-sm:[&>div:first-child]:pb-2"
+      description={title.description}
+      eyebrow={title.eyebrow}
+      icon={title.icon}
+      title={title.title}
+    />
+  );
+}
+
+/**
  * `decides` is false for the SFE Manager (owner, 2026-11-19: "only able to recommend validation or not
  * recommend, never able to take a decision"): the board leaves out every decision control and the
  * one-by-one review, which is nothing but decisions, and draws his two recommendation buttons instead.
@@ -45,7 +66,7 @@ export function PlaceChecksWithDeck({
       <PlaceCheckLayoutProvider guess={layout}>
         <ValidationReviewsBoard
           {...board}
-          hero={(line) => <AdminPageHero actions={line ?? undefined} description={title.description} eyebrow={title.eyebrow} icon={title.icon} title={title.title} />}
+          hero={(line) => <PlaceChecksTitle line={line} title={title} />}
           mode="company"
           reviewDeck={decides ? (input, rows) => <PlaceReviewDeckButton input={input} openOn={openOn} rows={rows} /> : undefined}
         />

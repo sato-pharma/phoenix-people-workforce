@@ -38,6 +38,7 @@ export const PLACE_CHECK_BOARD_FILES: ReadonlyArray<string> = [
   `${DIR}/in-use-panel.tsx`,
   `${DIR}/buildings-panel.tsx`,
   `${DIR}/scorecard-panel.tsx`,
+  `${DIR}/in-use-figures.tsx`,
   `${DIR}/history-panel.tsx`,
   `${DIR}/paged.tsx`,
   `${DIR}/phone-fold.tsx`,

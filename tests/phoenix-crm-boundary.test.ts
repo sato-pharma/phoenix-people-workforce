@@ -250,6 +250,9 @@ const ROUTE_GATES: RouteGate[] = [
   // place in use and every decision older than 14 days. `approve` at the route — it is the deciders' own
   // board — and `canDecideValidationReviews` refuses everyone else before a row is read.
   get("validation-reviews/everything", "approve"),
+  // The figures counted over those rows, asked for once the board is on screen (owner, 23 Nov 2026, "Fix
+  // speed next"): the same gate, and `readsCompanyPlaceChecks` before the read starts.
+  get("validation-reviews/summary", "approve"),
   // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
   // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
   // in the service exactly as it narrows `list/places`.
