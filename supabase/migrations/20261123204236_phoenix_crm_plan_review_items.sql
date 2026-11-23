@@ -62,4 +62,6 @@ $$;
 revoke execute on function public.phoenix_crm_plan_review_items(uuid[]) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_plan_review_items(uuid[]) to service_role;
 
+notify pgrst, 'reload schema';
+
 commit;

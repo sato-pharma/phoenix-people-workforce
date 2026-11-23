@@ -1204,6 +1204,9 @@ const LATER_MIGRATIONS = [
   // REPLACED, each from the body production held that day, and the last replacer of both. It replaces nothing save_visit
   // depends on.
   "supabase/migrations/20261123153104_phoenix_crm_building_reject_closes_its_reviews.sql",
+  // The Field CRM board's plan reviews in one request (owner, 23 Nov 2026: "fix the slow Field CRM board"): one NEW
+  // read-only function, phoenix_crm_plan_review_items, the items of many plans as one jsonb value. It replaces nothing.
+  "supabase/migrations/20261123204236_phoenix_crm_plan_review_items.sql",
 ];
 
 /**
