@@ -17,6 +17,8 @@ import type { PrivateCalendarSource } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertDailyDeductionsPublishActor } from "./permissions.ts";
 import { cairoTodayIso } from "./range.ts";
+import { getActiveDailyPublication } from "./service.ts";
+import { dailyDeductionConnectorLabels, isDailyDeductionConnector } from "./types.ts";
 import {
   buildDayReviewDraft,
   chargesOnDay,
@@ -61,6 +63,10 @@ export type DayReviewRecord = {
   unreadableSources: string[];
   /** The live deductions already charging this person on this day. */
   existingCharges: DayChargeOnRecord[];
+  /** The day as already RELEASED on this page (the "Released to employees" list). */
+  releasedOnDay: DayReleasedLine[];
+  /** The released list could not be read, so the push stays off rather than guess. */
+  releasedUnreadable: boolean;
   /** What a full day and half a day cost, from Base ÷ that month's calendar days. Null: no base salary on record. */
   price: { fullDay: number | null; halfDay: number | null };
   /** The payroll month the day would be charged to. */
@@ -68,6 +74,9 @@ export type DayReviewRecord = {
   /** Why this day cannot be deducted, or null. */
   refusal: string | null;
 };
+
+/** A line of the active Daily Deductions snapshot that already holds the chosen day. */
+export type DayReleasedLine = { lineId: string; label: string; amount: number; daysCount: number };
 
 type EmployeeRow = {
   hr_id: string;
@@ -147,6 +156,32 @@ async function loadChargesOnDay(hrId: string, date: string): Promise<DayChargeOn
   );
 }
 
+/**
+ * The day as already RELEASED on this page — the active snapshot's lines for this person that carry
+ * the day. They are a separate store from the month module (released here, emailed, shown on the
+ * portal), and the month collection later charges the same day on the Deductions screen; pushing a
+ * hand-made day on top would put it there twice. A failed read THROWS: the caller decides.
+ */
+async function loadReleasedOnDay(hrId: string, date: string): Promise<DayReleasedLine[]> {
+  const compact = compactDeductionsHrId(hrId);
+  if (!compact) return [];
+  const publication = await getActiveDailyPublication();
+  if (!publication) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from("daily_deductions_lines")
+    .select("id, category, amount, days_count")
+    .eq("publication_id", publication.id)
+    .eq("employee_hr_id_compact", compact)
+    .filter("dates", "cs", JSON.stringify([date]));
+  if (error) throw new Error(`Released daily deductions could not be read: ${error.message}`);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    lineId: String(row.id),
+    label: isDailyDeductionConnector(row.category) ? dailyDeductionConnectorLabels[row.category] : "Daily deduction",
+    amount: Number(row.amount ?? 0),
+    daysCount: Number(row.days_count ?? 0),
+  }));
+}
+
 /** Choose a person and a day: everything Phoenix holds for it, the deductions already on it, and its price. */
 export async function loadDayReviewRecord(input: {
   access: AccessContext;
@@ -159,10 +194,11 @@ export async function loadDayReviewRecord(input: {
   const employee = toDayReviewEmployee(row);
   const todayIso = cairoTodayIso();
 
-  const [evidence, existingCharges, target] = await Promise.all([
+  const [evidence, existingCharges, target, released] = await Promise.all([
     getPrivateCalendarDayEvidence([{ date: input.date, employeeHrId: row.hr_id }]).catch(() => null),
     loadChargesOnDay(row.hr_id, input.date),
     chargeTargetFor(row.hr_id, input.date),
+    loadReleasedOnDay(row.hr_id, input.date).catch(() => null),
   ]);
   const day = evidence?.get(`${privateCalendarHrIdKey(row.hr_id)}|${input.date}`) ?? null;
 
@@ -190,6 +226,8 @@ export async function loadDayReviewRecord(input: {
     recordIncomplete: day === null || day.unreadableSources.length > 0,
     unreadableSources: (day?.unreadableSources ?? []).map((source) => privateCalendarSourceLabels[source] ?? source),
     existingCharges,
+    releasedOnDay: released ?? [],
+    releasedUnreadable: released === null,
     price: {
       fullDay: priceDayReview({ baseSalary: employee.baseSalary, date: input.date, fraction: 1 }),
       halfDay: priceDayReview({ baseSalary: employee.baseSalary, date: input.date, fraction: 0.5 }),
@@ -231,9 +269,18 @@ export async function pushDayReviewDeduction(input: {
   const refusal = dayReviewRefusal({ employee, date: input.date, todayIso: cairoTodayIso() });
   if (refusal) throw new Error(`Validation: ${refusal}`);
 
-  const [existing, target] = await Promise.all([loadChargesOnDay(row.hr_id, input.date), chargeTargetFor(row.hr_id, input.date)]);
+  const [existing, target, released] = await Promise.all([
+    loadChargesOnDay(row.hr_id, input.date),
+    chargeTargetFor(row.hr_id, input.date),
+    loadReleasedOnDay(row.hr_id, input.date),
+  ]);
   if (existing.some((charge) => charge.isDayReview)) {
     throw new Error("Conflict: this day was already pushed for this employee. Change or clear it on the Deductions screen.");
+  }
+  if (released.length > 0) {
+    throw new Error(
+      "Conflict: this day is already released for this employee on Daily Deductions. One day is charged once — withdraw that release first if this push should replace it.",
+    );
   }
   if (existing.length > 0) {
     throw new Error(

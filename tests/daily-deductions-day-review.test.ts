@@ -179,6 +179,24 @@ function wiringTests(): void {
   assert.doesNotMatch(service, /autoDecideStatus/, "a pushed day is born Pending — never auto-approved");
   assert.match(service, /existing\.length > 0[\s\S]*throw new Error/, "a day already charged is refused before anything is written");
   assert.match(service, /ledgerClaimMonthKeys\(/, "existing charges are read across the month AND the next payroll month");
+  assert.match(
+    service,
+    /released\.length > 0\) \{\s*throw new Error\(\s*"Conflict:[\s\S]*insertCandidateDrafts\(/,
+    "a day already released on the Daily Deductions page is refused before anything is written",
+  );
+  assert.match(
+    service,
+    /getActiveDailyPublication\(\)[\s\S]*\.from\("daily_deductions_lines"\)[\s\S]*\.eq\("publication_id", publication\.id\)[\s\S]*\.filter\("dates", "cs", JSON\.stringify\(\[date\]\)\)/,
+    "the released read looks at the active snapshot's lines that carry the chosen day",
+  );
+  assert.match(service, /releasedUnreadable: released === null/, "a failed released read is said, never shown as nothing released");
+
+  const panel = readFileSync(new URL("../src/components/admin/daily-deductions-day-review.tsx", import.meta.url), "utf8");
+  assert.match(
+    panel,
+    /record\.releasedOnDay\.length > 0 \|\| record\.releasedUnreadable/,
+    "the panel keeps the push off while the day is released, or while that cannot be read",
+  );
 
   const page = readFileSync(new URL("../app/(admin)/admin/daily-deductions/page.tsx", import.meta.url), "utf8");
   assert.match(page, /access\.role === "Super Admin" \? <DailyDeductionsDayReview/, "the panel is mounted for the Super Admin alone");

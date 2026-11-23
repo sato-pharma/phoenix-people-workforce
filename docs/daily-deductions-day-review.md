@@ -18,6 +18,10 @@ A panel at the top of **Daily Deductions** (`/admin/daily-deductions`), for the 
    panel names it, so an empty list is never mistaken for "nothing happened".
 3. **The deductions already on that day** are listed (any live row whose charged days include it). While
    one exists the push is off: one day is charged once.
+   So is a day already **released on this page** (a line of the active snapshot under "Released to
+   employees" whose days include it): those lines are a separate store, and the month collection charges
+   the same day later, so a push on top would charge it twice. Withdraw that line first. When the released
+   list cannot be read the push stays off and the panel says so.
 4. **Push** one day or half a day, each shown with its price (Base ÷ that month's calendar days), with a
    **required comment** of up to 1,000 characters.
 
@@ -53,6 +57,8 @@ It is born **Pending** (no automatic decision). Then:
   Action", a day the reviewer unticked, and Loan / Other entries typed on the Deductions screen
   (`manual_hr`, dated on the month's 1st as a placeholder — the publish-time day guard skips them the same
   way).
+- A day already released on this page (`daily_deductions_lines` of the active publication whose `dates`
+  hold the day), or a moment when that list cannot be read. The server push refuses it too.
 - A second push for the same person and day (the candidate key collides).
 
 🔴 **It claims its day.** Unlike a `manual_hr` entry, a `daily_day_review` row names a real day, so the

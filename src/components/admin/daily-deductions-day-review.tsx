@@ -46,6 +46,8 @@ type ExistingCharge = {
   isDayReview: boolean;
 };
 
+type ReleasedLine = { lineId: string; label: string; amount: number; daysCount: number };
+
 type DayRecord = {
   employee: { hrId: string; name: string; jobTitle: string | null; hasLeft: boolean; lastWorkingDate: string | null };
   date: string;
@@ -53,6 +55,8 @@ type DayRecord = {
   recordIncomplete: boolean;
   unreadableSources: string[];
   existingCharges: ExistingCharge[];
+  releasedOnDay: ReleasedLine[];
+  releasedUnreadable: boolean;
   price: { fullDay: number | null; halfDay: number | null };
   payrollMonthKey: string;
   refusal: string | null;
@@ -200,7 +204,7 @@ export function DailyDeductionsDayReview({ today }: { today: string }) {
     }
   }
 
-  const blocked = Boolean(record && (record.refusal || record.existingCharges.length > 0));
+  const blocked = Boolean(record && (record.refusal || record.existingCharges.length > 0 || record.releasedOnDay.length > 0 || record.releasedUnreadable));
   const chosenPrice = record ? (fraction === 1 ? record.price.fullDay : record.price.halfDay) : null;
   const commentLength = comment.trim().length;
   const canPush = Boolean(record) && !blocked && !loading && commentLength > 0 && commentLength <= COMMENT_MAX && !pushing;
@@ -363,6 +367,32 @@ export function DailyDeductionsDayReview({ today }: { today: string }) {
                 </ul>
                 <p className={phxHintClassName}>One day is charged once. Change or clear that deduction on the Deductions screen first.</p>
               </div>
+            ) : null}
+
+            {record.releasedOnDay.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className={LABEL}>Released on this page for that day</h3>
+                <ul className="space-y-2">
+                  {record.releasedOnDay.map((line) => (
+                    <li className="border border-l-4 border-slate-200 border-l-rose-500 px-3 py-2 text-sm" key={line.lineId}>
+                      <span className="font-bold text-slate-900">{line.label}</span>
+                      <span className="text-slate-600">
+                        {" "}
+                        · {money(line.amount)} · {line.daysCount} {line.daysCount === 1 ? "day" : "days"} on that line
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className={phxHintClassName}>
+                  One day is charged once. Withdraw that line under Released to employees first if this push should replace it.
+                </p>
+              </div>
+            ) : null}
+
+            {record.releasedUnreadable ? (
+              <p className="border-l-4 border-l-amber-500 px-3 py-2 text-sm font-bold text-amber-800">
+                The lines already released on this page could not be read just now, so the push stays off. Open the day again in a moment.
+              </p>
             ) : null}
 
             {record.refusal ? (
