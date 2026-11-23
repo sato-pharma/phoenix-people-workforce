@@ -41,6 +41,7 @@ import {
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — a polyclinic validated ONCE, with its doctors seated inside it (owner, 2026-10-09 in
@@ -671,7 +672,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   );
 
   // And what the board reads where no review row exists.
-  const reviewsServer = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
+  const reviewsServer = stripComments(placeCheckSplitSource("validation-reviews"));
   assert.ok(
     reviewsServer.includes("loadSharedPlaceRefusalsForCustomers("),
     "🔴 the waiting list asks the VENUE for the reason and the rep when the customer has no refused review of his own",

@@ -14,6 +14,7 @@ import {
   type NeedsYouSourceId,
   type NeedsYouSourceResult,
 } from "../src/lib/needs-you/types.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM on the central Needs You board.
@@ -288,7 +289,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
   //    decider's own entries are TEST entries, so a real-only count is permanently calm;
   //  · an `overdue` verdict invented for a queue the module publishes no SLA for.
   {
-    const reviews = source("src/lib/phoenix-crm/server/validation-reviews.ts");
+    const reviews = placeCheckSplitSource("validation-reviews", source);
     const crmNeedsYou = source("src/lib/phoenix-crm/server/needs-you.ts");
 
     assert.ok(
@@ -308,10 +309,18 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     // 🔴 REAL ENTRIES, EXACTLY AS THE PAGE DRAWS THEM (owner, 17 Nov 2026, the audit's wrong counts). The
     // page has drawn no test entry since 2026-10-17 (`isReal`), so a count of both worlds read "1 place is
     // held" over a page that showed none. Until then this asserted the opposite.
-    const countBlock = reviews.slice(
-      reviews.indexOf("export async function countValidationReviewsWaiting"),
-      reviews.indexOf("function reviewNoticeKey"),
-    );
+    // The count and the two functions it calls, each from its signature to its top-level close: since the
+    // split of 23 Nov 2026 they sit in two parts (`validation-reviews/location-checks.ts`, `…/shared.ts`).
+    const functionText = (signature: string): string => {
+      const start = reviews.indexOf(signature);
+      assert.ok(start >= 0, `${signature} is in the reviews`);
+      return reviews.slice(start, reviews.indexOf("\n}\n", start) + 2);
+    };
+    const countBlock = [
+      "export async function countValidationReviewsWaiting",
+      "async function loadSfeRecommendedSubjects(",
+      "function reviewStillToDecide(",
+    ].map(functionText).join("\n");
     assert.ok(countBlock.length > 0, "the count could not be located");
     assert.match(countBlock, /\.eq\("status", "pending"\)\s+\.eq\("is_test", false\)/, "the waiting reviews are the real ones the page draws");
     assert.match(countBlock, /\.eq\("status", "held"\)\s+\.eq\("is_test", false\)/, "and so are the held buildings");
@@ -370,7 +379,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
   // Added 2026-10-08: 0 of 22 refused customers had been validated again, the oldest 76.7 hours
   // later, and nothing outside the page said so. The rep redoes the photo, so it is never his lane.
   {
-    const reviews = source("src/lib/phoenix-crm/server/validation-reviews.ts");
+    const reviews = placeCheckSplitSource("validation-reviews", source);
     const crmNeedsYou = source("src/lib/phoenix-crm/server/needs-you.ts");
     assert.ok(reviews.includes("export async function countReopenedCustomersWaiting"), "the module owns the count");
     assert.match(

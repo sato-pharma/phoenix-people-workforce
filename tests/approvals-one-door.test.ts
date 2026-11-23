@@ -10,6 +10,7 @@ import {
   type ApprovalIdentity,
 } from "../src/lib/approvals/raise-approval.ts";
 import { isPhoenixCrmApprovalNotice } from "../src/lib/phoenix-crm/server/notifications.ts";
+import { placeCheckSplitSourceAt } from "./support/place-check-split-source.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ONE WAY FOR A MODULE TO RAISE AN APPROVAL (enterprise audit REC-032, 14 Nov 2026).
@@ -128,7 +129,7 @@ export async function runApprovalsOneDoorTests() {
 
   // 3. Each module's approval notices go through the door.
   for (const { file, minDoor, notApprovals, why } of DOOR_FILES) {
-    const source = read(file);
+    const source = placeCheckSplitSourceAt(file, read);
     assert.match(source, /from "@\/lib\/approvals\/raise-approval"/, `${file} must import the approvals door`);
     const door = (source.match(/raiseApproval\(/g) ?? []).length;
     assert.ok(door >= minDoor, `${file} must send its ${minDoor} approval notice(s) through raiseApproval (found ${door})`);

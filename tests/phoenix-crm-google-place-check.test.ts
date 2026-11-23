@@ -19,6 +19,7 @@ import {
 import { listRowAction } from "../src/lib/phoenix-crm/list-request-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A place is checked against the account's own Google Maps listing before it is accepted (owner,
@@ -222,7 +223,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.ok(list.includes("const heldRequests = await withPlaceCheckHolds("), "the List tab asks it");
   const team = stripComments(readFileSync("src/lib/phoenix-crm/server/team.ts", "utf8"));
   assert.ok(team.includes("const heldRequests = await withPlaceCheckHolds("), "and so does the Team tab");
-  const reviewsRead = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
+  const reviewsRead = stripComments(placeCheckSplitSource("validation-reviews"));
   const batch = /export async function pendingLocationReviewCustomers\([\s\S]*?\n\}/.exec(reviewsRead)?.[0] ?? "";
   assert.ok(batch.includes('.eq("status", "pending")'), "the batch reads the same waiting reviews as the single check");
   const card = stripComments(readFileSync("src/components/phoenix-crm/request-card.tsx", "utf8"));
@@ -246,7 +247,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   // `tests/phoenix-crm-sfe-place-checks.test.ts` (the Super Admin alone since 2026-11-19, the SFE Manager recommending,
   // never a test account, never a district manager) — here only that it is declared once, in this file.
   assert.match(access, /export function canDecideValidationReviews\(viewer: PhoenixCrmViewer\): boolean \{\s*if \(viewer\.isTestPersona\) return false;/, "the decider refuses a test account first");
-  const reviews = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
+  const reviews = stripComments(placeCheckSplitSource("validation-reviews"));
   assert.match(reviews, /import \{ canDecideValidationReviews[^}]*\} from "@\/lib\/phoenix-crm\/server\/access";/, "and the decision module imports that one predicate, never a copy of its own");
   assert.doesNotMatch(reviews, /function canDecideValidationReviews\(/, "nothing re-declares it where it used to live");
   assert.match(reviews, /export async function decideValidationReview\([\s\S]*?if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, "the decision refuses everyone else");

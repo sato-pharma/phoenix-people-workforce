@@ -156,6 +156,22 @@ that pinned a rule by reading one of those files now read the list through
 `tests/support/place-check-list-source.ts`, and a new part file the helper does not name fails the
 lanes test.
 
+The three long files left over were split the same way afterwards (23 Nov 2026, after pull request
+710): the server's reviews, the bulk bar and the system's advice.
+
+| File | Was | Now | Its parts |
+| --- | --- | --- | --- |
+| The server's reviews (`server/validation-reviews.ts`) | 2,059 | 38 | 10 files under `server/validation-reviews/`: shared 188, types 300, location checks 251, notices 124, capture marks 110, queue 287, decisions 177, decided 218, place-in-use decisions 223, reopened 281 |
+| The bulk bar (`place-check-bulk.tsx`) | 429 | 281 | picks 159 |
+| The system's advice (`place-check-advice.ts`) | 430 | 304 | kinds 138 |
+
+Every statement moved unchanged: 1,981 lines of the reviews, 388 of the bulk bar and 382 of the
+advice, the rest being headers and imports. The only edits are an `export` on a name another part now
+uses, and the imports each part needs. Each original path re-exports exactly the names it did (33, 9
+and 15). The tests that pinned those files read them through
+`tests/support/place-check-split-source.ts`, and the lanes test fails on a part that helper does not
+name.
+
 ## The pass to 9.5 (owner, 23 Nov 2026, 14:40 Cairo: "Fix them")
 
 The page was scored again on production after pull requests 700 and 707 were live. The module read

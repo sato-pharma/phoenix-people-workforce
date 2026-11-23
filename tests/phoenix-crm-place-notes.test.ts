@@ -20,6 +20,7 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 import { placeCheckListSource } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — a district manager's own Place checks tab: the comment, the visibility choice and the
@@ -138,7 +139,7 @@ function checkTeamScope(): void {
 
   // All four section reads narrow on the server. A browser-side filter over a company-wide payload
   // would be the same screen and a disclosure of every other district.
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   const shared = read("src/lib/phoenix-crm/server/shared-places.ts");
   for (const [name, source] of [
     ["loadValidationReviews", reviews],
@@ -158,7 +159,7 @@ function checkTeamScope(): void {
 // ── 3 · He decides nothing, and his screen does not say who does ───────────────────────────────
 
 function checkHeDecidesNothing(): void {
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   for (const name of ["decideValidationReview", "refuseValidatedPlace"]) {
     const body = functionBody(reviews, name);
     assert.match(body, /if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, `${name} is still the Super Admin's alone`);
@@ -549,7 +550,7 @@ function checkDeviceEvidence(): void {
 
 function checkDecisionCommentReachesTheRep(): void {
   // Every way a place or a building is decided carries the comment, on either answer.
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   for (const name of ["decideValidationReview", "restoreValidation", "refuseValidatedPlace", "approveValidatedPlace"]) {
     assert.match(functionBody(reviews, name), /tellDecisionComment\(viewer, "place",/, `${name} tells the rep the comment`);
   }
@@ -614,7 +615,7 @@ function checkDecisionCommentReachesTheRep(): void {
 // ── A manager's payload carries no decider (found 2026-11-01) ───────────────────────────────────────
 
 function checkAManagersPayloadCarriesNoDecider(): void {
-  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", read);
   const buildings = read("src/lib/phoenix-crm/server/shared-places.ts");
   const evidence = read("src/lib/phoenix-crm/server/integrity-board.ts");
 
