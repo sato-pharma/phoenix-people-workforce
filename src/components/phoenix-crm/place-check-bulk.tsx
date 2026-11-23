@@ -23,7 +23,8 @@
  * nothing about who decides).
  */
 
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { messageOf } from "@/components/phoenix-crm/api";
@@ -32,6 +33,7 @@ import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { CrmButton, CrmCheck, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import type { PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
+import { cn } from "@/lib/utils";
 import {
   VALIDATION_NOTE_LABEL,
   VALIDATION_REASON_REQUIRED,
@@ -157,6 +159,26 @@ export function useBulkRunGoing(): boolean {
   return useSyncExternalStore(subscribeBulkRun, () => bulkRunGoing, () => false);
 }
 
+/**
+ * 🔴 ON THE BOARD WITH LANES THE BAR'S FIRST LINE STANDS IN ITS SECTION'S TITLE ROW (owner, 23 Nov 2026:
+ * "Add Pick rows to 707"). The line ("Pick rows to answer together", Pick all, the two quick picks, Clear)
+ * was a 61 px box of its own between the section's title and its first waiting place. A section hands its
+ * title row's slot down here and the bar draws the line into it; the reason, the note and the action
+ * buttons still open in the box under the title, where they always did.
+ *
+ * It is the SAME line with the same state, drawn in another place: never a second copy, never a second way
+ * to pick. `undefined` is a section with no slot (every board and panel but the lanes) and the bar is whole,
+ * as before. `null` is a slot not on the page yet: nothing is drawn for that one render, so the line never
+ * stands in the old place first and then jumps.
+ *
+ * 🔴 NO WIDTH CAP ON THE SLOT. Set on the live page's own elements (23 Nov 2026, nothing pressed): with no
+ * cap the line gives back 61 px on his own screen with none, one or two quick picks, 37 px in a 1,126 px
+ * column (9 px there with two quick picks) and 9 px under the title in a 900 or 700 px column: never a
+ * loss. A 576 or 672 px cap wrapped the buttons beside the title, gave back 41 px on his screen and COST
+ * 35 px in a 900 px column with one quick pick.
+ */
+export const BulkPickLineSlot = createContext<HTMLElement | null | undefined>(undefined);
+
 /** The tick box on one row — the same control in the cards and in the table. */
 export function BulkPick<Row>({ picks, row }: { picks: RowPicks<Row>; row: Row }) {
   return (
@@ -197,6 +219,7 @@ export function BulkDecideBar<Row>({
   const reasonId = `place-check-bulk-reason-${fieldId}`;
   const noteId = `place-check-bulk-note-${fieldId}`;
   const anyRunGoing = useBulkRunGoing();
+  const lineSlot = useContext(BulkPickLineSlot);
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<ValidationRefusalReason | "">("");
   const [armed, setArmed] = useState<string | null>(null);
@@ -287,31 +310,44 @@ export function BulkDecideBar<Row>({
   const toApprove = recommended("approve");
   const toReject = recommended("reject");
 
+  // The bar's first line. In a section's title row it ends the row on a desktop and stands under the title on a phone.
+  const inTitleRow = lineSlot !== undefined;
+  const line = (
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-2", inTitleRow && "sm:justify-end")}>
+      <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+        {picked.length === 0 ? `Pick rows to answer together (${picks.selectable} here)` : `${picked.length} picked`}
+      </p>
+      <CrmButton disabled={busy} onClick={() => picks.pickAll()} size="sm" variant="ghost">
+        Pick all {picks.selectable}
+      </CrmButton>
+      {adviceOf && toApprove > 0 ? (
+        <CrmButton disabled={busy} onClick={() => picks.pickWhere((row) => adviceOf(row) === "approve")} size="sm" variant="ghost">
+          Pick the {toApprove} the system recommends approving
+        </CrmButton>
+      ) : null}
+      {adviceOf && toReject > 0 ? (
+        <CrmButton disabled={busy} onClick={() => picks.pickWhere((row) => adviceOf(row) === "reject")} size="sm" variant="ghost">
+          Pick the {toReject} the system recommends rejecting
+        </CrmButton>
+      ) : null}
+      {picked.length > 0 ? (
+        <CrmButton disabled={busy} onClick={() => picks.clear()} size="sm" variant="ghost">
+          Clear
+        </CrmButton>
+      ) : null}
+    </div>
+  );
+  // The SAME element, in the title row's slot when the section has one. A slot not on the page yet draws
+  // nothing for that render.
+  const lineInPlace = !inTitleRow ? line : lineSlot ? createPortal(line, lineSlot) : null;
+  // With its line in the title row the box holds only what a pick opens and what the last run said: with
+  // nothing ticked and nothing said there is no box, and the first waiting place stands under the title.
+  const lastRunSaid = (summary !== null && running === null) || failures.length > 0;
+  if (inTitleRow && picked.length === 0 && !lastRunSaid) return lineInPlace;
+
   return (
     <div className="min-w-0 space-y-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-          {picked.length === 0 ? `Pick rows to answer together (${picks.selectable} here)` : `${picked.length} picked`}
-        </p>
-        <CrmButton disabled={busy} onClick={() => picks.pickAll()} size="sm" variant="ghost">
-          Pick all {picks.selectable}
-        </CrmButton>
-        {adviceOf && toApprove > 0 ? (
-          <CrmButton disabled={busy} onClick={() => picks.pickWhere((row) => adviceOf(row) === "approve")} size="sm" variant="ghost">
-            Pick the {toApprove} the system recommends approving
-          </CrmButton>
-        ) : null}
-        {adviceOf && toReject > 0 ? (
-          <CrmButton disabled={busy} onClick={() => picks.pickWhere((row) => adviceOf(row) === "reject")} size="sm" variant="ghost">
-            Pick the {toReject} the system recommends rejecting
-          </CrmButton>
-        ) : null}
-        {picked.length > 0 ? (
-          <CrmButton disabled={busy} onClick={() => picks.clear()} size="sm" variant="ghost">
-            Clear
-          </CrmButton>
-        ) : null}
-      </div>
+      {lineInPlace}
 
       {picked.length > 0 ? (
         <>
