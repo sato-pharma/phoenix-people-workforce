@@ -10607,6 +10607,9 @@ declare
   v_places integer := 0;
   v_validated jsonb := '[]'::jsonb;
   v_keeps_decision boolean := false;
+  -- 2026-11-23: the review a rejection closes, and how many it closed.
+  v_review_id uuid;
+  v_reviews_closed integer := 0;
 begin
   if v_id is null or v_actor is null or v_decision not in ('approve', 'reject')
     or (v_note is not null and char_length(v_note) > 500) then
@@ -10759,6 +10762,32 @@ begin
         v_seated.is_test
       );
 
+      -- 🔴 2026-11-23 (Place checks, the pass to 9.5): A REVIEW STILL WAITING ON A PLACE THIS REJECTION RETIRES IS
+      -- CLOSED WITH IT, in this transaction, as the building's own decision — the same decider, the same moment
+      -- (now() is the building's retired_at, which phoenix_crm_restore_shared_place reads to reopen it), the same
+      -- note and refusal reason. Until now it stayed 'pending' on a retired place: on Place checks with nothing
+      -- left to decide, and counted in "N have waited over 72 hours" (19 Nov and 22 Nov 2026, two real reviews).
+      -- Only a review of a place retired HERE is touched — the cursor is this building's active seats — and the
+      -- rep is told nothing more: the building's rejection already told him, through `reopened` below.
+      v_review_id := null;
+      update public.phoenix_crm_validation_reviews r
+      set status = 'rejected', decided_by_hr_id = v_actor, decided_at = now(), decision_note = v_note,
+          refusal_reason = v_reason
+      where r.place_id = v_seated.place_id and r.status = 'pending'
+      returning r.id into v_review_id;
+      if v_review_id is not null then
+        v_reviews_closed := v_reviews_closed + 1;
+        insert into public.phoenix_crm_list_events (seat_id, customer_id, place_id, event_type, actor_hr_id, details, is_test)
+        values (
+          v_venue.seat_id, v_seated.customer_id, v_seated.place_id, 'validation_review_rejected', v_actor,
+          jsonb_build_object(
+            'review_id', v_review_id, 'note', v_note, 'refusal_reason', v_reason,
+            'why', 'shared_place_rejected', 'shared_place_id', v_id
+          ),
+          v_seated.is_test
+        );
+      end if;
+
       if not exists (
         select 1 from public.phoenix_crm_places pl where pl.customer_id = v_seated.customer_id and pl.status = 'active'
       ) then
@@ -10798,6 +10827,7 @@ begin
     'is_test', v_venue.is_test,
     'name', v_venue.name,
     'places_retired', v_places,
+    'reviews_closed', v_reviews_closed,
     'validated', v_validated,
     'reopened', v_reopened,
     'refusal_reason', case when v_decision = 'reject' then v_reason else null end
@@ -16325,6 +16355,8 @@ declare
   v_places integer := 0;
   v_validated jsonb := '[]'::jsonb;
   v_still_waiting jsonb := '[]'::jsonb;
+  -- 2026-11-23: the reviews the rejection closed, waiting again.
+  v_reviews_reopened integer := 0;
 begin
   if v_id is null or v_actor is null or (v_note is not null and char_length(v_note) > 500) then
     raise exception 'phoenix_crm:bad_input';
@@ -16392,6 +16424,22 @@ begin
       v_seated.is_test
     );
 
+    -- 🔴 2026-11-23: THE REVIEW THE BUILDING'S REJECTION CLOSED WAITS AGAIN. phoenix_crm_decide_shared_place now
+    -- closes a review still waiting on each seat it retires, stamped with the building's own retired_at and
+    -- decider; taking the rejection back puts exactly those back to 'pending' — never a review rejected on its
+    -- own, which carries its own moment — so the hold below still sees it and the customer is not validated
+    -- on a photo nobody decided. The page shows it again, waiting from when it was first sent.
+    update public.phoenix_crm_validation_reviews r
+    set status = 'pending', decided_by_hr_id = null, decided_at = null, decision_note = null, refusal_reason = null
+    where r.place_id = v_seated.place_id
+      and r.status = 'rejected'
+      and r.decided_at = v_retired_at
+      and r.decided_by_hr_id is not distinct from v_venue.retired_by_hr_id
+      and r.system_advice_at_decision is null;
+    if found then
+      v_reviews_reopened := v_reviews_reopened + 1;
+    end if;
+
     -- 🔴 THE SAME THREE HOLDS APPROVING A HELD VENUE KEEPS (owner, 2026-10-14): a building with no
     -- timetable on file, a timetable read as another name or as no schedule, and a customer whose own
     -- location is waiting on a validation review all STAY pending. That rule is lifted verbatim from
@@ -16457,6 +16505,7 @@ begin
     'is_test', v_venue.is_test,
     'status', 'active',
     'places_restored', v_places,
+    'reviews_reopened', v_reviews_reopened,
     'validated', v_validated,
     'still_waiting', v_still_waiting
   );
