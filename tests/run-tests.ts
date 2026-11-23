@@ -2314,6 +2314,7 @@ import { runPhoenixCrmSignedOutAnswers401Tests } from "./phoenix-crm-signed-out-
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
 import { runPhoenixCrmFarVisitSafeguardsTests } from "./phoenix-crm-far-visit-safeguards.test.ts";
+import { runPhoenixCrmFarVisitHoldFiltersTests } from "./phoenix-crm-far-visit-hold-filters.test.ts";
 import { runPhoenixCrmUnvalidatedVisitCapTests } from "./phoenix-crm-unvalidated-visit-cap.test.ts";
 import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
@@ -8314,6 +8315,11 @@ await runTest(
 await runTest(
   "the four safeguards around a Phoenix CRM customer's place (owner, 2026-11-10: \"how to avoid these issues so they never happen again?\", after Momen Fathy's Dr. Doria Darraz was saved 8.3 km off from an indoor Wi-Fi guess and every visit to her was refused at her door). Pinned: a place reading the rep could not have reached from his own visit saved in the last hour (3 km and 80 km/h) is refused, and the same point again for six hours, never reaching back before 10 November; five far refusals from one tight spot tell the Super Admin and the SFE Manager once, never by email; the next visit from that spot is SAVED and held, written before the visit, counting in no view, list or report until the SFE approves it; an account is refused only past 500 m; and the rep reads only his own way out",
   runPhoenixCrmFarVisitSafeguardsTests,
+);
+
+await runTest(
+  "the advanced filters on Visits held for SFE (owner, 23 Nov 2026: \"in the held visits make me advanced filters top to be able to filter instead of passing by all visits to find what I want\"). Pinned: status, why held, rep, territory, visit days, distance and a name search narrow the rows and five orders sort them; a value that does not parse is not applied and days typed backwards are swapped; an unmeasured distance falls in no band; Arabic names are found whatever their hamza; the desktop table and the phone cards both draw the filtered rows while the cards above count the whole queue; and the page gate is asked before anything the address says",
+  runPhoenixCrmFarVisitHoldFiltersTests,
 );
 
 await runTest(
