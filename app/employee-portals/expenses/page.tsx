@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 const PAGE_BADGE = "Pay & Expenses";
 const PAGE_TITLE = "My Outstation Expenses";
 const PAGE_DESCRIPTION =
-  "Claim your travel tickets and follow every claim you have sent. Each trip starts from your home address on file.";
+  "Claim your travel tickets, or another cost you paid with its invoice, and follow every claim you have sent. Each trip starts from your home address on file.";
 
 export default async function EmployeePortalExpensesPage() {
   const access = await resolveAuthenticatedPageAccess();
@@ -94,6 +94,7 @@ export default async function EmployeePortalExpensesPage() {
     <EmployeePortalPageShell badge={PAGE_BADGE} description={PAGE_DESCRIPTION} title={PAGE_TITLE}>
       <MedicalRepExpensesWorkspace
         canSubmit={Boolean(context.fromLocation) && canSubmitExpense}
+        canSubmitOther={canSubmitExpense}
         employeeName={context.employeeName}
         initialRequests={requests}
         residenceSummary={context.fromLocation}
