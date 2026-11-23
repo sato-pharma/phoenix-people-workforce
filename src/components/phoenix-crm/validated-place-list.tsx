@@ -8,7 +8,7 @@
  * held and never appears in the queue above; an AM one that matched its listing does not either. Before
  * this list there was no way to take one back — it had to be undone in SQL.
  *
- * Refusing writes the same review the automatic check would have written and runs the same reject, so
+ * Rejecting writes the same review the automatic check would have written and runs the same reject, so
  * the rep reads the system's own wording ("The system could not confirm this place") and never that
  * a person looked at him. Since 2026-10-08 the Super Admin also picks WHAT IS WRONG WITH THE PHOTO from
  * a closed list, and that one sentence is what the rep is told about the photo. The comment beside it is
@@ -50,6 +50,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
+import { PLACE_CHECK_VERBS } from "@/lib/phoenix-crm/place-check-lanes";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
@@ -255,7 +256,7 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
  * the form was most of the row and the photograph a 113-pixel square beside it. Closed, a row is the
  * photo, who took it, what the reader saw, the system's advice and one button.
  */
-function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
+function RejectInUse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
   const done = usePlaceCheckDone();
   const canRestore = useCanRestoreValidation();
   const { saved, markSaved } = useSavedOutcome(row);
@@ -297,7 +298,7 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
   if (!open) {
     return (
       <CrmButton onClick={() => setOpen(true)} variant="danger">
-        Refuse this validation
+        {PLACE_CHECK_VERBS.reject}
       </CrmButton>
     );
   }
@@ -330,7 +331,7 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
           <CrmNote tone="warn">This retires the place — they validate the customer again from their own list. {refusalTakeBack(canRestore)}</CrmNote>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
             <CrmButton disabled={saving} onClick={() => void refuse()} variant="danger">
-              {saving ? "Refusing…" : "Yes, refuse it"}
+              {saving ? "Rejecting…" : "Yes, reject it"}
             </CrmButton>
             <CrmButton disabled={saving} onClick={() => setArmed(false)}>
               Keep it
@@ -340,7 +341,7 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
           <CrmButton disabled={reason === ""} onClick={() => setArmed(true)} variant="danger">
-            Refuse it
+            Reject it
           </CrmButton>
           <CrmButton disabled={saving} onClick={() => setOpen(false)}>
             Cancel
@@ -396,7 +397,7 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
     <div className="space-y-2">
       <DecisionComment disabled={saving} id={noteFieldId} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <CrmButton disabled={saving || shortName} onClick={() => void approve()} variant="primary">
-        {saving ? "Approving…" : "Approve this validation"}
+        {saving ? "Approving…" : PLACE_CHECK_VERBS.approve}
       </CrmButton>
       {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
@@ -413,7 +414,7 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
 /**
  * The last column, both modes together.
  *
- * 🔴 `Refuse` IS NOT RENDERED FOR A MANAGER, AND NEITHER IS ITS WARNING. Refusing a validation retires
+ * 🔴 `RejectInUse` IS NOT RENDERED FOR A MANAGER, AND NEITHER IS ITS WARNING. Rejecting a validation retires
  * the place and can send the customer back to To validate — it is a decision, and the decision is the
  * deciders' alone (the Super Admin and the SFE Manager). A manager comments and recommends, and the
  * owner's instruction on 2026-10-13 was that his screen does not say who makes the call.
@@ -423,7 +424,7 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
  */
 function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
-  // Approve and Refuse are decisions — the Super Admin's alone since 2026-11-19, never the SFE Manager's.
+  // Approve and Reject are decisions — the Super Admin's alone since 2026-11-19, never the SFE Manager's.
   const decides = usePlaceCheckDecides();
   const decider = mode !== "team" && decides;
   return (
@@ -431,7 +432,7 @@ function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the company board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
       {decider ? <Approve row={row} /> : null}
-      {decider ? <Refuse row={row} scope={scope} /> : null}
+      {decider ? <RejectInUse row={row} scope={scope} /> : null}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -463,8 +464,8 @@ const inUseActions = (canRestore: boolean): ReadonlyArray<BulkAction<ValidatedPl
   },
   {
     key: "refuse",
-    label: "Refuse",
-    busyLabel: "Refusing",
+    label: "Reject",
+    busyLabel: "Rejecting",
     variant: "danger",
     needsReason: true,
     warning: (count) =>
@@ -563,7 +564,7 @@ export function ValidatedPlaceList({
                 <th className={crmThClassName}>Photo</th>
                 <th className={crmThClassName}>Customer and rep</th>
                 <th className={crmThClassName}>The place they saved</th>
-                <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Approve or refuse" : "Your recommendation"}</th>
+                <th className={crmThClassName}>{mode === "team" ? "Your comment" : bulk ? "Approve or reject" : "Your recommendation"}</th>
               </tr>
             </thead>
             <tbody>
@@ -606,7 +607,7 @@ export {
   Approve as PlaceInUseApprove,
   Place as PlaceInUseEvidence,
   PHOTO_CLASS as PLACE_CHECK_PHOTO_CLASS,
-  Refuse as PlaceInUseRefuse,
+  RejectInUse as PlaceInUseReject,
   photoAlt as placeInUsePhotoAlt,
   readingText as placeReadingText,
   SCHEDULE_TEXT as PLACE_SCHEDULE_TEXT,

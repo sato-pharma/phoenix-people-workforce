@@ -33,6 +33,7 @@ import { standingOfPlaceInUse } from "../src/lib/phoenix-crm/place-check-scoreca
 import { parsePlaceNoteAdvice, placeNoteAdviceLabel } from "../src/lib/phoenix-crm/place-note-rules.ts";
 import type { VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Place checks — the one-by-one review (owner, 2026-10-18: "I want to have the picture in a very wide
@@ -294,7 +295,7 @@ export function runPlaceReviewDeckTests(): void {
     ["src/components/phoenix-crm/validation-review-queue.tsx", ["Decision", "RejectAfterApproval"]],
     // The take-back of a rejection is one control since 2026-11-10, drawn by the queue and a seated customer alike.
     ["src/components/phoenix-crm/place-check-restore.tsx", ["RestoreAfterRejection"]],
-    ["src/components/phoenix-crm/validated-place-list.tsx", ["Approve", "Refuse"]],
+    ["src/components/phoenix-crm/validated-place-list.tsx", ["Approve", "RejectInUse"]],
     ["src/components/phoenix-crm/shared-place-list.tsx", ["Decision", "RestoreVenue"]],
     ["src/components/phoenix-crm/shared-place-customers.tsx", ["RejectNotOnTimetable", "WaitingDecision"]],
     ["src/components/crm-integrity/integrity-settle.tsx", ["IntegritySettleControl"]],
@@ -439,7 +440,7 @@ export function runPlaceReviewDeckTests(): void {
       assert.match(body, /markSaved\(done\([^;]*\)\);\s*setSaving\((?:false|null)\);/, `${path} ${name} lets go of its busy state on success, not only on failure`);
       // 17 Nov 2026: the in-use list's Refuse sits beside its Approve on one row and both read the same saved
       // mark, so Approve draws it and Refuse steps aside — one press, one mark. Every other control draws its own.
-      const sharesApprovesMark = path.endsWith("validated-place-list.tsx") && name === "Refuse";
+      const sharesApprovesMark = path.endsWith("validated-place-list.tsx") && name === "RejectInUse";
       const savedAt = body.search(sharesApprovesMark ? /if \(saved\) return null;/ : /if \(saved\) return <PlaceCheckSaved outcome=\{saved\} \/>;/);
       assert.ok(savedAt >= 0, `${path} ${name} draws the saved outcome instead of its buttons once the decision is saved`);
       const firstButton = body.search(/<CrmButton/);
@@ -465,7 +466,7 @@ export function runPlaceReviewDeckTests(): void {
 
   // ── 5 · The Super Admin's alone, and in none of the portal's bundles ────────────────────────────
   {
-    const board = stripComments(read("src/components/phoenix-crm/validation-reviews-board.tsx"));
+    const board = stripComments(placeCheckBoardSource(read));
     assert.match(board, /const withDeck = !team && reviewDeck !== undefined;/, "a district manager's board is never handed the review");
     const imports = board.match(/import[^;]*from "@\/(?:lib|components)\/place-review-deck\/[^"]+";/g) ?? [];
     assert.ok(imports.length > 0, "the board names the review's input type");

@@ -189,7 +189,7 @@ function checkScreens(): void {
   assert.match(groups, /customer\.lockedBySuperAdmin = customer\.lockedBySuperAdmin === true \|\| review\.lockedBySuperAdmin === true;/, "the approved review's lock is carried onto the seated customer");
 
   const deck = read("src/components/place-review-deck/review-deck.tsx");
-  assert.match(deck, /<PlaceInUseRefuse row=\{row\}/, "the review deck reuses the gated Refuse button rather than a second one");
+  assert.match(deck, /<PlaceInUseReject row=\{row\}/, "the review deck reuses the gated Reject button rather than a second one");
 }
 
 /** The body of one exported function, from its name to the first line that closes it at column zero. */

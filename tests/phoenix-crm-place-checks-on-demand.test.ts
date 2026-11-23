@@ -19,6 +19,7 @@ import {
 import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — Place checks opens on what Needs you draws, and the rest waits for the click (owner,
@@ -202,7 +203,7 @@ function checkTheWiring() {
   assert.match(route, /olderDecided: reviews\.rows\.filter\(\(row\) => !row\.recent\)/, "it answers only the decisions the page did not send");
   assert.match(route, /NextResponse\.json\(\{ everything, success: true \}\)/, "under the key the board reads");
 
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.ok(
     board.includes('useCrmGet<PlaceChecksEverything>(onDemand && wanted ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything")'),
     "🔴 the board reads by the key the route answers under, and only once it is wanted",

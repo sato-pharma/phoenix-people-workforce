@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — the Super Admin can refuse a validation the Google check never held.
@@ -285,7 +286,7 @@ function checkBulkDecide(): void {
   // 🔴 THE PICK-LIST FOLLOWS THE PHOTOGRAPHS: a timetable refusal is never offered `photo_of_paper`.
   assert.match(queue, /picks\.picked\.every\(\(row\) => row\.photoKind === "schedule"\) \? "schedule" : "signboard"/, "the reasons offered follow what the picked photographs are");
 
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   for (const prop of ['section="waiting"', 'section="decided"']) {
     assert.ok(board.includes(prop), `the board names its sets: ${prop}`);
   }
@@ -350,7 +351,7 @@ function checkScreens(): void {
     assert.match(wrapper, /reviewDeck=\{decides \?/, "🔴 and the one-by-one review, which is nothing but decisions, only for the decider (owner, 2026-11-19)");
   }
 
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   // By PROP, not as one line — the same lesson the loop above was rewritten for. This assertion was
   // still a single-line fingerprint and went red on 2026-10-13 when the call gained `mode` and
   // `noteIndex` for the district manager's board, with nothing about the list wrong. What matters is

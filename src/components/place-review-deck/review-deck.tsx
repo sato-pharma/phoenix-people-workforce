@@ -45,7 +45,7 @@ import { VenueDecision, VenueHeader, venueSignboardText, VenueWhere } from "@/co
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmNote, CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
-import { PlaceInUseApprove, PlaceInUseEvidence, PlaceInUseRefuse, placeInUsePhotoAlt } from "@/components/phoenix-crm/validated-place-list";
+import { PlaceInUseApprove, PlaceInUseEvidence, PlaceInUseReject, placeInUsePhotoAlt } from "@/components/phoenix-crm/validated-place-list";
 import { ReviewDecision, ReviewEvidence, reviewPhotoAlt } from "@/components/phoenix-crm/validation-review-queue";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
@@ -96,7 +96,7 @@ const OUTCOME_WORDS: Record<PlaceCheckOutcome, string> = {
   approved: "Approved",
   waiting_building: "Approved, waits for the building",
   rejected: "Rejected",
-  refused: "Refused",
+  refused: "Rejected",
   restored: "Approved after all",
   kept: "Approved",
   settled: "Settled",
@@ -305,7 +305,7 @@ function placeSlide(row: ValidatedPlaceRow, noteIndex: PlaceNoteIndex): SlideVie
       <div className="space-y-2">
         <AdviceTag advice={adviceOnSubject(noteIndex, "place", row.placeId)} />
         <PlaceInUseApprove row={row} />
-        <PlaceInUseRefuse row={row} scope="deck-" />
+        <PlaceInUseReject row={row} scope="deck-" />
       </div>
     ),
     wideButtons: true,

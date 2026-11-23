@@ -39,6 +39,7 @@ import {
   EMPTY_VALIDATION_REVIEW_FILTERS,
 } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — a polyclinic validated ONCE, with its doctors seated inside it (owner, 2026-10-09 in
@@ -542,7 +543,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   assert.ok(decide.includes("phoenix_crm_places"), "the seated places, not only the venue");
 
   // ── The administrator's board ─────────────────────────────────────────────────────────────────
-  const board = stripComments(readFileSync("src/components/phoenix-crm/validation-reviews-board.tsx", "utf8"));
+  const board = stripComments(placeCheckBoardSource());
   assert.ok(board.includes("<SharedPlaceList"), "the Polyclinics section is on the place-checks page");
   assert.ok(board.includes("filteredVenueGroups.length"), "and its heading count is the FILTERED count, like every other section");
   const page = stripComments(readFileSync("app/(admin)/admin/field-crm/validation-reviews/page.tsx", "utf8"));

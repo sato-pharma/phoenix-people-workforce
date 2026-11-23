@@ -45,7 +45,7 @@ const REASON_TEXT: Record<NonNullable<ValidationReviewRow["reason"]>, string> = 
   listing_far: "Google's pin for this customer is over 1 km from them: the hospital may have moved, or the pin is old.",
   listing_off:
     "The rep was refused once for standing away from this customer's Google pin, and captured the same place again — so it is here instead of being refused a second time. Both their readings are precise; the distance to each listing is below.",
-  refused_by_admin: "The system did not question this one — it was refused here, by hand. The reason is the note.",
+  refused_by_admin: "The system did not question this one — it was rejected here, by hand. The reason is the note.",
   sign_other_name: "The signboard in the photo names somebody else — not this customer, and not their place. What the system read is below.",
   sign_no_name:
     "No name the system could judge on: the photo shows no signboard at all, or a PM customer's signboard names no person. What the system read is below.",

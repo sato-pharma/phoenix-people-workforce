@@ -670,6 +670,11 @@ export type ValidationReviewRow = {
   listings: Array<GoogleListing & { distanceMeters: number }>;
   /** Who decided it. 🔴 Null for a viewer who decides nothing: a field a browser receives counts as shown (owner, 2026-10-13). */
   decidedByName: string | null;
+  /**
+   * The rule the system approved this place under by itself (`sign-wins-rules.ts`), while that approval
+   * stands. Null when a person decided it, when it still waits, and once he has taken it back.
+   */
+  approvedByRule?: string | null;
   decidedAtText: string | null;
   /** The raw instant, for the reads and filters that compare it. `decidedAtText` is for the screen. */
   decidedAt: string | null;
@@ -877,7 +882,7 @@ export async function loadValidationReviews(
     const base = getSupabaseAdmin()
       .from("phoenix_crm_validation_reviews")
       .select(
-        `id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason, ${REVIEW_SUBJECTS_SELECT}`,
+        `id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason, system_approved_rule, ${REVIEW_SUBJECTS_SELECT}`,
       );
     // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
     // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
@@ -1021,6 +1026,7 @@ export async function loadValidationReviews(
       // The system approves a held signboard itself once a reading confirms the customer (2026-10-17,
       // server/signboard-holds.ts), as the actor SYSTEM — a word no person carries, shown as a word.
       decidedByName: decides ? deciderLabel(names, text(row.decided_by_hr_id)) : null,
+      approvedByRule: decides && row.status === "approved" ? text(row.system_approved_rule) : null,
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
       decidedAt: text(row.decided_at),
       decisionNote: decides ? text(row.decision_note) : null,

@@ -11,6 +11,7 @@ import {
   type TimetableRefusal,
 } from "../src/lib/phoenix-crm/failing-timetable-rules.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Timetables that keep failing, and the Super Admin's "This building has no timetable" (owner, 14 Nov
@@ -236,7 +237,7 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     "it says who took it back and when, and whose declaration that was",
   );
 
-  const board = code("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(code);
   assert.ok(board.includes("{!team && failingTimetables ? ("), "🔴 the list is drawn on the deciders' board only");
   assert.ok(
     board.includes("venues: sharedPlaces.filter((venue) => venue.sharedPlaceId === onlyBuilding), seated, filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null"),

@@ -18,6 +18,7 @@ import {
 import { decidedByMatches } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — a district manager's own Place checks tab: the comment, the visibility choice and the
@@ -174,7 +175,7 @@ function checkHeDecidesNothing(): void {
   }
 
   // The board's own switch, and the three lists that honour it.
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.match(board, /const team = mode === "team"/, "the board derives one flag for every sentence that names a decision");
   assert.match(board, /team \? `Still being checked/, "a manager reads 'Still being checked', never 'Waiting for your decision'");
   // Every sentence that names a decision sits inside that ternary — never drawn unconditionally.
@@ -194,7 +195,7 @@ function checkHeDecidesNothing(): void {
   // Manager's company board (owner, 2026-11-19: he recommends, he never decides).
   const placesInUse = read("src/components/phoenix-crm/validated-place-list.tsx");
   assert.match(placesInUse, /const decider = mode !== "team" && decides;/, "validated-place-list.tsx: one test for a decision");
-  assert.match(placesInUse, /\{decider \? <Refuse row=\{row\}[^>]*\/> : null\}/, "validated-place-list.tsx renders no Refuse control for a manager or the SFE Manager");
+  assert.match(placesInUse, /\{decider \? <RejectInUse row=\{row\}[^>]*\/> : null\}/, "validated-place-list.tsx renders no Reject control for a manager or the SFE Manager");
   assert.match(
     read("src/components/phoenix-crm/shared-place-list.tsx"),
     /\{mode === "team" \? null : decides \? \(\s*<Decision row=\{row\} scope=\{scope\} \/>\s*\) : \(\s*<PlaceCheckDecisionState/,
@@ -588,7 +589,7 @@ function checkDecisionCommentReachesTheRep(): void {
     read("src/lib/phoenix-crm/place-checks-on-demand.ts"),
     /decisionNoteIsAComment\(row\.decisionNote, notes\[placeNoteSubjectKey\("place", row\.placeId\)\]/,
   );
-  assert.match(read("src/components/phoenix-crm/validation-reviews-board.tsx"), /withoutDecisionNotesThatAreComments\(everything\.olderDecided/);
+  assert.match(placeCheckBoardSource(read), /withoutDecisionNotesThatAreComments\(everything\.olderDecided/);
   assert.match(board, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("shared_place", row\.sharedPlaceId\)\]/);
 
   // The rep's list carries both shapes: on a customer's card, and for an empty building inside To validate only.
@@ -659,7 +660,7 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   assert.match(company, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "and reads through the same loaders");
   // The board's filter lists are built by `placeCheckOptions`, which the page also runs on the server to
   // count the opening figures (2026-11-14, "Load lists on demand") — one list, never a second copy.
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.match(board, /placeCheckOptions\(\{ team, pending, decided, everyDecided, validated, reopened, sharedPlaces \}\)/, "the board's lists are the shared ones");
   assert.match(
     read("src/lib/phoenix-crm/place-checks-on-demand.ts"),

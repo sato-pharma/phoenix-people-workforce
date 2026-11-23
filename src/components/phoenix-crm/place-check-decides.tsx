@@ -6,7 +6,7 @@
  * Owner, 19 November 2026: "in place checks make Khaled Bedair only able to recommend validation or not
  * recommend, never able to take a decision, and the recommended by him goes separately in a separate page
  * for admin decision." The Super Admin decides (`true`); the SFE Manager reads the same board and
- * recommends (`false`), so every decision control on it — Approve, Reject, Refuse, the bulk bar, the
+ * recommends (`false`), so every decision control on it — Approve, Reject, the bulk bar, the
  * polyclinic decision, the held full name, the same-place answer — is left out for him, and his own two
  * recommendation buttons are drawn in their place.
  *

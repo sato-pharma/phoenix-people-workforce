@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { placeCheckScorecard, problemsOf, standingOfPlaceInUse, type RepScore } from "../src/lib/phoenix-crm/place-check-scorecard.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — Place checks, each rep's captures on one line (owner, 2026-10-17: "eyeball the check
@@ -193,7 +194,7 @@ function checkScreen(): void {
   assert.doesNotMatch(screen, /"[^"]*\b(doctors?|accounts?)\b[^"]*"/i, "no banned word in a screen string");
 
   // The board narrows every tab through its own Rep filter — the scorecard keeps no filter of its own.
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.ok(board.includes('onPickRep={(rep) => set("rep", rep)}'), "tapping a rep sets the board's own Rep filter");
   assert.ok(board.includes("pickedRep={filters.rep}"), "and the picked rep is read back from it");
   assert.ok(!/useState[^\n]*pickedRep/.test(screen), "the scorecard holds no rep of its own");
@@ -220,7 +221,7 @@ function checkCountsOpenTheirPhotos(): void {
   assert.ok(screen.includes('<ScoreFacts columns={columns} onOpen={onOpen} rep={score.repName} score={score} />'), "a rep's count opens that rep's rows");
   assert.ok(screen.includes('onOpen={onOpen} rep="" score={total} total'), "the Every rep line opens every rep's");
 
-  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const board = placeCheckBoardSource(read);
   assert.ok(board.includes("onOpen={openScore}"), "the board answers the scorecard's counts");
   const place = board.slice(board.indexOf("function placeOfTarget"), board.indexOf("function filterableReopened"));
   assert.match(place, /case "waiting":\s*return \{ view: "needs", chip: null \}/, "a place waiting is on Needs you");
@@ -242,7 +243,7 @@ function checkCountsOpenTheirPhotos(): void {
   }
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
   assert.ok(list.includes('<CrmTable columns={["36%", "20%", "24%", "20%"]}>'), "the photo column is the widest on Not confirmed");
-  const refuse = list.slice(list.indexOf("function Refuse("), list.indexOf("function LastColumn"));
+  const refuse = list.slice(list.indexOf("function RejectInUse("), list.indexOf("function LastColumn"));
   assert.ok(refuse.indexOf("if (!open)") > -1 && refuse.indexOf("if (!open)") < refuse.indexOf("<RefusalReasonField"), "the reason list opens only after Refuse is pressed");
   const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
   assert.ok(queue.includes('<CrmTable columns={["30%", "18%", "28%", "24%"]}>'), "the photo column is the widest on Needs you");

@@ -50,7 +50,7 @@ function Who({ row }: { row: ReopenedCustomerRow }) {
 function Waiting({ mode, row }: { mode: PlaceCheckNotesMode; row: ReopenedCustomerRow }) {
   // Who refused it and when — the company board only (owner, 2026-10-20); a district manager's board
   // names nobody above him, and the rep never reaches this list.
-  const refused = mode === "team" ? null : decisionStamp("Refused", row.refusedByName, row.refusedAtText);
+  const refused = mode === "team" ? null : decisionStamp("Rejected", row.refusedByName, row.refusedAtText);
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm font-black text-slate-900">{waitText(row.waitingHours)}</p>
@@ -64,7 +64,7 @@ function Reason({ row }: { row: ReopenedCustomerRow }) {
   return (
     <div className="min-w-0 space-y-1">
       <p className="break-words text-sm text-slate-700">
-        {row.reasonLabel ?? "No reason was chosen — refused before the reason list existed."}
+        {row.reasonLabel ?? "No reason was chosen — rejected before the reason list existed."}
       </p>
       {/*
         Which photo the reason above is about. A venue's refusal reopens every customer seated in it,

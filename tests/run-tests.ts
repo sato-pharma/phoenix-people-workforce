@@ -2329,6 +2329,7 @@ import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
 import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
 import { runPhoenixCrmPlaceChecksAuditFixesTests } from "./phoenix-crm-place-checks-audit-fixes.test.ts";
+import { runPhoenixCrmPlaceCheckLanesTests } from "./phoenix-crm-place-check-lanes.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
@@ -8258,6 +8259,11 @@ await runTest(
 await runTest(
   "Place checks, the deep audit of 17 Nov 2026 (Wrong counts, Decision paths, Wording on screen, Background runs): the Needs You figure counts real entries only and a building with its customers as ONE decision, held buildings included; a sent-back customer who captured again is counted once; a dropped customer's place is not in use; a recommendation is the district manager's alone; the team board is the territories under his district seats; an approval is rejected on its own row whatever screen sends it; every held full name is read whole; a place the other decider settled first is 'Already decided', never red, in a row and in a bulk run, and each settled row is marked saved; no line says a refusal the Super Admin can take back cannot be undone; the Same place rule names both deciders; a failed reload of every place is said; the phone cards and every bulk bar carry their own field ids; a bulk run holds the tabs, filters and counts still until it ends; and a decision's re-read dies with the board",
   runPhoenixCrmPlaceChecksAuditFixesTests,
+);
+
+await runTest(
+  "Place checks, the rebuild of 23 Nov 2026 (lanes, the one waiting number, the address, the verbs): a waiting decision is Ready only when the advice is Approve, that kind of advice is confident and Approve can be pressed; his last 30 days outrank the table once a kind holds 20 decisions; a building is Ready only if everything open in it is; the desk counts decisions, a building as ONE, to the number Needs You shows; Approve all sends each building, then its waiting customers, then the clinics, through the two routes a row's own Approve posts to; no person's name is ever written to the address, rows are capped at 200 and other parameters are left alone; the page's bulk actions are its four verbs and no screen says Refuse; every file of the board is in the list the source pins read",
+  runPhoenixCrmPlaceCheckLanesTests,
 );
 
 await runTest(

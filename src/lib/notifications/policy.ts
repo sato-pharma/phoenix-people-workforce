@@ -258,11 +258,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // Telegram only, and it is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES as well, which shuts both the
   // phone and the Telegram-failure email fallback. This row is the intent, that guard the enforcement.
   // The rep's "validate this customer again" (owner, 2026-10-08): what is wrong with HIS photo, from a
-  // closed list, worded about the picture and never a person. The notifier sends it in-app only, and
-  // it is on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES, which shuts the phone and the Telegram-failure email
-  // fallback. This row is the intent, that guard the enforcement.
-  // (2026-10-08, owner, asked about by name and answered "both") the rep's "validate this customer again" now
-  // emails too, REVERSING his ruling from earlier that day; the plan reminder and approval nudge join it.
+  // closed list, worded about the picture and never a person. It was in-app only for a few hours; the same
+  // day, asked about it by name, he widened it, and since the module stopped emailing (2026-10-13) it is
+  // in-app, Telegram and the phone, never email. 🔴 It is NOT on PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES and
+  // must not be put there: a rep whose place was rejected has to hear it. Three notes said otherwise until
+  // the rebuild of 23 Nov 2026 (`tests/phoenix-crm-validation-feedback.test.ts` pins the channels). The
+  // plan reminder and the approval nudge take the same three.
   "phoenix_crm.validation_not_confirmed": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.plan_reminder": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "phoenix_crm.approval_nudge": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },

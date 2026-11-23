@@ -191,6 +191,7 @@ export function PlaceCheckScorecard({
   mode,
   onOpen,
   onPickRep,
+  opened = false,
   pickedRep,
   reps,
   total,
@@ -200,6 +201,8 @@ export function PlaceCheckScorecard({
   onOpen: Opener;
   /** Narrows the whole board to one rep; an empty string clears it. */
   onPickRep: (rep: string) => void;
+  /** Drawn open: on the company board it is a tab of its own, so nothing is above it to fold under. */
+  opened?: boolean;
   pickedRep: string;
   reps: RepScore[];
   total: RepScore;
@@ -208,7 +211,7 @@ export function PlaceCheckScorecard({
   // 🔴 FOLDED UNDER ITS OWN TOTALS (owner, 17 Nov 2026: "make it easier to use, simple to decide"). It still
   // heads the board and says how many places and photo problems there are; the table of reps, a screen and
   // a half tall above the decisions, opens on one press.
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(opened);
   const columns = columnsFor(mode);
   const shown = showAll ? reps : reps.slice(0, FIRST_REPS);
   const widths = ["18%", ...TABLE_GROUPS.map((group) => group.width)];

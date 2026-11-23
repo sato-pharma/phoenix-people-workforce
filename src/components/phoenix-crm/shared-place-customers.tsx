@@ -41,6 +41,7 @@ import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
 import { earlierDecisionText } from "@/lib/phoenix-crm/earlier-decision";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
+import { PLACE_CHECK_VERBS } from "@/lib/phoenix-crm/place-check-lanes";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import type { SeatedCustomer, SeatedTimetable } from "@/lib/phoenix-crm/shared-place-groups";
@@ -87,7 +88,7 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
       : customer.state === "in_use"
         ? decisionStamp("Approved", customer.decidedByName, customer.decidedAtText)
         : customer.state === "sent_back" || customer.state === "rejected"
-          ? decisionStamp("Refused", customer.decidedByName, customer.decidedAtText)
+          ? decisionStamp("Rejected", customer.decidedByName, customer.decidedAtText)
           : null;
   return (
     <div className="min-w-0 space-y-1">
@@ -311,7 +312,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
           <CrmButton disabled={reason === "" || saving} onClick={() => setArmed(true)} variant="danger">
-            Reject this customer
+            {PLACE_CHECK_VERBS.reject}
           </CrmButton>
           <CrmButton disabled={saving} onClick={() => setOpen(false)}>
             Cancel

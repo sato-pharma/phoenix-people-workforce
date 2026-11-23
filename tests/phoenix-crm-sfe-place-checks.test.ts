@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { rejectedBuildingsSwitchLabel, seatedRejectWarning } from "@/lib/phoenix-crm/validation-feedback";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Place checks for the SFE Manager (owner, 2026-10-19: "show check place to sfe manager exactly as it
@@ -216,7 +217,7 @@ export function runPhoenixCrmSfePlaceChecksTests() {
     "This retires their seat — the rep captures the customer again from their own list.",
     "🔴 the SFE Manager reads what the rejection costs and no promise of a take-back",
   );
-  const placeBoard = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  const placeBoard = placeCheckBoardSource(read);
   assert.ok(placeBoard.includes("const canRestore = useCanRestoreValidation();"), "the board asks who takes a rejection back, from the page's own gate");
   assert.ok(placeBoard.includes("rejectedBuildingsSwitchLabel(rejectedBuildings, { team, canRestore })"), "and words the rejected-buildings switch by the answer");
   assert.ok(!placeBoard.includes("which can be brought back"), "🔴 the promise is written in one place, never again on the board itself");

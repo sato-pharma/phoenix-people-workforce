@@ -12,6 +12,7 @@ import {
 } from "../src/lib/phoenix-crm/validation-feedback.ts";
 import { phoenixCrmChannels } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
 
 /**
  * Phoenix CRM — what a rep is told when his signboard photo could not be confirmed (owner,
@@ -125,7 +126,7 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
   }
 
   // ── The Super Admin sees who is waiting to be captured again ──────────────────────────────────
-  const board = readFileSync("src/components/phoenix-crm/validation-reviews-board.tsx", "utf8");
+  const board = placeCheckBoardSource();
   assert.ok(board.includes("<ReopenedCustomerList"), "the wait is on his page");
   const list = readFileSync("src/components/phoenix-crm/reopened-customer-list.tsx", "utf8");
   assert.ok(list.indexOf("<CrmCardsOnPhone") < list.indexOf("<CrmTable"), "phone cards first, then the table");
