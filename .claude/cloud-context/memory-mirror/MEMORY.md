@@ -29,7 +29,9 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [Employee Master email is FINAL](employee-master-email-is-final-for-mailboxes.md) - never change it; a missing mailbox is created/restored AT that address.
+- 🔴 [Expense desk: three choices kept as built](expense-desk-three-choices-kept-as-built-2026-11-23.md) - 23 Nov: refuse a reduction on a held trip; full-screen Open (not expand in place); decided trips read-only after Undo.
+- 🔴 ["Convert to Navy identity"](convert-to-navy-identity-means-the-parked-pr-649-look.md) - the PR 649 portal redesign is a parked BACKUP (tag `backup/navy-identity-2026-11-23`); apply per screen ONLY on those words; never merge 649.
+- [Expense capture rules - his 3 picks (23 Nov)](expense-capture-rules-three-choices-2026-11-23.md) - uploaded arrival photo always Your call; return ticket read with the departure photo; odometer READ from the car photo and chained.
 
 
 
