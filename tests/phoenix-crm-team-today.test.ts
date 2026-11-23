@@ -143,7 +143,12 @@ export function runPhoenixCrmTeamTodayTests(): void {
 
     const team = source("src/lib/phoenix-crm/server/team.ts");
     assert.match(team, /holdBack: teamTodayHoldBack\(row, farHolds\.get\(String\(row\.id\)\) \?\? null\)/, "every visit on the line carries its hold-back, the SFE's hold included");
-    assert.match(team, /const farHolds = await loadUncountedFarVisitHolds\(\{ from: date, to: date \}\);/, "the day's far-visit holds are read once");
+    assert.match(team, /const farHoldsRead = loadUncountedFarVisitHolds\(\{ from: date, to: date \}\);/, "the day's far-visit holds are read once");
+    assert.match(
+      team,
+      /const \[plans, dayVisits, farHolds\] = await Promise\.all\(\[[\s\S]*?farHoldsRead,\s*\]\);/,
+      "beside each batch's plans and visits, not as a round of its own before them",
+    );
     assert.match(team, /unplanned:phoenix_crm_unplanned_visits!visit_id\(status\)/, "the approval is read with the visit");
     assert.match(team, /customer:phoenix_crm_customers!customer_id\(validated_at\)/, "and the customer's validation");
   }
