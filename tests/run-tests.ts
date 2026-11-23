@@ -3207,6 +3207,7 @@ import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold
 import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
 import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
 import { runPhoenixCrmPlanReviewItemsTests } from "./phoenix-crm-plan-review-items.test.ts";
+import { runPhoenixCrmTeamReadRoundsTests } from "./phoenix-crm-team-read-rounds.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
 import { runTabletFleetWatchTests } from "./tablet-fleet-watch.test.ts";
@@ -12876,6 +12877,10 @@ await runTest(
 await runTest(
   "Phoenix CRM plan reviews in one request (23 Nov 2026, the slow Field CRM board): phoenix_crm_plan_review_items answers the week's and the month's review items as one jsonb value with exactly REVIEW_ITEM_COLUMNS' keys, read-only and service-role only; both review loaders read through loadReviewItemRows, a bounded group of plans per call, and only a database without the function falls back to the paged read",
   runPhoenixCrmPlanReviewItemsTests,
+);
+await runTest(
+  "Phoenix CRM Team read rounds (23 Nov 2026, Speed up Team): today's far-visit holds ride beside each batch's plans and visits; the off-plan extras start on the off-plan rows and the requests' Place-checks holds and same-name matches on the request rows, both inside the first wave, the two marks together; the cards are built by one function and take their marks by request id",
+  runPhoenixCrmTeamReadRoundsTests,
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);

@@ -62,7 +62,7 @@ import {
   type OffPlanCaps,
   type OffPlanStanding,
 } from "@/lib/phoenix-crm/offplan-cap-rules";
-import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { canDecidePlanEditRow, loadPlanEditRows, mapPlanEditRow, planEditPeople, type PlanEditRequestView } from "@/lib/phoenix-crm/server/plan-edits";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -181,7 +181,9 @@ export function teamTodayHoldBack(row: Row, farHoldStatus: FarVisitHoldStatus | 
 async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, date: string): Promise<Map<string, TeamTodayFigures>> {
   const supabase = getSupabaseAdmin();
   // A visit held for the SFE (owner, 2026-11-10) counts in nothing until he approves it: one read for the day.
-  const farHolds = await loadUncountedFarVisitHolds({ from: date, to: date });
+  // It is needed only once the visits are in, so it runs BESIDE the first batch's reads, not before them
+  // (23 Nov 2026: it was a whole round of the Team read on its own, ~450 ms).
+  const farHoldsRead = loadUncountedFarVisitHolds({ from: date, to: date });
   // The batches run four at a time rather than one after another — an SFE Manager's whole company is
   // four batches of three steps each — and are folded back in batch order below, so the figures are
   // summed from the same rows in the same order as before.
@@ -189,7 +191,7 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
     const seatsWithPlan: string[] = [];
     const planned: TeamTodayPlanned[] = [];
     const visits: TeamTodayVisit[] = [];
-    const [plans, dayVisits] = await Promise.all([
+    const [plans, dayVisits, farHolds] = await Promise.all([
       supabase
         .from("phoenix_crm_plans")
         .select(`id, seat_id, ${PLAN_DAY_COLUMNS}`)
@@ -206,6 +208,7 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
         .eq("is_test", isTest)
         .eq("visit_date", date)
         .is("archived_at", null),
+      farHoldsRead,
     ]);
     throwIfError(plans.error);
     throwIfError(dayVisits.error);
@@ -391,6 +394,53 @@ async function visitAskSummaryOrNull(viewer: PhoenixCrmViewer, isTest: boolean):
   }
 }
 
+const NO_NAMES: PeopleNames = new Map();
+
+/** One waiting request as the Team tab shows it. */
+function teamRequestOf(
+  viewer: PhoenixCrmViewer,
+  isTest: boolean,
+  seatsById: ReadonlyMap<string, OrgSeat>,
+  row: Row,
+  names: PeopleNames,
+  territoryName: string,
+): TeamRequest {
+  const seatId = String(row.seat_id);
+  const seat = seatsById.get(seatId) as OrgSeat;
+  const request = mapRequestRow(row, names);
+  return {
+    ...request,
+    seatId,
+    territoryName,
+    // The step it is ON decides who may press the button (2026-09-29): a grade change and the
+    // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
+    // is the SFE Manager's. Everyone else in scope reads it and no more.
+    // A request SFE returned for a comment is with the rep: nobody decides it, and the bulk drop skips it.
+    ...requestRights(viewer, seat, isTest, request),
+    canOverride: canOverrideDecision(viewer, isTest),
+  };
+}
+
+/**
+ * What each request card says beside its Approve, read for every request at once. A request whose place is
+ * still on Place checks says so in place of its Approve (`withPlaceCheckHolds`); an add whose name is on the
+ * territory already says so to whoever decides it (`withSameNameMatches`). Neither reads the other's mark, so
+ * the two run together; each keeps the order and length of what it is given, and catches its own failure.
+ */
+async function loadTeamRequestMarks(
+  viewer: PhoenixCrmViewer,
+  isTest: boolean,
+  drafts: TeamRequest[],
+): Promise<Map<string, Pick<TeamRequest, "placeCheckHold" | "sameNameOnSeat">>> {
+  const [heldRequests, matched] = await Promise.all([
+    withPlaceCheckHolds(viewer, isTest, drafts),
+    withSameNameMatches(viewer, isTest, (request) => request.seatId, drafts),
+  ]);
+  return new Map(
+    heldRequests.map((request, index) => [request.requestId, { placeCheckHold: request.placeCheckHold, sameNameOnSeat: matched[index].sameNameOnSeat }]),
+  );
+}
+
 export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<TeamView> {
   const isTest = readWorldFor(viewer, raw.test);
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
@@ -406,12 +456,31 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     return null;
   });
 
-  const [readiness, requestRows, unplannedRows, planEditRows, todayBySeat, dayStartBySeat, visitAsks, vendorLeftovers] =
-    await Promise.all([
+  const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
+  // EACH READ STARTS THE MOMENT WHAT IT NEEDS HAS ARRIVED (owner, 23 Nov 2026: "Speed up Team"). The
+  // off-plan visits' extras need only the off-plan rows, and the requests' Place-checks holds and same-name
+  // matches need only the request rows; they used to wait for every read below and then for each other,
+  // eight rounds of the edge one after another for the Super Admin. They now ride beside today's figures.
+  // Every figure is computed from the same rows by the same functions as before.
+  const requestRowsRead: Promise<Row[]> = seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true });
+  const unplannedRowsRead = loadUnplannedRows(seatIds, isTest);
+
+  const [
+    readiness,
+    requestRows,
+    unplannedRows,
+    planEditRows,
+    todayBySeat,
+    dayStartBySeat,
+    visitAsks,
+    vendorLeftovers,
+    [movedFrom, offPlanStandingsRead, exemptVisitIds],
+    requestMarks,
+  ] = await Promise.all([
       // A display figure, so a copy up to a minute old (loadReadinessShared); a list write drops it.
       isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadinessShared(seatIds),
-      seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
-      loadUnplannedRows(seatIds, isTest),
+      requestRowsRead,
+      unplannedRowsRead,
       loadPlanEditRows(seatIds, isTest, viewer.cairoToday),
       // The VISIT day (until 02:00 the day that just ended), the same day the rep's own Today shows.
       seatIds.length === 0 ? Promise.resolve(new Map<string, TeamTodayFigures>()) : loadTeamToday(seatIds, isTest, viewer.visitDay),
@@ -422,6 +491,27 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       // The vendor mirror knows nothing of test entries, so test mode asks it nothing. Asked for THIS
       // scope's territories: only their rows are ever read off the answer.
       isTest ? Promise.resolve(new Map<string, VendorLeftoverRep[]>()) : loadVendorLeftoversBySeat({ seatIds }),
+      // The day each waiting off-plan visit was moved from, where each one's rep stands on the out-of-plan
+      // allowance (it catches its own failure), and which fell under a named exception (owner, 2026-10-17).
+      unplannedRowsRead.then((unplannedRows) =>
+        Promise.all([
+          loadMovedFromDays(unplannedRows.map(unplannedVisitRef), isTest),
+          loadWaitingOffPlanStandings(
+            unplannedRows.map((row) => ({ seatId: String(row.seat_id), day: String(row.visit_date) })),
+            isTest,
+            viewer.config.settings,
+          ),
+          loadExemptVisitIds(unplannedRows.map((row) => String(row.visit_id))),
+        ]),
+      ),
+      // What the request cards say beside their Approve. A name is display only, so the rows alone decide it.
+      requestRowsRead.then((rows) =>
+        loadTeamRequestMarks(
+          viewer,
+          isTest,
+          rows.map((row) => teamRequestOf(viewer, isTest, seatsById, row, NO_NAMES, "Territory")),
+        ),
+      ),
     ]);
 
   const pendingBySeat = new Map<string, number>();
@@ -443,23 +533,11 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const rowSeats = isTest
     ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId) || workedToday(seat.seatId))
     : seats;
-  // The day each waiting off-plan visit was moved from rides beside the names: it needs only the rows.
-  // So does where each one's rep stands on the out-of-plan allowance (it catches its own failure).
-  const [names, movedFrom, offPlanStandingsRead, exemptVisitIds] = await Promise.all([
-    loadPeopleNames([
-      ...territoryPeople(viewer.org, rowSeats),
-      ...requestPeople(requestRows),
-      ...unplannedPeople(unplannedRows),
-      ...planEditPeople(planEditRows),
-    ]),
-    loadMovedFromDays(unplannedRows.map(unplannedVisitRef), isTest),
-    loadWaitingOffPlanStandings(
-      unplannedRows.map((row) => ({ seatId: String(row.seat_id), day: String(row.visit_date) })),
-      isTest,
-      viewer.config.settings,
-    ),
-    // Which waiting visits fell under a named out-of-plan exception, so the card can say so (owner, 2026-10-17).
-    loadExemptVisitIds(unplannedRows.map((row) => String(row.visit_id))),
+  const names = await loadPeopleNames([
+    ...territoryPeople(viewer.org, rowSeats),
+    ...requestPeople(requestRows),
+    ...unplannedPeople(unplannedRows),
+    ...planEditPeople(planEditRows),
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
@@ -484,32 +562,12 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       left.territory.name.localeCompare(right.territory.name),
   );
 
-  const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
-  // A request whose place is still on Place checks says so in place of its Approve (`withPlaceCheckHolds`).
-  const heldRequests = await withPlaceCheckHolds(
-    viewer,
-    isTest,
-    requestRows
-      .map((row): TeamRequest => {
-        const seatId = String(row.seat_id);
-        const seat = seatsById.get(seatId) as OrgSeat;
-        const request = mapRequestRow(row, names);
-        return {
-          ...request,
-          seatId,
-          territoryName: summaries.get(seatId)?.name ?? "Territory",
-          // The step it is ON decides who may press the button (2026-09-29): a grade change and the
-          // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
-          // is the SFE Manager's. Everyone else in scope reads it and no more.
-          // A request SFE returned for a comment is with the rep: nobody decides it, and the bulk drop skips it.
-          ...requestRights(viewer, seat, isTest, request),
-          canOverride: canOverrideDecision(viewer, isTest),
-        };
-      })
-      .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt)),
-  );
-  // An add whose name is on the territory already says so to whoever decides it (`withSameNameMatches`).
-  const requests = await withSameNameMatches(viewer, isTest, (request) => request.seatId, heldRequests);
+  const requests = requestRows
+    .map((row): TeamRequest => {
+      const request = teamRequestOf(viewer, isTest, seatsById, row, names, summaries.get(String(row.seat_id))?.name ?? "Territory");
+      return { ...request, ...requestMarks.get(request.requestId) };
+    })
+    .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt));
 
   const unplannedVisits = unplannedRows
     .map((row): TeamUnplannedVisit => {
