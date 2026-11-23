@@ -67,7 +67,9 @@ export function runPhoenixCrmDoctorOnceTests(): void {
   // 4. The LIVE definition (2026-10-16 performance audit) keeps the same match and the same pick, set at a
   //    time: one DISTINCT ON per (seat, id) over the lateral's own four ordering keys, joined on the
   //    entry's contact id — and the pending drop as two joined key sets, never an EXISTS per entry.
-  const JOINS_ONCE = "supabase/migrations/20261024003000_phoenix_crm_seat_reference_joins_customers_on_one_key.sql";
+  //    Since 23 Nov 2026 the live definition is the file that also skips a stale mirror row (part 5); every
+  //    line this part pins is carried into it word for word.
+  const JOINS_ONCE = "supabase/migrations/20261123212028_phoenix_crm_seat_reference_skips_stale_mirror_rows.sql";
   const live = functionBody(stripSqlComments(readFileSync(JOINS_ONCE, "utf8").replace(/\r\n/g, "\n")), "phoenix_crm_seat_reference");
   assert.match(
     live,
@@ -97,6 +99,34 @@ export function runPhoenixCrmDoctorOnceTests(): void {
   assert.doesNotMatch(live, /left join lateral/, "no per-entry lookup of the seat's customers");
   assert.doesNotMatch(live, /when exists \(/, "no per-entry EXISTS over the requests");
   assert.match(live, /\n\s*security definer\n\s*set search_path to 'public'\n/, "still SECURITY DEFINER with its search path pinned");
+
+  // 5. A PHOENIX_CRM ASSIGNMENT WITH NO CUSTOMER OF THE SEAT BEHIND IT IS NOT A LIST ENTRY (23 Nov 2026).
+  //    Down town's list was moved to three reps and moved back; the hourly refresh had opened a phoenix_crm
+  //    assignment for each customer while he sat on the receiving seat, the move back left them open, and
+  //    the mint read them here with no customer and put 818 pending copies on 12 seats - Ali Hassan (Cairo
+  //    East 1) got 73 doctors and 24 pharmacies of Down town. The key set is every customer of the seat,
+  //    test or real, so the test reading keeps every mirror row a real customer stands behind.
+  assert.match(
+    live,
+    /seat_mirror as \(\s+select distinct c\.seat_id \|\| '\|' \|\| coalesce\(c\.reference_contact_crm_id, c\.own_contact_crm_id\)::text as seat_key\s+from public\.phoenix_crm_customers c\s+join seats s on s\.seat_id = c\.seat_id\s+\)/,
+    "the mirror keys are every customer of the asked seats, on the same one key, with no is_test filter",
+  );
+  assert.match(
+    live,
+    /left join seat_mirror mirror\s+on mirror\.seat_key = ch\.seat_id \|\| '\|' \|\| a\.contact_crm_id::text/,
+    "each entry finds its mirror key on that one key, never a per-entry EXISTS",
+  );
+  assert.match(
+    live,
+    /where a\.source is distinct from 'phoenix_crm'\s+or mirror\.seat_key is not null;\s*\n\$\$;/,
+    "a phoenix_crm row with no customer of the seat behind it is not returned; every other source is",
+  );
+  const skips = readFileSync(JOINS_ONCE, "utf8").replace(/\r\n/g, "\n");
+  assert.match(
+    skips,
+    /revoke execute on function public\.phoenix_crm_seat_reference\(text\[\], boolean\) from public, anon, authenticated;\ngrant execute on function public\.phoenix_crm_seat_reference\(text\[\], boolean\) to service_role;/,
+    "still callable by the service role alone",
+  );
 
   console.log("phoenix-crm doctor on a seat once: OK");
 }

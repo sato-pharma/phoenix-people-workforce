@@ -775,8 +775,9 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // present and enabled (tgenabled 'O') on public.phoenix_crm_customers, which is the guard the
   // file exists to install.
   // 🔴 SUPERSEDED IN PART since 2026-10-16: phoenix_crm_seat_reference's LAST definer is now
-  // 20261024003000_phoenix_crm_seat_reference_joins_customers_on_one_key.sql (applied through
-  // apply_migration, so it carries its own ledger row; the one before it was
+  // 20261123212028_phoenix_crm_seat_reference_skips_stale_mirror_rows.sql (applied through
+  // apply_migration, so it carries its own ledger row; before it came
+  // 20261024003000_phoenix_crm_seat_reference_joins_customers_on_one_key.sql and
   // 20261016180200_phoenix_crm_seat_reference_joins_once.sql). Re-applying THIS file would
   // revert that function to the per-entry lateral; the other two functions and the trigger are
   // still this file's.
