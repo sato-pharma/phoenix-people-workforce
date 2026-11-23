@@ -73,7 +73,7 @@ and tickets, with Approve, Reduce and Reject pinned.
 
 `approvals/checks.ts` runs seven checks on a trip: field work, route, arrival photo, departure
 photo, ticket, duplicate and amounts. A claim for a meeting or another cost runs two: duplicate and
-amounts. Each check answers pass, fail or "could not check" in one sentence. "Could not check" is
+amounts. A claimed meeting also runs the Thursday check ("Filters and the Thursday flag", below). Each check answers pass, fail or "could not check" in one sentence. "Could not check" is
 never a pass. The system files a claim in a lane and never rejects one.
 
 Each check was built on what the owner had actually decided, read on production on 23 Nov:
@@ -229,12 +229,63 @@ The rebuild reads decided claims and never rewrites one. Nothing re-runs the pay
 claim already decided, changes a payout month, or replaces an amount he typed with the claim's
 total. On the day of the rebuild 26 claims carried his own typed figure.
 
-Only a waiting claim is decided. A claim already approved or rejected draws no decision button
-anywhere on the desk. History and its opened trip read it and say "This claim was already decided.
-It is read here, not changed." The server refuses every press on one, before it even looks at the
-version. After the six seconds of Undo, a decision is not changed on the desk. The 7 Nov screen
-allowed that until a payroll took the trip; whether the desk should offer a guarded way to do it is
-an open question for the owner.
+Only a waiting claim takes the desk's four presses (Approve, Keep full claim, Reduce, Reject).
+
+### Changing a decided claim, from History
+
+The owner answered the open question the same evening (23 Nov 2026, about 21:05 Cairo): "make me
+able to reject even if approved in history. Make me easily able to approve or reject." A decided
+claim now takes one press of its own, on its History row and in its opened trip:
+
+| Where the claim stands | What can be pressed | What happens |
+| --- | --- | --- |
+| Approved, held out of payroll | Reject, with a reason | The workflow's own reject-before-payroll step. The employee is told the reason. |
+| Approved, waiting for the next payroll | Reject, with a reason | The same. Its payroll row is taken out, and a confirmed Expenses step is read again. |
+| Rejected | Approve EGP (the claim's total) | The claim is approved in full through the same payroll gate as any approval. Nobody is told. |
+| Approved, but its payout month's payroll already ran | Nothing | Not marked paid is not the same as not paid. The row says to check the payroll Expenses step. |
+| In payroll | Nothing | A payroll took it. The money has moved. |
+
+What stays closed, and why:
+
+- An approved claim is never approved again, kept full or reduced. That was the press the risk
+  review traced below. To pay less on an approved claim: reject it, then approve it.
+- A rejected claim is approved at its total only. Its idle days and its payroll hold are read for
+  a waiting claim only, so no other figure can be trusted for it. The reason kept on it is his own,
+  or "Approved after an earlier rejection." so the old rejection reason does not read as the
+  reason it was approved.
+- A change keeps the verdict of the first decision for the agreement meter. A claim decided before
+  the checks were kept has none, and stamping one now would put a made-up reading into the meter.
+- The pre-July sheet trips stay read-only. They were decided on the sheets.
+
+The standing is read from the paid stamps, and a payroll run can hold a trip before it stamps it.
+So both presses are also asked of the payout month's own payroll run, read on the server just
+before anything is written (the risk review of this change, 23 Nov 2026):
+
+| The payout month's run | Both presses |
+| --- | --- |
+| Not started, or in its first part | Open |
+| Second part confirmed | Refused: its expense figures are frozen. A rejection there deleted the payroll row, the re-sync was skipped, and publishing still paid the trip, while the employee was told "rejected". The message names Automated Payroll, where the second part is reopened. |
+| Published | Refused: no later run pays an earlier payout month. |
+| August 2026 or before | Refused: paid before the stamps were kept. |
+| Could not be read, or no payout month | Refused: money is not moved on a guess. |
+
+A rejected claim's figure on the button is the claim as it is now, never the payroll row its
+rejection left behind, because approving it again writes the row from the claim.
+
+One notice had to change with it. Approving a rejected claim used to send the "submitted and
+requires your review" alert, written for a claim the SYSTEM had rejected at filing. It now goes for
+a system rejection only. Read on production that day: 66 claims stood rejected by the Super Admin,
+none by the system, and 4 of the 66 had never been sent that alert, so approving them would have
+mailed the employee, the manager and the Super Admins.
+
+The rule is `decidedChange` in `src/lib/outstation/approvals/decided-change.ts`, read by the screen
+and by `planDeskDecision`; the run is asked through `decidedChangeRunRefusal` in the same file, from
+`decide.ts`. Pinned by `tests/expense-desk-decided-change.test.ts`.
+
+Left as they were, and reported: a second rejection after reject, approve and reject again is not
+told to the employee (the rejection notice is sent once per claim); approving a claim the SYSTEM
+rejected still sends the submission alert, as designed; and an older half-step stays, where a
+rejection deletes the payroll row and then the status write fails.
 
 ### What the risk review found before the merge
 
@@ -243,7 +294,9 @@ verdict was not to ship it. Six findings, all fixed in the same pull request:
 
 1. From History, Open offered "Pay in full", "Change amount" and "Reject" on a decided claim. "Pay
    in full" on a claim approved at EGP 900 of 1,200 wrote the typed amount to nothing and payroll
-   would have paid 1,200. Decided claims are now read-only, on the screen and on the server.
+   would have paid 1,200. Decided claims were made read-only, on the screen and on the server.
+   (Later that evening the owner asked for two presses on one; neither is that press. See
+   "Changing a decided claim, from History".)
 2. A reduced amount on a rejected trip that would be held lost its figure. Closed by the first fix.
 3. "Saved" was said when the claim was approved and its reduced figure had not landed. Now
    `amount_not_saved`, after one re-send.
@@ -264,7 +317,7 @@ Each of these was on the 7 Nov screen and is not on the desk.
 | On a phone the first claim began 904 px down, under the tiles (measured at 375, 23 Nov 2026) | On a phone the count, the lanes and the list come first; the tiles follow the list. A desktop is unchanged. |
 | On a phone a Your call card ran up to 300 px: every other check that failed or could not be made was a tag on its own line (measured at 375 in the preview of pull request 700, 23 Nov 2026) | A phone card says them in one line ("Also failed: … · Not checked: …", `otherFindings` in `desk-view.ts`). The desktop row keeps a tag for each. |
 | The "By employee" roll-up tab | The search box narrows by employee. |
-| "Unapprove back to waiting" | A decided claim is not reopened here. |
+| "Unapprove back to waiting" | A decided claim never goes back to waiting. From History an approved claim can be rejected and a rejected one approved. |
 | Biggest first, and the order remembered for each reviewer | Oldest first, always. |
 | The Data first / Map first switch | One scroll: the data, then each day's map. |
 | "Expand all / Collapse all" and the details panel inside the row | Open shows the trip on the full screen. |
@@ -394,6 +447,82 @@ measured.
 Pinned by `tests/expense-case-pdf.test.ts`. Each of its assertions was proven by breaking the fix it
 pins and watching that assertion fire: 46 cases on the first commit, 26 more on the review's fixes,
 all fired.
+
+### Filters and the Thursday flag
+
+His words, 23 Nov 2026: "I want to be able to filter by, for example, meeting, for example, other,
+for example, traveling. And I want you to flag any meeting that is not on Thursday." And a few
+minutes later: "AND FILTER BY PERIOD OR MONTH OR DATE."
+
+**The kind filter.** Under the lanes there are four buttons: All kinds, Traveling, Meeting, Other.
+The kind is the claim's own expense type, the three values Submit Expense offers. Production held
+332 Traveling, 24 Meeting and 7 Other claims that day, and nothing else. A type nobody recognises
+reads as Traveling, so it is checked as a trip and never excused as a cost. On Ready and Your call
+each button carries the number of claims of that kind in the lane. History is read from the server
+50 at a time, so there the buttons carry no number.
+
+**The trip-date filter.** Beside the kinds there are three controls:
+
+- **Trip month** lists this month and the eleven before it. One pick narrows the list to that month.
+- **From** picks one day. With no To chosen, the list shows that one day.
+- **To** turns it into a period. Either end can be left open.
+
+The date is the trip's own, the one each row prints. It is not the day the claim was filed or
+decided. A trip of several days is listed when any of its days is inside the period, so a trip from
+30 Oct to 2 Nov is listed under October and under November. From after To is read the other way
+round. "Clear dates" removes the filter.
+
+Both filters narrow Ready, Your call and History, and both are kept in the address (`kind`, `from`,
+`to`), so a reload or a shared link opens the same list. On a waiting lane the page filters the
+claims it already holds. On History the server filters, because the page holds only one page of it.
+The trip days are stored as midnight UTC (all 363 claims on 23 Nov), so the server asks for trips
+that ended on or after From and began before the day after To.
+
+Read on production on 23 Nov through the app's own data API, with the filter strings the page
+sends, and compared with the database read directly. Every count matched:
+
+| Filter | Claims |
+| --- | --- |
+| Traveling | 332 |
+| Meeting | 24 |
+| Other | 7 |
+| A trip day in November 2026 | 77 |
+| A trip day in October 2026 | 116 |
+| A trip day on 12 Nov 2026 | 3 |
+| Traveling, with a trip day in November 2026 | 73 |
+
+**The Thursday flag.** Meetings are held on a Thursday. `approvals/meeting-day.ts` adds one check,
+"Meeting day", to a claim that claims a meeting:
+
+- a claim filed as Meeting, and
+- a Traveling or Other claim that carries a meeting amount. The amount is the one payroll reads, so
+  a meeting amount already set to zero on review claims no meeting.
+
+A claimed meeting on any other day fails the check, with the day in words: "The meeting was on
+Monday 2 Nov, not a Thursday." A claim of several days does not say which day the meeting was held,
+so it passes when one of its days is a Thursday and fails when none is. A claim with no readable day
+is "could not check", which is never a pass.
+
+The flag is a flag. A failed check files the claim in Your call and never rejects it, changes its
+amount or stops it being filed. The reviewer shows the line with the other checks, and "Not a
+Thursday" is offered as a one-press reason for a rejection or a reduced amount.
+
+What it changes, read on production on 23 Nov:
+
+- A Meeting or Other claim was never Ready, because its amount is the employee's and the invoice
+  has to be read. For those the flag changes the reason the row wears. One Meeting claim waited, on
+  Thursday 12 Nov, and it passes.
+- A Traveling claim with a meeting amount could be Ready. Five such claims waited, none on a
+  Thursday, with meeting amounts of EGP 70 to EGP 150. They are now in Your call.
+- Among the 23 Meeting claims already decided, none of the 8 he rejected was on a Thursday, and 6 of
+  the 15 he approved were.
+
+The rules live in `approvals/claim-kind.ts`, `approvals/trip-period.ts` and
+`approvals/meeting-day.ts`. The screen parts are `desk-kind-filter.tsx` and
+`desk-period-filter.tsx`. Pinned by `tests/expense-desk-kind.test.ts`; eight of its assertions were
+proven by breaking the fix each pins and watching the test fail.
+
+Not seen in a browser before the merge: the dev server shows the live version, never a branch.
 
 ### What only time can prove
 

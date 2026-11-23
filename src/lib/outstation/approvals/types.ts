@@ -19,7 +19,11 @@ export type CheckKey =
   | "route"
   | "distance"
   | "odometer"
+  | "meeting_day"
   | "amounts";
+
+/** What a claim is for: the three kinds Submit Expense offers (claim-kind.ts). */
+export type ClaimKind = "traveling" | "meeting" | "other";
 
 export type ClaimCheck = {
   answer: CheckAnswer;
@@ -80,6 +84,8 @@ export type DeskClaim = {
   holdReason: string | null;
   hrComment: string;
   hrId: string | null;
+  /** Traveling, Meeting or Other — what the desk filters on (owner, 2026-11-23). */
+  kind: ClaimKind;
   /** True once a payroll took it: nothing here can change it any more. */
   locked: boolean;
   /** What the trip pays as it stands: the claim while waiting, the approved figure once decided. */

@@ -15,8 +15,14 @@
  *      only then answered. A claim that still does not stand at his figure is never called saved;
  *   5. keep the system's verdict on each claim whose decision landed whole.
  *
- * 🔴 Only a WAITING claim is decided here. A decided claim is refused in the plan, whatever the
- *    press says (owner's plan, 23 Nov: "No decided claim's money moves").
+ * 🔴 A claim already decided takes two presses and no other (owner, 23 Nov, about 21:05 Cairo: "make
+ *    me able to reject even if approved in history"): an approved claim no payroll has taken can be
+ *    rejected, and a rejected claim approved in full. The plan refuses every other press on one
+ *    (`decided-change.ts`), and both go through the same workflow function as a waiting claim's.
+ *
+ * 🔴 Both are refused, before anything is written, when the payout month's payroll run has its
+ *    second part confirmed or is published, or cannot be read (`decidedChangeRunRefusal`): a
+ *    rejection there deleted the payroll row while the frozen figure still paid the trip.
  *
  * 🔴 A request that decides more than one claim never carries "keep the full claim": a batch cannot
  *    pay an idle day in full, and that is refused here on the server, not only left out by the page.
@@ -25,15 +31,21 @@
  *    token), never a status and never an amount; a claim already stamped is not stamped again; and a
  *    stamp that fails is logged and costs nothing — the decision has already landed.
  *
+ * 🔴 Step 5 is for a claim that was WAITING when it was pressed. A decision changed from History
+ *    keeps nothing: the verdict belongs to the first decision, and a claim decided before the checks
+ *    were kept has none to keep — stamping it now would put a made-up reading into the meter.
+ *
  * The Undo is not here: it is six seconds in the browser before the press is sent at all. Nothing
- * on the server reverses a decision.
+ * on the server reverses a decision by itself; changing one is a press of its own, from History.
  */
 
+import { findActiveRun, findPublishedRun } from "@/lib/automated-payroll/draft-store";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 import { verdictStamp } from "@/lib/outstation/approvals/agreement";
+import { decidedChangeRunRefusal, type PayoutRunReading } from "@/lib/outstation/approvals/decided-change";
 import { DESK_DECISION_LIMIT } from "@/lib/outstation/approvals/decision-body";
 import { amountLanded, DESK_REFUSAL, deskDecisionOutcome, planDeskDecision, type PlannedDeskDecision } from "@/lib/outstation/approvals/decision-plan";
 import { loadDeskClaims } from "@/lib/outstation/approvals/queue";
@@ -46,6 +58,23 @@ import { applyOutstationRequestExpenseDecisions } from "@/lib/outstation/service
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Planned = { claim: DeskClaim | null; decision: DeskDecisionRequest; plan: PlannedDeskDecision };
+
+/**
+ * The payout month's own payroll run: is its second part confirmed, is it published. A failed read
+ * answers null, and the change is refused — money is not moved on a guess. Read once per month.
+ */
+async function readPayoutRun(month: number, year: number): Promise<PayoutRunReading> {
+  try {
+    const [active, published] = await Promise.all([findActiveRun(month, year), findPublishedRun(month, year)]);
+    return { part2Confirmed: Boolean(active?.part2ConfirmedAt), published: published !== null };
+  } catch (error) {
+    logError("The payroll run of a decided expense claim could not be read, so its change was refused", {
+      labels: { event: "expense_desk_payout_run_unread", period: `${year}-${month}` },
+      error: error instanceof Error ? error : new Error(String(error)),
+    });
+    return null;
+  }
+}
 type Sent = Planned & { plan: Extract<PlannedDeskDecision, { ok: true }> };
 
 async function keepVerdict(input: { approved: number | null; at: string; before: DeskClaim; decision: DeskDecisionRequest }): Promise<DeskClaim["verdict"] | null> {
@@ -98,6 +127,20 @@ export async function decideDeskClaims(
     decision,
     plan: batch && decision.keepFull === true ? keepFullInBatch : planDeskDecision(before.get(decision.requestId), decision),
   }));
+
+  // 🔴 A change to a DECIDED claim is also asked of its payout month's own payroll run, before
+  // anything is written: the standing is read from the paid stamps, and a run can freeze a trip's
+  // figure (second part confirmed) or pay it (published) before any stamp says so.
+  const runs = new Map<string, Promise<PayoutRunReading>>();
+  for (const entry of planned) {
+    if (!entry.plan.ok || !entry.claim || entry.claim.standing === "waiting") continue;
+    const { payoutMonth, payoutYear } = entry.claim;
+    const key = `${payoutYear}-${payoutMonth}`;
+    if (payoutMonth !== null && payoutYear !== null && !runs.has(key)) runs.set(key, readPayoutRun(payoutMonth, payoutYear));
+    const run = runs.has(key) ? await runs.get(key)! : null;
+    const refusal = decidedChangeRunRefusal({ payoutMonth, payoutYear, run });
+    if (refusal) entry.plan = { code: "refused", message: refusal, ok: false };
+  }
 
   const sent = planned.filter((entry): entry is Sent => entry.plan.ok);
   const result =
@@ -154,8 +197,9 @@ export async function decideDeskClaims(
       skipped: claim ? (skippedByTrip.get(claim.tripId) ?? null) : null,
     });
     // The verdict is kept once, and only with a decision that landed whole: in the state and at the
-    // figure. One that did not is left out of the agreement meter rather than recorded wrongly.
-    if (claim && stored && outcome.code === "saved") {
+    // figure. One that did not is left out of the agreement meter rather than recorded wrongly. A
+    // decision changed from History keeps none: the claim was not waiting, so no check was just run.
+    if (claim && stored && outcome.code === "saved" && claim.standing === "waiting") {
       const verdict = await keepVerdict({ approved: plan.approved, at: now.toISOString(), before: claim, decision });
       if (verdict) outcome.claim = { ...stored, verdict };
     }

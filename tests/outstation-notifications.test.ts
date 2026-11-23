@@ -183,10 +183,17 @@ export function runOutstationNotificationsTests() {
   const approveSlice = functionSlice(service, "async function approveOutstationRequestForPayroll");
   assert.match(
     approveSlice,
-    /existing\.status\.startsWith\("rejected"\)[\s\S]{0,80}notifyOutstationSubmitted\(/,
+    /existing\.status === "rejected_by_system"\) \{\s*await afterResponse\("outstation_notice:override", \(\) => notifyOutstationSubmitted\(/,
     "RULE 1: the submit alert fires from approve ONLY when overriding a system rejection — every " +
       "other claim was already alerted at submit, so an unconditional send here would double-mail " +
       "the employee, his manager and the Super Admins on every single trip",
+  );
+  // 🔴 Not ANY rejection (23 Nov 2026): from that day the Super Admin can approve, from History, a
+  // claim he rejected himself. "Submitted and requires your review" is not true of that claim.
+  assert.doesNotMatch(
+    approveSlice.replace(/\/\/.*$/gm, ""),
+    /status\.startsWith\("rejected"\)\)\s*\{\s*await afterResponse\("outstation_notice:override"/,
+    "RULE 1: approving a claim the Super Admin rejected himself sends nobody the submission alert",
   );
   assert.doesNotMatch(
     approveSlice,

@@ -4,6 +4,7 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
+import { CLAIM_KIND_LABEL, claimKindOf } from "@/lib/outstation/approvals/claim-kind";
 import { otherFindings, tripDayCount, waitLabel } from "@/lib/outstation/approvals/desk-view";
 import { TRIP_STANDING_LABEL, TRIP_STANDING_MEANING, type TripStanding } from "@/lib/outstation/approvals/standing";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
@@ -83,9 +84,16 @@ export function tripDates(claim: Pick<DeskClaim, "tripEnd" | "tripStart">): stri
   return `${start} → ${formatDateValue(claim.tripEnd, null, { weekday: "short", year: undefined })} · ${formatNumberValue(days)} days`;
 }
 
+/** "Meeting" or "Other" on a claim that is not a trip; nothing on a trip, whose line says how it was travelled. */
+export function kindNote(claim: Pick<DeskClaim, "kind">): string {
+  const kind = claimKindOf(claim.kind);
+  return kind === "traveling" ? "" : CLAIM_KIND_LABEL[kind];
+}
+
 /** Dates, then the route in words. Wraps; never cut. */
 export function TripLine({ claim }: { claim: DeskClaim }) {
-  const travel = travelLabel(claim.transportation);
+  // A Meeting or Other claim says its kind where a trip says how it was travelled: it has no travel of its own.
+  const travel = kindNote(claim) || travelLabel(claim.transportation);
   return (
     <>
       <span className="block text-xs font-semibold text-slate-600">

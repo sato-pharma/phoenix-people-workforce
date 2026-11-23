@@ -7,7 +7,7 @@
  *   1. The lanes. Ready (every check passed) · Your call (the one reason it is unclear) · History
  *      (read on a press). The two waiting lanes always add up to the Waiting tile: one list, split
  *      once, by the verdict the server already gave.
- *   2. The view kept in the address — lane, search, "over 7 days", the open trip — so a reload or a
+ *   2. The view kept in the address — lane, search, "over 7 days", kind, trip dates, the open trip — so a reload or a
  *      shared link opens the same thing. Defaults are left out of the address.
  *   3. What a press sends, and what the page looks like after the answer: the decided claim leaves
  *      the list, the Waiting tile loses it and its new tile gains it; a claim the server refused or
@@ -17,8 +17,11 @@
  *      (a rejection's reason is told to the employee; never a reason that is not true of the trip).
  */
 
+import { claimKindFromParam } from "@/lib/outstation/approvals/claim-kind";
 import { TRIP_STANDINGS, type TripStanding } from "@/lib/outstation/approvals/standing";
+import { claimInPeriod, tripPeriodOf } from "@/lib/outstation/approvals/trip-period";
 import type {
+  ClaimKind,
   DecisionAction,
   DeskClaim,
   DeskDecisionOutcome,
@@ -53,16 +56,22 @@ export const DESK_LANE_MEANING: Record<DeskLane, string> = {
 export type DeskHistoryChoice = "all" | "approved" | "rejected";
 
 export type DeskView = {
+  /** First trip day shown (owner, 2026-11-23: "filter by period or month or date"); null = no start. Narrows all three lanes. */
+  from: string | null;
   history: DeskHistoryChoice;
+  /** Traveling, Meeting or Other (owner, 2026-11-23); null = every kind. Narrows all three lanes. */
+  kind: ClaimKind | null;
   /** Null = not chosen: the page opens the first waiting lane that holds a claim. */
   lane: DeskLane | null;
   overSevenDays: boolean;
   search: string;
+  /** Last trip day shown; null = no end. One day is From and To the same; a month is its first and last day. */
+  to: string | null;
   /** The trip open in the reviewer; null when none. */
   trip: number | null;
 };
 
-export const DEFAULT_DESK_VIEW: DeskView = { history: "all", lane: null, overSevenDays: false, search: "", trip: null };
+export const DEFAULT_DESK_VIEW: DeskView = { from: null, history: "all", kind: null, lane: null, overSevenDays: false, search: "", to: null, trip: null };
 
 const isLane = (value: string | null): value is DeskLane => (DESK_LANES as readonly string[]).includes(String(value));
 
@@ -71,11 +80,15 @@ export function deskViewFromSearch(search: string | URLSearchParams | null | und
   const lane = params.get("lane");
   const history = params.get("decided");
   const trip = params.get("trip");
+  const period = tripPeriodOf(params.get("from"), params.get("to"));
   return {
+    from: period.from,
     history: history === "approved" || history === "rejected" ? history : "all",
+    kind: claimKindFromParam(params.get("kind")),
     lane: isLane(lane) ? lane : null,
     overSevenDays: params.get("over7") === "1",
     search: (params.get("q") ?? "").trim().slice(0, 60),
+    to: period.to,
     trip: trip && /^\d{1,12}$/.test(trip) && Number(trip) > 0 ? Number(trip) : null,
   };
 }
@@ -86,6 +99,9 @@ export function deskViewToSearch(view: DeskView): string {
   if (view.lane) params.set("lane", view.lane);
   if (view.search.trim()) params.set("q", view.search.trim());
   if (view.overSevenDays) params.set("over7", "1");
+  if (view.kind) params.set("kind", view.kind);
+  if (view.from) params.set("from", view.from);
+  if (view.to) params.set("to", view.to);
   if (view.history !== "all") params.set("decided", view.history);
   if (view.trip) params.set("trip", String(view.trip));
   const text = params.toString();
@@ -116,17 +132,20 @@ export function openingLane(view: DeskView, claims: ReadonlyArray<DeskClaim>): D
 
 const fold = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase();
 
-/** The claims a waiting lane shows: its lane, the search (name, places), and "over 7 days". Oldest first, as sent. */
+/** The claims a waiting lane shows: its lane, the search (name, places), "over 7 days", the kind and the trip dates. Oldest first, as sent. */
 export function claimsInLane(
   claims: ReadonlyArray<DeskClaim>,
   lane: Exclude<DeskLane, "history">,
-  view: Pick<DeskView, "overSevenDays" | "search">,
+  view: Pick<DeskView, "overSevenDays" | "search"> & { from?: string | null; kind?: ClaimKind | null; to?: string | null },
   hidden: ReadonlySet<number> = new Set(),
 ): DeskClaim[] {
   const words = fold(view.search).split(/\s+/).filter(Boolean);
+  const period = tripPeriodOf(view.from, view.to);
   return claims.filter((claim) => {
     if (claim.standing !== "waiting" || claim.verdict.lane !== lane || hidden.has(claim.requestId)) return false;
     if (view.overSevenDays && claim.daysWaiting <= 7) return false;
+    if (view.kind && claim.kind !== view.kind) return false;
+    if (!claimInPeriod(claim, period)) return false;
     if (words.length === 0) return true;
     const text = fold(`${claim.employeeName} ${claim.from} ${claim.to} ${claim.employeeRole ?? ""}`);
     return words.every((word) => text.includes(word));
@@ -166,6 +185,15 @@ export function approvePress(claim: DeskClaim, options: { full?: boolean } = {})
     requestId: claim.requestId,
     revision: claim.revision,
   };
+}
+
+/**
+ * Approve on a claim that was REJECTED (History, and its opened trip): the claim in full. It names
+ * no amount and never the idle-day cut, which is read for a waiting claim only, and the server
+ * refuses an approval of a rejected claim that names one (`decided-change.ts`).
+ */
+export function approveRejectedPress(claim: DeskClaim): DeskDecisionRequest {
+  return { action: "approve", requestId: claim.requestId, revision: claim.revision };
 }
 
 /**
@@ -288,6 +316,7 @@ export function reasonChips(claim: DeskClaim): ReasonChip[] {
     chips.push({ key: "departure-photo", label: "Departure photo", text: "The departure photo is missing or did not pass its check." });
   }
   if (failed.has("ticket")) chips.push({ key: "ticket", label: "No ticket", text: "No ticket was attached to this trip." });
+  if (failed.has("meeting_day")) chips.push({ key: "meeting-day", label: "Not a Thursday", text: "The meeting on this claim was not held on a Thursday." });
   if (failed.has("amounts")) chips.push({ key: "invoice", label: "No invoice", text: "No invoice or picture was attached to this cost." });
   return chips;
 }

@@ -14,7 +14,8 @@
  *   4. The departure photo, calibrated on his own decisions: taken together with the arrival photo
  *      PASSES (78% approved against 82% with no flag); only outside the trip or over 40 km fails.
  *   5. The one reason of a "Your call" row is picked in the order he rejects for: duplicate first.
- *   6. A meeting or other cost is not a trip: two checks only, and it is never Ready.
+ *   6. A meeting or other cost is not a trip: the duplicate and the amount (and, for a meeting, its
+ *      day), and it is never Ready.
  *   7. The pre-cut: the per-idle-day share of the allowance, never travel or tickets.
  *
  * Added 2026-11-23, after the District Manager expense inspection (the owner's three choices):
@@ -214,7 +215,9 @@ export function runExpenseDeskChecksTests() {
   assert.equal(isTripClaim("other"), false);
   assert.equal(isTripClaim("traveling"), true);
   const invoice = judgeClaim(facts({ attachments: 1, expenseType: "meeting" }));
-  assert.deepEqual(invoice.checks.map((entry) => entry.key), ["duplicate", "amounts"]);
+  // A claim filed as Meeting also carries the Thursday line (owner, 2026-11-23; tests/expense-desk-kind.test.ts).
+  assert.deepEqual(invoice.checks.map((entry) => entry.key), ["duplicate", "meeting_day", "amounts"]);
+  assert.deepEqual(judgeClaim(facts({ attachments: 1, expenseType: "other" })).checks.map((entry) => entry.key), ["duplicate", "amounts"]);
   assert.equal(invoice.lane, "your_call", "an amount the employee typed is always his to read");
   assert.equal(judgeClaim(facts({ attachments: 0, expenseType: "other" })).reason, "A meeting or other cost with no invoice or picture attached.");
   assert.deepEqual(judgeClaim(facts({ expenseType: "meeting", fieldWork: null })).idleDates, []);

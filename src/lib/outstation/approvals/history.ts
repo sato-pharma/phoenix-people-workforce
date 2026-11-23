@@ -17,9 +17,11 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { claimKindFilter } from "@/lib/outstation/approvals/claim-kind";
 import { buildDeskClaim, DESK_CLAIM_COLUMNS, requestIdOfRow, type ClaimRow } from "@/lib/outstation/approvals/claim-row";
 import { readLastPaidPayout, readLedger, withLiveNames } from "@/lib/outstation/approvals/queue";
-import type { DeskClaim } from "@/lib/outstation/approvals/types";
+import { dayAfter, tripPeriodOf } from "@/lib/outstation/approvals/trip-period";
+import type { ClaimKind, DeskClaim } from "@/lib/outstation/approvals/types";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
 import { applyEmployeeHrIdInFilter, keepExpenseRowsInScope, listPayrollExpenses, resolveExpenseAccessFilter } from "@/lib/outstation/expenses";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
@@ -62,7 +64,7 @@ export function historyFilterOf(value: string | null | undefined): DeskHistoryFi
 
 export async function loadDeskHistory(
   access: AccessContext,
-  options: { filter?: DeskHistoryFilter; now?: Date; offset?: number; search?: string | null } = {},
+  options: { filter?: DeskHistoryFilter; from?: string | null; kind?: ClaimKind | null; now?: Date; offset?: number; search?: string | null; to?: string | null } = {},
 ): Promise<DeskHistoryPage> {
   const now = options.now ?? new Date();
   const offset = Math.max(0, Math.trunc(Number(options.offset) || 0));
@@ -83,6 +85,16 @@ export async function loadDeskHistory(
   // Each `or` is its own condition; PostgREST joins them with AND.
   if (filter === "approved") query = query.or(APPROVED_STATUS_FILTER);
   if (filter === "rejected") query = query.or(REJECTED_STATUS_FILTER);
+  // The kind the desk is narrowed to (owner, 2026-11-23): one stored type, or every type that is not one of the other two.
+  const kindFilter = options.kind ? claimKindFilter(options.kind) : null;
+  if (kindFilter && "or" in kindFilter) query = query.or(kindFilter.or);
+  else if (kindFilter) query = query.ilike(kindFilter.column, kindFilter.pattern);
+  // The trip dates the desk is narrowed to (owner, 2026-11-23): a trip is listed when any of its days is
+  // inside the period — it ended on or after From and began on or before To. The days are stored as
+  // midnight UTC (all 363 rows on 23 Nov 2026), so "before the day after To" keeps the whole last day.
+  const period = tripPeriodOf(options.from, options.to);
+  if (period.from) query = query.gte("trip_end_date", period.from);
+  if (period.to) query = query.lt("trip_start_date", dayAfter(period.to));
   // The one builder quotes the term (src/lib/supabase/search-filter.ts); an empty answer means no filter.
   const searchFilter = search ? ilikeAnyFilter(["employee_name", "employee_hr_id"], search) : "";
   if (searchFilter) query = query.or(searchFilter);

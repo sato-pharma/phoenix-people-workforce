@@ -12,7 +12,7 @@ import { displayPlace } from "@/lib/outstation/place-label";
 import { cn } from "@/lib/utils";
 
 import { type DecisionMode, DecisionButtons, DecisionPanel, type OnPress } from "./desk-decision";
-import { FoundCell, MoneyCell, STANDING_RAIL, TripLine, WaitFigure, egp, tripDates } from "./desk-parts";
+import { FoundCell, MoneyCell, STANDING_RAIL, TripLine, WaitFigure, egp, kindNote, tripDates } from "./desk-parts";
 import { SelectionBar, TickAll, TickBox } from "./desk-select";
 
 /** Rows drawn at a time; "Show 20 more" under the list reaches the rest. */
@@ -92,7 +92,7 @@ export function DeskList({
       {canDecide && selection.count > 0 ? <SelectionBar onClear={() => setTicked(new Set())} onKeep={(requestIds) => setTicked(new Set(requestIds))} onPress={onPress} selection={selection} /> : null}
       {claims.length === 0 ? (
         <CrmEmpty
-          message={narrowed ? "Nothing in this lane matches the search. Clear it to see every waiting claim." : lane === "ready" ? "No claim has passed every check and is still waiting." : "Nothing unclear is waiting for you."}
+          message={narrowed ? "Nothing in this lane matches the search and the filters. Clear them to see every waiting claim." : lane === "ready" ? "No claim has passed every check and is still waiting." : "Nothing unclear is waiting for you."}
           title={narrowed ? "Nothing matches" : `Nothing in ${DESK_LANE_LABEL[lane]}`}
         />
       ) : (
@@ -191,7 +191,8 @@ function DeskCard({ canDecide, claim, onOpen, onPress, onTick, ticked }: RowProp
         <span className="shrink-0 text-right text-sm font-black tabular-nums text-slate-950">{egp(claim.total)}</span>
       </div>
       <p className="mt-0.5 min-w-0 break-words text-xs font-semibold text-slate-500">
-        {tripDates(claim)} · <bdi dir="auto">{displayPlace(claim.to)}</bdi> · <span className={claim.daysWaiting > 7 ? "font-black text-orange-700" : undefined}>waited {waitLabel(claim.daysWaiting).toLowerCase()}</span>
+        {tripDates(claim)}
+        {kindNote(claim) ? ` · ${kindNote(claim)}` : ""} · <bdi dir="auto">{displayPlace(claim.to)}</bdi> · <span className={claim.daysWaiting > 7 ? "font-black text-orange-700" : undefined}>waited {waitLabel(claim.daysWaiting).toLowerCase()}</span>
       </p>
       {claim.verdict.lane === "your_call" || claim.holdReason ? (
         <div className="mt-1 min-w-0">

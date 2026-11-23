@@ -266,15 +266,24 @@ export function runOutstationExpenseApprovalsQueueTests() {
   );
   assert.ok(decision.includes("onClick={() => onPress([approvePress(claim)], [claim])}"), "the Approve button sends that one press");
   assert.ok(decision.includes("{cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}"), "HEADLINE: and names what it pays");
-  // 🔴 A DECIDED claim draws no decision button (risk review, 23 Nov): History → Open → "Pay in full"
-  // wrote a typed amount to NULL and moved his money.
+  // 🔴 A DECIDED claim draws none of the four (risk review, 23 Nov): History → Open → "Pay in full"
+  // wrote a typed amount to NULL and moved his money. It draws ONE button of its own (owner, 23 Nov,
+  // about 21:05: "make me able to reject even if approved in history"), chosen in decided-change.ts.
   assert.ok(
     decision.includes('const acts = canDecide && !claim.locked && claim.standing === "waiting";'),
-    "HEADLINE: only a waiting claim gets a decision button",
+    "HEADLINE: only a waiting claim gets the desk's four decision buttons",
   );
+  assert.ok(decision.includes("const again = canDecide ? decidedChange(claim).offer : null;"), "HEADLINE: a decided claim's one button is asked of the one rule, and only for a decider");
+  assert.equal((decision.match(/\{again === "(?:approve|reject)" \? \(/g) ?? []).length, 2, "Reject on an approved claim, Approve on a rejected one, and no third");
+  assert.ok(
+    decision.includes('data-press="approve-rejected" onClick={() => onPress([approveRejectedPress(claim)], [claim])}'),
+    "HEADLINE: approving a rejected claim sends the claim in full, never the idle-day cut",
+  );
+  assert.ok(decision.includes("{DESK_WORDS.approve} {egp(claim.total)}"), "and its button names the amount it pays");
+  assert.ok(decision.includes(`data-press="reject-approved" onClick={() => toggle("reject")}`), "rejecting an approved claim opens the reason first: it is never one press");
   assert.ok(!/payInFull|changeAmount|Pay in full|Change amount/.test(decision), "the two buttons that re-decided a decided claim are gone");
   assert.equal((decision.match(/\{acts(?: && [^?]+)? \? \(/g) ?? []).length, 4, "Approve, Keep full claim, Reduce and Reject all hang on that one test");
-  assert.equal((decision.match(/<button\b/g) ?? []).length - (decision.slice(decision.indexOf("export function DecisionPanel")).match(/<button\b/g) ?? []).length, 5, "and the row's decision draws those four and Open, which decides nothing");
+  assert.equal((decision.match(/<button\b/g) ?? []).length - (decision.slice(decision.indexOf("export function DecisionPanel")).match(/<button\b/g) ?? []).length, 7, "and the row's decision draws those four, a decided claim's two, and Open, which decides nothing");
   assert.match(
     decision,
     /\{acts && cut \? \(\s*<button className=\{approvalActionClassName\("neutral", size\)\} data-press="keep-full" onClick=\{\(\) => onPress\(\[approvePress\(claim, \{ full: true \}\)\], \[claim\]\)\}/,
