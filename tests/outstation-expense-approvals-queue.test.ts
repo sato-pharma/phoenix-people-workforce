@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { claimPreCut, verdictFromChecks } from "../src/lib/outstation/approvals/checks.ts";
+import { approvePress, waitLabel } from "../src/lib/outstation/approvals/desk-view.ts";
+import type { CheckKey, ClaimCheck, DeskClaim } from "../src/lib/outstation/approvals/types.ts";
 import {
   compareExpenseApprovalTrips,
   expenseTripAwaitingLabel,
@@ -153,56 +156,137 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.equal(idleDayDeductionSuggestions({ allowance: 800, idleDays: 2, total: 500, tripDays: 2 })[0].deduction, 500, "never more than the claim");
 
   // ── 4. The screen ───────────────────────────────────────────────────────────────────────────
-  // Rebuilt from scratch on 2026-11-07 (expense-review/): the hook holds the state and the save, the
-  // model the tabs and the next trip, the reviewer the decision.
-  const dir = "src/components/outstation/expense-review";
-  const workspace = stripComments(readFileSync(`${dir}/use-expense-review.ts`, "utf8"));
-  const model = stripComments(readFileSync(`${dir}/review-model.ts`, "utf8"));
-  const rail = stripComments(readFileSync(`${dir}/review-queue-table.tsx`, "utf8"));
-  const filtersBar = stripComments(readFileSync(`${dir}/review-filters.tsx`, "utf8"));
-  const review = stripComments(readFileSync(`${dir}/review-deck/deck-days.tsx`, "utf8"));
-  const deck = stripComments(readFileSync(`${dir}/review-deck/deck.tsx`, "utf8"));
-  const bar = stripComments(readFileSync(`${dir}/review-deck/deck-decision.tsx`, "utf8"));
+  // Rebuilt from scratch on 2026-11-23 (approvals-desk/; owner: "REBUILD FROM SCRATCH", "Save at
+  // once, with Undo"). The four things he chose on 7 Nov are all still on the page, in the shape
+  // the new desk gives them:
+  //
+  //   Needs a look / Clean   → the two lanes, Your call and Ready, filed by the SERVER's checks;
+  //   Decide-and-advance     → a press in the open trip moves to the next claim of the lane;
+  //   Oldest first + wait    → the only order there is, with the wait on every waiting row;
+  //   Idle-day deduction     → Approve names the pre-cut amount, "Keep full claim" beside it.
+  //
+  // Sections 1 and 2 above pin the older domain helpers, which the export route still reads.
+  const dir = "src/components/outstation/approvals-desk";
+  const reviewer = stripComments(readFileSync(`${dir}/desk-reviewer.tsx`, "utf8"));
+  const decision = stripComments(readFileSync(`${dir}/desk-decision.tsx`, "utf8"));
+  const row = stripComments(readFileSync(`${dir}/desk-row.tsx`, "utf8"));
+  const workspace = stripComments(readFileSync(`${dir}/desk-workspace.tsx`, "utf8"));
+  const queueRead = stripComments(readFileSync("src/lib/outstation/approvals/queue.ts", "utf8"));
+  const claimRow = stripComments(readFileSync("src/lib/outstation/approvals/claim-row.ts", "utf8"));
   const exportRoute = stripComments(readFileSync("app/api/admin/outstation/expenses/export/route.ts", "utf8"));
 
-  // Decide-and-advance: Approve and Reject open the next trip awaiting a decision; Save, Undo and the
-  // amount never move the reviewer.
-  const handler = (name: string) => workspace.match(new RegExp(`${name}: \\(\\) => \\{[\\s\\S]*?\\n {4}\\},`))?.[0] ?? "";
-  assert.match(handler("onApprove"), /setDecision\(selected, \{ hrApproved: true, status: APPROVED_STATUS \}\);\s*selectNextPending\(selected\.tripId\);/, "HEADLINE: Approve opens the next trip awaiting a decision");
-  assert.match(handler("onReject"), /setDecision\(selected, \{ hrApproved: false, status: REJECTED_STATUS \}\);\s*selectNextPending\(selected\.tripId\);/, "HEADLINE: Reject opens the next trip awaiting a decision");
-  const stays = workspace.match(/onSave: [^\n]*\n[\s\S]*?onUnreject: [^\n]*/)?.[0] ?? "";
-  assert.ok(stays.length > 0 && !/selectNextPending/.test(stays), "Save and the two Undos never move to another trip");
-  assert.doesNotMatch(workspace.match(/onChangeAmount: [^\n]*/)?.[0] ?? "", /selectNextPending/);
-  assert.match(workspace, /const next = nextAwaitingTrip\(deckRows, fromTripId, decisionFor\);/, "HEADLINE: the next trip is the next one waiting in the reviewer's own frozen walk");
-  // ...and the walk is the list as sorted: one comparator for the tab, the roll-up and the walk.
-  assert.match(workspace, /const byValue = compareExpenseApprovalTrips\(filters\.sort\);/);
-  assert.match(model, /\(tab === "all" \? rank\(left\) - rank\(right\) : 0\) \|\| order\(left, right\)/, "HEADLINE: All trips ranks undecided first, then the reviewer's own order");
+  // Decide-and-advance: a press in the open trip is sent, then the reviewer moves on by itself —
+  // the next claim of the lane, else the one before, else it closes. Undo comes back to the claim.
+  assert.match(
+    reviewer,
+    /const pressAndMove = useCallback<OnPress>\(\s*\(decisions, claims\) => \{\s*onPress\(decisions, claims\);\s*setMode\("idle"\);\s*const target = next \?\? previous;\s*if \(target !== null\) onGo\(target\);\s*else onClose\(\);/,
+    "HEADLINE: a press in the open trip opens the next claim of the lane, and closes when none is left",
+  );
+  assert.ok(reviewer.includes("onPress={pressAndMove}"), "and every decision made in the reviewer goes through it");
+  assert.ok(
+    reviewer.includes("if (press && press.claims.length === 1) go(press.claims[0].requestId);"),
+    "HEADLINE: Undo returns to the claim it was pressed on",
+  );
+  assert.ok(workspace.includes("walk={laneClaims.map((claim) => claim.requestId)}"), "the walk is the lane on screen, in its order");
+
   // No key decides anything: the arrows walk, nothing else.
-  assert.doesNotMatch(deck, /onApprove\(\)[^;]*key|key[^;]*onApprove\(\)/, "no keyboard shortcut approves");
+  const keys = reviewer.match(/const onKey = \(event: KeyboardEvent\) => \{[\s\S]*?\n {4}\};/)?.[0] ?? "";
+  assert.ok(keys.length > 0, "the reviewer's key handler is found");
+  assert.deepEqual(
+    [...keys.matchAll(/event\.key === "(\w+)"/g)].map((match) => match[1]),
+    ["ArrowRight", "ArrowLeft"],
+    "HEADLINE: the only keys the reviewer answers are the two arrows",
+  );
+  assert.doesNotMatch(keys, /onPress|pressAndMove|onUndo/, "HEADLINE: no keyboard shortcut approves, rejects or undoes");
+  assert.ok(keys.includes("if (typingIn(event.target) || otherDialogOpen()) return;"), "and never while he is typing a reason or a photo is zoomed");
 
-  // The tabs carry the choice, each awaiting row its reasons and its wait.
-  assert.match(model, /return expenseTripTriage\(record\)\?\.triage === tab;/, "HEADLINE: Needs a look and Clean are tabs, read from the one triage rule");
-  assert.match(filtersBar, /Oldest first/);
-  assert.match(rail, /const awaiting = state === "pending" && !imported;/, "only an awaiting trip carries its wait");
-  // Owner, 2026-11-07: "show the system's findings on decided rows too".
-  assert.match(rail, /const reading = imported \? null : expenseTripTriage\(record\);/, "HEADLINE: a decided row keeps what the system found — only history has none");
-  assert.match(rail, /reading\?\.triage === "look"/);
-  assert.match(rail, /expenseTripDaysAwaiting\(record\.submittedAt, actions\.now\)/, "HEADLINE: an awaiting row says how long it has waited");
-  const workspaceFile = stripComments(readFileSync(`${dir}/expense-review-workspace.tsx`, "utf8"));
-  assert.match(workspaceFile, /const \[now\] = useState\(\(\) => Date\.now\(\)\);/, "the clock is read once, never during render");
-  assert.match(workspace, /const triage = exportTriageForTab\(tab\);[\s\S]*?if \(triage\) params\.set\("triage", triage\);/, "HEADLINE: the export narrows by the same tab");
+  // Needs a look / Clean are the two lanes, and a claim's lane is the server's own checks.
+  const pass = (key: CheckKey): ClaimCheck => ({ answer: "pass", key, label: key, sentence: `${key} passed.` });
+  assert.equal(verdictFromChecks([pass("field_work"), pass("arrival_photo")]).lane, "ready", "HEADLINE: every check passed is Ready");
+  const failed = verdictFromChecks([pass("field_work"), { answer: "fail", key: "departure_photo", label: "Departure photo", sentence: "The departure photo was taken 80 km from the arrival." }]);
+  assert.equal(failed.lane, "your_call", "HEADLINE: one failed check is Your call");
+  assert.equal(failed.reason, "The departure photo was taken 80 km from the arrival.", "and the lane's one reason is that check's own sentence");
+  const unknown = verdictFromChecks([pass("field_work"), { answer: "unknown", key: "ticket", label: "Ticket", sentence: "The ticket could not be read." }]);
+  assert.equal(unknown.lane, "your_call", "HEADLINE: unknown is never clean — a check that could not be made is Your call");
+  assert.equal(verdictFromChecks([]).lane, "your_call", "and a claim nothing could be checked on is never a quiet Ready");
+  assert.ok(workspace.includes('const laneClaims = queue && lane !== "history" ? claimsInLane(queue.claims, lane, view) : [];'), "the list on screen is the lane the server filed");
+  assert.ok(row.includes("<FoundCell claim={claim} />"), "and every row says what the system found");
+
+  // Oldest first + how long it has waited.
+  assert.ok(
+    queueRead.includes('.order("created_at", { ascending: true }).order("id", { ascending: true })'),
+    "HEADLINE: the waiting list is read oldest first, and that is the only order",
+  );
+  assert.ok(
+    claimRow.includes("daysWaiting: waiting ? daysBetween(text(row.created_at) || null, input.now) : 0,"),
+    "HEADLINE: the wait is counted from the submission, and only a waiting claim carries one",
+  );
+  assert.ok(row.includes("<WaitFigure days={claim.daysWaiting} />"), "HEADLINE: a waiting row says how long it has waited");
+  assert.ok(row.includes("waited {waitLabel(claim.daysWaiting).toLowerCase()}"), "and so does the phone card");
+  assert.equal(waitLabel(0.4), "Today");
+  assert.equal(waitLabel(1), "1 day");
+  assert.equal(waitLabel(9.7), "9 days", "whole days, never a fraction");
+  assert.doesNotMatch(row + workspace, /Date\.now\(\)/, "the clock is the server's, read once with the queue — never during render");
+
+  // The export is every trip, narrowed only by what he typed in the search box. The route still
+  // reads the older keys, so a link saved before the rebuild keeps working.
+  assert.ok(
+    workspace.includes(
+      'const exportHref = view.search.trim() ? `/api/admin/outstation/expenses/export?search=${encodeURIComponent(view.search.trim())}` : "/api/admin/outstation/expenses/export";',
+    ),
+    "HEADLINE: the export narrows by the search and by nothing else",
+  );
   assert.match(exportRoute, /triage: parseExpenseTripTriageFilter\(url\.searchParams\.get\("triage"\)\)/);
-  assert.match(workspace, /setFilters\(\(current\) => \(\{ \.\.\.NO_EXPENSE_APPROVAL_FILTERS, sort: current\.sort \}\)\)/, "Clear filters keeps the order");
 
-  // The idle-day offer: lifted from the field-work read, shown in the decision box, applied only on a click.
-  assert.match(review, /onIdleDays\(record\.tripId, \{ idleDays: days\.filter\(\(day\) => !isWorkedTripDay\(day\)\)\.length, tripDays: days\.length \}\)/, "HEADLINE: the field work hands up its idle days — a meeting day is worked, never idle (owner, 2026-11-07)");
-  assert.match(review, /workload\.matchStatus === "unmapped"\) return;/, "no CRM identity is not an idle day");
-  assert.match(deck, /onIdleDays=\{review\.recordIdleDays\}/);
-  assert.match(deck, /const idle = review\.idleByTrip\[record\.tripId\] \?\? null;/);
-  assert.match(bar, /!locked && undecided && idle \? idleDayDeductionSuggestions\(/, "HEADLINE: offered only on an undecided trip a decider can change");
-  assert.match(bar, /onClick=\{\(\) => applySuggestion\(suggestion\)\}/, "a share is applied only by a click");
-  // The reason a share writes (owner's review, 2026-11-07): the box opens holding the system's hold
-  // sentence, so "fill an empty box only" meant the share's reason never landed.
+  // The idle-day cut (owner, 2026-11-07: "Approver sees it pre-cut"): the server works it out, the
+  // Approve button names it, and "Keep full claim" is one press beside it. Nothing deducts alone.
+  const cut = claimPreCut({ allowance: 600, idleDays: 5, total: 1200, tripDays: 6 });
+  assert.deepEqual(
+    cut && [cut.deduction, cut.payable],
+    [500, 700],
+    "HEADLINE: the pre-cut is the first share the idle-day rule offers: 5 of 6 days of a 600 allowance",
+  );
+  assert.equal(claimPreCut({ allowance: 0, idleDays: 2, total: 900, tripDays: 3 }), null, "no allowance, no cut: travel is never deducted for an idle day");
+  assert.equal(claimPreCut({ allowance: 600, idleDays: 0, total: 900, tripDays: 3 }), null, "no idle day, no cut");
+  const waitingClaim = { holdReason: null, preCut: cut, requestId: 5088, revision: "rev-5088", standing: "waiting", total: 1200 } as unknown as DeskClaim;
+  assert.deepEqual(
+    approvePress(waitingClaim),
+    { action: "approve", approvedAmount: 700, requestId: 5088, revision: "rev-5088" },
+    "HEADLINE: Approve on a trip with idle days sends the amount its own button names",
+  );
+  assert.deepEqual(
+    approvePress(waitingClaim, { full: true }),
+    { action: "approve", requestId: 5088, revision: "rev-5088" },
+    "HEADLINE: Keep full claim sends no amount: the claim is paid as claimed",
+  );
+  assert.equal(
+    "approvedAmount" in approvePress({ ...waitingClaim, holdReason: "No payroll month is open." } as DeskClaim),
+    false,
+    "a trip the payroll gate would hold carries no cut: a held claim cannot take a reduced amount",
+  );
+  assert.ok(
+    decision.includes("onClick={() => onPress([approvePress(claim, { full: decided(claim) })], [claim])}"),
+    "the Approve button sends that one press",
+  );
+  assert.ok(decision.includes("{decided(claim) ? DESK_WORDS.payInFull : cut ? `${DESK_WORDS.approve} ${egp(cut.payable)}` : DESK_WORDS.approve}"), "HEADLINE: and names what it pays");
+  assert.match(
+    decision,
+    /\{acts && cut \? \(\s*<button className=\{approvalActionClassName\("neutral", size\)\} data-press="keep-full" onClick=\{\(\) => onPress\(\[approvePress\(claim, \{ full: true \}\)\], \[claim\]\)\}/,
+    "HEADLINE: Keep full claim sits beside it wherever a cut is named",
+  );
+  assert.ok(!decision.includes("useEffect"), "HEADLINE: nothing deducts on its own: the decision box runs no effect at all");
+
+  // The reason box opens EMPTY (it used to open holding the system's hold sentence, which the
+  // employee was then sent). The system's sentence is one press away and is added to his words.
+  assert.ok(decision.includes('const [reason, setReason] = useState("");'), "HEADLINE: the reason box opens empty");
+  assert.ok(
+    decision.includes("onClick={() => setReason(reason ? `${reason} ${claim.systemNote}` : String(claim.systemNote))}"),
+    "HEADLINE: the system's sentence is added after the reviewer's own reason, never written over it",
+  );
+  assert.ok(decision.includes("{claim.systemNote && !reason.includes(claim.systemNote) ? ("), "and is offered once, not twice");
+
+  // `reasonAfterIdleDayPick` is the 7 Nov rule for a share picked from a list. The desk has no such
+  // list — the cut is on the Approve button — so no screen calls it since 23 Nov. It stays pinned.
   const reasons = ["Allowance deducted for the idle days: 2.", "Allowance deducted in full: 2."];
   const held = "Held: no field activity recorded.";
   assert.equal(reasonAfterIdleDayPick({ current: "", picked: reasons[0], reasons, systemText: held }), reasons[0], "an empty box takes the reason");
@@ -222,10 +306,4 @@ export function runOutstationExpenseApprovalsQueueTests() {
     null,
     "HEADLINE: the reviewer's own reason is never written over",
   );
-  assert.match(bar, /const next = reasonAfterIdleDayPick\(\{/, "the decision box uses that one rule");
-  assert.match(bar, /if \(next !== null\) onChangeReason\(next\);/, "and leaves the reviewer's words alone on null");
-  // Approve and Reject are two equal halves of the pinned bar; Save sits on its own line under them.
-  assert.match(bar, /<div className="grid min-w-0 grid-cols-2 gap-2">\s*<CrmButton\s+data-approve-precut=\{[^}]*\}\s+data-deck-approve/, "HEADLINE: Approve and Reject take the whole width, side by side");
-  assert.match(bar, /data-save-cluster/, "and Save has its own line");
-  assert.doesNotMatch(bar, /useEffect\([^)]*applySuggestion|onChangeAmount\(approvedAmountFromDeduction\(record\.total, suggestions\[/, "nothing deducts on its own");
 }

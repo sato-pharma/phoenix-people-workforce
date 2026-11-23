@@ -15,7 +15,7 @@
  *    a database constraint: an employee is told which claim already covers the trip and what to
  *    do, which a unique constraint cannot say.
  *  - The APPROVALS screen flags every pair already in the table, so the ones submitted before
- *    this guard existed are decided knowingly (expense-review/review-queue-table.tsx).
+ *    this guard existed are decided knowingly (the duplicate check in approvals/queue.ts).
  *
  * The payroll duplicate HOLD (automated-payroll/duplicate-expense-hold.ts) is a separate, later
  * net and is unchanged: it holds an extra copy of an imported or already-stored claim instead of

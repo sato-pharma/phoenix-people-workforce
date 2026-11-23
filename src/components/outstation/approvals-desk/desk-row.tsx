@@ -8,6 +8,7 @@ import { formatNumberValue } from "@/lib/i18n/format";
 import { DESK_DECISION_LIMIT } from "@/lib/outstation/approvals/decision-body";
 import { DESK_LANE_LABEL, DESK_LANE_MEANING, selectionBatch, waitLabel, type DeskLane } from "@/lib/outstation/approvals/desk-view";
 import type { DeskClaim } from "@/lib/outstation/approvals/types";
+import { displayPlace } from "@/lib/outstation/place-label";
 import { cn } from "@/lib/utils";
 
 import { type DecisionMode, DecisionButtons, DecisionPanel, type OnPress } from "./desk-decision";
@@ -190,7 +191,7 @@ function DeskCard({ canDecide, claim, onOpen, onPress, onTick, ticked }: RowProp
         <span className="shrink-0 text-right text-sm font-black tabular-nums text-slate-950">{egp(claim.total)}</span>
       </div>
       <p className="mt-0.5 min-w-0 break-words text-xs font-semibold text-slate-500">
-        {tripDates(claim)} · <bdi dir="auto">{claim.to}</bdi> · <span className={claim.daysWaiting > 7 ? "font-black text-orange-700" : undefined}>waited {waitLabel(claim.daysWaiting).toLowerCase()}</span>
+        {tripDates(claim)} · <bdi dir="auto">{displayPlace(claim.to)}</bdi> · <span className={claim.daysWaiting > 7 ? "font-black text-orange-700" : undefined}>waited {waitLabel(claim.daysWaiting).toLowerCase()}</span>
       </p>
       {claim.verdict.lane === "your_call" || claim.holdReason ? (
         <div className="mt-1 min-w-0">

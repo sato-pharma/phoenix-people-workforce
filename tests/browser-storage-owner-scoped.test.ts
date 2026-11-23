@@ -203,11 +203,21 @@ export function runBrowserStorageOwnerScopedTests() {
     assert.match(contact, /localStorage\.getItem\(draftKey\)/, "and read back from that person's key");
     assert.doesNotMatch(contact, /localStorage\.getItem\(LEGACY_SUPPORT_DRAFT_KEY\)/, "never from the browser-wide key");
 
+    // Expense Approvals (rebuilt 2026-11-23, "Save at once, with Undo") keeps NOTHING in the
+    // browser: a press is sent by itself and the view lives in the address. So the page hands down
+    // no reviewer id, and no decision can be left behind on a shared computer.
     const page = source("app/(admin)/admin/outstation/expense-approvals/page.tsx");
-    assert.match(page, /viewerHrId=\{access\.hrId\}/, "the expense queue is told who the reviewer is");
-    const expense = source("src/components/outstation/expense-review/use-expense-review.ts");
-    assert.match(expense, /if \(!draftKey\) return null;/, "with no reviewer, no decision draft is read");
-    assert.match(expense, /function writeExpenseDecisionDraft\(draftKey: string \| null, decisions: Record<string, Decision>\) \{\s*if \(!draftKey\) return;/, "and none is written");
+    assert.ok(
+      page.includes("<DeskWorkspace initialSearch={searchText(await searchParams)} />"),
+      "the expense desk is handed the address's query, and nothing about who is reading",
+    );
+    for (const file of ["use-desk.ts", "desk-workspace.tsx", "desk-row.tsx", "desk-select.tsx", "desk-decision.tsx", "desk-reviewer.tsx", "desk-trip-file.tsx", "desk-history.tsx"]) {
+      assert.doesNotMatch(
+        source(`src/components/outstation/approvals-desk/${file}`),
+        /localStorage|sessionStorage|indexedDB/,
+        `${file} stores nothing in the browser`,
+      );
+    }
   }
 
   // ── 7. The push registration memo (1 Nov 2026) ───────────────────────────────────────────────────────

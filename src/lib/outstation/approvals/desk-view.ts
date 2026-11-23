@@ -164,14 +164,18 @@ export function approvePress(claim: DeskClaim, options: { full?: boolean } = {})
   };
 }
 
-/** What "Approve all" in the Ready lane sends, and the two figures it shows before the press. */
+/**
+ * What "Approve all" in the Ready lane sends, and the two figures it shows before the press. A Ready
+ * claim has no idle day, so it carries no cut — but the batch still sends each row's OWN Approve,
+ * never "Keep full claim": no batch can pay an idle day in full, whatever lane it was built from.
+ */
 export function readyBatch(claims: ReadonlyArray<DeskClaim>, limit: number): { count: number; decisions: DeskDecisionRequest[]; left: number; value: number } {
   const taken = claims.slice(0, Math.max(0, limit));
   return {
     count: taken.length,
-    decisions: taken.map((claim) => approvePress(claim, { full: true })),
+    decisions: taken.map((claim) => approvePress(claim)),
     left: claims.length - taken.length,
-    value: money(taken.reduce((sum, claim) => sum + claim.total, 0)),
+    value: money(taken.reduce((sum, claim) => sum + approvePays(claim), 0)),
   };
 }
 

@@ -149,6 +149,18 @@ export function runExpenseDeskViewTests() {
   assert.deepEqual({ count: batch.count, left: batch.left, value: batch.value }, { count: 2, left: 0, value: 800 }, "the button shows the count and the total it will approve");
   assert.ok(batch.decisions.every((decision) => decision.action === "approve" && decision.approvedAmount === undefined));
   assert.deepEqual({ count: readyBatch(claims, 1).count, left: readyBatch(claims, 1).left }, { count: 1, left: 2 }, "a lane over the limit says how many are left");
+  // A Ready claim has no idle day, so the lane's batch carries no cut today. The batch is still built
+  // from each row's OWN Approve, so no list it is ever handed can pay an idle day in full.
+  const mixed = readyBatch([yourCall(3, { preCut: cut }), yourCall(4, { holdReason: "No departure photo yet.", preCut: cut }), claim(1)], 100);
+  assert.deepEqual(
+    mixed.decisions.slice(0, 2),
+    [
+      { action: "approve", approvedAmount: 300, requestId: 3, revision: "rev-3" },
+      { action: "approve", requestId: 4, revision: "rev-4" },
+    ],
+    "HEADLINE: Approve all sends each row's own Approve — never Keep full claim",
+  );
+  assert.equal(mixed.value, 1300, "HEADLINE: and the total on the button is what those presses pay (300 + 500 + 500), not the 1,500 the trips claim");
 
   // 3b. Several claims in one press: the ticked rows.
   const lane = [yourCall(3, { preCut: cut }), yourCall(4, { holdReason: "No departure photo yet.", preCut: cut }), yourCall(7, { total: 120, payable: 120 })];
