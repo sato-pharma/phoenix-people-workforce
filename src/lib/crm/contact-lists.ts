@@ -36,6 +36,7 @@ import { unstable_cache } from "next/cache";
 
 import { fetchAllRowsKeyset, keysetRanges } from "@/lib/supabase/paginated";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { isMissingRpcError } from "@/lib/supabase/errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/list-types";
@@ -241,7 +242,7 @@ export const CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG = "crm-contact-list-summaries"
  * account, and a Phoenix list change writes his rows with none. A row with no HR id at all — a vendor
  * row nobody resolved — still counts, under its CRM account, so it is visible rather than dropped.
  */
-export function summarizeRepLists(records: readonly OpenAssignmentCountRecord[]): RepListSummary[] {
+export function summarizeRepLists(records: readonly (OpenAssignmentCountRecord & { rows?: number })[]): RepListSummary[] {
   const byRep = new Map<string, RepListSummary>();
   for (const record of records) {
     const hrKey = canonicalHrIdKey(record.agent_hr_id);
@@ -261,10 +262,12 @@ export function summarizeRepLists(records: readonly OpenAssignmentCountRecord[])
       };
       byRep.set(key, summary);
     }
+    // A grouped tuple from phx_crm_rep_list_summary_groups carries its row count; a raw row is one.
+    const rows = record.rows ?? 1;
     const listType = normalizeListType(record.list_type);
-    if (listType === "PM") summary.pmCount += 1;
-    else if (listType === "AM") summary.amCount += 1;
-    else summary.pharmacyCount += 1;
+    if (listType === "PM") summary.pmCount += rows;
+    else if (listType === "AM") summary.amCount += rows;
+    else summary.pharmacyCount += rows;
     if (summary.agentCrmId == null && record.agent_crm_id != null) summary.agentCrmId = record.agent_crm_id;
     if (record.updated_at && (!summary.syncedAt || record.updated_at > summary.syncedAt)) {
       summary.syncedAt = record.updated_at;
@@ -342,41 +345,83 @@ async function assignmentIdCuts(walks: number): Promise<number[]> {
  * cache as an empty roster that then reads as "no rep has a list" for five minutes.
  */
 export const getRepListSummaries = unstable_cache(
-  async (): Promise<RepListSummary[]> => {
-    const supabase = getSupabaseAdmin();
-    const { count, error: countError } = await supabase
-      .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-      .select("id", { count: "exact", head: true })
-      .is("effective_to", null);
-    if (countError) throw new Error(`Could not size the doctor lists: ${countError.message}`);
-
-    const ranges = keysetRanges(await assignmentIdCuts(Math.ceil((count ?? 0) / PAGE_SIZE)));
-    const walks = await Promise.all(
-      ranges.map((range) =>
-        fetchAllRowsKeyset<OpenAssignmentCountRecord & { id: number }>(
-          () => {
-            let query = supabase
-              .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-              .select("id, agent_crm_id, agent_hr_id, list_type, updated_at")
-              .is("effective_to", null);
-            if (range.from !== null) query = query.gte("id", range.from);
-            if (range.below !== null) query = query.lt("id", range.below);
-            return query;
-          },
-          { cursorColumn: "id", cursorOf: (row) => row.id },
-        ),
-      ),
-    ).catch((error: { message?: string }) => {
-      throw new Error(`Could not read the doctor lists: ${error?.message ?? String(error)}`);
-    });
-
-    // The ranges are in ascending id order, so the rows arrive in the order one walk would return them.
-    const records: OpenAssignmentCountRecord[] = walks.flat();
-    return summarizeRepLists(records);
-  },
+  async (): Promise<RepListSummary[]> => summarizeRepLists(await readRepListSummaryRecords()),
   ["crm-rep-list-summaries-by-hr-id"],
   { revalidate: 300, tags: [CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG] },
 );
+
+const REP_LIST_SUMMARY_GROUPS_RPC = "phx_crm_rep_list_summary_groups";
+
+/** One group as the function returns it: [first_id, agent_crm_id, agent_hr_id, list_type, rows, synced_at]. */
+export type RepListSummaryGroupTuple = [number, number | null, string | null, string | null, number, string | null];
+
+/** The function's tuple as the weighted record summarizeRepLists counts. Pure; exported for its test. */
+export function repListRecordFromGroup(
+  tuple: RepListSummaryGroupTuple,
+): OpenAssignmentCountRecord & { rows: number } {
+  const [, agentCrmId, agentHrId, listType, rows, syncedAt] = tuple;
+  return {
+    agent_crm_id: agentCrmId == null ? null : Number(agentCrmId),
+    agent_hr_id: agentHrId,
+    list_type: listType ?? "",
+    rows: Number(rows),
+    updated_at: syncedAt,
+  };
+}
+
+/**
+ * ONE STATEMENT since 23 Nov 2026. `phx_crm_rep_list_summary_groups` groups the open rows by
+ * (HR id, CRM account, list) in the database — 327 groups from 17,863 rows in 21.7 ms — ordered by each
+ * group's lowest id, so summarizeRepLists meets every rep's groups in the order the id walk met his rows
+ * and every count, HR id, CRM account and synced date comes out the same.
+ *
+ * WHY: the id walk below sent ~40 requests per rebuild, eighteen at a time. Ten minutes after the
+ * 23 Nov 15:51 Cairo deploy the cold cache was rebuilt three times in thirteen seconds, those waves took
+ * every PostgREST connection, and every other read in the app queued behind them — 19 reads crossed the
+ * 15 s client budget at once (the pulse, the direct-order page, the area-rep lookup). The walk stays only
+ * for a database the function has not reached (PGRST202).
+ */
+async function readRepListSummaryRecords(): Promise<(OpenAssignmentCountRecord & { rows?: number })[]> {
+  const { data, error } = await getSupabaseAdmin().rpc(REP_LIST_SUMMARY_GROUPS_RPC);
+  if (error) {
+    if (isMissingRpcError(error)) return readRepListRecordsByRanges();
+    throw new Error(`Could not read the doctor lists: ${error.message}`);
+  }
+  return ((Array.isArray(data) ? data : []) as RepListSummaryGroupTuple[]).map(repListRecordFromGroup);
+}
+
+/** The pre-function read: every open row, by id range. Kept only for the PGRST202 fallback. */
+async function readRepListRecordsByRanges(): Promise<OpenAssignmentCountRecord[]> {
+  const supabase = getSupabaseAdmin();
+  const { count, error: countError } = await supabase
+    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .is("effective_to", null);
+  if (countError) throw new Error(`Could not size the doctor lists: ${countError.message}`);
+
+  const ranges = keysetRanges(await assignmentIdCuts(Math.ceil((count ?? 0) / PAGE_SIZE)));
+  const walks = await Promise.all(
+    ranges.map((range) =>
+      fetchAllRowsKeyset<OpenAssignmentCountRecord & { id: number }>(
+        () => {
+          let query = supabase
+            .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+            .select("id, agent_crm_id, agent_hr_id, list_type, updated_at")
+            .is("effective_to", null);
+          if (range.from !== null) query = query.gte("id", range.from);
+          if (range.below !== null) query = query.lt("id", range.below);
+          return query;
+        },
+        { cursorColumn: "id", cursorOf: (row) => row.id },
+      ),
+    ),
+  ).catch((error: { message?: string }) => {
+    throw new Error(`Could not read the doctor lists: ${error?.message ?? String(error)}`);
+  });
+
+  // The ranges are in ascending id order, so the rows arrive in the order one walk would return them.
+  return walks.flat();
+}
 
 /**
  * The same summaries, limited to reps whose list rows carry a CRM account — for the callers that

@@ -142,4 +142,9 @@ Related: [[the-next-step-box-must-not-manufacture-the-next-task]]
   - Back r14b (`back-why-r14b.html`): one row per ingredient, each ingredient box → short gold arrow → white benefit box with a line icon; hook "**Key features** and benefits"; heading, cans, 330 EGP, dosage and notice unchanged.
   - Colour, measured off `can-1-ls.png`: aqua #77E1DB (the can's lit band), dark green #0F5242 (its wordmark), soft green #15584B, gold lines #A8741A, gold text #8A5A0C. BOTH sides took it; the front only re-inked (aqua facts band, green text, dark-gold facts icons) — its layout, baby, cans and words are pixel-identical to r13 (0 px changed in the baby and can areas).
   - Kept **"ARA"**, not his pasted "AA": his 19 Nov 17:45 rule was "HMOs / ARA … زي ال front", and the front and the can both say ARA.
-  - Packaged as r14 in `Downloads\Lacto-Advanced-A5-landscape`; the approved r13 package moved to `superseded-r13-teal`. Not yet approved.
+  - Packaged as r14 (16:06); moved to `superseded-r14-lacto1` when r15 replaced it. The approved r13 package is in `superseded-r13-teal`.
+- **Round 10, r15: "artistic fantastic touches" (23 Nov 2026, ~16:05 Cairo), on r14.** Two motifs, flat ink only (`touches_r15.py`, deterministic seeds):
+  - the Pedia honeycomb, patches thinning from a corner (never a lattice): pale aqua lines in the front's open top-right white corner, white inside the front's aqua band, white in three corners of the back; every patch is kept off the words, the headline, the dosage panel and the baby's picture (her picture is flat RGB on white — anything drawn under her box shows its edge);
+  - a milk wave: the front's aqua band rises and falls twice (y = 119.9 − 2 cos(2π(x − 50)/135) mm) under a 0.8 mm gold rule that rides it — 1.8 mm under the Sato mark, 1.8 mm over the facts.
+  - Measured against r14: 0 px changed on the front outside the corner and the band; 0 px changed on any word of the back. Packaged as r15; r14 moved to `superseded-r14-lacto1`. Not yet approved.
+  - A 1 mm wave read as a bent line (a mistake); 2 mm reads as deliberate.

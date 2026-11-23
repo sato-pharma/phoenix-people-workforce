@@ -77,7 +77,10 @@ export function runCrmReportsReadPhoenixTests() {
       summaries.includes("tags: [CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG]"),
       "the cached summaries keep their tag, or a list change leaves the picker quoting old counts until the TTL runs out",
     );
-    assert.ok(summaries.includes("summarizeRepLists(records)"), "the summaries aggregate through the one HR-keyed reducer");
+    assert.ok(
+      summaries.includes("summarizeRepLists(await readRepListSummaryRecords())"),
+      "the summaries aggregate through the one HR-keyed reducer",
+    );
 
     const board = readFileSync("src/lib/crm/reps-list-board.ts", "utf8");
     assert.ok(board.includes("getRepListSummaries()"), "the Reps List cascade reads the HR-keyed summaries");
