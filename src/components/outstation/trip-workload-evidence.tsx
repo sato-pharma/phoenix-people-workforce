@@ -26,6 +26,9 @@ export type WorkloadVisitDetail = {
   customer: string | null;
   /** "campaign" is the payload's word for an UNPLANNED visit; the card prints "Unplanned" / "Planned". */
   kind: string;
+  /** On a "meeting" row: "Meeting", "Training" or "Conference" (trip-day-meetings.ts). Optional so a payload
+   * from a server built before it still renders "Meeting". */
+  meetingLabel?: string | null;
   /** On a partner visit, the rep who logged it — resigned or not (visit-workload.ts). Optional so a
    * payload from a server built before it still renders the bare "double". */
   repName?: string | null;
@@ -275,7 +278,7 @@ function DayDetail({
                           : "bg-sky-100 text-sky-700",
                     )}
                   >
-                    {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
+                    {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? (visit.meetingLabel ?? "Meeting") : "Planned"}
                   </span>
                 ),
                 body: (

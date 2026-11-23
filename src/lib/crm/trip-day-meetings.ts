@@ -14,13 +14,20 @@
  *
  * The meeting codes are the vendor's Meeting (-11), its undocumented twin (-19, owner ruling
  * 2026-09-21: the same activity) and Group Meeting (-2, which Phoenix CRM also serves a recorded
- * group meeting under). Other working codes (training, conference, admin work…) are deliberately
- * NOT widened into this: the owner's word was meetings.
+ * group meeting under).
+ *
+ * TRAINING AND CONFERENCE COUNT AS MEETINGS TOO (owner, 23 Nov 2026: "Count them as meetings", then
+ * "Count them there too" for these older trip screens, after the 19 Nov training in Cairo and
+ * Weaam's Hurghada conference read as days with nothing done): Training (-9), the training the
+ * vendor sent as "Unknown" (-16, owner ruling 2026-09-17: the same activity) and Conference (-1).
+ * Phoenix CRM serves its own Training and Conference under -9 and -1, so Expense Approvals
+ * (approvals/field-evidence.ts) and these screens read one rule. Admin work, Travelling, Health day,
+ * Sales day and every other code are NOT widened.
  *
  * Pure, so the client review screen and the server reads share the one rule.
  */
 
-import { MEETING_TYPE, VENDOR_MEETING_TYPE } from "@/lib/crm/visit-types";
+import { CONFERENCE_TYPE, MEETING_TYPE, TRAINING_TYPE, UNLABELED_TRAINING_TYPE, VENDOR_MEETING_TYPE } from "@/lib/crm/visit-types";
 
 /** Group Meeting — the vendor's own code, kept as its own activity in the visit-type filter. */
 const GROUP_MEETING_VISIT_TYPE = -2;
@@ -29,7 +36,19 @@ export const TRIP_DAY_MEETING_VISIT_TYPES: ReadonlySet<number> = new Set<number>
   VENDOR_MEETING_TYPE,
   MEETING_TYPE,
   GROUP_MEETING_VISIT_TYPE,
+  TRAINING_TYPE,
+  UNLABELED_TRAINING_TYPE,
+  CONFERENCE_TYPE,
 ]);
+
+export type TripDayMeetingLabel = "Conference" | "Meeting" | "Training";
+
+/** What a trip screen calls a meeting-day row — a training row never reads "Meeting". */
+export function tripDayMeetingLabel(visitType: number | null | undefined): TripDayMeetingLabel {
+  if (visitType === TRAINING_TYPE || visitType === UNLABELED_TRAINING_TYPE) return "Training";
+  if (visitType === CONFERENCE_TYPE) return "Conference";
+  return "Meeting";
+}
 
 export function isMeetingVisitType(visitType: number | null | undefined): boolean {
   return typeof visitType === "number" && TRIP_DAY_MEETING_VISIT_TYPES.has(visitType);

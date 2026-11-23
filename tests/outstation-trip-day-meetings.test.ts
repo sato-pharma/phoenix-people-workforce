@@ -5,8 +5,10 @@ import {
   isMeetingVisitType,
   isWorkedTripDay,
   TRIP_DAY_MEETING_VISIT_TYPES,
+  tripDayMeetingLabel,
   tripWorkloadMatch,
 } from "../src/lib/crm/trip-day-meetings.ts";
+import { MEETING_ACTIVITY_KEYS } from "../src/lib/outstation/approvals/field-evidence.ts";
 import { idleTripDates } from "../src/lib/outstation/approvals/checks.ts";
 import { resolveWorkloadFreshness } from "../src/lib/outstation/workload-freshness.ts";
 import { capturedWorkloadMatchStatus } from "../src/lib/outstation/workload-rollup.ts";
@@ -42,7 +44,25 @@ export function runOutstationTripDayMeetingsTests() {
   assert.equal(isMeetingVisitType(-8), false, "a campaign visit is a visit, not a meeting");
   assert.equal(isMeetingVisitType(-3), false, "other working codes are NOT widened into a meeting");
   assert.equal(isMeetingVisitType(null), false);
-  assert.equal(TRIP_DAY_MEETING_VISIT_TYPES.size, 3, "exactly the three meeting codes, nothing more");
+
+  // Training and Conference count as meetings on these screens too (owner, 23 Nov 2026: "Count them there too").
+  assert.equal(isMeetingVisitType(-9), true, "HEADLINE: a Training day is a meeting day (owner, 23 Nov 2026)");
+  assert.equal(isMeetingVisitType(-16), true, "the training the vendor sent as Unknown is the same activity");
+  assert.equal(isMeetingVisitType(-1), true, "a Conference day is a meeting day (owner, 23 Nov 2026)");
+  for (const [code, name] of [[-20, "Admin work"], [-12, "Travelling"], [-15, "Health day"], [-7, "Sales day"], [-22, "RTD"], [-5, "a public holiday"], [-6, "casual leave"]] as const) {
+    assert.equal(isMeetingVisitType(code), false, `${name} (${code}) is not a meeting: only Training and Conference were widened`);
+  }
+  assert.deepEqual([...TRIP_DAY_MEETING_VISIT_TYPES].sort((a, b) => a - b), [-19, -16, -11, -9, -2, -1], "exactly the six meeting codes, nothing more");
+  assert.equal(tripDayMeetingLabel(-9), "Training", "a training row is called Training, never Meeting");
+  assert.equal(tripDayMeetingLabel(-16), "Training");
+  assert.equal(tripDayMeetingLabel(-1), "Conference");
+  assert.equal(tripDayMeetingLabel(-11), "Meeting");
+  assert.equal(tripDayMeetingLabel(-2), "Meeting");
+  // The desk and these screens read one rule: every Phoenix CRM kind the desk counts is served under a code counted here.
+  const SERVED_AS: Record<string, number> = { conference: -1, group_meeting: -2, meeting: -11, training: -9 };
+  for (const key of MEETING_ACTIVITY_KEYS) {
+    assert.ok(key in SERVED_AS && isMeetingVisitType(SERVED_AS[key]), `${key} counts on Expense Approvals, so its served code counts here too`);
+  }
 
   // -- a meeting day is worked ---------------------------------------------------------------------
   assert.equal(isWorkedTripDay({ meetings: 1, total: 0 }), true, "HEADLINE: a meeting-only day is worked");

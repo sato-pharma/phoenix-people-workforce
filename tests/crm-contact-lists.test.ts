@@ -6,7 +6,10 @@ import {
   EXPECTED_PM_MAX,
   EXPECTED_PM_MIN,
   isInExpectedBand,
+  repListRecordFromGroup,
+  summarizeRepLists,
   toDoctorListRow,
+  type RepListSummaryGroupTuple,
 } from "../src/lib/crm/contact-lists.ts";
 import {
   canAccessDoctorList,
@@ -156,73 +159,117 @@ export function runCrmContactListsTests() {
   assert.equal(doctorListBasisForRole("National Sales Manager"), "line", "an NSM sees his own line's reps, not the company's");
 
 
-  // ── THE REP-PICKER SUMMARIES ARE CACHED, PARALLEL AND DETERMINISTICALLY ORDERED ──────────────
-  // `getRepListSummaries` produces ~70 summary rows by reading every open row of
-  // crm_contact_assignments — there is no per-rep aggregate in the database, so the whole-table read
-  // is inherent. Doing it SEQUENTIALLY on every render was not: three boards call this, and the
-  // portal board's FIRST screen (the rep picker, before any rep is chosen) paid ten serial round
-  // trips to Amsterdam to put a contact count on about five cards.
+  // ── THE REP-PICKER SUMMARIES ARE CACHED AND COME FROM ONE STATEMENT ────────────────────────────
+  // `getRepListSummaries` puts a contact count on every rep card of three boards. Until 23 Nov 2026 it
+  // read every open crm_contact_assignments row in ~40 requests, eighteen at a time; ten minutes after a
+  // deploy the cold cache was rebuilt three times in thirteen seconds, the waves took every PostgREST
+  // connection, and 19 unrelated reads (the pulse, the direct-order page) crossed the 15 s client budget
+  // together. `phx_crm_rep_list_summary_groups` now groups the rows in the database (327 groups, one
+  // request); the id-range walk is kept only for a database the function has not reached.
   //
-  // The harness cannot run Next.js, so this locks the SOURCE SHAPE — the same weaker-but-honest
-  // instrument tests/crm-brick-centroids-cache.test.ts uses for the identical migration on
-  // loadBrickCentroids. Each invariant fails silently if it regresses:
+  // The harness cannot run Next.js, so the SOURCE SHAPE is locked here; the arithmetic is proved below.
   {
-    const source = readFileSync("src/lib/crm/contact-lists.ts", "utf8");
-    const start = source.indexOf("export const getRepListSummaries");
-    assert.ok(start > 0, "getRepListSummaries must exist — three boards read their picker counts from it");
-    const block = source.slice(start, source.indexOf("\n);", start));
+    const source = readFileSync("src/lib/crm/contact-lists.ts", "utf8").replace(/\r\n/g, "\n");
+    const sliceFrom = (marker: string, end: string) => {
+      const start = source.indexOf(marker);
+      assert.ok(start > 0, `${marker} must exist`);
+      return source.slice(start, source.indexOf(end, start));
+    };
+    const cached = sliceFrom("export const getRepListSummaries", "\n);");
+    const read = sliceFrom("async function readRepListSummaryRecords", "\n}\n");
+    const walk = sliceFrom("async function readRepListRecordsByRanges", "\n}\n");
 
     assert.ok(
-      /^export const getRepListSummaries = unstable_cache\(/m.test(source.slice(start)),
-      "the summaries must go through unstable_cache: a module-level variable is cold in most route segments (the exact fault loadBrickCentroids was moved off), and without a cache every render re-reads ~9,800 rows",
+      /^export const getRepListSummaries = unstable_cache\(/m.test(source.slice(source.indexOf("export const getRepListSummaries"))),
+      "the summaries must go through unstable_cache: a module-level variable is cold in most route segments (the exact fault loadBrickCentroids was moved off)",
+    );
+    assert.ok(
+      cached.includes("summarizeRepLists(await readRepListSummaryRecords())") && cached.includes("revalidate: 300"),
+      "the cached function must summarize what readRepListSummaryRecords returns, on the same five-minute window",
     );
 
-    // PHOENIX'S OWN LIST, TODAY'S ROWS. The vendor scrape freezes the day the sweep is switched off,
-    // and a count over closed periods would add every contact a rep ever held.
+    // ONE STATEMENT FIRST — the wave of chunked reads is what queued the whole app behind it.
     assert.ok(
-      block.includes(".from(CRM_CONTACT_ASSIGNMENTS_TABLE)") && !block.includes("CRM_CONTACTS_TABLE") && !block.includes("ireports360_contacts"),
-      "the summaries must read crm_contact_assignments, never the vendor scrape — the scrape stops moving when the sweep is switched off",
+      source.includes('const REP_LIST_SUMMARY_GROUPS_RPC = "phx_crm_rep_list_summary_groups";') &&
+        read.includes(".rpc(REP_LIST_SUMMARY_GROUPS_RPC)") &&
+        read.includes("isMissingRpcError(error)) return readRepListRecordsByRanges()") &&
+        !read.includes(".from("),
+      "the summaries must ask phx_crm_rep_list_summary_groups in one request and fall back to the id walk ONLY on PGRST202 — never read the table in chunks first",
+    );
+    assert.ok(
+      read.indexOf("isMissingRpcError(error)") < read.indexOf("throw new Error"),
+      "any other error must throw, never fall back: a transient failure retried as ~40 parallel requests is the stampede itself",
+    );
+
+    // The fallback walk keeps every property it had (28 Oct 2026): Phoenix's own list, open rows, ID RANGES.
+    assert.ok(
+      walk.includes(".from(CRM_CONTACT_ASSIGNMENTS_TABLE)") && !walk.includes("ireports360_contacts"),
+      "the fallback must read crm_contact_assignments, never the vendor scrape",
     );
     assert.equal(
-      (block.match(/\.is\("effective_to", null\)/g) ?? []).length,
+      (walk.match(/\.is\("effective_to", null\)/g) ?? []).length,
       2,
-      "the count AND every page read open periods only: a count over all history sizes the fan-out for rows no page returns, and a page without the filter counts closed periods as today's list",
+      "the count AND every page read open periods only",
     );
-    // Plan Verification joins on a CRM account, so it gets a filtered view of the SAME cached read.
+    assert.ok(
+      walk.includes('count: "exact", head: true') && walk.includes('cursorColumn: "id"') && !walk.includes(".range(") &&
+        walk.includes("keysetRanges(") && /fetchAllRowsKeyset(?:<[^(]*>)?\(/.test(walk),
+      "the fallback must size by an exact count, split the id span with keysetRanges and seek on id inside each range — never offset pages",
+    );
     assert.match(
       source,
       /export async function getDoctorListRepSummaries\(\)[^{]*\{\s*return \(await getRepListSummaries\(\)\)\.filter/,
       "getDoctorListRepSummaries must derive from the one cached read — a second read is how two pickers come to quote different counts",
     );
 
-    // PARALLEL, not one page after another. This is the half that fixes the cold path.
-    assert.ok(
-      block.includes("await Promise.all(") && block.includes("count: \"exact\", head: true"),
-      "the pages must be counted first and then fetched AT ONCE — a `for` loop awaiting each range in turn is ten serial hops to Amsterdam on a page a manager opens from a phone",
+    // NO FIGURE CHANGES. The function's grouping, replayed here exactly as its SQL does it, must give
+    // the same summaries as the raw rows: counts, the first row's HR id, the first CRM account, the
+    // newest updated_at — including a rep whose first rows carry no CRM account and one spelled twice.
+    const rows = [
+      { id: 1, agent_crm_id: null, agent_hr_id: "B-7", list_type: "PM", updated_at: "2026-11-20T08:00:00+00:00" },
+      { id: 2, agent_crm_id: 501, agent_hr_id: "B-7", list_type: "AM", updated_at: "2026-11-21T08:00:00+00:00" },
+      { id: 3, agent_crm_id: 501, agent_hr_id: "b-7", list_type: "PM", updated_at: "2026-11-19T08:00:00+00:00" },
+      { id: 4, agent_crm_id: 900, agent_hr_id: null, list_type: "Pharmacy", updated_at: null },
+      { id: 5, agent_crm_id: null, agent_hr_id: "B-7", list_type: "PM", updated_at: "2026-11-22T08:00:00+00:00" },
+      { id: 6, agent_crm_id: 900, agent_hr_id: null, list_type: "odd", updated_at: "2026-11-01T08:00:00+00:00" },
+      { id: 7, agent_crm_id: null, agent_hr_id: null, list_type: "PM", updated_at: null },
+      { id: 8, agent_crm_id: 77, agent_hr_id: "PD-0026", list_type: "PM", updated_at: "2026-11-02T08:00:00+00:00" },
+    ];
+    const groups = new Map<string, RepListSummaryGroupTuple>();
+    for (const row of rows) {
+      const key = JSON.stringify([row.agent_hr_id, row.agent_crm_id, row.list_type]);
+      const group = groups.get(key);
+      if (!group) {
+        groups.set(key, [row.id, row.agent_crm_id, row.agent_hr_id, row.list_type, 1, row.updated_at]);
+        continue;
+      }
+      group[4] += 1;
+      if (row.updated_at && (!group[5] || row.updated_at > group[5])) group[5] = row.updated_at;
+    }
+    const tuples = [...groups.values()].sort((left, right) => left[0] - right[0]);
+    assert.ok(tuples.length < rows.length, "the fixture must actually group rows, or it proves nothing about the weights");
+    assert.deepEqual(
+      summarizeRepLists(tuples.map(repListRecordFromGroup)),
+      summarizeRepLists(rows),
+      "the grouped tuples must summarize to exactly what the raw rows do",
     );
-    assert.ok(
-      !/for \(let from = 0; ; from \+= PAGE_SIZE\)/.test(block),
-      "the open-ended sequential paging loop must not come back",
+    assert.deepEqual(
+      repListRecordFromGroup([4, "900" as unknown as number, null, "Pharmacy", "2" as unknown as number, null]),
+      { agent_crm_id: 900, agent_hr_id: null, list_type: "Pharmacy", rows: 2, updated_at: null },
+      "jsonb numbers arriving as strings are read as numbers",
     );
 
-    // SEEK on the assignment's unique `id`. Without a total order, paging has no defined row order
-    // between requests, so a contact can be counted twice or skipped and the picker's numbers come out
-    // quietly wrong — a wrong count reads exactly like a real one. fetchAllRowsKeyset orders by its
-    // cursor column, so `cursorColumn: "id"` is that total order.
+    const migration = readFileSync(
+      "supabase/migrations/20261123160756_crm_rep_contact_list_summaries_in_one_statement.sql",
+      "utf8",
+    ).replace(/\r\n/g, "\n");
     assert.ok(
-      block.includes('cursorColumn: "id"'),
-      "the sweep must seek on id: it is the assignment table's identity key, and only a total order makes paging deterministic",
-    );
-    // ID RANGES, NEVER OFFSETS (28 Oct 2026). An offset page makes Postgres walk and discard every
-    // earlier open row: page 14 walked ~14,000 rows to return 1,000, 9,487 buffer pages a build and the
-    // largest single read on the database (8.9% of all page reads over 25–28 Oct).
-    assert.ok(
-      !block.includes(".range("),
-      "the summaries must not page by offset — `.range(` walks every earlier open row on each page; split the id span with keysetRanges and seek inside each range",
-    );
-    assert.ok(
-      block.includes("keysetRanges(") && /fetchAllRowsKeyset(?:<[^(]*>)?\(/.test(block),
-      "the summaries must read contiguous id ranges (keysetRanges) and seek inside each one (fetchAllRowsKeyset) — the ranges cover every id, so no open row is lost or read twice",
+      migration.includes("where a.effective_to is null") &&
+        migration.includes("group by a.agent_hr_id, a.agent_crm_id, a.list_type") &&
+        migration.includes("order by g.first_id") &&
+        migration.includes("revoke execute on function public.phx_crm_rep_list_summary_groups() from public, anon, authenticated;") &&
+        migration.includes("grant execute on function public.phx_crm_rep_list_summary_groups() to service_role;"),
+      "the function must group the open rows by (HR id, CRM account, list), order by each group's lowest id, and stay service-role only",
     );
   }
 
