@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 import { PLACE_CHECK_BOARD_FILES, PLACE_CHECK_BOARD_SHELL, placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { PLACE_CHECK_LIST_FILES, PLACE_CHECK_LIST_PATHS, placeCheckListSource, type PlaceCheckList } from "./support/place-check-list-source.ts";
 
 import {
   parsePlaceCheckAddress,
@@ -41,7 +42,7 @@ import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validati
 import type { SharedPlaceBoardRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 
 /**
- * Phoenix CRM — Place checks, the rebuild of 23 Nov 2026 (`docs/approvals-rebuild-2026-11.md`, Part 2):
+ * Phoenix CRM — Place checks, the rebuild of 23 Nov 2026 (`docs/approvals-rebuild-2026-11-place-checks.md`):
  * the two lanes a waiting decision sits in, the ONE waiting number, the Ready lane's one press, what the
  * page's address remembers, and the page's verbs.
  *
@@ -247,7 +248,7 @@ function runLaneTests() {
   );
   assert.equal(laneOfReviewRow(review({}), demoted).lane, "your_call", "and the row reads the 30-day count too");
 
-  const heldVenue = venue({ status: "held", signboard: { verdict: "match", reason: null, signText: "Nile Polyclinic" } });
+  const heldVenue = venue({ status: "held", signboard: { verdict: "match", reason: null, signText: "Nile Polyclinic", note: null } });
   const heldReading = laneOfVenueGroup(group(heldVenue, []));
   assert.equal(heldReading.lane, "your_call", "🔴 a held building is not Ready on the table: he approved 100 of 120");
   assert.ok(heldReading.because?.startsWith("The building: "));
@@ -446,19 +447,24 @@ const PLACE_CHECK_SCREENS: ReadonlyArray<string> = [
   "src/components/phoenix-crm/place-check-restore.tsx",
   "src/components/phoenix-crm/place-check-scorecard.tsx",
   "src/components/phoenix-crm/reopened-customer-list.tsx",
-  "src/components/phoenix-crm/shared-place-customers.tsx",
-  "src/components/phoenix-crm/shared-place-list.tsx",
+  // The four lists and the review are each a file and its parts since the split of 23 Nov 2026: every
+  // part draws words, so every part is read.
+  ...PLACE_CHECK_LIST_FILES["shared-place-customers"],
+  ...PLACE_CHECK_LIST_FILES["shared-place-list"],
   "src/components/phoenix-crm/system-advice.tsx",
-  "src/components/phoenix-crm/validated-place-list.tsx",
-  "src/components/phoenix-crm/validation-review-queue.tsx",
+  ...PLACE_CHECK_LIST_FILES["validated-place-list"],
+  ...PLACE_CHECK_LIST_FILES["validation-review-queue"],
   "src/components/place-review-deck/deck-parts.tsx",
   "src/components/place-review-deck/place-checks-with-deck.tsx",
   "src/components/place-review-deck/review-deck-button.tsx",
-  "src/components/place-review-deck/review-deck.tsx",
+  ...PLACE_CHECK_LIST_FILES["review-deck"],
   "app/(admin)/admin/field-crm/validation-reviews/page.tsx",
 ];
 
-/** The files whose bulk bar offers decisions; each action is `label: "…",` then `busyLabel:`. */
+/**
+ * The files whose bulk bar offers decisions; each action is `label: "…",` then `busyLabel:`. The bulk
+ * answers stayed in the file at each list's original path when its row's parts moved out (23 Nov 2026).
+ */
 const BULK_ACTION_FILES = ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/shared-place-list.tsx", "src/components/phoenix-crm/validated-place-list.tsx"];
 
 function runWordingAndFileTests() {
@@ -488,10 +494,10 @@ function runWordingAndFileTests() {
   assert.equal(actions, 9, "nine bulk actions on the three lists, every one read above (a new one is counted here)");
 
   // One Approve label and one Reject label on a row: the object is the row itself, never a second noun.
-  const inUse = code("src/components/phoenix-crm/validated-place-list.tsx");
+  const inUse = placeCheckListSource("validated-place-list", code);
   assert.ok(inUse.includes('{saving ? "Approving…" : PLACE_CHECK_VERBS.approve}'), "a place in use is approved with the page's own Approve");
   assert.ok(!inUse.includes("Approve this validation") && !inUse.includes("Reject this validation"), "🔴 not 'Approve this validation': one action had four names");
-  assert.ok(!code("src/components/phoenix-crm/shared-place-customers.tsx").includes("Reject this customer"));
+  assert.ok(!placeCheckListSource("shared-place-customers", code).includes("Reject this customer"));
 
   // The board's tabs are named by the lanes' own labels.
   const board = placeCheckBoardSource(code);
@@ -530,6 +536,27 @@ function runWordingAndFileTests() {
   assert.ok(listed.has(PLACE_CHECK_BOARD_SHELL), "the frame is one of them");
   assert.equal(listed.size, PLACE_CHECK_BOARD_FILES.length, "and none is listed twice");
   for (const path of PLACE_CHECK_BOARD_FILES) assert.ok(code(path).length > 0, `${path} exists and holds code`);
+
+  // 🔴 THE SAME RULE FOR THE FIVE FILES SPLIT INTO PARTS BESIDE THEMSELVES (23 Nov 2026): a new part of a
+  // list is in the list the source pins read. A part is a sibling named `<list>-…`; the review's opener,
+  // `review-deck-button.tsx`, was a file of its own long before the split and is read by name above.
+  const notAPart = new Set(["src/components/place-review-deck/review-deck-button.tsx"]);
+  for (const list of Object.keys(PLACE_CHECK_LIST_FILES) as PlaceCheckList[]) {
+    const files = PLACE_CHECK_LIST_FILES[list];
+    const original = PLACE_CHECK_LIST_PATHS[list];
+    const folder = original.slice(0, original.lastIndexOf("/"));
+    const base = original.slice(folder.length + 1, -".tsx".length);
+    assert.equal(files.filter((path) => path === original).length, 1, `${list}: the file at the original path is read, once`);
+    assert.equal(new Set(files).size, files.length, `${list}: no part is listed twice`);
+    for (const path of files) assert.ok(code(path).length > 0, `${path} exists and holds code`);
+    const siblings = readdirSync(new URL(`${folder}/`, ROOT))
+      .filter((name) => name.startsWith(`${base}-`))
+      .map((name) => `${folder}/${name}`);
+    assert.ok(siblings.length >= 2, `${list}: its parts are read from the folder`);
+    for (const path of siblings) {
+      assert.ok(files.includes(path) || notAPart.has(path), `🔴 ${path} is a part of ${list} the source pins do not read: add it to PLACE_CHECK_LIST_FILES`);
+    }
+  }
 }
 
 export function runPhoenixCrmPlaceCheckLanesTests() {

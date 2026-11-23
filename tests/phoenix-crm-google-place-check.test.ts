@@ -18,6 +18,7 @@ import {
 } from "../src/lib/phoenix-crm/google-place-rules.ts";
 import { listRowAction } from "../src/lib/phoenix-crm/list-request-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A place is checked against the account's own Google Maps listing before it is accepted (owner,
@@ -270,7 +271,7 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
     /verdict\.kind === "mismatch" \? "listing_off"/,
     "a held mismatch reaches the board as listing_off",
   );
-  const queue = readFileSync("src/components/phoenix-crm/validation-review-queue.tsx", "utf8");
+  const queue = placeCheckListSource("validation-review-queue");
   assert.match(queue, /listing_off:/, "and the board has words for it");
   assert.doesNotMatch(queue, /listing_off:[\s\S]{0,400}?(lying|fraud|suspicious)/i, "which never accuse the rep of anything");
 

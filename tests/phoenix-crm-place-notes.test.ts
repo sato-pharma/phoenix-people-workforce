@@ -19,6 +19,7 @@ import { decidedByMatches } from "../src/lib/phoenix-crm/validation-review-filte
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — a district manager's own Place checks tab: the comment, the visibility choice and the
@@ -186,24 +187,24 @@ function checkHeDecidesNothing(): void {
   // A seated customer waiting on the Super Admin reads as the building above it does (owner, 2026-10-19):
   // "Waiting for you" to him, while a manager still reads "Still being checked".
   assert.match(
-    read("src/components/phoenix-crm/shared-place-customers.tsx"),
+    placeCheckListSource("shared-place-customers", read),
     /customer\.state === "waiting" \? <CrmPill tone="warn">\{mode === "team" \? "Still being checked" : decides \? "Waiting for you" : "Waiting for the administrator"\}<\/CrmPill>/,
     "a waiting customer reads 'Waiting for you' to the Super Admin, 'Waiting for the administrator' to the SFE Manager and 'Still being checked' to a manager",
   );
 
   // Each list draws its decision behind one test that is false on a manager's board AND on the SFE
   // Manager's company board (owner, 2026-11-19: he recommends, he never decides).
-  const placesInUse = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const placesInUse = placeCheckListSource("validated-place-list", read);
   assert.match(placesInUse, /const decider = mode !== "team" && decides;/, "validated-place-list.tsx: one test for a decision");
   assert.match(placesInUse, /\{decider \? <RejectInUse row=\{row\}[^>]*\/> : null\}/, "validated-place-list.tsx renders no Reject control for a manager or the SFE Manager");
   assert.match(
-    read("src/components/phoenix-crm/shared-place-list.tsx"),
+    placeCheckListSource("shared-place-list", read),
     /\{mode === "team" \? null : decides \? \(\s*<Decision row=\{row\} scope=\{scope\} \/>\s*\) : \(\s*<PlaceCheckDecisionState/,
     "shared-place-list.tsx renders no Decision control for a manager, and the SFE Manager reads the decision's state instead",
   );
 
   // The queue keeps a settled state for him, and it names nobody and carries no note.
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   const settled = /function Settled\(\{ row \}: \{ row: ValidationReviewRow \}\) \{[\s\S]*?\n\}/.exec(queue);
   assert.ok(settled, "the manager's settled display is its own component");
   assert.ok(!settled[0].includes("decidedByName"), "it never names who decided");
@@ -602,11 +603,11 @@ function checkDecisionCommentReachesTheRep(): void {
   assert.match(read("src/components/phoenix-crm/list-customer.tsx"), /note\.aboutBuilding/, "the card says which building it is about");
 
   // Approving an unconfirmed place can carry a comment too.
-  const approve = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const approve = placeCheckListSource("validated-place-list", read);
   assert.match(approve, /approve", \{ placeId: row\.placeId, note \}/, "the typed comment is what is posted");
   assert.doesNotMatch(approve, /note: ""/, "never a hard-coded empty note");
   // The box says who reads it, on the take-back as well.
-  assert.match(read("src/components/phoenix-crm/validation-review-queue.tsx"), /\{VALIDATION_NOTE_LABEL\}/);
+  assert.match(placeCheckListSource("validation-review-queue", read), /\{VALIDATION_NOTE_LABEL\}/);
   assert.doesNotMatch(read("src/lib/phoenix-crm/validation-feedback.ts"), /never shown to the rep|the rep reads only/);
 }
 

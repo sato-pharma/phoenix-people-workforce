@@ -16,14 +16,15 @@ import {
   type PlaceCheckAdvice,
 } from "../src/lib/phoenix-crm/place-check-advice.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * The system's recommendation on every place check (owner, 2026-10-17: "add system recommendations to
  * approve or no on every validation", then "and the reason of system recommendation").
  *
- * 🔴 THE TABLE IS HIS OWN DECISIONS (the rebuild, 23 Nov 2026; `docs/approvals-rebuild-2026-11.md`,
- * Part 2). The advice said Reject, reason filled in, on evidence he mostly approved. Each case below
- * that reads "look" where it once read "reject" carries the count that moved it.
+ * 🔴 THE TABLE IS HIS OWN DECISIONS (the rebuild, 23 Nov 2026;
+ * `docs/approvals-rebuild-2026-11-place-checks.md`). The advice said Reject, reason filled in, on
+ * evidence he mostly approved. Each case below that reads "look" where it once read "reject" carries the count that moved it.
  *
  * Four things here would break silently:
  * - a Reject that opens on a reason the system never actually saw — an unreadable photo pre-picking
@@ -324,7 +325,7 @@ function checkScreens() {
     "src/components/phoenix-crm/shared-place-customers.tsx",
   ];
   for (const file of files) {
-    const source = stripComments(read(file));
+    const source = stripComments(placeCheckListSourceAt(file, read));
     const lines = source.split("\n").filter((line) => line.includes("<SystemAdvice"));
     assert.ok(lines.length >= 1, `${file} draws the system's recommendation`);
     for (const line of lines) {

@@ -9,6 +9,7 @@ import { needsYouDecisionCount, needsYouDecisionCountWithSfe, seatedCustomersByV
 import type { ValidatedPlaceRow } from "../src/lib/phoenix-crm/server/validation-reviews.ts";
 import { refusalTakeBack } from "../src/lib/phoenix-crm/validation-feedback.ts";
 import { PLACE_CHECK_BOARD_SHELL, placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * Place checks — the deep audit of 17 Nov 2026 (owner: "redo the deep audit", then "Wrong counts,
@@ -246,7 +247,7 @@ function checkWording() {
   assert.equal(summary(["rejected", "already"], savedLabel, "L"), "Saved. Rejected: 1 · Already decided: 1.", "a mixed run says both");
 
   // ── C3: a refusal the Super Admin can take back is never "cannot be undone" ──────────────────────
-  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const list = placeCheckListSource("validated-place-list", read);
   assert.ok(!/cannot be undone/.test(stripComments(list)), "🔴 no screen line says a refusal cannot be undone");
   assert.equal(refusalTakeBack(true), "You can approve it after all from History while it stays retired.", "the line follows who can take it back");
   assert.equal(refusalTakeBack(false), "Only the Super Admin can take it back.", "and says who can when he cannot");
@@ -292,12 +293,12 @@ function checkWording() {
 
   // ── C6: one id per field on the page ─────────────────────────────────────────────────────────────
   for (const path of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/validated-place-list.tsx"]) {
-    const source = code(path);
+    const source = placeCheckListSourceAt(path, code);
     assert.equal((source.match(/<LastColumn mode=\{mode\} noteIndex=\{noteIndex\} row=\{row\} scope="card-" \/>/g) ?? []).length, 1, `🔴 ${path}: the phone cards carry their own scope`);
     assert.equal((source.match(/<LastColumn mode=\{mode\} noteIndex=\{noteIndex\} row=\{row\} scope="" \/>/g) ?? []).length, 1, `${path}: the table keeps its ids`);
   }
-  assert.ok(code("src/components/phoenix-crm/validation-review-queue.tsx").includes("<Decision row={row} scope={scope} />"), "the queue hands the scope to its decision, its take-back and its reject-after-all");
-  assert.ok(code("src/components/phoenix-crm/validated-place-list.tsx").includes("<RejectInUse row={row} scope={scope} />"), "the list hands it to its Reject");
+  assert.ok(placeCheckListSource("validation-review-queue", code).includes("<Decision row={row} scope={scope} />"), "the queue hands the scope to its decision, its take-back and its reject-after-all");
+  assert.ok(placeCheckListSource("validated-place-list", code).includes("<RejectInUse row={row} scope={scope} />"), "the list hands it to its Reject");
   assert.ok(!/id="place-check-bulk-(reason|note)"/.test(bulk), "🔴 no bulk bar carries a fixed field id");
   assert.ok(bulk.includes("const noteId = `place-check-bulk-note-${fieldId}`;") && bulk.includes("const reasonId = `place-check-bulk-reason-${fieldId}`;"), "each bar its own");
 }
@@ -536,7 +537,7 @@ function checkOwedReads(board: string) {
 
   const bulk = code("src/components/phoenix-crm/place-check-bulk.tsx");
   assert.ok(/placeCheckReread\.cancel\(\);\s*placeCheckReread\.owe\(\);/.test(bulk), "🔴 a bulk run's rows are owed from its first one, so leaving mid-run never shows the old page again");
-  assert.ok(code("src/components/phoenix-crm/shared-place-list.tsx").includes("placeCheckReread.refreshNow(() => router.refresh());"), "the no-timetable declaration reads through the one re-read");
+  assert.ok(placeCheckListSource("shared-place-list", code).includes("placeCheckReread.refreshNow(() => router.refresh());"), "the no-timetable declaration reads through the one re-read");
   const done = code("src/components/phoenix-crm/place-check-done.tsx");
   assert.ok(
     /const pressedOn = typeof window === "undefined" \? null : window\.location\.pathname;\s*placeCheckReread\.ask\(\(\) => \{\s*if \(pressedOn === null \|\| window\.location\.pathname === pressedOn\) router\.refresh\(\);/.test(done),
@@ -587,7 +588,7 @@ function checkEarlierDecision() {
     ["src/components/place-review-deck/review-deck.tsx", "the one-by-one slide"],
     ["src/components/phoenix-crm/shared-place-customers.tsx", "a customer waiting in a building"],
   ] as const) {
-    assert.ok(/earlierDecision \? [\s\S]{0,120}earlierDecisionText\(/.test(code(path)), `🔴 ${why} prints the earlier decision`);
+    assert.ok(/earlierDecision \? [\s\S]{0,120}earlierDecisionText\(/.test(placeCheckListSourceAt(path, code)), `🔴 ${why} prints the earlier decision`);
   }
   assert.ok(
     code("src/lib/phoenix-crm/shared-place-groups.ts").includes('earlierDecision: state === "waiting" ? (row.earlierDecision ?? null) : null'),
@@ -622,7 +623,7 @@ function checkWaitsForBuilding() {
     "🔴 only an APPROVED seat whose customer is still under To validate waits for the building",
   );
   assert.ok(
-    code("src/components/phoenix-crm/shared-place-customers.tsx").includes('customer.waitsForBuilding ? "Approved, waits for the building" : "Approved"'),
+    placeCheckListSource("shared-place-customers", code).includes('customer.waitsForBuilding ? "Approved, waits for the building" : "Approved"'),
     "🔴 the building card says he waits for the building",
   );
 }

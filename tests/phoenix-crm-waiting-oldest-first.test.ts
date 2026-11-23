@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { compareOldestFirst, WAITING_LONG_HOURS, waitingHours, waitingIsLong, waitingOldestFirst, waitingText } from "../src/lib/phoenix-crm/waiting-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckListSource } from "./support/place-check-list-source.ts";
 
 /**
  * Place checks lists what is WAITING oldest first, and says how long it has waited (owner, 14 Nov 2026).
@@ -105,10 +106,10 @@ export function runPhoenixCrmWaitingOldestFirstTests(): void {
   assert.ok(groups.includes("for (const list of byVenue.values()) list.sort(byStateThenWaitThenName);"), "and that is the order every building's list is filed in");
 
   const pill = '<CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill>';
-  assert.ok(code("src/components/phoenix-crm/validation-review-queue.tsx").includes(`{row.waitingText ? ${pill} : null}`), "the review row shows its wait");
-  assert.ok(code("src/components/phoenix-crm/shared-place-list.tsx").includes(`{row.waitingText ? ${pill} : null}`), "the held building shows its wait");
+  assert.ok(placeCheckListSource("validation-review-queue", code).includes(`{row.waitingText ? ${pill} : null}`), "the review row shows its wait");
+  assert.ok(placeCheckListSource("shared-place-list", code).includes(`{row.waitingText ? ${pill} : null}`), "the held building shows its wait");
   assert.ok(
-    code("src/components/phoenix-crm/shared-place-customers.tsx").includes(
+    placeCheckListSource("shared-place-customers", code).includes(
       '{customer.waitingText ? <CrmPill tone={customer.waitingLong ? "warn" : "neutral"}>{customer.waitingText}</CrmPill> : null}',
     ),
     "the waiting seated customer shows his wait",

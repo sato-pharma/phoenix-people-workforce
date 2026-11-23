@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { placeCheckScorecard, problemsOf, standingOfPlaceInUse, type RepScore } from "../src/lib/phoenix-crm/place-check-scorecard.ts";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * Phoenix CRM — Place checks, each rep's captures on one line (owner, 2026-10-17: "eyeball the check
@@ -236,16 +237,16 @@ function checkCountsOpenTheirPhotos(): void {
 
   // 🔴 THE PHOTO IS THE ROW: large on both lists, and the refusal form folded behind one button.
   for (const path of ["src/components/phoenix-crm/validated-place-list.tsx", "src/components/phoenix-crm/validation-review-queue.tsx"]) {
-    const list = read(path);
+    const list = placeCheckListSourceAt(path, read);
     assert.ok(list.includes('const PHOTO_CLASS = "h-80 w-full";'), `${path}: the photograph is 20rem tall across its column`);
     assert.equal((list.match(/<CrmPhotoThumb alt=\{photoAlt\(row\)\} className=\{PHOTO_CLASS\}/g) ?? []).length, 2, `${path}: on the phone card and the table alike`);
     assert.ok(!list.includes("h-32 w-32"), `${path}: never the 128-pixel square again`);
   }
-  const list = read("src/components/phoenix-crm/validated-place-list.tsx");
+  const list = placeCheckListSource("validated-place-list", read);
   assert.ok(list.includes('<CrmTable columns={["36%", "20%", "24%", "20%"]}>'), "the photo column is the widest on Not confirmed");
   const refuse = list.slice(list.indexOf("function RejectInUse("), list.indexOf("function LastColumn"));
   assert.ok(refuse.indexOf("if (!open)") > -1 && refuse.indexOf("if (!open)") < refuse.indexOf("<RefusalReasonField"), "the reason list opens only after Refuse is pressed");
-  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  const queue = placeCheckListSource("validation-review-queue", read);
   assert.ok(queue.includes('<CrmTable columns={["30%", "18%", "28%", "24%"]}>'), "the photo column is the widest on Needs you");
 }
 

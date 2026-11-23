@@ -13,7 +13,11 @@
  * reach it (golden rule #1).
  */
 
-export type DecisionVerb = "Approved" | "Refused";
+/**
+ * The page's one vocabulary (`PLACE_CHECK_VERBS`): Approve and Reject, so the stamp says "Rejected by".
+ * No place-check screen says Refuse any more (owner, 2026-11-23, the rebuild's wording item).
+ */
+export type DecisionVerb = "Approved" | "Rejected";
 
 /**
  * "Approved by Khaled Bedair · 19 Oct 2026, 14:43". The system's own approvals arrive as the name

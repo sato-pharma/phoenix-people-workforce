@@ -34,6 +34,7 @@ import { parsePlaceNoteAdvice, placeNoteAdviceLabel } from "../src/lib/phoenix-c
 import type { VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
+import { PLACE_CHECK_LIST_FILES, placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
 
 /**
  * Place checks — the one-by-one review (owner, 2026-10-18: "I want to have the picture in a very wide
@@ -59,7 +60,8 @@ function read(path: string): string {
 }
 
 const NEW_FILES = [
-  "src/components/place-review-deck/review-deck.tsx",
+  // The review and the parts beside it (the split of 23 Nov 2026) — each file is held to the rules below.
+  ...PLACE_CHECK_LIST_FILES["review-deck"],
   "src/components/place-review-deck/review-deck-button.tsx",
   "src/components/place-review-deck/place-checks-with-deck.tsx",
   "src/components/place-review-deck/deck-parts.tsx",
@@ -301,7 +303,7 @@ export function runPlaceReviewDeckTests(): void {
     ["src/components/crm-integrity/integrity-settle.tsx", ["IntegritySettleControl"]],
   ];
   for (const [path, names] of CONTROLS) {
-    const code = stripComments(read(path));
+    const code = stripComments(placeCheckListSourceAt(path, read));
     for (const name of names) {
       const body = functionBody(code, name);
       assert.match(body, /const done = usePlaceCheckDone\(\);/, `${path} ${name} must report a saved decision through usePlaceCheckDone, or the review never slides on`);
@@ -314,7 +316,7 @@ export function runPlaceReviewDeckTests(): void {
     ["src/components/phoenix-crm/validation-review-queue.tsx", "Restore"],
     ["src/components/phoenix-crm/shared-place-customers.tsx", "RestoreSeated"],
   ] as const) {
-    assert.match(functionBody(read(path), name), /<RestoreAfterRejection\s/, `${path} ${name} draws the one take-back control, which reports through usePlaceCheckDone`);
+    assert.match(functionBody(placeCheckListSourceAt(path, read), name), /<RestoreAfterRejection\s/, `${path} ${name} draws the one take-back control, which reports through usePlaceCheckDone`);
   }
   {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
@@ -405,7 +407,7 @@ export function runPlaceReviewDeckTests(): void {
   }
   for (const [path, names] of CONTROLS) {
     if (path.includes("crm-integrity/")) continue; // useCrmAction answers its own refusals
-    const code = stripComments(read(path));
+    const code = stripComments(placeCheckListSourceAt(path, read));
     for (const name of names) {
       assert.match(
         functionBody(code, name),
@@ -430,7 +432,7 @@ export function runPlaceReviewDeckTests(): void {
   }
   for (const [path, names] of CONTROLS) {
     if (path.includes("crm-integrity/")) continue; // useCrmAction already releases its own busy state
-    const code = stripComments(read(path));
+    const code = stripComments(placeCheckListSourceAt(path, read));
     for (const name of names) {
       const body = functionBody(code, name);
       assert.match(body, /const \{ saved, markSaved \} = useSavedOutcome\((?:row|customer)\);/, `${path} ${name} must hold its saved outcome against its own row`);
@@ -456,7 +458,7 @@ export function runPlaceReviewDeckTests(): void {
     assert.doesNotMatch(code, /crmPost|crmPatch|fetch\(|method:\s*"/, `${path} must post nothing of its own — every decision is a control the board already had`);
   }
   {
-    const deck = stripComments(read("src/components/place-review-deck/review-deck.tsx"));
+    const deck = stripComments(placeCheckListSource("review-deck", read));
     assert.match(deck, /<PlaceCheckDoneProvider item=\{current\.key\} key=\{current\.key\} onDone=\{record\}>/, "every control on the slide reports to the review");
     assert.match(deck, /<PlaceCheckDoneItem item=\{deckSlideKey\("venue", venue\.sharedPlaceId\)\}>/, "a polyclinic's building is answered on its own");
     assert.match(deck, /<PlaceCheckDoneItem item=\{deckSeatItem\(customer\.key\)\}>/, "and each customer seated in it on his own");
@@ -484,7 +486,7 @@ export function runPlaceReviewDeckTests(): void {
 
   // ── 6 · A real dialog, the house rules, and the cases read through the board ─────────────────────
   {
-    const deck = stripComments(read("src/components/place-review-deck/review-deck.tsx"));
+    const deck = stripComments(placeCheckListSource("review-deck", read));
     assert.match(deck, /useDialogA11y<HTMLDivElement>\(\{ open: hydrated, onClose: close \}\)/, "focus held inside, the page behind locked, Escape closes");
     assert.match(deck, /aria-modal="true"/);
     assert.match(deck, /role="dialog"/);
@@ -608,7 +610,7 @@ export function runPlaceReviewDeckTests(): void {
     assert.ok(repRead.length > 0 && loader.includes("export async function loadRepVisiblePlaceNotes("), "the rep's own read must still exist — this check has lost its anchor");
     assert.doesNotMatch(repRead.slice(0, repRead.indexOf("\nexport ", 1)), /advice/, "the rep's own read never names it");
 
-    const deck = stripComments(read("src/components/place-review-deck/review-deck.tsx"));
+    const deck = stripComments(placeCheckListSource("review-deck", read));
     assert.match(deck, /const rankSlide = useMemo\(\(\) => deckAdviceRanker\(frozen\), \[frozen\]\);/, "the order is taken from the notes as the review opened, so a slide never jumps under his finger");
     assert.match(deck, /buildDeckSlides\(tab, kind, sources, rankSlide\)/, "the slides he moves through are the ranked ones");
     assert.match(
