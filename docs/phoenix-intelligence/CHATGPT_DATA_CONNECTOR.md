@@ -133,6 +133,13 @@ exactly what that person's own screen shows.
 - Downloads are denied, pop-ups are closed and dialogs are dismissed. Requests to other sites are https
   only.
 
+**The opener has a second caller (23 Nov 2026).** The expense case PDF
+(`src/lib/outstation/approvals/case-pdf.ts`) opens its page through the same `openSignedInPage`, with
+four optional settings: its own address, its own fence, its own session name and revoke reason, and
+the non-GET address prefixes the page stub lets through (the map's call to Google). A capture gives
+none of them, so nothing above changed, and the export's address is on the list a capture refuses.
+Account: `docs/approvals-rebuild-2026-11.md`, "Export PDF".
+
 **What comes back.** The picture or video is stored like the sheets and PDFs: a `connector_files` row
 (the kinds `png`, `mp4` and `webm` were added by `20261120111031`) and a link that only the same
 person opens, for 7 days. ChatGPT shows the result in the **capture viewer** (`browser/viewer.ts`,

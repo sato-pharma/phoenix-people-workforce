@@ -10,6 +10,7 @@ import { formatNumberValue } from "@/lib/i18n/format";
 import { type DeskNotice, type PressQueue, pressedRequestIds } from "@/lib/outstation/approvals/press-queue";
 
 import type { DecisionMode, OnPress } from "./desk-decision";
+import { DeskExportPdfButton, DeskExportPdfNote, useCaseExport } from "./desk-export-pdf";
 import { DeskTripFile } from "./desk-trip-file";
 import { DeskUndoBar } from "./desk-undo-bar";
 
@@ -41,6 +42,10 @@ const NAV_BUTTON =
  * moves straight to the next claim of the lane on screen — or closes after the last one. Undo
  * brings the claim back and opens it again. ← and → walk the lane; Escape closes the reason box
  * first, then the reviewer.
+ *
+ * Export PDF (owner, 23 Nov 2026: "export every expense trip case as a PDF, looking 100% as it is
+ * looking in the system") prints THIS screen for the claim that is open, waiting or decided
+ * (desk-export-pdf.tsx). It reads and decides nothing.
  */
 export function DeskReviewer({
   canDecide,
@@ -68,6 +73,7 @@ export function DeskReviewer({
   const hydrated = useHydrated();
   const titleId = useId();
   const [mode, setMode] = useState<DecisionMode>("idle");
+  const exporting = useCaseExport();
 
   const index = walk.indexOf(requestId);
   const previous = index > 0 ? walk[index - 1] : null;
@@ -151,6 +157,7 @@ export function DeskReviewer({
             {index >= 0 ? `Claim ${formatNumberValue(index + 1)} of ${formatNumberValue(walk.length)} in this lane` : "One claim"}
           </p>
         </div>
+        <DeskExportPdfButton busy={exporting.busy} onExport={() => void exporting.start(requestId)} />
         <button aria-label="Previous claim" className={NAV_BUTTON} disabled={previous === null} onClick={() => previous !== null && go(previous)} title="Previous claim (←)" type="button">
           <ChevronLeft aria-hidden className="h-5 w-5" />
         </button>
@@ -161,6 +168,7 @@ export function DeskReviewer({
           <X aria-hidden className="h-5 w-5" />
         </button>
       </header>
+      <DeskExportPdfNote note={exporting.note} onDismiss={exporting.dismiss} requestId={requestId} />
 
       <DeskTripFile
         canDecide={canDecide}

@@ -297,6 +297,70 @@ was proven by breaking its fix and watching that assertion fire: 18 domain cases
 24 screen cases, 52 carried-over cases and 8 batch cases. The look-over's fixes added 15 cases and
 the risk review's fixes 17; all fired.
 
+### Export PDF — the reviewer on paper
+
+His words, 23 Nov 2026: "to be able to export every PDF, every expense trip case as a PDF, looking
+100% as it is looking in the system." So the PDF is not a second drawing of the case. The reviewer's
+bar has an **Export PDF** button, on a waiting claim and on a decided one. The server opens the real
+Expense Approvals page on that one trip and prints what the reviewer shows. "100% as it is in the
+system" outranks the house document look for this one export.
+
+**How it runs** (`src/lib/outstation/approvals/case-pdf.ts`, the route
+`app/api/admin/outstation/approvals/[requestId]/pdf/route.ts`):
+
+1. The route's gate is the one-trip read's own: signed in, the desk's read permission, a real
+   session (a preview session is answered 409), and the claim on that person's list (404 before any
+   browser opens).
+2. Chromium (the PDF printer's own, one of its two slots) signs in as the person who pressed, with a
+   180-second session named "Phoenix expense case PDF export". It is revoked when the print ends,
+   with reason `expense_case_pdf_export`. So the PDF shows what that person's own screen shows.
+3. The page is opened on the deployment's own public address (`APP_URL`, else the production
+   domain; a laptop uses its loopback port; `PHOENIX_CASE_PDF_ORIGIN` overrides). The map's key is
+   tied to that address: on the loopback address Google answered `RefererNotAllowedMapError` and the
+   map did not draw (measured 23 Nov 2026). The address is never taken from a request header.
+4. Everything on the page but the reviewer is hidden, because the list behind it holds other people's
+   claims and a PDF keeps text a screen only covers. The window is grown to the bar, the whole case
+   and the foot, and the print waits until two readings agree and no photo or loader is still
+   arriving (25 seconds at most; a late photo prints as the screen showed it).
+5. One page, 1,440 px wide and as tall as the case, with the screen's own styles. A PDF page cannot
+   be taller than 200 inches, so a case over 19,000 px is scaled down to fit one page, never split.
+
+**The fence is an allow-list** (`classifyCasePdfRequest` in `case-pdf-plan.ts`), because the print
+browser is signed in as a real person on the live database:
+
+- GET and HEAD only, and no Server Action. The reviewer's buttons are never pressed.
+- Of this app: the page, `/login` (so a refused sign-in is seen, not waited out), `/_next/`, static
+  files, and the three reads an open case makes: the list, the one trip, and the visit workload.
+  Every other address, another trip and the export itself included, is answered with nothing.
+- Other sites over https (photos from storage, map tiles).
+- One non-GET passes: the map's own viewport call to Google. It carries the map's bounds and
+  nothing of Phoenix's.
+
+A new read added to the reviewer must be added to `casePdfReads`, or that part prints empty.
+
+**What it shares.** The opener is the ChatGPT connector's (`openSignedInPage`), which gained four
+optional settings: the address, the fence, the session's name, and the non-GET prefixes its page
+stub lets through. With none of them given the connector behaves as before, and the new export
+address is on the list its captures refuse.
+
+**What it does not replace.** The Expense Center page keeps its September "Download PDF", a
+house-style summary of a claim with its own gate and its own list.
+
+**What can only be proven on production.** The branch runs nowhere before the merge, so three things
+were not seen in the built app: the map drawing in the server's Chromium on the public address, the
+session cookie through the edge, and the time an export takes (budget 100 seconds, route limit 120).
+A trial outside the app printed trip 341 at 1,440 × 2,137 px and it matched the screen.
+
+**The button.** A press with a state, never a bare link: it reads "Preparing" while the server
+prints, one export runs at a time, and the file is saved under the name the server gave it
+(`Expense-trip-<name>-<days>-<number>.pdf`). While it prepares it is `aria-disabled`, not `disabled`,
+so the keyboard stays inside the reviewer. The note under the bar remembers which claim it is about
+(`caseExportNoteOnScreen`): he can walk to the next claim while a PDF is prepared, and the note then
+says "the claim you exported", never "this claim". A failure stays until he closes it.
+
+Pinned by `tests/expense-case-pdf.test.ts`. Each of its assertions was proven by breaking the fix it
+pins and watching that assertion fire: 46 cases, all fired.
+
 ### What only time can prove
 
 Three items of the audit cannot be scored on the day the page ships:
