@@ -23,9 +23,10 @@ import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { saveCandidateWhatsAppAnswer } from "@/lib/recruitment/whatsapp-answer-edit";
 import { whatsAppAnswerEditPayload } from "@/lib/recruitment/whatsapp-answer-edit-rules";
 import { loadAnswerChipContext, placingQuestionsFor } from "@/lib/recruitment/workspace/answer-chips";
+import { placingGap } from "@/lib/recruitment/workspace/answer-place-options";
 import { assertWorkspaceWorker, placeCandidate } from "@/lib/recruitment/workspace/candidate-actions";
 import { validRegionCode } from "@/lib/recruitment/workspace/placement-from-reply";
-import { ANSWER_PLACEMENT_SOURCES, removePlacementsWhere } from "@/lib/recruitment/workspace/placements-db";
+import { ANSWER_PLACEMENT_SOURCES, listPlacementsFor, removePlacementsWhere, resolveAuArea } from "@/lib/recruitment/workspace/placements-db";
 import { findWorkspaceArea, loadWorkspacePlaces } from "@/lib/recruitment/workspace/places";
 import {
   PLACING_BUILT_IN_KEYS,
@@ -35,6 +36,7 @@ import {
   type PlacingInput,
   type PlacingQuestion,
 } from "@/lib/recruitment/workspace/placing-rules";
+import { placementIsComplete } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspacePlacement, WorkspacePlaces } from "@/lib/recruitment/workspace/types";
 
 const PLACING_COLUMNS =
@@ -201,4 +203,38 @@ export async function placeWithAnswers(
 
   const placements = await placeCandidate(access, candidateId, { areaCode: area?.code ?? null, regionCode, roleTab });
   return { placements, saved };
+}
+
+/**
+ * After a role, region or area answer was saved from the table: is the person now WHOLE in a role tab,
+ * and if not, the one sentence that says why (Talent Acquisition, 24 Nov 2026 — typed areas such as
+ * "kom hamada" saved as "Saved" and the CV silently stayed in Needs placing). Read, never written.
+ */
+export async function placingGapAfterAnswer(candidateId: string): Promise<{ placed: boolean; note: string | null }> {
+  const { data, error } = await recruitmentDb()
+    .from("ats_candidates")
+    .select("declared_role_family,preferred_region_code,preferred_region_name,preferred_area_name")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw notFoundError("Candidate not found.");
+  const row = data as {
+    declared_role_family: string | null;
+    preferred_region_code: string | null;
+    preferred_region_name: string | null;
+    preferred_area_name: string | null;
+  };
+  const [placements, area] = await Promise.all([listPlacementsFor([candidateId]), resolveAuArea(row.preferred_area_name)]);
+  const placed = (placements.get(candidateId) ?? []).some((placement) =>
+    placementIsComplete({ areaCode: placement.areaCode, regionCode: placement.regionCode, tab: placement.roleTab }),
+  );
+  const note = placingGap({
+    areaKnown: area !== null,
+    areaName: row.preferred_area_name,
+    placed,
+    regionCode: validRegionCode(row.preferred_region_code),
+    regionWords: row.preferred_region_name,
+    roleFamily: row.declared_role_family,
+  });
+  return { note, placed };
 }

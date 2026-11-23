@@ -473,7 +473,10 @@ export function useWorkspaceActions({
   const saveAnswer = useCallback(
     async (row: WorkspaceRow, chip: WorkspaceAnswerChip, value: string | null, editorName: string | null) => {
       const key = answerEditKey(chip.key);
-      await patchJson(`${CANDIDATES}/${row.id}/whatsapp-answer`, { key, value });
+      const data = await patchJson(`${CANDIDATES}/${row.id}/whatsapp-answer`, { key, value });
+      // A role, region or area save that left the person in Needs placing says why, in the route's words.
+      const placing = (data.placing ?? null) as { placed?: unknown; note?: unknown } | null;
+      const stillNeeds = placing && typeof placing.note === "string" && placing.note ? placing.note : null;
       const now = new Date().toISOString();
       const before = rows.patchRows([row.id], (current) => ({
         ...current,
@@ -486,7 +489,9 @@ export function useWorkspaceActions({
       countsSoon();
       push({
         kind: "applied",
-        message: value === null ? `Cleared “${chip.label}” for ${row.name}` : `Saved “${chip.label}” for ${row.name}`,
+        message:
+          (value === null ? `Cleared “${chip.label}” for ${row.name}` : `Saved “${chip.label}” for ${row.name}`) +
+          (stillNeeds ? `. ${stillNeeds}` : placing?.placed === true ? ". Placed — out of Needs placing." : ""),
         restore: () => rows.restoreRows(before),
         revert: async () => {
           await patchJson(`${CANDIDATES}/${row.id}/whatsapp-answer`, { key, value: chip.rawValue });
