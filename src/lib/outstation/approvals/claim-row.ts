@@ -278,6 +278,7 @@ export function deskDistanceOfRow(row: ClaimRow): DeskClaim["distance"] {
     basis: basis.basis,
     capturedKm: basis.capturedKm,
     visitKm: basis.basis === "first_double_visit" ? (basis.visit?.km ?? null) : null,
+    minimumKm: basis.minimumKm,
     visitWords: basis.visit ? distanceVisitWords(basis.visit) : null,
   };
 }

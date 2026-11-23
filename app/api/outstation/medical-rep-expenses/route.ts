@@ -4,7 +4,10 @@ import { z } from "zod";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { submitMedicalRepSimpleExpenseRequest } from "@/lib/outstation/service";
+import {
+  submitMedicalRepOtherExpenseRequest,
+  submitMedicalRepSimpleExpenseRequest,
+} from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -22,9 +25,15 @@ const formPhoto = z.instanceof(File);
  * still refuses a missing one with its own words (the photo count included, as a 400).
  */
 const MedicalRepExpenseFormSchema = z.object({
+  /** Other only: what the rep paid. */
+  amount: z.string().optional(),
   amWorkload: z.string().optional(),
   attachments: z.union([formPhoto, z.array(formPhoto)]).optional(),
+  /** Other only: the day the rep paid (YYYY-MM-DD). */
+  expenseDate: z.string().optional(),
   goTicketAmount: z.string().optional(),
+  /** "traveling" (the default, and what an older client sends by saying nothing) or "other". */
+  kind: z.enum(["traveling", "other"]).optional(),
   notes: z.string().optional(),
   pmWorkload: z.string().optional(),
   returnTicketAmount: z.string().optional(),
@@ -96,6 +105,18 @@ export async function POST(request: Request) {
         size: file.size,
       })),
     );
+
+    // Other (owner, 2026-11-23): an invoice he paid — a date, the amount, his comment and the file.
+    // No destination and no tickets; it waits for the Super Admin on Expense Approvals.
+    if (fields.kind === "other") {
+      const otherRecord = await submitMedicalRepOtherExpenseRequest(access, {
+        amount: Number(formText(fields.amount)),
+        attachments,
+        expenseDate: formText(fields.expenseDate),
+        notes: formText(fields.notes),
+      });
+      return NextResponse.json({ request: otherRecord });
+    }
 
     const requestRecord = await submitMedicalRepSimpleExpenseRequest(access, {
       amWorkload: Number(formText(fields.amWorkload) || "0"),
