@@ -38,17 +38,20 @@ export async function loadHeldFullNames(viewer: PhoenixCrmViewer): Promise<HeldF
     rows.map((row) => String(row.id)),
     (query) => query.eq("status", "active"),
   );
-  const venues = await selectByIds<Row>(
-    "phoenix_crm_shared_places",
-    "id, name, schedule_photo_path",
-    "id",
-    places.map((place) => (place.shared_place_id ? String(place.shared_place_id) : null)),
-  );
-  const venueById = new Map(venues.map((venue) => [String(venue.id), venue]));
-  const names = await loadPeopleNames([
-    ...rows.map((row) => String(row.full_name_held_by_hr_id ?? "")),
-    ...places.map((place) => String(place.created_by_hr_id ?? "")),
+  // The buildings and the people's names are asked for together (23 Nov 2026): both wait on the places only.
+  const [venues, names] = await Promise.all([
+    selectByIds<Row>(
+      "phoenix_crm_shared_places",
+      "id, name, schedule_photo_path",
+      "id",
+      places.map((place) => (place.shared_place_id ? String(place.shared_place_id) : null)),
+    ),
+    loadPeopleNames([
+      ...rows.map((row) => String(row.full_name_held_by_hr_id ?? "")),
+      ...places.map((place) => String(place.created_by_hr_id ?? "")),
+    ]),
   ]);
+  const venueById = new Map(venues.map((venue) => [String(venue.id), venue]));
   const boardsByCustomer = new Map<string, HeldFullNameBoard[]>();
   for (const place of [...places].sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))) {
     const venue = place.shared_place_id ? venueById.get(String(place.shared_place_id)) : undefined;

@@ -1,7 +1,8 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Building2, CheckCircle2, ChevronDown, EyeOff, MapPinCheck } from "lucide-react";
 
-import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
+import { AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
 import { FullNameChecks } from "@/components/phoenix-crm/full-name-checks";
 import { PlaceCheckRestoreProvider } from "@/components/phoenix-crm/place-check-restore";
@@ -9,7 +10,14 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
-import { placeChecksSummary, seatedPlacesInUse, withoutDecisionNotesThatAreComments } from "@/lib/phoenix-crm/place-checks-on-demand";
+import { placeCheckLayoutGuess } from "@/lib/phoenix-crm/place-check-layout";
+import {
+  decidedLeftForTheClick,
+  decidedSentWithPage,
+  placeChecksSummary,
+  seatedPlacesInUse,
+  withoutDecisionNotesThatAreComments,
+} from "@/lib/phoenix-crm/place-checks-on-demand";
 import { canRestoreValidation, readsCompanyPlaceChecks, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { SFE_RECOMMENDATIONS_PATH, sfeRecommendationOf, withoutSfeRecommended } from "@/lib/phoenix-crm/sfe-recommendations";
 import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
@@ -151,12 +159,14 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // counted here, by the board's own functions, and the board reads the rows themselves from
   // `PLACE_CHECKS_EVERYTHING_ROUTE` when he opens Not confirmed, picks a filter, or opens the review.
   // Never hand the board `validated` or every decision again.
-  const recentDecided = decided.filter((row) => row.recent);
+  // 🔴 NOR THE RECENT DECISIONS OF SINGLE CLINICS (23 Nov 2026): only History and "Approved by the system"
+  // draw them, so they wait for those tabs. The seated ones go, because a building's card shows everybody.
+  const sentDecided = decidedSentWithPage(decided.filter((row) => row.recent), sharedPlaces);
   // What it read and does not send waits two minutes for the click, so the click reads nothing again.
-  keepPlaceChecksForTheClick(placeChecksHandoffKey(viewer), { validated, olderDecided: reviews.rows.filter((row) => !row.recent) });
+  keepPlaceChecksForTheClick(placeChecksHandoffKey(viewer), { validated, olderDecided: decidedLeftForTheClick(reviews.rows, sentDecided) });
   const seatedInUse = seatedPlacesInUse(validated, sharedPlaces);
   const onDemand = {
-    summary: placeChecksSummary({ team: false, pending: waiting, decided, validated, reopened, sharedPlaces }),
+    summary: placeChecksSummary({ team: false, lanes: decides, pending: waiting, decided, validated, reopened, sharedPlaces }),
     readAt: new Date().toISOString(),
   };
 
@@ -245,27 +255,24 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     },
   ];
 
+  // Which of a list's two layouts this request will draw, so each row is rendered once
+  // (`place-checks/layout.tsx`); the browser corrects a wrong guess from its own width.
+  const requestHeaders = await headers();
+  const layout = placeCheckLayoutGuess({ userAgent: requestHeaders.get("user-agent"), mobileHint: requestHeaders.get("sec-ch-ua-mobile") });
+
   return (
     <div className="space-y-5">
-      <AdminPageHero
-        eyebrow="CRM"
-        title="Place checks"
-        description={
-          decides
-            ? "Decide the places the system could not settle by itself."
-            : "Recommend on the places the system could not settle by itself. The administrator decides."
-        }
-        icon={<MapPinCheck className="h-3.5 w-3.5" />}
-      />
-
+      {/* The title band is drawn by the board's wrapper, around the board's own top line, so "N decisions
+          wait for you" stands beside the title (`PlaceChecksWithDeck`). */}
       {/* Taking a rejection back — the Super Admin alone, never the SFE Manager (owner, 2026-11-10). */}
       <PlaceCheckRestoreProvider canRestore={canRestoreValidation(viewer)}>
         <PlaceChecksWithDeck
           agreement={agreement}
           capped={capped}
           decides={decides}
-          decided={recentDecided}
+          decided={sentDecided}
           failingTimetables={failingTimetables}
+          layout={layout}
           noteIndex={noteIndex}
           onDemand={onDemand}
           openOn={openOn}
@@ -275,6 +282,14 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
           sharedPlaces={sharedPlaces}
           signWins={decides ? signWins : undefined}
           slots={slots}
+          title={{
+            eyebrow: "CRM",
+            title: "Place checks",
+            description: decides
+              ? "Decide the places the system could not settle by itself."
+              : "Recommend on the places the system could not settle by itself. The administrator decides.",
+            icon: <MapPinCheck className="h-3.5 w-3.5" />,
+          }}
           validated={seatedInUse}
         />
       </PlaceCheckRestoreProvider>

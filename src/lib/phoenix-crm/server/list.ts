@@ -120,7 +120,7 @@ import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { filePlaceCaptureTrust, filePlaceSignboardFlag, judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { readPlaceSignboard, readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { approveHeldSignboardBySystem, settleHeldSignboard } from "@/lib/phoenix-crm/server/signboard-holds";
-import { signWinsAtTheDoor } from "@/lib/phoenix-crm/server/sign-wins";
+import { signWinsAfterGoogleHold } from "@/lib/phoenix-crm/server/sign-wins";
 import {
   SIGNBOARD_DOOR_MAX_TRIES,
   SIGNBOARD_RETAKE_AWAY_FROM_PLACE,
@@ -2791,11 +2791,12 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   // only when every read is spent (`settleHeldSignboard`). Every other hold is his at once, as before.
   const heldReviewId = text(result.review_id);
   const signboardHold = validated.held && heldBySignboard && heldReviewId !== null;
-  // 🔴 THE SIGN WINS (owner, 23 Nov 2026; sign-wins-rules.ts). A place only Google held, whose sign the
-  // door has just read as naming the customer, may be approved by the system after the reply. He is
-  // told about it only if the rule left it (below), never about a hold that is gone a second later.
+  // 🔴 THE SIGN WINS (owner, 23 Nov 2026; sign-wins-rules.ts). A place only Google held may be approved
+  // by the system after the reply, when its sign names the customer. The door did NOT read that sign
+  // (`held_elsewhere`, `signboardCheckForSave`), so the read is made after the reply too. He is told
+  // about the hold only if the rule left it (below), never about one that is gone a few seconds later.
   // A seating reads no sign at the door, so it is never one of these.
-  const signMayWin = validated.held && !heldBySignboard && heldReviewId !== null && signboard?.check.verdict === "match";
+  const signMayWin = validated.held && !heldBySignboard && heldReviewId !== null && signboard?.check.reason === "held_elsewhere";
   if (validated.held && !isTest && !signboardHold && !signMayWin) {
     await notifyValidationReviewWaiting({ customerName: validated.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
@@ -2867,10 +2868,11 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       );
       if (settled === "approved" && !isTest) await withdrawValidationNotConfirmed(validated.customerId);
     }
-    // The sign wins: AFTER the door's reading is recorded above, because the rule reads the place's own
-    // stored sign. A place it left is his, and he is told now, as every other hold is told at the door.
+    // The sign wins: AFTER the door's own record is on the place above, because the read made here
+    // replaces it and the rule reads the place's stored sign. A place it left is his, and he is told
+    // now, as every other hold is told at the door.
     if (signMayWin && heldReviewId) {
-      const won = await signWinsAtTheDoor(heldReviewId);
+      const won = await signWinsAfterGoogleHold(heldReviewId, validated.placeId);
       if (!won.approved && !isTest) {
         await notifyValidationReviewWaiting({ customerName: validated.customerName, seat, repHrId: viewer.hrId, reviewId: heldReviewId });
       }
@@ -3331,7 +3333,7 @@ export async function addPlace(
   const heldReviewId = text(result.review_id);
   const signboardHold = added.held && heldBySignboard && heldReviewId !== null;
   // The sign wins, exactly as in `validateCustomer`: told only if the rule left it.
-  const signMayWin = added.held && !heldBySignboard && heldReviewId !== null && signboard?.check.verdict === "match";
+  const signMayWin = added.held && !heldBySignboard && heldReviewId !== null && signboard?.check.reason === "held_elsewhere";
   if (added.held && !isTest && !signboardHold && !signMayWin) {
     await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: text(result.review_id) });
   }
@@ -3368,7 +3370,7 @@ export async function addPlace(
       );
     }
     if (signMayWin && heldReviewId) {
-      const won = await signWinsAtTheDoor(heldReviewId);
+      const won = await signWinsAfterGoogleHold(heldReviewId, added.placeId);
       if (!won.approved && !isTest) {
         await notifyValidationReviewWaiting({ customerName: added.customerName, seat, repHrId: viewer.hrId, reviewId: heldReviewId });
       }

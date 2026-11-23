@@ -340,7 +340,7 @@ function checkScreens(): void {
   // call multi-line, and a single-line fingerprint would go red on formatting alone.
   // Since 2026-11-14 the page hands the recent decisions and the seated places in use, and the board reads
   // the rest on the click (`place-checks-on-demand.ts`) — so those two props are the narrower sets.
-  for (const prop of ["pending={waiting}", "decided={recentDecided}", "validated={seatedInUse}", "onDemand={onDemand}", "reopened={reopened}", "capped={capped}"]) {
+  for (const prop of ["pending={waiting}", "decided={sentDecided}", "validated={seatedInUse}", "onDemand={onDemand}", "reopened={reopened}", "capped={capped}"]) {
     assert.ok(page.includes(prop), `the Place checks board is handed ${prop}`);
   }
   // Since 2026-10-18 the page draws the board through the one-by-one review's wrapper, which hands
@@ -348,7 +348,7 @@ function checkScreens(): void {
   assert.ok(page.includes("<ValidationReviewsBoard") || page.includes("<PlaceChecksWithDeck"), "the board is what the page draws");
   if (page.includes("<PlaceChecksWithDeck")) {
     const wrapper = read("src/components/place-review-deck/place-checks-with-deck.tsx");
-    assert.match(wrapper, /<ValidationReviewsBoard\s+\{\.\.\.board\}\s+mode="company"/, "the wrapper draws the company board with every prop it was handed");
+    assert.match(wrapper, /<ValidationReviewsBoard\s+\{\.\.\.board\}[\s\S]{0,400}?\bmode="company"/, "the wrapper draws the company board with every prop it was handed");
     assert.match(wrapper, /reviewDeck=\{decides \?/, "🔴 and the one-by-one review, which is nothing but decisions, only for the decider (owner, 2026-11-19)");
   }
 

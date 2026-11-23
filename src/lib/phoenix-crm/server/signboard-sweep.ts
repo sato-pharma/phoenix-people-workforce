@@ -187,9 +187,9 @@ function toPlace(row: Row): SweepPlace | null {
  * only a wasted model call. It is excluded at the database rather than in `toPlace`, so a seated row
  * is never counted in the night's limit either.
  */
-async function loadBacklog(limit: number): Promise<SweepPlace[]> {
+async function loadBacklog(limit: number, onlyPlaceId: string | null = null): Promise<SweepPlace[]> {
   const reread = SIGNBOARD_REREAD_REASONS.join(",");
-  const { data, error } = await getSupabaseAdmin()
+  const waiting = getSupabaseAdmin()
     .from("phoenix_crm_places")
     .select(
       "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, brick_name, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
@@ -205,8 +205,64 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
     .order("id", { ascending: true })
     // One page, under PostgREST's 1,000-row ceiling by construction.
     .limit(limit);
+  // One place read now passes the SAME test as the night's: it is asked for by its id on top of every
+  // condition above, so a place the night would not read is not read early either.
+  const { data, error } = await (onlyPlaceId ? waiting.eq("id", onlyPlaceId) : waiting);
   throwIfError(error);
   return ((data ?? []) as Row[]).map(toPlace).filter((entry): entry is SweepPlace => entry !== null);
+}
+
+/**
+ * One place of the pass: read it, read a flaggable verdict a second time, keep the answer on the place
+ * and file the case. The night's worker and `readPlaceSignboardNow` both run exactly this, so a place
+ * read early is read the way the night would have read it, once.
+ */
+async function readRecordAndFlag(place: SweepPlace): Promise<PhoenixCrmSignboardCheck> {
+  const first = await readOne(place);
+  const check = signboardNextAttempt(await confirmBeforeFlagging(place, first), place.priorAttempts);
+  await recordPlaceSignboard(place.placeId, check);
+  if (check.verdict === "other_name" || check.verdict === "no_name") {
+    await filePlaceSignboardFlag({
+      placeId: place.placeId,
+      seatId: place.seatId,
+      repHrId: place.repHrId,
+      customerId: place.customerId,
+      isTest: false,
+      flag: check.verdict === "other_name" ? "sign_other_name" : "sign_no_name",
+      signals: { signText: check.signText, personNames: check.personNames, placeNames: check.placeNames, note: check.note },
+      fixed: { lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters, capturedAt: place.capturedAt },
+    });
+  }
+  return check;
+}
+
+/**
+ * The night's reading of ONE place, made now (owner, 23 Nov 2026, "the sign wins").
+ *
+ * 🔴 WHY IT EXISTS. The door reads no sign for a place Google already holds (`held_elsewhere`,
+ * `signboardCheckForSave`), so the only reader of such a place was this pass at 03:35. "The sign wins"
+ * approves exactly those places and asks for the stored reading, so on its first day it approved none:
+ * all four Google holds of 23 Nov carried `held_elsewhere`. The door now asks for this read after its
+ * reply.
+ *
+ * It is the night's next read of that place made early, never one more (owner, 2026-10-18): a verdict
+ * takes the place out of the backlog, and an answer the night would read again (SIGNBOARD_REREAD_REASONS:
+ * a lost call, an unconfirmed flag, a fallback's "unreadable") is read again by the night exactly as it
+ * would have been the night after, one try sooner, under the same count of tries. Nothing claims a place
+ * between this read and a pass already running, so a capture made while the 03:35 pass runs could be
+ * read by both; the window is the pass's own few minutes. Null when the place is not one the pass reads
+ * (a test entry, a pharmacy, a seated customer, no photograph, already read) or no key is set here.
+ * Never throws.
+ */
+export async function readPlaceSignboardNow(placeId: string): Promise<PhoenixCrmSignboardCheck | null> {
+  if (!placeId || !hasAiApiKey()) return null;
+  try {
+    const [place] = await loadBacklog(1, placeId);
+    return place ? await readRecordAndFlag(place) : null;
+  } catch {
+    // Left for the night, which reads the same backlog.
+    return null;
+  }
 }
 
 /**
@@ -294,25 +350,11 @@ export async function runPhoenixCrmSignboardSweep(
       }
       const place = backlog[next];
       next += 1;
-      const first = await readOne(place);
-      const check = signboardNextAttempt(await confirmBeforeFlagging(place, first), place.priorAttempts);
-      await recordPlaceSignboard(place.placeId, check);
+      const check = await readRecordAndFlag(place);
       result.read += 1;
       if (check.verdict === "unjudged") result.unjudged += 1;
       if (check.reason === "unconfirmed") result.unconfirmed += 1;
-      if (check.verdict === "other_name" || check.verdict === "no_name") {
-        await filePlaceSignboardFlag({
-          placeId: place.placeId,
-          seatId: place.seatId,
-          repHrId: place.repHrId,
-          customerId: place.customerId,
-          isTest: false,
-          flag: check.verdict === "other_name" ? "sign_other_name" : "sign_no_name",
-          signals: { signText: check.signText, personNames: check.personNames, placeNames: check.placeNames, note: check.note },
-          fixed: { lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters, capturedAt: place.capturedAt },
-        });
-        result.flagged += 1;
-      }
+      if (check.verdict === "other_name" || check.verdict === "no_name") result.flagged += 1;
     }
   };
   await Promise.all(Array.from({ length: Math.min(SIGNBOARD_SWEEP_CONCURRENCY, backlog.length) }, () => worker()));

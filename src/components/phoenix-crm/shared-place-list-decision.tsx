@@ -19,14 +19,10 @@ import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-re
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
-import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField, RefusalReasonPick } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
-import {
-  VALIDATION_NOTE_LABEL,
-  VALIDATION_REASON_REQUIRED,
-  type ValidationRefusalReason,
-} from "@/lib/phoenix-crm/validation-feedback";
+import { VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import {
   NO_TIMETABLE_DECLARE_EXPLAINER,
   NO_TIMETABLE_DECLARE_LABEL,
@@ -137,15 +133,17 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnBuilding(row).refusal ?? "");
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // Reject with no reason chosen opens the list of reasons; pressing one sends it (RefusalReasonPick).
+  const [picking, setPicking] = useState(false);
 
-  async function decide(decision: "approve" | "reject") {
+  async function decide(decision: "approve" | "reject", why: ValidationRefusalReason | "" = reason) {
     if (saving) return;
     setSaving(decision);
     setProblem(null);
     try {
       await crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews/shared-place",
-        { sharedPlaceId: row.sharedPlaceId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
+        { sharedPlaceId: row.sharedPlaceId, decision, note, ...(decision === "reject" ? { refusalReason: why } : {}) },
         "decided",
       );
       // Approving a building is "Approved" on screen whether it was held or already standing (owner, 21 Nov
@@ -185,7 +183,9 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
       {/* What the administrator approved, only he rejects (owner, 2026-11-16). Approve-again stays: it changes nothing. */}
       {row.lockedBySuperAdmin ? <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote> : null}
       {row.lockedBySuperAdmin ? null : <Cost row={row} />}
-      {row.lockedBySuperAdmin ? null : <RefusalReasonField
+      {/* Reject is one press on a reason already chosen and two otherwise (owner, 23 Nov 2026): with none
+          chosen, Reject opens the reasons and the reason pressed sends it. */}
+      {row.lockedBySuperAdmin || reason === "" || picking ? null : <RefusalReasonField
         disabled={saving !== null}
         id={`shared-place-reason-${scope}-${row.sharedPlaceId}`}
         kind="building"
@@ -193,17 +193,29 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
         value={reason}
       />}
       <DecisionComment disabled={saving !== null} id={`shared-place-note-${scope}-${row.sharedPlaceId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
-      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-        <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant={buildingApproveVariant(row.decidedAtText)}>
-          {saving === "approve" ? BUILDING_APPROVING_LABEL : BUILDING_APPROVE_LABEL}
-        </CrmButton>
-        {row.lockedBySuperAdmin ? null : (
-          <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
-            {saving === "reject" ? "Rejecting…" : "Reject"}
+      {picking ? (
+        <RefusalReasonPick
+          disabled={saving !== null}
+          kind="building"
+          onBack={() => setPicking(false)}
+          onPick={(next) => {
+            setReason(next);
+            setPicking(false);
+            void decide("reject", next);
+          }}
+        />
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
+          <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant={buildingApproveVariant(row.decidedAtText)}>
+            {saving === "approve" ? BUILDING_APPROVING_LABEL : BUILDING_APPROVE_LABEL}
           </CrmButton>
-        )}
-      </div>
-      {reason === "" && !row.lockedBySuperAdmin ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
+          {row.lockedBySuperAdmin ? null : (
+            <CrmButton disabled={saving !== null} onClick={() => (reason === "" ? setPicking(true) : void decide("reject"))} variant="danger">
+              {saving === "reject" ? "Rejecting…" : "Reject"}
+            </CrmButton>
+          )}
+        </div>
+      )}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

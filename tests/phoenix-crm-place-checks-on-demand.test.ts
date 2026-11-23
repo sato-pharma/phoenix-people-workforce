@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  decidedLeftForTheClick,
+  decidedSentWithPage,
+  isReal,
   mergeDecided,
   PLACE_CHECKS_EVERYTHING_ROUTE,
   placeCheckOptions,
@@ -16,6 +19,7 @@ import {
   placeChecksHandoffKey,
   takePlaceChecksForTheClick,
 } from "../src/lib/phoenix-crm/server/place-checks-handoff.ts";
+import { withoutSeated } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -38,7 +42,11 @@ import { placeCheckBoardSource } from "./support/place-check-board-source.ts";
  * - the older decisions merged back in another order, or twice after a re-read;
  * - a tab drawing part of a list while the rest is still on its way;
  * - the click's route answering anybody but the deciders;
- * - the review opening on the seated few instead of every place.
+ * - the review opening on the seated few instead of every place;
+ * - (23 Nov 2026) the single clinics' decisions sent with the page again — 609 of the 991 decisions of the
+ *   last 14 days that day, drawn only by History and "Approved by the system";
+ * - the two decided tabs showing the few seated decisions as their count before the click, or a different
+ *   number after it.
  */
 
 const ROOT = new URL("../", import.meta.url);
@@ -178,15 +186,56 @@ function checkTheMergedDecisions() {
   assert.equal(noted[0].decisionNote, null, "the decision note that is also a comment is not drawn twice");
 }
 
+/**
+ * 🔴 THE DECISIONS OF SINGLE CLINICS WAIT FOR THE CLICK (owner, 23 Nov 2026: "Fix them"). The page sends the
+ * recent decisions seated in a building on the board, the two decided tabs are counted on the server, and
+ * the rows come with the click.
+ */
+function checkTheDecisionsThatWait() {
+  const waiting = review("d-wait", "2026-11-13T09:00:00.000Z", { status: "pending", decidedByName: null } as Partial<ValidationReviewRow>);
+  const clinic = review("d-clinic", "2026-11-12T09:00:00.000Z");
+  const system = review("d-system", "2026-11-12T08:00:00.000Z", { approvedByRule: "sign_wins" } as unknown as Partial<ValidationReviewRow>);
+  const seated = review("d-seated", "2026-11-11T09:00:00.000Z", { sharedPlaceId: "venue-1" });
+  // Seated in a building that is not on the board: it stays among the clinics, where it can still be found.
+  const elsewhere = review("d-elsewhere", "2026-11-10T09:00:00.000Z", { sharedPlaceId: "venue-gone" });
+  const old = review("d-old", "2026-09-01T09:00:00.000Z", { recent: false });
+  const test = review("d-test", "2026-11-12T07:00:00.000Z", { isTest: true });
+  const everyRow = [waiting, clinic, system, seated, elsewhere, old, test];
+  const everyDecision = everyRow.filter((row) => row.status !== "pending");
+
+  const sent = decidedSentWithPage(everyDecision.filter((row) => row.recent), [venue]);
+  assert.deepEqual(sent.map((row) => row.reviewId), ["d-seated"], "🔴 the page sends only the recent decisions seated in a building on the board");
+  const left = decidedLeftForTheClick(everyRow, sent);
+  assert.deepEqual(
+    left.map((row) => row.reviewId),
+    ["d-clinic", "d-system", "d-elsewhere", "d-old", "d-test"],
+    "🔴 every other decision waits for the click, and a waiting place is never one of them",
+  );
+  assert.equal(sent.length + left.length, everyDecision.length, "sent or left: no decision is lost and none is in both");
+
+  const summary = placeChecksSummary({ team: false, lanes: true, pending: [waiting], decided: everyDecision, validated, reopened, sharedPlaces: [venue, testVenue] });
+  assert.equal(summary.bySystem, 1, "🔴 the server counts what the system approved, a tab whose rows the page no longer sends");
+  assert.equal(summary.history, 3, "🔴 and History: two single clinics' recent decisions by a person, and one customer sent back");
+  const whole = placeChecksSummary({ team: false, pending: [waiting], decided: everyDecision, validated, reopened, sharedPlaces: [venue, testVenue] });
+  assert.deepEqual([whole.history, whole.bySystem], [4, 0], "a board with no lanes is not told which approvals were the system's: its History is whole");
+
+  // The board after the click, by the board's own steps (use-board-rows.ts): the same two numbers.
+  const afterTheClick = withoutSeated(mergeDecided(sent, left).filter(isReal).filter((row) => row.recent), new Set(["venue-1"]));
+  const bySystemAfter = afterTheClick.filter((row) => Boolean(row.approvedByRule)).length;
+  assert.equal(bySystemAfter, summary.bySystem, "🔴 the tab shows the same count before the click and after it");
+  assert.equal(afterTheClick.length - bySystemAfter + withoutSeated(reopened, new Set(["venue-1"])).length, summary.history, "and so does History");
+}
+
 function checkTheWiring() {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(page, /placeChecksSummary\(\{ team: false, pending: waiting, decided, validated, reopened, sharedPlaces \}\)/, "🔴 the figures are counted from every row the page read");
-  for (const prop of ["validated={seatedInUse}", "decided={recentDecided}", "onDemand={onDemand}"]) {
+  assert.match(page, /placeChecksSummary\(\{ team: false, lanes: decides, pending: waiting, decided, validated, reopened, sharedPlaces \}\)/, "🔴 the figures are counted from every row the page read");
+  for (const prop of ["validated={seatedInUse}", "decided={sentDecided}", "onDemand={onDemand}"]) {
     assert.ok(page.includes(prop), `the page hands the board ${prop}`);
   }
   assert.ok(!page.includes("validated={validated}"), "🔴 the page never hands the board every place in use again (7.4 MB, the freeze)");
   assert.ok(!page.includes("decided={decided}"), "🔴 nor every decision ever made");
-  assert.match(page, /const recentDecided = decided\.filter\(\(row\) => row\.recent\);/, "the decisions it sends are the board's default window");
+  assert.ok(!page.includes("decided={recentDecided}"), "🔴 nor the whole 14-day window: 609 of its 991 rows were single clinics' (23 Nov 2026)");
+  assert.match(page, /const sentDecided = decidedSentWithPage\(decided\.filter\(\(row\) => row\.recent\), sharedPlaces\);/, "the decisions it sends are the recent ones seated in a building on the board");
 
   const route = read("app/api/phoenix-crm/validation-reviews/everything/route.ts");
   assert.equal(PLACE_CHECKS_EVERYTHING_ROUTE, "/api/phoenix-crm/validation-reviews/everything", "the board asks the route that exists");
@@ -197,10 +246,10 @@ function checkTheWiring() {
   assert.ok(gate > 0 && decider > gate && firstRow > decider, "🔴 the route asks `approve`, then the board's reader, before a row is taken or read — the page's own two gates");
   assert.match(
     page,
-    /keepPlaceChecksForTheClick\(placeChecksHandoffKey\(viewer\), \{ validated, olderDecided: reviews\.rows\.filter\(\(row\) => !row\.recent\) \}\)/,
+    /keepPlaceChecksForTheClick\(placeChecksHandoffKey\(viewer\), \{ validated, olderDecided: decidedLeftForTheClick\(reviews\.rows, sentDecided\) \}\)/,
     "the page leaves what it read for the click, under the same person's key",
   );
-  assert.match(route, /olderDecided: reviews\.rows\.filter\(\(row\) => !row\.recent\)/, "it answers only the decisions the page did not send");
+  assert.match(route, /olderDecided: reviews\.rows\.filter\(\(row\) => row\.status !== "pending"\)/, "reading for itself it answers every decision; the board keeps the page's copy of one it already holds");
   assert.match(route, /NextResponse\.json\(\{ everything, success: true \}\)/, "under the key the board reads");
 
   const board = placeCheckBoardSource(read);
@@ -208,11 +257,21 @@ function checkTheWiring() {
     board.includes('useCrmGet<PlaceChecksEverything>(onDemand && wanted ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything")'),
     "🔴 the board reads by the key the route answers under, and only once it is wanted",
   );
-  assert.match(board, /if \(onDemand && !wanted && \(view === "unconfirmed" \|\| filtering \|\| deckAsked\)\) setWanted\(true\);/, "Not confirmed, any filter or the review asks for the rest");
+  assert.match(board, /if \(onDemand && !wanted && \(viewNeedsEverything\(view\) \|\| filtering \|\| deckAsked\)\) setWanted\(true\);/, "a tab whose rows wait, any filter or the review asks for the rest");
+  assert.match(
+    board,
+    /export function viewNeedsEverything\(view: PlaceCheckView\): boolean \{\s*return view === "unconfirmed" \|\| view === "history" \|\| view === "bySystem";\s*\}/,
+    "🔴 Not confirmed, History and Approved by the system are the tabs whose rows the page does not send",
+  );
   assert.match(board, /if \(wanted\) reloadEverything\(\);/, "a re-read of the page reads the rest again");
   assert.match(board, /complete \? placeCheckScorecardOf\(/, "🔴 the board counts the scorecard only once it holds every row");
-  assert.match(board, /const reading = !complete && \(filtering \|\| view === "unconfirmed"\);/, "it knows when a tab would draw part of a list");
-  for (const view of ["needs", "unconfirmed", "polyclinics", "history"]) {
+  assert.match(board, /const reading = !complete && \(filtering \|\| viewNeedsEverything\(view\)\);/, "it knows when a tab would draw part of a list");
+  assert.match(board, /const decidedCounts = !complete && onDemand && !filtering \? onDemand\.summary : null;/, "until the rows are in, the two decided tabs show the server's count");
+  assert.ok(
+    board.includes('count: decidedCounts ? decidedCounts.history : shown(historyCount) }') && board.includes("count: decidedCounts ? decidedCounts.bySystem : shown(bySystemRows.length) }"),
+    "🔴 never the count of the few seated decisions the board holds before the click",
+  );
+  for (const view of ["needs", "unconfirmed", "polyclinics", "history", "bySystem"]) {
     assert.ok(board.includes(`{!reading && view === "${view}" ? (`), `🔴 the ${view} tab is never drawn from part of its rows`);
   }
   assert.ok(board.includes("<ReadingEverything error={everythingRead.error} onRetry={reloadEverything} />"), "it says what it is reading, and offers Try again when the read fails");
@@ -251,5 +310,6 @@ export async function runPhoenixCrmPlaceChecksOnDemandTests() {
   checkTheOpeningFigures();
   checkTheHandoff();
   checkTheMergedDecisions();
+  checkTheDecisionsThatWait();
   checkTheWiring();
 }

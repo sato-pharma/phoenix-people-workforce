@@ -24,6 +24,7 @@ import { approvalOutcome } from "@/components/phoenix-crm/place-check-done";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { usePlaceCheckLayout } from "@/components/phoenix-crm/place-checks/layout";
 import { PhoneFold } from "@/components/phoenix-crm/place-checks/phone-fold";
 import { CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName, type PillTone } from "@/components/phoenix-crm/ui";
 import { Decision, LastColumn } from "@/components/phoenix-crm/validation-review-queue-decision";
@@ -128,6 +129,8 @@ export function ValidationReviewQueue({
   // 🔴 THE PICK-LIST FOLLOWS THE PHOTOGRAPHS IN THE PICK. All timetables → the timetable reasons; a
   // mixed pick takes the signboard list, whose reasons are all sayable about a building's sign.
   const kind = picks.picked.length > 0 && picks.picked.every((row) => row.photoKind === "schedule") ? "schedule" : "signboard";
+  // One of the two layouts on the Super Admin's page, both everywhere else (place-checks/layout.tsx).
+  const layout = usePlaceCheckLayout();
 
   return (
     <>
@@ -141,6 +144,7 @@ export function ValidationReviewQueue({
           picks={picks}
         />
       ) : null}
+      {layout === "table" ? null : (
       <CrmCardsOnPhone>
         {rows.map((row) => (
           // Closed until pressed: who and what, then the photograph, the evidence and the controls under it.
@@ -167,6 +171,8 @@ export function ValidationReviewQueue({
           </PhoneFold>
         ))}
       </CrmCardsOnPhone>
+      )}
+      {layout === "cards" ? null : (
       <CrmTable columns={["30%", "18%", "28%", "24%"]}>
         <thead>
           <tr>
@@ -198,6 +204,7 @@ export function ValidationReviewQueue({
           ))}
         </tbody>
       </CrmTable>
+      )}
     </>
   );
 }

@@ -11,6 +11,7 @@ import {
   DECK_TABS,
   deckAdviceRank,
   deckAdviceRanker,
+  deckHeldSplit,
   deckSlideAdvice,
   deckArrowStep,
   deckSeatItem,
@@ -225,6 +226,15 @@ export function runPlaceReviewDeckTests(): void {
     }
     assert.equal(reviewIsUnreadable(reviews[1]), true);
     assert.equal(venueIsUnreadable(venues.past), false);
+
+    // 🔴 "WAITING FOR YOU" IS NOT EVERYTHING THAT WAITS (owner, 23 Nov 2026: "Fix them"): the review says the
+    // whole number held for him and how many of them stand in Not readable, under the same switch as the tabs.
+    assert.deepEqual(deckHeldSplit(input, "both"), { readable: 4, unreadable: 3 }, "three held places and one building he can read, two places and one building he cannot");
+    assert.deepEqual(deckHeldSplit(input, "places"), { readable: 3, unreadable: 2 }, "Places counts the places alone");
+    assert.deepEqual(deckHeldSplit(input, "polyclinics"), { readable: 1, unreadable: 1 }, "Polyclinics counts the buildings alone");
+    const held = deckHeldSplit(input, "both");
+    assert.equal(held.readable, split.waitingReviews.length + split.waitingVenues.length, "🔴 the readable number is the Waiting tab's own");
+    assert.equal(held.unreadable, split.unreadableReviews.length + split.unreadableVenues.filter((id) => id === "v-seat").length, "and the unreadable number is the held part of Not readable");
   }
 
   // The switch (owner, 2026-10-18: "view polyclinics only, or places only, or both").
@@ -505,14 +515,25 @@ export function runPlaceReviewDeckTests(): void {
       /return \(\) => \{[^}]*?const target = returnFocusRef\.current;\s*returnFocusRef\.current = null;\s*if \(target instanceof HTMLElement && target\.isConnected\) target\.focus\(\);\s*\};\s*\}, \[open\]\);/,
       "focus goes back to where it was when a dialog closes, whether it is turned off or taken off the page",
     );
-    // On a phone only Back / Next is pinned; pinned, a held place's decision covered 426 of the 603 px
-    // under the photo and pushed Back / Next off the screen (measured 2026-10-19, 375 x 812).
+    // On a phone Back / Next is pinned. Pinned, a held place's decision covered 426 of the 603 px under
+    // the photo and pushed Back / Next off the screen (measured 2026-10-19, 375 x 812), so every slide's
+    // decision followed the facts. 🔴 A HELD PLACE'S IS PINNED AGAIN SINCE 23 Nov 2026 (owner: "Fix them"),
+    // because it is small now: the comment link and Approve beside Reject, and the reasons Reject opens
+    // scroll inside 40% of the screen. Every other slide's decision still follows the facts.
     assert.match(deck, /aria-label="Move between photos"\s+className="sticky bottom-0 /, "Back / Next is what a phone keeps pinned");
     assert.match(
       deck,
-      /\{view\.footer \? \(\s*<div className="(?![^"]*\bsticky\b)[^"]*">\s*<div className=\{cn\("(?![^"]*\bsticky\b)[^"]*"[^>]*>\{view\.footer\}/,
-      "the decision follows the facts on a phone, never inside a pinned box",
+      /\{view\.footer \? \(\s*<div className="(?![^"]*\bsticky\b)[^"]*">\s*<div\s+className=\{cn\(\s*"(?![^"]*\bsticky\b)[^"]*",[\s\S]{0,400}?\)\}\s*>\s*\{view\.footer\}/,
+      "the decision's own box is never the pinned one",
     );
+    assert.match(
+      deck,
+      /\{view\.pinOnPhone \? \(\s*<div className="sticky bottom-0 z-10 [^"]*lg:static[^"]*" data-pinned-decision>\s*\{decideAndMove\}\s*<\/div>\s*\) : \(\s*decideAndMove\s*\)\}/,
+      "🔴 only a slide that asks for it pins its decision with Back / Next on a phone, and never on a desktop",
+    );
+    assert.ok(deck.includes('view.pinOnPhone ? "max-h-[40svh] overflow-y-auto [&_[data-decide-pair]]:grid-cols-2" : null'), "pinned, the decision never takes more than 40% of the screen and its two buttons stand side by side");
+    assert.equal((deck.match(/pinOnPhone: /g) ?? []).length, 1, "one kind of slide asks for it");
+    assert.ok(deck.includes('pinOnPhone: row.status === "pending",'), "🔴 a held place still waiting, and nothing else");
     // A polyclinic's two photos sit side by side on every screen: stacked on a phone, each upright photo
     // had about 104 x 139 px of a 375 x 812 screen (measured 2026-10-19; he chose side by side).
     const parts = stripComments(read("src/components/place-review-deck/deck-parts.tsx"));

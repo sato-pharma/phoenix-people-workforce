@@ -1046,8 +1046,9 @@ export async function loadValidationReviews(
       recent: true,
     };
   });
-  await markDoorsCapturedAgain(rows, reviews, placeById);
-  await markEarlierDecisions(rows, reviews, decides);
+  // Asked for together (23 Nov 2026): the first marks decided rows, the second waiting ones, and neither
+  // reads what the other writes. Each keeps its own failed read to itself, as before.
+  await Promise.all([markDoorsCapturedAgain(rows, reviews, placeById), markEarlierDecisions(rows, reviews, decides)]);
   // 🔴 THE LONGER WINDOW IS FOR THE UNDO, NOT FOR THE HISTORY. A rejection older than the ordinary
   // 14 days is kept only while it can still be taken back — its place still retired. One whose place
   // is active again, or gone, has nothing left to reverse, so it drops back under the ordinary window
@@ -1882,13 +1883,18 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
   const customers = await withoutACaptureSince(read.rows);
   if (customers.length === 0) return { rows: [], capped: read.capped };
 
-  const reviews = await selectByIds<Row>(
-    "phoenix_crm_validation_reviews",
-    "id, customer_id, status, refusal_reason, created_by_hr_id, decided_by_hr_id, decided_at",
-    "customer_id",
-    customers.map((row) => String(row.id)),
-    (query) => query.eq("status", "rejected"),
-  );
+  // His own refusals and his building's are asked for together (23 Nov 2026): both read by customer only.
+  const customerIds = customers.map((row) => String(row.id));
+  const [reviews, viaVenue] = await Promise.all([
+    selectByIds<Row>(
+      "phoenix_crm_validation_reviews",
+      "id, customer_id, status, refusal_reason, created_by_hr_id, decided_by_hr_id, decided_at",
+      "customer_id",
+      customerIds,
+      (query) => query.eq("status", "rejected"),
+    ),
+    loadSharedPlaceRefusalsForCustomers(customerIds),
+  ]);
   // The LATEST refusal per customer is the one he is waiting on.
   const latest = new Map<string, Row>();
   for (const review of reviews) {
@@ -1907,7 +1913,6 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
   // seated in a building, and whose building was refused later, was shown under the OLD refusal: the
   // wrong reason, the wrong rep, the wrong date, and filed among the single clinics. Whichever refusal
   // was decided later is the one he is waiting on (`decidedLater`), and the row is built from that one.
-  const viaVenue = await loadSharedPlaceRefusalsForCustomers(customers.map((row) => String(row.id)));
   const names = await loadPeopleNames([
     ...[...latest.values()].map((row) => text(row.created_by_hr_id)),
     ...[...viaVenue.values()].map((row) => row.repHrId),

@@ -148,6 +148,33 @@ export function deckSourcesOf(input: PlaceReviewDeckInput, cases: DeckSources["c
   };
 }
 
+/**
+ * What is HELD for his decision, split by the tab it stands in.
+ *
+ * 🔴 "WAITING FOR YOU" IS NOT EVERYTHING THAT WAITS. The held photographs the system could not read stand
+ * in Not readable, a tab of their own by his word (2026-10-19), so the first tab's number was smaller
+ * than the page's and finishing it looked like finishing the work. The review now says the whole number
+ * and points at the second tab when the first is done (owner, 23 Nov 2026: "Fix them"). Counted under
+ * the Places / Polyclinics switch, exactly as the tabs are.
+ */
+export function deckHeldSplit(input: Pick<PlaceReviewDeckInput, "waiting">, kind: DeckKind): { readable: number; unreadable: number } {
+  let readable = 0;
+  let unreadable = 0;
+  if (kind !== "polyclinics") {
+    for (const row of input.waiting.reviews) {
+      if (reviewIsUnreadable(row)) unreadable += 1;
+      else readable += 1;
+    }
+  }
+  if (kind !== "places") {
+    for (const group of input.waiting.venues) {
+      if (venueIsUnreadable(group)) unreadable += 1;
+      else readable += 1;
+    }
+  }
+  return { readable, unreadable };
+}
+
 type OneTab = Exclude<DeckTab, "all">;
 
 function slidesOf(tab: OneTab, sources: DeckSources): DeckSlide[] {

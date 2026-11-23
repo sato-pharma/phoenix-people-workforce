@@ -577,7 +577,7 @@ function checkEarlierDecision() {
 
   const loader = code("src/lib/phoenix-crm/server/validation-reviews.ts");
   assert.ok(
-    /await markDoorsCapturedAgain\(rows, reviews, placeById\);\s*await markEarlierDecisions\(rows, reviews, decides\);/.test(loader),
+    /await Promise\.all\(\[markDoorsCapturedAgain\(rows, reviews, placeById\), markEarlierDecisions\(rows, reviews, decides\)\]\);/.test(loader),
     "🔴 the board's read marks every waiting review with the decision before it",
   );
   const mark = fn(loader, "async function markEarlierDecisions(");

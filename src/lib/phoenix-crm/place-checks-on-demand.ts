@@ -9,9 +9,12 @@
  * page's payload took React 273 to 314 ms in one block, and drawing it on the server another 107 to 438 ms,
  * while every other employee's request waited.
  *
- * So the page sends what Needs you draws: the places waiting, the decisions of the last 14 days, the
- * buildings, the customers sent back, and the places in use that are SEATED in a building (a building's
- * card shows everybody in it). Every figure the board shows on opening that is counted over the places in
+ * So the page sends what Needs you draws: the places waiting, the buildings, the customers sent back, and
+ * the places in use and the recent decisions that are SEATED in a building (a building's card shows
+ * everybody in it). 🔴 THE DECISIONS OF SINGLE CLINICS WAIT FOR THE CLICK TOO (owner, 23 Nov 2026: "Fix
+ * them"): 609 of the 991 decisions of the last 14 days were single clinics' that day, sent whole with every
+ * open of the page and drawn only by History and "Approved by the system". Their two tab counts are counted
+ * on the server (`history`, `bySystem`) and the rows come with the click, as the places in use do. Every figure the board shows on opening that is counted over the places in
  * use — the scorecard, the Not confirmed count, the filter lists — is counted on the server by the SAME
  * functions the board uses (`placeCheckOptions`, `placeCheckScorecardOf`, `unconfirmedOpenCount`), with
  * the filters empty, so the two can never disagree. The rest arrives from
@@ -41,9 +44,27 @@ export const PLACE_CHECKS_EVERYTHING_ROUTE = "/api/phoenix-crm/validation-review
 
 export type PlaceChecksEverything = {
   validated: ValidatedPlaceRow[];
-  /** Decisions outside the board's default window (`recent` false). The page already sent the recent ones. */
+  /**
+   * Every decision the page did not send: the ones outside the board's default window (`recent` false) and
+   * the recent ones of single clinics. A row the page did send may be here too; `mergeDecided` keeps the page's.
+   */
   olderDecided: ValidationReviewRow[];
 };
+
+/**
+ * The decisions the page sends on opening: the recent ones of customers SEATED in a building on the board,
+ * because a building's card shows everybody in it. Every other decision waits for the click.
+ */
+export function decidedSentWithPage(recentDecided: ReadonlyArray<ValidationReviewRow>, sharedPlaces: ReadonlyArray<SharedPlaceBoardRow>): ValidationReviewRow[] {
+  const venueIds = new Set(sharedPlaces.map((row) => row.sharedPlaceId));
+  return recentDecided.filter((row) => row.sharedPlaceId !== null && venueIds.has(row.sharedPlaceId));
+}
+
+/** Every decision the page read and did not send, for the click. A waiting place is never one of them. */
+export function decidedLeftForTheClick(everyRow: ReadonlyArray<ValidationReviewRow>, sent: ReadonlyArray<ValidationReviewRow>): ValidationReviewRow[] {
+  const sentIds = new Set(sent.map((row) => row.reviewId));
+  return everyRow.filter((row) => row.status !== "pending" && !sentIds.has(row.reviewId));
+}
 
 /** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */
 export type UnconfirmedChip = "open" | Exclude<PlaceStanding, "confirmed" | "waiting"> | "all";
@@ -153,6 +174,10 @@ export type PlaceChecksSummary = {
   options: PlaceCheckOptions;
   scorecard: { reps: RepScore[]; total: RepScore };
   unconfirmed: number;
+  /** The number on the History tab: the single clinics' recent decisions and the customers sent back. */
+  history: number;
+  /** The number on "Approved by the system". Zero on a board with no lanes, whose History is whole. */
+  bySystem: number;
 };
 
 /**
@@ -161,6 +186,8 @@ export type PlaceChecksSummary = {
  */
 export function placeChecksSummary(input: {
   team: boolean;
+  /** The Super Admin's board, which lists what the system approved apart from History. */
+  lanes?: boolean;
   pending: ReadonlyArray<ValidationReviewRow>;
   decided: ReadonlyArray<ValidationReviewRow>;
   validated: ReadonlyArray<ValidatedPlaceRow>;
@@ -175,10 +202,15 @@ export function placeChecksSummary(input: {
   const reopened = input.reopened.filter(isReal);
   const sharedPlaces = input.sharedPlaces.filter(isReal);
   const venueIds = new Set(sharedPlaces.map((row) => row.sharedPlaceId));
+  // The two decided tabs as the board counts them with no filter: single clinics only, the system's apart.
+  const clinicDecided = withoutSeated(decided, venueIds);
+  const bySystem = input.lanes ? clinicDecided.filter((row) => Boolean(row.approvedByRule)).length : 0;
   return {
     options: placeCheckOptions({ team: input.team, pending, decided, everyDecided, validated, reopened, sharedPlaces }),
     scorecard: placeCheckScorecardOf({ pending, validated, reopened }, filters, null),
     unconfirmed: unconfirmedOpenCount(clinicsInUse(withoutSeated(validated, venueIds), filters, null), filters),
+    history: clinicDecided.length - bySystem + withoutSeated(reopened, venueIds).length,
+    bySystem,
   };
 }
 

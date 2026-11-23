@@ -749,7 +749,7 @@ export const MODULES = [
     title: "Phoenix CRM — the Place checks desk: two lanes, one waiting number, and what the system approves by itself",
     scope: "How the rebuilt Place checks page sorts and counts what waits for the Super Admin — the Ready and Your call lanes, the one waiting number in one unit, the four verbs, the view kept in the address, the advice kept with every decision and its 30-day agreement, and the sign-wins group the system approves by itself until it is taken back too often.",
     globs: [
-      "src/lib/phoenix-crm/{place-check-lanes,place-check-address,place-check-stored-advice,sign-wins-rules,decision-stamp}.ts",
+      "src/lib/phoenix-crm/{place-check-lanes,place-check-address,place-check-layout,place-check-stored-advice,sign-wins-rules,decision-stamp}.ts",
       "src/lib/phoenix-crm/server/{sign-wins,stored-advice}.ts",
       "src/components/phoenix-crm/place-checks/**",
       "tests/phoenix-crm-{place-check-lanes,sign-wins}*",

@@ -17,7 +17,7 @@ import { PlaceCheckDecisionState, usePlaceCheckDecides } from "@/components/phoe
 import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection } from "@/components/phoenix-crm/place-check-restore";
-import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField, RefusalReasonPick } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { DOOR_CAPTURED_AGAIN_TEXT } from "@/lib/phoenix-crm/door-captured-again";
@@ -154,6 +154,8 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
   const [reason, setReason] = useState<ValidationRefusalReason | "">(() => (shortName ? "short_name" : (adviseOnReview(row).refusal ?? "")));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // Reject with no reason chosen opens the list of reasons; pressing one sends it (RefusalReasonPick).
+  const [picking, setPicking] = useState(false);
 
   if (saved) return <PlaceCheckSaved outcome={saved} />;
 
@@ -175,14 +177,14 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
     );
   }
 
-  async function decide(decision: "approve" | "reject") {
+  async function decide(decision: "approve" | "reject", why: ValidationRefusalReason | "" = reason) {
     if (saving) return;
     setSaving(decision);
     setProblem(null);
     try {
       const decided = await crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews",
-        { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
+        { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: why } : {}) },
         "decided",
       );
       markSaved(done(decision === "approve" ? approvalOutcome(decided, "approved") : "rejected"));
@@ -199,29 +201,44 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
   }
 
   // 🔴 THE DECISION READS TOP TO BOTTOM, THEN THE PRESS (owner, 17 Nov 2026: "simple to decide"): what the
-  // rep is told, an optional comment folded behind one link, the two buttons, and one short line each under
-  // them. The long "does not add to the list" sentence is the section's own description, once, not every row's.
+  // rep is told when the system is confident of it, an optional comment folded behind one link, the two
+  // buttons. 🔴 REJECT IS ONE PRESS ON A REASON ALREADY CHOSEN AND TWO OTHERWISE (owner, 23 Nov 2026):
+  // with none chosen, Reject opens the reasons and the reason pressed sends it. The "does not add to the
+  // list" sentence is the lane's own, once, not every row's.
   return (
     <div className="space-y-2.5">
-      <RefusalReasonField
-        disabled={saving !== null}
-        id={`review-reason-${scope}${row.reviewId}`}
-        kind={row.photoKind}
-        onChange={setReason}
-        value={reason}
-      />
+      {reason === "" || picking ? null : (
+        <RefusalReasonField
+          disabled={saving !== null}
+          id={`review-reason-${scope}${row.reviewId}`}
+          kind={row.photoKind}
+          onChange={setReason}
+          value={reason}
+        />
+      )}
       <DecisionComment disabled={saving !== null} id={`review-note-${scope}${row.reviewId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
-      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-        <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
-          {saving === "approve" ? "Approving…" : "Approve"}
-        </CrmButton>
-        <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
-          {saving === "reject" ? "Rejecting…" : "Reject"}
-        </CrmButton>
-      </div>
+      {picking ? (
+        <RefusalReasonPick
+          disabled={saving !== null}
+          kind={row.photoKind}
+          onBack={() => setPicking(false)}
+          onPick={(next) => {
+            setReason(next);
+            setPicking(false);
+            void decide("reject", next);
+          }}
+        />
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2" data-decide-pair>
+          <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
+            {saving === "approve" ? "Approving…" : "Approve"}
+          </CrmButton>
+          <CrmButton disabled={saving !== null} onClick={() => (reason === "" ? setPicking(true) : void decide("reject"))} variant="danger">
+            {saving === "reject" ? "Rejecting…" : "Reject"}
+          </CrmButton>
+        </div>
+      )}
       {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
-      {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
-      <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

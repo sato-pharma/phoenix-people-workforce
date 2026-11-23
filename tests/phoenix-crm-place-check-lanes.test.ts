@@ -40,6 +40,7 @@ import {
 } from "../src/lib/phoenix-crm/place-check-lanes.ts";
 import { AGREEMENT_READY_MIN_DECISIONS, placeCheckAgreement, type AgreementDecision } from "../src/lib/phoenix-crm/place-check-stored-advice.ts";
 import { placeNoteSubjectKey } from "../src/lib/phoenix-crm/place-note-rules.ts";
+import { PLACE_CHECK_TABLE_FROM_PX, placeCheckLayoutGuess } from "../src/lib/phoenix-crm/place-check-layout.ts";
 import { needsYouDecisionCount, type SeatedCustomer, type VenueGroup } from "../src/lib/phoenix-crm/shared-place-groups.ts";
 import { EMPTY_VALIDATION_REVIEW_FILTERS } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import type { SharedPlaceBoardRow, ValidationReviewRow } from "../src/lib/phoenix-crm/view-types.ts";
@@ -661,10 +662,48 @@ function runWordingAndFileTests() {
   // 🔴 NO WIDTH CAP ON THE SLOT. Set on the live page's own elements (23 Nov 2026): a 576 or 672 px cap gave
   // back 41 px on his own screen where none gives 61, and COST 35 px in a 900 px column with one quick pick.
   assert.ok(!/className="[^"]*max-w-[^"]*" data-pick-line-slot/.test(needs), "🔴 the slot carries no width cap");
-  assert.ok(
-    code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
+  const section = code(`${dir}/section.tsx`);
+  assert.match(
+    section,
+    /if \(lane === undefined\) \{\s*return \(\s*<TitledCard action=\{action\} description=\{description\} title=\{title\}>\s*\{children\}\s*<\/TitledCard>/,
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",
   );
+  assert.ok(section.includes('import { AdminTableShell as TitledCard } from "@/components/admin/admin-design-system";'), "and it IS the admin shell, under the name of what it is here");
+  // 🔴 The section is not a table file: a table tag in it would put it in the table ratchet with no phone
+  // cards of its own (tests/table-structure-ratchet.test.ts read it as the 20th such file, 23 Nov 2026).
+  assert.doesNotMatch(section, /<(?:table|PortalDesktopTable|CrmTable|RgTable|AdminTableShell)\b/, "🔴 the section draws no table: the list inside owns it and its phone cards");
+  // 🔴 A LANE'S CARD HAS A ONE-ROW HEAD (owner, 23 Nov 2026: "Fix them"): the title, the line of why the rows
+  // are his and the Pick rows slot stand in one row, and the first waiting place moved from 546 px to 376 px
+  // on a 1440 page (637 to 326 on his own screen).
+  assert.match(
+    section,
+    /<div className="flex min-w-0 flex-wrap items-center [^"]*" data-lane-head>[\s\S]*?<h2 [^>]*>\{title\}<\/h2>[\s\S]*?<div className="min-w-0 flex-1 [^"]*">\{lane\}<\/div>\s*\{action \? <div [^>]*>\{action\}<\/div> : null\}/,
+    "🔴 a lane's title, its line and its action stand in one row",
+  );
+  assert.ok(!/\{description\}/.test(section.slice(section.indexOf("data-lane-head"))), "a lane's head carries no second sentence under the title");
+  assert.doesNotMatch(section, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp/, "square, no sideways scroll, no ellipsis");
+  assert.ok((needs.match(/ lane=\{/g) ?? []).length >= 2, "both of the Super Admin's lanes hand the head their line");
+
+  // 🔴 EVERY ROW WAS ON THE PAGE TWICE (23 Nov 2026): cards for a phone and a table for a desktop, both always
+  // rendered. A list under the board's provider draws ONE; with no provider it draws both, as before.
+  assert.equal(placeCheckLayoutGuess({ userAgent: "Mozilla/5.0 (Windows NT 10.0)", mobileHint: "?1" }), "cards", "the browser's own hint decides when it sent one");
+  assert.equal(placeCheckLayoutGuess({ userAgent: "Mozilla/5.0 (iPhone)", mobileHint: "?0" }), "table", "and outranks the name");
+  assert.equal(placeCheckLayoutGuess({ userAgent: "Mozilla/5.0 (Linux; Android 14) Mobile Safari", mobileHint: null }), "cards", "with no hint, a phone's name asks for cards");
+  assert.equal(placeCheckLayoutGuess({ userAgent: "Mozilla/5.0 (iPad; CPU OS 17_0)", mobileHint: null }), "table", "a tablet is wide enough for the table");
+  assert.equal(placeCheckLayoutGuess({ userAgent: null, mobileHint: null }), "table", "nothing known reads as a desktop");
+  assert.equal(PLACE_CHECK_TABLE_FROM_PX, 768, "the table starts where the module's md breakpoint does");
+  const layout = code(`${dir}/layout.tsx`);
+  assert.ok(layout.includes('return guess === null ? "both" : seen;'), "🔴 with no provider a list draws both, so every other screen is unchanged");
+  assert.ok(layout.includes("useSyncExternalStore(subscribe, onThisScreen, () => guess ?? \"table\")"), "the server draws the guess and the browser corrects it from its own width");
+  for (const path of ["src/components/phoenix-crm/validation-review-queue.tsx", "src/components/phoenix-crm/validated-place-list.tsx", "src/components/phoenix-crm/shared-place-list.tsx"]) {
+    const list = code(path);
+    assert.ok(list.includes("const layout = usePlaceCheckLayout();"), `${path} asks which layout to draw`);
+    assert.ok(list.includes('{layout === "table" ? null : (') && list.includes('{layout === "cards" ? null : ('), `🔴 ${path} draws the cards or the table, never both under the provider`);
+  }
+  const pageSource = code("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
+  assert.ok(pageSource.includes('const layout = placeCheckLayoutGuess({ userAgent: requestHeaders.get("user-agent"), mobileHint: requestHeaders.get("sec-ch-ua-mobile") });') && pageSource.includes("layout={layout}"), "the Super Admin's page reads its guess from the request and hands it on");
+  assert.ok(code("src/components/place-review-deck/place-checks-with-deck.tsx").includes("<PlaceCheckLayoutProvider guess={layout}>"), "and the board and the review are drawn under it");
+  assert.ok(!code("app/employee-portals/place-checks/page.tsx").includes("PlaceCheckLayoutProvider"), "a district manager's page hands none and draws both, as before");
 
   // 🔴 A NEW FILE OF THE BOARD IS IN THE LIST THE SOURCE PINS READ, or the rule it carries is pinned by nothing.
   const listed = new Set(PLACE_CHECK_BOARD_FILES);

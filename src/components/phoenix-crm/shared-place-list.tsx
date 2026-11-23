@@ -20,20 +20,22 @@
  * list every other refusal uses, and never that a person looked at him.
  *
  * Desktop draws the module's `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
- * scroller); a phone draws the same rows as cards. Square corners throughout.
+ * scroller); a phone draws the same rows as cards. Square corners throughout. On the Super Admin's page
+ * only ONE of the two is drawn (`usePlaceCheckLayout`); every other screen draws both, as before.
  *
  * The building's pieces live beside this file since the split of 23 Nov 2026: what is read in
  * `shared-place-list-evidence.tsx`, the decision in `shared-place-list-decision.tsx`. This file keeps the
  * bulk answers, the table and its phone cards.
  */
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 
 import { crmPost } from "@/components/phoenix-crm/api";
 import { usePlaceCheckDecides } from "@/components/phoenix-crm/place-check-decides";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { usePlaceCheckLayout } from "@/components/phoenix-crm/place-checks/layout";
 import { PhoneFold } from "@/components/phoenix-crm/place-checks/phone-fold";
 import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
 import { Decision, LastColumn } from "@/components/phoenix-crm/shared-place-list-decision";
@@ -116,6 +118,7 @@ export function SharedPlaceList({
   const canPick = (row: SharedPlaceBoardRow) => canRestore || !row.restorable;
   const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId, canPick);
   const venueActions = canRestore ? VENUE_ACTIONS : VENUE_ACTIONS.filter((action) => action.key !== "restore");
+  const layout = usePlaceCheckLayout();
   return (
     <>
       {bulk ? (
@@ -127,6 +130,7 @@ export function SharedPlaceList({
           picks={picks}
         />
       ) : null}
+      {layout === "table" ? null : (
       <CrmCardsOnPhone>
         {groups.map(({ customers, total, venue: row }) => (
           // Closed until pressed: the building's name, its state and who captured it; its photographs, its
@@ -147,6 +151,8 @@ export function SharedPlaceList({
           </PhoneFold>
         ))}
       </CrmCardsOnPhone>
+      )}
+      {layout === "cards" ? null : (
       <CrmTable columns={["34%", "17%", "17%", "15%", "17%"]}>
         <thead>
           <tr>
@@ -159,14 +165,14 @@ export function SharedPlaceList({
         </thead>
         <tbody>
           {groups.map(({ customers, total, venue: row }) => (
-            <tr key={row.sharedPlaceId}>
+            // The building's own row, then a row for each customer seated in it (`SeatedCustomers`): the
+            // heavier line above marks where the next building starts.
+            <Fragment key={row.sharedPlaceId}>
+            <tr className="border-t-2 border-slate-200" data-building-row>
               <td className={crmTdClassName}>
                 <div className="flex min-w-0 items-start gap-3">
                   {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                   <VenueHeader mode={mode} row={row} />
-                </div>
-                <div className="-mx-3 mt-3 border-t border-slate-100">
-                  <SeatedCustomers customers={customers} layout="table" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
                 </div>
               </td>
               <td className={crmTdClassName}>
@@ -182,9 +188,12 @@ export function SharedPlaceList({
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="table" />
               </td>
             </tr>
+            <SeatedCustomers customers={customers} layout="table" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+            </Fragment>
           ))}
         </tbody>
       </CrmTable>
+      )}
     </>
   );
 }

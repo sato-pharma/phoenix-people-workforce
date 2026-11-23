@@ -36,7 +36,12 @@ import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "@/l
 import { adviceOnSubject, deckSeatItem, deckSlideKey } from "@/lib/place-review-deck/slides";
 import { cn } from "@/lib/utils";
 
-type SlideView = { stage: ReactNode; column: ReactNode; footer: ReactNode; wideButtons: boolean };
+/**
+ * `pinOnPhone`: the footer stays in reach on a phone too. Only a held place has it: its decision is the
+ * comment link and Approve beside Reject, about 125 px, since Reject opens its reasons on a press
+ * (23 Nov 2026). A place in use keeps its decision under the facts, where it has stood since 2026-10-19.
+ */
+type SlideView = { stage: ReactNode; column: ReactNode; footer: ReactNode; wideButtons: boolean; pinOnPhone?: boolean };
 
 function Comments({ kind, noteIndex, subjectId }: { kind: "place" | "shared_place"; noteIndex: PlaceNoteIndex; subjectId: string }) {
   const key = placeNoteSubjectKey(kind, subjectId);
@@ -121,6 +126,7 @@ function reviewSlide(row: ValidationReviewRow, noteIndex: PlaceNoteIndex): Slide
       </div>
     ),
     wideButtons: true,
+    pinOnPhone: row.status === "pending",
   };
 }
 
