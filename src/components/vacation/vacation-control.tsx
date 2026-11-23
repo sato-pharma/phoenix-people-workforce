@@ -1,21 +1,23 @@
 "use client";
 
-import { AlertCircle, CalendarClock, Save } from "lucide-react";
+import { CalendarClock, Save } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { AdminCallout, AdminPageHero, adminPanelClassName } from "@/components/admin/admin-design-system";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_INK, LandingRailLine, landingActionClassName } from "@/components/employee-portal/landing-kit";
+import { phxLabelTextClassName } from "@/components/ui/form-tokens";
 import { PageContainer } from "@/components/layout/page-container";
 import type { VacationControlData, VacationWeeklyOffMode, VacationWeeklyOffPolicyRecord } from "@/lib/vacation/types";
 import { VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
-import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
 type VacationControlProps = {
   initialData: VacationControlData | null;
   initialError: string | null;
+  /** The admin page shows its own title line; the portal page already has one and passes false. */
+  showHero?: boolean;
 };
 
 type DraftPolicy = Pick<VacationWeeklyOffPolicyRecord, "friday" | "jobTitle" | "saturday" | "thursday">;
@@ -30,7 +32,7 @@ function policyKey(policy: DraftPolicy) {
   return `${policy.thursday}|${policy.friday}|${policy.saturday}`;
 }
 
-export function VacationControl({ initialData, initialError }: VacationControlProps) {
+export function VacationControl({ initialData, initialError, showHero = true }: VacationControlProps) {
   const [policies, setPolicies] = useState<VacationWeeklyOffPolicyRecord[]>(initialData?.policies ?? []);
   const [drafts, setDrafts] = useState<Record<string, DraftPolicy>>(() =>
     Object.fromEntries((initialData?.policies ?? []).map((policy) => [policy.jobTitle, {
@@ -97,39 +99,49 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
     }
   }
 
+  const saveButton = (jobTitle: string, dirty: boolean, className?: string) => (
+    <button
+      className={landingActionClassName("solid", className)}
+      disabled={!dirty || savingTitle === jobTitle}
+      onClick={() => savePolicy(jobTitle)}
+      type="button"
+    >
+      <Save aria-hidden="true" className="h-3.5 w-3.5" />
+      {savingTitle === jobTitle ? "Saving..." : "Save"}
+    </button>
+  );
+
   return (
     <PageContainer className="max-w-none">
-      <AdminPageHero
-        description="Control weekly off days by job title. Friday is default full off unless changed here."
-        eyebrow="Leave Management"
-        icon={<CalendarClock className="h-3.5 w-3.5" />}
-        title="Vacation Control"
-      />
-
-      {error ? (
-        <AdminCallout tone="danger">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </AdminCallout>
+      {/* The portal page draws its own title band, so it turns this one off — one title per page. */}
+      {showHero ? (
+        <AdminPageHero
+          description="Control weekly off days by job title. Friday is default full off unless changed here."
+          eyebrow="Leave Management"
+          icon={<CalendarClock className="h-3.5 w-3.5" />}
+          title="Vacation Control"
+        />
       ) : null}
 
-      <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-        <p className="border-b border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500">
-          Each job title&apos;s weekly days off are used by the vacation duration calculation for employees with that title.
-        </p>
-        <div className="divide-y divide-slate-100 md:hidden">
+      {error ? (
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="alert">
+          <LandingRailLine rail="bg-rose-500">{error}</LandingRailLine>
+        </div>
+      ) : null}
+
+      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        {/* Phone: one ruled block per job title, its three days stacked, Save under them. */}
+        <div className="divide-y divide-slate-200 md:hidden">
           {policies.map((policy) => {
             const draft = drafts[policy.jobTitle] ?? policy;
             const dirty = policyKey(draft) !== policyKey(policyMap.get(policy.jobTitle) ?? policy);
             return (
-              <div className="bg-white p-4" key={policy.jobTitle}>
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-black text-slate-950">{policy.jobTitle}</p>
-                </div>
-                <div className="mt-4 grid gap-3">
+              <div className="px-3 py-4" key={policy.jobTitle}>
+                <p className={`break-words text-sm font-bold ${LANDING_INK}`} dir="auto">{policy.jobTitle}</p>
+                <div className="mt-3 grid gap-3">
                   {dayFields.map((field) => (
                     <label className="grid gap-1.5" key={field.key}>
-                      <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{field.label}</span>
+                      <span className={phxLabelTextClassName}>{field.label}</span>
                       <SearchableSelect
                         className="w-full px-3"
                         value={draft[field.key]}
@@ -142,22 +154,14 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                     </label>
                   ))}
                 </div>
-                <Button
-                  className="mt-4 w-full gap-2 bg-slate-950 font-black text-white hover:bg-slate-800"
-                  disabled={!dirty || savingTitle === policy.jobTitle}
-                  onClick={() => savePolicy(policy.jobTitle)}
-                  type="button"
-                >
-                  <Save className="h-4 w-4" />
-                  {savingTitle === policy.jobTitle ? "Saving..." : "Save"}
-                </Button>
+                {saveButton(policy.jobTitle, dirty, "mt-4 w-full")}
               </div>
             );
           })}
           {policies.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
+            <p className="px-3 py-8 text-center text-phx-sm font-medium text-slate-500">
               No job titles found in the employee directory.
-            </div>
+            </p>
           ) : null}
         </div>
 
@@ -170,27 +174,28 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
               <col className="w-[20%]" />
               <col className="w-[15%]" />
             </colgroup>
-            <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <thead className="bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th className="px-4 py-3">Job title</th>
+                <th className="border-b border-slate-200 px-4 py-2.5">Job title</th>
                 {dayFields.map((field) => (
-                  <th className="px-4 py-3" key={field.key}>{field.label}</th>
+                  <th className="border-b border-slate-200 px-4 py-2.5" key={field.key}>{field.label}</th>
                 ))}
-                <th className="px-4 py-3">Action</th>
+                <th className="border-b border-slate-200 px-4 py-2.5">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-200">
               {policies.map((policy) => {
                 const draft = drafts[policy.jobTitle] ?? policy;
                 const dirty = policyKey(draft) !== policyKey(policyMap.get(policy.jobTitle) ?? policy);
                 return (
                   <tr className="bg-white align-middle" key={policy.jobTitle}>
-                    <td className="px-4 py-4">
-                      <p className="break-words font-black text-slate-950">{policy.jobTitle}</p>
+                    <td className="px-4 py-3">
+                      <p className={`break-words font-bold ${LANDING_INK}`} dir="auto">{policy.jobTitle}</p>
                     </td>
                     {dayFields.map((field) => (
-                      <td className="px-4 py-4" key={field.key}>
+                      <td className="px-4 py-3" key={field.key}>
                         <SearchableSelect
+                          aria-label={`${field.label} for ${policy.jobTitle}`}
                           className="w-full px-3"
                           value={draft[field.key]}
                           onChange={(event) => updateDraft(policy.jobTitle, field.key, event.target.value as VacationWeeklyOffMode)}
@@ -201,23 +206,13 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
                         </SearchableSelect>
                       </td>
                     ))}
-                    <td className="px-4 py-4">
-                      <Button
-                        className="gap-2 bg-slate-950 font-black text-white hover:bg-slate-800"
-                        disabled={!dirty || savingTitle === policy.jobTitle}
-                        onClick={() => savePolicy(policy.jobTitle)}
-                        type="button"
-                      >
-                        <Save className="h-4 w-4" />
-                        {savingTitle === policy.jobTitle ? "Saving..." : "Save"}
-                      </Button>
-                    </td>
+                    <td className="px-4 py-3">{saveButton(policy.jobTitle, dirty)}</td>
                   </tr>
                 );
               })}
               {policies.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm font-semibold text-slate-500" colSpan={5}>
+                  <td className="px-4 py-8 text-center text-phx-sm font-medium text-slate-500" colSpan={5}>
                     No job titles found in the employee directory.
                   </td>
                 </tr>
@@ -225,7 +220,7 @@ export function VacationControl({ initialData, initialError }: VacationControlPr
             </tbody>
           </table>
         </div>
-      </Card>
+      </section>
     </PageContainer>
   );
 }

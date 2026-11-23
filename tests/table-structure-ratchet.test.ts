@@ -24,7 +24,9 @@ import { stripComments } from "./support/comment-strip.ts";
 // raise one to make a red run green.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASELINE = { noColgroup: 69, noPhoneLayout: 19, minWidth: 19, notFixed: 21 };
+// 2026-11-20, the employee portal redesign: noColgroup 69 -> 57, minWidth 19 -> 2, notFixed 21 -> 1.
+// 2026-11-20: CrmTable's `columns` prop draws a real <colgroup>; the detector now reads it, so noColgroup 57 -> 17 (40 false alarms gone).
+const BASELINE = { noColgroup: 17, noPhoneLayout: 19, minWidth: 2, notFixed: 1 };
 
 /** Exempt files and why. A new entry needs the owner's word, not a convenience. */
 const ALLOWED: Readonly<Record<string, string>> = {
@@ -68,7 +70,8 @@ export function flagsOf(rawSource: string): Flags | null {
   const source = stripComments(rawSource);
   if (!TABLE_TAG.test(source)) return null;
   const hasRaw = RAW_TABLE.test(source);
-  const hasColgroup = /<colgroup\b/.test(source) || /\bcols=/.test(source);
+  // CrmTable (src/components/phoenix-crm/ui.tsx) draws its <colgroup> from its `columns` prop.
+  const hasColgroup = /<colgroup\b/.test(source) || /\bcols=/.test(source) || /<CrmTable\b[^>]*\bcolumns=/.test(source);
   const tableTags = tagsOf(source, /<(?:table|PortalDesktopTable)\b/);
   const floorOnTag = tableTags.some((tag) => /min-w-|minWidth|style=\{\{[^}]*\bwidth/.test(tag));
   const floorBesideScroll = source.split("\n").some((line) => /\boverflow-x-(?:auto|scroll)\b/.test(line) && /\bmin-w-(?:\[|max)/.test(line));
@@ -99,6 +102,8 @@ export function runTableStructureRatchetTests() {
   assert.deepEqual(flagsOf(good), { minWidth: false, noColgroup: false, noPhoneLayout: false, notFixed: false }, "a fitting table raises nothing");
   assert.equal(flagsOf('<table className="w-full"><tbody /></table>')?.notFixed, true, "a table with no table-fixed is seen");
   assert.equal(flagsOf('<table className="w-full table-fixed"><tbody /></table>')?.noColgroup, true, "a table with no colgroup is seen");
+  assert.equal(flagsOf('<CrmTable columns={["40%", "60%"]}><tbody /></CrmTable><div className="md:hidden" />')?.noColgroup, false, "CrmTable's columns prop is its colgroup");
+  assert.equal(flagsOf('<CrmTable><tbody /></CrmTable>')?.noColgroup, true, "a CrmTable with no columns is still seen");
   assert.equal(flagsOf('<table className="w-full table-fixed min-w-[900px]"><colgroup /></table>')?.minWidth, true, "a min-width floor on the table is seen");
   assert.equal(flagsOf('<PortalDesktopTable cols={c} minWidth="900px">x</PortalDesktopTable>')?.minWidth, true, "the dead minWidth prop is seen");
   assert.equal(flagsOf('<div className="overflow-x-auto min-w-[700px]"><table className="table-fixed"><colgroup /></table></div>')?.minWidth, true, "a floor beside an overflow wrapper is seen");

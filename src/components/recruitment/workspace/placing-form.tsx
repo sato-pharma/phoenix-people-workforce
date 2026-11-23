@@ -301,7 +301,7 @@ export function PlacingForm({
         <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> Reading the questions and the places…
       </p>
     ) : form.phase === "failed" ? (
-      <p className="break-words border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
+      <p className="break-words border-l-4 border-rose-500 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
         {form.message}
       </p>
     ) : (
@@ -402,7 +402,7 @@ export function PlacingForm({
         )}
 
         {problem ? (
-          <p className="break-words border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
+          <p className="break-words border-l-4 border-rose-500 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-800" dir="auto" role="alert">
             {problem}
           </p>
         ) : null}
@@ -426,14 +426,14 @@ export function PlacingForm({
 
   if (!framed) return body;
   return (
-    <section aria-label={`Place ${row.name}`} className={`border border-orange-200 bg-white ${adminSoftDepthClassName}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-orange-200 bg-orange-50/70 px-3 py-2">
+    <section aria-label={`Place ${row.name}`} className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.1em] text-slate-800">
-          <MapPin aria-hidden className="h-3.5 w-3.5 text-orange-600" />
+          <MapPin aria-hidden className="h-3.5 w-3.5 text-[#08111f]" />
           <span dir="auto">{`Place ${row.name}`}</span>
         </p>
         {onClose ? (
-          <button aria-label="Close" className="p-0.5 text-slate-500 transition hover:text-slate-900" onClick={onClose} type="button">
+          <button aria-label="Close" className="p-0.5 text-slate-500 transition motion-reduce:transition-none hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]" onClick={onClose} type="button">
             <X aria-hidden className="h-4 w-4" />
           </button>
         ) : null}

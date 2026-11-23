@@ -145,7 +145,7 @@ const CHANNEL_ICON: Record<CandidateSourceChannelKey, React.ReactNode> = {
 };
 
 /** The small square link each file row carries — a hairline control with the house's lift. */
-const fileLinkClassName = `inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-800 ${adminControlDepthClassName}`;
+const fileLinkClassName = `inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 transition motion-reduce:transition-none hover:border-[#08111f] hover:bg-slate-50 hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`;
 
 /**
  * "Accepted · starts 01 October 2026" — where an offer letter stands, for the hint under the row.
@@ -266,14 +266,14 @@ function RecordPanel({
         <button
           aria-expanded={open}
           aria-label={open ? `Fold ${title}` : `Open ${title}`}
-          className="flex h-8 w-8 items-center justify-center border border-white/15 bg-white/5 text-slate-200 transition hover:border-white/30 hover:bg-white/15 hover:text-white"
+          className="flex h-8 w-8 items-center justify-center border border-white/15 bg-white/5 text-slate-200 transition motion-reduce:transition-none hover:border-white/30 hover:bg-white/15 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
           onClick={toggle}
           title={open ? "Fold this section" : "Open this section"}
           type="button"
         >
           <ChevronDown
             aria-hidden
-            className={open ? "h-4 w-4 rotate-180 transition-transform duration-200" : "h-4 w-4 transition-transform duration-200"}
+            className={open ? "h-4 w-4 rotate-180 transition-transform motion-reduce:transition-none duration-200" : "h-4 w-4 transition-transform motion-reduce:transition-none duration-200"}
           />
         </button>
       }
@@ -301,7 +301,7 @@ function RecordNotice({
     <div
       className={
         tone === "warn"
-          ? `flex items-start gap-3 border border-amber-200 border-l-[3px] border-l-amber-500 bg-amber-50/80 px-4 py-3 ${adminSoftDepthClassName}`
+          ? `flex items-start gap-3 border border-slate-200 border-l-[3px] border-l-amber-500 bg-white px-4 py-3 ${adminSoftDepthClassName}`
           : `flex items-start gap-3 border border-slate-200 border-l-[3px] border-l-slate-400 bg-white px-4 py-3 ${adminSoftDepthClassName}`
       }
     >
@@ -347,7 +347,7 @@ function RecordRow({ row }: { row: CandidateRecordRow }) {
     <KeyValue label={row.label}>
       <ol className="space-y-1.5">
         {row.entries.map((lines, index) => (
-          <li className="border-l-2 border-orange-200 pl-2" key={index}>
+          <li className="border-l-2 border-slate-200 pl-2" key={index}>
             {lines.map((line) => (
               <span className="block break-words" key={line.label}>
                 <span className="text-[11px] font-semibold text-phx-ink-soft">{line.label}: </span>
@@ -371,11 +371,11 @@ function FileRow({ file, uploadedBy }: { file: RecruitmentFile; uploadedBy: stri
     uploadedBy ? `by ${uploadedBy}` : null,
   ].filter(Boolean);
   return (
-    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 px-4 py-3 transition-colors last:border-b-0 hover:bg-slate-50/70">
+    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 px-4 py-3 transition-colors motion-reduce:transition-none last:border-b-0 hover:bg-slate-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]">
       <span className="flex min-w-0 flex-1 items-start gap-2.5">
         <span
           aria-hidden
-          className={`flex h-8 w-8 shrink-0 items-center justify-center border border-orange-200 bg-orange-50 text-orange-600 ${adminChipDepthClassName}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center border-l-4 border-[#08111f] bg-white text-[#08111f] ${adminChipDepthClassName}`}
         >
           <FileText className="h-4 w-4" />
         </span>
@@ -407,7 +407,7 @@ function FileRow({ file, uploadedBy }: { file: RecruitmentFile; uploadedBy: stri
 /** A short list inside a section: each item a heading line and quieter lines under it. */
 function ListItem({ children, title }: { children?: React.ReactNode; title: React.ReactNode }) {
   return (
-    <li className="border-b border-slate-100 px-4 py-2.5 transition-colors last:border-b-0 hover:bg-slate-50/70">
+    <li className="border-b border-slate-100 px-4 py-2.5 transition-colors motion-reduce:transition-none last:border-b-0 hover:bg-slate-50/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]">
       <span className="block break-words text-[13px] font-semibold leading-snug text-slate-950">{title}</span>
       {children ? <span className="mt-0.5 block break-words text-[12px] leading-snug text-slate-500">{children}</span> : null}
     </li>
@@ -416,7 +416,7 @@ function ListItem({ children, title }: { children?: React.ReactNode; title: Reac
 
 function Unreadable({ part }: { part: CandidateRecordPart }) {
   return (
-    <p className="flex items-start gap-2 border-b border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-4 py-2.5 text-[13px] leading-relaxed text-rose-800">
+    <p className="flex items-start gap-2 border-b border-slate-200 border-l-[3px] border-l-rose-500 bg-white px-4 py-2.5 text-[13px] leading-relaxed text-rose-800">
       <TriangleAlert aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0 break-words">{`Could not read ${PART_WORDS[part]}. Reload the page to try again.`}</span>
     </p>
@@ -478,7 +478,7 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
                   title={title}
                   type="button"
                 >
-                  <CalendarPlus aria-hidden className="h-3.5 w-3.5 text-orange-600" />
+                  <CalendarPlus aria-hidden className="h-3.5 w-3.5 text-[#08111f]" />
                   Schedule interview
                 </button>
               )}
@@ -497,7 +497,7 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
               Print record
             </a>
             <a
-              className="inline-flex items-center gap-1.5 px-2 py-2 text-sm font-bold text-slate-600 underline-offset-4 transition hover:text-slate-950 hover:underline"
+              className="inline-flex items-center gap-1.5 px-2 py-2 text-sm font-bold text-slate-600 underline-offset-4 transition motion-reduce:transition-none hover:text-slate-950 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               href={root}
               title="Back to the candidate pool"
             >
@@ -579,7 +579,7 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
             >
               {candidate.rating ? (
                 <>
-                  <span aria-hidden className="text-phx-accent">
+                  <span aria-hidden className="text-[#08111f]">
                     {"★".repeat(candidate.rating)}
                   </span>{" "}
                   {candidateRatingLabels[candidate.rating]}
@@ -720,7 +720,7 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
             {candidate.cvExternalUrl ? (
               <KeyValue label="CV link">
                 <a
-                  className="break-all text-phx-accent-press underline underline-offset-2"
+                  className="break-all text-[#08111f] underline underline-offset-2"
                   href={candidate.cvExternalUrl}
                   rel="noreferrer"
                   target="_blank"

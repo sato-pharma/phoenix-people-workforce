@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -9,7 +10,6 @@ import {
 } from "react";
 import {
   AlertCircle,
-  CalendarClock,
   CheckCircle2,
   Printer,
   Search,
@@ -17,9 +17,7 @@ import {
   WifiOff,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { ChoiceGroup } from "@/components/ui/choice-group";
-import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import type {
@@ -34,6 +32,18 @@ import {
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingEmpty,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingRow,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Types ────────────────────────────────────────────────────────── */
@@ -61,11 +71,25 @@ type DateWarning = {
 /* ─── Helpers ──────────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function statusBadgeVariant(status: EmployeeExcuseStatus): "danger" | "success" | "warning" {
-  if (status === "approved") return "success";
-  if (status === "rejected") return "danger";
-  return "warning";
+// The landing kit's status rule: a status is a coloured word (and, on a card, a 4px rail), never a
+// filled pill. The same four colours as the plans: approved green, rejected rose, returned amber,
+// awaiting the manager sky.
+function statusInk(status: EmployeeExcuseStatus): string {
+  if (status === "approved") return "text-emerald-700";
+  if (status === "rejected") return "text-rose-700";
+  if (status === "returned_to_employee") return "text-amber-700";
+  return "text-sky-700";
 }
+
+function statusRail(status: EmployeeExcuseStatus): string {
+  if (status === "approved") return "bg-emerald-500";
+  if (status === "rejected") return "bg-rose-500";
+  if (status === "returned_to_employee") return "bg-amber-500";
+  return "bg-sky-500";
+}
+
+/** The status word's shape — small tracked capitals that wrap inside a narrow column. */
+const statusWordClassName = "break-words text-phx-xs font-bold uppercase tracking-[0.08em]";
 
 function statusLabel(status: EmployeeExcuseStatus): string {
   if (status === "approved") return "Approved";
@@ -222,53 +246,40 @@ function MetricCard({
 }: {
   description: string;
   label: string;
-  tone: "blue" | "emerald" | "orange" | "rose" | "violet";
+  /** The figure's colour on navy — white when absent; rose once the allowance is used up. */
+  tone?: string;
   value: number | string;
 }) {
-  const toneMap = {
-    blue: {
-      bg: "bg-sky-50",
-      border: "border-sky-100",
-      label: "text-sky-600",
-      value: "text-sky-900",
-    },
-    emerald: {
-      bg: "bg-emerald-50",
-      border: "border-emerald-100",
-      label: "text-emerald-600",
-      value: "text-emerald-900",
-    },
-    orange: {
-      bg: "bg-orange-50",
-      border: "border-orange-100",
-      label: "text-orange-600",
-      value: "text-orange-900",
-    },
-    rose: {
-      bg: "bg-rose-50",
-      border: "border-rose-100",
-      label: "text-rose-600",
-      value: "text-rose-900",
-    },
-    violet: {
-      bg: "bg-violet-50",
-      border: "border-violet-100",
-      label: "text-violet-600",
-      value: "text-violet-900",
-    },
-  };
-
-  const t = toneMap[tone];
-
   return (
-    <div className={`border p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)] ${t.border} ${t.bg}`}>
-      <p className={`text-phx-sm font-bold uppercase tracking-[0.12em] ${t.label}`}>
-        {label}
-      </p>
-      <p className={`mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em] ${t.value}`}>
-        {value}
-      </p>
-      <p className="mt-2 text-phx-xs font-medium leading-4 text-slate-500">{description}</p>
+    // A tile on the navy board: one step lighter than the board, the figure white and tabular.
+    <div className={`min-w-0 px-3 py-2.5 ${LANDING_NAVY_TILE}`}>
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-white/60">{label}</p>
+      <div className="mt-1.5">
+        <LandingFigure onNavy tone={tone}>
+          {value}
+        </LandingFigure>
+      </div>
+      <p className="mt-1.5 break-words text-phx-xs font-medium leading-4 text-white/45">{description}</p>
+    </div>
+  );
+}
+
+/** A condition line — offline, sent, an error — with its tone on a 4px rail, never a tinted box. */
+function ExcuseNotice({
+  children,
+  icon,
+  tone,
+}: {
+  children: ReactNode;
+  icon: ReactNode;
+  tone: "amber" | "emerald" | "rose";
+}) {
+  const rail = tone === "amber" ? "bg-amber-500" : tone === "emerald" ? "bg-emerald-500" : "bg-rose-600";
+  return (
+    <div className={`flex min-w-0 items-start gap-3 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${rail}`} />
+      {icon}
+      <div className="min-w-0 flex-1 break-words text-phx-sm font-bold leading-snug text-slate-700">{children}</div>
     </div>
   );
 }
@@ -295,49 +306,49 @@ function UsageDistributionBar({
   const remainingPct = (remaining / allowance) * 100;
 
   return (
-    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between">
-        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Monthly usage</p>
-        <p className="text-phx-xs font-bold text-slate-400">{allowance} {allowance === 1 ? "excuse" : "excuses"} allowed this month</p>
-      </div>
-      <div className="mt-2.5 flex h-3 w-full overflow-hidden bg-slate-100">
+    <LandingPanel
+      bodyClassName="px-3 py-3 sm:px-4"
+      right={<LandingMeta items={[`${allowance} ${allowance === 1 ? "excuse" : "excuses"} allowed this month`]} />}
+      title="Monthly usage"
+    >
+      <div className="flex h-2 w-full overflow-hidden bg-slate-100">
         {approvedPct > 0 ? (
           <div
-            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+            className="h-full bg-emerald-500 transition-all duration-500 motion-reduce:transition-none"
             style={{ width: `${approvedPct}%` }}
             title={`Approved: ${approved}`}
           />
         ) : null}
         {pendingPct > 0 ? (
           <div
-            className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+            className="h-full bg-sky-500 transition-all duration-500 motion-reduce:transition-none"
             style={{ width: `${pendingPct}%` }}
             title={`Pending: ${pending}`}
           />
         ) : null}
         {remainingPct > 0 ? (
           <div
-            className="h-full bg-gradient-to-r from-slate-200 to-slate-100 transition-all duration-500"
+            className="h-full bg-slate-200 transition-all duration-500 motion-reduce:transition-none"
             style={{ width: `${remainingPct}%` }}
             title={`Remaining: ${remaining}`}
           />
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-sm font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 bg-emerald-500" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-emerald-500" />
           <span className="text-emerald-700">Approved {approved}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 bg-amber-500" />
-          <span className="text-amber-700">Pending {pending}</span>
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-sky-500" />
+          <span className="text-sky-700">Pending {pending}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 bg-slate-300" />
+          <span aria-hidden="true" className="inline-block h-2 w-2 bg-slate-300" />
           <span className="text-slate-600">Remaining {remaining}</span>
         </span>
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -370,25 +381,24 @@ function MonthlyTrendSparkline({ requests }: { requests: EmployeeExcuseRequest[]
   if (requests.length === 0) return null;
 
   return (
-    <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Monthly trend</p>
-      <div className="mt-3 flex items-end justify-between gap-1">
+    <LandingPanel bodyClassName="px-3 py-3 sm:px-4" title="Monthly trend">
+      <div className="flex items-end justify-between gap-1">
         {buckets.map((b) => {
           const h = Math.max(4, (b.count / maxCount) * barMaxHeight);
           return (
-            <div key={b.key} className="flex flex-1 flex-col items-center gap-1">
-              <span className="text-phx-sm font-bold text-slate-700">{b.count}</span>
+            <div key={b.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+              <span className={`text-phx-sm font-bold tabular-nums ${LANDING_INK}`}>{b.count}</span>
               <div
-                className="w-full bg-gradient-to-t from-orange-500 to-orange-300 transition-all duration-500"
+                className="w-full bg-[#08111f] transition-all duration-500 motion-reduce:transition-none"
                 style={{ height: `${h}px` }}
                 title={`${b.label}: ${b.count} excuses`}
               />
-              <span className="text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-400">{b.label}</span>
+              <span className="text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-500">{b.label}</span>
             </div>
           );
         })}
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -404,49 +414,52 @@ function ExcuseHistoryCard({
   request: EmployeeExcuseRequest;
 }) {
   return (
-    <div className="border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-phx-md font-bold text-slate-900">{typeLabel(request.excuseType)}</p>
-          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {formatDate(request.excuseDate)} · {request.durationHours}h
-          </p>
-          <p className="mt-0.5 font-mono text-phx-sm font-bold text-slate-400">{request.requestCode}</p>
+    <div className="flex min-w-0 gap-3 px-3 py-3">
+      <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${statusRail(request.status)}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+          <div className="min-w-0 flex-1">
+            <p className={`break-words text-phx-md font-bold ${LANDING_INK}`}>{typeLabel(request.excuseType)}</p>
+            <p className="mt-0.5 text-phx-xs font-medium tabular-nums text-slate-500">
+              {formatDate(request.excuseDate)} · {request.durationHours}h
+            </p>
+            <p className="mt-0.5 break-words font-mono text-phx-sm font-bold text-slate-400">{request.requestCode}</p>
+          </div>
+          <span className={`${statusWordClassName} ${statusInk(request.status)}`}>
+            {statusLabel(request.status)}
+          </span>
         </div>
-        <Badge variant={statusBadgeVariant(request.status)}>
-          {statusLabel(request.status)}
-        </Badge>
-      </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <div>
-          <p className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">Manager</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{request.managerName ?? "Not assigned"}</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="min-w-0">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Manager</p>
+            <p className="mt-0.5 break-words text-phx-sm font-semibold text-slate-700">{request.managerName ?? "Not assigned"}</p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Submitted</p>
+            <p className="mt-0.5 break-words text-phx-sm font-semibold tabular-nums text-slate-700">{formatDateTime(request.createdAt)}</p>
+          </div>
         </div>
-        <div>
-          <p className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">Submitted</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDateTime(request.createdAt)}</p>
-        </div>
-      </div>
 
-      {request.managerDecisionAt ? (
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <p className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">Decision</p>
-          <p className="mt-0.5 text-phx-xs font-semibold text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
-          {request.managerDecisionComment ? (
-            <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{request.managerDecisionComment}</p>
-          ) : null}
-        </div>
-      ) : null}
-      {request.status === "returned_to_employee" ? (
-        <button
-          className="mt-3 inline-flex h-8 items-center justify-center border border-orange-200 bg-orange-50 px-3 text-phx-xs font-bold text-orange-700 transition hover:bg-orange-100"
-          onClick={() => onEditReturned(request)}
-          type="button"
-        >
-          Edit and resubmit
-        </button>
-      ) : null}
+        {request.managerDecisionAt ? (
+          <div className="mt-2 border-t border-slate-200 pt-2">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Decision</p>
+            <p className="mt-0.5 text-phx-xs font-semibold tabular-nums text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
+            {request.managerDecisionComment ? (
+              <p className="mt-0.5 break-words text-phx-xs font-medium leading-4 text-slate-500" dir="auto">{request.managerDecisionComment}</p>
+            ) : null}
+          </div>
+        ) : null}
+        {request.status === "returned_to_employee" ? (
+          <button
+            className={landingActionClassName("outline", "mt-3")}
+            onClick={() => onEditReturned(request)}
+            type="button"
+          >
+            Edit and resubmit
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -675,50 +688,47 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
       {/* ── Offline banner (#2) ───────────────────────────────── */}
       {!isOnline ? (
-        <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-md font-bold text-amber-800">
-          <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
-          <span>
-            You are offline. Requests will be queued and sent automatically when you reconnect.
-            {queueLength > 0 ? ` (${queueLength} queued)` : ""}
-          </span>
-        </div>
+        <ExcuseNotice icon={<WifiOff aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />} tone="amber">
+          You are offline. Requests will be queued and sent automatically when you reconnect.
+          {queueLength > 0 ? ` (${queueLength} queued)` : ""}
+        </ExcuseNotice>
       ) : null}
 
       {/* ── Optimistic success animation (#1) ─────────────────── */}
       {submitSuccess ? (
-        <div className="flex items-center gap-2.5 border border-emerald-200 bg-emerald-50 px-4 py-3 text-phx-md font-bold text-emerald-800 animate-in fade-in duration-300">
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-          <span>Excuse request submitted successfully. Switching to history...</span>
+        <div className="animate-in fade-in duration-300 motion-reduce:animate-none">
+          <ExcuseNotice icon={<CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />} tone="emerald">
+            Excuse request submitted successfully. Switching to history...
+          </ExcuseNotice>
         </div>
       ) : null}
 
-      {/* ── Metric Cards ──────────────────────────────────────── */}
-      <div className="grid gap-2 grid-cols-2 xs:grid-cols-4">
-        <MetricCard
-          description={`Allowance for ${currentMonthLabel}`}
-          label="Monthly limit"
-          tone="blue"
-          value={workspace.monthly.allowance}
-        />
-        <MetricCard
-          description="Approved excuses this month"
-          label="Used"
-          tone="emerald"
-          value={workspace.monthly.used}
-        />
-        <MetricCard
-          description="Awaiting manager decision"
-          label="Pending"
-          tone="orange"
-          value={workspace.monthly.pending}
-        />
-        <MetricCard
-          description="Available excuses left"
-          label="Remaining"
-          tone={workspace.monthly.remaining <= 0 ? "rose" : "violet"}
-          value={workspace.monthly.remaining}
-        />
-      </div>
+      {/* ── Metric Cards — the page's one navy board ────────────── */}
+      <LandingNavyBoard label="Key figures" right={<LandingMeta items={[currentMonthLabel]} onNavy />}>
+        <div className="grid grid-cols-2 gap-px xs:grid-cols-4">
+          <MetricCard
+            description={`Allowance for ${currentMonthLabel}`}
+            label="Monthly limit"
+            value={workspace.monthly.allowance}
+          />
+          <MetricCard
+            description="Approved excuses this month"
+            label="Used"
+            value={workspace.monthly.used}
+          />
+          <MetricCard
+            description="Awaiting manager decision"
+            label="Pending"
+            value={workspace.monthly.pending}
+          />
+          <MetricCard
+            description="Available excuses left"
+            label="Remaining"
+            tone={workspace.monthly.remaining <= 0 ? "text-rose-300" : undefined}
+            value={workspace.monthly.remaining}
+          />
+        </div>
+      </LandingNavyBoard>
 
       {/* ── Usage Distribution Bar ────────────────────────────── */}
       <UsageDistributionBar
@@ -730,7 +740,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
       {/* ── Tab Bar ────────────────────────────────────────────── */}
       <div
-        className={`flex w-full gap-0.5 overflow-x-auto border border-slate-200 bg-slate-50 p-0.5 ${adminSoftDepthClassName}`}
+        className={`flex w-full flex-wrap border border-slate-200 bg-white ${adminSoftDepthClassName}`}
         role="tablist"
         aria-label="Excuse workspace tabs"
       >
@@ -739,8 +749,8 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
           return (
             <button
               aria-selected={active}
-              className={`flex h-9 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-phx-md font-bold transition ${
-                active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700"
+              className={`flex min-h-10 items-center gap-2 border-b-2 px-3 text-phx-md font-bold transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
+                active ? "border-[#08111f] text-[#08111f]" : "border-transparent text-slate-500 hover:text-[#08111f]"
               }`}
               key={tab.value}
               role="tab"
@@ -749,8 +759,8 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
             >
               {tab.label}
               {tab.count > 0 ? (
-                <span className={`inline-flex h-5 min-w-5 items-center justify-center px-1 text-phx-sm font-bold ${
-                  active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600"
+                <span className={`inline-flex h-5 min-w-5 items-center justify-center px-1 text-phx-sm font-bold tabular-nums ${
+                  active ? "bg-[#08111f] text-white" : "bg-slate-100 text-slate-600"
                 }`}>
                   {tab.count}
                 </span>
@@ -766,16 +776,8 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
         <div>
           {/* ═════ Request Tab ═════ */}
           {activeTab === "request" ? (
-            <div className="border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Simple workflow</p>
-                <h2 className="mt-1 text-base font-extrabold text-slate-900">Request a 2-hour excuse</h2>
-                <p className="mt-0.5 text-phx-sm font-medium leading-5 text-slate-500">
-                  Choose the date and type. Your manager and HR receive the request for visibility.
-                </p>
-              </div>
-
-              <div className="space-y-4 p-4">
+            <LandingPanel right={<LandingMeta items={["Simple workflow"]} />} title="Request a 2-hour excuse">
+              <div className="space-y-4 p-3 sm:p-4">
                 <div className="grid gap-3 xs:grid-cols-2">
                   <label className="space-y-1.5">
                     <span className={labelClass}>Date</span>
@@ -809,23 +811,23 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
                 {/* Message */}
                 {message ? (
-                  <div className={`flex items-start gap-2 border px-3 py-2.5 text-phx-sm font-bold ${
-                    message.kind === "success"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-rose-200 bg-rose-50 text-rose-700"
-                  }`}>
-                    {message.kind === "success"
-                      ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      : <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                    <span>{message.text}</span>
-                  </div>
+                  <ExcuseNotice
+                    icon={message.kind === "success"
+                      ? <CheckCircle2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                      : <AlertCircle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />}
+                    tone={message.kind === "success" ? "emerald" : "rose"}
+                  >
+                    {message.text}
+                  </ExcuseNotice>
                 ) : null}
 
                 {/* Submit button with optimistic states (#1) */}
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <button
                     className={cn(
                       phxButtonAccentClassName,
+                      LANDING_FOCUS,
+                      "motion-reduce:transition-none",
                       // Sent turns the same button green — the one state the accent token does not
                       // carry, and the one thing a rep looks for after pressing it.
                       submitSuccess && "border-emerald-600 bg-emerald-600 hover:bg-emerald-700",
@@ -861,7 +863,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   ) : null}
                   {resubmitRequestId ? (
                     <button
-                      className="text-phx-xs font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                      className={`text-phx-xs font-bold text-slate-500 underline-offset-2 transition-colors hover:text-[#08111f] hover:underline motion-reduce:transition-none ${LANDING_FOCUS}`}
                       onClick={() => {
                         setResubmitRequestId(null);
                         setMessage(null);
@@ -873,43 +875,44 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   ) : null}
                 </div>
               </div>
-            </div>
+            </LandingPanel>
           ) : null}
 
           {/* ═════ History Tab ═════ */}
           {activeTab === "history" ? (
-            <div ref={historyPanelRef} className="border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Request history</p>
-                    <h2 className="mt-1 text-base font-extrabold text-slate-900">Excuse requests</h2>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className={`w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-600 ${adminSoftDepthClassName}`}>
-                      {filteredRequests.length === historyTotal
+            <div ref={historyPanelRef}>
+            <LandingPanel
+              right={
+                <>
+                  <LandingMeta
+                    items={[
+                      "Request history",
+                      filteredRequests.length === historyTotal
                         ? `${historyTotal} requests`
-                        : `${filteredRequests.length} of ${historyTotal}`}
-                    </Badge>
-                    <button
-                      className="inline-flex h-7 items-center gap-1.5 border border-slate-200 bg-white px-2.5 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
-                      onClick={() => window.print()}
-                      title="Print history"
-                      type="button"
-                    >
-                      <Printer className="h-3 w-3" /> Print
-                    </button>
-                  </div>
-                </div>
-              </div>
+                        : `${filteredRequests.length} of ${historyTotal}`,
+                    ]}
+                  />
+                  <button
+                    className={landingActionClassName("outline", "print:hidden")}
+                    onClick={() => window.print()}
+                    title="Print history"
+                    type="button"
+                  >
+                    <Printer aria-hidden="true" className="h-3 w-3" /> Print
+                  </button>
+                </>
+              }
+              title="Excuse requests"
+            >
 
               {/* Search filter (#4) */}
               {historyTotal > 0 ? (
-                <div className="border-b border-slate-100 px-4 py-2.5 print:hidden">
+                <div className="border-b border-slate-200 px-3 py-2.5 sm:px-4 print:hidden">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      className="pl-9 text-phx-sm"
+                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <input
+                      aria-label="Search excuse requests"
+                      className={cn(inputClass, "pl-9")}
                       placeholder="Search by date, type, status, manager..."
                       value={historySearch}
                       onChange={(event) => setHistorySearch(event.target.value)}
@@ -920,53 +923,53 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
               {/* Status distribution mini-bar */}
               {historyTotal > 0 ? (
-                <div className="border-b border-slate-100 px-4 py-2.5">
+                <div className="border-b border-slate-200 px-3 py-2.5 sm:px-4">
                   <div className="flex h-2 w-full overflow-hidden bg-slate-100">
                     {statusCounts.approved > 0 ? (
                       <div
-                        className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+                        className="h-full bg-emerald-500 transition-all duration-500 motion-reduce:transition-none"
                         style={{ width: `${(statusCounts.approved / historyTotal) * 100}%` }}
                         title={`Approved: ${statusCounts.approved}`}
                       />
                     ) : null}
                     {statusCounts.pending > 0 ? (
                       <div
-                        className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-500"
+                        className="h-full bg-sky-500 transition-all duration-500 motion-reduce:transition-none"
                         style={{ width: `${(statusCounts.pending / historyTotal) * 100}%` }}
                         title={`Pending: ${statusCounts.pending}`}
                       />
                     ) : null}
                     {statusCounts.rejected > 0 ? (
                       <div
-                        className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
+                        className="h-full bg-rose-500 transition-all duration-500 motion-reduce:transition-none"
                         style={{ width: `${(statusCounts.rejected / historyTotal) * 100}%` }}
                         title={`Rejected: ${statusCounts.rejected}`}
                       />
                     ) : null}
                     {statusCounts.returned > 0 ? (
                       <div
-                        className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-500"
+                        className="h-full bg-amber-500 transition-all duration-500 motion-reduce:transition-none"
                         style={{ width: `${(statusCounts.returned / historyTotal) * 100}%` }}
                         title={`Returned: ${statusCounts.returned}`}
                       />
                     ) : null}
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-phx-sm font-bold uppercase tracking-[0.08em]">
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums">
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 bg-emerald-500" />
+                      <span aria-hidden="true" className="inline-block h-2 w-2 bg-emerald-500" />
                       <span className="text-emerald-700">Approved {statusCounts.approved}</span>
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 bg-amber-500" />
-                      <span className="text-amber-700">Pending {statusCounts.pending}</span>
+                      <span aria-hidden="true" className="inline-block h-2 w-2 bg-sky-500" />
+                      <span className="text-sky-700">Pending {statusCounts.pending}</span>
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 bg-rose-500" />
+                      <span aria-hidden="true" className="inline-block h-2 w-2 bg-rose-500" />
                       <span className="text-rose-700">Rejected {statusCounts.rejected}</span>
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-2 w-2 bg-orange-500" />
-                      <span className="text-orange-700">Returned {statusCounts.returned}</span>
+                      <span aria-hidden="true" className="inline-block h-2 w-2 bg-amber-500" />
+                      <span className="text-amber-700">Returned {statusCounts.returned}</span>
                     </span>
                   </div>
                 </div>
@@ -984,43 +987,43 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                     <col className="w-[14%]" />
                     <col className="w-[23%]" />
                   </colgroup>
-                  <thead className="bg-slate-50 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="bg-white text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Date</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Duration</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Status</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Submitted</th>
-                      <th className="border-b border-slate-100 px-3 py-2.5">Decision</th>
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5">Date</th>
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5">Type</th>
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5">Duration</th>
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5">Manager</th>
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5">Status</th>
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5">Submitted</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Decision</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-200">
                     {filteredRequests.map((request) => (
-                      <tr key={request.id} className="bg-white transition hover:bg-orange-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-semibold text-slate-700">
+                      <tr key={request.id} className="bg-white transition-colors hover:bg-slate-50 motion-reduce:transition-none">
+                        <td className="border-r border-slate-200 px-3 py-2.5 break-words font-semibold tabular-nums text-slate-700">
                           {formatDate(request.excuseDate)}
                           <span className="mt-0.5 block font-mono text-phx-sm font-bold text-slate-400">{request.requestCode}</span>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-semibold text-slate-800">{typeLabel(request.excuseType)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{request.durationHours}h</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-semibold text-slate-700">{request.managerName ?? "—"}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5">
-                          <Badge variant={statusBadgeVariant(request.status)}>
+                        <td className={`border-r border-slate-200 px-3 py-2.5 break-words font-semibold ${LANDING_INK}`}>{typeLabel(request.excuseType)}</td>
+                        <td className={`border-r border-slate-200 px-3 py-2.5 text-center font-bold tabular-nums ${LANDING_INK}`}>{request.durationHours}h</td>
+                        <td className="border-r border-slate-200 px-3 py-2.5 break-words font-semibold text-slate-700">{request.managerName ?? "—"}</td>
+                        <td className="border-r border-slate-200 px-3 py-2.5">
+                          <span className={`${statusWordClassName} ${statusInk(request.status)}`}>
                             {statusLabel(request.status)}
-                          </Badge>
+                          </span>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-medium text-slate-600">{formatDateTime(request.createdAt)}</td>
+                        <td className="border-r border-slate-200 px-3 py-2.5 break-words font-medium tabular-nums text-slate-600">{formatDateTime(request.createdAt)}</td>
                         <td className="break-words px-3 py-2.5 text-phx-xs">
                           {request.managerDecisionAt ? (
                             <div>
-                              <p className="font-medium text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
+                              <p className="font-medium tabular-nums text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
                               {request.managerDecisionComment ? (
-                                <p className="mt-0.5 leading-4 text-slate-500">{request.managerDecisionComment}</p>
+                                <p className="mt-0.5 leading-4 text-slate-500" dir="auto">{request.managerDecisionComment}</p>
                               ) : null}
                               {request.status === "returned_to_employee" ? (
                                 <button
-                                  className="mt-2 inline-flex h-7 items-center justify-center border border-orange-200 bg-orange-50 px-2.5 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
+                                  className={landingActionClassName("outline", "mt-2")}
                                   onClick={() => editReturnedRequest(request)}
                                   type="button"
                                 >
@@ -1046,20 +1049,18 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
               </div>
 
               {/* Mobile card view (< xs / 480px) */}
-              <div className="block md:hidden space-y-2 p-3">
+              <div className="block divide-y divide-slate-200 md:hidden">
                 {filteredRequests.length === 0 ? (
-                  <div className="border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                    <CalendarClock className="mx-auto h-6 w-6 text-slate-400" />
-                    <p className="mt-2 text-phx-md font-bold text-slate-600">
-                      {historySearch ? "No matching requests found." : "No excuse requests yet."}
-                    </p>
-                  </div>
+                  <LandingEmpty>
+                    {historySearch ? "No matching requests found." : "No excuse requests yet."}
+                  </LandingEmpty>
                 ) : (
                   filteredRequests.map((request) => (
                     <ExcuseHistoryCard key={request.id} request={request} onEditReturned={editReturnedRequest} />
                   ))
                 )}
               </div>
+            </LandingPanel>
             </div>
           ) : null}
         </div>
@@ -1070,47 +1071,36 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
           <MonthlyTrendSparkline requests={workspace.requests} />
 
           {/* Profile card */}
-          <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Employee profile</p>
-            <h3 className="mt-1.5 text-base font-extrabold text-slate-900">{workspace.employee.fullName}</h3>
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Role</span>
-                <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.roleLabel}</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Line</span>
-                <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.lineName ?? "Head Office"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Manager</span>
-                <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.managerName ?? "Not assigned"}</span>
-              </div>
-            </div>
-          </div>
+          <LandingPanel title="Employee profile">
+            <h3 className={`break-words border-b border-slate-200 px-3 py-2.5 text-base font-extrabold sm:px-4 ${LANDING_INK}`} dir="auto">
+              {workspace.employee.fullName}
+            </h3>
+            <LandingRow label="Role" value={workspace.employee.roleLabel} />
+            <LandingRow label="Line" value={workspace.employee.lineName ?? "Head Office"} />
+            <LandingRow label="Manager" value={workspace.employee.managerName ?? "Not assigned"} />
+          </LandingPanel>
 
           {/* Policy info card */}
-          <div className="border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Excuse policy</p>
-            <div className="mt-2.5 space-y-2 text-phx-sm leading-5 text-slate-600">
+          <LandingPanel bodyClassName="px-3 py-3 sm:px-4" title="Excuse policy">
+            <div className="space-y-2 text-phx-sm leading-5 text-slate-600">
               <div className="flex items-start gap-2">
-                <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-orange-400" />
+                <span aria-hidden="true" className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-[#08111f]" />
                 <span>Each excuse covers a 2-hour window (morning or afternoon).</span>
               </div>
               <div className="flex items-start gap-2">
-                <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-orange-400" />
+                <span aria-hidden="true" className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-[#08111f]" />
                 <span>{workspace.monthly.allowance} excuses allowed per calendar month.</span>
               </div>
               <div className="flex items-start gap-2">
-                <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-orange-400" />
+                <span aria-hidden="true" className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-[#08111f]" />
                 <span>Rejected requests do not count against the monthly limit.</span>
               </div>
               <div className="flex items-start gap-2">
-                <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-orange-400" />
+                <span aria-hidden="true" className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 bg-[#08111f]" />
                 <span>Your direct manager receives an email with approve/reject links.</span>
               </div>
             </div>
-          </div>
+          </LandingPanel>
         </div>
       </div>
     </div>

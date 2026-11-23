@@ -145,7 +145,7 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
         ) : null}
         <div className="flex min-w-0 grow basis-60 flex-col gap-1.5">
           <span className={`inline-flex items-center gap-1.5 ${phxLabelTextClassName}`}>
-            <FileUp aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
+            <FileUp aria-hidden="true" className="h-3.5 w-3.5 text-[#08111f]" />
             CV file
           </span>
           <span
@@ -168,13 +168,13 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
           {busy ? (
             <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
+            <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-[#08111f]" />
           )}
           {busy ? "Reading CV…" : "Create from CV"}
         </button>
         {error ? (
           <p
-            className="flex basis-full items-start gap-2 border-l-[3px] border-rose-500 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+            className="flex basis-full items-start gap-2 border-l-[3px] border-rose-500 bg-white px-3 py-2 text-xs font-semibold text-rose-800"
             role="alert"
           >
             <AlertCircle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />

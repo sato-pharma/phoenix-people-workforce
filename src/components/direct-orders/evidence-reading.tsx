@@ -45,12 +45,12 @@ export function EvidenceReading({
 
   const tone =
     check.isPharmacy === false
-      ? "border-rose-200 bg-rose-50 text-rose-800"
+      ? "border-slate-200 border-l-4 border-l-rose-500 bg-white text-rose-800"
       : check.isPharmacy === true && check.signMatchesClaim === false
-        ? "border-amber-200 bg-amber-50 text-amber-900"
+        ? "border-slate-200 border-l-4 border-l-amber-500 bg-white text-amber-900"
         : check.isPharmacy === true
-          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-          : "border-slate-200 bg-slate-50 text-slate-500";
+          ? "border-slate-200 border-l-4 border-l-emerald-500 bg-white text-emerald-800"
+          : "border-slate-200 border-l-4 border-l-slate-300 bg-white text-slate-500";
 
   // A nursery was reading "This does not look like a pharmacy." in rose over a photograph that
   // was never wrong — it was never claiming to be one. The verdict now names what was asked.

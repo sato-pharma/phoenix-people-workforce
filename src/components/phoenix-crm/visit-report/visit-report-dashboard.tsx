@@ -8,6 +8,7 @@
  * The figures are worked out in `visit-report-dashboard.ts`; this only draws them.
  */
 
+import { LandingTick } from "@/components/employee-portal/landing-kit";
 import { countText, dayLabel } from "@/components/phoenix-crm/format";
 import { CrmBlock, CrmPanel, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
 import { visitReportCategoryOf, type VisitReportDashboard, type VisitReportDashboardPanel } from "@/lib/phoenix-crm/visit-report-fields";
@@ -25,10 +26,10 @@ function Bars({ panel }: { panel: VisitReportDashboardPanel }) {
       {panel.items.map((item) => (
         <li className="grid min-w-0 grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-2 text-xs font-semibold text-slate-700" key={item.label}>
           <span className="min-w-0 break-words">{labelOf(item.label)}</span>
-          <span className="h-3 min-w-0 border border-slate-200 bg-slate-50">
-            <span className="block h-full bg-orange-500" style={{ width: `${Math.max(2, Math.round((item.value / max) * 100))}%` }} />
+          <span className="h-2 min-w-0 bg-slate-100">
+            <span className="block h-full bg-[#08111f]" style={{ width: `${Math.max(2, Math.round((item.value / max) * 100))}%` }} />
           </span>
-          <span className="w-10 text-right font-black text-slate-950">{countText(item.value)}</span>
+          <span className="w-10 text-right font-bold tabular-nums text-[#08111f]">{countText(item.value)}</span>
         </li>
       ))}
     </ul>
@@ -49,8 +50,8 @@ function Columns({ panel }: { panel: VisitReportDashboardPanel }) {
             key={item.label}
             title={`${labelOf(item.label)}: ${countText(item.value)}`}
           >
-            {showValues ? <span className="mb-0.5 text-center text-phx-sm font-black text-slate-700">{countText(item.value)}</span> : null}
-            <span className="block w-full bg-orange-500" style={{ height: `${Math.max(2, Math.round((item.value / max) * 100))}%` }} />
+            {showValues ? <span className="mb-0.5 text-center text-phx-sm font-bold tabular-nums text-slate-700">{countText(item.value)}</span> : null}
+            <span className="block w-full bg-[#08111f]" style={{ height: `${Math.max(2, Math.round((item.value / max) * 100))}%` }} />
           </div>
         ))}
       </div>
@@ -79,9 +80,12 @@ export function VisitReportDashboardView({ dashboard }: { dashboard: VisitReport
         <CrmBlock>
           <div className="grid gap-3 lg:grid-cols-2">
             {dashboard.panels.map((panel) => (
-              <section className="min-w-0 border border-t-2 border-slate-200 border-t-orange-500 bg-white px-4 py-3.5" key={panel.id}>
-                <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">{visitReportCategoryOf(panel.category).label}</p>
-                <h3 className="mb-3 mt-0.5 break-words text-sm font-black text-slate-950">{panel.title}</h3>
+              <section className="min-w-0 border border-slate-200 bg-white px-4 py-3.5" key={panel.id}>
+                <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{visitReportCategoryOf(panel.category).label}</p>
+                <h3 className="mb-3 mt-1 flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em] text-[#08111f]">
+                  <LandingTick />
+                  <span className="min-w-0">{panel.title}</span>
+                </h3>
                 {panel.kind === "columns" ? <Columns panel={panel} /> : <Bars panel={panel} />}
                 {panel.note ? <p className="mt-2 break-words text-xs font-medium leading-5 text-slate-500">{panel.note}</p> : null}
               </section>

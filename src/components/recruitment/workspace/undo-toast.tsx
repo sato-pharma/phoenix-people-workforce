@@ -177,7 +177,7 @@ export function UndoToasts({
               </span>
             </p>
             <button
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-orange-400/50 bg-orange-500/15 px-2.5 text-xs font-black uppercase tracking-wide text-orange-100 transition hover:bg-orange-500/30 disabled:opacity-40"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-white/40 px-2.5 text-xs font-black uppercase tracking-wide text-white transition motion-reduce:transition-none hover:bg-orange-500/30 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               disabled={entry.state !== "open"}
               onClick={() => onUndo(entry.id)}
               type="button"
@@ -206,14 +206,14 @@ export function WorkspaceNotice({ message, onClose, tone = "rose" }: { message: 
     <div
       className={cn(
         "flex items-start gap-3 border px-3.5 py-2.5 text-sm font-semibold",
-        tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-900" : "border-emerald-200 bg-emerald-50 text-emerald-900",
+        tone === "rose" ? "border-slate-200 border-l-4 border-l-rose-500 bg-white text-rose-900" : "border-slate-200 border-l-4 border-l-emerald-500 bg-white text-emerald-900",
       )}
       role={tone === "rose" ? "alert" : "status"}
     >
       <p className="min-w-0 grow break-words" dir="auto">
         {message}
       </p>
-      <button aria-label="Dismiss" className="shrink-0 p-0.5 opacity-70 transition hover:opacity-100" onClick={onClose} type="button">
+      <button aria-label="Dismiss" className="shrink-0 p-0.5 opacity-70 transition motion-reduce:transition-none hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]" onClick={onClose} type="button">
         <X aria-hidden className="h-4 w-4" />
       </button>
     </div>

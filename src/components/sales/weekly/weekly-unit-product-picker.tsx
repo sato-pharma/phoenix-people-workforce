@@ -1,6 +1,7 @@
 "use client";
 
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /**
  * "Units for" — the one product whose units a weekly screen shows wherever its own figures would add
@@ -31,7 +32,7 @@ export function WeeklyUnitProductPicker({
           ? "border border-phx-line bg-phx-paper"
           : tone === "inset"
             ? "border-b border-slate-200 bg-white"
-            : "border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60"
+            : `border border-slate-200 bg-white ${adminSoftDepthClassName}`
       }`}
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">

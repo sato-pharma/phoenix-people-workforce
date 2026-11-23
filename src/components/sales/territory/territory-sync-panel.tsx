@@ -147,7 +147,7 @@ export function TerritorySyncPanel({ canRun, showReconciliation }: { canRun: boo
           <h3 id="territory-sync-heading" className="text-sm font-semibold text-slate-900 dark:text-slate-100">
             Data sync
           </h3>
-          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">{SYNC_DESCRIPTION}</p>
+          <p className="phx-header-note mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">{SYNC_DESCRIPTION}</p>
         </div>
         <Button disabled={!canRun || busy} size="sm" type="button" variant="outline" onClick={() => void runSync()}>
           <RefreshCcw aria-hidden className={`mr-1.5 h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />

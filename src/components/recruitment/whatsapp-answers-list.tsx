@@ -44,7 +44,7 @@ export function WhatsAppAnswersList({
             <dt className="break-words text-[11px] font-semibold leading-[1.45] text-phx-ink-soft" dir="auto">
               {entry.question}
               {entry.askedTo ? (
-                <span className="block text-[10px] font-normal leading-[1.5] text-phx-ink-faint">{entry.askedTo}</span>
+                <span className="block text-[11px] font-normal leading-[1.5] text-phx-ink-faint">{entry.askedTo}</span>
               ) : null}
             </dt>
             <dd

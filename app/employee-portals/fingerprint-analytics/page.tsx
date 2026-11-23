@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { AttendancePolicyCard } from "@/components/attendance/attendance-policy-card";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { FingerprintAnalytics, type FingerprintTarget } from "@/components/employee-portal/fingerprint-analytics";
+import { LandingRailLine } from "@/components/employee-portal/landing-kit";
 import { getEmployeeAttendanceData, loadAttendancePickerReports } from "@/lib/attendance/employee-attendance";
 import { loadAttendancePolicyExplainer } from "@/lib/attendance/policy-explainer-loader";
 import { canAccess } from "@/lib/auth/permissions";
@@ -101,9 +103,9 @@ export default async function FingerprintAnalyticsPage() {
       title="Attendance Analytics"
     >
       {initialError && (
-        <p className="border border-rose-200 bg-rose-50 px-4 py-3 text-phx-md font-semibold text-rose-800">
-          {initialError}
-        </p>
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="alert">
+          <LandingRailLine rail="bg-rose-600">{initialError}</LandingRailLine>
+        </div>
       )}
       {policyExplainer && <AttendancePolicyCard explainer={policyExplainer} />}
       <FingerprintAnalytics hrId={hrId} initialData={initialData} targets={targets} />

@@ -318,6 +318,11 @@ overrides:
 # - unrs-resolver (via eslint-config-next): napi-postinstall fallback for the
 #   prebuilt native binding.
 allowBuilds:
+  # false (20 Nov 2026): reached only through the development tools Vite and Storybook (PR 649). Its
+  # native binary is installed from the matching optional `@esbuild/<platform>` package, so the install
+  # script, which only re-checks that binary, never runs in CI or the production image. Left unlisted, pnpm
+  # refuses the whole install (ERR_PNPM_IGNORED_BUILDS), which turned every CI job red.
+  esbuild: false
   sharp: true
   supabase: true
   # false, and verified rather than assumed: free OCR was measured end to end against the six real

@@ -84,7 +84,7 @@ export function DirectOrderServiceFeeControl({
 
   return (
     <div className="border-t border-[#eef1f3] px-4 py-3">
-      <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">
+      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
         Service fee kept by the pharmacy (Administrator)
       </p>
       {ok ? (

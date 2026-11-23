@@ -98,7 +98,7 @@ export function MrCvApplication({
   }
   if (state.phase === "failed") {
     return arrange(
-      <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800" dir="auto" role="alert">
+      <p className="border-l-4 border-rose-500 bg-white px-3 py-2 text-sm font-semibold text-rose-800" dir="auto" role="alert">
         {state.message}
       </p>,
       null,
@@ -153,7 +153,7 @@ export function MrCvApplication({
           <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Other files</span>
           {others.map((item) => (
             <a
-              className={`inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 hover:border-orange-300 ${adminChipDepthClassName}`}
+              className={`inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 hover:border-[#08111f] ${adminChipDepthClassName}`}
               href={fileUrl(item.id)}
               key={item.id}
             >

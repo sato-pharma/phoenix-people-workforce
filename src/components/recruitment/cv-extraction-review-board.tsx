@@ -72,13 +72,13 @@ import {
 import { cn } from "@/lib/utils";
 
 /** The micro-caps label over every slot, select and block. */
-const fieldLabelClassName = "mb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500";
+const fieldLabelClassName = "mb-1 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 /** A section's heading: the module's orange tick, then the section name on a hairline. */
 function SectionHeading({ children }: { children: string }) {
   return (
     <p className="flex items-center gap-2 border-b border-slate-200 pb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-700">
-      <span aria-hidden="true" className="h-3 w-0.5 bg-orange-500" />
+      <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
       {children}
     </p>
   );
@@ -150,10 +150,10 @@ function Chip({ chip, isEditing, onEdit, onCommitEdit }: {
   return (
     <div
       className={cn(
-        `flex cursor-grab items-start gap-1.5 border px-2 py-1 text-sm text-slate-900 transition-colors active:cursor-grabbing ${adminChipDepthClassName}`,
+        `flex cursor-grab items-start gap-1.5 border px-2 py-1 text-sm text-slate-900 transition-colors motion-reduce:transition-none active:cursor-grabbing ${adminChipDepthClassName}`,
         isDragging
-          ? "border-dashed border-orange-300 bg-orange-50/40 opacity-40"
-          : "border-slate-200 bg-white hover:border-orange-300",
+          ? "border-dashed border-slate-300 bg-slate-100 opacity-40"
+          : "border-slate-200 bg-white hover:border-[#08111f]",
       )}
       onClick={() => onEdit(chip.key)}
       ref={setNodeRef}
@@ -168,7 +168,7 @@ function Chip({ chip, isEditing, onEdit, onCommitEdit }: {
         {chip.value || <span className="text-slate-400">(empty)</span>}
       </span>
       {chip.confidence === "low" ? (
-        <span className="shrink-0 border border-amber-300 bg-amber-50 px-1 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-amber-800">
+        <span className="shrink-0 border-l-2 border-amber-500 pl-1 text-phx-xs font-bold uppercase tracking-[0.06em] text-amber-800">
           Check this
         </span>
       ) : null}
@@ -238,7 +238,7 @@ function BlockCard({
                     )}
                   </div>
                   <button
-                    className={`inline-flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-500 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 ${adminControlDepthClassName}`}
+                    className={`inline-flex shrink-0 items-center gap-1 border border-slate-200 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-500 transition motion-reduce:transition-none hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
                     onClick={() => onRemove(field.key, index)}
                     type="button"
                   >
@@ -431,7 +431,7 @@ export function CvExtractionReviewBoard({
               Drag a field into the right column, or drag one out to leave it blank. Populate resets everything to the original suggested values.
             </p>
             {/* The four states, named once, so the colours below never have to be guessed. */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.06em] text-slate-500">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-500">
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden="true" className="h-2.5 w-2.5 border-l-[3px] border-l-emerald-500 bg-emerald-100" />
                 Saved
@@ -461,7 +461,7 @@ export function CvExtractionReviewBoard({
         </div>
         {error ? (
           <p
-            className="flex items-start gap-2 border border-rose-200 border-l-[3px] border-l-rose-500 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"
+            className="flex items-start gap-2 border border-slate-200 border-l-[3px] border-l-rose-500 bg-white px-3 py-2 text-xs font-semibold text-rose-800"
             role="alert"
           >
             <AlertCircle aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -604,8 +604,8 @@ export function CvExtractionReviewBoard({
 
       <DragOverlay>
         {activeChip ? (
-          <div className="flex items-center gap-1.5 border border-orange-400 bg-white px-2 py-1 text-sm text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.18)]">
-            <GripVertical aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-400" />
+          <div className="flex items-center gap-1.5 border border-[#08111f] bg-white px-2 py-1 text-sm text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.18)]">
+            <GripVertical aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#08111f]" />
             {chipValues[activeChip] || <span className="text-slate-400">(empty)</span>}
           </div>
         ) : null}

@@ -38,11 +38,11 @@ export function MrStepStrip({ candidateId, className }: { candidateId: string; c
   const state = mrStageStateLine(stage);
 
   return (
-    <p className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-950 ${className ?? ""}`}>
-      <Stethoscope aria-hidden className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+    <p className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-[#08111f] ${className ?? ""}`}>
+      <Stethoscope aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#08111f]" />
       <span className="break-words font-black">{mrStageHeadline(stage)}</span>
       {state ? <span className="break-words">{state}</span> : null}
-      <Link className="font-bold text-orange-700 underline" href={`${page}?candidate=${encodeURIComponent(candidateId)}`}>
+      <Link className="font-bold text-[#08111f] underline" href={`${page}?candidate=${encodeURIComponent(candidateId)}`}>
         Open the hiring journey
       </Link>
     </p>

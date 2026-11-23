@@ -60,7 +60,7 @@ function Panel({ children, note, title }: { children: React.ReactNode; note?: st
     <div className="border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-3">
         <h3 className="min-w-0 break-words text-sm font-bold">{title}</h3>
-        {note && <span className="min-w-0 break-words text-xs text-muted-foreground">{note}</span>}
+        {note && <span className="phx-header-note min-w-0 break-words text-xs text-muted-foreground">{note}</span>}
       </div>
       <div className="p-1">{children}</div>
     </div>

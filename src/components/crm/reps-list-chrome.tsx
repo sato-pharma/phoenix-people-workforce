@@ -30,6 +30,7 @@
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
+import { LANDING_FOCUS, LANDING_INK, LandingTitle, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { meterPercent, repInitials, shareSlices, type ShareSegment } from "@/lib/crm/reps-list-groups";
 
 /** The five tones the board speaks in. Each maps to one figure colour, one rule colour and one swatch. */
@@ -41,7 +42,7 @@ export const TONE_TEXT: Record<ChromeTone, string> = {
   emerald: "text-emerald-700",
   rose: "text-rose-700",
   sky: "text-sky-700",
-  slate: "text-slate-900",
+  slate: LANDING_INK,
 };
 
 /** The 3px top rule a tile carries. Neutral is a quiet slate, so an untoned tile still has its rule. */
@@ -92,7 +93,7 @@ export function BackToAllReps({ href, label = "Back to all reps" }: { href: stri
   return (
     <div className="border-b border-slate-200 bg-white px-5 py-3 print:hidden">
       <Link
-        className="inline-flex min-h-11 items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-orange-800 transition-colors hover:bg-orange-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-0"
+        className={landingActionClassName("outline", "min-h-11 gap-2 py-2")}
         href={href}
       >
         <ArrowLeft aria-hidden className="h-4 w-4 shrink-0" />
@@ -103,17 +104,16 @@ export function BackToAllReps({ href, label = "Back to all reps" }: { href: stri
 }
 
 /**
- * A board section: the dark title bar and its body.
+ * A board section: the title head and its body.
  *
- * The bar carries a 3px orange keyline on its left edge — the same accent the page header and the active tab use —
- * so a stack of sections reads as one document with chapter marks rather than a run of identical black slabs.
+ * Redesign (owner, 2026-11-20): the landing kit’s head — a white bar, a hairline, the title behind its orange tick.
+ * `description` is no longer drawn (no sentence sits under a section header); the prop stays so no caller changes.
  * `meta` is a short right-aligned figure ("13 reps"); `action` is a control, and wins the right edge when both are
  * given, because a control a reader needs outranks a figure he can read below.
  */
 export function Section({
   action,
   children,
-  description,
   meta,
   title,
 }: {
@@ -125,12 +125,11 @@ export function Section({
 }) {
   return (
     <section className="border-b border-slate-200 bg-white last:border-b-0">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-l-[3px] border-b-slate-200 border-l-orange-500 bg-slate-900 px-5 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-5 py-3.5">
         <div className="min-w-0 flex-1">
-          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-1 max-w-[110ch] text-phx-sm leading-relaxed text-slate-300">{description}</p> : null}
+          <LandingTitle>{title}</LandingTitle>
         </div>
-        {action ?? (meta ? <p className="shrink-0 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-300 tabular-nums">{meta}</p> : null)}
+        {action ?? (meta ? <p className="shrink-0 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500 tabular-nums">{meta}</p> : null)}
       </div>
       {children}
     </section>
@@ -145,7 +144,7 @@ export function Section({
  * change to either: the row would then read as three stats and one button, which is exactly the
  * "one-off look" the owner's standing rule forbids. A tile with no `href` is a plain `div`.
  *
- * The active tile keeps its tone on the NUMBER and takes the orange accent on the BORDER. Tinting
+ * The active tile keeps its tone on the NUMBER and takes a navy frame on the BORDER. Tinting
  * the number instead would collide with what the tone means here — amber is "waiting on you", rose
  * is "nobody filed" — so the selected state has to be carried by something the tones do not use.
  *
@@ -180,7 +179,7 @@ export function Tile({
         {href ? (
           <ChevronRight
             aria-hidden
-            className={`h-3.5 w-3.5 shrink-0 ${active ? "text-orange-600" : "text-slate-300"}`}
+            className={`h-3.5 w-3.5 shrink-0 ${active ? LANDING_INK : "text-slate-300"}`}
           />
         ) : null}
       </div>
@@ -198,8 +197,8 @@ export function Tile({
       aria-current={active ? "true" : undefined}
       className={
         active
-          ? `block ${frame} border-x-orange-500 border-b-orange-500 bg-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400`
-          : `block ${frame} border-x-slate-200 border-b-slate-200 bg-white transition-colors hover:border-x-orange-400 hover:border-b-orange-400 hover:bg-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400`
+          ? `block ${frame} border-x-[#08111f] border-b-[#08111f] bg-slate-50 ${LANDING_FOCUS}`
+          : `block ${frame} border-x-slate-200 border-b-slate-200 bg-white transition-colors motion-reduce:transition-none hover:border-x-slate-400 hover:border-b-slate-400 hover:bg-slate-50 ${LANDING_FOCUS}`
       }
       href={href}
     >
@@ -287,7 +286,7 @@ export function ShareBar({ caption, segments }: { caption: string; segments: rea
           <li className="inline-flex items-center gap-1.5 text-phx-sm text-slate-600" key={slice.key}>
             <Swatch tone={toneOf.get(slice.key) ?? "slate"} />
             <span className="font-semibold">{slice.label}</span>
-            <span className="font-black text-slate-900 tabular-nums">{slice.value}</span>
+            <span className={`font-black tabular-nums ${LANDING_INK}`}>{slice.value}</span>
             <span className="text-slate-400 tabular-nums">{slice.percent}%</span>
           </li>
         ))}
@@ -303,8 +302,8 @@ export function ShareBar({ caption, segments }: { caption: string; segments: rea
  */
 function RegionHeading({ count, label, noun, right }: { count: number; label: string; noun: string; right?: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-slate-900 pb-1.5">
-      <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#08111f] pb-1.5">
+      <h3 className={`text-phx-xs font-black uppercase tracking-[0.14em] ${LANDING_INK}`}>
         {label}
         <span className="ml-2 font-semibold normal-case tracking-normal text-slate-500 tabular-nums">
           {count} {count === 1 ? noun : `${noun}s`}
@@ -361,7 +360,7 @@ function RepMonogram({ muted, name }: { muted?: boolean; name: string }) {
     <span
       aria-hidden
       className={`flex h-9 w-9 shrink-0 items-center justify-center text-phx-sm font-black tracking-[0.06em] ${
-        muted ? "border border-dashed border-slate-300 bg-white text-slate-400" : "bg-slate-900 text-white"
+        muted ? "border border-dashed border-slate-300 bg-white text-slate-400" : "bg-[#08111f] text-white"
       }`}
     >
       {repInitials(name)}
@@ -391,18 +390,18 @@ export function RepCardFrame({
 }) {
   return (
     <Link
-      className={`group flex items-start gap-3 border border-l-[3px] border-slate-200 ${TONE_LEFT_RULE[tone]} bg-white px-3.5 py-3 transition-colors hover:border-y-orange-400 hover:border-r-orange-400 hover:bg-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400`}
+      className={`group flex items-start gap-3 border border-l-[3px] border-slate-200 ${TONE_LEFT_RULE[tone]} bg-white px-3.5 py-3 transition-colors motion-reduce:transition-none hover:border-y-slate-400 hover:border-r-slate-400 hover:bg-slate-50 ${LANDING_FOCUS}`}
       href={href}
     >
       <RepMonogram muted={monogramMuted} name={name} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-black leading-tight text-slate-900 [overflow-wrap:anywhere]">{name}</p>
+        <p className={`text-sm font-black leading-tight [overflow-wrap:anywhere] ${LANDING_INK}`}>{name}</p>
         <p className="mt-0.5 text-phx-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{places}</p>
         {children ? <div className="mt-2">{children}</div> : null}
       </div>
       <ChevronRight
         aria-hidden
-        className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-orange-600"
+        className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-[#08111f] motion-reduce:transition-none"
       />
     </Link>
   );
@@ -425,7 +424,7 @@ export function CardMeter({ max, tone = "slate", value }: { max: number; tone?: 
 export function EmptyNote({ detail, title }: { detail?: React.ReactNode; title: string }) {
   return (
     <div className="m-5 border border-dashed border-slate-300 bg-white px-5 py-5">
-      <p className="text-sm font-black text-slate-800">{title}</p>
+      <p className={`text-sm font-black ${LANDING_INK}`}>{title}</p>
       {detail ? <p className="mt-1 max-w-[90ch] text-phx-xs leading-relaxed text-slate-500">{detail}</p> : null}
     </div>
   );
@@ -491,11 +490,11 @@ export function TeamTable<T>({
             <col className={column.width} key={column.key} />
           ))}
         </colgroup>
-        <thead>
-          <tr className="bg-slate-900">
+        <thead className="border-b border-slate-200 bg-white">
+          <tr>
             {columns.map((column) => (
               <th
-                className={`px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white ${column.align === "right" ? "text-right" : ""}`}
+                className={`px-3 py-2.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500 ${column.align === "right" ? "text-right" : ""}`}
                 key={column.key}
                 scope="col"
               >
@@ -506,10 +505,10 @@ export function TeamTable<T>({
         </thead>
         {groups.map((group) => (
           <tbody key={group.key ?? group.label}>
-            <tr className="border-t-2 border-slate-900 bg-slate-50">
+            <tr className="border-t-2 border-[#08111f] bg-slate-50">
               <th className="px-3 py-2.5" colSpan={columns.length} scope="colgroup">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900">
+                  <span className={`text-phx-xs font-black uppercase tracking-[0.14em] ${LANDING_INK}`}>
                     {group.label}
                     <span className="ml-2 font-semibold normal-case tracking-normal text-slate-500 tabular-nums">
                       {countOf(group.reps.length, noun)}
@@ -524,7 +523,7 @@ export function TeamTable<T>({
               </th>
             </tr>
             {group.reps.map((item) => (
-              <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50" key={rowKey(item)}>
+              <tr className="border-t border-slate-200 transition-colors hover:bg-slate-50 motion-reduce:transition-none" key={rowKey(item)}>
                 {columns.map((column) => (
                   <td
                     className={`px-3 py-2.5 align-top text-sm text-slate-700 [overflow-wrap:anywhere] ${column.align === "right" ? "text-right tabular-nums" : ""}`}
@@ -545,10 +544,10 @@ export function TeamTable<T>({
 /** A team table's first cell: the monogram and the name, as the row's link. */
 export function TeamTableName({ href, muted, name, sub }: { href: string; muted?: boolean; name: string; sub?: string }) {
   return (
-    <Link className="group flex items-start gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400" href={href}>
+    <Link className={`group flex items-start gap-2.5 ${LANDING_FOCUS}`} href={href}>
       <RepMonogram muted={muted} name={name} />
       <span className="min-w-0">
-        <span className="block font-black leading-tight text-slate-900 group-hover:text-orange-700">{name}</span>
+        <span className={`block font-black leading-tight underline decoration-transparent underline-offset-2 transition-colors group-hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_INK}`}>{name}</span>
         {sub ? <span className="mt-0.5 block text-phx-sm font-semibold text-slate-500">{sub}</span> : null}
       </span>
     </Link>
@@ -580,14 +579,14 @@ export function RepProfileBand({
         <span
           aria-hidden
           className={`flex h-12 w-12 shrink-0 items-center justify-center text-phx-xs font-black tracking-[0.06em] ${
-            muted ? "border border-dashed border-slate-300 bg-white text-slate-400" : "bg-slate-900 text-white"
+            muted ? "border border-dashed border-slate-300 bg-white text-slate-400" : "bg-[#08111f] text-white"
           }`}
         >
           {repInitials(name)}
         </span>
         <div className="min-w-0">
-          <p className="text-base font-black leading-tight text-slate-900 [overflow-wrap:anywhere]">{name}</p>
-          <p className="mt-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-orange-700 [overflow-wrap:anywhere]">{team}</p>
+          <p className={`text-base font-black leading-tight [overflow-wrap:anywhere] ${LANDING_INK}`}>{name}</p>
+          <p className="mt-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-600 [overflow-wrap:anywhere]">{team}</p>
           <p className="mt-0.5 text-phx-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{places}</p>
         </div>
       </div>
@@ -635,7 +634,7 @@ export function RankedBars({
                 {item.label}
                 {item.note ? <span className="ml-1.5 text-amber-700">{item.note}</span> : null}
               </span>
-              <span className="shrink-0 text-phx-sm font-black text-slate-900 tabular-nums">{item.value}</span>
+              <span className={`shrink-0 text-phx-sm font-black tabular-nums ${LANDING_INK}`}>{item.value}</span>
             </div>
             <div aria-hidden className="mt-1 h-1.5 w-full bg-slate-100">
               <div className={`h-1.5 ${TONE_FILL[item.tone ?? "slate"]}`} style={{ width: `${meterPercent(item.value, largest)}%` }} />
@@ -692,10 +691,10 @@ export function TeamRollup<T>({
           const toneOf = new Map(parts.map((part) => [part.key, part.tone]));
           return (
             <div
-              className="grid gap-x-6 gap-y-1.5 border-b border-slate-100 py-2.5 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:items-center"
+              className="grid gap-x-6 gap-y-1.5 border-b border-slate-200 py-2.5 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:items-center"
               key={group.key ?? group.label}
             >
-              <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-900 [overflow-wrap:anywhere]">
+              <dt className={`text-phx-sm font-black uppercase tracking-[0.12em] [overflow-wrap:anywhere] ${LANDING_INK}`}>
                 {group.label}
                 <span className="ml-2 font-semibold normal-case tracking-normal text-slate-500 tabular-nums">
                   {countOf(group.reps.length, noun)}
@@ -717,7 +716,7 @@ export function TeamRollup<T>({
                   {slices.map((slice) => (
                     <span className="inline-flex items-center gap-1.5" key={slice.key}>
                       <Swatch tone={toneOf.get(slice.key) ?? "slate"} />
-                      <span className="font-black text-slate-900 tabular-nums">{slice.value}</span>
+                      <span className={`font-black tabular-nums ${LANDING_INK}`}>{slice.value}</span>
                       {slice.label.toLowerCase()}
                     </span>
                   ))}

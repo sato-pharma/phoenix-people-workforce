@@ -19,6 +19,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Send } from "lucide-react";
 
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { CrmButton } from "@/components/phoenix-crm/ui";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { readTelegramConnectionStatus, requestTelegramConnectLink } from "@/components/notifications/telegram-connect";
@@ -131,20 +133,20 @@ export function TelegramConnectCard({ cairoToday }: { cairoToday: string }) {
 
   if (state === "connected") {
     return (
-      <div className="flex min-w-0 items-start gap-3 rounded-none border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5" role="status">
+      <div className={`flex min-w-0 items-start gap-3 rounded-none border border-l-[3px] border-slate-200 border-l-emerald-500 bg-white px-4 py-3 sm:px-5 ${adminSoftDepthClassName}`} role="status">
         <Send aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
-        <p className="min-w-0 break-words text-sm font-black text-emerald-900">Telegram is connected. Phoenix CRM messages will reach you there.</p>
+        <p className="min-w-0 break-words text-sm font-bold text-emerald-700">Telegram is connected. Phoenix CRM messages will reach you there.</p>
       </div>
     );
   }
 
   const finishing = state === "finishing" || state === "checking";
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-none border border-l-[3px] border-orange-200 border-l-orange-500 bg-orange-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+    <div className={`flex min-w-0 flex-col gap-3 rounded-none border border-l-[3px] border-slate-200 border-l-sky-500 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${adminSoftDepthClassName}`}>
       <div className="flex min-w-0 items-start gap-3">
-        <Send aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+        <Send aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
         <div className="min-w-0">
-          <p className="break-words text-sm font-black text-slate-950">
+          <p className="break-words text-sm font-bold text-[#08111f]">
             {finishing ? "Finish in Telegram" : "Get Phoenix CRM messages on Telegram"}
           </p>
           <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-600">
@@ -160,7 +162,7 @@ export function TelegramConnectCard({ cairoToday }: { cairoToday: string }) {
           <>
             {link ? (
               <a
-                className="inline-flex min-h-10 min-w-0 items-center justify-center gap-2 rounded-none border border-orange-600 bg-orange-600 px-3 py-1.5 text-center text-xs font-black text-white transition hover:bg-orange-700 md:min-h-9"
+                className={landingActionClassName("solid", "min-w-0 gap-2 md:min-h-9")}
                 href={link}
                 rel="noopener noreferrer"
                 target="_blank"

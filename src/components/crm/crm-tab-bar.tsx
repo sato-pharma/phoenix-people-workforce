@@ -88,8 +88,8 @@ export function CrmTabBar({
           return (
             <button
               aria-pressed={isActive}
-              className={`flex min-h-10 min-w-0 items-center justify-center gap-1.5 border-b border-r border-slate-200 px-2 py-2 text-center text-xs font-bold transition ${
-                isActive ? "bg-orange-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              className={`flex min-h-10 min-w-0 items-center justify-center gap-1.5 border-b border-r border-slate-200 px-2 py-2 text-center text-xs font-bold transition motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${
+                isActive ? "bg-[#08111f] text-white" : "bg-white text-slate-600 hover:bg-slate-50"
               }`}
               key={tab.id}
               onClick={() => switchTo(tab.id)}
@@ -141,8 +141,8 @@ function TabButton({
 }) {
   return (
     <button
-      className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold transition ${
-        isActive ? "bg-orange-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+      className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold transition motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${
+        isActive ? "bg-[#08111f] text-white" : "bg-white text-slate-600 hover:bg-slate-50"
       }`}
       onClick={onClick}
       type="button"

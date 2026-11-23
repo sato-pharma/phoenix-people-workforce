@@ -37,27 +37,27 @@ import { cn } from "@/lib/utils";
  */
 
 const OUTCOME_STYLES: Record<PlanRowOutcome, { chip: string; accent: string }> = {
-  ahead: { accent: "border-l-sky-400", chip: "border-sky-200 bg-sky-50 text-sky-700" },
-  done: { accent: "border-l-emerald-500", chip: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  no_plan: { accent: "border-l-slate-300", chip: "border-slate-200 bg-slate-50 text-slate-600" },
-  not_checkable: { accent: "border-l-slate-300", chip: "border-slate-200 bg-slate-50 text-slate-600" },
-  not_done: { accent: "border-l-rose-500", chip: "border-rose-200 bg-rose-50 text-rose-700" },
-  open: { accent: "border-l-amber-400", chip: "border-amber-200 bg-amber-50 text-amber-800" },
-  unplanned: { accent: "border-l-violet-500", chip: "border-violet-200 bg-violet-50 text-violet-700" },
+  ahead: { accent: "border-l-sky-400", chip: "text-sky-700" },
+  done: { accent: "border-l-emerald-500", chip: "text-emerald-700" },
+  no_plan: { accent: "border-l-slate-300", chip: "text-slate-500" },
+  not_checkable: { accent: "border-l-slate-300", chip: "text-slate-500" },
+  not_done: { accent: "border-l-rose-500", chip: "text-rose-700" },
+  open: { accent: "border-l-amber-400", chip: "text-amber-700" },
+  unplanned: { accent: "border-l-violet-500", chip: "text-violet-700" },
 };
 
 const HALF_STYLES: Record<string, string> = {
-  AM: "border-cyan-200 bg-cyan-50 text-cyan-800",
-  Pharmacy: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  PM: "border-orange-200 bg-orange-50 text-orange-800",
+  AM: "text-cyan-700",
+  Pharmacy: "text-emerald-700",
+  PM: "text-orange-700",
 };
 
 const KIND_STYLES: Record<ManagerDayVisit["kind"], string> = {
-  chain: "border-violet-200 bg-violet-50 text-violet-700",
-  double: "border-sky-200 bg-sky-50 text-sky-700",
-  product_manager: "border-teal-200 bg-teal-50 text-teal-700",
-  single: "border-slate-300 bg-slate-100 text-slate-700",
-  with_senior: "border-amber-200 bg-amber-50 text-amber-800",
+  chain: "text-violet-700",
+  double: "text-sky-700",
+  product_manager: "text-teal-700",
+  single: "text-slate-600",
+  with_senior: "text-amber-700",
 };
 
 /**
@@ -66,18 +66,27 @@ const KIND_STYLES: Record<ManagerDayVisit["kind"], string> = {
  * boundary pin). Keep the two strings equal.
  */
 const TH_CLASS =
-  "border-b border-slate-200 bg-slate-50 px-3 py-2.5 align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500 border-t-2 border-t-slate-900";
+  "border-b border-slate-200 px-3 py-2.5 align-bottom text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
+/**
+ * A chip is the landing kit's status word: small tracked capitals in the tone's own colour, behind a thin rail drawn
+ * in that same colour (`before:bg-current`) — never a filled pill, so a row of them never reads as badge on badge.
+ */
 function Chip({ children, className }: { children: ReactNode; className: string }) {
   return (
-    <span className={cn("inline-flex max-w-full items-center rounded-none border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em]", className)}>
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1.5 rounded-none text-phx-xs font-bold uppercase leading-4 tracking-[0.08em] before:h-3 before:w-0.5 before:shrink-0 before:bg-current before:content-['']",
+        className,
+      )}
+    >
       {children}
     </span>
   );
 }
 
 function Label({ children }: { children: ReactNode }) {
-  return <p className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{children}</p>;
+  return <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{children}</p>;
 }
 
 function Muted({ children }: { children: ReactNode }) {
@@ -96,10 +105,10 @@ function PlanCell({ row }: { row: PlanVsActualRow }) {
     <div className="grid min-w-0 gap-1.5">
       <div className="flex flex-wrap items-center gap-1.5">
         <HalfChip half={row.half} />
-        <Chip className="border-slate-300 bg-slate-100 text-slate-700">{plan.kindLabel}</Chip>
-        {plan.flagLabel ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">{plan.flagLabel}</Chip> : null}
+        <Chip className="text-slate-600">{plan.kindLabel}</Chip>
+        {plan.flagLabel ? <Chip className="text-amber-700">{plan.flagLabel}</Chip> : null}
       </div>
-      <p className="break-words text-sm font-black leading-5 text-slate-950" dir="auto">
+      <p className="break-words text-sm font-black leading-5 text-[#08111f]" dir="auto">
         {plan.title}
       </p>
       {plan.customerName ? (
@@ -124,7 +133,7 @@ function PlanCell({ row }: { row: PlanVsActualRow }) {
 function Fact({ children, label }: { children: ReactNode; label: string }) {
   return (
     <p className="min-w-0 break-words leading-5">
-      <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{label} </span>
+      <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label} </span>
       <span className="text-xs font-bold text-slate-700">{children}</span>
     </p>
   );
@@ -145,24 +154,24 @@ function StatusCell({ row, visitsOnly = false }: { row: PlanVsActualRow; visitsO
           {visitsOnly && planActualRowHasHalf(row) ? <HalfChip half={row.half} /> : null}
           {words.verdict ? <Chip className={OUTCOME_STYLES[row.outcome].chip}>{words.verdict}</Chip> : null}
           {visit && !visitsOnly ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
-          {visit?.enteredByAdmin ? <Chip className="border-slate-300 bg-white text-slate-700">{MISSED_RECORD_MARK}</Chip> : null}
+          {visit?.enteredByAdmin ? <Chip className="text-slate-600">{MISSED_RECORD_MARK}</Chip> : null}
         </div>
       ) : null}
       {words.sentence ? <Muted>{words.sentence}</Muted> : null}
       {visit ? (
         <>
           {words.customerName ? (
-            <p className="break-words text-sm font-black leading-5 text-slate-950" dir="auto">
+            <p className="break-words text-sm font-black leading-5 text-[#08111f]" dir="auto">
               {words.customerName}
             </p>
           ) : null}
           {type ? <p className="break-words text-xs font-bold leading-5 text-slate-700">{type}</p> : null}
           {words.listChip || visit.awaitingApproval || visit.awaitingValidation || visit.inVacantTerritory ? (
             <div className="flex flex-wrap gap-1.5">
-              {words.listChip ? <Chip className="border-slate-200 bg-white text-slate-600">{words.listChip}</Chip> : null}
-              {visit.awaitingApproval ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Waiting for approval — not counted yet</Chip> : null}
-              {visit.awaitingValidation ? <Chip className="border-slate-200 bg-white text-slate-600">{visit.archiveHistory ? ARCHIVE_HISTORY_LABEL : "Not scored yet"}</Chip> : null}
-              {visit.inVacantTerritory ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Vacant area</Chip> : null}
+              {words.listChip ? <Chip className="text-slate-500">{words.listChip}</Chip> : null}
+              {visit.awaitingApproval ? <Chip className="text-amber-700">Waiting for approval — not counted yet</Chip> : null}
+              {visit.awaitingValidation ? <Chip className="text-slate-500">{visit.archiveHistory ? ARCHIVE_HISTORY_LABEL : "Not scored yet"}</Chip> : null}
+              {visit.inVacantTerritory ? <Chip className="text-amber-700">Vacant area</Chip> : null}
             </div>
           ) : null}
           <div className="mt-0.5 grid min-w-0 gap-0.5 border-t border-dashed border-slate-200 pt-1.5">
@@ -246,7 +255,7 @@ function AddressTimeCell({ row }: { row: PlanVsActualRow }) {
       ) : null}
       {words.locationNote ? <Muted>{words.locationNote}</Muted> : null}
       {visit.loggedAt ? (
-        <p className="text-base font-black tabular-nums leading-6 tracking-tight text-slate-950">{managerVisitClock(visit.loggedAt)}</p>
+        <p className="text-base font-bold tabular-nums leading-6 tracking-[-0.02em] text-[#08111f]">{managerVisitClock(visit.loggedAt)}</p>
       ) : (
         <Muted>{COPIED_VISIT_NO_TIME}</Muted>
       )}
@@ -329,7 +338,7 @@ export function ManagerPlanActualTable({
       <div className="grid min-w-0 gap-2.5 @min-[720px]:hidden">
         {rows.map((row) => (
           <article
-            className={cn("min-w-0 border border-l-4 border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]", OUTCOME_STYLES[row.outcome].accent)}
+            className={cn("min-w-0 border border-l-4 border-slate-200 bg-white", OUTCOME_STYLES[row.outcome].accent)}
             key={row.id}
           >
             <div className="grid min-w-0 gap-3 px-3 py-3">

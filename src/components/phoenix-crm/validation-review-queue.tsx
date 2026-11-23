@@ -131,7 +131,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
             {line}
           </p>
         ))}
-        <a className="text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
+        <a className="text-xs font-black text-[#08111f] underline underline-offset-2 hover:text-slate-600" href={row.mapsLink} rel="noreferrer" target="_blank">
           {row.photoKind === "schedule" ? "Open the building in Google Maps" : "Open where they stood in Google Maps"}
         </a>
       </div>
@@ -177,7 +177,7 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
                 {listing.mapsUri ? (
                   <>
                     {" · "}
-                    <a className="font-black text-orange-700 underline underline-offset-2" href={listing.mapsUri} rel="noreferrer" target="_blank">
+                    <a className="font-black text-[#08111f] underline underline-offset-2 hover:text-slate-600" href={listing.mapsUri} rel="noreferrer" target="_blank">
                       open
                     </a>
                   </>

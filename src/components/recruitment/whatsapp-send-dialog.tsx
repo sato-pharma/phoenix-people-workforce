@@ -333,7 +333,7 @@ export function WhatsAppSendDialog({
           )}
         >
           <div className="flex min-w-0 grow basis-56 items-start gap-2.5">
-            <MessageCircle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-300" />
+            <MessageCircle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-white/60" />
             <div className="min-w-0">
               <h2 className="text-sm font-black uppercase tracking-[0.12em] text-white">WhatsApp message</h2>
               <p className="mt-0.5 break-words text-xs text-slate-300" dir="auto">
@@ -342,7 +342,7 @@ export function WhatsAppSendDialog({
             </div>
           </div>
           <button
-            className="inline-flex items-center gap-1 border border-white/25 bg-white/10 px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
+            className="inline-flex items-center gap-1 border border-white/25 bg-white/10 px-2.5 py-1.5 text-xs font-bold text-white transition motion-reduce:transition-none hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             onClick={onClose}
             type="button"
           >
@@ -354,7 +354,7 @@ export function WhatsAppSendDialog({
         <div className="space-y-5 px-4 py-4 sm:px-5">
           {loading ? (
             <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600" role="status">
-              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-orange-500" />
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-[#08111f]" />
               Loading your templates…
             </p>
           ) : null}
@@ -382,9 +382,9 @@ export function WhatsAppSendDialog({
                     <button
                       aria-pressed={template.id === selectedId}
                       className={cn(
-                        "border-b-2 px-3 py-1.5 text-left text-xs font-bold transition-colors",
+                        "border-b-2 px-3 py-1.5 text-left text-xs font-bold transition-colors motion-reduce:transition-none",
                         template.id === selectedId
-                          ? `border-b-orange-500 bg-white text-slate-950 ${adminChipDepthClassName}`
+                          ? `border-b-[#08111f] bg-white text-slate-950 ${adminChipDepthClassName}`
                           : "border-b-transparent text-slate-600 hover:bg-white/70 hover:text-slate-900",
                       )}
                       key={template.id}
@@ -404,7 +404,7 @@ export function WhatsAppSendDialog({
 
               <div>
                 <label className={cn(phxLabelClassName, "flex items-center gap-1.5")} htmlFor="wa-number">
-                  <Smartphone aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />
+                  <Smartphone aria-hidden="true" className="h-3.5 w-3.5 text-[#08111f]" />
                   WhatsApp number
                 </label>
                 <input
@@ -460,7 +460,7 @@ export function WhatsAppSendDialog({
 
               <div>
                 <span className={cn(phxLabelClassName, "flex items-center gap-1.5")}>
-                  <Eye aria-hidden="true" className="h-3.5 w-3.5 text-orange-500" />
+                  <Eye aria-hidden="true" className="h-3.5 w-3.5 text-[#08111f]" />
                   Preview
                 </span>
                 {/* The message as the person will see it: a bubble on the chat's own pale ground. */}
@@ -472,13 +472,13 @@ export function WhatsAppSendDialog({
           ) : null}
 
           {error ? (
-            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800" role="alert">
+            <p className="border-l-4 border-rose-500 bg-white px-3 py-2 text-sm font-semibold text-rose-800" role="alert">
               {error}
             </p>
           ) : null}
 
           {blockedUrl ? (
-            <p className="flex items-start gap-2 border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
+            <p className="flex items-start gap-2 border-l-4 border-amber-500 bg-white px-3 py-2 text-sm text-amber-900" role="status">
               <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-amber-600" />
               <span className="min-w-0 break-words">
                 Your browser blocked the pop-up.{" "}
@@ -508,7 +508,7 @@ export function WhatsAppSendDialog({
           </button>
         </div>
         {missing.length > 0 ? (
-          <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 sm:px-5">
+          <p className="border-t border-slate-200 border-l-4 border-l-amber-500 bg-white px-4 py-2 text-xs font-semibold text-amber-900 sm:px-5">
             Still to fill in: {missing.map((key) => labelFor(key)).join(", ")}
           </p>
         ) : null}

@@ -327,14 +327,14 @@ export function ScreeningPageClient({
 // the only safe way to say a Phoenix step inside `cn()`; see the same warning in workstation-look.
 const filterLabelClass = (active: boolean) =>
   cn(
-    "flex min-w-0 flex-col gap-1 text-[10px] font-bold uppercase leading-none tracking-[0.12em] transition-colors",
-    active ? "text-phx-accent-press" : "text-phx-ink-faint",
+    "flex min-w-0 flex-col gap-1 text-phx-xs font-bold uppercase leading-none tracking-[0.12em] transition-colors motion-reduce:transition-none",
+    active ? "text-[#08111f]" : "text-phx-ink-faint",
   );
 const filterSelectClass = (active: boolean) =>
   cn(
-    "h-8 border px-2 text-[13px] transition-colors focus:outline-none focus:ring-1 focus:ring-phx-accent-line",
+    "h-8 border px-2 text-[13px] transition-colors motion-reduce:transition-none focus:outline-none focus:ring-1 focus:ring-phx-accent-line",
     active
-      ? "border-phx-accent-line bg-phx-accent-soft font-semibold text-phx-accent-press hover:border-phx-accent focus:border-phx-accent"
+      ? "border-slate-300 bg-slate-100 font-semibold text-[#08111f] hover:border-[#08111f] focus:border-[#08111f]"
       : "border-phx-line bg-white text-phx-ink hover:border-phx-line-strong focus:border-phx-accent",
   );
 
@@ -471,7 +471,7 @@ export function ScreeningFilterBar({
         className={cn(
           "inline-flex h-8 items-center gap-1 whitespace-nowrap border px-2 text-[13px] font-black tabular-nums",
           narrowed
-            ? "border-phx-accent-line bg-phx-accent-soft text-phx-accent-press"
+            ? "border-[#08111f] bg-slate-100 text-[#08111f]"
             : "border-phx-line bg-white text-phx-ink",
           adminChipDepthClassName,
         )}
@@ -493,7 +493,7 @@ export function ScreeningFilterBar({
           working perfectly and slowly. Its own element rather than a suffix inside the count so the
           number beside it does not jump sideways each time it appears. */}
       {pending ? (
-        <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-bold uppercase leading-none tracking-[0.12em] text-phx-accent-press">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold uppercase leading-none tracking-[0.12em] text-[#08111f]">
           <Loader2 aria-hidden className="h-3 w-3 animate-spin" />
           Updating
         </span>

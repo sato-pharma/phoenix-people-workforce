@@ -185,7 +185,7 @@ function Place({ row }: { row: PlaceEvidence }) {
           </p>
         ))
       )}
-      <a className="inline-block text-xs font-black text-orange-700 underline underline-offset-2" href={row.mapsLink} rel="noreferrer" target="_blank">
+      <a className="inline-block text-xs font-black text-[#08111f] underline underline-offset-2 hover:text-slate-600" href={row.mapsLink} rel="noreferrer" target="_blank">
         {seated ? "Open the building in Google Maps" : "Open where they stood in Google Maps"}
       </a>
       <div className="space-y-0.5 border-t border-slate-100 pt-1">

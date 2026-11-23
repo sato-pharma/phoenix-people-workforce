@@ -99,7 +99,7 @@ export function CrmContactPicker({
       </p>
 
       {picked ? (
-        <div className="flex flex-wrap items-start justify-between gap-2 border border-emerald-200 bg-emerald-50 px-2 py-1.5">
+        <div className="flex flex-wrap items-start justify-between gap-2 border border-l-4 border-slate-200 border-l-emerald-500 bg-white px-2 py-1.5">
           <span className="min-w-0 text-phx-sm font-bold text-emerald-900">
             {picked.name}
             {picked.nameAr && picked.nameAr !== picked.name ? (

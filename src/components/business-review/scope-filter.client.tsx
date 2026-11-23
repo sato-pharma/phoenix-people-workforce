@@ -147,7 +147,7 @@ export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidd
         )}
 
         <button
-          className="h-9 whitespace-nowrap rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          className="h-9 whitespace-nowrap bg-primary px-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           type="submit"
         >
           Apply
@@ -155,7 +155,7 @@ export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidd
         {/* A LINK, not a submit: clearing means "no filter in the URL at all", and a submit button
             cannot remove the values sitting in the selects beside it. */}
         <a
-          className="h-9 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-[7px] text-sm font-semibold text-muted-foreground transition-colors hover:bg-bg-muted hover:text-foreground"
+          className="h-9 whitespace-nowrap border border-border bg-card px-3 py-[7px] text-sm font-semibold text-muted-foreground transition-colors hover:bg-bg-muted hover:text-foreground"
           href={action}
         >
           Clear

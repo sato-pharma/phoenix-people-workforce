@@ -142,7 +142,7 @@ export function KpiTeamFrequencyRollup({ phoenix, teams }: { phoenix: boolean; t
           <col style={{ width: "18%" }} />
           <col style={{ width: "18%" }} />
         </colgroup>
-        <thead className="border-b border-slate-200 bg-slate-50">
+        <thead className="border-b border-slate-200 bg-white">
           <tr>
             <th className={`px-3 py-2.5 text-left ${EYEBROW}`} scope="col">
               Team
@@ -166,11 +166,11 @@ export function KpiTeamFrequencyRollup({ phoenix, teams }: { phoenix: boolean; t
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-slate-200">
           {teams.map(({ frequency, team }) => (
             <tr key={team.key}>
               <td className="px-3 py-3 align-top">
-                <span className="block text-sm font-bold leading-5 text-slate-900" dir="auto">
+                <span className="block text-sm font-bold leading-5 text-[#08111f]" dir="auto">
                   {team.managerName}
                 </span>
                 <span className={`block ${SMALL}`} dir="auto">
@@ -184,22 +184,22 @@ export function KpiTeamFrequencyRollup({ phoenix, teams }: { phoenix: boolean; t
                   {frequency.met} of {frequency.judged} {passWord}
                 </span>
               </td>
-              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-slate-900">
+              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-[#08111f]">
                 {offTargetWords(frequency, phoenix)}
               </td>
-              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-slate-900">
+              <td className="px-3 py-3 text-right align-top text-sm font-semibold tabular-nums text-[#08111f]">
                 {frequency.withPlan > 0 ? `${frequency.topBand} of ${frequency.withPlan}` : "–"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <ul className="divide-y divide-slate-100 border border-slate-200 md:hidden">
+      <ul className="divide-y divide-slate-200 border border-slate-200 md:hidden">
         {teams.map(({ frequency, team }) => (
           <li className="px-3 py-3" key={team.key}>
             <div className="flex items-baseline justify-between gap-3">
               <span className="min-w-0">
-                <span className="block text-sm font-bold leading-5 text-slate-900" dir="auto">
+                <span className="block text-sm font-bold leading-5 text-[#08111f]" dir="auto">
                   {team.managerName}
                 </span>
                 <span className={`block ${SMALL}`} dir="auto">
@@ -233,7 +233,7 @@ export function KpiTeamFrequencyRollup({ phoenix, teams }: { phoenix: boolean; t
  */
 export function KpiFrequencyTeamHeadingRow({ columns, entry, phoenix }: { columns: number; entry: KpiTeamWithFrequency; phoenix: boolean }) {
   return (
-    <tr className="border-t-2 border-slate-900 bg-slate-50">
+    <tr className="border-t-2 border-[#08111f] bg-slate-50">
       <th className="px-3 py-2.5 text-left font-normal" colSpan={columns} scope="colgroup">
         <KpiFrequencyTeamHeadingText entry={entry} phoenix={phoenix} />
       </th>
@@ -244,7 +244,7 @@ export function KpiFrequencyTeamHeadingRow({ columns, entry, phoenix }: { column
 /** The same heading over a team's phone cards. */
 export function KpiFrequencyTeamHeadingBand({ entry, phoenix }: { entry: KpiTeamWithFrequency; phoenix: boolean }) {
   return (
-    <div className="border-t-2 border-slate-900 bg-slate-50 px-4 py-2.5">
+    <div className="border-t-2 border-[#08111f] bg-slate-50 px-4 py-2.5">
       <KpiFrequencyTeamHeadingText entry={entry} phoenix={phoenix} />
     </div>
   );
@@ -255,7 +255,7 @@ function KpiFrequencyTeamHeadingText({ entry, phoenix }: { entry: KpiTeamWithFre
   return (
     <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <span className="min-w-0">
-        <span className="block text-phx-md font-black uppercase tracking-[0.12em] text-slate-900" dir="auto">
+        <span className="block text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f]" dir="auto">
           {kpiTeamHeading(team)}
         </span>
         <span className={`block ${SMALL}`}>{kpiFrequencyHeadCount(frequency)}</span>

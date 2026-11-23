@@ -124,7 +124,7 @@ export function CandidateFieldsPanel({ candidate, schema }: { candidate: Candida
   return (
     <div className="space-y-5">
       <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-        <ClipboardList aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
+        <ClipboardList aria-hidden="true" className="h-3.5 w-3.5 text-[#08111f]" />
         On record
       </p>
 
@@ -141,12 +141,12 @@ export function CandidateFieldsPanel({ candidate, schema }: { candidate: Candida
           return (
             <div key={section.key} className="space-y-3">
               <p className="flex items-center gap-2 border-b border-slate-200 pb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-slate-700">
-                <span aria-hidden="true" className="h-3 w-0.5 bg-orange-500" />
+                <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
                 {section.label}
               </p>
               {rows.map(({ field, irrelevant, value }) => (
                 <div key={field.key} className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{field.label}</p>
+                  <p className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-400">{field.label}</p>
                   {irrelevant ? (
                     <p className="mt-0.5 text-sm italic text-slate-400">Irrelevant</p>
                   ) : field.type === "array" && Array.isArray(value) ? (

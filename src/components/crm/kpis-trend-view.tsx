@@ -40,7 +40,7 @@ import {
  * which is written last.
  */
 const PERIOD_TH = "px-2 py-2.5 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
-const PERIOD_TD = "px-2 py-3 align-top text-sm font-semibold tabular-nums text-slate-900";
+const PERIOD_TD = "px-2 py-3 align-top text-sm font-semibold tabular-nums text-[#08111f]";
 
 type Reading = { value: string; caption: string; band: KpiBand; fill: number | null };
 
@@ -99,7 +99,7 @@ function readingOf(cell: KpiTrendCell | null, metric: KpiTrendMetric, column: Kp
 
 /** The total column is tinted so "what the weeks add up to" is found at a glance. */
 function cellTint(column: KpiTrendColumn): string {
-  return column.kind === "total" ? " bg-orange-50/70" : "";
+  return column.kind === "total" ? " bg-slate-50" : "";
 }
 
 function ReadingBlock({ reading }: { reading: Reading }) {
@@ -148,8 +148,8 @@ function Switch<T extends string>({
             aria-current={option === current ? "page" : undefined}
             className={
               option === current
-                ? "border border-orange-500 bg-orange-50 px-2.5 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-orange-800"
-                : "border border-slate-300 bg-white px-2.5 py-1.5 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
+                ? "border border-[#08111f] bg-[#08111f] px-2.5 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
+                : "border border-slate-300 bg-white px-2.5 py-1.5 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-600 transition-colors hover:border-[#08111f] hover:text-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             }
             href={hrefs[option]}
             key={option}
@@ -168,16 +168,16 @@ function TeamMatrix({ trend }: { trend: KpiTrend }) {
   const periodWidth = `${(78 / columns.length).toFixed(3)}%`;
   return (
     <>
-      <div className="divide-y divide-slate-100 md:hidden">
+      <div className="divide-y divide-slate-200 md:hidden">
         {KPI_TREND_METRICS.map((metric) => (
           <div className="px-4 py-4" key={metric}>
-            <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">
+            <p className="text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f]">
               {KPI_TREND_METRIC_LABEL[metric]}
             </p>
             <div className="mt-2 grid grid-cols-3 gap-2">
               {columns.map((column, index) => (
                 <div
-                  className={`min-w-0 border px-2 py-2 ${column.kind === "total" ? "border-orange-300 bg-orange-50/70" : "border-slate-200 bg-white"}`}
+                  className={`min-w-0 border px-2 py-2 ${column.kind === "total" ? "border-[#08111f] bg-slate-50" : "border-slate-200 bg-white"}`}
                   key={column.key}
                 >
                   <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</p>
@@ -199,7 +199,7 @@ function TeamMatrix({ trend }: { trend: KpiTrend }) {
               <col key={column.key} style={{ width: periodWidth }} />
             ))}
           </colgroup>
-          <thead className="border-y border-slate-200 bg-slate-50">
+          <thead className="border-y border-slate-200 bg-white">
             <tr>
               <th className={TH} scope="col">
                 Measure
@@ -209,10 +209,10 @@ function TeamMatrix({ trend }: { trend: KpiTrend }) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {KPI_TREND_METRICS.map((metric) => (
               <tr key={metric}>
-                <th className={`${TD} text-left font-bold text-slate-900`} scope="row">
+                <th className={`${TD} text-left font-bold text-[#08111f]`} scope="row">
                   {KPI_TREND_METRIC_LABEL[metric]}
                 </th>
                 {columns.map((column, index) => (
@@ -235,14 +235,14 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
   const periodWidth = `${(76 / columns.length).toFixed(3)}%`;
   return (
     <>
-      <div className="divide-y divide-slate-100 md:hidden">
+      <div className="divide-y divide-slate-200 md:hidden">
         {reps.map((line) => (
           <div className="px-4 py-4" key={line.key}>
             <KpiRepName areaName={line.areaName} hireDate={line.hireDate} jobTitle={line.jobTitle} lineName={line.lineName} name={line.repName} />
             <div className="mt-2 grid grid-cols-3 gap-2">
               {columns.map((column, index) => (
                 <div
-                  className={`min-w-0 border px-2 py-2 ${column.kind === "total" ? "border-orange-300 bg-orange-50/70" : "border-slate-200 bg-white"}`}
+                  className={`min-w-0 border px-2 py-2 ${column.kind === "total" ? "border-[#08111f] bg-slate-50" : "border-slate-200 bg-white"}`}
                   key={column.key}
                 >
                   <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</p>
@@ -263,7 +263,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
               <col key={column.key} style={{ width: periodWidth }} />
             ))}
           </colgroup>
-          <thead className="border-y border-slate-200 bg-slate-50">
+          <thead className="border-y border-slate-200 bg-white">
             <tr>
               <th className={TH} scope="col">
                 Medical rep
@@ -276,7 +276,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {reps.map((line) => (
               <tr key={line.key}>
                 <td className={TD}>
@@ -326,22 +326,22 @@ export function KpiTrendView({
   const pieceWord = trend.plan.scale === "month" ? "week" : "month";
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-200 px-4 py-4 sm:px-5">
         <Switch current={scale} hrefs={scaleHrefs} labels={KPI_TREND_SCALE_LABEL} options={KPI_TREND_SCALES} title="View" />
-        <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">
+        <p className="text-phx-md font-black uppercase tracking-[0.12em] text-[#08111f]">
           {trend.plan.title}
           {trend.plan.running ? <span className="ml-1.5 text-slate-500">· so far</span> : null}
         </p>
       </div>
 
       {trend.rulesNote ? (
-        <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+        <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
           <p className={`${CAPTION} font-semibold`}>{trend.rulesNote}</p>
         </div>
       ) : null}
 
       {trend.columns.length === 0 ? (
-        <div className="border-t border-slate-100 px-5 py-8 text-center">
+        <div className="border-t border-slate-200 px-5 py-8 text-center">
           <p className="text-sm font-bold text-slate-800">Nothing in {trend.plan.title} has begun yet.</p>
           <p className={`mx-auto mt-1 max-w-md leading-5 ${CAPTION}`}>
             Each {pieceWord} appears here on the day it starts, beside the total it adds to.
@@ -349,7 +349,7 @@ export function KpiTrendView({
         </div>
       ) : (
         <>
-          <div className="border-t border-slate-100">
+          <div className="border-t border-slate-200">
             <KpiSection
               description={`All five measures, ${pieceWord} by ${pieceWord}, and the total they add up to in the last column.`}
               title={single ? `${single.repName} · ${pieceWord} by ${pieceWord}` : `Team · ${pieceWord} by ${pieceWord}`}
@@ -359,7 +359,7 @@ export function KpiTrendView({
           </div>
 
           {single ? null : (
-            <div className="border-t border-slate-100">
+            <div className="border-t border-slate-200">
               <KpiSection
                 description={`Each rep on one measure at a time, ${pieceWord} by ${pieceWord}. AM, PM and pharmacy are read apart, never averaged.`}
                 title={`Each rep · ${KPI_TREND_METRIC_LABEL[metric]}`}
@@ -378,7 +378,7 @@ export function KpiTrendView({
             </div>
           )}
 
-          <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+          <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
             <p className={`leading-4 ${CAPTION}`}>
               Each {pieceWord} is scored exactly as the Summary tab scores that {pieceWord} on its own.{" "}
               {totalExplained(trend)} Call rates stop at yesterday while a {pieceWord} is running; coverage and frequency

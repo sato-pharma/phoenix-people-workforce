@@ -183,7 +183,7 @@ export function VacancyPicker({
       emptyLabel="No position matches"
       hint="area · region · manager"
       items={items}
-      leadingIcon={<Briefcase className={value ? "h-3.5 w-3.5 shrink-0 text-orange-500" : "h-3.5 w-3.5 shrink-0 text-slate-400"} />}
+      leadingIcon={<Briefcase className={value ? "h-3.5 w-3.5 shrink-0 text-[#08111f]" : "h-3.5 w-3.5 shrink-0 text-slate-400"} />}
       onChange={(ids) => onChange(ids[0] ?? "")}
       panelId={panelId}
       placeholder="For which position? (optional)"

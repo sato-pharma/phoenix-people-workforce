@@ -132,7 +132,7 @@ export function DirectOrderCollectionControl({
 
   return (
     <div className="border-t border-[#eef1f3] px-4 py-3">
-      <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">Total collected (Finance)</p>
+      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Total collected (Finance)</p>
 
       {recorded ? (
         <div className="mt-1 flex flex-wrap items-baseline gap-x-5 gap-y-1">
@@ -154,7 +154,7 @@ export function DirectOrderCollectionControl({
 
       {history.length > 0 ? (
         <div className="mt-2">
-          <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">Payment history</p>
+          <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Payment history</p>
           <ol className="mt-1 divide-y divide-[#eef1f3] border border-[#eef1f3]">
             {history.map((entry, index) => (
               <li

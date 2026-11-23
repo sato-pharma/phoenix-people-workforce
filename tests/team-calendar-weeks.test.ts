@@ -132,8 +132,9 @@ export function runTeamCalendarWeeksTests() {
     view,
     // Not anchored on a closing quote: the stepper's ground took a depth token in the portal's
     // premium-depth pass (2026-10-09), so the attribute is a template now. Every class this
-    // assertion cares about is still matched, in order, `lg:hidden` included.
-    /className=(?:"|\{`)flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden/,
+    // assertion cares about is still matched, in order, `lg:hidden` included. The landing redesign
+    // (2026-11-20) took its radius off under the square-edge golden rule; the order is unchanged.
+    /className=(?:"|\{`)flex items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2 lg:hidden/,
     "the stepper is hidden from lg up, where the whole month is shown instead",
   );
   // The stepper's own state must never reach the row grids as an index into someone's timeline.

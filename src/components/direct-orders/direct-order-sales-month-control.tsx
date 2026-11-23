@@ -72,7 +72,7 @@ export function DirectOrderSalesMonthControl({
 
   return (
     <div className="border-t border-[#eef1f3] px-4 py-3">
-      <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">Sales month (Finance)</p>
+      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Sales month (Finance)</p>
 
       {!canEdit ? (
         <p className="mt-0.5 text-sm font-semibold text-slate-900">

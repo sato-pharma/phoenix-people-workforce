@@ -5,6 +5,7 @@ import { MessageSquare } from "lucide-react";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 /**
  * Market Awareness — the conversation on an activity, shared by both screens that need it.
@@ -18,8 +19,8 @@ import { cn } from "@/lib/utils";
  * `rounded-*` class in this file), no ellipsis, human names never codes, Cairo time.
  */
 
-const BTN_QUIET =
-  "inline-flex items-center justify-center gap-2 border border-phx-line bg-phx-paper px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft transition hover:border-phx-line-strong hover:text-phx-ink";
+/** The landing kit's navy outline action. */
+const BTN_QUIET = landingActionClassName("outline", "bg-white");
 const TEXTAREA = cn(phxTextareaClassName, "min-h-20 w-full px-3 py-2 text-phx-sm");
 
 /**
@@ -50,7 +51,7 @@ function cairoStamp(value: string | null | undefined): string {
 // the two files circular, since the inbox imports this component.
 function MicroLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="block text-phx-3xs font-bold uppercase tracking-[0.14em] text-phx-ink-faint">
+    <span className="block text-phx-xs font-bold uppercase tracking-[0.14em] text-slate-500">
       {children}
     </span>
   );
@@ -141,8 +142,8 @@ export function Conversation({ activityId }: { activityId: string }) {
   }
 
   return (
-    <div className="min-w-0 border border-phx-line bg-phx-paper-2 p-3">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-phx-line pb-2">
+    <div className="min-w-0 border border-slate-200 bg-white p-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
         <MicroLabel>Conversation</MicroLabel>
         <button className={BTN_QUIET} onClick={() => setOpen(false)} type="button">
           Hide
@@ -150,31 +151,31 @@ export function Conversation({ activityId }: { activityId: string }) {
       </div>
 
       {error ? (
-        <p className="mt-2 break-words border border-phx-warn-line bg-phx-warn-bg px-2.5 py-2 text-phx-2xs font-bold text-phx-warn">
+        <p className="mt-2 break-words border border-slate-200 border-l-4 border-l-amber-500 bg-white px-2.5 py-2 text-phx-xs font-bold text-amber-800">
           {error}
         </p>
       ) : null}
 
       {comments === null ? (
-        <p className="mt-2 text-phx-2xs font-bold text-phx-ink-faint">Loading the thread.</p>
+        <p className="mt-2 text-phx-xs font-bold text-slate-500">Loading the thread.</p>
       ) : comments.length === 0 ? (
-        <p className="mt-2 break-words text-phx-2xs font-medium text-phx-ink-faint">
+        <p className="mt-2 break-words text-phx-xs font-medium text-slate-500">
           Nothing said yet. Whatever you write is emailed to whoever raised this, copying everyone
           already involved.
         </p>
       ) : (
         <ol className="mt-2 flex min-w-0 flex-col gap-2.5">
           {comments.map((comment) => (
-            <li className="min-w-0 border-l-2 border-phx-accent-line pl-2.5" key={comment.id}>
+            <li className="min-w-0 border-l-2 border-slate-300 pl-2.5" key={comment.id}>
               <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                <span className="break-words text-phx-2xs font-black text-phx-ink">
+                <span className="break-words text-phx-xs font-black text-[#08111f]">
                   {comment.authorName ?? comment.authorHrId}
                 </span>
-                <span className="text-phx-3xs font-medium text-phx-ink-faint">
+                <span className="text-phx-xs font-medium text-slate-500">
                   {cairoStamp(comment.createdAt)}
                 </span>
               </span>
-              <p className="mt-0.5 whitespace-pre-wrap break-words text-phx-2xs font-medium text-phx-ink-soft">
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-phx-xs font-medium text-slate-600">
                 {comment.body}
               </p>
             </li>
@@ -199,7 +200,7 @@ export function Conversation({ activityId }: { activityId: string }) {
             <MessageSquare aria-hidden="true" className="h-3 w-3 shrink-0" />
             <span>{busy ? "Sending" : "Send"}</span>
           </button>
-          <span className="break-words text-phx-3xs font-medium text-phx-ink-faint">
+          <span className="break-words text-phx-xs font-medium text-slate-500">
             Sends without deciding anything — the activity stays where it is.
           </span>
         </span>

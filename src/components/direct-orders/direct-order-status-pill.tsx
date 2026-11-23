@@ -17,7 +17,7 @@ import { showsAwaitingFinanceMonth, type DirectOrderStatus } from "@/lib/direct-
 // rather than adding a fifth.
 //
 // Two visual families are preserved on purpose. Admin tables use square solid pills; the portal
-// uses rounded ring pills. The owner's standing rule is that a module's pages match their siblings
+// uses coloured small capitals on a 2px rail (the landing kit's status words, never a tinted pill). The owner's standing rule is that a module's pages match their siblings
 // exactly, so unifying the LOOK here would break four screens to tidy one file.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -34,17 +34,17 @@ const SOLID_TONE: Record<DirectOrderStatus, string> = {
   cancelled: "bg-zinc-200 text-zinc-700",
 };
 
-/** Rounded ring — the employee portal. */
+/** Rail words — the employee portal: the colour is the rail and the ink, never a ground. */
 const RING_TONE: Record<DirectOrderStatus, string> = {
-  pending_approval: "bg-amber-50 text-amber-700 ring-amber-200",
-  approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  rejected: "bg-rose-50 text-rose-700 ring-rose-200",
-  returned: "bg-sky-50 text-sky-700 ring-sky-200",
-  reversed: "bg-slate-100 text-slate-600 ring-slate-200",
-  draft: "bg-slate-50 text-slate-500 ring-slate-200",
-  held: "bg-orange-50 text-orange-700 ring-orange-200",
-  expired: "bg-slate-200 text-slate-500 ring-slate-300",
-  cancelled: "bg-zinc-100 text-zinc-600 ring-zinc-300",
+  pending_approval: "border-amber-500 text-amber-700",
+  approved: "border-emerald-500 text-emerald-700",
+  rejected: "border-rose-500 text-rose-700",
+  returned: "border-sky-500 text-sky-700",
+  reversed: "border-slate-400 text-slate-600",
+  draft: "border-slate-300 text-slate-500",
+  held: "border-orange-500 text-orange-700",
+  expired: "border-slate-400 text-slate-500",
+  cancelled: "border-zinc-400 text-zinc-600",
 };
 
 /**
@@ -55,7 +55,7 @@ const RING_TONE: Record<DirectOrderStatus, string> = {
  * (direct-order-request-detail.tsx) — this is its short form, for a cell.
  */
 const AWAITING_FINANCE_SOLID = "bg-amber-100 text-amber-900";
-const AWAITING_FINANCE_RING = "bg-amber-50 text-amber-800 ring-amber-300";
+const AWAITING_FINANCE_RING = "border-amber-500 text-amber-800";
 
 type Props = {
   status: DirectOrderStatus | string;
@@ -94,10 +94,10 @@ export function DirectOrderStatusPill({
 
   const base =
     variant === "ring"
-      ? "inline-flex items-center rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ring-1"
+      ? "inline-flex items-center border-l-2 pl-1.5 text-phx-xs font-black uppercase leading-tight tracking-wide"
       : "inline-block px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wider";
 
-  const fallback = variant === "ring" ? "bg-slate-50 text-slate-500 ring-slate-200" : "bg-slate-100 text-slate-600";
+  const fallback = variant === "ring" ? "border-slate-300 text-slate-500" : "bg-slate-100 text-slate-600";
   const tone = awaitingFinance
     ? variant === "ring"
       ? AWAITING_FINANCE_RING

@@ -430,7 +430,7 @@ export function WorkstationReviewHeader({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-phx-surface-2 px-3 py-1">
           <button
             aria-label="Leave full-screen reading"
-            className={`shrink-0 border border-phx-line bg-white p-1 text-phx-ink-2 transition-colors hover:border-phx-accent-line hover:text-phx-accent-press ${adminControlDepthClassName}`}
+            className={`shrink-0 border border-phx-line bg-white p-1 text-phx-ink-2 transition-colors motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`}
             onClick={onToggleFocus}
             title="Leave full-screen reading — or press Escape"
             type="button"
@@ -440,7 +440,7 @@ export function WorkstationReviewHeader({
           <span className="min-w-0 break-words text-[13px] font-black leading-tight text-phx-ink">
             {row.fullName}
           </span>
-          <span className="min-w-0 flex-1 break-words text-[12px] font-bold leading-tight text-phx-accent-press">
+          <span className="min-w-0 flex-1 break-words text-[12px] font-bold leading-tight text-[#08111f]">
             {row.appliedForText ?? "No job named on the application"}
           </span>
           {statusPill}
@@ -455,7 +455,7 @@ export function WorkstationReviewHeader({
     <button
       aria-expanded={actionsOpen}
       aria-label={actionsOpen ? "Hide the decision bar" : "Show the decision bar"}
-      className="shrink-0 text-phx-ink-faint transition-colors hover:text-phx-accent-press"
+      className="shrink-0 text-phx-ink-faint transition-colors motion-reduce:transition-none hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
       onClick={toggleActions}
       title={actionsOpen ? "Hide the decision bar" : "Show the decision bar"}
       type="button"
@@ -479,7 +479,7 @@ export function WorkstationReviewHeader({
           <button
             aria-expanded={false}
             aria-label="Show the candidate's contact details"
-            className="shrink-0 text-phx-ink-faint transition-colors hover:text-phx-accent-press"
+            className="shrink-0 text-phx-ink-faint transition-colors motion-reduce:transition-none hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             onClick={toggleWho}
             title="Show the candidate's contact details"
             type="button"
@@ -487,7 +487,7 @@ export function WorkstationReviewHeader({
             <ChevronRight aria-hidden className="h-4 w-4" />
           </button>
           <h2 className="min-w-0 break-words text-[15px] font-black leading-tight text-phx-ink">{row.fullName}</h2>
-          <p className="min-w-0 flex-1 break-words text-[13px] font-bold leading-tight text-phx-accent-press">
+          <p className="min-w-0 flex-1 break-words text-[13px] font-bold leading-tight text-[#08111f]">
             {row.appliedForText ?? "No job named on the application"}
           </p>
           {statusPill}
@@ -498,7 +498,7 @@ export function WorkstationReviewHeader({
           <button
             aria-expanded
             aria-label="Hide the candidate's contact details"
-            className="mt-1 shrink-0 text-phx-ink-faint transition-colors hover:text-phx-accent-press"
+            className="mt-1 shrink-0 text-phx-ink-faint transition-colors motion-reduce:transition-none hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
             onClick={toggleWho}
             title="Hide the candidate's contact details"
             type="button"
@@ -509,7 +509,7 @@ export function WorkstationReviewHeader({
             <h2 className="break-words text-[20px] font-black leading-tight text-phx-ink">{row.fullName}</h2>
             {/* The SEAT, immediately under the name and heavier than the current job title — the same
                 inversion the list uses, because a recruiter is filling a vacancy, not browsing people. */}
-            <p className="mt-0.5 break-words text-[14px] font-bold leading-tight text-phx-accent-press">
+            <p className="mt-0.5 break-words text-[14px] font-bold leading-tight text-[#08111f]">
               {row.appliedForText ?? "No job named on the application"}
             </p>
             {/* WHAT THEY DO NOW, directly under the seat, and only when it is a different job.
@@ -619,7 +619,7 @@ type DecisionTone = "ok" | "danger" | "info" | "accent" | "whatsapp";
  * house control depth, dropped while it is disabled (a greyed control still floating reads as one
  * that will answer).
  */
-const DECISION_SHAPE = `inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
+const DECISION_SHAPE = `inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-45 ${adminControlDepthClassName} disabled:shadow-none`;
 
 /**
  * A press at rest.
@@ -640,7 +640,7 @@ function decisionRest(tone: DecisionTone): string {
         ? "border-phx-line bg-white text-phx-info hover:border-phx-info-line hover:bg-phx-info-bg"
         : tone === "whatsapp"
           ? phxWhatsAppShareButtonClassName
-          : "border-phx-accent-press bg-phx-accent text-phx-accent-ink hover:bg-phx-accent-hover";
+          : "border-[#08111f] bg-[#08111f] text-white hover:border-[#13233a] hover:bg-[#13233a]";
 }
 
 function DecisionButton({
@@ -666,7 +666,7 @@ function DecisionButton({
    * The mark is the one this module's own predecessor already uses — candidate-screening-session.tsx
    * prints `<kbd>S</kbd>` inside the Shortlist button and names the key in the tooltip. This is that
    * pattern, not a new one: same element, same 10px, same place. The one difference is spelling:
-   * that file writes `text-phx-2xs`, this one must write `text-[10px]`, because this file is pinned
+   * that file writes `text-phx-xs`, this one must write `text-[10px]`, because this file is pinned
    * against named font sizes — see the render below.
    *
    * OMITTED MEANS THERE IS NO KEY, and that is load-bearing. Reject opens a panel to ask for a
@@ -708,7 +708,7 @@ function DecisionButton({
           ? "border-phx-info-line bg-phx-info-bg text-phx-info"
           : tone === "whatsapp"
             ? "border-[#1DA851] bg-[#1DA851] text-slate-900"
-            : "border-phx-accent-press bg-phx-accent-hover text-phx-accent-ink";
+            : "border-[#13233a] bg-[#13233a] text-white";
   return (
     <button
       aria-pressed={pressed}
@@ -728,7 +728,7 @@ function DecisionButton({
     >
       {icon}
       {label}
-      {/* `text-[10px]`, NOT `text-phx-2xs`, though the predecessor screen writes the named token and
+      {/* `text-[10px]`, NOT `text-phx-xs`, though the predecessor screen writes the named token and
           the two are the same 10px (tokens.css `--phx-fs-2xs`). tailwind-merge silently DROPS a
           custom named font size — it compiles away and the element inherits, visible only through
           getComputedStyle in a real browser — and this file is pinned against the named form by
@@ -792,7 +792,7 @@ function RejectPanel({
           <button
             aria-pressed={reason === key}
             className={cn(
-              "border px-2 py-1 text-[12px] font-semibold leading-none transition-colors",
+              "border px-2 py-1 text-[12px] font-semibold leading-none transition-colors motion-reduce:transition-none",
               reason === key
                 ? "border-phx-danger-line bg-phx-danger text-white shadow-[inset_0_1px_2px_rgba(13,16,21,0.18)]"
                 : "border-phx-line bg-white text-phx-ink-2 hover:border-phx-danger-line hover:text-phx-danger",

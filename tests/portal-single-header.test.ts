@@ -204,12 +204,14 @@ const SHELL_OWNS_THE_HEADER: ReadonlyArray<{ page: string; components: readonly 
 // how it looks in the source rather than by what it does.
 
 export function runPortalSingleHeaderTests(): void {
-  // The premise: the shell really does paint the header. If this moves, re-derive the rule before
-  // trusting anything below it.
+  // The premise: the shell really does draw the header, and its <h1>. Since 2026-11-20 that header is
+  // the landing kit's light title band rather than a navy block — the paint changed, the invariant
+  // (one <h1>, drawn by the shell) did not. If this moves, re-derive the rule before trusting
+  // anything below it.
   const shell = read("src/components/employee-portal/enterprise-shell.tsx");
   assert.ok(
-    shell.includes("bg-[#08111f]"),
-    "The portal shell no longer paints its own command header; re-derive what a page may draw.",
+    shell.includes("employee-portal-page-header") && /<h1[\s>]/.test(shell),
+    "The portal shell no longer draws its own title band and <h1>; re-derive what a page may draw.",
   );
 
   for (const { page, components } of SHELL_OWNS_THE_HEADER) {

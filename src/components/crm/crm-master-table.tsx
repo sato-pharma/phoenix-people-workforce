@@ -21,9 +21,11 @@ import type {
   CrmMasterRow,
 } from "@/lib/crm/master";
 import {
+  phxCheckInputClassName,
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+import { LANDING_FOCUS, LANDING_INK, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { cn } from "@/lib/utils";
 
 // renderCell / formatVendorLocal / formatVendorTimeOnly / recognitionLabel — and the export-only
@@ -44,7 +46,7 @@ function VisitTimeCell({ source, value, wrap = false }: { source: unknown; value
     <span className={wrap ? "inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5" : "inline-flex items-center gap-1.5"}>
       <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
       <span
-        className={`rounded px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide ${
+        className={`px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide ${
           isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
         }`}
         title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
@@ -67,11 +69,11 @@ function RecognitionBadge({ missing, score }: { missing: unknown; score: unknown
       : score === 75
         ? "bg-amber-100 text-amber-700"
         : score === 50
-          ? "bg-orange-100 text-orange-700"
+          ? "bg-amber-200 text-amber-900"
           : "bg-rose-100 text-rose-700";
   const title = typeof missing === "string" && missing ? `Missing: ${missing}` : "All checks resolved";
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-phx-xs font-bold ${tone}`} title={title}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-phx-xs font-bold ${tone}`} title={title}>
       {label}
     </span>
   );
@@ -140,7 +142,7 @@ function Sub({ children }: { children: ReactNode }) {
 
 function Lead({ children }: { children: ReactNode }) {
   return (
-    <span className="block break-words font-semibold text-slate-900" dir="auto">
+    <span className={`block break-words font-semibold ${LANDING_INK}`} dir="auto">
       {children}
     </span>
   );
@@ -490,8 +492,7 @@ function portalCardHeader(dataset: CrmMasterData["dataset"], row: CrmMasterRow):
   };
 }
 
-const ALL_FIELDS_BUTTON =
-  "inline-flex min-h-10 items-center gap-1 border px-2.5 py-1 text-phx-xs font-bold transition md:min-h-8";
+const ALL_FIELDS_BUTTON = `inline-flex min-h-10 items-center gap-1 border px-2.5 py-1 text-phx-xs font-bold transition motion-reduce:transition-none md:min-h-8 ${LANDING_FOCUS}`;
 
 function AllFieldsButton({
   count,
@@ -509,7 +510,7 @@ function AllFieldsButton({
     <button
       {...(detailId ? rowDetailToggleProps(detailId, isOpen) : { "aria-expanded": isOpen })}
       className={`${ALL_FIELDS_BUTTON} ${
-        isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+        isOpen ? "border-[#08111f] bg-[#08111f] text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"
       }`}
       onClick={onToggle}
       type="button"
@@ -638,7 +639,7 @@ function PortalMasterRow({
 }) {
   return (
     <>
-      <tr className={`align-top text-slate-700 ${isHoliday ? "bg-amber-100/70" : "hover:bg-orange-50/40"}`}>
+      <tr className={`align-top text-slate-700 ${isHoliday ? "bg-amber-100/70" : "hover:bg-slate-50"}`}>
         {columns.map((column, index) => (
           <td className="break-words px-3 py-2" key={column.id}>
             {column.render(row)}
@@ -942,7 +943,7 @@ export function CrmMasterTable({
           </label>
           <label className={`${FILTER_FIELD} col-span-2`}>
             Search
-            <div className="flex items-center gap-2 border border-slate-200 px-2 py-1.5 focus-within:border-orange-400">
+            <div className="flex items-center gap-2 border border-slate-200 px-2 py-1.5 focus-within:border-[#08111f]">
               <Search aria-hidden="true" className="h-4 w-4 text-slate-400" />
               <input
                 className={cn(phxFieldClassName, "w-full")}
@@ -1072,7 +1073,7 @@ export function CrmMasterTable({
               <label className="flex items-center gap-2 pb-1.5 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 <input
                   checked={halfDaysOnly}
-                  className="h-4 w-4 accent-orange-600"
+                  className={phxCheckInputClassName}
                   onChange={(event) => setHalfDaysOnly(event.target.checked)}
                   type="checkbox"
                 />
@@ -1091,7 +1092,7 @@ export function CrmMasterTable({
             ) : (
               activeChips.map((chip) => (
                 <button
-                  className="inline-flex items-center gap-1 rounded-full border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-semibold text-phx-warn transition hover:border-phx-warn-line hover:bg-phx-warn-bg"
+                  className={`inline-flex items-center gap-1 border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-semibold text-phx-warn transition motion-reduce:transition-none hover:border-phx-warn-line hover:bg-phx-warn-bg ${LANDING_FOCUS}`}
                   key={chip.id}
                   onClick={() => clearFilters(chip.keys)}
                   title="Remove this filter"
@@ -1105,13 +1106,13 @@ export function CrmMasterTable({
           </div>
           <div className="flex items-center gap-2">
             <button
-              className="border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+              className={landingActionClassName("outline")}
               onClick={resetFilters}
               type="button"
             >
               Reset
             </button>
-            <button className="bg-orange-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-orange-700" onClick={applyFilters} type="button">
+            <button className={landingActionClassName("solid")} onClick={applyFilters} type="button">
               Apply
             </button>
           </div>
@@ -1122,7 +1123,7 @@ export function CrmMasterTable({
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         <p className={portal ? "flex min-w-0 flex-wrap items-center gap-2" : "flex items-center gap-2"}>
           <span>
-            <span className="font-bold text-slate-900">{data.totalCount.toLocaleString("en-US")}</span> records
+            <span className={`font-bold ${LANDING_INK}`}>{data.totalCount.toLocaleString("en-US")}</span> records
             {data.totalCount > 0 ? (
               <span className="text-slate-400"> · showing {rangeStart.toLocaleString("en-US")}–{rangeEnd.toLocaleString("en-US")}</span>
             ) : null}
@@ -1136,7 +1137,7 @@ export function CrmMasterTable({
             </span>
           ) : null}
           {isPending ? (
-            <span className="inline-flex items-center gap-1 font-semibold text-orange-600">
+            <span className="inline-flex items-center gap-1 font-semibold text-slate-600">
               <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> Updating…
             </span>
           ) : null}
@@ -1150,7 +1151,7 @@ export function CrmMasterTable({
             phone gives them 336–366px, so without a wrap the shell's overflow clip cut Next off. */}
         <div className={portal ? "flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end" : "flex items-center gap-3"}>
           <button
-            className="inline-flex h-8 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition enabled:hover:border-orange-300 enabled:hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+            className={`inline-flex h-8 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition motion-reduce:transition-none enabled:hover:border-[#08111f] enabled:hover:text-[#08111f] ${LANDING_FOCUS} disabled:cursor-not-allowed disabled:opacity-40`}
             disabled={exportBusy || data.totalCount === 0}
             onClick={handleExport}
             title={data.totalCount === 0 ? "Nothing to export" : "Export the full filtered result as XLSX"}
@@ -1175,7 +1176,7 @@ export function CrmMasterTable({
           </label>
           <div className="flex items-center gap-2">
             <button
-              className="inline-flex items-center gap-1 border border-slate-200 px-2 py-1 font-semibold text-slate-600 transition enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className={`inline-flex items-center gap-1 border border-slate-200 px-2 py-1 font-semibold text-slate-600 transition motion-reduce:transition-none enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ${LANDING_FOCUS}`}
               disabled={data.page <= 1}
               onClick={() => navigate({ page: String(data.page - 1) })}
               type="button"
@@ -1187,7 +1188,7 @@ export function CrmMasterTable({
               Page {data.page.toLocaleString("en-US")} / {totalPages.toLocaleString("en-US")}
             </span>
             <button
-              className="inline-flex items-center gap-1 border border-slate-200 px-2 py-1 font-semibold text-slate-600 transition enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className={`inline-flex items-center gap-1 border border-slate-200 px-2 py-1 font-semibold text-slate-600 transition motion-reduce:transition-none enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ${LANDING_FOCUS}`}
               disabled={data.page >= totalPages}
               onClick={() => navigate({ page: String(data.page + 1) })}
               type="button"
@@ -1207,7 +1208,7 @@ export function CrmMasterTable({
       ) : null}
 
       {/* Master table with a synced top scrollbar + sticky header. Dims during a pending navigation. */}
-      <div className={isPending ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
+      <div className={isPending ? "pointer-events-none opacity-50 transition-opacity motion-reduce:transition-none" : "transition-opacity motion-reduce:transition-none"}>
       {!data.schemaReady ? (
         <div className="border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
           The iReports360 mirror is not set up yet — no CRM data to show.
@@ -1266,12 +1267,12 @@ export function CrmMasterTable({
                 ref={tableRef}
               >
                 <thead className="sticky top-0 z-10">
-                  <tr className="border-b border-slate-200 bg-slate-100 text-slate-500">
+                  <tr className="border-b border-slate-200 bg-white text-slate-500">
                     {data.columns.map((col) => (
                       <th className="whitespace-nowrap px-3 py-2 font-semibold" key={col.key} title={col.note ?? undefined}>
                         <span className={`inline-flex items-center gap-1 ${col.note ? "cursor-help" : ""}`}>
                           {col.label}
-                          {col.note ? <Info aria-hidden="true" className="h-3 w-3 text-orange-400" /> : null}
+                          {col.note ? <Info aria-hidden="true" className="h-3 w-3 text-slate-400" /> : null}
                         </span>
                       </th>
                     ))}
@@ -1316,7 +1317,7 @@ function RowGroup({
     <>
       <tr
         className={`border-b text-slate-700 ${
-          isNationalHoliday ? "border-amber-200 bg-amber-100/70 hover:bg-amber-100" : "border-slate-100 hover:bg-orange-50/40"
+          isNationalHoliday ? "border-amber-200 bg-amber-100/70 hover:bg-amber-100" : "border-slate-200 hover:bg-slate-50"
         }`}
       >
         {columns.map((col) => (
@@ -1328,8 +1329,8 @@ function RowGroup({
           <div className="inline-flex items-center gap-1">
             <button
               {...rowDetailToggleProps(`master-json-${row.id}`, isOpen)}
-              className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition ${
-                isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+              className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition motion-reduce:transition-none ${LANDING_FOCUS} ${
+                isOpen ? "border-[#08111f] bg-[#08111f] text-white" : "border-slate-200 text-slate-500 hover:bg-slate-50"
               }`}
               onClick={onToggle}
               type="button"
@@ -1383,8 +1384,8 @@ function RowCard({
       <div className="mt-3">
         <button
           aria-expanded={isOpen}
-          className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition ${
-            isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+          className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition motion-reduce:transition-none ${LANDING_FOCUS} ${
+            isOpen ? "border-[#08111f] bg-[#08111f] text-white" : "border-slate-200 text-slate-500 hover:bg-slate-50"
           }`}
           onClick={onToggle}
           type="button"

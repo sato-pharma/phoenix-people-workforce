@@ -5,9 +5,10 @@ import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Inbox } from "lucide-react";
+import { Inbox } from "lucide-react";
 
-import { AdminInsightChip, AdminPageHero, adminPanelClassName } from "@/components/admin/admin-design-system";
+import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import type {
   ActionHubData,
   ActionHubItem,
@@ -29,13 +30,17 @@ import {
   type MarketingConfirmDecision,
 } from "@/lib/marketing-requests/decision-confirm-prompt";
 import { approvalActionClassName, type ApprovalTone } from "@/components/approvals-hub/approval-action-kit";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingEmpty,
+  LandingRailLine,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
-import { cn } from "@/lib/utils";
-import {
-  phxButtonApproveDenseClassName,
-  phxTextareaClassName,
-} from "@/components/ui/form-tokens";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 
 // ── Snooze helpers (localStorage, no backend) ────────────────────────────────
@@ -97,16 +102,9 @@ const SLA_THRESHOLDS: Record<ActionHubModule, number> = {
   weekly_plan: 2,
 };
 
-const MODULE_COLORS: Record<ActionHubModule, string> = {
-  leave: "bg-sky-50 text-sky-700 border-sky-200/80",
-  resignation: "bg-rose-50 text-rose-700 border-rose-200/80",
-  excuse: "bg-amber-50 text-amber-800 border-amber-200/80",
-  outstation: "bg-violet-50 text-violet-700 border-violet-200/80",
-  marketing: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
-  contract_renewal: "bg-teal-50 text-teal-700 border-teal-200/80",
-  weekly_plan: "bg-indigo-50 text-indigo-700 border-indigo-200/80",
-};
-
+// The kit's language (landing-kit.tsx): a module is named in small capitals beside a square swatch of
+// its colour, never a filled pill; urgency and the SLA are coloured small text, and the SLA's age is
+// a thin rail under the row. Orange is kept for the title tick alone.
 const MODULE_DOTS: Record<ActionHubModule, string> = {
   leave: "bg-sky-500",
   resignation: "bg-rose-500",
@@ -117,11 +115,22 @@ const MODULE_DOTS: Record<ActionHubModule, string> = {
   weekly_plan: "bg-indigo-500",
 };
 
-const URGENCY_COLORS: Record<string, string> = {
-  high: "bg-rose-50 text-rose-700 border-rose-200/80",
-  normal: "bg-amber-50 text-amber-800 border-amber-200/80",
-  low: "bg-slate-50 text-slate-500 border-slate-200",
+const URGENCY_TEXT: Record<string, string> = {
+  high: "text-rose-700",
+  normal: "text-amber-700",
+  low: "text-slate-500",
 };
+
+/** The panel every hub surface sits in: the kit's white sheet, its hairline and the soft depth token. */
+const HUB_PANEL = `border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+/** The small capitals every label in the hub is set in. */
+const HUB_LABEL = "text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+/**
+ * The keyboard ring for a row inside the queue's own scroller: the kit's orange outline drawn INSIDE
+ * the row, so the scroller cannot clip it the way it clips an outline drawn outside.
+ */
+const ROW_FOCUS =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#F05A1A]";
 
 function daysSince(iso: string) {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
@@ -137,8 +146,8 @@ function itemIsOverdue(item: ActionHubItem) {
 
 function ModuleBadge({ module }: { module: ActionHubModule }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] ${MODULE_COLORS[module]}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${MODULE_DOTS[module]}`} />
+    <span className={`inline-flex items-center gap-1.5 ${HUB_LABEL}`}>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 ${MODULE_DOTS[module]}`} />
       {ACTION_HUB_MODULE_LABELS[module]}
     </span>
   );
@@ -147,11 +156,20 @@ function ModuleBadge({ module }: { module: ActionHubModule }) {
 function UrgencyBadge({ urgency }: { urgency: string }) {
   if (urgency === "normal") return null;
   return (
-    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-phx-2xs font-bold ${URGENCY_COLORS[urgency]}`}>
+    <span className={`text-phx-xs font-bold uppercase tracking-[0.1em] ${URGENCY_TEXT[urgency] ?? "text-slate-500"}`}>
       {urgency === "high" ? "Urgent" : "Low"}
     </span>
   );
 }
+
+type SlaState = "within" | "near" | "over";
+
+function slaStateOf(item: ActionHubItem): SlaState {
+  if (itemIsOverdue(item)) return "over";
+  return SLA_THRESHOLDS[item.module] - itemSlaAge(item) <= 1 ? "near" : "within";
+}
+
+const SLA_RAIL: Record<SlaState, string> = { within: "bg-emerald-500", near: "bg-amber-500", over: "bg-rose-500" };
 
 function SlaBadge({ item }: { item: ActionHubItem }) {
   const age = itemSlaAge(item);
@@ -161,15 +179,14 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   const daysLeft = threshold - age;
   if (overdue) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-phx-danger-line/80 bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-danger">
-        <span className="h-1 w-1 rounded-full bg-rose-500" />
+      <span className="text-phx-xs font-bold uppercase tracking-[0.1em] tabular-nums text-rose-700">
         Overdue {age}d
       </span>
     );
   }
   if (daysLeft <= 1) {
     return (
-      <span className="inline-flex items-center rounded-full border border-phx-warn-line/80 bg-phx-warn-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-warn">
+      <span className="text-phx-xs font-bold uppercase tracking-[0.1em] tabular-nums text-amber-700">
         {daysLeft === 0 ? "Due today" : "1d left"}
       </span>
     );
@@ -177,45 +194,90 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   return null;
 }
 
-function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
+/**
+ * How long a request has waited against its module's SLA, as a 2px rail: emerald while it is within
+ * the window, amber on its last day, rose once it is over. Full width means the SLA is spent.
+ */
+function SlaRail({ item }: { item: ActionHubItem }) {
+  const threshold = SLA_THRESHOLDS[item.module];
+  const width = Math.max(0, Math.min(100, (itemSlaAge(item) / Math.max(1, threshold)) * 100));
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="text-sm text-slate-800" dir="auto">{value}</dd>
+    <div aria-hidden="true" className="mt-2 h-0.5 w-full bg-slate-100">
+      <div className={`h-full ${SLA_RAIL[slaStateOf(item)]}`} style={{ width: `${width}%` }} />
     </div>
   );
 }
+
+function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+  if (!value) return null;
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className={HUB_LABEL}>{label}</dt>
+      <dd className={`break-words text-sm font-semibold ${LANDING_INK}`} dir="auto">{value}</dd>
+    </div>
+  );
+}
+
+/** A note or a reason under the facts: its words in full, on a 2px rail — rose when it is a refusal. */
+function DetailNote({ label, children, tone = "neutral" }: { label: string; children: React.ReactNode; tone?: "neutral" | "reject" }) {
+  return (
+    <div className="col-span-2 min-w-0">
+      <dt className={`mb-1 text-phx-xs font-bold uppercase tracking-[0.1em] ${tone === "reject" ? "text-rose-700" : "text-slate-500"}`}>{label}</dt>
+      <dd
+        className={`whitespace-pre-line break-words border-l-2 py-1 pl-3 text-sm ${tone === "reject" ? "border-rose-500 text-rose-800" : "border-slate-300 text-slate-700"}`}
+        dir="auto"
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+const STEP_RAIL: Record<string, string> = {
+  approved: "bg-emerald-500",
+  rejected: "bg-rose-500",
+  pending: "bg-amber-400",
+};
+
+const STEP_TEXT: Record<string, string> = {
+  approved: "text-emerald-700",
+  rejected: "text-rose-700",
+  pending: "text-amber-700",
+};
 
 function ApprovalTimeline({ steps }: { steps: LeaveDetail["approvalSteps"] }) {
   if (steps.length === 0) return null;
   return (
     <div className="mt-4 border-t border-slate-200 pt-4">
-      <p className="mb-3 text-phx-xs font-black uppercase tracking-wide text-slate-500">Approval history</p>
-      <div className="space-y-2">
+      <div className="mb-3">
+        <LandingTitle as="h3">Approval history</LandingTitle>
+      </div>
+      <ol className="divide-y divide-slate-200 border border-slate-200">
         {steps.map((step) => (
-          <div key={step.stepKey} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3">
-            <div className="flex items-center gap-2">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${step.status === "approved" ? "bg-emerald-500" : step.status === "rejected" ? "bg-rose-500" : step.status === "pending" ? "bg-amber-400" : "bg-slate-300"}`} />
-              <span className="text-xs font-bold text-slate-700">{humanizeCode(step.genericStep)}</span>
-              {step.approverName && <span className="text-phx-xs text-slate-500">· {step.approverName}</span>}
-              <span className={`ml-auto text-phx-xs font-black ${step.status === "approved" ? "text-emerald-700" : step.status === "rejected" ? "text-rose-700" : step.status === "pending" ? "text-amber-700" : "text-slate-500"}`}>
-                {step.status === "approved" ? "✓ approved" : step.status === "rejected" ? "✗ rejected" : step.status}
-              </span>
-              {step.decidedAt && (
-                <span className="text-phx-2xs text-slate-400">
-                  {new Date(step.decidedAt).toLocaleDateString("en", { day: "2-digit", month: "short" })}
+          <li key={step.stepKey} className="flex min-w-0 gap-3 px-3 py-2.5">
+            <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${STEP_RAIL[step.status] ?? "bg-slate-300"}`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className={`text-xs font-bold ${LANDING_INK}`}>{humanizeCode(step.genericStep)}</span>
+                {step.approverName && <span className="break-words text-phx-xs text-slate-500" dir="auto">· {step.approverName}</span>}
+                <span className={`ml-auto text-phx-xs font-black ${STEP_TEXT[step.status] ?? "text-slate-500"}`}>
+                  {step.status === "approved" ? "✓ approved" : step.status === "rejected" ? "✗ rejected" : step.status}
                 </span>
+                {step.decidedAt && (
+                  <span className="text-phx-xs tabular-nums text-slate-400">
+                    {new Date(step.decidedAt).toLocaleDateString("en", { day: "2-digit", month: "short" })}
+                  </span>
+                )}
+              </div>
+              {step.decisionComment && (
+                <p className="mt-1 whitespace-pre-line break-words border-l-2 border-slate-300 pl-2 text-phx-xs italic text-slate-600" dir="auto">
+                  &ldquo;{step.decisionComment}&rdquo;
+                </p>
               )}
             </div>
-            {step.decisionComment && (
-              <p className="mt-0.5 rounded bg-slate-50 px-2 py-1 text-phx-xs italic text-slate-600">
-                &ldquo;{step.decisionComment}&rdquo;
-              </p>
-            )}
-          </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </div>
   );
 }
@@ -231,8 +293,9 @@ function LeaveDetailView({ detail }: { detail: LeaveDetail }) {
         <DetailRow label="Payment" value={detail.paymentStatus} />
         <DetailRow label="Balance before" value={`${Number(detail.balanceBeforeDays.toFixed(2))} days`} />
         {detail.slaAgeDays > 0 && (
-          <div className="col-span-2">
-            <span className={`inline-flex rounded-full border px-2 py-0.5 text-phx-2xs font-bold ${detail.slaAgeDays >= 3 ? "border-rose-300 bg-rose-100 text-rose-800" : "border-amber-300 bg-amber-100 text-amber-900"}`}>
+          <div className="col-span-2 flex items-center gap-2">
+            <span aria-hidden="true" className={`h-3 w-1 shrink-0 ${detail.slaAgeDays >= 3 ? "bg-rose-500" : "bg-amber-500"}`} />
+            <span className={`text-phx-xs font-bold uppercase tracking-[0.1em] tabular-nums ${detail.slaAgeDays >= 3 ? "text-rose-700" : "text-amber-700"}`}>
               {detail.slaAgeDays} day{detail.slaAgeDays === 1 ? "" : "s"} since submission
             </span>
           </div>
@@ -250,23 +313,12 @@ function ResignationDetailView({ detail }: { detail: ResignationDetail }) {
       <DetailRow label="Submitted" value={detail.submittedDate} />
       <DetailRow label="Job title" value={detail.jobTitle} />
       <DetailRow label="Line" value={detail.lineName} />
-      {detail.reason && (
-        <div className="col-span-2">
-          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Reason</dt>
-          <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.reason}</dd>
-        </div>
-      )}
-      {detail.workflowNotes && (
-        <div className="col-span-2">
-          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Notes</dt>
-          <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.workflowNotes}</dd>
-        </div>
-      )}
+      {detail.reason && <DetailNote label="Reason">{detail.reason}</DetailNote>}
+      {detail.workflowNotes && <DetailNote label="Notes">{detail.workflowNotes}</DetailNote>}
       {detail.rejectedReason && (
-        <div className="col-span-2">
-          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-rose-600">Rejected reason</dt>
-          <dd className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{detail.rejectedReason}</dd>
-        </div>
+        <DetailNote label="Rejected reason" tone="reject">
+          {detail.rejectedReason}
+        </DetailNote>
       )}
     </dl>
   );
@@ -286,12 +338,12 @@ function ExcuseDetailView({ detail }: { detail: ExcuseDetail }) {
 }
 
 function OutstationDetailView({ detail }: { detail: OutstationDetail }) {
-  const recColor =
+  const recTone =
     detail.approvalRecommendation === "auto_approve"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+      ? { rail: "bg-emerald-500", text: "text-emerald-700" }
       : detail.approvalRecommendation === "hr_review"
-        ? "border-rose-300 bg-rose-50 text-rose-800"
-        : "border-amber-300 bg-amber-50 text-amber-900";
+        ? { rail: "bg-rose-500", text: "text-rose-700" }
+        : { rail: "bg-amber-500", text: "text-amber-700" };
 
   return (
     <dl className="grid grid-cols-2 gap-4">
@@ -301,18 +353,16 @@ function OutstationDetailView({ detail }: { detail: OutstationDetail }) {
       <DetailRow label="Trip end" value={detail.tripEndDate} />
       <DetailRow label="Claimed amount" value={`${Number(detail.claimedTotalAmount || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`} />
       <DetailRow label="Allowance" value={`${Number(detail.allowanceAmount || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`} />
-      <div className="col-span-2 flex items-center gap-2">
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${recColor}`}>
-          {humanizeCode(detail.approvalRecommendation)}
-        </span>
-        {detail.approvalReason && <span className="text-xs text-slate-500">{detail.approvalReason}</span>}
-      </div>
-      {detail.notes && (
-        <div className="col-span-2">
-          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Notes</dt>
-          <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.notes}</dd>
+      <div className="col-span-2 flex min-w-0 gap-3">
+        <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${recTone.rail}`} />
+        <div className="min-w-0">
+          <span className={`text-phx-xs font-bold uppercase tracking-[0.1em] ${recTone.text}`}>
+            {humanizeCode(detail.approvalRecommendation)}
+          </span>
+          {detail.approvalReason && <p className="mt-0.5 break-words text-xs text-slate-500">{detail.approvalReason}</p>}
         </div>
-      )}
+      </div>
+      {detail.notes && <DetailNote label="Notes">{detail.notes}</DetailNote>}
     </dl>
   );
 }
@@ -342,17 +392,11 @@ function ContractRenewalDetailView({ detail }: { detail: ContractRenewalDetail }
       <DetailRow label="Area" value={detail.areaName} />
       {detail.proposedStartDate && <DetailRow label="Proposed start" value={detail.proposedStartDate} />}
       {detail.proposedEndDate && <DetailRow label="Proposed end" value={detail.proposedEndDate} />}
-      {detail.workflowNotes && (
-        <div className="col-span-2">
-          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Notes</dt>
-          <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.workflowNotes}</dd>
-        </div>
-      )}
+      {detail.workflowNotes && <DetailNote label="Notes">{detail.workflowNotes}</DetailNote>}
       {detail.decisionReason && (
-        <div className="col-span-2">
-          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-rose-600">Decision reason</dt>
-          <dd className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{detail.decisionReason}</dd>
-        </div>
+        <DetailNote label="Decision reason" tone="reject">
+          {detail.decisionReason}
+        </DetailNote>
       )}
     </dl>
   );
@@ -363,29 +407,30 @@ function ContractRenewalDetailView({ detail }: { detail: ContractRenewalDetail }
 // one source. Imported above.
 
 function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loading: boolean }) {
-  if (loading) return <p className="text-sm text-slate-400">Loading context…</p>;
-  if (!data) return <p className="text-sm text-slate-400">Context unavailable.</p>;
+  if (loading) return <LandingEmpty>Loading context…</LandingEmpty>;
+  if (!data) return <LandingEmpty>Context unavailable.</LandingEmpty>;
 
   const priorLeaveDecisions = (data.recentLeave ?? []).map((r) => r.hrDecision ?? r.managerDecision);
 
   return (
     <div className="space-y-5">
       <div>
-        <p className="mb-2.5 text-phx-xs font-black uppercase tracking-wide text-slate-500">
-          Attendance · last 30 days
-        </p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="mb-2.5">
+          <LandingTitle as="h3">Attendance · last 30 days</LandingTitle>
+        </div>
+        {/* Six figures on one hairline grid: the figure carries the tone, the ground stays white. */}
+        <div className="grid grid-cols-3 border-l border-t border-slate-200">
           {[
-            { label: "Complete", value: data.attendance.completeDays, cls: "border-emerald-200 bg-emerald-50 text-emerald-800" },
-            { label: "Late", value: data.attendance.lateDays, cls: "border-amber-200 bg-amber-50 text-amber-800" },
-            { label: "Absent", value: data.attendance.absentDays, cls: "border-rose-200 bg-rose-50 text-rose-800" },
-            { label: "Short days", value: data.attendance.shortDays, cls: "border-slate-200 bg-white text-slate-700" },
-            { label: "Deductions", value: data.attendance.deductionDays, cls: "border-slate-200 bg-white text-slate-700" },
-            { label: "Total tracked", value: data.attendance.totalRows, cls: "border-slate-200 bg-white text-slate-700" },
+            { label: "Complete", value: data.attendance.completeDays, cls: "text-emerald-700" },
+            { label: "Late", value: data.attendance.lateDays, cls: "text-amber-700" },
+            { label: "Absent", value: data.attendance.absentDays, cls: "text-rose-700" },
+            { label: "Short days", value: data.attendance.shortDays, cls: LANDING_INK },
+            { label: "Deductions", value: data.attendance.deductionDays, cls: LANDING_INK },
+            { label: "Total tracked", value: data.attendance.totalRows, cls: LANDING_INK },
           ].map(({ label, value, cls }) => (
-            <div key={label} className={`rounded-lg border p-2.5 text-center ${cls}`}>
-              <p className="text-lg font-black">{value}</p>
-              <p className="text-phx-2xs font-bold uppercase">{label}</p>
+            <div key={label} className="min-w-0 border-b border-r border-slate-200 px-2 py-2.5 text-center">
+              <p className={`text-lg font-black tabular-nums ${cls}`}>{value}</p>
+              <p className={`break-words ${HUB_LABEL}`}>{label}</p>
             </div>
           ))}
         </div>
@@ -393,21 +438,23 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
 
       {(data.recentLeave?.length ?? 0) > 0 && (
         <div>
-          <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-slate-500">
-            Recent leave &nbsp;
-            <span className="font-mono tracking-wider text-slate-400">
-              {priorLeaveDecisions.map((d) => d === "approved" ? "✓" : d === "rejected" ? "✗" : "–").join(" ")}
-            </span>
-          </p>
+          <div className="mb-2">
+            <LandingTitle as="h3">
+              Recent leave &nbsp;
+              <span className="font-mono tracking-wider text-slate-400">
+                {priorLeaveDecisions.map((d) => d === "approved" ? "✓" : d === "rejected" ? "✗" : "–").join(" ")}
+              </span>
+            </LandingTitle>
+          </div>
           <div className="space-y-1">
             {data.recentLeave.map((r, i) => {
               const d = r.hrDecision ?? r.managerDecision;
               return (
-                <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
-                  <span className={d === "approved" ? "font-bold text-emerald-600" : d === "rejected" ? "font-bold text-rose-600" : "text-slate-400"}>
+                <div key={i} className="flex min-w-0 items-center gap-2 text-xs text-slate-600">
+                  <span className={d === "approved" ? "font-bold text-emerald-700" : d === "rejected" ? "font-bold text-rose-700" : "text-slate-400"}>
                     {d === "approved" ? "✓" : d === "rejected" ? "✗" : "–"}
                   </span>
-                  <span>{vacationTypeLabel(r.vacationType)} · {r.startDate} – {r.endDate}</span>
+                  <span className="min-w-0 break-words">{vacationTypeLabel(r.vacationType)} · {r.startDate} – {r.endDate}</span>
                 </div>
               );
             })}
@@ -417,14 +464,16 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
 
       {(data.recentExcuses?.length ?? 0) > 0 && (
         <div>
-          <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-slate-500">Recent excuses</p>
+          <div className="mb-2">
+            <LandingTitle as="h3">Recent excuses</LandingTitle>
+          </div>
           <div className="space-y-1">
             {data.recentExcuses.map((e, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
-                <span className={e.status === "approved" ? "font-bold text-emerald-600" : "font-bold text-rose-600"}>
+              <div key={i} className="flex min-w-0 items-center gap-2 text-xs text-slate-600">
+                <span className={e.status === "approved" ? "font-bold text-emerald-700" : "font-bold text-rose-700"}>
                   {e.status === "approved" ? "✓" : "✗"}
                 </span>
-                <span>{humanizeCode(e.excuseType)} · {e.excuseDate}</span>
+                <span className="min-w-0 break-words">{humanizeCode(e.excuseType)} · {e.excuseDate}</span>
               </div>
             ))}
           </div>
@@ -434,18 +483,33 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
   );
 }
 
+/** A key, as the kit draws one: a square hairline frame in monospace. */
+function Kbd({ children }: { children: React.ReactNode }) {
+  return <kbd className="border border-slate-200 bg-white px-1 font-mono text-phx-xs font-bold text-slate-600">{children}</kbd>;
+}
+
 function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={onClose}>
       <div
-        className="w-72 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+        className={`w-full max-w-72 ${HUB_PANEL}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm font-black text-slate-900">Keyboard shortcuts</p>
-          <button onClick={onClose} className="text-xl leading-none text-slate-400 hover:text-slate-700">×</button>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
+          <LandingTitle>Keyboard shortcuts</LandingTitle>
+          <button
+            aria-label="Close"
+            onClick={onClose}
+            className={`text-xl leading-none text-slate-400 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
+          >
+            ×
+          </button>
         </div>
-        <table className="w-full">
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col className="w-20" />
+            <col />
+          </colgroup>
           <tbody>
             {[
               ["j / ↓", "Next item"],
@@ -455,11 +519,11 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
               ["Esc", "Clear selection"],
               ["?", "Toggle this panel"],
             ].map(([key, desc]) => (
-              <tr key={key} className="border-b border-slate-100 last:border-0">
-                <td className="py-2 pr-4">
-                  <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs font-bold text-slate-700">{key}</kbd>
+              <tr key={key} className="border-b border-slate-200 last:border-0">
+                <td className="py-2 pl-4 pr-2 align-top">
+                  <Kbd>{key}</Kbd>
                 </td>
-                <td className="py-2 text-xs text-slate-600">{desc}</td>
+                <td className="break-words py-2 pr-4 text-xs text-slate-600">{desc}</td>
               </tr>
             ))}
           </tbody>
@@ -958,25 +1022,22 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
       )}
 
       {allItems.length === 0 ? (
-        <div className={`flex min-h-[420px] flex-col items-center justify-center gap-5 p-12 text-center ${adminPanelClassName}`}>
-          <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600 ring-1 ring-emerald-200/70 shadow-[0_12px_30px_rgba(16,185,129,0.18)]">
-            <span className="absolute inset-0 rounded-full bg-emerald-400/10 blur-xl" aria-hidden />
-            <CheckCircle2 className="h-10 w-10" />
-          </div>
-          <div>
-            <p className="text-xl font-black tracking-tight text-slate-900">{notice ? "Request not found" : "All clear"}</p>
-            <p className="mt-1.5 max-w-xs text-sm leading-6 text-slate-500">
-              {notice ?? "No approvals or reviews waiting on you right now. You're on top of everything."}
-            </p>
-          </div>
-        </div>
+        // Nothing waiting: one calm line on a rail, never an empty square with a glowing icon.
+        <section className={HUB_PANEL}>
+          <header className="border-b border-slate-200 px-3 py-2.5 sm:px-4">
+            <LandingTitle>{notice ? "Request not found" : "All clear"}</LandingTitle>
+          </header>
+          <LandingRailLine rail={notice ? "bg-amber-500" : "bg-emerald-500"}>
+            {notice ?? "No approvals or reviews waiting on you right now. You're on top of everything."}
+          </LandingRailLine>
+        </section>
       ) : (
-        <div className={`flex min-h-[640px] flex-col overflow-hidden lg:h-[calc(100dvh-16rem)] lg:min-h-[560px] lg:flex-row ${adminPanelClassName}`}>
+        <div className={`flex min-h-[640px] flex-col overflow-hidden lg:h-[calc(100dvh-16rem)] lg:min-h-[560px] lg:flex-row ${HUB_PANEL}`}>
           {/* Left rail */}
-          <div className="flex w-full flex-col border-b border-[#E5EAF1] lg:w-[21rem] lg:shrink-0 lg:border-b-0 lg:border-r max-h-[45vh] lg:max-h-none">
+          <div className="flex max-h-[45vh] w-full flex-col border-b border-slate-200 lg:max-h-none lg:w-[21rem] lg:shrink-0 lg:border-b-0 lg:border-r">
             {/* Super-admin view-as switcher */}
             {canViewAs && managers && managers.length > 0 && (
-              <div className="border-b border-[#E5EAF1] bg-slate-50/70 px-4 py-2.5">
+              <div className="border-b border-slate-200 px-4 py-2.5">
                 {viewAsLoading ? (
                   <p className="text-phx-xs text-slate-400">Loading queue…</p>
                 ) : (
@@ -996,8 +1057,8 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   </SearchableSelect>
                 )}
                 {viewAsHrId && (
-                  <p className="mt-1 flex items-center gap-1 text-phx-2xs font-bold text-orange-600">
-                    <span className="h-1 w-1 rounded-full bg-orange-500" />
+                  <p className={`mt-1.5 flex items-center gap-1.5 break-words text-phx-xs font-bold ${LANDING_INK}`} dir="auto">
+                    <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 bg-[#08111f]" />
                     Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? "this manager"}&apos;s queue
                   </p>
                 )}
@@ -1005,23 +1066,23 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             )}
 
             {/* Rail header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#E5EAF1] bg-gradient-to-b from-white to-slate-50/60 px-4 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 px-4 py-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Queue</span>
-                <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-phx-ink px-2 py-0.5 text-phx-xs font-black leading-none text-white">{stats.total}</span>
+                <LandingTitle>Queue</LandingTitle>
+                <span className={`text-phx-sm font-black tabular-nums ${LANDING_INK}`}>{stats.total}</span>
               </div>
               <div className="flex items-center gap-3 text-phx-xs">
                 {stats.overdue > 0 && (
-                  <span className="flex items-center gap-1 font-bold text-rose-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{stats.overdue} overdue
+                  <span className="font-bold uppercase tracking-[0.1em] tabular-nums text-rose-700">
+                    {stats.overdue} overdue
                   </span>
                 )}
-                <span className="text-slate-400">avg <span className="font-bold text-slate-600">{stats.avgAge}d</span></span>
+                <span className="uppercase tracking-[0.1em] text-slate-500">avg <span className={`font-bold tabular-nums ${LANDING_INK}`}>{stats.avgAge}d</span></span>
               </div>
             </div>
 
-            {/* Module filter tabs */}
-            <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#E5EAF1] bg-white px-2.5 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {/* Module filter tabs — they WRAP, never a sideways scroller (the fits-the-screen rule). */}
+            <div className="flex shrink-0 flex-wrap gap-1 border-b border-slate-200 px-2.5 py-2.5">
               {modules.map((mod) => {
                 const count = moduleCounts[mod] ?? 0;
                 if (mod !== "all" && count === 0) return null;
@@ -1029,6 +1090,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                 return (
                   <button
                     key={mod}
+                    aria-pressed={active}
                     onClick={() => {
                       setActiveModule(mod);
                       setActiveFilter("all");
@@ -1036,16 +1098,14 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       const firstInModule = allItems.find((item) => mod === "all" || item.module === mod);
                       if (firstInModule) selectItem(firstInModule);
                     }}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-phx-xs font-bold transition-all ${
+                    className={`flex min-h-8 items-center gap-1.5 border px-2.5 py-1 text-phx-xs font-bold uppercase tracking-[0.08em] transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
                       active
-                        ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
-                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                        ? "border-[#08111f] bg-[#08111f] text-white"
+                        : "border-transparent text-slate-500 hover:border-slate-200 hover:text-[#08111f]"
                     }`}
                   >
                     {mod === "all" ? "All" : ACTION_HUB_MODULE_LABELS[mod as ActionHubModule]}
-                    <span className={`inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-0.5 text-phx-2xs font-black leading-none ${
-                      active ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-600"
-                    }`}>
+                    <span className={`tabular-nums ${active ? "text-white/60" : "text-slate-400"}`}>
                       {count}
                     </span>
                   </button>
@@ -1054,22 +1114,22 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             </div>
 
             {/* Quick filter chips */}
-            <div className="flex shrink-0 items-center gap-1.5 border-b border-[#E5EAF1] bg-slate-50/50 px-3 py-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-200 px-3 py-2">
               {(["all", "overdue", "high"] as const).map((f) => {
                 const chipCount = f === "all" ? filteredByModule.length : f === "overdue" ? overdueTotalCount : highPriorityCount;
                 if (f !== "all" && chipCount === 0) return null;
+                const on = activeFilter === f;
                 return (
                   <button
                     key={f}
+                    aria-pressed={on}
                     onClick={() => setActiveFilter(f)}
-                    className={`rounded-full border px-3 py-1 text-phx-xs font-bold transition-colors ${
-                      activeFilter === f
-                        ? f === "overdue"
-                          ? "border-rose-200 bg-rose-50 text-rose-700"
-                          : f === "high"
-                            ? "border-orange-200 bg-orange-50 text-orange-700"
-                            : "border-slate-300 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                    className={`min-h-8 border px-3 py-1 text-phx-xs font-bold tabular-nums transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
+                      on
+                        ? f === "all"
+                          ? "border-[#08111f] bg-[#08111f] text-white"
+                          : "border-rose-600 bg-white text-rose-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-[#08111f]"
                     }`}
                   >
                     {f === "all" ? "All" : f === "overdue" ? `Overdue (${chipCount})` : `Urgent (${chipCount})`}
@@ -1081,9 +1141,9 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             {/* Item list */}
             <div className="flex-1 overflow-y-auto">
               {filteredItems.length === 0 ? (
-                <p className="p-6 text-center text-sm text-slate-400">No items match this filter.</p>
+                <LandingEmpty>No items match this filter.</LandingEmpty>
               ) : (
-                <ul className="divide-y divide-[#EEF2F7]">
+                <ul className="divide-y divide-slate-200">
                   {filteredItems.map((item) => {
                     const canBulk = isBulkModule(item.module);
                     const isSelected = selectedId === item.id;
@@ -1095,13 +1155,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                           aria-pressed={isSelected}
                           onClick={() => selectItem(item)}
                           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectItem(item); } }}
-                          className={`cursor-pointer px-4 py-3 text-left outline-none transition-colors focus-visible:bg-orange-50/60 ${
+                          className={`cursor-pointer border-l-[3px] py-3 pl-[13px] pr-4 text-left transition-colors motion-reduce:transition-none ${ROW_FOCUS} ${
                             isSelected
-                              ? "border-l-[3px] border-orange-500 bg-orange-50/70 pl-[13px]"
-                              : "border-l-[3px] border-transparent hover:bg-slate-50"
+                              ? "border-[#08111f] bg-slate-50"
+                              : "border-transparent hover:bg-slate-50"
                           }`}
                         >
-                          <div className="mb-1.5 flex flex-wrap items-center gap-1">
+                          <div className="mb-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                             <ModuleBadge module={item.module} />
                             <UrgencyBadge urgency={item.urgency} />
                             <SlaBadge item={item} />
@@ -1111,10 +1171,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                 aria-checked={bulkSelected.has(item.id)}
                                 aria-label={`Select ${item.employeeName}`}
                                 tabIndex={0}
-                                className={`ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded border text-phx-2xs font-bold transition-colors ${
+                                className={`ml-auto flex h-5 w-5 shrink-0 items-center justify-center border text-phx-xs font-bold transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
                                   bulkSelected.has(item.id)
-                                    ? "border-orange-500 bg-orange-500 text-white"
-                                    : "border-slate-300 bg-white text-transparent hover:border-orange-400"
+                                    ? "border-[#08111f] bg-[#08111f] text-white"
+                                    : "border-slate-300 bg-white text-transparent hover:border-[#08111f]"
                                 }`}
                                 onClick={(e) => toggleBulk(item, e)}
                                 onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") toggleBulk(item, e); }}
@@ -1123,23 +1183,24 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               </span>
                             )}
                           </div>
-                          <div className="flex items-start justify-between gap-1">
-                            <p className={`text-sm font-bold leading-snug ${isSelected ? "text-slate-900" : "text-slate-800"}`}>
+                          <div className="flex min-w-0 items-start justify-between gap-2">
+                            <p className={`min-w-0 break-words text-sm font-bold leading-snug ${LANDING_INK}`} dir="auto">
                               {item.employeeName}
                             </p>
                             <button
                               onClick={(e) => { e.stopPropagation(); snoozeAndUpdate(item.id); }}
                               title="Snooze for 24h"
-                              className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-slate-500"
+                              className={`shrink-0 p-0.5 text-slate-300 opacity-0 transition-opacity hover:text-slate-500 focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none ${LANDING_FOCUS}`}
                               aria-label="Snooze 24h"
                             >
                               ⏱
                             </button>
                           </div>
-                          <p className="text-xs text-slate-500">{item.title}</p>
-                          <p className="mt-0.5 text-phx-xs text-slate-400">
+                          <p className="break-words text-xs text-slate-600" dir="auto">{item.title}</p>
+                          <p className="mt-0.5 break-words text-phx-xs text-slate-500">
                             {item.statusLabel}
                           </p>
+                          <SlaRail item={item} />
                         </div>
                       </li>
                     );
@@ -1147,11 +1208,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                 </ul>
               )}
               {viewAsItems !== null && viewAsItems.length < viewAsTotal && (
-                <div className="border-t border-[#EEF2F7] px-4 py-3">
+                <div className="border-t border-slate-200 px-4 py-3">
                   <button
                     onClick={loadMoreViewAs}
                     disabled={viewAsLoading}
-                    className="w-full rounded-lg border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    className={landingActionClassName("outline", "w-full")}
                   >
                     {viewAsLoading ? "Loading…" : `Load more (${viewAsTotal - viewAsItems.length} remaining)`}
                   </button>
@@ -1159,24 +1220,21 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
               )}
             </div>
 
-            {/* Bulk approve footer */}
+            {/* Bulk approve footer — a flat white sheet on a hairline, never a floating card. */}
             {bulkSelected.size > 0 && (
               <div className="shrink-0 border-t border-slate-200 bg-white p-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-700">{bulkSelected.size} selected</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-xs font-bold tabular-nums ${LANDING_INK}`}>{bulkSelected.size} selected</span>
                   <button
                     disabled={bulkBusy}
                     onClick={() => void handleBulkApprove()}
-                    className={cn(
-                      phxButtonApproveDenseClassName,
-                      "px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50",
-                    )}
+                    className={approvalActionClassName("approve", "dense")}
                   >
                     {bulkBusy ? "Approving…" : "Approve all"}
                   </button>
                   <button
                     onClick={() => setBulkSelected(new Set())}
-                    className="text-xs text-slate-400 hover:text-slate-700"
+                    className={`text-xs font-bold text-slate-500 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
                   >
                     Clear
                   </button>
@@ -1185,10 +1243,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             )}
 
             {/* Shortcuts hint */}
-            <div className="shrink-0 border-t border-slate-100 bg-slate-50 px-4 py-1.5">
+            <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-1.5">
               <button
                 onClick={() => setShowShortcuts(true)}
-                className="text-phx-xs text-slate-400 hover:text-slate-600"
+                className={`text-phx-xs text-slate-500 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
               >
                 ? Keyboard shortcuts
               </button>
@@ -1198,52 +1256,50 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
           {/* Right detail panel */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
             {!selected ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-300 ring-1 ring-slate-200">
-                  <Inbox className="h-6 w-6" />
-                </div>
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-12 text-center">
                 <p className="text-sm font-bold text-slate-500">{notice ?? "Select an item to review it"}</p>
-                <p className="text-xs text-slate-400">press <kbd className="rounded bg-slate-100 px-1 font-mono text-phx-2xs text-slate-500">j</kbd> / <kbd className="rounded bg-slate-100 px-1 font-mono text-phx-2xs text-slate-500">k</kbd> to navigate · <kbd className="rounded bg-slate-100 px-1 font-mono text-phx-2xs text-slate-500">?</kbd> for shortcuts</p>
+                <p className="text-xs text-slate-500">press <Kbd>j</Kbd> / <Kbd>k</Kbd> to navigate · <Kbd>?</Kbd> for shortcuts</p>
               </div>
             ) : (
               <div>
-                {/* Detail header — branded dark band */}
-                <div className="relative overflow-hidden border-b border-slate-200 bg-[linear-gradient(135deg,#0a0a0c_0%,#101016_58%,#1b1003_100%)] px-5 py-4 sm:px-7">
-                  <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0" />
-                  <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                {/* Detail header — the kit's white header: who, what, how long it has waited. */}
+                <div className="border-b border-slate-200 px-5 py-4 sm:px-7">
+                  <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                     <ModuleBadge module={selected.module} />
                     <UrgencyBadge urgency={selected.urgency} />
                     <SlaBadge item={selected} />
                   </div>
-                  <h2 className="text-lg font-black text-white">{selected.employeeName}</h2>
-                  <p className="text-sm text-slate-400">{selected.title}</p>
+                  <h2 className={`break-words text-lg font-black ${LANDING_INK}`} dir="auto">{selected.employeeName}</h2>
+                  <p className="break-words text-sm text-slate-600" dir="auto">{selected.title}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
-                    <span>Status: <span className="font-semibold text-slate-300">{selected.statusLabel}</span></span>
+                    <span>Status: <span className={`font-semibold ${LANDING_INK}`}>{selected.statusLabel}</span></span>
                     <span>Submitted {new Date(selected.submittedAt).toLocaleDateString("en", { day: "2-digit", month: "short", year: "numeric" })}</span>
                     {priorLeaveHint && priorLeaveHint.length > 0 && (
                       <span>
                         Prior:{" "}
                         {priorLeaveHint.map((d, i) => (
-                          <span key={i} className={d === "approved" ? "font-bold text-emerald-400" : d === "rejected" ? "font-bold text-rose-400" : "text-slate-500"}>
+                          <span key={i} className={d === "approved" ? "font-bold text-emerald-700" : d === "rejected" ? "font-bold text-rose-700" : "text-slate-400"}>
                             {d === "approved" ? "✓" : d === "rejected" ? "✗" : "–"}{" "}
                           </span>
                         ))}
                       </span>
                     )}
                   </div>
+                  <SlaRail item={selected} />
                 </div>
 
                 <div className="p-5 sm:p-7">
                   {/* Details | Context tabs */}
-                  <div className="mb-5 flex gap-1 border-b border-slate-200">
+                  <div className="mb-5 flex flex-wrap gap-4 border-b border-slate-200">
                     {(["details", "context"] as const).map((tab) => (
                       <button
                         key={tab}
+                        aria-pressed={detailTab === tab}
                         onClick={() => setDetailTab(tab)}
-                        className={`pb-2 px-1 text-xs font-bold transition-colors ${
+                        className={`-mb-px border-b-2 px-1 pb-2 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none ${LANDING_FOCUS} ${
                           detailTab === tab
-                            ? "border-b-2 border-orange-500 text-orange-600"
-                            : "text-slate-400 hover:text-slate-600"
+                            ? "border-[#08111f] text-[#08111f]"
+                            : "border-transparent text-slate-500 hover:text-[#08111f]"
                         }`}
                       >
                         {tab === "details" ? "Details" : "Employee Context"}
@@ -1252,13 +1308,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   </div>
 
                   {detailTab === "context" ? (
-                    <div className="mb-6 rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
+                    <div className="mb-6 border border-slate-200 p-4">
                       <EmployeeContextPanel data={contextData} loading={contextLoading} />
                     </div>
                   ) : (
                     <>
                       {/* Module-specific detail */}
-                      <div className="mb-6 rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
+                      <div className="mb-6 border border-slate-200 p-4">
                         {selected.detail.module === "leave" && <LeaveDetailView detail={selected.detail} />}
                         {selected.detail.module === "resignation" && <ResignationDetailView detail={selected.detail} />}
                         {selected.detail.module === "excuse" && <ExcuseDetailView detail={selected.detail} />}
@@ -1269,21 +1325,20 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       </div>
 
                       {/* Action zone */}
-                      <div className="rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Decision</p>
+                      <div className="border border-slate-200">
+                        <div className="border-b border-slate-200 px-4 py-2.5">
+                          <LandingTitle as="h3">Decision</LandingTitle>
                         </div>
                         {notice ? (
-                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-                            {notice}
-                          </div>
+                          <LandingRailLine rail="bg-emerald-500">
+                            <span className={`font-bold ${LANDING_INK}`}>{notice}</span>
+                          </LandingRailLine>
                         ) : selected.readOnlyReason ? (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                            {selected.readOnlyReason}
-                          </div>
+                          <LandingRailLine rail="bg-amber-500">
+                            <span className={`font-bold ${LANDING_INK}`}>{selected.readOnlyReason}</span>
+                          </LandingRailLine>
                         ) : (
-                          <div className="space-y-3">
+                          <div className="space-y-3 p-4">
                             {/* Template rejection reasons */}
                             {REJECTION_TEMPLATES[selected.module].length > 0 && (
                               <SearchableSelect
@@ -1317,13 +1372,13 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                             />
 
                             {error && (
-                              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+                              <p className="break-words border-l-4 border-rose-500 py-1.5 pl-3 text-sm font-bold text-rose-700" role="alert">
                                 {error}
                               </p>
                             )}
 
                             {/* Action buttons */}
-                            <div className="flex flex-wrap gap-2 pt-1">
+                            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:justify-end">
                               {selected.module === "leave" && selected.detail.module === "leave" && (() => {
                                 const actions = resolveLeaveActions(selected.detail);
                                 return actions.length > 0
@@ -1337,7 +1392,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                       {busy ? "…" : action.label}
                                     </button>
                                   ))
-                                  : <p className="text-sm text-slate-400">No actions available for you on this request.</p>;
+                                  : <p className="text-sm text-slate-500">No actions available for you on this request.</p>;
                               })()}
 
                               {selected.module === "resignation" && selected.detail.module === "resignation" && (() => {
@@ -1353,7 +1408,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                       {busy ? "…" : action.label}
                                     </button>
                                   ))
-                                  : <p className="text-sm text-slate-400">No workflow actions available.</p>;
+                                  : <p className="text-sm text-slate-500">No workflow actions available.</p>;
                               })()}
 
                               {selected.module === "excuse" && (
@@ -1476,33 +1531,28 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
           <div
             aria-labelledby="action-center-marketing-confirm-title"
             aria-modal
-            className="w-full max-w-md rounded-xl bg-white shadow-xl"
+            className={`w-full max-w-md ${HUB_PANEL}`}
             ref={marketingDialogRef}
             role="dialog"
           >
             <div className="px-5 py-4">
-              <h2 className="text-base font-bold text-slate-950" id="action-center-marketing-confirm-title">
+              <h2 className={`break-words text-base font-bold ${LANDING_INK}`} id="action-center-marketing-confirm-title">
                 {marketingPrompt.title}
               </h2>
-              <p className="mt-2 text-sm text-slate-700">{marketingPrompt.body}</p>
-              <p className="mt-2 text-sm font-medium text-slate-950">{marketingPrompt.consequence}</p>
+              <p className="mt-2 break-words text-sm text-slate-700">{marketingPrompt.body}</p>
+              <p className={`mt-2 break-words text-sm font-medium ${LANDING_INK}`}>{marketingPrompt.consequence}</p>
             </div>
-            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">
+            {/* The are-you-sure pair wears the one approvals interface: the confirm tone whatever the act. */}
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-200 px-5 py-3 sm:flex-row sm:flex-wrap sm:justify-end">
               <button
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                className={approvalActionClassName("neutral")}
                 onClick={() => setMarketingConfirm(null)}
                 type="button"
               >
                 {marketingPrompt.cancelLabel}
               </button>
               <button
-                className={`rounded-lg px-4 py-2 text-sm font-bold text-white ${
-                  marketingConfirm === "reject"
-                    ? "bg-rose-600"
-                    : marketingConfirm === "return"
-                      ? "bg-amber-500"
-                      : "bg-emerald-600"
-                }`}
+                className={approvalActionClassName("confirm")}
                 disabled={busy}
                 onClick={confirmMarketingAction}
                 type="button"

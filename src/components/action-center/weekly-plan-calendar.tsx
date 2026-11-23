@@ -3,22 +3,25 @@
 // week/month grid from one source (no divergence). Pure render (no client hooks), so it works in
 // both server components (the new plan detail page) and client components (the inbox).
 import type { WeeklyPlanDetail } from "@/components/action-center/types";
+import { LANDING_INK, landingActionClassName } from "@/components/employee-portal/landing-kit";
 
-const PLAN_ACTIVITY_COLORS: Record<string, string> = {
-  Field: "bg-sky-50 text-sky-800 border-sky-200",
-  "Double Visit": "bg-violet-50 text-violet-800 border-violet-200",
-  Training: "bg-amber-50 text-amber-900 border-amber-200",
-  Meeting: "bg-teal-50 text-teal-800 border-teal-200",
-  "Meeting with Team": "bg-cyan-50 text-cyan-800 border-cyan-200",
-  Event: "bg-rose-50 text-rose-800 border-rose-200",
-  Travel: "bg-orange-50 text-orange-800 border-orange-200",
-  Office: "bg-slate-50 text-slate-700 border-slate-200",
-  Admin: "bg-slate-50 text-slate-700 border-slate-200",
-  Remote: "bg-indigo-50 text-indigo-800 border-indigo-200",
-  Vacation: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  Other: "bg-slate-50 text-slate-700 border-slate-200",
+// The kit's language (landing-kit.tsx): an activity's kind is a 3px rail of its colour beside a white
+// card, never a tinted box — the words stay navy and slate, so a week of activities reads as one sheet.
+const PLAN_ACTIVITY_RAILS: Record<string, string> = {
+  Field: "bg-sky-500",
+  "Double Visit": "bg-violet-500",
+  Training: "bg-amber-500",
+  Meeting: "bg-teal-500",
+  "Meeting with Team": "bg-cyan-500",
+  Event: "bg-rose-500",
+  Travel: "bg-stone-500",
+  Office: "bg-slate-400",
+  Admin: "bg-slate-400",
+  Remote: "bg-indigo-500",
+  Vacation: "bg-emerald-500",
+  Other: "bg-slate-400",
 };
-const PLAN_COACHING_COLOR = "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200";
+const PLAN_COACHING_RAIL = "bg-fuchsia-500";
 
 // DATE-ONLY (a plan day's `activity_date`, a `date` column), which `new Date` parses as UTC midnight.
 // UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset.
@@ -50,33 +53,36 @@ function planDaysInPeriod(startIso: string, endIso: string): string[] {
 }
 
 function PlanActivityCard({ item }: { item: WeeklyPlanDetail["items"][number] }) {
-  const color = item.isCoaching ? PLAN_COACHING_COLOR : PLAN_ACTIVITY_COLORS[item.activityType] ?? PLAN_ACTIVITY_COLORS.Other;
+  const rail = item.isCoaching ? PLAN_COACHING_RAIL : PLAN_ACTIVITY_RAILS[item.activityType] ?? PLAN_ACTIVITY_RAILS.Other;
   const geo = item.activityType === "Training"
     ? (item.region ? `Format: ${item.region}` : null)
     : [item.region, item.area].filter(Boolean).join(" · ") || null;
   return (
     <div className="space-y-1">
-      <div className={`rounded-md border px-2 py-1.5 ${color}`}>
-        <div className="flex items-start justify-between gap-1.5">
-          <span className="text-phx-xs font-bold leading-tight">{item.activityLabel}</span>
-          {item.timeLabel && <span className="shrink-0 text-phx-2xs font-semibold opacity-70">{item.timeLabel}</span>}
+      <div className="flex min-w-0 border border-slate-200 bg-white">
+        <span aria-hidden="true" className={`w-[3px] shrink-0 self-stretch ${rail}`} />
+        <div className="min-w-0 flex-1 px-2 py-1.5">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-1.5">
+            <span className={`min-w-0 break-words text-phx-xs font-bold leading-tight ${LANDING_INK}`}>{item.activityLabel}</span>
+            {item.timeLabel && <span className="shrink-0 text-phx-xs font-semibold tabular-nums text-slate-500">{item.timeLabel}</span>}
+          </div>
+          {geo && <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-600">{geo}</p>}
+          {item.repName && <p className="break-words text-phx-xs text-slate-500" dir="auto">with {item.repName}</p>}
+          {item.objective && <p className="mt-0.5 break-words text-phx-xs italic leading-snug text-slate-500">{item.objective}</p>}
         </div>
-        {geo && <p className="mt-0.5 text-phx-2xs font-medium opacity-90">{geo}</p>}
-        {item.repName && <p className="text-phx-2xs opacity-80">with {item.repName}</p>}
-        {item.objective && <p className="mt-0.5 text-phx-2xs italic leading-snug opacity-75">{item.objective}</p>}
       </div>
       {item.activityType === "Field" && item.visitDetails.length > 0 && (
         <div className="ml-1 space-y-1 border-l-2 border-sky-300 pl-2">
           {item.visitDetails.map((vd, idx) => (
-            <div key={vd.id ?? idx} className="rounded border border-sky-200 bg-sky-50 px-2 py-1">
-              <p className="text-phx-2xs font-black text-sky-900">{vd.doctorName}</p>
-              <p className="text-phx-2xs font-semibold text-sky-700">
-                <span className="rounded-full bg-phx-info-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-info">
+            <div key={vd.id ?? idx} className="border border-slate-200 bg-white px-2 py-1">
+              <p className={`break-words text-phx-xs font-black ${LANDING_INK}`} dir="auto">{vd.doctorName}</p>
+              <p className="break-words text-phx-xs font-semibold text-slate-600">
+                <span className="font-black uppercase tracking-[0.08em] text-sky-700">
                   {vd.speciality}
                 </span>
                 {" · "}{vd.address}
               </p>
-              {vd.objective && <p className="mt-0.5 text-phx-2xs italic text-sky-600">{vd.objective}</p>}
+              {vd.objective && <p className="mt-0.5 break-words text-phx-xs italic text-slate-500">{vd.objective}</p>}
             </div>
           ))}
         </div>
@@ -102,23 +108,25 @@ export function WeeklyPlanCalendar({ detail }: { detail: WeeklyPlanDetail }) {
   const start = planDayParts(detail.periodStartDate);
   const end = planDayParts(detail.periodEndDate);
   const rangeLabel = `${start.weekday} ${start.month} ${start.dayNumber} – ${end.weekday} ${end.month} ${end.dayNumber}`;
+  // Container queries, not the viewport: the calendar sits in a narrow detail pane in the inbox and
+  // across the full page on a plan's own page, so the columns follow the room it is actually given.
   const gridClass = detail.planKind === "weekly"
-    ? "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
-    : "grid grid-cols-1 gap-2 sm:grid-cols-2";
+    ? "grid grid-cols-2 gap-2 @xl:grid-cols-3 @3xl:grid-cols-5"
+    : "grid grid-cols-1 gap-2 @xl:grid-cols-2";
 
   return (
-    <div>
+    <div className="@container">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-black text-slate-900">
+        <div className="min-w-0">
+          <p className={`break-words text-sm font-black ${LANDING_INK}`}>
             {detail.planKind === "weekly" ? "Weekly plan" : "Monthly plan"} · {detail.periodKey}
           </p>
-          <p className="text-phx-xs text-slate-500">
+          <p className="break-words text-phx-xs text-slate-500">
             {rangeLabel} · {detail.itemCount} activit{detail.itemCount === 1 ? "y" : "ies"} ·{" "}
             {detail.stage === "manager" ? "Manager review" : "CEO approval"}
           </p>
           {(detail.employeeJobTitle || detail.managerName) && (
-            <p className="mt-0.5 text-phx-xs text-slate-400">
+            <p className="mt-0.5 break-words text-phx-xs text-slate-500" dir="auto">
               {detail.employeeJobTitle ? `Submitter: ${detail.employeeJobTitle}` : null}
               {detail.employeeJobTitle && detail.managerName ? " · " : null}
               {detail.managerName ? `Manager: ${detail.managerName}` : null}
@@ -127,14 +135,14 @@ export function WeeklyPlanCalendar({ detail }: { detail: WeeklyPlanDetail }) {
         </div>
         <a
           href={detail.reviewHref}
-          className="shrink-0 rounded border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-600 transition-colors hover:border-orange-300 hover:text-orange-600"
+          className={landingActionClassName("outline")}
         >
           Open in full planner ↗
         </a>
       </div>
 
       {days.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 bg-white py-6 text-center text-xs text-slate-400">
+        <p className="border border-slate-200 bg-white px-3 py-4 text-phx-sm text-slate-500">
           This plan has no activities yet.
         </p>
       ) : (
@@ -143,14 +151,14 @@ export function WeeklyPlanCalendar({ detail }: { detail: WeeklyPlanDetail }) {
             const parts = planDayParts(day);
             const dayItems = byDate.get(day) ?? [];
             return (
-              <div key={day} className="flex flex-col rounded-lg border border-slate-200 bg-white p-2">
-                <div className="mb-1.5 flex items-baseline justify-between border-b border-slate-100 pb-1">
-                  <span className="text-phx-xs font-black uppercase tracking-wide text-slate-700">{parts.weekday}</span>
-                  <span className="text-phx-2xs font-bold text-slate-400">{parts.dayNumber} {parts.month}</span>
+              <div key={day} className="flex min-w-0 flex-col border border-slate-200 bg-white p-2">
+                <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-1 border-b border-slate-200 pb-1">
+                  <span className={`text-phx-xs font-black uppercase tracking-[0.1em] ${LANDING_INK}`}>{parts.weekday}</span>
+                  <span className="text-phx-xs font-bold tabular-nums text-slate-500">{parts.dayNumber} {parts.month}</span>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   {dayItems.length === 0 ? (
-                    <p className="py-2 text-center text-phx-2xs text-slate-300">No activity</p>
+                    <p className="py-2 text-center text-phx-xs text-slate-400">No activity</p>
                   ) : (
                     dayItems.map((item, idx) => <PlanActivityCard key={`${day}-${idx}`} item={item} />)
                   )}

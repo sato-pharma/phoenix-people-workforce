@@ -1339,9 +1339,9 @@ export function ScreeningWorkstation({
               <button
                 aria-pressed={mobilePane === pane}
                 className={cn(
-                  "relative px-2.5 py-1.5 text-[12px] font-bold leading-none transition-colors",
+                  "relative px-2.5 py-1.5 text-[12px] font-bold leading-none transition-colors motion-reduce:transition-none",
                   mobilePane === pane
-                    ? cn("bg-white text-phx-accent-press after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:bg-phx-accent", adminChipDepthClassName)
+                    ? cn("bg-white text-[#08111f] after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:bg-[#08111f]", adminChipDepthClassName)
                     : "text-phx-ink-soft hover:bg-white/70 hover:text-phx-ink",
                 )}
                 key={pane}
@@ -1710,7 +1710,7 @@ function DuplicateBanner({
       </span>
       {row.duplicateIds.map((id, index) => (
         <button
-          className="border border-phx-warn-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-warn hover:text-white"
+          className="border border-phx-warn-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition motion-reduce:transition-none hover:bg-phx-warn hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
           key={id}
           onClick={() => onOpen(id)}
           type="button"
@@ -1721,7 +1721,7 @@ function DuplicateBanner({
       {/* Archives the one ON SCREEN, never the other — the reader is looking at the record they are
           judging, and a button that acted on the twin would act on a CV they have not read. */}
       <button
-        className="border border-phx-warn-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-warn transition hover:bg-phx-warn hover:text-white disabled:opacity-50"
+        className="border border-phx-warn-line bg-white px-2 py-0.5 text-[12px] font-bold text-phx-warn transition motion-reduce:transition-none hover:bg-phx-warn hover:text-white disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
         disabled={archiving}
         onClick={() => onArchive(row.id)}
         title="Move this record to the Duplicates folder. It leaves the pool and can be put back."

@@ -104,7 +104,7 @@ export function DecisionComment({
     return (
       <button
         aria-expanded={false}
-        className="inline-flex min-h-9 items-center gap-1.5 rounded-none text-xs font-black text-orange-700 underline-offset-2 hover:underline disabled:text-slate-400"
+        className="inline-flex min-h-9 items-center gap-1.5 rounded-none text-xs font-black text-[#08111f] underline underline-offset-2 hover:text-slate-600 disabled:text-slate-400"
         disabled={disabled}
         onClick={() => {
           setOpen(true);

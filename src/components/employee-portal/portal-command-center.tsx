@@ -26,7 +26,6 @@ import {
   PieChart,
   ReceiptText,
   Send,
-  TrendingUp,
   User,
   Wallet,
 } from "lucide-react";
@@ -58,11 +57,28 @@ import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-d
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_ROW_LINK,
+  LandingBar,
+  LandingEmpty,
+  LandingFigure,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingTick,
+} from "@/components/employee-portal/landing-kit";
 
 export function egp(n: number) {
   return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 }
 
+/**
+ * The navy-headed panel the ADMIN shell's command centres still draw (CEO, Finance, Needs You,
+ * System Admin, the personal workspace). The portal landing no longer uses it — its pending rows
+ * moved into the landing kit's white panel in the 2026-11-20 redesign — and its look is left for the
+ * admin batch of that redesign, so this file changes no admin page.
+ */
 export function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
@@ -75,6 +91,11 @@ export function SectionShell({ title, children }: { title: string; children: Rea
   );
 }
 
+/**
+ * One row of a landing's workspace list: the icon in plain line weight, the name in navy capitals,
+ * its one-line purpose from `sm` up, and an arrow that steps forward on hover. No filled icon square
+ * and no orange wash — the 2026-11-20 redesign keeps orange for the title tick alone.
+ */
 export function PremiumNavTile({
   href,
   icon: Icon,
@@ -91,26 +112,17 @@ export function PremiumNavTile({
   return (
     <Link
       href={href}
-      className="group relative flex min-h-[52px] bg-white transition-colors hover:bg-orange-50 active:bg-orange-100 sm:min-h-[72px]"
+      className={`group flex min-h-[52px] min-w-0 items-center gap-3 bg-white px-3 py-3 sm:min-h-[64px] sm:px-4 ${LANDING_ROW_LINK}`}
     >
+      <Icon className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-[#08111f] motion-reduce:transition-none" />
+      <span className="min-w-0 flex-1">
+        <span className="block break-words text-phx-sm font-bold uppercase tracking-[0.1em] text-[#08111f]">{label}</span>
+        <span className="mt-0.5 hidden break-words text-phx-sm leading-snug text-slate-500 sm:block">{description}</span>
+      </span>
       {badge != null && badge > 0 && (
-        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center bg-orange-500 px-1 text-phx-xs font-black text-white">
-          {badge}
-        </span>
+        <span className="shrink-0 border border-[#08111f] px-1.5 py-px text-phx-xs font-bold tabular-nums text-[#08111f]">{badge}</span>
       )}
-      <div className="w-[3px] shrink-0 bg-slate-200 transition-colors group-hover:bg-orange-500" />
-      <div className="flex flex-1 items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-slate-900 text-slate-300 transition-colors group-hover:bg-orange-600 group-hover:text-white sm:h-10 sm:w-10">
-          <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500 transition-colors group-hover:text-orange-600">
-            {label}
-          </p>
-          <p className="mt-0.5 hidden text-sm font-semibold leading-snug text-slate-800 sm:block">{description}</p>
-        </div>
-        <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-orange-500" />
-      </div>
+      <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#08111f] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0" />
     </Link>
   );
 }
@@ -129,16 +141,43 @@ export function MarketingToolRow({
   return (
     <Link
       href={href}
-      className="group flex min-h-[48px] items-center gap-3 bg-white px-4 py-3 transition-colors hover:bg-slate-50 active:bg-orange-50 sm:min-h-[56px] sm:gap-4 sm:px-5 sm:py-4"
+      className={`group flex min-h-[52px] items-center gap-3 border-b border-slate-200 bg-white px-3 py-3 last:border-b-0 sm:px-4 ${LANDING_ROW_LINK}`}
     >
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 transition-colors group-hover:border-orange-300 group-hover:bg-orange-50 ${adminControlDepthClassName}`}>
-        <Icon className="h-4 w-4 text-slate-500 transition-colors group-hover:text-orange-600" />
-      </div>
+      <Icon className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-[#08111f] motion-reduce:transition-none" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-900">{label}</p>
-        <p className="text-phx-xs leading-snug text-slate-500">{sub}</p>
+        <p className="break-words text-phx-md font-bold text-[#08111f]">{label}</p>
+        <p className="break-words text-phx-xs leading-snug text-slate-500">{sub}</p>
       </div>
-      <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-orange-500" />
+      <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#08111f] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0" />
+    </Link>
+  );
+}
+
+/**
+ * One pending item as a whole-row link: a status rail, the icon, the words in navy, the arrow.
+ * The rail carries the tone — orange for a decision that waits on the viewer, amber for the
+ * viewer's own request waiting on someone else — the same two the rep's Needs you rows use.
+ */
+function PendingRow({
+  href,
+  icon: Icon,
+  rail,
+  text,
+}: {
+  href: string;
+  icon: React.ElementType;
+  rail: string;
+  text: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group flex min-h-12 items-center gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0 sm:px-4 ${LANDING_ROW_LINK}`}
+    >
+      <span aria-hidden="true" className={`w-1 self-stretch ${rail}`} />
+      <Icon className="h-4 w-4 shrink-0 text-slate-400" />
+      <span className="min-w-0 flex-1 break-words text-phx-md font-bold leading-snug text-[#08111f]">{text}</span>
+      <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#08111f] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0" />
     </Link>
   );
 }
@@ -151,6 +190,9 @@ export function MarketingToolRow({
  * "Needs Your Decision" beside the plans awaiting the viewer's approval and open the Approvals Hub,
  * where there was nothing to decide. `pendingItems` (rsm-home-summary.ts) splits them; the viewer's
  * own requests open the viewer's own request pages.
+ *
+ * Two white panels of whole-row links since the 2026-11-20 redesign — the orange-filled tiles they
+ * replaced shouted every pending item at the same volume as an alarm.
  */
 export function PendingActions({
   pendingVacationCount,
@@ -168,58 +210,38 @@ export function PendingActions({
   });
   if (decisions.length === 0 && own.length === 0) return null;
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {decisions.length > 0 ? (
-        <SectionShell title="Needs Your Decision">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {decisions.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className="flex items-center justify-between gap-3 border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <ClipboardCheck className="h-4 w-4 shrink-0" />
-                  <span className="min-w-0 break-words">{item.text}</span>
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0" />
-              </Link>
-            ))}
-          </div>
-        </SectionShell>
+        <LandingPanel right={<LandingMeta items={[`${decisions.length} waiting`]} />} title="Needs Your Decision">
+          {decisions.map((item) => (
+            <PendingRow href={item.href} icon={ClipboardCheck} key={item.key} rail="bg-orange-500" text={item.text} />
+          ))}
+        </LandingPanel>
       ) : null}
       {own.length > 0 ? (
-        <SectionShell title="Your Requests in Progress">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {own.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className={`flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 hover:border-orange-300 hover:bg-orange-50 ${adminControlDepthClassName}`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  {item.key === "excuse" ? (
-                    <CalendarX2 className="h-4 w-4 shrink-0 text-slate-500" />
-                  ) : (
-                    <CalendarDays className="h-4 w-4 shrink-0 text-slate-500" />
-                  )}
-                  <span className="min-w-0 break-words">{item.text}</span>
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </Link>
-            ))}
-          </div>
-        </SectionShell>
+        <LandingPanel title="Your Requests in Progress">
+          {own.map((item) => (
+            <PendingRow
+              href={item.href}
+              icon={item.key === "excuse" ? CalendarX2 : CalendarDays}
+              key={item.key}
+              rail="bg-amber-500"
+              text={item.text}
+            />
+          ))}
+        </LandingPanel>
       ) : null}
     </div>
   );
 }
 
+/** A failed count is said in words — never drawn as a calm zero. */
 export function PendingCountsUnavailable() {
   return (
-    <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 sm:px-5 sm:py-4">
+    <div className={`flex items-center gap-3 border border-slate-200 bg-white px-3 py-3 sm:px-4 ${adminSoftDepthClassName}`} role="status">
+      <span aria-hidden="true" className="w-1 self-stretch bg-amber-500" />
       <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-      <span className="text-sm font-medium text-amber-800">
+      <span className="min-w-0 break-words text-phx-md font-semibold text-[#08111f]">
         Couldn&apos;t load your pending items right now — refresh to try again.
       </span>
     </div>
@@ -240,16 +262,25 @@ function IntelField({
   className?: string;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-1 bg-white px-3 py-3 sm:px-7 sm:py-4 ${className}`}>
+    // `min-w-min`, not `min-w-0`: a cell never shrinks below its own words. With `min-w-0` the
+    // last cell (basis 0) was squeezed to nothing on a small Android phone on Large text (~280px
+    // CSS wide) and "REPORTS TO / Osama Mohamed" ran out past the screen edge, clipped. Now each
+    // cell keeps its unbroken label and its longest word, and the values wrap inside their cells.
+    <div className={`flex min-w-min flex-col gap-1 bg-white px-2 py-3 min-[360px]:px-3 sm:px-7 sm:py-4 ${className}`}>
+      {/* The LABEL never breaks — "REPORTS / TO" on two lines beside one-line "LINE" and "JOINED" is
+          the irregular row he saw on his phone. The tracking eases to 0.12em on a phone so the
+          three labels fit a 360px Android row in Roboto and an iPhone's Helvetica Neue; under 360px
+          the icon steps aside to keep all three on the one line. The VALUE below still wraps inside
+          its cell, so nothing is ever cut. */}
       <div className="flex items-center gap-1.5">
-        <Icon className="h-3 w-3 shrink-0 text-orange-600" />
-        <span className="text-phx-xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
+        <Icon className="hidden h-3 w-3 shrink-0 text-slate-400 min-[360px]:block" />
+        <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 sm:tracking-[0.18em]">{label}</span>
       </div>
       {/* Wraps rather than clips. The old value carried `whitespace-nowrap` inside an
           `overflow-hidden` band, which is the blindness the golden rule names: a long manager name
           was cut off with `main` still measuring a clean 375/375, because clipped content never
           reaches scrollWidth. Wrapping is the permitted answer; the ellipsis ban is untouched. */}
-      <span className="text-sm font-black text-slate-900 sm:text-base">{value}</span>
+      <span className="text-sm font-black leading-snug text-[#08111f] [overflow-wrap:break-word] sm:text-base">{value}</span>
     </div>
   );
 }
@@ -269,7 +300,7 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
   // white now, and a positioned sibling later in the DOM paints over an absolute one — which is
   // exactly how a 2px rule disappears without anything erroring.
   return (
-    <div className="relative border border-t-2 border-slate-200 border-t-orange-500 bg-slate-200">
+    <div className={`relative border border-t-2 border-slate-200 border-t-[#F05A1A] bg-slate-200 ${adminSoftDepthClassName}`}>
       {/* The on-light file, NOT `sato-pharma-logo.png`. That one draws the word SATO in WHITE — it
           was made for the navy sidebar and this band's own navy past, and it goes invisible the
           moment the ground turns light. The two files are not interchangeable. */}
@@ -384,15 +415,20 @@ export function PortalIdentityBand({
 
 /* ── PortalContextBar ────────────────────────────────────────────── */
 
+/**
+ * The role and the territory it covers, under the identity rows. A white strip with the house tick
+ * since the 2026-11-20 redesign — the orange-washed bar it replaced was the loudest thing on a
+ * manager's landing while saying the least.
+ */
 export function PortalContextBar({ role, context }: { role: string; context: string }) {
   return (
-    <div className="flex items-center gap-3 border border-orange-200 bg-orange-50 px-4 py-3 sm:px-5 sm:py-3.5">
-      <Layers className="h-4 w-4 shrink-0 text-orange-600" />
+    <div className={`flex items-center gap-3 border border-slate-200 bg-white px-3 py-2.5 sm:px-4 ${adminSoftDepthClassName}`}>
+      <LandingTick />
       <div className="min-w-0">
-        <p className="break-words text-phx-xs font-bold uppercase tracking-widest text-orange-500">{role}</p>
+        <p className="break-words text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{role}</p>
         {/* Wraps: a Regional Manager's territory names every region under the seat (#162), which
             ran past a phone's edge with the nowrap this used to carry. */}
-        <p className="break-words font-bold leading-snug text-slate-900">{context}</p>
+        {context ? <p className="break-words text-phx-base font-bold leading-snug text-[#08111f]">{context}</p> : null}
       </div>
     </div>
   );
@@ -419,33 +455,37 @@ export function GlanceStrip({ items }: { items: GlanceStripItem[] }) {
      resolves against its nearest ANCESTOR container, so `@2xl:grid-cols-3` on the element that
      declares `@container` looked past itself, found no container anywhere up the portal, and the
      strip stayed one column at every width (measured 2026-09-25: a single 1408px column at a
-     1440px window). The cells' `@2xl:` queries keep working — they read the wrapper. */
+     1440px window). The cells' `@2xl:` queries keep working — they read the wrapper.
+
+     The 2026-11-20 redesign: each cell is a figure first — 22px navy, the label in small capitals
+     under it — and an urgent cell says so with a status rail on its left edge, not an orange box. */
   return (
-    <div className="@container">
-      <div className="grid grid-cols-1 gap-px bg-slate-200 @2xl:grid-cols-3">
-        {items.map((item, i) => (
-          <Link
-            key={i}
-            href={item.href}
-            className={`group flex min-h-[56px] items-center gap-2 bg-white px-3 py-3 transition-colors hover:bg-slate-50 @2xl:min-h-[64px] @2xl:gap-4 @2xl:px-5 border-l-[3px] ${item.urgent ? "border-orange-500" : "border-transparent"}`}
-          >
-            <div
-              className={`flex h-9 w-9 shrink-0 items-center justify-center border transition-colors group-hover:border-orange-300 group-hover:bg-orange-50${item.urgent ? " border-orange-200 bg-orange-50" : " border-slate-200 bg-slate-50"}`}
+    <div className={`border border-slate-200 ${adminSoftDepthClassName}`}>
+      <div className="@container">
+        <div className="grid grid-cols-1 gap-px bg-slate-200 @2xl:grid-cols-3">
+          {items.map((item, i) => (
+            <Link
+              key={i}
+              href={item.href}
+              className={`group relative flex min-h-[64px] items-center gap-3 bg-white px-3 py-3 @2xl:px-4 ${LANDING_ROW_LINK}`}
             >
-              <item.icon
-                className={`h-4 w-4 transition-colors group-hover:text-orange-600${item.urgent ? " text-orange-600" : " text-slate-500"}`}
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className={`whitespace-nowrap text-sm font-black leading-tight @2xl:text-base${item.urgent ? " text-orange-600" : " text-slate-900"}`}>{item.value}</p>
-              {/* The VALUE keeps its nowrap — it is a short number and must not break across
-                  lines. The label is prose and wraps: in the three-column form each cell leaves it
-                  about 132px, and "pending requests" does not fit on one line. */}
-              <p className="break-words text-xs leading-snug text-slate-500">{item.label}</p>
-            </div>
-            <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-orange-400" />
-          </Link>
-        ))}
+              <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${item.urgent ? "bg-orange-500" : "bg-transparent"}`} />
+              <item.icon className={`h-4 w-4 shrink-0 ${item.urgent ? "text-orange-600" : "text-slate-400"}`} />
+              <div className="min-w-0 flex-1">
+                <p
+                  className={`whitespace-nowrap text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums ${item.urgent ? "text-orange-700" : "text-[#08111f]"}`}
+                >
+                  {item.value}
+                </p>
+                {/* The VALUE keeps its nowrap — it is a short number and must not break across
+                    lines. The label is prose and wraps: in the three-column form each cell leaves it
+                    about 132px, and "pending requests" does not fit on one line. */}
+                <p className="mt-1 break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-500">{item.label}</p>
+              </div>
+              <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-[#08111f] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0" />
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -476,13 +516,14 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
        still fits and nothing crosses the right edge.
 
        From `sm` the layout is unchanged: `sm:grow-0 sm:basis-auto` returns the items to content
-       width, measured pixel-identical to the previous markup at 1280px. */
+       width. The 2026-11-20 redesign made each one the landing's own button — a navy frame that
+       fills navy on hover — instead of a grey chip that washed orange. */
     <div className="flex flex-wrap gap-2">
       {actions.map((action, i) => (
         <Link
           key={i}
           href={action.href}
-          className={`flex min-h-[48px] min-w-fit grow basis-[calc(50%-0.25rem)] items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:grow-0 sm:basis-auto sm:px-4 sm:py-2.5 sm:text-phx-xs ${adminControlDepthClassName}`}
+          className={`flex min-h-[48px] min-w-fit grow basis-[calc(50%-0.25rem)] items-center justify-center gap-2 border border-[#08111f] bg-white px-3 py-3 text-phx-xs font-bold uppercase tracking-[0.08em] text-[#08111f] transition hover:bg-[#08111f] hover:text-white motion-reduce:transition-none sm:inline-flex sm:min-h-10 sm:grow-0 sm:basis-auto sm:px-4 sm:py-2 ${adminControlDepthClassName} ${LANDING_FOCUS}`}
         >
           <action.icon className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
           <span className="text-center leading-tight whitespace-normal sm:whitespace-nowrap">{action.label}</span>
@@ -492,35 +533,38 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
   );
 }
 
-/* ── SectionHead (navy grid-pattern header used by the richer dashboards) ── */
+/* ── SectionHead (the navy header bar of the richer dashboards) ── */
 
+/**
+ * A flat night-navy header bar with the house tick — the ground of the portal's top bar (owner,
+ * 2026-11-20: "A: night navy"). It used to carry a gradient hairline, a 4% grid texture and a 32px
+ * navy glow; the redesign took all three off, because each is an ornament that reads as made by a
+ * machine rather than by a designer. The early-birds and rep-ranks pages put light-on-dark content
+ * in its right slot, which is why it stays navy rather than turning white like a landing panel.
+ */
 export function SectionHead({ title, right }: { title: string; right?: React.ReactNode }) {
   return (
-    <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
-      <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
+    <div className="bg-[#08111f]">
       {/* flex-wrap, and the right slot wraps inside itself: it now carries the closing month
           beside whatever it showed before, and at 375px title + stamp + count exceeds the bar.
-          This wrapper is overflow-hidden, so a nowrap chip would be CLIPPED rather than scrolled —
-          invisible to a scrollWidth check (AGENTS.md §4, the golden rule's second blind spot).
-          Wrapping is the permitted answer here; the ellipsis ban rules the other one out. */}
-      <div className="relative flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 sm:px-5 sm:py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="h-4 w-[3px] shrink-0 bg-[#f47b20]" />
-          <h2 className="min-w-0 break-words text-phx-xs font-black uppercase tracking-[0.18em] text-slate-300">
-            {title}
-          </h2>
-        </div>
-        {right}
+          Nothing here clips any more (the old frame was overflow-hidden, which hid a nowrap chip
+          from a scrollWidth check — AGENTS.md §4's second blind spot), and the ellipsis ban rules
+          out cutting it, so wrapping is the answer. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2.5 sm:px-4">
+        <h2 className="flex min-w-0 items-center gap-2 break-words text-phx-xs font-black uppercase tracking-[0.14em] text-white/80">
+          <LandingTick />
+          <span className="min-w-0">{title}</span>
+        </h2>
+        {right ? <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-white/50">{right}</div> : null}
       </div>
     </div>
   );
 }
 
-/* ── SectionMeta (the small-caps chips on the right of a SectionHead) ── */
+/* ── SectionMeta (the small-caps chips on the right of a header) ── */
 
 /**
- * The chips on the right of a SectionHead — a closing month, a head count, a sort order.
+ * The chips on the right of a header — a closing month, a head count, a sort order.
  *
  * It exists because every performance header now has to name its WINDOW as well as whatever it
  * showed before. The sales figures on these dashboards come from PUBLISHED monthly closings, and a
@@ -529,18 +573,20 @@ export function SectionHead({ title, right }: { title: string; right?: React.Rea
  * Owner, 2026-09-03: "you must show this achievement is in which window?"
  *
  * Null and blank items are dropped rather than rendered as an empty chip, so a caller can pass a
- * not-yet-published month straight through. It wraps rather than truncating (ellipsis ban) and
- * rather than nowrapping — SectionHead's frame is overflow-hidden, so nowrap clips in silence.
+ * not-yet-published month straight through. It wraps rather than truncating (ellipsis ban).
+ *
+ * It takes its COLOUR from the header it sits in (2026-11-20): white at half strength on a navy
+ * SectionHead, slate on a white LandingPanel — one component, legible on both grounds.
  */
 export function SectionMeta({ items }: { items: readonly (string | null | undefined)[] }) {
   const shown = items.filter((item): item is string => Boolean(item && item.trim()));
   if (shown.length === 0) return null;
   return (
-    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-phx-xs font-bold uppercase tracking-widest text-slate-400">
+    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-phx-xs font-bold uppercase tracking-[0.08em]">
       {shown.map((item, index) => (
         <span key={item} className="flex items-center gap-2">
           {index > 0 ? (
-            <span aria-hidden className="text-slate-600">
+            <span aria-hidden className="opacity-50">
               ·
             </span>
           ) : null}
@@ -551,7 +597,7 @@ export function SectionMeta({ items }: { items: readonly (string | null | undefi
   );
 }
 
-/* ── KeycardGrid (icon-square KPI cards, 4-up, under a SectionHead) ──── */
+/* ── KeycardGrid (KPI cards, 2-up on a phone, 4-up on a wide screen) ──── */
 
 export type Keycard = {
   icon: React.ElementType;
@@ -562,62 +608,116 @@ export type Keycard = {
   valueClass: string;
 };
 
-export function KeycardGrid({ cards }: { cards: Keycard[] }) {
+/**
+ * The callers' card colours are written for a white tile (`achievementTone`, `figureInk` and their
+ * kin, pinned per money tile by tests/portal-unpublished-keycards.test.ts). On the night-navy board
+ * the same classes are swapped here, one for one, for the board's own — so a caller's data and its
+ * tone rules stay exactly as they are, and slate-900 is never drawn on #08111f. Every value is a
+ * literal, so Tailwind sees each one it has to generate.
+ */
+const KEYCARD_ON_NAVY: Record<string, string> = {
+  "text-emerald-600": "text-emerald-300",
+  "text-emerald-700": "text-emerald-300",
+  "text-amber-600": "text-amber-300",
+  "text-amber-700": "text-amber-300",
+  "text-orange-500": "text-orange-300",
+  "text-orange-600": "text-orange-300",
+  "text-orange-700": "text-orange-300",
+  "text-rose-600": "text-rose-300",
+  "text-rose-700": "text-rose-300",
+  "text-slate-950": "text-white",
+  "text-slate-900": "text-white",
+  "text-slate-800": "text-white",
+  "text-slate-700": "text-white",
+  "text-slate-600": "text-white/60",
+  "text-slate-500": "text-white/45",
+  "text-slate-400": "text-white/45",
+  "text-[#08111f]": "text-white",
+  "bg-slate-950": "bg-white/15",
+  "bg-slate-900": "bg-white/15",
+  "bg-slate-800": "bg-white/15",
+};
+
+function keycardOnNavy(classes: string): string {
+  return classes
+    .split(/\s+/)
+    .map((c) => KEYCARD_ON_NAVY[c] ?? c)
+    .join(" ");
+}
+
+export function KeycardGrid({ cards, onNavy = false }: { cards: Keycard[]; onNavy?: boolean }) {
+  // A wrapping row, not a fixed grid: with an odd count (three, on the Product Managers' landing) a
+  // two-column grid left a solid grey cell — the "empty square" the owner banned — and `grow` makes
+  // the last card of an odd row take the rest of it instead.
+  //
+  // `onNavy` draws the cards as the tiles of a LandingNavyBoard — a manager's headline board, the
+  // same night navy as the rep's month tiles — with the callers' colours swapped above.
+  //
+  // The cards count off the GRID's own width, never the window's: one to a row under 17rem (a small
+  // Android phone on Large text leaves the board about 238px, where two cards split "ACHIEVEMENT"
+  // mid-word and "EGP 1.42M" over two lines — measured 2026-11-20), two from 17rem, four from 48rem.
   return (
-    <div className="grid grid-cols-2 gap-px bg-slate-200 xl:grid-cols-4">
-      {cards.map((card) => (
-        <div key={card.label} className="relative min-w-0 overflow-hidden bg-white px-4 py-4 sm:px-5 sm:py-5">
-          <span className={`absolute inset-x-0 top-0 h-[3px] ${card.accent}`} />
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
-              <card.icon className="h-3.5 w-3.5" />
-            </span>
-            <p className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
-              {card.label}
+    <div className="@container">
+      <div className={onNavy ? "flex flex-wrap gap-2" : "flex flex-wrap gap-px bg-slate-200"}>
+        {cards.map((card) => (
+          <div
+            key={card.label}
+            className={`relative min-w-0 grow basis-full px-3 py-3 sm:px-4 sm:py-4 ${
+              onNavy
+                ? "border border-white/[0.08] bg-[#0d1828] @[17rem]:basis-[calc(50%-0.25rem)] @3xl:basis-[calc(25%-0.375rem)]"
+                : "bg-white @[17rem]:basis-[calc(50%-1px)] @3xl:basis-[calc(25%-1px)]"
+            }`}
+          >
+            <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-0.5 ${onNavy ? keycardOnNavy(card.accent) : card.accent}`} />
+            <div className="flex items-start gap-1.5">
+              <card.icon className={`mt-px h-3.5 w-3.5 shrink-0 ${onNavy ? "text-white/40" : "text-slate-400"}`} />
+              <p className={`min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.1em] ${onNavy ? "text-white/65" : "text-slate-500"}`}>
+                {card.label}
+              </p>
+            </div>
+            {/* Values are computed (egpCompact, percentages) and can run long — wrap instead of the
+                fixed-width nowrap this used to have, which let the grid's minmax(0,1fr) columns
+                clip or bleed digits into the next card instead of showing the full number. */}
+            <p
+              className={`mt-3 break-words text-[24px] font-bold leading-none tracking-[-0.02em] tabular-nums ${onNavy ? keycardOnNavy(card.valueClass) : card.valueClass}`}
+            >
+              {card.value}
             </p>
+            {/* Owner rule: never truncate with an ellipsis. Subs now name the closing month
+                ("Jul 2026 closing"), which is longer than the fixed phrases they replaced. */}
+            <p className={`mt-1.5 break-words text-phx-xs font-medium leading-snug ${onNavy ? "text-white/45" : "text-slate-500"}`}>{card.sub}</p>
           </div>
-          {/* Values are computed (egpCompact, percentages) and can run long — wrap instead of the
-              fixed-width nowrap this used to have, which let the grid's minmax(0,1fr) columns
-              clip or bleed digits into the next card instead of showing the full number. */}
-          <p className={`mt-3 break-words text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
-            {card.value}
-          </p>
-          {/* Owner rule: never truncate with an ellipsis. Subs now name the closing month
-              ("Jul 2026 closing"), which is longer than the fixed phrases they replaced. */}
-          <p className="break-words text-phx-xs font-medium leading-snug text-slate-500">{card.sub}</p>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
 
-/* ── DashboardsGrid (icon-tile link grid under a "Dashboards" SectionHead) ── */
+/* ── DashboardsGrid (the link list under a "Dashboards" panel) ── */
 
 export type DashboardLink = { href: string; icon: React.ElementType; label: string };
 
 export function DashboardsGrid({ items, title = "Dashboards" }: { items: readonly DashboardLink[]; title?: string }) {
+  // Hairline-ruled cells, two to a row on a phone and four from `sm`; the last cell of an odd row
+  // grows into the rest of it, so no grey hole is ever left. Labels wrap inside their cell —
+  // "Double-Visit Analytics" at 375px — never clip.
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead title={title} />
-      <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-4 sm:gap-2.5 sm:p-2.5">
+    <LandingPanel title={title}>
+      <div className="flex flex-wrap gap-px bg-slate-200">
         {items.map((d) => (
           <Link
             key={d.href}
             href={d.href}
-            className={`group flex flex-col items-center justify-center gap-2 border border-slate-200 bg-white px-2 py-4 text-center transition-colors hover:border-orange-300 hover:bg-orange-50 ${adminControlDepthClassName}`}
+            className={`group flex min-h-[52px] min-w-0 grow basis-[calc(50%-1px)] items-center gap-2.5 bg-white px-3 py-3 sm:basis-[calc(25%-1px)] sm:px-4 ${LANDING_ROW_LINK}`}
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
-              <d.icon className="h-[18px] w-[18px]" />
-            </span>
-            {/* Wraps: the frame above is overflow-hidden, so a label wider than its cell
-                ("Med Rep Performance" at 375px) would be clipped rather than scrolled. */}
-            <span className="min-w-0 break-words text-xs font-bold uppercase leading-snug tracking-wide text-slate-700 transition-colors group-hover:text-orange-700">
+            <d.icon className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-[#08111f] motion-reduce:transition-none" />
+            <span className="min-w-0 flex-1 break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-[#08111f]">
               {d.label}
             </span>
           </Link>
         ))}
       </div>
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -633,10 +733,10 @@ export type RankRow = {
 };
 
 const BAND_TEXT: Record<AchievementBand, string> = {
-  met: "text-emerald-600",
-  near: "text-amber-600",
-  behind: "text-orange-600",
-  far: "text-rose-600",
+  met: "text-emerald-700",
+  near: "text-amber-700",
+  behind: "text-orange-700",
+  far: "text-rose-700",
 };
 const BAND_BAR: Record<AchievementBand, string> = {
   met: "bg-emerald-500",
@@ -650,8 +750,10 @@ function pctTextClass(pct: number): string {
 function pctBarClass(pct: number): string {
   return BAND_BAR[achievementBand(pct)];
 }
-/** The house medal palette — gold, silver, bronze, then plain. Exported so the Early Birds race
- * panel reuses the same chips as the sales leaderboard instead of a second, drifting copy. */
+/** The house medal palette — gold, silver, bronze, then a plain framed number. Exported so the Early
+ * Birds race panel reuses the same chips as the sales leaderboard instead of a second, drifting copy.
+ * Fourth place down is a hairline frame since 2026-11-20: a column of filled navy squares under the
+ * three medals read heavier than the medals themselves. */
 export function rankChipClass(index: number): string {
   return index === 0
     ? "bg-amber-400 text-slate-900"
@@ -659,7 +761,7 @@ export function rankChipClass(index: number): string {
       ? "bg-slate-300 text-slate-900"
       : index === 2
         ? "bg-orange-300 text-slate-900"
-        : "bg-slate-900 text-white";
+        : "border border-slate-300 text-slate-600";
 }
 
 export function RankingPanel({
@@ -689,12 +791,11 @@ export function RankingPanel({
 }) {
   const ranked = rows.slice().sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
   return (
-    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead title={title} right={<SectionMeta items={[windowLabel, subtitle]} />} />
+    <LandingPanel right={<SectionMeta items={[windowLabel, subtitle]} />} title={title}>
       {ranked.length === 0 && unranked.length === 0 ? (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">{rankingBoardEmptyText(windowLabel)}</p>
+        <LandingEmpty>{rankingBoardEmptyText(windowLabel)}</LandingEmpty>
       ) : (
-        <div className="bg-white">
+        <div>
           {ranked.map((row, i) => {
             // Never rounded UP across a line: 89.6% reads 89%, the same as Districts Needing Attention.
             const pct = wholePercent(row.achievementPercent);
@@ -704,9 +805,9 @@ export function RankingPanel({
             return (
               <div
                 key={row.hrId || `${row.name}-${i}`}
-                className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:px-4"
+                className="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 last:border-b-0 sm:px-4"
               >
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-phx-xs font-black ${rankChipClass(i)}`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-phx-xs font-black tabular-nums ${rankChipClass(i)}`}>
                   {i + 1}
                 </span>
                 <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -714,24 +815,24 @@ export function RankingPanel({
                   <div className="min-w-0">
                     {/* Wraps, never truncates — owner rule. Egyptian full names run four parts
                         and the old ellipsis cut most of them off on a phone. */}
-                    <p className="break-words text-sm font-semibold leading-snug text-slate-800">{row.name}</p>
+                    <p className="break-words text-phx-md font-bold leading-snug text-[#08111f]">{row.name}</p>
                     {showManager && row.managerName ? (
-                      <p className="break-words text-phx-xs font-medium uppercase leading-snug tracking-wide text-slate-400">
+                      <p className="break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-400">
                         {row.managerName}
                       </p>
                     ) : null}
                   </div>
                 </div>
-                <div className="w-16 shrink-0">
+                <div className="w-20 shrink-0">
                   {hasTarget ? (
                     <>
-                      <p className={`text-right text-sm font-black tabular-nums ${pctTextClass(pct)}`}>{pct}%</p>
-                      <div className="mt-1 h-1 w-full bg-slate-100">
-                        <div className={`h-full ${pctBarClass(pct)}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
+                      <p className={`text-right text-phx-base font-bold tabular-nums ${pctTextClass(pct)}`}>{pct}%</p>
+                      <div className="mt-1.5">
+                        <LandingBar fill={pctBarClass(pct)} pct={pct} />
                       </div>
                     </>
                   ) : (
-                    <p className="break-words text-right text-phx-xs font-bold uppercase leading-snug tracking-wide text-slate-400">
+                    <p className="break-words text-right text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-400">
                       No target
                     </p>
                   )}
@@ -742,23 +843,23 @@ export function RankingPanel({
           {unranked.map((person) => (
             <div
               key={`unranked-${person.hrId}`}
-              className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:px-4"
+              className="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 last:border-b-0 sm:px-4"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center border border-slate-200 text-phx-xs font-black text-slate-400">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center border border-dashed border-slate-300 text-phx-xs font-black text-slate-400">
                 –
               </span>
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
                 <div className="min-w-0">
-                  <p className="break-words text-sm font-semibold leading-snug text-slate-800">{person.name}</p>
+                  <p className="break-words text-phx-md font-bold leading-snug text-[#08111f]">{person.name}</p>
                   {person.note ? (
-                    <p className="break-words text-phx-xs font-medium uppercase leading-snug tracking-wide text-slate-400">
+                    <p className="break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-400">
                       {person.note}
                     </p>
                   ) : null}
                 </div>
               </div>
-              <p className="w-24 shrink-0 break-words text-right text-phx-xs font-bold uppercase leading-snug tracking-wide text-slate-400">
+              <p className="w-24 shrink-0 break-words text-right text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-slate-400">
                 {NO_PUBLISHED_MONTH}
               </p>
             </div>
@@ -766,7 +867,7 @@ export function RankingPanel({
         </div>
       )}
       {footer}
-    </div>
+    </LandingPanel>
   );
 }
 
@@ -797,7 +898,7 @@ export function DepartedFromBoardNote({
 }) {
   if (count <= 0) return null;
   return (
-    <p className="border-t border-slate-100 bg-slate-50 px-3 py-2.5 text-phx-xs leading-relaxed text-slate-500 sm:px-4">
+    <p className="border-t border-dashed border-slate-200 px-3 py-2.5 text-phx-xs leading-relaxed text-slate-500 sm:px-4">
       {count === 1 ? "One colleague who" : `${count} colleagues who`} left during this window{" "}
       {count === 1 ? "is" : "are"} no longer listed here.
       {sales > 0 ? ` Their ${egpCompact(sales)} of sales is still counted in ${totalLabel} above.` : ""}
@@ -817,15 +918,15 @@ export function ActionStrip({ items }: { items: readonly ActionStripItem[] }) {
     // scrolled. That is invisible to a scrollWidth check: main measured 375/375 while the words
     // sat off the edge (AGENTS.md §4). Merging columns is the owner's prescribed fix — fit by
     // merging, never by shrinking type — and the labels wrap inside the wider cell.
-    <div className="grid grid-cols-2 gap-px overflow-hidden border border-slate-200 bg-slate-200 sm:grid-cols-4">
+    <div className={`grid grid-cols-2 gap-px border border-slate-200 bg-slate-200 sm:grid-cols-4 ${adminSoftDepthClassName}`}>
       {items.map((a) => (
         <Link
           key={a.href}
           href={a.href}
-          className="group flex flex-col items-center justify-center gap-1 bg-white px-2 py-3 text-center transition-colors hover:bg-orange-50 sm:flex-row sm:gap-2"
+          className={`group flex min-h-[52px] flex-col items-center justify-center gap-1.5 bg-white px-2 py-3 text-center sm:flex-row sm:gap-2 ${LANDING_ROW_LINK}`}
         >
-          <a.icon className="h-4 w-4 shrink-0 text-orange-600" />
-          <span className="min-w-0 break-words text-phx-xs font-bold uppercase leading-snug tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
+          <a.icon className="h-4 w-4 shrink-0 text-[#08111f]" />
+          <span className="min-w-0 break-words text-phx-xs font-bold uppercase leading-snug tracking-[0.08em] text-[#08111f]">
             {a.label}
           </span>
         </Link>
@@ -838,6 +939,43 @@ export function ActionStrip({ items }: { items: readonly ActionStripItem[] }) {
 
 export function egpCompact(value: number): string {
   return compactEgp(value);
+}
+
+/* ── The night-navy figure tile shared by the Product Managers' and the standard landings ── */
+
+/**
+ * One headline figure on a landing's night-navy board: the rep's month tile (`RepTile`) carrying a
+ * single big number, optionally a whole-tile link. It sits in a wrapping row — two to a row on a
+ * phone, all in one row once the board is wide — and the last tile of an odd row takes the rest of
+ * it, so no grey hole is ever left.
+ */
+function BoardFigureTile({
+  label,
+  hint,
+  href,
+  children,
+}: {
+  label: string;
+  hint?: string | null;
+  href?: string;
+  children: React.ReactNode;
+}) {
+  const tile = (
+    <RepTile hint={hint} label={label}>
+      {children}
+    </RepTile>
+  );
+  return (
+    <div className="flex min-w-0 grow basis-[calc(50%-0.25rem)] @3xl:basis-0 [&>*]:flex-1">
+      {href ? (
+        <Link className={`flex min-w-0 [&>div]:flex-1 [&>div]:transition-colors hover:[&>div]:border-white/30 ${LANDING_FOCUS}`} href={href}>
+          {tile}
+        </Link>
+      ) : (
+        tile
+      )}
+    </div>
+  );
 }
 
 /* ── Private command center layouts ─────────────────────────────── */
@@ -877,49 +1015,39 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   // and would otherwise silently understate totalPending rather than reading as unknown.
   const pendingAvailable = pendingCountsAvailable && plansCountAvailable;
 
-  const cards: Keycard[] = [
-    {
-      icon: Send,
-      label: "Marketing Requests",
-      value: pmMarketing ? String(pmMarketing.myPendingRequests) : "—",
-      sub: "in flight",
-      accent: "bg-slate-900",
-      valueClass: "text-slate-900",
-    },
-    {
-      icon: CalendarX2,
-      label: "Pending Requests",
-      value: pendingAvailable ? String(totalPending) : "—",
-      sub: "awaiting decision",
-      accent: pendingAvailable && totalPending > 0 ? "bg-orange-500" : "bg-slate-900",
-      valueClass: pendingAvailable && totalPending > 0 ? "text-orange-600" : "text-slate-900",
-    },
-    {
-      icon: CalendarDays,
-      label: "Leave Balance",
-      value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
-      sub: "annual entitlement",
-      accent: "bg-slate-900",
-      valueClass: "text-slate-900",
-    },
-    // NO PAYSLIP KEYCARD: payslip data (amount OR month) must never render on any overview/landing
-    // surface for any role — owner rule. It lives only on /employee-portals/payslips.
-  ];
-
   return (
-    <div className="mx-auto w-full space-y-3" dir="auto">
+    <div className="mx-auto w-full space-y-2" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
+
+      {/* 🔒 THE HEADLINE BOARD — night navy, the landing's one board (2026-11-20 redesign). Three
+          figures: what he has in flight with marketing, what is pending, his leave entitlement.
+          NO PAYSLIP TILE: payslip data (amount OR month) must never render on any overview/landing
+          surface for any role — owner rule. It lives only on /employee-portals/payslips. */}
+      <LandingNavyBoard label="My Workspace">
+        <div className="@container">
+          <div className="flex flex-wrap gap-2">
+            <BoardFigureTile hint="In flight" href="/employee-portals/marketing-requests" label="Marketing requests">
+              <LandingFigure onNavy>{pmMarketing ? String(pmMarketing.myPendingRequests) : "—"}</LandingFigure>
+            </BoardFigureTile>
+            <BoardFigureTile hint="Awaiting decision" label="Pending requests">
+              <LandingFigure onNavy tone={pendingAvailable && totalPending > 0 ? "text-orange-300" : undefined}>
+                {pendingAvailable ? String(totalPending) : "—"}
+              </LandingFigure>
+            </BoardFigureTile>
+            <BoardFigureTile hint="Annual entitlement" href="/employee-portals/vacation-request" label="Leave balance">
+              <LandingFigure onNavy unit={leaveEntitlementDays != null ? "days" : undefined}>
+                {leaveEntitlementDays != null ? String(leaveEntitlementDays) : "—"}
+              </LandingFigure>
+            </BoardFigureTile>
+          </div>
+        </div>
+      </LandingNavyBoard>
 
       {!pendingAvailable ? (
         <PendingCountsUnavailable />
       ) : totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : null}
-
-      <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-        <SectionHead title="My Workspace" />
-        <KeycardGrid cards={cards} />
-      </div>
 
       <DashboardsGrid items={PM_GPM_DASHBOARDS} />
 
@@ -966,33 +1094,49 @@ function repTone(pct: number): { rail: string; fill: string; text: string } {
   return { rail: "bg-orange-500", fill: "bg-orange-500", text: "text-orange-700" };
 }
 
-/** Square metric tile with a status rail across its top edge. */
+/**
+ * The same scale, drawn on the rep's night-navy month board (owner, 2026-11-20: the landing
+ * redesign after his "A: night navy" top bar). The figures themselves stay white; the colour rides
+ * on the bar and the small words only, so the board stays flat and calm.
+ */
+function repNightTone(pct: number): { fill: string; text: string } {
+  if (pct >= 100) return { fill: "bg-emerald-400", text: "text-emerald-300" };
+  if (pct >= 90) return { fill: "bg-amber-400", text: "text-amber-300" };
+  return { fill: "bg-orange-500", text: "text-orange-300" };
+}
+
+/** The night-navy ground of the month board, and the one step lighter that its tiles stand on. */
+const REP_BOARD_GROUND = "bg-[#08111f]";
+const REP_BOARD_TILE = "bg-[#0d1828]";
+
+/** One of the four month tiles on the night-navy board: label, period, figure, one quiet line. */
 function RepTile({
   label,
   meta,
-  rail,
   children,
   hint,
 }: {
   label: string;
   meta?: string | null;
-  rail?: string;
   children: React.ReactNode;
   hint?: string | null;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <div aria-hidden="true" className={`h-0.5 w-full ${rail ?? "bg-slate-300"}`} />
+    <div className={`flex min-w-0 flex-col border border-white/[0.08] ${REP_BOARD_TILE}`}>
       {/* A container, so what fits in the tile is decided by the TILE's width, not the window's. */}
       <div className="@container flex flex-1 flex-col p-3">
-        <div className="flex items-baseline gap-2">
-          <span className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+        {/* The period STACKS under the label in a narrow tile and sits beside it from 13rem up. Side by
+            side in a phone's two-column grid it needed ~190px in a 140px tile: on an iPhone (Helvetica
+            Neue) and Android (Roboto) — both wider than the Aptos this was sized against — "OCT 2026"
+            was cut at the tile edge and "CALL RATE" broke onto two lines while its neighbours did not. */}
+        <div className="flex flex-col gap-0.5 @[13rem]:flex-row @[13rem]:items-baseline @[13rem]:gap-2">
+          <span className="text-phx-sm font-bold uppercase tracking-[0.1em] text-white/65">{label}</span>
           {meta && (
-            <span className="ml-auto whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
+            <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-white/35 @[13rem]:ml-auto">{meta}</span>
           )}
         </div>
-        <div className="mt-2">{children}</div>
-        {hint && <p className="mt-auto pt-2 text-phx-xs leading-snug text-slate-500">{hint}</p>}
+        <div className="mt-3">{children}</div>
+        {hint && <p className="mt-auto pt-3 text-phx-xs leading-snug text-white/45">{hint}</p>}
       </div>
     </div>
   );
@@ -1001,19 +1145,17 @@ function RepTile({
 /** Big percentage plus its attainment bar. The 100% line is drawn so a bar reads against target. */
 function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
   const rounded = Math.round(pct);
-  const tone = repTone(rounded);
+  const tone = repNightTone(rounded);
   return (
     <>
-      <div className="flex items-baseline gap-1.5">
-        <span className={`text-[21px] font-bold leading-none tracking-[-0.01em] tabular-nums ${tone.text}`}>
-          {rounded}
-        </span>
-        <span className="text-phx-xs font-bold text-slate-400">%</span>
+      <div className="flex flex-wrap items-baseline gap-x-1">
+        <span className="text-[28px] font-bold leading-none tracking-[-0.02em] tabular-nums text-white">{rounded}</span>
+        <span className="text-phx-sm font-bold text-white/45">%</span>
         {note && <span className="ml-auto">{note}</span>}
       </div>
-      <div className="relative mt-2 h-1.5 w-full bg-slate-100">
+      <div className="relative mt-3 h-1 w-full bg-white/10">
         <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, rounded))}%` }} />
-        <div aria-hidden="true" className="absolute -bottom-0.5 -top-0.5 right-0 w-0.5 bg-slate-900" />
+        <div aria-hidden="true" className="absolute -bottom-1 -top-1 right-0 w-px bg-white/70" />
       </div>
     </>
   );
@@ -1032,12 +1174,12 @@ function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
  */
 function RepFrequencyBreakdown({ exact, above, below }: { exact: number; above: number; below: number }) {
   const rows: { label: string; value: number; tone: string }[] = [
-    { label: "Exact", value: exact, tone: "text-emerald-700" },
-    { label: "Above", value: above, tone: "text-rose-600" },
-    { label: "Below", value: below, tone: "text-amber-600" },
+    { label: "Exact", value: exact, tone: "text-emerald-300" },
+    { label: "Above", value: above, tone: "text-rose-300" },
+    { label: "Below", value: below, tone: "text-amber-300" },
   ];
   return (
-    <dl className="mt-2.5 space-y-1 border-t border-slate-100 pt-2">
+    <dl className="mt-3 space-y-1 border-t border-white/10 pt-2.5">
       {rows.map((r) => (
         <div className="flex items-baseline justify-between gap-2" key={r.label}>
           <dt className={`text-phx-xs font-bold uppercase tracking-[0.08em] ${r.tone}`}>{r.label}</dt>
@@ -1067,47 +1209,55 @@ function RepCallHalf({
   target: number | null;
 }) {
   const attainment = target != null && target > 0 ? (rate / target) * 100 : 0;
-  const tone = target != null ? repTone(attainment) : null;
+  const tone = target != null ? repNightTone(attainment) : null;
   // One ROW per rate, never three side-by-side columns: on a phone the tile is half the screen, and
   // three columns left each figure 49px — too narrow for a 10.2 at any size bigger than its siblings.
-  // A row gives the figure the tile's whole width, so it runs at 26px everywhere, with the code,
-  // the target and (where there is room) the full name on the same baseline.
+  // A row gives the figure the tile's whole width, with the code, the target and (where there is
+  // room) the full name on the same baseline.
   return (
-    <div className="relative min-w-0 pl-3">
-      <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-0.5 ${tone?.rail ?? "bg-slate-300"}`} />
+    <div className="relative min-w-0 pl-2.5">
+      <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-0.5 ${tone?.fill ?? "bg-white/20"}`} />
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="w-7 shrink-0 text-phx-sm font-black tracking-[0.06em] text-slate-900">{code}</span>
-        <span className={`text-[26px] font-bold leading-none tracking-[-0.02em] tabular-nums ${tone?.text ?? "text-slate-700"}`}>
+        <span className="w-7 shrink-0 text-phx-sm font-black tracking-[0.06em] text-white/60">{code}</span>
+        <span className="text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums text-white">
           {rate.toFixed(1)}
         </span>
-        <span className="text-phx-sm font-semibold tabular-nums text-slate-500">
+        <span className="text-phx-sm font-semibold tabular-nums text-white/45">
           {target != null ? `of ${target}` : "no target"}
         </span>
         {/* Only where the tile itself has room for it (a container query on RepTile's body): the
             window's width said nothing about the tile once the sidebar opened at lg. */}
-        <span className="ml-auto hidden text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400 @[13rem]:inline">
+        <span className="ml-auto hidden text-phx-xs font-bold uppercase tracking-[0.08em] text-white/35 @[13rem]:inline">
           {label}
         </span>
       </p>
       {tone ? (
-        <div className="relative mt-1.5 h-1.5 w-full bg-slate-100">
+        <div className="relative mt-2 h-1 w-full bg-white/10">
           <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, attainment))}%` }} />
-          <div aria-hidden="true" className="absolute -bottom-0.5 -top-0.5 right-0 w-0.5 bg-slate-900" />
+          <div aria-hidden="true" className="absolute -bottom-1 -top-1 right-0 w-px bg-white/70" />
         </div>
       ) : (
         // No standard to reach, so no bar to fill — a dashed rule keeps the three rows aligned
         // without drawing an empty bar that reads as 0%.
-        <div aria-hidden="true" className="mt-1.5 h-1.5 w-full border-t border-dashed border-slate-300" />
+        <div aria-hidden="true" className="mt-2 h-1 w-full border-t border-dashed border-white/20" />
       )}
     </div>
   );
 }
 
+/**
+ * Every white panel on the rep's landing: a plain white header with the house's short orange tick
+ * before the title — the tick of his honour-strip footer and the line on top of the night-navy bar
+ * (owner, 2026-11-20 redesign). `RepTodayPlanPanel` and My map's rep frame wear the same header.
+ */
 function RepPanel({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">{title}</h2>
+      <header className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5">
+        <h2 className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-[#08111f]">
+          <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
+          {title}
+        </h2>
         {right && <div className="ml-auto">{right}</div>}
       </header>
       {children}
@@ -1132,16 +1282,16 @@ function RepNeedRow({
   cta: string;
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 last:border-b-0">
+    <div className="flex items-center gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0">
       <span aria-hidden="true" className={`w-1 self-stretch ${rail}`} />
-      <span className="min-w-[28px] text-phx-xl font-bold leading-none tabular-nums text-slate-900">{count}</span>
+      <span className="min-w-[28px] text-[24px] font-bold leading-none tracking-[-0.02em] tabular-nums text-[#08111f]">{count}</span>
       <span className="min-w-0 flex-1">
-        <span className="block break-words text-phx-md font-semibold leading-snug text-slate-900">{headline}</span>
+        <span className="block break-words text-phx-md font-bold leading-snug text-[#08111f]">{headline}</span>
         <span className="mt-0.5 block break-words text-phx-xs leading-snug tabular-nums text-slate-500">{detail}</span>
       </span>
       {/* 40px tall on a phone — it is the one thing on this row a thumb has to hit. */}
       <Link
-        className="inline-flex min-h-10 shrink-0 items-center border border-slate-300 px-3 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-700 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800 sm:min-h-8"
+        className="inline-flex min-h-10 shrink-0 items-center border border-[#08111f] px-3 text-phx-xs font-bold uppercase tracking-[0.08em] text-[#08111f] transition hover:bg-[#08111f] hover:text-white sm:min-h-8"
         href={href}
       >
         {cta}
@@ -1151,13 +1301,15 @@ function RepNeedRow({
 }
 
 function RepFact({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  // `grow` on a fixed basis: two to a row on a phone, three from `sm`, and the last fact in a short
-  // row stretches to fill it. The facts are optional (no double visit in 90 days, no renewal date),
-  // and on a fixed grid an odd count left a solid grey cell — the "empty square" the owner banned.
+  // One fact per ROW — label on the left, value on the right — so a long label ("Until contract
+  // renewal") wraps inside its own row and never leaves its neighbour a row taller than it needs
+  // (owner, 2026-11-20 redesign: the old two-up grid ran uneven heights on a phone). Two rows to a
+  // line from `sm`; `grow` makes the last fact of an odd count take the whole line, so a fixed grid's
+  // solid grey cell — the "empty square" the owner banned — can never appear.
   return (
-    <div className="min-w-0 grow basis-[calc(50%-1px)] bg-white px-3 py-2 sm:basis-[calc(33.333%-1px)]">
-      <dt className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
-      <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${tone ?? "text-slate-900"}`}>{value}</dd>
+    <div className="flex min-w-0 grow basis-full items-baseline justify-between gap-3 bg-white px-3 py-2.5 sm:basis-[calc(50%-1px)]">
+      <dt className="min-w-0 text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
+      <dd className={`max-w-[60%] break-words text-right text-phx-md font-bold tabular-nums ${tone ?? "text-[#08111f]"}`}>{value}</dd>
     </div>
   );
 }
@@ -1279,8 +1431,8 @@ function RepTileLoading({ label }: { label: string }) {
     <RepTile label={label}>
       <div aria-busy="true">
         <span className="sr-only">Loading</span>
-        <div aria-hidden="true" className="employee-portal-skeleton h-[21px] w-16" />
-        <div aria-hidden="true" className="employee-portal-skeleton mt-2 h-1.5 w-full" />
+        <div aria-hidden="true" className="employee-portal-skeleton h-[28px] w-16 opacity-20" />
+        <div aria-hidden="true" className="employee-portal-skeleton mt-3 h-1 w-full opacity-20" />
       </div>
     </RepTile>
   );
@@ -1371,52 +1523,64 @@ function MedicalRepCommandCenter({
       <div className="@container">
         <div className="group/rep-day grid gap-2 @3xl:has-[>[data-rep-day]]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="min-w-0 space-y-2">
-            {/* The month these four tiles are showing, and the box that changes it (owner, 2026-10-01).
-                It sits directly ABOVE them and nowhere else on the page, because it governs exactly
-                these four — not his day, not his double visits, not the alert rows, all of which stay
-                on the real calendar. One row, one label, one control: no hero, no sentence. */}
-            <RepKpiMonthPicker month={kpiMonth} options={kpiMonthOptions} />
+            {/* 🔒 THE MONTH BOARD — night navy, the ground of the top bar he chose (owner, 2026-11-20,
+                "A: night navy", then the from-scratch redesign of this landing). One flat orange line
+                on top, the month box as its header row, the four tiles a step lighter beneath it. Flat
+                colour only: no gradient, no glow; the figures are white and the colour is on the bars. */}
+            <section aria-label="KPI month" className={`border border-[#08111f] ${REP_BOARD_GROUND} ${adminSoftDepthClassName}`}>
+              <div aria-hidden="true" className="h-0.5 w-full bg-[#F05A1A]" />
+              <div className="space-y-2 p-2 pt-2.5">
+                {/* The month these four tiles are showing, and the box that changes it (owner, 2026-10-01).
+                    It sits directly ABOVE them and nowhere else on the page, because it governs exactly
+                    these four — not his day, not his double visits, not the alert rows, all of which stay
+                    on the real calendar. One row, one label, one control: no hero, no sentence. */}
+                <RepKpiMonthPicker month={kpiMonth} options={kpiMonthOptions} />
 
-            {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
-                disagree by design — production has run 68% coverage against 39% frequency in one month —
-                and any blend of them hides exactly the gap they exist to expose.
-                🔴 THEY MOVED INTO THE LEFT COLUMN ON 2026-09-30, at the owner's own instruction, and
-                that is WHY they are here rather than across the top: "take two of the key cores of the
-                KPIs and put them under each other, so the left side is more tall — and Your day is
-                pushed up, because it is very long now and the page is asymmetric." His day runs the
-                whole right-hand column from the top; these four fold to 2x2 beside it.
-                🔴 THE FOLD IS THE DAY ITSELF, NOT A WIDTH QUERY — THAT IS THE SECOND HALF OF THE FIX,
-                2026-09-30. It first shipped as `@3xl:grid-cols-4` on the wrapper below, reasoning that
-                the row only reaches 48rem when there is no day beside it. Measured on the running app,
-                that reasoning does not hold: the wrapper is a real `inline-size` container 721px wide
-                — inside 48rem — and the row still rendered FOUR tracks of 219px, so on a wide screen
-                the tiles went back across the top and the left column finished 143px short of his day.
-                He saw exactly that and asked for the stack a second time. A query measured not to hold
-                is not worth keeping: with a day beside them the tiles are 2x2, full stop, and the
-                four-across form is kept only for the no-day layout, where this column IS the page.
-                `lg:` was wrong here for a different reason and must not come back — it fired at a
-                1024px window whose content was ~636px once the sidebar opened, leaving each tile
-                ~127px, and "SEP 2026" broke in two while "10.2 of 10" wrapped.
-                Suspense renders no element of its own, so the four tiles stay direct items of this grid
-                whether they are still loading or filled. */}
-            <div className="@container">
-              <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4 group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
-                <Suspense fallback={<RepTileLoading label="Achievement" />}>
-                  <RepAchievementCard kpiMonth={kpiMonth} sales={cards.sales} />
-                </Suspense>
-                <Suspense
-                  fallback={
-                    <>
-                      <RepTileLoading label="Coverage" />
-                      <RepTileLoading label="Call rate" />
-                      <RepTileLoading label="Frequency" />
-                    </>
-                  }
-                >
-                  <RepFieldTiles fieldKpis={cards.fieldKpis} />
-                </Suspense>
+                {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
+                    disagree by design — production has run 68% coverage against 39% frequency in one month —
+                    and any blend of them hides exactly the gap they exist to expose.
+                    🔴 THEY MOVED INTO THE LEFT COLUMN ON 2026-09-30, at the owner's own instruction, and
+                    that is WHY they are here rather than across the top: "take two of the key cores of the
+                    KPIs and put them under each other, so the left side is more tall — and Your day is
+                    pushed up, because it is very long now and the page is asymmetric." His day runs the
+                    whole right-hand column from the top; these four fold to 2x2 beside it.
+                    🔴 THE FOLD IS THE DAY ITSELF, NOT A WIDTH QUERY — THAT IS THE SECOND HALF OF THE FIX,
+                    2026-09-30. It first shipped as `@3xl:grid-cols-4` on the wrapper below, reasoning that
+                    the row only reaches 48rem when there is no day beside it. Measured on the running app,
+                    that reasoning does not hold: the wrapper is a real `inline-size` container 721px wide
+                    — inside 48rem — and the row still rendered FOUR tracks of 219px, so on a wide screen
+                    the tiles went back across the top and the left column finished 143px short of his day.
+                    He saw exactly that and asked for the stack a second time. A query measured not to hold
+                    is not worth keeping: with a day beside them the tiles are 2x2, full stop, and the
+                    four-across form is kept only for the no-day layout, where this column IS the page.
+                    `lg:` was wrong here for a different reason and must not come back — it fired at a
+                    1024px window whose content was ~636px once the sidebar opened, leaving each tile
+                    ~127px, and "SEP 2026" broke in two while "10.2 of 10" wrapped.
+                    Suspense renders no element of its own, so the four tiles stay direct items of this grid
+                    whether they are still loading or filled. */}
+                <div className="@container">
+                  {/* Two tiles to a row at every phone width (his 2026-09-30 rule above). On a small
+                      Android phone on Large text (~280px) each tile is ~128px, so RepTile stacks its
+                      period under its label rather than cutting either. */}
+                  <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4 group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
+                    <Suspense fallback={<RepTileLoading label="Achievement" />}>
+                      <RepAchievementCard kpiMonth={kpiMonth} sales={cards.sales} />
+                    </Suspense>
+                    <Suspense
+                      fallback={
+                        <>
+                          <RepTileLoading label="Coverage" />
+                          <RepTileLoading label="Call rate" />
+                          <RepTileLoading label="Frequency" />
+                        </>
+                      }
+                    >
+                      <RepFieldTiles fieldKpis={cards.fieldKpis} />
+                    </Suspense>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
 
             <Suspense fallback={<RepPanelLoading title="Achievement by month" />}>
               <RepAchievementByMonth kpiMonth={kpiMonth} sales={cards.sales} />
@@ -1510,14 +1674,13 @@ async function RepAchievementCard({ sales, kpiMonth }: { sales: Promise<PortalHo
       hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
       label="Achievement"
       meta={achMonth}
-      rail={achPct !== null ? repTone(achPct).rail : undefined}
     >
       {achPct !== null ? (
         <RepPercent
           note={
             achDelta !== null ? (
               <span
-                className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
+                className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-300" : "text-rose-300"}`}
               >
                 {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
               </span>
@@ -1526,7 +1689,7 @@ async function RepAchievementCard({ sales, kpiMonth }: { sales: Promise<PortalHo
           pct={achPct}
         />
       ) : (
-        <p className="text-phx-md font-semibold text-slate-400">No closing published yet</p>
+        <p className="text-phx-md font-semibold text-white/40">No closing published yet</p>
       )}
     </RepTile>
   );
@@ -1545,12 +1708,11 @@ async function RepFieldTiles({ fieldKpis }: { fieldKpis: Promise<PortalHomeSnaps
         }
         label="Coverage"
         meta={shortPeriod(kpis?.monthLabel)}
-        rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
       >
         {kpis?.hasMeasurablePlan ? (
           <RepPercent pct={kpis.coveragePct} />
         ) : (
-          <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+          <p className="text-phx-md font-semibold text-white/40">No plan to score</p>
         )}
       </RepTile>
 
@@ -1568,20 +1730,19 @@ async function RepFieldTiles({ fieldKpis }: { fieldKpis: Promise<PortalHomeSnaps
         }
         label="Call rate"
         meta={shortPeriod(kpis?.monthLabel)}
-        rail="bg-sky-500"
       >
         {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
             check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
         {kpis?.noGpsFeed ? (
-          <p className="text-phx-md font-semibold text-slate-400">No GPS feed</p>
+          <p className="text-phx-md font-semibold text-white/40">No GPS feed</p>
         ) : kpis?.hasCallRate ? (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
             <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
             <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
           </div>
         ) : (
-          <p className="text-phx-md font-semibold text-slate-400">Nothing logged yet</p>
+          <p className="text-phx-md font-semibold text-white/40">Nothing logged yet</p>
         )}
       </RepTile>
 
@@ -1593,7 +1754,6 @@ async function RepFieldTiles({ fieldKpis }: { fieldKpis: Promise<PortalHomeSnaps
         }
         label="Frequency"
         meta={shortPeriod(kpis?.monthLabel)}
-        rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
       >
         {kpis?.hasMeasurablePlan ? (
           <>
@@ -1605,7 +1765,7 @@ async function RepFieldTiles({ fieldKpis }: { fieldKpis: Promise<PortalHomeSnaps
             />
           </>
         ) : (
-          <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+          <p className="text-phx-md font-semibold text-white/40">No plan to score</p>
         )}
       </RepTile>
     </>
@@ -1629,53 +1789,61 @@ async function RepAchievementByMonth({ sales, kpiMonth }: { sales: Promise<Porta
       {/* The % label rides ON its bar (absolute, above it) instead of sharing the column with
           it. When the label took ~19px of a 118px column, every bar at 84%+ of the scale was
           squeezed to the same ~99px: 85%, 95% and 100% looked identical, and a 100% month
-          stopped short of the dashed 100% line drawn on the same scale. */}
+          stopped short of the dashed 100% line drawn on the same scale.
+          The "100%" mark sits in a gutter of its own on the LEFT (owner, 2026-11-20 redesign):
+          drawn at the right edge it landed on the newest bar's own label — a 98% October read
+          "98%100%". The bars are slim columns now, not slabs, and the newest month is named in navy. */}
       <div className="px-3 pb-3 pt-6">
-        <div className="relative flex h-[98px] items-end gap-2">
-          {/* The 100% line, positioned on the same scale as the bars. */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
-            style={{ bottom: `${(100 / trendMax) * 100}%` }}
-          />
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute right-0 text-phx-xs font-bold tabular-nums text-slate-400"
-            style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
-          >
-            100%
-          </span>
+        <div className="flex gap-2">
+          <div aria-hidden="true" className="relative w-8 shrink-0">
+            <span
+              className="absolute right-0 translate-y-1/2 text-phx-xs font-bold tabular-nums text-slate-400"
+              style={{ bottom: `${(100 / trendMax) * 100}%` }}
+            >
+              100%
+            </span>
+          </div>
+          <div className="relative flex h-[96px] min-w-0 flex-1 items-end gap-3">
+            {/* The 100% line, positioned on the same scale as the bars. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
+              style={{ bottom: `${(100 / trendMax) * 100}%` }}
+            />
+            {closed.map((t) => {
+              const pct = Math.max(0, Math.round(t.achievementPercent));
+              const isLatest =
+                latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
+              return (
+                <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
+                  <div
+                    className={`relative mx-auto w-full max-w-[36px] ${repTone(pct).fill}`}
+                    style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
+                  >
+                    <p
+                      className={`absolute left-1/2 bottom-full mb-1 -translate-x-1/2 whitespace-nowrap text-phx-sm font-bold tabular-nums ${isLatest ? "text-[#08111f]" : "text-slate-500"}`}
+                    >
+                      {pct}%
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="ml-10 mt-2 flex gap-3 border-t border-slate-200 pt-2">
           {closed.map((t) => {
-            const pct = Math.max(0, Math.round(t.achievementPercent));
             const isLatest =
               latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
             return (
-              <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
-                {/* Capped width: with only two scorable months, full-width bars read as
-                    slabs rather than as a chart. */}
-                <div
-                  className={`relative mx-auto w-full max-w-[84px] ${repTone(pct).fill} ${isLatest ? "outline outline-1 outline-slate-900" : ""}`}
-                  style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
-                >
-                  <p
-                    className={`absolute inset-x-0 bottom-full mb-1 text-center text-phx-sm font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
-                  >
-                    {pct}%
-                  </p>
-                </div>
+              <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
+                <p className={`text-phx-sm tracking-[0.06em] ${isLatest ? "font-black text-[#08111f]" : "font-bold text-slate-500"}`}>
+                  {monthShort(t.month)}
+                </p>
+                <p className="break-words text-phx-xs tabular-nums text-slate-400">{egpCompact(t.salesValue)}</p>
               </div>
             );
           })}
-        </div>
-        <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
-          {closed.map((t) => (
-            <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
-              <p className="text-phx-sm font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
-              <p className="text-phx-xs uppercase tracking-[0.04em] text-slate-400">
-                {egpCompact(t.salesValue)}
-              </p>
-            </div>
-          ))}
         </div>
       </div>
     </RepPanel>
@@ -1706,7 +1874,7 @@ async function RepNeedsYou({
       right={
         pendingCountsAvailable ? (
           <span
-            className={`border px-1.5 py-px text-phx-sm font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
+            className={`border px-1.5 py-px text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums ${openCount > 0 ? "border-orange-500/50 text-orange-700" : "border-emerald-600/40 text-emerald-700"}`}
           >
             {openCount} open
           </span>
@@ -1835,10 +2003,6 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
   const ach = mrSalesAchievement;
   const pct = ach ? Math.max(0, Math.min(100, Math.round(ach.achievementPercent))) : null;
-  const achColor =
-    pct === null ? "text-slate-900" : pct >= 100 ? "text-emerald-600" : pct >= 90 ? "text-amber-600" : "text-orange-500";
-  const barColor =
-    pct === null ? "bg-orange-500" : pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : "bg-orange-500";
 
   // Built for the retired Talent Acquisition seat, HR/office staff who had no approval
   // authority (Approvals Hub was hidden from her sidebar entirely, see navigation.ts's
@@ -1850,45 +2014,48 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   const isPortalHrOfficeStaff = new Set<string>([]).has(role);
 
   return (
-    <div className="mx-auto w-full space-y-3 sm:space-y-5" dir="auto">
+    <div className="mx-auto w-full space-y-2" dir="auto">
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar role={role} context={shell.employee.department || ""} />
 
-      <GlanceStrip
-        items={[
-          ...(ach && pct !== null
-            ? [
-                {
-                  icon: TrendingUp,
-                  value: `${pct}%`,
-                  label: "achievement",
-                  href: "/employee-portals/source-of-sales",
-                  urgent: pct < 70,
-                },
-              ]
-            : []),
-          ...(isPortalHrOfficeStaff
-            ? []
-            : [
-                {
-                  icon: CalendarX2,
-                  value: pendingAvailable ? String(totalPending) : "—",
-                  label: pendingAvailable && totalPending === 1 ? "pending request" : "pending requests",
-                  href: "/employee-portals/approvals-hub",
-                  urgent: pendingAvailable && totalPending > 0,
-                },
-              ]),
-          {
-            icon: CalendarDays,
-            value: leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "—",
-            label: "annual leave left",
-            href: "/employee-portals/vacation-request",
-          },
-          // NO PAYSLIP TILE: payslip data (amount OR month) must never render on any
-          // overview/landing surface for any role — owner rule. It lives only on
-          // /employee-portals/payslips.
-        ]}
-      />
+      {/* 🔒 THE HEADLINE BOARD (2026-11-20 redesign) — night navy, this landing's one board. It took
+          the place of two things that said the same numbers twice: the three-cell glance strip and
+          a separate "This Month | Achievement" block with a 48px figure under a slate bar. Each tile
+          opens the page that holds its number.
+          NO PAYSLIP TILE: payslip data (amount OR month) must never render on any overview/landing
+          surface for any role — owner rule. It lives only on /employee-portals/payslips. */}
+      <LandingNavyBoard label="At a glance">
+        <div className="@container">
+          <div className="flex flex-wrap gap-2">
+            {ach && pct !== null ? (
+              <BoardFigureTile
+                hint={`${egp(ach.salesValue)} of ${egp(ach.targetValue)}`}
+                href="/employee-portals/source-of-sales"
+                label="Achievement"
+              >
+                <RepPercent pct={pct} />
+              </BoardFigureTile>
+            ) : null}
+            {isPortalHrOfficeStaff ? null : (
+              <BoardFigureTile
+                hint={pendingAvailable ? (totalPending === 1 ? "Pending request" : "Pending requests") : "Could not be read"}
+                href="/employee-portals/approvals-hub"
+                label="Pending"
+              >
+                <LandingFigure onNavy tone={pendingAvailable && totalPending > 0 ? "text-orange-300" : undefined}>
+                  {pendingAvailable ? String(totalPending) : "—"}
+                </LandingFigure>
+              </BoardFigureTile>
+            )}
+            <BoardFigureTile hint="Annual leave left" href="/employee-portals/vacation-request" label="Leave">
+              <LandingFigure onNavy unit={leaveDaysRemaining != null ? "days" : undefined}>
+                {leaveDaysRemaining != null ? String(leaveDaysRemaining) : "—"}
+              </LandingFigure>
+            </BoardFigureTile>
+          </div>
+        </div>
+      </LandingNavyBoard>
+
       <QuickActions
         actions={[
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
@@ -1897,43 +2064,24 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           { href: "/employee-portals/report-it", icon: Activity, label: "Report It" },
         ]}
       />
+
+      {/* ONE place for what is pending. This landing used to draw the pending panels TWICE — once
+          under the quick actions and again under the workspace — so every waiting request was listed
+          two times on the same screen. Now: the panels when something waits, the all-clear line
+          when nothing does, and a plain "could not load" when the count itself failed. */}
       {!isPortalHrOfficeStaff && !pendingAvailable ? (
         <PendingCountsUnavailable />
       ) : !isPortalHrOfficeStaff && totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
-      ) : null}
-
-      {ach && pct !== null && (
-        <div className="overflow-hidden border border-slate-200">
-          <div className="bg-slate-900 px-5 py-3">
-            <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">
-              This Month | Achievement
-            </h2>
-          </div>
-          <div className="bg-white px-4 py-4 sm:px-6 sm:py-6">
-            <div className="flex items-end gap-3">
-              <p className={`text-4xl font-black leading-none tabular-nums sm:text-5xl ${achColor}`}>{pct}%</p>
-              <p className="mb-1 text-sm text-slate-500">of target</p>
-            </div>
-            <div className="mt-3 h-2 w-full overflow-hidden bg-slate-100">
-              <div
-                className={`h-full transition-[width] duration-700 ${barColor}`}
-                style={{ width: `${Math.max(4, pct)}%` }}
-              />
-            </div>
-            <div className="mt-3 flex items-center justify-between text-sm">
-              <span className="font-semibold text-slate-800">{egp(ach.salesValue)} sold</span>
-              <span className="text-slate-500">target {egp(ach.targetValue)}</span>
-            </div>
-          </div>
+      ) : (
+        <div className={`flex items-center gap-3 border border-slate-200 bg-white px-3 py-3 sm:px-4 ${adminSoftDepthClassName}`} role="status">
+          <span aria-hidden="true" className="w-1 self-stretch bg-emerald-500" />
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          <span className="min-w-0 break-words text-phx-md font-semibold text-[#08111f]">All clear — nothing needs your attention right now.</span>
         </div>
       )}
 
-      <div className="overflow-hidden border border-slate-200">
-        <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">My Workspace</h2>
-          <div className="h-1.5 w-12 bg-orange-500" />
-        </div>
+      <LandingPanel title="My Workspace">
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
           {/* The retired Talent Acquisition seat held no `coaching` grant, so this tile landed her on the
               "not authorized to view coaching reports" dead end. Guarded like its two
@@ -1949,18 +2097,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           )}
           <PremiumNavTile href="/employee-portals/payslips" icon={Wallet} label="My Payslips" description="View and download salary slips" />
         </div>
-      </div>
-
-      {!isPortalHrOfficeStaff && !pendingAvailable ? (
-        <PendingCountsUnavailable />
-      ) : !isPortalHrOfficeStaff && totalPending > 0 ? (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
-      ) : (
-        <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span className="text-sm font-medium text-emerald-800">All clear — nothing needs your attention right now.</span>
-        </div>
-      )}
+      </LandingPanel>
     </div>
   );
 }

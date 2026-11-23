@@ -35,6 +35,7 @@ import {
   type PerformanceReviewGrowth,
 } from "@/lib/sales/closing-performance-review-regions";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 // The screen half of the Performance Review. Its sections are the workbook's tabs, in the same
 // order, from the same object — the owner's rule is that an export matches the screen, and the
@@ -136,7 +137,7 @@ function RegionDot({ regionCode }: { regionCode: string }) {
   return (
     <span
       aria-hidden
-      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+      className="inline-block h-2.5 w-2.5 shrink-0"
       style={{ backgroundColor: "#" + style.chip.slice(2) }}
     />
   );
@@ -610,7 +611,7 @@ export function ClosingPerformanceReviewWorkspace({
 
   if (!review) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{error ?? "No closing has been uploaded yet, so there is nothing to review."}</p>
@@ -638,7 +639,7 @@ export function ClosingPerformanceReviewWorkspace({
   return (
     <div className={isPortal ? "space-y-7" : "min-h-[calc(100vh-7rem)] space-y-7"}>
       {isPortal ? (
-        <div className="flex flex-col gap-3 border border-phx-line bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
+        <div className={`flex flex-col gap-3 border border-slate-200 bg-white p-4 sm:p-5 ${adminSoftDepthClassName}`}>
           <div className="flex flex-wrap items-center gap-2">{chips}</div>
           {scopeNote ? (
             <p className="text-xs font-semibold text-slate-500">{scopeNote}</p>
@@ -676,7 +677,7 @@ export function ClosingPerformanceReviewWorkspace({
       {/* The filter bar narrows every section at once, and it does so on the SERVER: the ranks,
           the region subtotals and the national total are all re-derived from what survives, so a
           rank of "3rd" always counts the rows the reader can actually see. */}
-      <div className="flex flex-col gap-3 rounded-[28px] border border-phx-line bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
+      <div className={`flex flex-col gap-3 border border-slate-200 bg-white p-4 sm:p-5 ${adminSoftDepthClassName}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
           <span className="text-xs font-semibold text-slate-500">

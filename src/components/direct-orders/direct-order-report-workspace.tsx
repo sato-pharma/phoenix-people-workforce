@@ -20,6 +20,7 @@ import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 // The shell this report was opened in, so a row's link stays inside it.
 //
@@ -180,7 +181,7 @@ function FactLines({ facts }: { facts: Fact[] }) {
 
 function KpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
+    <div className={`border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
       <div className="text-phx-xs font-black uppercase tracking-wider text-slate-400">{label}</div>
       <div className={`text-xl font-black ${tone ?? "text-slate-900"}`}>{value}</div>
     </div>
@@ -309,18 +310,18 @@ export function DirectOrderReportWorkspace({
           type="button"
           onClick={exportXlsx}
           disabled={exporting || filtered.length === 0}
-          className="rounded-md bg-orange-600 px-4 py-2 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50"
+          className={landingActionClassName("solid", "px-4 disabled:cursor-not-allowed")}
         >
           {exporting ? "Exporting…" : "Export XLSX"}
         </button>
       </div>
 
       {unbooked.count > 0 ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-4 py-3">
           <div className="text-phx-xs font-black uppercase tracking-wider text-amber-700">
             Approved, not booked into a sales month
           </div>
-          <div className="mt-0.5 text-sm font-semibold text-amber-900">
+          <div className="mt-0.5 text-sm font-semibold text-slate-800">
             {unbooked.count.toLocaleString("en-US")}{" "}
             {unbooked.count === 1 ? "direct order" : "direct orders"} worth {money(unbooked.value)} EGP
             {" "}are approved but are not in Source of Sales yet. Finance sets the sales month on each
@@ -345,8 +346,8 @@ export function DirectOrderReportWorkspace({
         />
         {/* Finance's own slice, and the reason this control exists: booking approved orders into a
             sales month is one person's entire job here, and until now it was the one question this
-            report could not be asked. Same chip geometry as the status chips beside it — a
-            square-cornered one-off next to nine rounded ones would read as a rendering fault — but
+            report could not be asked. Same chip geometry as the status chips beside it (all square,
+            the square-edge golden rule) — a one-off shape next to nine others would read as a rendering fault — but
             amber rather than slate when active, because it narrows on a DIFFERENT axis than status
             and composes with them rather than replacing them. Amber matches the unbooked banner
             already sitting above these chips.
@@ -357,7 +358,7 @@ export function DirectOrderReportWorkspace({
           type="button"
           onClick={() => setUnbookedOnly((prev) => !prev)}
           aria-pressed={unbookedOnly}
-          className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${
+          className={`min-h-10 px-3 py-1 text-xs font-bold ring-1 ring-inset sm:min-h-8 ${
             unbookedOnly ? "bg-amber-500 text-white ring-amber-500" : "bg-white text-amber-700 ring-amber-300"
           }`}
         >
@@ -369,8 +370,8 @@ export function DirectOrderReportWorkspace({
             key={option.key}
             type="button"
             onClick={() => toggleStatus(option.key)}
-            className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${
-              statusFilter.has(option.key) ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-300"
+            className={`min-h-10 px-3 py-1 text-xs font-bold ring-1 ring-inset sm:min-h-8 ${
+              statusFilter.has(option.key) ? "bg-[#08111f] text-white ring-[#08111f]" : "bg-white text-slate-600 ring-slate-300"
             }`}
           >
             {option.label}
@@ -378,7 +379,11 @@ export function DirectOrderReportWorkspace({
         ))}
       </div>
 
-      {error ? <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+      {error ? (
+        <div className="border border-l-4 border-slate-200 border-l-rose-500 bg-white px-3 py-2 text-sm text-rose-700" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       <PortalResponsiveDataList
         empty={<p className="border border-slate-200 px-3 py-8 text-center text-slate-400">No direct orders match your filters.</p>}
@@ -388,7 +393,7 @@ export function DirectOrderReportWorkspace({
           <PortalRecordCard
             actions={
               <Link
-                className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className="font-bold text-[#08111f] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#08111f]"
                 href={`${detailBasePath}/${row.id}`}
               >
                 {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}
@@ -442,7 +447,7 @@ export function DirectOrderReportWorkspace({
                       {col.key === "status" ? (
                         <p>
                           <Link
-                            className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                            className="font-bold text-[#08111f] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#08111f]"
                             href={`${detailBasePath}/${row.id}`}
                           >
                             {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}

@@ -79,12 +79,13 @@ export const statusTone: Record<CandidateStatus, RecruitmentPillTone> = {
 
 /** The pill skin per tone, at 11px — the kit's own pill is 10px, below the owner's floor. */
 export const chipToneClassName: Record<RecruitmentPillTone, string> = {
-  amber: "border-amber-200 bg-amber-50 text-amber-900",
-  emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  orange: "border-orange-200 bg-orange-50 text-orange-900",
-  rose: "border-rose-200 bg-rose-50 text-rose-900",
-  sky: "border-sky-200 bg-sky-50 text-sky-900",
-  slate: "border-slate-200 bg-slate-50 text-slate-700",
+  // The landing's status language: white ground, a 2px rail in the tone, the words in the tone — never a fill.
+  amber: "border-slate-200 border-l-2 border-l-amber-500 bg-white text-amber-800",
+  emerald: "border-slate-200 border-l-2 border-l-emerald-600 bg-white text-emerald-800",
+  orange: "border-slate-200 border-l-2 border-l-orange-500 bg-white text-orange-700",
+  rose: "border-slate-200 border-l-2 border-l-rose-500 bg-white text-rose-800",
+  sky: "border-slate-200 border-l-2 border-l-sky-500 bg-white text-sky-800",
+  slate: "border-slate-200 border-l-2 border-l-slate-400 bg-white text-slate-700",
 };
 
 // ---------------------------------------------------------------------------------------------

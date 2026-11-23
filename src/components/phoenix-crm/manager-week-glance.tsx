@@ -29,6 +29,7 @@ import {
 } from "@/lib/phoenix-crm/manager-week-glance";
 import type { ManagerPlanBoardView } from "@/lib/phoenix-crm/view-types";
 import { CrmTable } from "@/components/phoenix-crm/ui";
+import { LANDING_FOCUS, LandingTick, landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 /**
  * A manager's own week at a glance, above the plan board's steps (premium pass, owner, 2026-11-09). Every figure comes
@@ -40,10 +41,10 @@ import { CrmTable } from "@/components/phoenix-crm/ui";
  */
 
 const TILE = "grid min-w-0 content-start gap-1 border border-slate-200 bg-white px-3 py-3";
-const TILE_LABEL = "text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500";
-const TILE_VALUE = "text-xl font-black tabular-nums text-slate-900";
-const TILE_NOTE = "break-words text-xs font-semibold leading-5 text-slate-600";
-const SECTION_TITLE = "text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500";
+const TILE_LABEL = "break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
+const TILE_VALUE = "break-words text-[22px] font-bold leading-tight tracking-[-0.02em] tabular-nums text-[#08111f]";
+const TILE_NOTE = "break-words text-xs leading-5 text-slate-500";
+const SECTION_TITLE = "break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500";
 
 function Tile({ label, note, value }: { label: string; note: string | null; value: string }) {
   return (
@@ -83,11 +84,11 @@ function KindBar({ glance, view }: { glance: ManagerGlance; view: ManagerPlanBoa
 function CellBody({ cell, view }: { cell: ManagerGlanceCell; view: ManagerPlanBoardView }) {
   return (
     <>
-      <span className="block text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+      <span className="block text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
         {cell.half}
         {cell.kind ? ` · ${managerGlanceKindLabel(view, cell.kind)}` : ""}
       </span>
-      <span className={`block break-words text-xs font-semibold leading-5 ${cell.state === "planned" ? "text-slate-900" : cell.state === "open" ? "text-slate-500" : "text-slate-400"}`}>
+      <span className={`block break-words text-xs font-semibold leading-5 ${cell.state === "planned" ? "text-[#08111f]" : cell.state === "open" ? "text-slate-500" : "text-slate-400"}`}>
         <bdi>{cell.text}</bdi>
       </span>
     </>
@@ -96,8 +97,8 @@ function CellBody({ cell, view }: { cell: ManagerGlanceCell; view: ManagerPlanBo
 
 function cellFrame(cell: ManagerGlanceCell): string {
   if (cell.state === "planned" && cell.kind) return `border border-slate-200 border-l-4 ${MANAGER_GLANCE_KIND_EDGE[cell.kind]} bg-white`;
-  if (cell.state === "open") return "border border-dashed border-slate-300 bg-slate-50";
-  return "border border-slate-100 bg-slate-50";
+  if (cell.state === "open") return "border border-dashed border-slate-300 bg-white";
+  return "border border-slate-100 bg-white";
 }
 
 /** One half of the grid: a button that opens it while it can still be planned, plain text once it has passed. */
@@ -119,7 +120,7 @@ function Cell({
   const frame = `min-w-0 px-2.5 py-2 text-left ${cellFrame(cell)}`;
   if (canOpen && !passed) {
     return (
-      <button className={`${frame} w-full hover:border-orange-300`} onClick={() => onOpenHalf(date, cell.half)} type="button">
+      <button className={`${frame} w-full transition-colors hover:border-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`} onClick={() => onOpenHalf(date, cell.half)} type="button">
         <CellBody cell={cell} view={view} />
       </button>
     );
@@ -134,7 +135,7 @@ function Cell({
 function DayLabel({ row }: { row: ManagerGlanceDayRow }) {
   return (
     <>
-      <span className="block text-sm font-black text-slate-900">{row.shortDay}</span>
+      <span className="block text-sm font-black text-[#08111f]">{row.shortDay}</span>
       <span className="block break-words text-phx-xs font-semibold text-slate-500">
         {managerGlanceDayState(row)}
       </span>
@@ -153,7 +154,7 @@ function WeekGrid({ canOpen, glance, onOpenHalf, view }: { canOpen: boolean; gla
       <div className="hidden min-w-0 lg:block">
         <CrmTable className="border-separate border-spacing-y-1.5 text-base" columns={WEEK_GRID_COLUMNS} desktopOnly={false}>
         <thead>
-          <tr className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+          <tr className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
             <th className="pb-1" scope="col">Day</th>
             <th className="px-1 pb-1" scope="col">Morning</th>
             <th className="px-1 pb-1" scope="col">Afternoon</th>
@@ -180,7 +181,7 @@ function WeekGrid({ canOpen, glance, onOpenHalf, view }: { canOpen: boolean; gla
                 })
               ) : (
                 <td className="px-1" colSpan={2}>
-                  <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-500">
+                  <div className="min-w-0 border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold text-slate-500">
                     <bdi>{managerGlanceNoFieldWords(row)}</bdi>
                   </div>
                 </td>
@@ -221,7 +222,7 @@ function Districts({ glance, words }: { glance: ManagerGlance; words: ManagerGla
         <ul className="grid min-w-0 gap-1.5">
           {glance.districts.map((district) => (
             <li className="grid min-w-0 gap-0.5 border-l-4 border-l-indigo-700 bg-white py-1 pl-2.5" key={district.key}>
-              <span className="break-words text-sm font-black text-slate-900">
+              <span className="break-words text-sm font-black text-[#08111f]">
                 <bdi>{district.name}</bdi>
               </span>
               <span className="break-words text-xs font-semibold tabular-nums text-slate-600">{managerGlanceDistrictLine(district)}</span>
@@ -251,13 +252,13 @@ function People({ glance }: { glance: ManagerGlance }) {
       <p className={SECTION_TITLE}>Who the week goes with</p>
       {reps ? (
         <p className="break-words text-xs font-semibold leading-5 text-slate-700">
-          <span className="font-black text-slate-900">Reps · </span>
+          <span className="font-black text-[#08111f]">Reps · </span>
           <bdi>{reps}</bdi>
         </p>
       ) : null}
       {managers ? (
         <p className="break-words text-xs font-semibold leading-5 text-slate-700">
-          <span className="font-black text-slate-900">Managers · </span>
+          <span className="font-black text-[#08111f]">Managers · </span>
           <bdi>{managers}</bdi>
         </p>
       ) : null}
@@ -275,7 +276,7 @@ function Customers({ glance }: { glance: ManagerGlance }) {
   return (
     <div className="grid min-w-0 content-start gap-2">
       <p className={SECTION_TITLE}>Whom the week visits</p>
-      <p className="break-words text-sm font-black tabular-nums text-slate-900">{managerGlanceCustomerLine(customers)}</p>
+      <p className="break-words text-sm font-black tabular-nums text-[#08111f]">{managerGlanceCustomerLine(customers)}</p>
       {grades ? (
         <p className="break-words text-xs font-semibold tabular-nums text-slate-700">
           {grades}
@@ -312,7 +313,7 @@ function OpenHalves({ canOpen, glance, onOpenHalf }: { canOpen: boolean; glance:
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {glance.openHalves.map((entry) => (
           <button
-            className="inline-flex min-h-10 items-center border border-dashed border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:border-orange-300 hover:bg-orange-50 md:min-h-9"
+            className={landingActionClassName("outline", "border-dashed sm:min-h-10 md:min-h-9")}
             key={`${entry.date}|${entry.half}`}
             onClick={() => onOpenHalf(entry.date, entry.half)}
             type="button"
@@ -354,16 +355,17 @@ export function ManagerWeekGlancePanel({
   return (
     <section aria-labelledby={headingId} className="min-w-0 border-t border-slate-100">
       <details className="group min-w-0" open>
-        <summary className="flex min-w-0 cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-slate-50 sm:px-5 [&::-webkit-details-marker]:hidden">
+        <summary className={`flex min-w-0 cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 transition-colors hover:bg-slate-50 motion-reduce:transition-none sm:px-5 [&::-webkit-details-marker]:hidden ${LANDING_FOCUS}`}>
           <span className="grid min-w-0 gap-0.5">
-            <span className="text-sm font-black text-slate-900" id={headingId}>
-              {view.mode === "own" ? title : <bdi>{title}</bdi>}
+            <span className="flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em] text-[#08111f]" id={headingId}>
+              <LandingTick />
+              <span className="min-w-0">{view.mode === "own" ? title : <bdi>{title}</bdi>}</span>
             </span>
             <span className="break-words text-xs font-semibold tabular-nums text-slate-500">
               {managerGlancePlannedLine(glance)} · {managerGlanceOpenLine(glance)}
             </span>
           </span>
-          <span className="text-xs font-black text-orange-700">
+          <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
             <span className="group-open:hidden">Show</span>
             <span className="hidden group-open:inline">Hide</span>
           </span>
@@ -375,7 +377,7 @@ export function ManagerWeekGlancePanel({
             </p>
             {exportHref ? (
               <a
-                className="inline-flex min-h-10 items-center border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:border-orange-300 hover:bg-orange-50 md:min-h-9"
+                className={landingActionClassName("outline", "sm:min-h-10 md:min-h-9")}
                 download
                 href={exportHref}
               >

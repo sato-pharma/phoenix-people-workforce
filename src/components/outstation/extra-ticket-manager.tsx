@@ -2,7 +2,8 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { LANDING_FOCUS } from "@/components/employee-portal/landing-kit";
+import { phxButtonAccentClassName, phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
 type TicketRow = { file: File | null; amount: string };
@@ -102,13 +103,16 @@ export function ExtraTicketRowEditor({
   }
 
   return (
-    <div className="border border-orange-100 bg-orange-50/40 p-3">
+    <div className="border border-slate-200 bg-slate-50 p-3">
       <div className="space-y-2">
         {rows.map((row, index) => (
           <div key={index} className="flex flex-wrap items-center gap-2">
             <input
               accept="application/pdf,image/jpeg,image/png"
-              className="min-w-0 flex-1 text-xs text-slate-700 file:mr-3 file:border-0 file:bg-orange-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-700"
+              className={cn(
+                "min-w-0 flex-1 text-xs text-slate-700 file:mr-3 file:border-0 file:bg-sky-600 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white",
+                LANDING_FOCUS,
+              )}
               onChange={(event) => updateRow(index, { file: event.target.files?.[0] ?? null })}
               type="file"
             />
@@ -122,27 +126,30 @@ export function ExtraTicketRowEditor({
             />
             <button
               aria-label="Remove ticket"
-              className="border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40"
+              className={cn(
+                "border border-slate-300 bg-white p-2 text-slate-500 transition-colors hover:border-rose-300 hover:text-rose-700 disabled:opacity-40 motion-reduce:transition-none",
+                LANDING_FOCUS,
+              )}
               disabled={rows.length <= 1}
               onClick={() => removeRow(index)}
               type="button"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </div>
         ))}
       </div>
 
       <button
-        className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-orange-700 hover:underline"
+        className={cn("mt-2 inline-flex items-center gap-1 text-xs font-bold text-[#08111f] hover:underline", LANDING_FOCUS)}
         onClick={addRow}
         type="button"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus aria-hidden="true" className="h-3.5 w-3.5" />
         Add another ticket
       </button>
 
-      <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-slate-600">
+      <label className="mt-3 grid gap-1 text-xs font-bold text-slate-600 sm:flex sm:items-center sm:gap-2">
         Destination:
         <input
           className={phxFieldClassName}
@@ -152,7 +159,7 @@ export function ExtraTicketRowEditor({
         />
       </label>
 
-      <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-600">
+      <label className="mt-2 grid gap-1 text-xs font-bold text-slate-600 sm:flex sm:items-center sm:gap-2">
         Note:
         <input
           className={phxFieldClassName}
@@ -162,9 +169,9 @@ export function ExtraTicketRowEditor({
         />
       </label>
 
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3">
         <button
-          className="inline-flex items-center gap-1 bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
+          className={cn(phxButtonAccentClassName, LANDING_FOCUS, "motion-reduce:transition-none")}
           disabled={busy}
           onClick={() => void submit()}
           type="button"
@@ -172,7 +179,13 @@ export function ExtraTicketRowEditor({
           {busy ? "Adding…" : "Add tickets to this request"}
         </button>
         {message ? (
-          <span className={`text-xs font-semibold ${message.ok ? "text-emerald-700" : "text-rose-700"}`}>
+          <span
+            className={cn(
+              "border-l-2 pl-2 text-xs font-bold",
+              message.ok ? "border-emerald-500 text-emerald-700" : "border-rose-500 text-rose-700",
+            )}
+            role={message.ok ? "status" : "alert"}
+          >
             {message.text}
           </span>
         ) : null}

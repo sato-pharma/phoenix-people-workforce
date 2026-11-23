@@ -199,7 +199,10 @@ export function VisitRecordingGate({
   return (
     <div className="grid min-w-0 gap-3">
       <div className="min-w-0">
-        <p className="text-base font-black text-slate-900">Record the visit</p>
+        <p className="flex min-w-0 items-center gap-2 text-phx-sm font-black uppercase tracking-[0.1em] text-[#08111f]">
+          <span aria-hidden="true" className="h-0.5 w-3 shrink-0 bg-[#F05A1A]" />
+          Record the visit
+        </p>
         <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-600">
           Press Start recording before going in, and keep the phone recording through the whole conversation. Press Stop and send
           when the visit ends. Then choose the customer and log the visit as usual.
@@ -209,12 +212,12 @@ export function VisitRecordingGate({
       {notice ? <CrmNote tone="warn">{notice}</CrmNote> : null}
 
       {phase === "recording" ? (
-        <div className="grid min-w-0 gap-2 border border-rose-200 bg-rose-50 px-3.5 py-3">
-          <p className="flex min-w-0 items-center gap-2 text-sm font-black text-rose-800">
-            <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 animate-pulse bg-rose-600" />
+        <div className="grid min-w-0 gap-2 border border-l-[3px] border-slate-200 border-l-rose-500 bg-white px-3.5 py-3">
+          <p className="flex min-w-0 items-center gap-2 text-sm font-bold tabular-nums text-rose-700">
+            <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 animate-pulse bg-rose-600 motion-reduce:animate-none" />
             Recording · {formatSeconds(elapsed)}
           </p>
-          <p className="break-words text-xs font-medium leading-5 text-rose-900">
+          <p className="break-words text-xs font-medium leading-5 text-slate-600">
             Keep this screen open until the visit ends. It stops by itself at {formatSeconds(VISIT_RECORDING_MAX_SECONDS)}; {formatSeconds(left)} left.
           </p>
         </div>

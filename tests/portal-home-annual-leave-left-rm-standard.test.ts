@@ -55,10 +55,12 @@ export function runPortalHomeAnnualLeaveLeftRmStandardTests() {
     assert.ok(!body.includes("leaveEntitlementDays"), "StandardCommandCenter must not fall back to the raw entitlement field");
     assert.match(
       body,
-      /value: leaveDaysRemaining != null \? `\$\{leaveDaysRemaining\} days` : "—"/,
+      // The tile is a figure on the night-navy board since 2026-11-20, with "days" as its unit.
+      /\{leaveDaysRemaining != null \? String\(leaveDaysRemaining\) : "—"\}/,
       "the StandardCommandCenter tile's value must come from leaveDaysRemaining",
     );
-    assert.match(body, /label: "annual leave left"/, 'the StandardCommandCenter tile must be labelled "annual leave left"');
+    // On the board the tile's small label is "Leave" and the words under the figure name it in full.
+    assert.match(body, /hint="Annual leave left"/, 'the StandardCommandCenter tile must say "Annual leave left"');
 
     // 3. PmGpmCommandCenter is a DIFFERENT, intentional tile ("annual entitlement") and must be
     // left alone — this pins that the fix did not spread there by a global find/replace.

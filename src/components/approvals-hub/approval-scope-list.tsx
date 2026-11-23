@@ -1,4 +1,5 @@
-import { adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_INK, LandingEmpty, LandingPanel } from "@/components/employee-portal/landing-kit";
 import type { ApprovalScopeData } from "@/lib/approvals-hub/service";
 
 type Props = {
@@ -15,36 +16,36 @@ type Props = {
 export function ApprovalScopeList({ data, moduleLabel }: Props) {
   if (!data || data.totalPeople === 0) {
     return (
-      <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
-        No one currently routes their {moduleLabel} requests to you for approval.
-      </p>
+      <div className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+        <LandingEmpty>No one currently routes their {moduleLabel} requests to you for approval.</LandingEmpty>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <p className="text-xs leading-5 text-slate-500">
-        Your direct reports — the people whose {moduleLabel} requests you are responsible for approving, grouped by
-        role. Derived live from the organization structure.
-      </p>
-
+      {/* One kit panel per role, its people on a hairline grid. The sentence that sat above the
+          groups is gone (owner, 2026-11-20: no sentence under any header). */}
       {data.groups.map((group) => (
-        <section key={group.title} className="space-y-2">
-          <div className="flex items-baseline gap-2">
-            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{group.title}</h3>
-            <span className="text-phx-xs font-bold text-slate-400">{group.people.length}</span>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+        <LandingPanel
+          key={group.title}
+          title={
+            <>
+              {group.title} <span className="tabular-nums text-slate-500">{group.people.length}</span>
+            </>
+          }
+        >
+          <div className="grid gap-px bg-slate-200 sm:grid-cols-2">
             {group.people.map((person) => (
-              <div key={person.hrId} className={`min-w-0 ${adminSoftPanelClassName} px-4 py-2.5`}>
+              <div key={person.hrId} className="min-w-0 bg-white px-3 py-2.5 sm:px-4">
                 {/* min-w-0 above so a long name cannot stretch this card's grid track; break-words
                     so it wraps rather than ending in an ellipsis. These are RECORD names. */}
-                <p className="break-words text-sm font-bold text-slate-900">{person.name}</p>
+                <p className={`break-words text-sm font-bold ${LANDING_INK}`} dir="auto">{person.name}</p>
                 <p className="break-words text-xs text-slate-500">{person.jobTitle ?? "—"}</p>
               </div>
             ))}
           </div>
-        </section>
+        </LandingPanel>
       ))}
     </div>
   );

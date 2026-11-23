@@ -43,7 +43,7 @@ import { kpiBandOf, type KpiBand } from "@/lib/crm/kpis-filters";
 
 const EYEBROW = "text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-xs";
 const SMALL = "text-phx-sm leading-4 text-slate-500 sm:text-phx-xs";
-const LINK = "underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500";
+const LINK = "underline decoration-slate-300 underline-offset-2 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]";
 
 /** The four states of a doctor on the track, each one flat swatch. Short is the only warning colour. */
 const TRACK_SWATCH = {
@@ -181,7 +181,7 @@ export function KpiFrequencyTrack({
           <li className="flex items-start gap-2" key={segment.key}>
             <span aria-hidden className={`mt-1 h-2 w-2 shrink-0 ${segment.swatch}`} />
             <span className="min-w-0 flex-1 text-phx-md leading-4 text-slate-700 sm:text-phx-sm">{segment.label}</span>
-            <span className="shrink-0 text-phx-md font-black tabular-nums text-slate-900 sm:text-phx-sm">
+            <span className="shrink-0 text-phx-md font-black tabular-nums text-[#08111f] sm:text-phx-sm">
               <CountLink count={segment.count} href={segment.href} />
             </span>
           </li>
@@ -217,11 +217,11 @@ export function KpiShortDepthPanel({ buckets, shortHref }: { buckets: readonly K
           unit={["short doctor", "short doctors"]}
         />
       </div>
-      <dl className="grid grid-cols-2 divide-x divide-y divide-slate-100 border-t border-slate-100 sm:grid-cols-4 sm:divide-y-0">
+      <dl className="grid grid-cols-2 divide-x divide-y divide-slate-200 border-t border-slate-200 sm:grid-cols-4 sm:divide-y-0">
         {buckets.map((bucket) => (
           <div className="min-w-0 px-3 py-2.5" key={bucket.depth}>
             <dt className={SMALL}>{bucket.label}</dt>
-            <dd className="mt-0.5 text-lg font-black tabular-nums text-slate-900">
+            <dd className="mt-0.5 text-lg font-black tabular-nums text-[#08111f]">
               <CountLink count={bucket.rows.length} href={shortHref} />
             </dd>
             <dd className={SMALL}>{bucket.rows.length === 0 ? "Nobody" : `${plural(bucket.owed, "visit")} owed`}</dd>
@@ -239,7 +239,7 @@ function DoctorLine({ doctor }: { doctor: KpiCoverageDoctor }) {
   return (
     <span className="block min-w-0">
       {doctor.name ? (
-        <span className="block font-semibold leading-5 text-slate-900" dir="auto">
+        <span className="block font-semibold leading-5 text-[#08111f]" dir="auto">
           {doctor.name}
         </span>
       ) : (
@@ -274,7 +274,7 @@ export function KpiFrequencyFirstPanel({ phoenix, steps, total }: { phoenix: boo
             <col style={{ width: "48%" }} />
             <col style={{ width: "42%" }} />
           </colgroup>
-          <thead className="border-b border-slate-100">
+          <thead className="border-b border-slate-200 bg-white">
             <tr>
               <th className={TH} scope="col">
                 #
@@ -287,7 +287,7 @@ export function KpiFrequencyFirstPanel({ phoenix, steps, total }: { phoenix: boo
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {steps.map((step, index) => (
               <tr key={step.doctor.contactCrmId}>
                 <td className={NUM}>{index + 1}</td>
@@ -303,7 +303,7 @@ export function KpiFrequencyFirstPanel({ phoenix, steps, total }: { phoenix: boo
             ))}
           </tbody>
         </table>
-        <ol className="divide-y divide-slate-100 @min-[34rem]:md:hidden">
+        <ol className="divide-y divide-slate-200 @min-[34rem]:md:hidden">
           {steps.map((step, index) => (
             <li className="flex items-start gap-3 px-3 py-2.5 text-sm" key={step.doctor.contactCrmId}>
               <span className="w-5 shrink-0 font-black tabular-nums text-slate-400">{index + 1}</span>
@@ -393,7 +393,7 @@ export function KpiFrequencyGroupTable({
             <col style={{ width: "19%" }} />
             <col style={{ width: "19%" }} />
           </colgroup>
-          <thead className="border-b border-slate-100">
+          <thead className="border-b border-slate-200 bg-white">
             <tr>
               <th className={TH} scope="col">
                 {groupHeading}
@@ -412,7 +412,7 @@ export function KpiFrequencyGroupTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {rows.map((row) => (
               <tr key={row.label}>
                 <td className={TD}>
@@ -437,11 +437,11 @@ export function KpiFrequencyGroupTable({
             ))}
           </tbody>
         </table>
-        <ul className="divide-y divide-slate-100 @min-[34rem]:md:hidden">
+        <ul className="divide-y divide-slate-200 @min-[34rem]:md:hidden">
           {rows.map((row) => (
             <li className="px-3 py-2.5" key={row.label}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 text-sm font-semibold text-slate-900">
+                <span className="min-w-0 text-sm font-semibold text-[#08111f]">
                   <GroupName row={row} />
                 </span>
                 <span className={`shrink-0 text-sm font-black tabular-nums ${toneOf(groupBand(row)).text}`}>{pctText(row)}</span>

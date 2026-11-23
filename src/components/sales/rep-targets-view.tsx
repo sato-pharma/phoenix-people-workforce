@@ -61,7 +61,7 @@ type RepTargetsViewProps = {
 };
 
 const OUTLINE_ACTION_CLASS =
-  "inline-flex h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500 lg:h-8";
+  "inline-flex h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#08111f] lg:h-8";
 
 const CARD_FACT_CLASS = "flex flex-wrap items-baseline justify-between gap-x-2";
 
@@ -73,10 +73,10 @@ const STATUS_LABEL: Record<RepTargetsMonthStatus, string> = {
 };
 
 const STATUS_CHIP_CLASS: Record<RepTargetsMonthStatus, string> = {
-  published: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  in_progress: "border-orange-200 bg-orange-50 text-orange-700",
-  awaiting_closing: "border-amber-200 bg-amber-50 text-amber-700",
-  upcoming: "border-sky-200 bg-sky-50 text-sky-700",
+  published: "border-emerald-500 text-emerald-700",
+  in_progress: "border-[#08111f] text-[#08111f]",
+  awaiting_closing: "border-amber-500 text-amber-700",
+  upcoming: "border-sky-500 text-sky-700",
 };
 
 /** What a month tile says where a published month shows its achievement. */
@@ -113,7 +113,7 @@ function StatusChip({ status }: { status: RepTargetsMonthStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center whitespace-normal border px-1.5 py-0.5 text-left text-phx-2xs font-black uppercase leading-tight tracking-[0.12em]",
+        "inline-flex max-w-full items-center whitespace-normal border-l-2 pl-1.5 text-left text-phx-2xs font-black uppercase leading-tight tracking-[0.12em]",
         STATUS_CHIP_CLASS[status],
       )}
     >
@@ -159,9 +159,9 @@ function Notice({
   children: React.ReactNode;
 }) {
   const palette = {
-    orange: { box: "border-slate-200 border-l-orange-500 bg-white", icon: "text-orange-600", text: "text-slate-700", title: "text-slate-900" },
-    amber: { box: "border-amber-200 border-l-amber-500 bg-amber-50", icon: "text-amber-600", text: "text-amber-900", title: "text-amber-900" },
-    sky: { box: "border-sky-200 border-l-sky-500 bg-sky-50", icon: "text-sky-600", text: "text-sky-900", title: "text-sky-900" },
+    orange: { box: "border-slate-200 border-l-[#08111f] bg-white", icon: "text-[#08111f]", text: "text-slate-700", title: "text-slate-900" },
+    amber: { box: "border-slate-200 border-l-amber-500 bg-white", icon: "text-amber-600", text: "text-slate-700", title: "text-slate-900" },
+    sky: { box: "border-slate-200 border-l-sky-500 bg-white", icon: "text-sky-600", text: "text-slate-700", title: "text-slate-900" },
   }[tone];
   return (
     <div className={cn("flex items-start gap-3 border border-l-[3px] px-4 py-3", palette.box)}>
@@ -201,10 +201,10 @@ function MonthTile({
         onSelect(month.period);
       }}
       className={cn(
-        "flex min-w-0 flex-col border bg-white p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
+        "flex min-w-0 flex-col border bg-white p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#08111f]",
         selected
-          ? "border-orange-500 bg-orange-50/40 shadow-[inset_0_0_0_1px_#F97316]"
-          : "border-slate-200 hover:border-orange-300 hover:bg-orange-50/40",
+          ? "border-[#08111f] shadow-[inset_0_0_0_1px_#08111f]"
+          : "border-slate-200 hover:border-[#08111f] hover:bg-slate-50",
       )}
     >
       <span className="flex flex-wrap items-center justify-between gap-1.5">

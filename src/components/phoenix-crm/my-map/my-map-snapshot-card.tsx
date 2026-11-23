@@ -16,8 +16,8 @@
  *
  * 🔴 AM, PM AND PHARMACIES ARE THREE FIGURES, side by side and never added up (`myMapPerListText`).
  *
- * It wears the frame of the page it sits on: the managers' dark section header (`frame="manager"`, the
- * `MmSectionSkeleton` skin), or the rep's white panel (`frame="rep"`, the `RepPanel` skin). The body folds
+ * Since the landings' redesign (owner, 2026-11-20) both frames — the managers' (`frame="manager"`) and the rep's
+ * (`frame="rep"`) — are the landing kit's white panel, the shape `LandingPanelLoading` streams in under. The body folds
  * by its own width (`@container`), never the window's, because the rep's column is narrower than his screen.
  */
 
@@ -25,7 +25,7 @@ import { Map as MapIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LandingPanel, LandingRailLine, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { MyMapCardMap } from "@/components/phoenix-crm/my-map/my-map-card-map";
 import { snapshotFrame } from "@/lib/phoenix-crm/my-map-geometry";
@@ -36,38 +36,34 @@ const HEIGHT = 200;
 
 export type MyMapCardFrame = "manager" | "rep";
 
-function Shell({ children, frame }: { children: ReactNode; frame: MyMapCardFrame }) {
-  if (frame === "rep") {
-    return (
-      <section className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-        <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-          <MapIcon aria-hidden className="h-3.5 w-3.5 text-slate-500" />
-          <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">My map</h2>
-        </header>
-        {children}
-      </section>
-    );
-  }
-  return (
-    <div className="overflow-hidden border border-slate-200">
-      <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="flex items-center gap-2 text-phx-sm font-bold uppercase tracking-widest text-slate-300">
-          <MapIcon className="h-3.5 w-3.5 text-orange-400" />
-          My map
-        </h2>
-        <div className="h-1.5 w-12 bg-orange-500" />
-      </div>
-      {children}
-    </div>
-  );
+/** The landing kit's white panel, its title behind the orange tick. `frame` is kept for the callers; both draw this. */
+function Shell({ children }: { children: ReactNode; frame: MyMapCardFrame }) {
+  return <LandingPanel title="My map">{children}</LandingPanel>;
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="min-w-0 bg-white px-4 py-3">
-      <p className="break-words text-phx-xs font-medium uppercase tracking-wider text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-xl font-bold text-slate-900">{value}</p>
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-[22px] font-bold leading-tight tracking-[-0.02em] tabular-nums text-[#08111f]">{value}</p>
       {sub ? <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{sub}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * A one-line fact — label on the left, value on the right (owner, 2026-11-20, the rep landing's
+ * redesign): stacked as three full stat blocks, "None" three times over ran the card ~150px taller
+ * on a phone than the facts it carried.
+ */
+function Row({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="flex min-w-0 items-baseline justify-between gap-3 bg-white px-4 py-2.5">
+      <div className="min-w-0">
+        <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+        {sub ? <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-400">{sub}</p> : null}
+      </div>
+      <p className="max-w-[60%] break-words text-right text-phx-md font-bold tabular-nums text-[#08111f]">{value}</p>
     </div>
   );
 }
@@ -75,11 +71,11 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 function OpenLink() {
   return (
     <Link
-      className="inline-flex items-center gap-1.5 rounded-none bg-slate-900 px-3 py-2 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-slate-800"
+      className={landingActionClassName("solid")}
       href="/employee-portals/my-map"
       prefetch={false}
     >
-      <MapIcon aria-hidden className="h-3.5 w-3.5 text-orange-400" />
+      <MapIcon aria-hidden className="h-3.5 w-3.5" />
       Open My map
     </Link>
   );
@@ -157,7 +153,7 @@ export function MyMapSnapshotView({
   if (snapshot.unavailable) {
     return (
       <Shell frame={frame}>
-        <p className="bg-amber-50 px-5 py-5 text-sm font-semibold text-amber-900">The map could not be read just now. Refresh to try again.</p>
+        <LandingRailLine rail="bg-amber-500">The map could not be read just now. Refresh to try again.</LandingRailLine>
       </Shell>
     );
   }
@@ -205,9 +201,9 @@ export function MyMapSnapshotView({
               <Stat label="PM" sub={plural(counts.places.PM, "pin", "pins")} value={countText(counts.customers.PM)} />
               <Stat label="Pharmacies" sub={plural(counts.places.Pharmacy, "pin", "pins")} value={countText(counts.customers.Pharmacy)} />
             </div>
-            <Stat label="New this week" sub="Validated in the last 7 days" value={myMapPerListText(counts.newThisWeek)} />
-            <Stat label="Not visited this month" value={myMapPerListText(counts.notVisited)} />
-            {snapshot.planRead ? <Stat label="In today's plan" value={myMapPerListText(counts.plannedToday)} /> : null}
+            <Row label="New this week" sub="Validated in the last 7 days" value={myMapPerListText(counts.newThisWeek)} />
+            <Row label="Not visited this month" value={myMapPerListText(counts.notVisited)} />
+            {snapshot.planRead ? <Row label="In today's plan" value={myMapPerListText(counts.plannedToday)} /> : null}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-3">
               <p className="min-w-0 break-words text-phx-xs font-medium text-slate-500">
                 {someWithoutPin

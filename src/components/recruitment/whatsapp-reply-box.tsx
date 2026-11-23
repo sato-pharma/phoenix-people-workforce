@@ -142,7 +142,7 @@ export function WhatsAppReplyBox({ candidateId }: { candidateId: string }) {
           turns to the warning ink in the last hour. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink">
-          <MessageCircle aria-hidden className="h-3.5 w-3.5 text-phx-accent" />
+          <MessageCircle aria-hidden className="h-3.5 w-3.5 text-[#08111f]" />
           Reply on WhatsApp
         </span>
         {state.kind === "open" ? (
@@ -162,7 +162,7 @@ export function WhatsAppReplyBox({ candidateId }: { candidateId: string }) {
       <div className="p-3">
         {state.kind === "loading" ? (
           <p className="inline-flex items-center gap-1.5 text-phx-ink-soft" role="status">
-            <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin text-phx-accent" />
+            <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin text-[#08111f]" />
             Checking WhatsApp…
           </p>
         ) : null}

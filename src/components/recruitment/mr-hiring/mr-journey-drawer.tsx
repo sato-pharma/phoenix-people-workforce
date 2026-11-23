@@ -129,7 +129,7 @@ export function MrJourneyDrawer({
       >
         <header className="flex items-start justify-between gap-3 bg-slate-950 px-4 py-3 text-white sm:px-5">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-300">Hiring journey · Medical Representative</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-white/60">Hiring journey · Medical Representative</p>
             <h2 className="mt-1 break-words text-lg font-black" id="mr-journey-title">
               {row?.name ?? "Loading…"}
             </h2>
@@ -149,7 +149,7 @@ export function MrJourneyDrawer({
         <div className="flex min-h-0 flex-1">
           {wide ? <MrCvApplication candidateId={candidateId} layout="panes" /> : null}
           <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5">
-            {error ? <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">{error}</p> : null}
+            {error ? <p className="border-l-4 border-rose-500 bg-white px-3 py-2 text-sm font-bold text-rose-800">{error}</p> : null}
             {!row && !error ? <p className="text-sm text-slate-500">Loading the journey…</p> : null}
 
             {row ? (
@@ -159,7 +159,7 @@ export function MrJourneyDrawer({
                     <RecruitmentPill tone={mrStageTone(row.stage)}>{mrStageHeadline(row.stage)}</RecruitmentPill>
                   </div>
                   <p className="mt-2 break-words text-sm text-slate-700">{mrStageStateLine(row.stage)}</p>
-                  {notice ? <p className="mt-2 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{notice}</p> : null}
+                  {notice ? <p className="mt-2 border-l-4 border-amber-500 bg-white px-3 py-2 text-xs font-bold text-amber-900">{notice}</p> : null}
 
                   {mode === null ? (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -241,13 +241,13 @@ export function MrJourneyDrawer({
                       const result = item.result;
                       const recommendation = item.step === "recommendation" ? row.recommendation : null;
                       return (
-                        <li className={cn("flex gap-3 px-3 py-2.5", item.status === "current" && "bg-orange-50")} key={item.step}>
+                        <li className={cn("flex gap-3 px-3 py-2.5", item.status === "current" && "bg-slate-100")} key={item.step}>
                           <span
                             aria-hidden="true"
                             className={cn(
-                              "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center border text-phx-2xs font-black",
+                              "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center border text-phx-xs font-black",
                               item.status === "done" && "border-emerald-600 bg-emerald-600 text-white",
-                              item.status === "current" && "border-orange-500 text-orange-600",
+                              item.status === "current" && "border-[#08111f] text-[#08111f]",
                               item.status === "closed_here" && "border-rose-600 bg-rose-600 text-white",
                               (item.status === "upcoming" || item.status === "skipped") && "border-slate-300 text-slate-400",
                             )}
@@ -305,8 +305,8 @@ export function MrJourneyDrawer({
                   {journey && journey.timeline.length > 0 ? (
                     <ol className="mt-2 space-y-2">
                       {journey.timeline.map((event) => (
-                        <li className="border-l-2 border-orange-400 pl-3" key={event.id}>
-                          <p className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">{cairoWhen(event.at)}</p>
+                        <li className="border-l-2 border-[#08111f] pl-3" key={event.id}>
+                          <p className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{cairoWhen(event.at)}</p>
                           <p className="break-words text-sm font-bold text-slate-900">{event.title}</p>
                           {event.detail ? <p className="whitespace-pre-wrap break-words text-xs text-slate-600">{event.detail}</p> : null}
                         </li>

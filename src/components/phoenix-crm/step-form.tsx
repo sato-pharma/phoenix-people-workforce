@@ -139,7 +139,7 @@ export function CrmStepForm({
       <FormWizard
         badge={
           chip ? (
-            <span className="inline-flex max-w-full items-center gap-1.5 break-words border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
+            <span className="inline-flex max-w-full items-center gap-1.5 break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
               {chip}
             </span>
           ) : undefined

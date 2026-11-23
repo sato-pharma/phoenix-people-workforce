@@ -60,16 +60,29 @@ import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import {
   phxButtonAccentClassName,
   phxButtonGhostClassName,
+  phxFieldClassName,
   phxFormErrorClassName,
+  phxLabelClassName,
+  phxSelectClassName,
 } from "@/components/ui/form-tokens";
 import { FormActions, FormBlock } from "@/components/ui/form-kit";
 import {
   adminChipDepthClassName,
-  adminControlDepthClassName,
   adminPanelDepthClassName,
-  adminPanelHeaderClassName,
   adminSoftDepthClassName,
 } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LANDING_ROW_LINK,
+  LandingMeta,
+  LandingNavyBoard,
+  LandingPanel,
+  LandingTick,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -245,9 +258,22 @@ function severityOutline(severity: PrivateCalendarItem["severity"]) {
 // An item's flag is good news (an approved exception), a real problem (absence) or something
 // to check (everything else). It used to paint every flag red, the approved one included.
 function flagTone(flag: string) {
-  if (flag === "Approved attendance exception") return "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200";
-  if (flag === "Absence risk") return "bg-red-50 text-red-800 ring-1 ring-inset ring-red-200";
-  return "bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200";
+  if (flag === "Approved attendance exception") return "text-emerald-700";
+  if (flag === "Absence risk") return "text-red-700";
+  return "text-orange-700";
+}
+
+/** A state line on this screen: a white hairline sheet with its tone on a 4px rail, never a tinted box. */
+function CalendarNotice({ children, tone }: { children: React.ReactNode; tone: "amber" | "red" }) {
+  const rail = tone === "red" ? "bg-rose-600" : "bg-amber-500";
+  const ink = tone === "red" ? "text-rose-700" : "text-amber-700";
+  return (
+    <div className={`flex min-w-0 gap-3 border border-slate-200 bg-white px-3 py-2.5 ${adminSoftDepthClassName}`}>
+      <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${rail}`} />
+      <AlertTriangle aria-hidden="true" className={`mt-0.5 h-4 w-4 shrink-0 ${ink}`} />
+      <div className="min-w-0 flex-1 break-words text-sm font-semibold leading-snug text-slate-700">{children}</div>
+    </div>
+  );
 }
 
 // Every private calendar exception is a real problem (danger), something to check (warning, e.g.
@@ -573,13 +599,9 @@ export function PrivateCalendar({
   // ID. On the employee surface a person is their name — a rep never needs his own ID beside it.
   const deskDetail = showDeskDetail ?? isWorkspaceSurface;
   const showHrIds = deskDetail;
-  const inputClass = isWorkspaceSurface
-    ? `h-9 w-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none ${adminControlDepthClassName}`
-    : "h-9 w-full border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
-  const searchInputClass = isWorkspaceSurface
-    ? `h-9 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 ${adminControlDepthClassName}`
-    : "h-9 w-full border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
-  const controlRadiusClass = "";
+  // The filters wear the house form tokens on both surfaces (the employee surface used to draw a grey borderless field).
+  const inputClass = phxSelectClassName;
+  const searchInputClass = phxFieldClassName.replace("px-3", "pl-9 pr-3");
 
   const employeeByHrId = useMemo(
     () => new Map(visibleEmployees.map((employee) => [privateCalendarHrIdKey(employee.hrId), employee])),
@@ -995,54 +1017,46 @@ export function PrivateCalendar({
   return (
     <div className={isWorkspaceSurface ? "space-y-5" : "space-y-6"}>
       {!workspace.schemaReady ? (
-        <div className="flex items-center gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          Some private calendar sources are temporarily unavailable.
-        </div>
+        <CalendarNotice tone="amber">Some private calendar sources are temporarily unavailable.</CalendarNotice>
       ) : null}
 
-      {/* ── Header + Metrics ── */}
+      {/* ── Header — the month and whose calendar it is, on white. The dark gradient band it replaces was the page's
+          hero; the page's figures stand on its one navy board, Key figures, below. ── */}
       <section className={panelClass}>
-        <div className={[adminPanelHeaderClassName, "px-5 py-5"].join(" ")}>
+        <div className="px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="mb-3 flex flex-wrap items-center gap-2 empty:hidden">
+              <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 empty:hidden">
                 {/* The portal page header above already names the page, so the employee surface
                     does not say "Private Calendar" a third time. */}
-                {isWorkspaceSurface ? (
-                  <span className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
-                    Private Calendar
-                  </span>
-                ) : null}
+                {isWorkspaceSurface ? <LandingTitle>Private Calendar</LandingTitle> : null}
                 {workspace.access.isGlobalViewer ? (
-                  <span className="inline-flex items-center gap-1.5 bg-phx-info/20 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-info-bg ring-1 ring-phx-info-line/30">
-                    Global view
-                  </span>
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-sky-700">Global view</span>
                 ) : null}
                 {isTeamView ? (
-                  <span className="inline-flex items-center gap-1.5 bg-indigo-500/20 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
-                    Team mode
-                  </span>
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-indigo-700">Team mode</span>
                 ) : null}
               </div>
-              <h2 className="text-3xl font-black leading-none tracking-tight text-white">{monthLabel(year, month)}</h2>
-              <p className="mt-2 text-sm font-semibold text-slate-300">
+              <h2 className={`break-words text-2xl font-bold leading-none tracking-[-0.02em] sm:text-3xl ${LANDING_INK}`}>{monthLabel(year, month)}</h2>
+              <p className="mt-2 break-words text-sm font-semibold text-slate-600" dir="auto">
                 {isTeamView
                   ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
                   : selectedEmployee.fullName}{" "}
-                {!isTeamView && showHrIds ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
+                {!isTeamView && showHrIds ? <span className="font-mono text-xs text-slate-500">{selectedEmployee.hrId}</span> : null}
               </p>
-              <p className="mt-1 text-xs font-semibold text-slate-400">
+              <p className="mt-1 text-xs font-semibold text-slate-500">
                 {isPending ? "Syncing" : lastSyncedAt ? `Synced at ${formatSyncedAt(lastSyncedAt)}` : null}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex border border-white/20 bg-white/10 p-0.5">
+              <div className="inline-flex border border-[#08111f]">
                 {(["month", "list"] as const).map((mode) => (
                   <button
+                    aria-pressed={calendarView === mode}
                     className={[
-                      "h-9 px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-colors",
-                      calendarView === mode ? "bg-slate-900 text-white" : "text-white/70 hover:bg-white/15",
+                      "min-h-10 px-3.5 text-phx-xs font-bold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none sm:min-h-8",
+                      LANDING_FOCUS,
+                      calendarView === mode ? "bg-[#08111f] text-white" : "bg-white text-[#08111f] hover:bg-slate-50",
                     ].join(" ")}
                     key={mode}
                     onClick={() => setCalendarView(mode)}
@@ -1054,42 +1068,42 @@ export function PrivateCalendar({
               </div>
               <button
                 aria-label="Sync Now — refresh this calendar with whatever is currently recorded in Phoenix"
-                className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-50", controlRadiusClass].join(" ")}
+                className={landingActionClassName("outline")}
                 disabled={isPending}
                 onClick={syncNow}
                 type="button"
               >
-                <RefreshCw className={["h-3.5 w-3.5", isPending ? "animate-spin" : ""].join(" ")} />
+                <RefreshCw aria-hidden="true" className={["h-3.5 w-3.5", isPending ? "animate-spin motion-reduce:animate-none" : ""].join(" ")} />
                 Sync Now
               </button>
               <a
-                className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
+                className={landingActionClassName("outline")}
                 href={`/api/private-calendar/export?format=xlsx&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}${actualOnly ? "&actualOnly=1" : ""}`}
                 download
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download aria-hidden="true" className="h-3.5 w-3.5" />
                 XLSX
               </a>
               <a
-                className={["inline-flex h-9 items-center gap-1.5 bg-white/10 px-3 text-xs font-black text-white/80 ring-1 ring-white/20 transition hover:bg-white/20", controlRadiusClass].join(" ")}
+                className={landingActionClassName("outline")}
                 href={`/api/private-calendar/export?format=pdf&year=${year}&month=${month}&employeeHrId=${encodeURIComponent(selectedEmployee.hrId)}&view=${viewMode}${actualOnly ? "&actualOnly=1" : ""}`}
                 download
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download aria-hidden="true" className="h-3.5 w-3.5" />
                 PDF
               </a>
               <div className="inline-flex items-center gap-2">
                 <button
                   aria-label="Previous month"
-                  className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
+                  className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
                   disabled={isPending}
                   onClick={() => shiftMonth(-1)}
                   type="button"
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft aria-hidden="true" className="h-4 w-4" />
                 </button>
                 <button
-                  className={["h-9 bg-orange-500 px-4 text-sm font-black text-white transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
+                  className={landingActionClassName("solid")}
                   disabled={isPending}
                   onClick={goToday}
                   type="button"
@@ -1098,23 +1112,24 @@ export function PrivateCalendar({
                 </button>
                 <button
                   aria-label="Next month"
-                  className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
+                  className={landingActionClassName("outline", "w-10 px-0 sm:w-8")}
                   disabled={isPending}
                   onClick={() => shiftMonth(1)}
                   type="button"
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight aria-hidden="true" className="h-4 w-4" />
                 </button>
               </div>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* KEY FIGURES — two narrow rows, folded away with one click (owner, 2026-09-21). Row one is
-            every visit, per colour, AM · PM · Pharmacies apart — never a pharmacy inside PM; row
-            two is every other kind of day. The eight tall cards this replaces took a screen of
-            their own and counted a double visit twice across a team. */}
-        <KeyFigures
+      {/* KEY FIGURES — the page's one navy board: two narrow rows, folded away with one click (owner, 2026-09-21).
+          Row one is every visit, per colour, AM · PM · Pharmacies apart — never a pharmacy inside PM; row two is
+          every other kind of day. The eight tall cards this replaces took a screen of their own and counted a
+          double visit twice across a team. */}
+      <KeyFigures
           daysWithIssues={daysWithIssues}
           exceptionCount={reviewExceptions.length}
           noActivityDays={noActivityDays}
@@ -1125,35 +1140,32 @@ export function PrivateCalendar({
           summary={summary}
           visitSummary={visitSummary}
         />
-      </section>
 
-      {message ? (
-        <div className="flex items-center gap-3 border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {message}
-        </div>
-      ) : null}
+      {message ? <CalendarNotice tone="red">{message}</CalendarNotice> : null}
 
       {/* ── Filters — at most two narrow rows, folded away with one click (owner, 2026-09-21) ── */}
       <section className={secondaryPanelClass}>
         <button
           aria-controls="private-calendar-filters"
           aria-expanded={filtersOpen}
-          className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50"
+          className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left sm:px-4 ${LANDING_ROW_LINK}`}
           onClick={toggleFilters}
           type="button"
         >
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Filter &amp; Search</span>
+          <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <span className={`flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] ${LANDING_INK}`}>
+              <LandingTick />
+              Filter &amp; Search
+            </span>
             {activeFilterCount > 0 ? (
-              <span className="bg-orange-500 px-1.5 py-0.5 text-phx-sm font-black text-white">
+              <span className="text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-sky-700">
                 {activeFilterCount} active
               </span>
             ) : null}
           </span>
-          <span className="inline-flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+          <span className="inline-flex shrink-0 items-center gap-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
             {filtersOpen ? "Hide" : "Show"}
-            {filtersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {filtersOpen ? <ChevronUp aria-hidden="true" className="h-3.5 w-3.5" /> : <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />}
           </span>
         </button>
         {filtersOpen ? (
@@ -1164,7 +1176,7 @@ export function PrivateCalendar({
             {canFilterAcrossEmployees ? (
               <>
                 <label className="col-span-2 block lg:col-span-1">
-                  <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+                  <span className={phxLabelClassName}>Search</span>
                   <span className="relative block">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
@@ -1177,7 +1189,7 @@ export function PrivateCalendar({
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">View</span>
+                  <span className={phxLabelClassName}>View</span>
                   <SearchableSelect
                     className={inputClass}
                     wrapValue
@@ -1192,7 +1204,7 @@ export function PrivateCalendar({
 
                 {!isTeamView ? (
                   <label className="block">
-                    <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                    <span className={phxLabelClassName}>Employee</span>
                     <SearchableSelect
                       className={inputClass}
                       wrapValue
@@ -1209,7 +1221,7 @@ export function PrivateCalendar({
                   </label>
                 ) : (
                   <label className="block">
-                    <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                    <span className={phxLabelClassName}>Employee</span>
                     <SearchableSelect
                       className={inputClass}
                       wrapValue
@@ -1227,7 +1239,7 @@ export function PrivateCalendar({
                 )}
 
                 <label className="block">
-                  <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
+                  <span className={phxLabelClassName}>Line</span>
                   <SearchableSelect
                     className={inputClass}
                     wrapValue
@@ -1240,7 +1252,7 @@ export function PrivateCalendar({
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
+                  <span className={phxLabelClassName}>Department</span>
                   <SearchableSelect
                     className={inputClass}
                     wrapValue
@@ -1255,7 +1267,7 @@ export function PrivateCalendar({
             ) : null}
 
             <label className="block">
-              <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Kind</span>
+              <span className={phxLabelClassName}>Kind</span>
               <SearchableSelect
                 className={inputClass}
                 wrapValue
@@ -1270,7 +1282,7 @@ export function PrivateCalendar({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
+              <span className={phxLabelClassName}>Status</span>
               <SearchableSelect
                 className={inputClass}
                 wrapValue
@@ -1286,21 +1298,16 @@ export function PrivateCalendar({
 
             <div className="col-span-2 flex flex-wrap items-end gap-2 lg:col-span-1">
               <button
-                className={[
-                  "inline-flex h-9 items-center gap-2 px-3 text-sm font-black ring-1 transition",
-                  controlRadiusClass,
-                  exceptionOnly
-                    ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100"
-                    : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200",
-                ].join(" ")}
+                aria-pressed={exceptionOnly}
+                className={landingActionClassName(exceptionOnly ? "solid" : "outline", "sm:min-h-10")}
                 onClick={() => setExceptionOnly((value) => !value)}
                 type="button"
               >
-                <ListFilter className="h-4 w-4" />
+                <ListFilter aria-hidden="true" className="h-4 w-4" />
                 Exceptions
               </button>
               <button
-                className={["h-9 bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200 disabled:opacity-50", controlRadiusClass].join(" ")}
+                className={landingActionClassName("outline", "sm:min-h-10")}
                 disabled={isPending}
                 onClick={resetFilters}
                 type="button"
@@ -1318,18 +1325,18 @@ export function PrivateCalendar({
       {presentKinds.some((kind) => kind !== "plan") || noActivityDays > 0 ? (
         <section className={[secondaryPanelClass, "px-4 py-3"].join(" ")}>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Key</span>
+            <span className="mr-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Key</span>
             {presentKinds.filter((kind) => kind !== "plan").map((kind) => {
               const hidden = hiddenKinds.has(kind);
               return (
                 <button
                   aria-pressed={!hidden}
                   className={[
-                    "inline-flex items-center gap-1.5 border px-2.5 py-1 text-phx-xs font-black transition",
-                    controlRadiusClass,
+                    "inline-flex items-center gap-1.5 border px-2.5 py-1 text-phx-xs font-bold transition-colors motion-reduce:transition-none",
+                    LANDING_FOCUS,
                     hidden
                       ? "border-slate-200 bg-slate-50 text-slate-400 line-through"
-                      : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
+                      : "border-slate-300 bg-white text-[#08111f] hover:border-[#08111f]",
                   ].join(" ")}
                   key={kind}
                   onClick={() => toggleKind(kind)}
@@ -1348,7 +1355,7 @@ export function PrivateCalendar({
             ) : null}
             {hiddenKinds.size > 0 ? (
               <button
-                className={["inline-flex items-center px-2.5 py-1 text-phx-xs font-black text-orange-600 transition hover:text-orange-700", controlRadiusClass].join(" ")}
+                className={`inline-flex items-center px-2.5 py-1 text-phx-xs font-bold uppercase tracking-[0.08em] text-[#08111f] underline-offset-2 transition-colors hover:underline motion-reduce:transition-none ${LANDING_FOCUS}`}
                 onClick={() => setHiddenKinds(new Set())}
                 type="button"
               >
@@ -1362,13 +1369,13 @@ export function PrivateCalendar({
       {/* ── Actionable exceptions strip ── */}
       {filteredExceptions.length > 0 ? (
         <section className={["border-l-4", filteredReviewExceptions.length > 0 ? "border-l-red-600" : "border-l-indigo-500", secondaryPanelClass].join(" ")}>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
-            <span className={["text-phx-xs font-black uppercase tracking-[0.14em]", filteredReviewExceptions.length > 0 ? "text-red-700" : "text-indigo-700"].join(" ")}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 sm:px-5">
+            <span className={["text-phx-xs font-bold uppercase tracking-[0.12em]", filteredReviewExceptions.length > 0 ? "text-red-700" : "text-indigo-700"].join(" ")}>
               {stripHeading}
             </span>
             {filteredExceptions.length > 8 ? (
               <button
-                className="text-phx-xs font-black uppercase tracking-[0.12em] text-orange-600 transition hover:text-orange-700"
+                className={`text-phx-xs font-bold uppercase tracking-[0.1em] text-[#08111f] underline-offset-2 transition-colors hover:underline motion-reduce:transition-none ${LANDING_FOCUS}`}
                 onClick={() => setShowAllExceptions((value) => !value)}
                 type="button"
               >
@@ -1376,25 +1383,25 @@ export function PrivateCalendar({
               </button>
             ) : null}
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-200">
             {stripExceptions.map((exception) => {
               const tone = exceptionTone(exception.severity);
               return (
                 <button
-                  className={["flex w-full flex-wrap items-center gap-x-2 gap-y-1 px-5 py-3 text-left transition hover:bg-orange-50/60", tone.panel].join(" ")}
+                  className={`flex w-full flex-wrap items-center gap-x-2 gap-y-1 bg-white px-4 py-3 text-left sm:px-5 ${LANDING_ROW_LINK}`}
                   key={exception.id}
                   onClick={() => focusException(exception.date)}
                   type="button"
                 >
                   <span aria-hidden="true" className={["h-2 w-2 shrink-0", tone.dot].join(" ")} />
                   <span className="whitespace-nowrap text-phx-xs font-bold tabular-nums text-slate-500">{reportDateLabel(exception.date)}</span>
-                  <span className="text-sm font-black text-slate-900">{exception.title}</span>
+                  <span className={`break-words text-sm font-bold ${LANDING_INK}`}>{exception.title}</span>
                   {exception.employeeName ? (
-                    <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+                    <bdi className="text-phx-xs font-semibold text-slate-600">
                       {personLabel(exception.employeeName, exception.employeeHrId, showHrIds)}
-                    </span>
+                    </bdi>
                   ) : null}
-                  <span className="w-full pl-4 text-phx-xs font-semibold leading-relaxed text-slate-600">
+                  <span className="w-full break-words pl-4 text-phx-xs font-semibold leading-relaxed text-slate-600">
                     {exception.description}
                   </span>
                 </button>
@@ -1425,17 +1432,17 @@ export function PrivateCalendar({
               fire on — see the weekly-off note in src/lib/private-calendar/logic.ts. It
               needs an equal 1fr share like Sun-Thu. Keep this template identical on the
               header row and the day grid below or the columns misalign. */}
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] bg-slate-950">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_32px_minmax(0,1fr)] border-b border-slate-200 bg-white md:grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)]">
             {weekdays.map((weekday) => (
               <div
-                className={["px-1 py-3 text-center text-phx-sm font-black uppercase tracking-[0.14em]", weekday === "Fri" ? "text-slate-500" : "text-slate-300"].join(" ")}
+                className={["px-0.5 py-2.5 text-center text-phx-xs font-bold uppercase tracking-[0.08em] md:tracking-[0.14em]", weekday === "Fri" ? "text-slate-400" : "text-[#08111f]"].join(" ")}
                 key={weekday}
               >
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] divide-x divide-y divide-slate-100">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_32px_minmax(0,1fr)] divide-x divide-y divide-slate-200 md:grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)]">
             {shownWeeks.flatMap((week) => week).map((day, index) => {
               const date = day.date;
               // The day slot draws what was RECORDED, of every type (attendance, leave, holiday, visits, other CRM) and never
@@ -1474,24 +1481,30 @@ export function PrivateCalendar({
                     // the Daily Timeline under the grid. From md up the entries show in the cell.
                     // flex-col keeps the date at the TOP: a <button> centres its content
                     // vertically, which floated every date to the middle of a tall cell.
-                    "flex min-h-[60px] flex-col items-center justify-start gap-1 px-0.5 py-1.5 text-left transition-colors md:min-h-[150px] md:items-stretch md:gap-0 md:p-2",
+                    // relative: today's navy top rule is drawn inside the cell.
+                    "relative flex min-h-[60px] flex-col items-center justify-start gap-1 px-0.5 py-1.5 text-left transition-colors motion-reduce:transition-none md:min-h-[150px] md:items-stretch md:gap-0 md:p-2",
+                    LANDING_FOCUS,
                     !day.inMonth
-                      ? "bg-slate-50/60 text-slate-300 hover:bg-orange-50/30"
+                      ? "bg-slate-50/60 text-slate-300 hover:bg-slate-100"
                       : isFriday
-                        ? "bg-slate-50 text-slate-900 hover:bg-orange-50/60"
-                        : "bg-white text-slate-900 hover:bg-orange-50/60",
-                    selected ? "bg-orange-50/50 ring-2 ring-inset ring-orange-500" : "",
+                        ? "bg-slate-50 text-slate-900 hover:bg-slate-100"
+                        : "bg-white text-slate-900 hover:bg-slate-50",
+                    // The chosen day: a navy frame inside the cell — never an orange wash.
+                    selected ? "ring-2 ring-inset ring-[#08111f]" : "",
                   ].join(" ")}
                   disabled={!date}
                   key={`${date ?? "blank"}-${index}`}
                   onClick={() => date && setSelectedDate(date)}
                   type="button"
                 >
+                  {/* Today: a 2px navy rule along the top of the cell — the day number stays unfilled. */}
+                  {isToday ? <span aria-hidden="true" className="absolute inset-x-0 top-0 h-0.5 bg-[#08111f]" /> : null}
                   <span className="flex items-center justify-between gap-1">
                     <span
                       className={[
-                        "flex h-6 w-6 items-center justify-center text-xs font-black",
-                        isToday ? "bg-orange-500 text-white" : "",
+                        "flex h-6 min-w-6 items-center justify-center text-xs tabular-nums",
+                        isToday ? "font-black" : "font-bold",
+                        day.inMonth ? LANDING_INK : "",
                       ].join(" ")}
                     >
                       {date ? Number(date.slice(8, 10)) : ""}
@@ -1501,7 +1514,7 @@ export function PrivateCalendar({
                         day and said nothing the entries under them did not. */}
                     {dayNeedsReview ? (
                       <span
-                        className="hidden bg-red-600 px-1.5 py-0.5 text-phx-sm font-black text-white md:inline"
+                        className="hidden px-1 text-phx-xs font-bold tabular-nums text-red-700 md:inline"
                         title={`${dayReviewCount} to review`}
                       >
                         {dayReviewCount}
@@ -1569,7 +1582,7 @@ export function PrivateCalendar({
                       );
                     })}
                     {hiddenCount > 0 ? (
-                      <span className="block bg-slate-100 px-1.5 py-0.5 text-phx-sm font-bold text-slate-600">
+                      <span className="block px-1.5 py-0.5 text-phx-xs font-bold text-slate-500">
                         + {hiddenCount} more
                       </span>
                     ) : null}
@@ -1578,37 +1591,38 @@ export function PrivateCalendar({
               );
             })}
           </div>
-          <p className="border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-phx-xs font-semibold text-slate-500">
+          <p className="border-t border-slate-200 bg-white px-4 py-2 text-phx-xs font-semibold text-slate-500">
             Each day shows its counts and tags. Press a day to read its visits in full in the Daily Timeline below.
           </p>
         </section>
 
         {/* ── Daily Timeline ── */}
         <section className={panelClass}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center bg-slate-950 text-white">
-                <span className="text-xl font-black leading-none tabular-nums">{Number(selectedDate.slice(8, 10))}</span>
-                <span className="mt-1 text-phx-sm font-black uppercase tracking-[0.14em] text-white/70">{shortMonthLabel(selectedDate)}</span>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+                <span className={`text-xl font-bold leading-none tabular-nums ${LANDING_INK}`}>{Number(selectedDate.slice(8, 10))}</span>
+                <span className="mt-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{shortMonthLabel(selectedDate)}</span>
               </div>
-              <div>
-                <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
-                  Daily Timeline
-                </div>
-                <h3 className="mt-1 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
+              <div className="min-w-0">
+                <LandingTitle>Daily Timeline</LandingTitle>
+                <h3 className={`mt-1.5 break-words text-lg font-bold sm:text-xl ${LANDING_INK}`}>{dayLabel(selectedDate)}</h3>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
-                {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
-              </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <LandingMeta
+                items={[
+                  `${timelineItems.length} item${timelineItems.length === 1 ? "" : "s"}`,
+                  `${selectedExceptions.length} exception${selectedExceptions.length === 1 ? "" : "s"}`,
+                ]}
+              />
               {canActOnOwnDay && selectedDayExplainable ? (
                 <button
-                  className="inline-flex h-8 items-center gap-1.5 border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                  className={landingActionClassName("outline")}
                   onClick={openExplainForm}
                   type="button"
                 >
-                  <FileSearch className="h-3.5 w-3.5" />
+                  <FileSearch aria-hidden="true" className="h-3.5 w-3.5" />
                   Explain this day
                 </button>
               ) : null}
@@ -1620,10 +1634,6 @@ export function PrivateCalendar({
           {disputeFormOpen && selectedDayExplainable ? (
             <div className="border-b border-slate-200 bg-slate-50/60 px-4 py-5 sm:px-6">
               <FormBlock label={`Explain ${dayLabel(selectedDate)}`}>
-                <p className="mb-5 text-sm leading-relaxed text-slate-600">
-                  Say why this day has no record and who can confirm it. The person you name confirms first, then the
-                  Super Admin decides. Nothing on your calendar changes until then.
-                </p>
                 <ExplainReasonFields
                   extraDays={{ onToggle: toggleExplainExtraDate, options: otherExplainableDays, selected: explainExtraDates }}
                   name="explain-calendar-day"
@@ -1661,7 +1671,7 @@ export function PrivateCalendar({
           ) : null}
           {disputeNotice?.tone === "sent" && disputeNotice.dates?.includes(selectedDate) ? (
             <p className="flex items-start gap-2 border-b border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 sm:px-6" role="status">
-              <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 bg-orange-500" />
+              <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 bg-emerald-600" />
               {disputeNotice.text}
             </p>
           ) : null}
@@ -1687,8 +1697,8 @@ export function PrivateCalendar({
           <div className="grid gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
             {selectedExceptions.length > 0 ? (
               <section>
-                <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-red-600">
-                  <AlertTriangle className="h-4 w-4" />
+                <div className="mb-3 flex items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.12em] text-red-700">
+                  <AlertTriangle aria-hidden="true" className="h-4 w-4" />
                   Exception Warnings
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -1750,12 +1760,15 @@ function PrivateCalendarAgenda({
       {agendaDays.map(({ date, dayExceptions, dayItems }) => (
         <div className={`overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`} key={date}>
           <button
-            className="flex w-full items-center justify-between gap-2 bg-slate-900 px-4 py-2.5 text-left transition-colors hover:bg-slate-800"
+            className={`flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 bg-white px-4 py-2.5 text-left ${LANDING_ROW_LINK}`}
             onClick={() => onSelectDate(date)}
             type="button"
           >
-            <span className="text-sm font-black text-white">{dayLabel(date)}</span>
-            <span className="text-right text-phx-xs font-bold text-slate-300">
+            <span className={`flex items-center gap-2 text-sm font-bold ${LANDING_INK}`}>
+              <LandingTick />
+              {dayLabel(date)}
+            </span>
+            <span className="text-right text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums text-slate-500">
               {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
               {dayExceptions.length > 0 ? ` · ${dayExceptions.length} exception${dayExceptions.length === 1 ? "" : "s"}` : ""}
             </span>
@@ -1764,19 +1777,19 @@ function PrivateCalendarAgenda({
             {dayExceptions.map((exception) => {
               const tone = exceptionTone(exception.severity);
               return (
-                <div className={["border-l-[3px] px-4 py-3", tone.border, tone.panel].join(" ")} key={exception.id}>
+                <div className={["border-l-[3px] bg-white px-4 py-3", tone.border].join(" ")} key={exception.id}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={["inline-block h-2.5 w-2.5 shrink-0", tone.dot].join(" ")} />
-                    <span className="text-sm font-black text-slate-900">{exception.title}</span>
-                    <span className={["ml-auto inline-flex items-center whitespace-nowrap px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
+                    <span aria-hidden="true" className={["inline-block h-2.5 w-2.5 shrink-0", tone.dot].join(" ")} />
+                    <span className={`break-words text-sm font-bold ${LANDING_INK}`}>{exception.title}</span>
+                    <span className={["ml-auto inline-flex items-center whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.1em]", tone.text].join(" ")}>
                       {tone.label}
                     </span>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                     {exception.employeeName ? (
-                      <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+                      <bdi className="text-phx-xs font-semibold text-slate-600">
                         {personLabel(exception.employeeName, exception.employeeHrId, showHrIds)}
-                      </span>
+                      </bdi>
                     ) : null}
                     <span className="w-full text-phx-xs font-semibold leading-relaxed text-slate-600">
                       {exception.description}
@@ -1795,22 +1808,23 @@ function PrivateCalendarAgenda({
               return (
                 <div className={["px-4 py-3", severityOutline(item.severity)].join(" ")} key={item.id}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={["inline-block h-2.5 w-2.5 shrink-0", kindSwatchColor(privateCalendarItemKind(item))].join(" ")} />
-                    <span className="text-sm font-black text-slate-900">{item.title}</span>
-                    <span className={["inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-800", kindChipTone(privateCalendarItemKind(item))].join(" ")}>
+                    <span aria-hidden="true" className={["inline-block h-2.5 w-2.5 shrink-0", kindSwatchColor(privateCalendarItemKind(item))].join(" ")} />
+                    <span className={`break-words text-sm font-bold ${LANDING_INK}`}>{item.title}</span>
+                    <span className={["inline-flex items-center gap-1 px-2 py-0.5 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-800", kindChipTone(privateCalendarItemKind(item))].join(" ")}>
                       {privateCalendarActivityKindLabels[privateCalendarItemKind(item)]}
                     </span>
                     {item.status ? (
-                      <span className="ml-auto inline-flex items-center whitespace-nowrap bg-phx-paper px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-phx-ink-soft">
+                      <span className="ml-auto inline-flex items-center text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                         {statusLabel(item.status)}
                       </span>
                     ) : null}
                   </div>
                   {meta.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 pl-[18px]">
                       {meta.map((value, index) => (
                         <span
-                          className="inline-flex items-center bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200/70"
+                          className="min-w-0 break-words text-phx-xs font-semibold text-slate-600"
+                          dir="auto"
                           key={`${item.id}-meta-${index}`}
                         >
                           {value}
@@ -1826,7 +1840,7 @@ function PrivateCalendarAgenda({
                   {item.exceptionFlags.length > 0 ? (
                     <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                       {item.exceptionFlags.map((flag) => (
-                        <span className={["inline-flex items-center px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]", flagTone(flag)].join(" ")} key={flag}>
+                        <span className={["inline-flex items-center text-phx-xs font-bold uppercase tracking-[0.1em]", flagTone(flag)].join(" ")} key={flag}>
                           {flag}
                         </span>
                       ))}
@@ -1878,16 +1892,17 @@ function KeyFigure({
   value: string;
 }) {
   return (
-    <div className={["min-w-0 border bg-white px-3 py-2", strong ? "border-slate-900" : "border-slate-200"].join(" ")}>
+    // A tile on the navy board: one step lighter than the board, the total framed in a white hairline.
+    <div className={["min-w-0 px-3 py-2", LANDING_NAVY_TILE, strong ? "ring-1 ring-inset ring-white/40" : ""].join(" ")}>
       <p className="flex items-center gap-1.5">
-        {swatch ? <span aria-hidden="true" className={["h-2.5 w-2.5 shrink-0", swatch].join(" ")} /> : null}
-        <span className="min-w-0 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500 [overflow-wrap:anywhere]">{label}</span>
+        {swatch ? <span aria-hidden="true" className={["h-2.5 w-2.5 shrink-0 ring-1 ring-white/25", swatch].join(" ")} /> : null}
+        <span className="min-w-0 text-phx-xs font-bold uppercase tracking-[0.1em] text-white/60 [overflow-wrap:anywhere]">{label}</span>
       </p>
       <p
         className={[
-          "mt-1 font-black tabular-nums leading-tight [overflow-wrap:anywhere]",
+          "mt-1 font-bold tabular-nums leading-tight [overflow-wrap:anywhere]",
           big ? "text-lg" : "text-sm",
-          !ready ? "text-amber-700" : alert ? "text-red-700" : "text-slate-900",
+          !ready ? "text-amber-300" : alert ? "text-rose-300" : "text-white",
         ].join(" ")}
       >
         {ready ? value : "Unavailable"}
@@ -1912,34 +1927,32 @@ function KeyFigures({
   const visitsReady = sourceReadiness.double_visit !== false && sourceReadiness.field_visit !== false;
   const allVisits = privateCalendarTileCountsText(visits?.all ?? { am: 0, pm: 0, pharmacies: 0 });
   return (
-    <div className="border-t border-slate-200">
-      <button
-        aria-controls="private-calendar-key-figures"
-        aria-expanded={open}
-        className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 text-left transition hover:bg-slate-50"
-        onClick={onToggle}
-        type="button"
-      >
-        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Key figures</span>
-          {!open ? (
-            <span className="text-xs font-bold text-slate-700">
-              Visits {allVisits}
-              {exceptionCount > 0 ? ` · ${exceptionCount} to review` : ""}
-            </span>
-          ) : null}
-        </span>
-        <span className="inline-flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
+    <LandingNavyBoard
+      label="Key figures"
+      right={
+        <button
+          aria-controls="private-calendar-key-figures"
+          aria-expanded={open}
+          className={`inline-flex min-h-8 items-center gap-1 px-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-white/70 transition-colors hover:text-white motion-reduce:transition-none ${LANDING_FOCUS}`}
+          onClick={onToggle}
+          type="button"
+        >
           {open ? "Hide" : "Show"}
-          {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </span>
-      </button>
-      {open ? (
-        <div id="private-calendar-key-figures">
+          {open ? <ChevronUp aria-hidden="true" className="h-3.5 w-3.5" /> : <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />}
+        </button>
+      }
+    >
+      {!open ? (
+        <p className="break-words px-1 pb-1 text-xs font-bold tabular-nums text-white/80">
+          Visits {allVisits}
+          {exceptionCount > 0 ? ` · ${exceptionCount} to review` : ""}
+        </p>
+      ) : (
+        <div className="space-y-3" id="private-calendar-key-figures">
           {/* Row one — every visit, per colour, AM · PM · Pharmacies apart. */}
-          <div className="border-t border-slate-100 bg-white px-4 py-3">
-            <p className="mb-2 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Visits · AM, PM and PH counted apart</p>
-            <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div>
+            <p className="mb-1.5 px-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-white/45">Visits · AM, PM and PH counted apart</p>
+            <div className="grid grid-cols-1 gap-px min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {privateCalendarVisitKinds.map((kind) => {
               const split = visits?.[kind];
               return (
@@ -1956,9 +1969,9 @@ function KeyFigures({
             </div>
           </div>
           {/* Row two — every other kind of day. */}
-          <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
-            <p className="mb-2 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Days</p>
-            <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-3 lg:grid-cols-5 xl:grid-cols-11">
+          <div>
+            <p className="mb-1.5 px-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-white/45">Days</p>
+            <div className="grid grid-cols-2 gap-px min-[560px]:grid-cols-3 lg:grid-cols-5 xl:grid-cols-11">
             <KeyFigure big label="Attendance" ready={sourceReadiness.attendance} swatch={kindSwatchColor("attendance")} value={String(summary.attendance)} />
             <KeyFigure big label="Vacations" ready={sourceReadiness.vacation} swatch={kindSwatchColor("vacation")} value={String(summary.vacation)} />
             <KeyFigure big label="Excuses" ready={sourceReadiness.excuse} swatch={kindSwatchColor("excuse")} value={String(summary.excuse)} />
@@ -1973,37 +1986,29 @@ function KeyFigures({
             </div>
           </div>
         </div>
-      ) : null}
-    </div>
+      )}
+    </LandingNavyBoard>
   );
 }
 
 function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummary"] }) {
   const sortedRows = [...rows].sort((left, right) => right.exceptionCount - left.exceptionCount || left.fullName.localeCompare(right.fullName));
   return (
-    <section className={`overflow-hidden border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-        <div>
-          <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
-            Manager Team Calendar
-          </div>
-          <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
-        </div>
-        <span className="bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
-          {rows.length} employee{rows.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="grid max-h-72 gap-3 overflow-y-auto p-5 md:grid-cols-2 xl:grid-cols-3">
+    <LandingPanel
+      right={<LandingMeta items={["Manager Team Calendar", `${rows.length} employee${rows.length === 1 ? "" : "s"}`]} />}
+      title="Visible employees snapshot"
+    >
+      <div className="grid max-h-72 gap-3 overflow-y-auto p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-3">
         {sortedRows.slice(0, 18).map((row) => (
-          <article key={row.hrId} className={`border border-slate-200 bg-white p-4 ${adminPanelDepthClassName}`}>
+          <article key={row.hrId} className={`min-w-0 border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h4 className="text-sm font-black text-slate-900">{row.fullName}</h4>
-                <p className="mt-0.5 text-phx-xs font-semibold text-slate-500">
+                <h4 className={`break-words text-sm font-bold ${LANDING_INK}`} dir="auto">{row.fullName}</h4>
+                <p className="mt-0.5 break-words text-phx-xs font-semibold text-slate-500">
                   {row.hrId}{row.lineName ? ` · ${row.lineName}` : ""}
                 </p>
               </div>
-              <span className={["shrink-0 px-2.5 py-0.5 text-phx-sm font-black", row.exceptionCount ? "bg-red-600 text-white" : "bg-emerald-50 text-emerald-700"].join(" ")}>
+              <span className={["shrink-0 text-phx-xs font-bold uppercase tracking-[0.08em] tabular-nums", row.exceptionCount ? "text-red-700" : "text-emerald-700"].join(" ")}>
                 {row.exceptionCount} warn{row.exceptionCount === 1 ? "" : "s"}
               </span>
             </div>
@@ -2028,25 +2033,25 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
           </article>
         ))}
       </div>
-    </section>
+    </LandingPanel>
   );
 }
 
 function ExceptionItem({ exception, showHrIds }: { exception: PrivateCalendarException; showHrIds: boolean }) {
   const tone = exceptionTone(exception.severity);
   return (
-    <article className={["border-l-4 p-4 ring-1", tone.border, tone.panelStrong].join(" ")}>
+    <article className={[`min-w-0 border border-l-4 border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`, tone.border].join(" ")}>
       <div className="min-w-0">
-        <h4 className={["text-sm font-black", tone.title].join(" ")}>
+        <h4 className={["break-words text-sm font-bold", tone.title].join(" ")}>
           {exception.title}
         </h4>
         {exception.employeeName ? (
-          <p className={["mt-1 text-xs font-semibold", tone.text].join(" ")}>
+          <p className="mt-1 break-words text-xs font-semibold text-slate-500" dir="auto">
             {personLabel(exception.employeeName, exception.employeeHrId, showHrIds)}
           </p>
         ) : null}
       </div>
-      <p className={["mt-2.5 text-xs font-semibold leading-relaxed", tone.text].join(" ")}>
+      <p className="mt-2.5 break-words text-xs font-semibold leading-relaxed text-slate-600">
         {exception.description}
       </p>
     </article>
@@ -2079,14 +2084,14 @@ function SourceNotesLegend({ items }: { items: PrivateCalendarItem[] }) {
   if (sources.size === 0) return null;
   return (
     <section aria-label="Where these entries come from" className="border-y border-slate-200 px-4 py-3">
-      <div className="flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
-        <FileSearch className="h-3 w-3" />
+      <div className="flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        <FileSearch aria-hidden="true" className="h-3 w-3" />
         Recorded in
       </div>
       <ul className="mt-2 space-y-1.5 text-xs font-semibold text-slate-600">
         {Array.from(sources.entries()).map(([label, notes]) => (
           <li className="min-w-0 break-words" key={label}>
-            <span className="font-black text-slate-800">{label}</span>
+            <span className={`font-bold ${LANDING_INK}`}>{label}</span>
             {Array.from(notes).map((note) => (
               <span className="block text-slate-500" key={note}>{note}</span>
             ))}
@@ -2112,8 +2117,9 @@ function TimelineItem({
   return (
     <article
       className={[
-        "overflow-hidden border-l-4 bg-white ring-1",
-        item.severity === "danger" ? "ring-red-300" : item.severity === "warning" ? "ring-orange-300" : "ring-slate-200/70",
+        // A white sheet on the kind's rail; a problem is an outline round it, as on the grid (severityOutline).
+        `min-w-0 overflow-hidden border border-l-4 border-slate-200 bg-white ${adminSoftDepthClassName}`,
+        severityOutline(item.severity),
         kindAccentColor(privateCalendarItemKind(item)),
         // A day that carries a table (a manager's plan against his visits) takes the whole row, so the table gets a
         // desk's width instead of a third of it.
@@ -2124,16 +2130,16 @@ function TimelineItem({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={["inline-flex items-center gap-1.5 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-800", kindChipTone(privateCalendarItemKind(item))].join(" ")}>
+              <span className={["inline-flex items-center gap-1.5 px-2 py-0.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-800", kindChipTone(privateCalendarItemKind(item))].join(" ")}>
                 {privateCalendarActivityKindLabels[privateCalendarItemKind(item)]}
               </span>
               {item.time ? (
-                <span className="bg-slate-100 px-2 py-0.5 text-phx-sm font-black text-slate-600">
+                <span className="text-phx-xs font-bold tabular-nums text-slate-500">
                   {item.time}
                 </span>
               ) : null}
             </div>
-            <h4 className="mt-2 text-sm font-black text-slate-950">{item.title}</h4>
+            <h4 className={`mt-2 break-words text-sm font-bold ${LANDING_INK}`} dir="auto">{item.title}</h4>
             {viewMode === "team" && item.employeeName ? (
               <p className="mt-1 text-xs font-semibold text-slate-500">
                 {personLabel(item.employeeName, item.employeeHrId, showHrIds)}
@@ -2150,7 +2156,7 @@ function TimelineItem({
         {item.exceptionFlags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {item.exceptionFlags.map((flag) => (
-              <span key={flag} className={["px-2.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]", flagTone(flag)].join(" ")}>
+              <span key={flag} className={["text-phx-xs font-bold uppercase tracking-[0.1em]", flagTone(flag)].join(" ")}>
                 {flag}
               </span>
             ))}
@@ -2182,8 +2188,8 @@ function TimelineItem({
         {/* Folded shut (owner, 2026-10-29: the day details repeated themselves) — the desk opens it when it needs the table and ID. */}
         {showSourceTrace ? (
           <details className="mt-4 border-t border-slate-100 pt-3">
-            <summary className="flex cursor-pointer items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
-              <FileSearch className="h-3 w-3" />
+            <summary className={`flex cursor-pointer items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500 ${LANDING_FOCUS}`}>
+              <FileSearch aria-hidden="true" className="h-3 w-3" />
               Source trace
             </summary>
             <p className="mt-1 break-words text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>

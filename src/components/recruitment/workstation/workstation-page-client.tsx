@@ -552,7 +552,7 @@ export function WorkstationPageClient({
                 Filters
                 {activeFilters > 0 ? (
                   <span
-                    className={`border border-phx-accent-line bg-phx-accent-soft px-1 text-[11px] font-black leading-tight tabular-nums text-phx-accent-press ${adminChipDepthClassName}`}
+                    className={`border border-slate-300 bg-slate-100 px-1 text-[11px] font-black leading-tight tabular-nums text-[#08111f] ${adminChipDepthClassName}`}
                   >
                     {activeFilters}
                   </span>

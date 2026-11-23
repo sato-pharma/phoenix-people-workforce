@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
+import { DevReactGrab } from "@/components/layout/dev-react-grab";
 import { GlobalErrorReporter } from "@/components/layout/global-error-reporter";
 import { PageTimingBeacon } from "@/components/layout/page-timing-beacon";
 import { PhxLiveBanner } from "@/components/layout/phx-live-banner";
@@ -155,6 +156,8 @@ export default async function RootLayout({
         <GlobalErrorReporter />
         <PageTimingBeacon />
         <PhxLiveBanner />
+        {/* Development only: hover an element and press Ctrl+C to copy its source location. */}
+        {process.env.NODE_ENV === "development" ? <DevReactGrab /> : null}
         <CspNonceProvider nonce={nonce}>
           <ThemeProvider>
             <ReportingErrorBoundary>{children}</ReportingErrorBoundary>

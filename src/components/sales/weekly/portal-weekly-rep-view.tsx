@@ -50,6 +50,8 @@ import type {
 import { weeklyAreaLabel, weeklyRegionLabel } from "@/lib/sales/weekly/display-labels";
 import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LandingTitle, landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 type RepTab = "month" | "detail";
 
@@ -134,14 +136,14 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
   return (
     <div className="space-y-5">
       {/* Scope bar: whose area this is, which month, and a way to pull the latest upload. */}
-      <div className="flex flex-col gap-3 border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
+      <div className={`flex flex-col gap-3 border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${adminSoftDepthClassName}`}>
         <div className="flex min-w-0 items-center gap-3">
-          <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
+          <span aria-hidden="true" className="h-9 w-[3px] shrink-0 bg-[#08111f]" />
           <div className="min-w-0">
-            <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-400">
+            <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
               {areas.length > 1 ? "Your areas" : "Your area"}
             </p>
-            <p className="break-words text-sm font-black text-slate-900">{areaSummary}</p>
+            <p className="break-words text-sm font-black text-[#08111f]">{areaSummary}</p>
             {placeSummary ? (
               <p className="break-words text-phx-sm font-bold tracking-wide text-slate-400">{placeSummary}</p>
             ) : null}
@@ -167,14 +169,14 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
             type="button"
             onClick={syncNow}
             disabled={isPending}
-            className="inline-flex min-h-10 items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-sm font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 md:min-h-0"
+            className={landingActionClassName("outline", "disabled:opacity-50")}
           >
             <RefreshCw className={`h-3 w-3 ${isPending ? "animate-spin" : ""}`} />
             Sync now
           </button>
           {isPending ? (
-            <span className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wide text-orange-600">
-              <span className="h-1.5 w-1.5 animate-pulse bg-orange-500" />
+            <span className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wide text-[#08111f]">
+              <span className="h-1.5 w-1.5 animate-pulse bg-[#08111f] motion-reduce:animate-none" />
               Updating
             </span>
           ) : null}
@@ -249,7 +251,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
                     <div
                       key={week.weekNumber}
                       className={`border px-3 py-2.5 ${
-                        week.spansGap ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50/60"
+                        week.spansGap ? "border-slate-200 border-l-[3px] border-l-amber-500 bg-white" : "border-slate-200 bg-slate-50/60"
                       }`}
                     >
                       <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
@@ -277,7 +279,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
                 {areas.map((area) => (
                   <div key={area.key} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                      <MapPin aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                       <span className="break-words text-xs font-black text-slate-800">{weeklyAreaLabel(area.areaName)}</span>
                       <span className="break-words text-phx-sm font-bold tracking-wide text-slate-400">
                         {[area.lineName, weeklyRegionLabel(area.regionName)].filter(Boolean).join(" · ")}
@@ -337,7 +339,7 @@ function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepT
     { key: "detail", label: "Branch Detail", hint: "Every product at every branch", icon: Building2 },
   ];
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="grid grid-cols-2">
         {tabs.map((item) => {
           const isActive = active === item.key;
@@ -348,16 +350,16 @@ function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepT
               type="button"
               onClick={() => onChange(item.key)}
               aria-current={isActive ? "page" : undefined}
-              className={`relative flex min-w-0 items-center gap-2 px-3 py-3 text-left transition sm:gap-3 sm:px-4 ${
-                isActive ? "bg-slate-900" : "bg-white hover:bg-slate-50"
+              className={`relative flex min-w-0 items-center gap-2 px-3 py-3 text-left transition motion-reduce:transition-none sm:gap-3 sm:px-4 ${LANDING_FOCUS} ${
+                isActive ? "bg-[#08111f]" : "bg-white hover:bg-slate-50"
               }`}
             >
               <span
-                className={`absolute inset-x-0 bottom-0 h-0.5 transition-all ${isActive ? "bg-orange-500" : "bg-transparent"}`}
+                className={`absolute inset-x-0 bottom-0 h-0.5 transition-all ${isActive ? "bg-[#F05A1A]" : "bg-transparent"}`}
               />
               <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center ${
-                  isActive ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
+                className={`flex h-4 w-4 shrink-0 items-center justify-center ${
+                  isActive ? "text-white" : "text-slate-400"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -486,9 +488,9 @@ function ProductCards({ products, weeks }: { products: ProductRow[]; weeks: RepW
                     key={week.weekNumber}
                     className={`inline-flex items-center gap-1 whitespace-nowrap border px-1.5 py-0.5 text-phx-sm tabular-nums ${
                       week.spansGap
-                        ? "border-dotted border-amber-400 bg-amber-50"
+                        ? "border-dotted border-amber-400 bg-white"
                         : rank.peak
-                          ? "border-orange-300 bg-orange-50"
+                          ? "border-[#08111f] bg-white"
                           : "border-slate-200 bg-slate-50"
                     } ${rank.text}`}
                   >
@@ -525,7 +527,7 @@ function rankWeek(value: number, peak: number): WeekRank {
 /** The underline under a week figure. A gap week's dotted amber line wins over the peak hairline. */
 function weekMark(rank: WeekRank, spansGap: boolean): string {
   if (spansGap) return "border-b-2 border-dotted border-amber-400 pb-0.5";
-  return rank.peak ? "border-b-2 border-orange-400 pb-0.5" : "";
+  return rank.peak ? "border-b-2 border-[#08111f] pb-0.5" : "";
 }
 
 /** The best COMPLETE week: a gap week carries two weeks of sales and would dwarf every honest week. */
@@ -571,22 +573,19 @@ function latestWeekDelta(
 
 function Notice({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-start gap-2.5 border border-amber-200 bg-amber-50 px-4 py-3">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-      <p className="text-xs font-semibold leading-relaxed text-amber-900">{children}</p>
+    <div className="flex items-start gap-2.5 border border-slate-200 bg-white py-3 pr-4">
+      <span aria-hidden="true" className="w-1 shrink-0 self-stretch bg-amber-500" />
+      <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+      <p className="text-xs font-semibold leading-relaxed text-slate-700">{children}</p>
     </div>
   );
 }
 
 function RepSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="h-3.5 w-[3px] shrink-0 bg-orange-500" />
-          <h2 className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
-        </div>
-        <span className="h-1.5 w-10 shrink-0 bg-orange-500/80" />
+    <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+        <LandingTitle>{title}</LandingTitle>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -609,19 +608,11 @@ function RepTile({
   delta?: number | null;
 }) {
   return (
-    <div className="group relative overflow-hidden border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-      <span
-        className="absolute inset-x-0 top-0 h-1 transition-all duration-200 group-hover:h-1.5"
-        style={{ backgroundColor: accent }}
-      />
+    <div className={`relative overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
+      <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: accent }} />
       <div className="p-3.5 sm:p-4">
         <div className="flex flex-wrap items-center justify-between gap-1">
-          <span
-            className="flex h-7 w-7 items-center justify-center"
-            style={{ backgroundColor: `${accent}1A`, color: accent }}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </span>
+          <Icon aria-hidden="true" className="h-3.5 w-3.5" style={{ color: accent }} />
           {delta != null ? <DeltaPill delta={delta} /> : null}
         </div>
         <p className="mt-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
@@ -639,8 +630,8 @@ function DeltaPill({ delta }: { delta: number }) {
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-phx-sm font-black tabular-nums ${
-        up ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+      className={`inline-flex items-center gap-0.5 text-phx-sm font-black tabular-nums ${
+        up ? "text-emerald-700" : "text-rose-700"
       }`}
     >
       <Icon className="h-3 w-3" />
@@ -728,10 +719,8 @@ const EMPTY_COPY: Record<Exclude<PortalWeeklyRepStatus, "ok">, { title: string; 
 function RepWeeklyEmpty({ status }: { status: Exclude<PortalWeeklyRepStatus, "ok"> }) {
   const copy = EMPTY_COPY[status];
   return (
-    <div className="border border-slate-200 bg-white p-10 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
-      <span className="mx-auto flex h-11 w-11 items-center justify-center bg-orange-50 text-orange-500">
-        <Layers className="h-5 w-5" />
-      </span>
+    <div className={`border border-slate-200 bg-white p-10 text-center ${adminSoftDepthClassName}`}>
+      <Layers aria-hidden="true" className="mx-auto h-6 w-6 text-slate-400" />
       <p className="mt-3 text-sm font-black text-slate-900">{copy.title}</p>
       <p className="mx-auto mt-1.5 max-w-md text-xs font-semibold leading-relaxed text-slate-500">{copy.message}</p>
     </div>

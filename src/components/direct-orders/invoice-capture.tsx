@@ -199,7 +199,7 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
         </p>
 
         {error ? (
-          <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-800">{error}</p>
+          <p className="border border-l-4 border-slate-200 border-l-rose-500 bg-white px-3 py-2 text-phx-sm font-semibold text-rose-800" role="alert">{error}</p>
         ) : null}
 
         {result ? (
@@ -215,8 +215,8 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
                 hand if that is what it takes. Refusing them would send them back to typing codes,
                 which is the behaviour that created the false pharmacies in the first place. */}
             {!result.resolved.customer || result.resolved.lines.every((line) => !line.product) ? (
-              <div className="border border-amber-300 bg-amber-50 px-3 py-2">
-                <p className="text-phx-sm font-bold text-amber-900">
+              <div className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2">
+                <p className="text-phx-sm font-bold text-slate-800">
                   Not much came off this photo. If the invoice is still in front of you, a second
                   shot usually fixes it — get closer, keep the page flat, and avoid the glare.
                 </p>
@@ -300,7 +300,7 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
 
                     <div className="mt-2 flex flex-wrap items-end gap-3">
                       <label className="block">
-                        <span className="block text-phx-2xs font-black uppercase tracking-wider text-slate-400">
+                        <span className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
                           Quantity
                         </span>
                         <input
@@ -314,7 +314,7 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
                         />
                       </label>
                       <label className="block">
-                        <span className="block text-phx-2xs font-black uppercase tracking-wider text-slate-400">
+                        <span className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
                           Bonus
                         </span>
                         <input
@@ -357,11 +357,11 @@ export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props)
             </div>
 
             {result.problems.length > 0 ? (
-              <div className="border border-amber-300 bg-amber-50 px-3 py-2">
-                <p className="text-phx-xs font-black uppercase tracking-wider text-amber-900">Finish these by hand</p>
+              <div className="border border-l-4 border-slate-200 border-l-amber-500 bg-white px-3 py-2">
+                <p className="text-phx-xs font-black uppercase tracking-wider text-amber-800">Finish these by hand</p>
                 <ul className="mt-1 space-y-0.5">
                   {result.problems.map((problem) => (
-                    <li key={problem} className="text-phx-sm text-amber-900">
+                    <li key={problem} className="text-phx-sm text-slate-700">
                       {problem}
                     </li>
                   ))}

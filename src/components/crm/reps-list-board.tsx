@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
+
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
 import {
@@ -116,13 +118,13 @@ function TeamListLine({ reps }: { reps: readonly RepsListRep[] }) {
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="inline-flex items-center gap-1.5">
         <Swatch tone="slate" />
-        <span className="font-black text-slate-900 tabular-nums">{median(withList.map((rep) => rep.contactCount))}</span>{" "}
+        <span className="font-black text-[#08111f] tabular-nums">{median(withList.map((rep) => rep.contactCount))}</span>{" "}
         contacts a rep
       </span>
       {missing > 0 ? (
         <span className="inline-flex items-center gap-1.5">
           <Swatch tone="amber" />
-          <span className="font-black text-slate-900 tabular-nums">{missing}</span> with no list
+          <span className="font-black text-[#08111f] tabular-nums">{missing}</span> with no list
         </span>
       ) : null}
     </span>
@@ -308,7 +310,7 @@ function contactColumns(basePath: string, board: RepsListBoard, largest: number)
       align: "right",
       cell: (rep) => (
         <>
-          <span className="font-black text-slate-900 tabular-nums">{rep.contactCount}</span>
+          <span className="font-black text-[#08111f] tabular-nums">{rep.contactCount}</span>
           <CardMeter max={largest} value={rep.contactCount} />
         </>
       ),
@@ -318,7 +320,7 @@ function contactColumns(basePath: string, board: RepsListBoard, largest: number)
     },
     {
       align: "right",
-      cell: (rep) => <span className="font-black text-slate-900 tabular-nums">{rep.pharmacyCount}</span>,
+      cell: (rep) => <span className="font-black text-[#08111f] tabular-nums">{rep.pharmacyCount}</span>,
       key: "pharmacies",
       label: "Pharmacies",
       width: "w-[12%]",
@@ -546,7 +548,7 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
 
   return (
     <div className="border border-slate-200">
-      <Section description={description} title="Reps List">
+      <Section description={description} meta={syncedAt ? `Refreshed ${cairoStamp(syncedAt)} Cairo` : "Never refreshed"} title="Reps List">
         <RepsListFilters basePath={basePath} options={options} preserve={preserve} selection={selection} />
       </Section>
 
@@ -555,7 +557,7 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
         <Section
           action={
             <Link
-              className="border border-slate-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
+              className={landingActionClassName("outline")}
               href={hrefWithRep(basePath, board, null)}
             >
               Back to all reps

@@ -8,7 +8,7 @@
 import { ArrowDown, ArrowUp, Columns3, Pencil, RotateCcw, X } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
-import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { Button } from "@/components/ui/button";
 import { phxFieldClassName, phxLabelTextClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { candidateRegionLabels } from "@/lib/recruitment/candidate-region";
@@ -103,8 +103,8 @@ export function PoolEditableAnswer({
           aria-label={`Edit the answer to "${column.header}"`}
           className={
             touch
-              ? `mt-1.5 inline-flex min-h-8 items-center gap-1 border border-slate-200 bg-white px-2.5 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:text-orange-600 ${adminControlDepthClassName}`
-              : "mt-1 inline-flex items-center gap-1 text-phx-xs font-semibold text-slate-400 opacity-60 transition hover:text-orange-600 group-hover/answer:opacity-100"
+              ? `mt-1.5 inline-flex min-h-8 items-center gap-1 border border-slate-200 bg-white px-2.5 text-phx-xs font-semibold text-slate-600 transition motion-reduce:transition-none hover:border-[#08111f] hover:text-[#08111f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A] ${adminControlDepthClassName}`
+              : "mt-1 inline-flex items-center gap-1 text-phx-xs font-semibold text-slate-400 opacity-60 transition motion-reduce:transition-none hover:text-[#08111f] group-hover/answer:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
           }
           disabled={pending}
           onClick={onStartEdit}
@@ -241,7 +241,7 @@ export function PoolColumnChooser({
         Columns{isCustom ? " (changed)" : ""}
       </Button>
       {open ? (
-        <div className="mt-2 w-full max-w-xl border border-slate-200 bg-white p-3 shadow-lg">
+        <div className={`mt-2 w-full max-w-xl border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-slate-800">Columns for {viewLabel}</p>
             <button
@@ -267,7 +267,7 @@ export function PoolColumnChooser({
                   </div>
                   <button
                     aria-label={`Move "${column.header}" left`}
-                    className="p-1 text-slate-400 hover:text-orange-600 disabled:opacity-30"
+                    className="p-1 text-slate-400 hover:text-[#08111f] disabled:opacity-30"
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
                     title="Move left"
@@ -277,7 +277,7 @@ export function PoolColumnChooser({
                   </button>
                   <button
                     aria-label={`Move "${column.header}" right`}
-                    className="p-1 text-slate-400 hover:text-orange-600 disabled:opacity-30"
+                    className="p-1 text-slate-400 hover:text-[#08111f] disabled:opacity-30"
                     disabled={index === columns.length - 1}
                     onClick={() => move(index, 1)}
                     title="Move right"
@@ -326,7 +326,7 @@ export function PoolColumnChooser({
           ) : null}
           {isCustom ? (
             <button
-              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-orange-600"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#08111f]"
               onClick={() => onChange(null)}
               type="button"
             >

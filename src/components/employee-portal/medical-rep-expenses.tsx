@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import {
   ArrowUpDown,
-  CalendarDays,
   Download,
   FileSpreadsheet,
   FileText,
@@ -16,7 +15,13 @@ import {
   Upload,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingMeta,
+  LandingRailLine,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import {
   PortalEmptyState,
   PortalSection,
@@ -37,7 +42,6 @@ import { cn } from "@/lib/utils";
 import { FormField } from "@/components/ui/form-kit";
 import {
   phxButtonAccentClassName,
-  phxButtonGhostClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -123,6 +127,27 @@ function statusVariant(status: string): "success" | "danger" | "warning" {
   return "warning";
 }
 
+/** A claim's status as coloured small capitals with the tone's rail at the left. */
+const STATUS_TEXT: Record<"success" | "danger" | "warning", string> = {
+  danger: "border-rose-500 text-rose-700",
+  success: "border-emerald-500 text-emerald-700",
+  warning: "border-amber-400 text-amber-800",
+};
+
+function StatusText({ status, className }: { status: string; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em]",
+        STATUS_TEXT[statusVariant(status)],
+        className,
+      )}
+    >
+      {normalizeStatus(status)}
+    </span>
+  );
+}
+
 function ReadOnlyField({
   icon: Icon,
   value,
@@ -133,8 +158,8 @@ function ReadOnlyField({
   // Wraps, never clips: a home address or a long name does not fit a ~240px phone field on one line,
   // and the card around it is overflow-hidden, so a one-line value was cut off mid-word.
   return (
-    <div className={`flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 ${adminSoftDepthClassName}`}>
-      <Icon className="h-4 w-4 shrink-0 text-orange-500" />
+    <div className={`flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-[#08111f] ${adminSoftDepthClassName}`}>
+      <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
       <span className="min-w-0 break-words" dir="auto">{value}</span>
     </div>
   );
@@ -227,11 +252,12 @@ async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbac
   window.URL.revokeObjectURL(url);
 }
 
-/** The house segmented-tab button (the same look as the Phoenix CRM space tabs). */
+/** The segmented-tab button: the active one is a flat navy segment, never orange. */
 function tabButtonClassName(active: boolean) {
   return cn(
-    "flex min-h-10 min-w-0 items-center justify-center gap-2 px-3 py-2 text-center text-sm font-bold leading-tight transition",
-    active ? "bg-white text-orange-700 shadow-sm" : "text-slate-600 hover:bg-white/70",
+    "flex min-h-10 min-w-0 items-center justify-center gap-2 px-3 py-2 text-center text-phx-xs font-bold uppercase leading-tight tracking-[0.1em] transition motion-reduce:transition-none",
+    LANDING_FOCUS,
+    active ? "bg-[#08111f] text-white" : "text-slate-600 hover:bg-white hover:text-[#08111f]",
   );
 }
 
@@ -422,7 +448,7 @@ export function MedicalRepExpensesWorkspace({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Two tabs side by side at every width — they fit a 360px phone, so they never stack. */}
       <PortalSegmentedTabs className="grid grid-cols-2">
         <button
@@ -431,7 +457,7 @@ export function MedicalRepExpensesWorkspace({
           onClick={() => setActiveTab("submit")}
           type="button"
         >
-          <ReceiptText className="h-4 w-4 shrink-0" />
+          <ReceiptText aria-hidden="true" className="h-4 w-4 shrink-0" />
           Submit Expense
         </button>
         <button
@@ -440,20 +466,20 @@ export function MedicalRepExpensesWorkspace({
           onClick={() => setActiveTab("history")}
           type="button"
         >
-          <FileSpreadsheet className="h-4 w-4 shrink-0" />
+          <FileSpreadsheet aria-hidden="true" className="h-4 w-4 shrink-0" />
           History
         </button>
       </PortalSegmentedTabs>
 
       {message ? (
-        <div className="rounded-none border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
-          {message}
+        <div className={`border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="status">
+          <LandingRailLine rail="bg-slate-400">{message}</LandingRailLine>
         </div>
       ) : null}
 
       {activeTab === "submit" ? (
         <PortalSection
-          actions={<Badge variant="neutral">Traveling only</Badge>}
+          actions={<LandingMeta items={["Traveling only"]} />}
           eyebrow="Submit Expense"
           title="Traveling request"
         >
@@ -486,13 +512,13 @@ export function MedicalRepExpensesWorkspace({
                 <FormField label={`Photos (at least ${MEDICAL_REP_MIN_PHOTOS})`}>
                   <label
                     className={cn(
-                      "flex min-h-12 items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition",
+                      "flex min-h-12 items-center justify-center gap-2 rounded-none border border-dashed border-sky-300 bg-sky-50/60 px-4 text-sm font-bold text-sky-800 transition motion-reduce:transition-none",
                       isPreparingPhotos || attachments.length >= MEDICAL_REP_MAX_PHOTOS
                         ? "cursor-not-allowed opacity-70"
-                        : "cursor-pointer hover:bg-orange-100",
+                        : "cursor-pointer hover:bg-sky-50",
                     )}
                   >
-                    {isPreparingPhotos ? <LoadingSpinner /> : <Upload className="h-4 w-4" />}
+                    {isPreparingPhotos ? <LoadingSpinner /> : <Upload aria-hidden="true" className="h-4 w-4" />}
                     <span className="break-words">
                       {isPreparingPhotos
                         ? "Adding photos…"
@@ -523,7 +549,10 @@ export function MedicalRepExpensesWorkspace({
                             src={photo.previewUrl}
                           />
                           <button
-                            className="min-h-8 text-xs font-bold text-orange-700 hover:underline"
+                            className={cn(
+                              "min-h-8 text-xs font-bold text-slate-600 transition-colors hover:text-rose-700 hover:underline motion-reduce:transition-none",
+                              LANDING_FOCUS,
+                            )}
                             onClick={() => removePhoto(photo.key)}
                             type="button"
                           >
@@ -670,24 +699,24 @@ export function MedicalRepExpensesWorkspace({
 
               {!canSubmit ? (
                 <div className="md:col-span-6">
-                  <div className="rounded-none border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  <p className="border-l-2 border-amber-400 pl-3 text-sm font-semibold text-amber-800">
                     Residence must be configured before this request can be submitted.
-                  </div>
+                  </p>
                 </div>
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 bg-slate-50 px-4 py-4 sm:px-6">
-              <div className="flex min-w-0 items-center gap-3 text-base font-black text-slate-800">
-                <CalendarDays className="h-5 w-5 shrink-0 text-orange-500" />
-                <span>Total: {egp(ticketTotal)}</span>
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-4 py-4 sm:px-6">
+              <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">Total</span>
+                <span className={`text-[22px] font-bold leading-none tracking-[-0.02em] tabular-nums ${LANDING_INK}`}>{egp(ticketTotal)}</span>
+              </p>
               <button
                 className={cn(phxButtonAccentClassName, "w-full sm:w-auto sm:min-w-[220px]")}
                 disabled={!canSend}
                 type="submit"
               >
-                {isSubmitting ? <LoadingSpinner className="text-white" /> : <Send className="h-4 w-4" />}
+                {isSubmitting ? <LoadingSpinner className="text-white" /> : <Send aria-hidden="true" className="h-4 w-4" />}
                 Submit Expense
               </button>
             </div>
@@ -697,14 +726,13 @@ export function MedicalRepExpensesWorkspace({
         <PortalSection
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="neutral">{countLabel(filteredRequests.length, "claim", "claims")}</Badge>
-              <Badge variant="neutral">{egp(filteredTotal)}</Badge>
+              <LandingMeta items={[countLabel(filteredRequests.length, "claim", "claims"), egp(filteredTotal)]} />
               <button
-                className={phxButtonGhostClassName}
+                className={landingActionClassName("outline")}
                 onClick={() => void downloadExpenseWorkbook(filteredRequests, employeeName)}
                 type="button"
               >
-                <Download className="h-4 w-4" />
+                <Download aria-hidden="true" className="h-3.5 w-3.5" />
                 Download Excel
               </button>
             </div>
@@ -712,7 +740,7 @@ export function MedicalRepExpensesWorkspace({
           eyebrow="History"
           title="Your submitted claims"
         >
-          <div className="border-b border-slate-100 p-4 sm:p-6">
+          <div className="border-b border-slate-200 px-3 py-3 sm:px-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
               <label className="relative block min-w-0">
                 <span className="sr-only">Search claims</span>
@@ -785,31 +813,29 @@ export function MedicalRepExpensesWorkspace({
                     <col className="w-[10%]" />
                     <col className="w-[24%]" />
                   </colgroup>
-                  <thead className="bg-slate-900 text-xs font-black uppercase tracking-[0.14em] text-white">
+                  <thead className="bg-white text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">
                     <tr>
-                      <th className="px-3 py-3">Request</th>
-                      <th className="px-3 py-3">Trip</th>
-                      <th className="px-3 py-3">Tickets</th>
-                      <th className="px-3 py-3">Files</th>
-                      <th className="px-3 py-3">Note</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Request</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Trip</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Tickets</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Files</th>
+                      <th className="border-b border-slate-200 px-3 py-2.5">Note</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-orange-100 bg-white">
+                  <tbody className="divide-y divide-slate-200 bg-white">
                     {filteredRequests.map((request) => (
-                      <tr className="align-top transition hover:bg-orange-50/40" key={getRequestKey(request)}>
+                      <tr className="align-top transition hover:bg-slate-50 motion-reduce:transition-none" key={getRequestKey(request)}>
                         <td className="px-3 py-3">
-                          <p className="break-words font-mono text-xs font-bold text-slate-600">MR-{request.id}</p>
-                          <Badge className="mt-1.5" variant={statusVariant(request.status)}>
-                            {normalizeStatus(request.status)}
-                          </Badge>
+                          <p className="break-words text-xs font-bold tabular-nums text-slate-500">MR-{request.id}</p>
+                          <StatusText className="mt-1.5" status={request.status} />
                         </td>
                         <td className="px-3 py-3">
-                          <p className="break-words font-semibold text-slate-900">{tripDatesLabel(request)}</p>
+                          <p className={`break-words font-semibold tabular-nums ${LANDING_INK}`}>{tripDatesLabel(request)}</p>
                           <p className="mt-1 break-words font-medium text-slate-700">
                             <span dir="auto">{requestFromLabel(request)}</span>
-                            <span aria-hidden="true" className="px-1 text-orange-500">→</span>
+                            <span aria-hidden="true" className="px-1 text-slate-400">→</span>
                             <span className="sr-only"> to </span>
-                            <span className="font-semibold text-slate-900" dir="auto">
+                            <span className={`font-semibold ${LANDING_INK}`} dir="auto">
                               {request.toLabel || "—"}
                             </span>
                           </p>
@@ -828,9 +854,9 @@ export function MedicalRepExpensesWorkspace({
                                 {egp(request.returnTicketAmount)}
                               </dd>
                             </div>
-                            <div className="flex flex-wrap items-baseline justify-between gap-x-2 border-t border-slate-100 pt-1">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-2 border-t border-slate-200 pt-1">
                               <dt className="text-xs font-bold text-slate-600">Total</dt>
-                              <dd className="min-w-0 break-words font-black tabular-nums text-slate-950">
+                              <dd className={`min-w-0 break-words font-black tabular-nums ${LANDING_INK}`}>
                                 {egp(requestTotal(request))}
                               </dd>
                             </div>
@@ -848,40 +874,38 @@ export function MedicalRepExpensesWorkspace({
                 </table>
               </div>
 
-              <div className="space-y-3 p-4 md:hidden">
+              <div className="divide-y divide-slate-200 md:hidden">
                 {filteredRequests.map((request) => (
                   <div
-                    className="rounded-none border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                    className="px-3 py-3.5 sm:px-4"
                     key={`${getRequestKey(request)}-mobile`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-xs font-bold text-slate-500">MR-{request.id}</p>
-                        <p className="mt-1 break-words font-black text-slate-950" dir="auto">
+                        <p className="text-xs font-bold tabular-nums text-slate-500">MR-{request.id}</p>
+                        <p className={`mt-1 break-words font-black ${LANDING_INK}`} dir="auto">
                           {request.toLabel}
                         </p>
                       </div>
-                      <Badge className="shrink-0" variant={statusVariant(request.status)}>
-                        {normalizeStatus(request.status)}
-                      </Badge>
+                      <StatusText className="shrink-0" status={request.status} />
                     </div>
-                    <p className="mt-2 text-sm font-medium text-slate-600">{tripDatesLabel(request)}</p>
+                    <p className="mt-2 text-sm font-medium tabular-nums text-slate-600">{tripDatesLabel(request)}</p>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                       <p className="text-slate-600">
-                        Go: <span className="font-bold text-slate-950">{egp(request.goTicketAmount)}</span>
+                        Go: <span className={`font-bold tabular-nums ${LANDING_INK}`}>{egp(request.goTicketAmount)}</span>
                       </p>
                       <p className="text-slate-600">
                         Return:{" "}
-                        <span className="font-bold text-slate-950">{egp(request.returnTicketAmount)}</span>
+                        <span className={`font-bold tabular-nums ${LANDING_INK}`}>{egp(request.returnTicketAmount)}</span>
                       </p>
                       <p className="text-slate-600">
                         Total:{" "}
-                        <span className="font-bold text-slate-950">
+                        <span className={`font-bold tabular-nums ${LANDING_INK}`}>
                           {egp(requestTotal(request))}
                         </span>
                       </p>
                       <p className="text-slate-600">
-                        Files: <span className="font-bold text-slate-950">{request.attachmentCount}</span>
+                        Files: <span className={`font-bold tabular-nums ${LANDING_INK}`}>{request.attachmentCount}</span>
                       </p>
                     </div>
                     {request.notes ? (

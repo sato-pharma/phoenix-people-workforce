@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 
-import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LandingEmpty,
+  LandingPanel,
+  LandingRailLine,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
 import type { PlanApprovalDetail } from "@/lib/approvals-hub/service";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import { planPeriodLabel } from "@/lib/weekly-planning/plan-labels";
@@ -18,12 +26,28 @@ type Props = {
   backHref: string;
 };
 
+/** The white sheet a stand-alone line sits on: the kit's hairline and the soft depth token. */
+const SHEET = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+
 function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
-    <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2">
-      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="text-sm font-semibold text-slate-900">{value === null || value === undefined || value === "" ? "—" : value}</dd>
+    <div className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0">
+      <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</dt>
+      <dd className={`break-words text-sm font-semibold ${LANDING_INK}`} dir="auto">
+        {value === null || value === undefined || value === "" ? "—" : value}
+      </dd>
     </div>
+  );
+}
+
+function Back({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] underline-offset-4 transition-colors hover:underline motion-reduce:transition-none ${LANDING_INK} ${LANDING_FOCUS}`}
+    >
+      <ArrowLeft aria-hidden="true" className="h-4 w-4" /> Back to list
+    </Link>
   );
 }
 
@@ -31,12 +55,10 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
   if (detail.notFound) {
     return (
       <div className="space-y-4">
-        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-          <ArrowLeft className="h-4 w-4" /> Back to list
-        </Link>
-        <p className={`${adminSoftPanelClassName} px-4 py-6 text-sm text-slate-600`}>
-          This plan could not be found, or you do not have access to it.
-        </p>
+        <Back href={backHref} />
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-amber-500">This plan could not be found, or you do not have access to it.</LandingRailLine>
+        </div>
       </div>
     );
   }
@@ -45,40 +67,30 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
 
   return (
     <div className="space-y-4">
-      <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
-        <ArrowLeft className="h-4 w-4" /> Back to list
-      </Link>
+      <Back href={backHref} />
 
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
-        <div>
-          <h2 className="text-lg font-black text-slate-900">{detail.employeeName}</h2>
-          <p className="text-sm text-slate-600">
-            {kindLabel} plan · {planPeriodLabel(detail.periodStartDate, detail.periodEndDate) || detail.periodKey}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      {/* The head is the name and its standing alone (no sentence under a header); the plan type and
+          its period are rows of Plan details. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-3">
+        <h2 className={`min-w-0 break-words text-lg font-black ${LANDING_INK}`} dir="auto">{detail.employeeName}</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {detail.adherence ? <PlanAdherenceBadge score={detail.adherence} /> : null}
           <PlanPeriodBadge status={detail.periodStatus} />
-          <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
-            {detail.statusLabel}
-          </span>
+          <span className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-600">{detail.statusLabel}</span>
         </div>
       </div>
 
       {detail.readOnly && detail.readOnlyReason ? (
-        <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
-          {detail.readOnlyReason}
-        </p>
+        <div className={SHEET}>
+          <LandingRailLine rail="bg-slate-400">{detail.readOnlyReason}</LandingRailLine>
+        </div>
       ) : null}
 
       {/* The submitter's own plan: a clear jump to the planner, where they can view/edit it through
           its lifecycle (e.g. fix a returned plan) — the hub page itself is read-only for them. */}
       {detail.isOwner && detail.plannerHref ? (
-        <a
-          href={detail.plannerHref}
-          className="inline-flex items-center gap-1.5 bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
-        >
-          <ExternalLink className="h-4 w-4" /> Open in my planner
+        <a href={detail.plannerHref} className={landingActionClassName("solid")}>
+          <ExternalLink aria-hidden="true" className="h-4 w-4" /> Open in my planner
         </a>
       ) : null}
 
@@ -90,11 +102,8 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">
-          <section className={adminPanelClassName}>
-            <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-              <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Plan details</h3>
-            </header>
-            <dl className="px-4 py-2">
+          <LandingPanel title="Plan details">
+            <dl className="px-3 py-1 sm:px-4">
               <Row label="Employee" value={detail.employeeName} />
               <Row label="Job title" value={detail.employeeJobTitle} />
               <Row label="Plan type" value={`${kindLabel} plan`} />
@@ -105,7 +114,7 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
               <Row label="Manager" value={detail.managerName} />
               <Row label="Activities" value={detail.composition.total} />
             </dl>
-          </section>
+          </LandingPanel>
 
           {/* Approver decision-support — never shown to the submitter viewing their own plan. */}
           {!detail.isOwner ? <PlanApproverContext employeeHrId={detail.employeeHrId} /> : null}
@@ -135,18 +144,15 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
           ) : null}
         </div>
 
-        <section className={`${adminPanelClassName} lg:col-span-2`}>
-          <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Planned activities</h3>
-          </header>
-          <div className="px-4 py-4">
-            {detail.calendar ? (
+        <LandingPanel className="lg:col-span-2" title="Planned activities">
+          {detail.calendar ? (
+            <div className="px-3 py-3 sm:px-4">
               <WeeklyPlanCalendar detail={detail.calendar} />
-            ) : (
-              <p className="text-sm text-slate-500">This plan has no activities.</p>
-            )}
-          </div>
-        </section>
+            </div>
+          ) : (
+            <LandingEmpty>This plan has no activities.</LandingEmpty>
+          )}
+        </LandingPanel>
       </div>
     </div>
   );

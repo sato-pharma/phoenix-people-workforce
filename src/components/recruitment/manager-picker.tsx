@@ -130,7 +130,7 @@ export function ManagerPicker({
       inputRef={inputRef}
       items={items}
       leadingIcon={
-        <UserRound className={value.length === 1 ? "h-3.5 w-3.5 shrink-0 text-orange-500" : "h-3.5 w-3.5 shrink-0 text-slate-400"} />
+        <UserRound className={value.length === 1 ? "h-3.5 w-3.5 shrink-0 text-[#08111f]" : "h-3.5 w-3.5 shrink-0 text-slate-400"} />
       }
       multiple={multiple}
       onChange={onChange}

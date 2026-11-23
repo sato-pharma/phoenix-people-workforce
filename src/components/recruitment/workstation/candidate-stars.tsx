@@ -62,13 +62,13 @@ export function CandidateStars({
           <button
             aria-pressed={lit}
             className={cn(
-              "inline-flex h-[30px] w-7 items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+              "inline-flex h-[30px] w-7 items-center justify-center transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-45",
               // The hairline between stars, never around them: three bordered boxes would read as
               // three separate buttons rather than one ladder with three rungs.
               value === 1 ? "" : "border-l border-phx-line",
               lit
-                ? "bg-phx-accent-soft text-phx-accent-press"
-                : "text-phx-ink-soft hover:bg-phx-surface-2 hover:text-phx-accent-press",
+                ? "bg-slate-100 text-[#08111f]"
+                : "text-phx-ink-soft hover:bg-phx-surface-2 hover:text-[#08111f]",
             )}
             disabled={busy}
             key={value}
@@ -107,7 +107,7 @@ export function StarMark({ className, rating }: { className?: string; rating: Ca
   return (
     <span
       aria-label={candidateRatingLabels[rating]}
-      className={cn("inline-flex items-center gap-px text-phx-accent-press", className)}
+      className={cn("inline-flex items-center gap-px text-[#08111f]", className)}
       title={candidateRatingLabels[rating]}
     >
       {/* Only the stars that are lit, so three stars is visibly wider than one — the difference

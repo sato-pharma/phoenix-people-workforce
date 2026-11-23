@@ -1,5 +1,6 @@
 import { Navigation } from "lucide-react";
 
+import { LANDING_FOCUS, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,8 +36,8 @@ export function DirectionsLink({
       aria-label={`Directions to ${customerName}`}
       className={cn(
         variant === "button"
-          ? "inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 md:min-h-9"
-          : "inline-flex min-w-0 items-center gap-1 rounded-none text-phx-xs font-semibold text-slate-600 underline underline-offset-2 transition hover:text-orange-700",
+          ? landingActionClassName("outline", "min-h-11 min-w-0 sm:min-h-11 md:min-h-9")
+          : `inline-flex min-w-0 items-center gap-1 rounded-none text-phx-xs font-semibold text-slate-600 underline underline-offset-2 transition-colors hover:text-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`,
         className,
       )}
       href={href}

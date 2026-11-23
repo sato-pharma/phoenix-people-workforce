@@ -35,6 +35,8 @@ import {
 import { closingIntro, earlierClosings, paceWords, wholePercentText } from "@/lib/sales/sos-portal-words";
 import { phxButtonGhostClassName, phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { landingActionClassName } from "@/components/employee-portal/landing-kit";
 
 // "Where my sales come from" — the pharmacy action lists and the weekly month pace, above the
 // distributor dashboard. Every rule is computed server-side (sos-pharmacy-actions.ts); this file
@@ -108,7 +110,7 @@ const BAND_TITLE = "Source of Sales";
 const formatPct = wholePercentText;
 
 // A phone tap target is at least 40px; the compact 32px control returns from `md` up.
-const SELECT_CLASS = cn(phxSelectClassName, "min-w-0 max-w-full px-2 text-xs hover:border-orange-300 md:h-8");
+const SELECT_CLASS = cn(phxSelectClassName, "min-w-0 max-w-full px-2 text-xs hover:border-[#08111f] md:h-8");
 const SEARCH_CLASS = cn(phxFieldClassName, "min-w-0 w-full px-2 text-xs md:h-8");
 const FILTER_LABEL = "mb-1 block whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.18em] text-slate-500";
 /** The shared chip, grown to a 40px tap target on a phone. Appended as a plain string, never cn(). */
@@ -136,8 +138,8 @@ function Tile({
       aria-pressed={active}
       // Not SURFACE_CLASS: its border and background colours would sit beside the active ones
       // in one class list, and which of two same-kind utilities wins is not decided by order.
-      className={`relative border text-left shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.05)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500 ${
-        active ? "border-orange-500 bg-orange-50/40 ring-2 ring-inset ring-orange-500" : "border-slate-200 bg-white hover:border-orange-300"
+      className={`relative border text-left ${adminSoftDepthClassName} transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#08111f] ${
+        active ? "border-[#08111f] bg-white ring-2 ring-inset ring-[#08111f]" : "border-slate-200 bg-white hover:border-[#08111f]"
       }`}
       onClick={onClick}
       type="button"
@@ -146,9 +148,7 @@ function Tile({
       <div className="p-3.5 pt-4 sm:p-4 sm:pt-5">
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center" style={{ backgroundColor: `${accent}14`, color: accent }}>
-            <Icon className="h-3.5 w-3.5" />
-          </span>
+          <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
         </div>
         <p className="mt-1 text-3xl font-black tabular-nums leading-none tracking-tight text-slate-900">{value}</p>
         <p className="mt-2 text-phx-xs font-semibold text-slate-500">{sub}</p>
@@ -164,7 +164,7 @@ function PharmacyName({ item }: { item: PharmacyActionItem }) {
       <p className="break-words text-sm font-bold text-slate-900">
         {item.name}
         {item.isDirect ? (
-          <span className="ml-2 inline-block border border-orange-300 bg-orange-50/60 px-1.5 py-px align-middle text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700">
+          <span className="ml-2 inline-block border-l-2 border-[#08111f] pl-1.5 align-middle text-phx-xs font-black uppercase leading-tight tracking-[0.06em] text-[#08111f]">
             Direct order
           </span>
         ) : null}
@@ -180,9 +180,7 @@ function ChangePill({ change }: { change: number | null }) {
   const down = change < 0;
   return (
     <span
-      className={`inline-flex px-1.5 py-0.5 text-phx-xs font-black tabular-nums ring-1 ring-inset ${
-        down ? "bg-red-50 text-red-600 ring-red-100" : "bg-emerald-50 text-emerald-600 ring-emerald-100"
-      }`}
+      className={`inline-flex text-phx-xs font-black tabular-nums ${down ? "text-rose-700" : "text-emerald-700"}`}
     >
       {`${down ? "" : "+"}${formatPct(change)}`}
     </span>
@@ -247,7 +245,7 @@ function ResponsiveTable<T extends { key: string }>({
       </div>
       <div className="space-y-2 md:hidden">
         {items.map((item) => (
-          <div key={item.key} className="border border-l-[3px] border-slate-200 border-l-orange-500 bg-white p-3">
+          <div key={item.key} className="border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white p-3">
             {lead.render(item)}
             <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-2.5">
               {columns.map((column) => (
@@ -284,7 +282,7 @@ function ShowMore({ shown, total, full, onMore }: { shown: number; total: number
             : `Showing ${count(shown)} of ${count(total)}`}
       </p>
       {shown < total ? (
-        <button className={`${chipClass(false)} ${TAP_CHIP}`} onClick={onMore} type="button">
+        <button className={`${chipClass(false, "portal")} ${TAP_CHIP}`} onClick={onMore} type="button">
           Show more
         </button>
       ) : null}
@@ -302,7 +300,7 @@ function PaceBar({ row }: { row: MonthPaceRow }) {
   return (
     <div className="min-w-0 pt-1">
       <div className="relative h-2.5 w-full bg-slate-100">
-        <span className={`absolute inset-y-0 left-0 ${row.onPace ? "bg-emerald-500" : "bg-orange-500"}`} style={{ width: `${width}%` }} />
+        <span className={`absolute inset-y-0 left-0 ${row.onPace ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${width}%` }} />
         <span aria-hidden className="absolute -bottom-1 -top-1 w-0.5 -translate-x-1/2 bg-slate-900" style={{ left: `${expected}%` }} />
       </div>
       {/* The mark's meaning is printed, not a hover title: a phone has no hover. */}
@@ -361,14 +359,14 @@ function MonthPace({ pace, area }: { pace: MonthPaceResult; area: string }) {
         return (
           <div className="min-w-0">
             <span
-              className={`inline-block border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${
-                row.onPace ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-orange-200 bg-orange-50 text-orange-700"
+              className={`inline-block border-l-2 pl-1.5 text-phx-xs font-black uppercase leading-tight tracking-[0.06em] ${
+                row.onPace ? "border-emerald-500 text-emerald-700" : "border-amber-500 text-amber-700"
               }`}
             >
               {words.badge}
             </span>
             {words.shortBy != null ? (
-              <p className="mt-1 break-words text-phx-xs font-semibold tabular-nums text-orange-700">{`${formatEgp(words.shortBy)} short of today's mark`}</p>
+              <p className="mt-1 break-words text-phx-xs font-semibold tabular-nums text-amber-700">{`${formatEgp(words.shortBy)} short of today's mark`}</p>
             ) : null}
           </div>
         );
@@ -671,7 +669,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
           render: (item) => (
             <div className="flex flex-wrap gap-1">
               {item.missingProducts.map((product) => (
-                <span key={product.code} className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-phx-xs font-bold text-orange-700">
+                <span key={product.code} className="border border-slate-200 bg-white px-1.5 py-0.5 text-phx-xs font-bold text-slate-700">
                   {product.name}
                 </span>
               ))}
@@ -779,7 +777,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
         actions={
           actions ? (
             <a
-              className="inline-flex min-h-10 items-center gap-1.5 border border-orange-300 bg-white px-3 py-1 text-xs font-bold text-orange-700 transition-colors hover:border-orange-500 hover:bg-orange-50 md:min-h-0"
+              className={landingActionClassName("outline")}
               href={`/api/employee-portals/source-of-sales/actions/export?${new URLSearchParams({
                 ...(data.line ? { line: data.line } : {}),
                 ...(actions.latestPeriod ? { period: actions.latestPeriod } : {}),
@@ -938,7 +936,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
               </div>
 
               {!filterOn && totals && totals.total > 0 ? (
-                <p className="mt-4 border-l-2 border-orange-200 pl-3 text-phx-xs font-semibold leading-5 text-slate-500">
+                <p className="mt-4 border-l-2 border-slate-300 pl-3 text-phx-xs font-semibold leading-5 text-slate-500">
                   {`Your ${formatPeriod(actions.latestPeriod)} closing: ${formatEgp(totals.total)} = ${tieBack.join(" + ")}. Only pharmacies are listed — Main Stores and wholesaler shares are split across areas and have no single pharmacy to visit.`}
                 </p>
               ) : null}
@@ -950,13 +948,13 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                     <button
                       key={entry.key}
                       aria-pressed={selected}
-                      className={`${chipClass(selected)} ${TAP_CHIP}`}
+                      className={`${chipClass(selected, "portal")} ${TAP_CHIP}`}
                       onClick={() => selectTab(entry.key)}
                       type="button"
                     >
                       {entry.label}
                       {entry.key === "top" ? null : (
-                        <span className={`ml-1 tabular-nums ${selected ? "text-orange-100" : "text-slate-400"}`}>{`· ${count(countOf(entry.key))}`}</span>
+                        <span className={`ml-1 tabular-nums ${selected ? "text-white/65" : "text-slate-400"}`}>{`· ${count(countOf(entry.key))}`}</span>
                       )}
                     </button>
                   );

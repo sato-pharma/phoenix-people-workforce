@@ -28,6 +28,17 @@ import { claimMoneyRows } from "@/lib/outstation/claim-money-rows";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { tidyOutstationAddress } from "@/lib/outstation/description-format";
 import { claimsLabel, isPassedValidation, summarizeMyClaims } from "@/lib/outstation/my-claims-summary";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  LANDING_FOCUS,
+  LANDING_INK,
+  LANDING_NAVY_TILE,
+  LandingFigure,
+  LandingNavyBoard,
+  LandingTitle,
+  landingActionClassName,
+} from "@/components/employee-portal/landing-kit";
+import { cn } from "@/lib/utils";
 
 /** A stored address with its leading plus code ("2C2Q+R4 …") and trailing "Egypt" removed; the raw text when nothing readable is left. */
 function readableAddress(value: string | null | undefined): string {
@@ -269,12 +280,20 @@ export function headlineStatus(submission: MyOutstationSubmission): {
   return { label: "In review", tone: "slate" };
 }
 
+/**
+ * A status is coloured small text on a thin rail at its left, never a filled pill. The rail colour
+ * and the text colour travel together; STATUS_TEXT_CLASS carries the `border-l-2 pl-1.5` that shows it.
+ */
 export const TONE_CLASSES: Record<"amber" | "emerald" | "rose" | "slate", string> = {
-  amber: "bg-amber-100 text-amber-800",
-  emerald: "bg-emerald-100 text-emerald-800",
-  rose: "bg-rose-100 text-rose-800",
-  slate: "bg-slate-100 text-slate-700",
+  amber: "border-amber-400 text-amber-800",
+  emerald: "border-emerald-500 text-emerald-700",
+  rose: "border-rose-500 text-rose-700",
+  slate: "border-slate-300 text-slate-600",
 };
+
+/** The status words themselves: small capitals, the tone's rail at the left. */
+export const STATUS_TEXT_CLASS =
+  "inline-flex max-w-full items-center break-words border-l-2 pl-1.5 text-phx-xs font-bold uppercase leading-tight tracking-[0.06em]";
 
 /**
  * The row's answer to "what now, and what after", readable without opening the claim (owner,
@@ -310,19 +329,18 @@ export function rowNowAndNext(
 export function Fact({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <p className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
+      <p className="flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
         {icon}
         {label}
       </p>
-      <p className="mt-1 text-sm font-bold text-slate-900">{value}</p>
+      <p className={`mt-1 break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{value}</p>
     </div>
   );
 }
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-phx-xs font-black uppercase tracking-wider text-slate-500">{children}</h3>
-  );
+  // A step header: the orange tick, then the words in navy capitals.
+  return <LandingTitle as="h3">{children}</LandingTitle>;
 }
 
 export function MyExpenseSubmissions({
@@ -387,9 +405,9 @@ export function MyExpenseSubmissions({
 
   if (submissions.length === 0) {
     return (
-      <section className="border border-slate-200 bg-white p-8 text-center">
-        <Route className="mx-auto h-8 w-8 text-slate-300" />
-        <p className="mt-3 text-sm font-bold text-slate-900">No outstation submissions yet</p>
+      <section className={`border border-slate-200 bg-white px-4 py-8 text-center ${adminSoftDepthClassName}`}>
+        <Route aria-hidden="true" className="mx-auto h-7 w-7 text-slate-300" />
+        <p className={`mt-3 text-phx-md font-bold ${LANDING_INK}`}>No outstation submissions yet</p>
         <p className="mt-1 text-phx-md text-slate-500">
           Claims you submit appear here, with their evidence, what each one waits for, and how it was validated.
         </p>
@@ -397,33 +415,49 @@ export function MyExpenseSubmissions({
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">You claimed</p>
-          <p className="mt-1 text-2xl font-black text-slate-900">{money(totals.claimed)}</p>
-          <p className="mt-0.5 text-xs text-slate-500">{claimsLabel(submissions.length)}</p>
-        </div>
-        <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">Passed validation</p>
-          <p className="mt-1 text-2xl font-black text-emerald-700">
-            {totals.validatedCount > 0 ? money(totals.validatedAmount) : "—"}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {totals.validatedCount > 0
-              ? `${totals.validatedCount} of ${claimsLabel(submissions.length)}`
-              : "None validated yet"}
-          </p>
-        </div>
-        <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">Still held</p>
-          <p className="mt-1 text-2xl font-black text-amber-700">{totals.awaiting}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Waiting on evidence or workload</p>
-        </div>
-      </section>
+  // The page's ONE navy board: the three totals, each a tile with its tone on a thin rail.
+  const totalTileClass = `relative flex min-w-0 flex-col border border-white/[0.08] p-3 pl-3.5 ${LANDING_NAVY_TILE}`;
 
-      <div className="space-y-3">
+  return (
+    <div className="space-y-3">
+      <LandingNavyBoard label="Claim totals">
+        <div className="@container">
+          <div className="grid grid-cols-1 gap-2 @xl:grid-cols-3">
+            <div className={totalTileClass}>
+              <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-white/30" />
+              <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-white/65">You claimed</p>
+              <div className="mt-1.5">
+                <LandingFigure onNavy size="md">{money(totals.claimed)}</LandingFigure>
+              </div>
+              <p className="mt-1 text-phx-xs font-medium tabular-nums text-white/55">{claimsLabel(submissions.length)}</p>
+            </div>
+            <div className={totalTileClass}>
+              <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-emerald-400" />
+              <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-white/65">Passed validation</p>
+              <div className="mt-1.5">
+                <LandingFigure onNavy size="md" tone="text-emerald-300">
+                  {totals.validatedCount > 0 ? money(totals.validatedAmount) : "—"}
+                </LandingFigure>
+              </div>
+              <p className="mt-1 text-phx-xs font-medium tabular-nums text-white/55">
+                {totals.validatedCount > 0
+                  ? `${totals.validatedCount} of ${claimsLabel(submissions.length)}`
+                  : "None validated yet"}
+              </p>
+            </div>
+            <div className={totalTileClass}>
+              <span aria-hidden="true" className="absolute inset-y-0 left-0 w-0.5 bg-amber-400" />
+              <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-white/65">Still held</p>
+              <div className="mt-1.5">
+                <LandingFigure onNavy size="md" tone="text-amber-300">{totals.awaiting}</LandingFigure>
+              </div>
+              <p className="mt-1 text-phx-xs font-medium text-white/55">Waiting on evidence or workload</p>
+            </div>
+          </div>
+        </div>
+      </LandingNavyBoard>
+
+      <div className="space-y-2">
         {submissions.map((submission) => {
           const isOpen = openId === submission.id;
           const status = headlineStatus(submission);
@@ -440,35 +474,36 @@ export function MyExpenseSubmissions({
 
           return (
             <article
-              className="overflow-hidden border border-slate-200 bg-white"
+              className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}
               key={submission.id}
             >
               <button
                 aria-expanded={isOpen}
-                className="flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-slate-50 sm:p-5"
+                className={cn(
+                  "flex w-full items-start justify-between gap-3 px-3 py-3.5 text-left transition-colors hover:bg-slate-50 motion-reduce:transition-none sm:px-4",
+                  LANDING_FOCUS,
+                )}
                 onClick={() => toggle(submission.id)}
                 type="button"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="bg-slate-900 px-1.5 py-0.5 text-phx-sm font-black tracking-wider text-white">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className={`text-phx-xs font-black tabular-nums tracking-[0.08em] ${LANDING_INK}`}>
                       OUTSTATION-{submission.id}
                     </span>
-                    <span
-                      className={`px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wider ${TONE_CLASSES[status.tone]}`}
-                    >
+                    <span className={cn(STATUS_TEXT_CLASS, TONE_CLASSES[status.tone])}>
                       {status.label}
                     </span>
                     {departureDue || ticketDue ? (
-                      <span className="inline-flex items-center gap-1 bg-orange-500 px-2 py-0.5 text-phx-sm font-black uppercase tracking-wider text-white">
-                        {departureDue ? <Camera className="h-3 w-3" /> : <Ticket className="h-3 w-3" />}
+                      <span className={cn(STATUS_TEXT_CLASS, "gap-1 border-[#08111f] font-black text-[#08111f]")}>
+                        {departureDue ? <Camera aria-hidden="true" className="h-3 w-3" /> : <Ticket aria-hidden="true" className="h-3 w-3" />}
                         Action needed
                       </span>
                     ) : null}
                   </div>
 
-                  <p className="mt-2 text-sm font-black text-slate-900">{readableAddress(submission.destination)}</p>
-                  <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                  <p className={`mt-2 break-words text-phx-md font-bold ${LANDING_INK}`} dir="auto">{readableAddress(submission.destination)}</p>
+                  <p className="mt-0.5 text-phx-xs font-semibold tabular-nums text-slate-500">
                     {formatPhoenixLongDate(submission.tripStartDate)}
                     {submission.tripStartDate !== submission.tripEndDate
                       ? ` – ${formatPhoenixLongDate(submission.tripEndDate)}`
@@ -477,14 +512,14 @@ export function MyExpenseSubmissions({
                     {humanizeCode(submission.transportationType)}
                   </p>
                   {!submission.isPayrollEligible ? (
-                    <p className="mt-1.5 text-phx-md leading-relaxed text-amber-800">
+                    <p className="mt-1.5 break-words border-l-2 border-amber-400 pl-2 text-phx-md leading-relaxed text-amber-800">
                       {submission.gateMessage}
                     </p>
                   ) : null}
                   {nowAndNext ? (
-                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                    <p className="mt-1.5 break-words text-phx-xs leading-relaxed text-slate-600">
                       <span
-                        className={`font-black uppercase tracking-wider ${nowAndNext.yours ? "text-orange-700" : "text-slate-500"}`}
+                        className={`font-black uppercase tracking-[0.08em] ${nowAndNext.yours ? LANDING_INK : "text-slate-500"}`}
                       >
                         Now
                       </span>{" "}
@@ -492,7 +527,7 @@ export function MyExpenseSubmissions({
                       {nowAndNext.next ? (
                         <>
                           {" · "}
-                          <span className="font-black uppercase tracking-wider text-slate-500">Next</span>{" "}
+                          <span className="font-black uppercase tracking-[0.08em] text-slate-500">Next</span>{" "}
                           {nowAndNext.next}
                         </>
                       ) : null}
@@ -500,49 +535,52 @@ export function MyExpenseSubmissions({
                   ) : null}
                 </div>
 
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="flex shrink-0 items-start gap-2.5">
                   <div className="text-right">
-                    <p className="text-sm font-black text-slate-900">
+                    <p className={`text-phx-md font-bold tabular-nums ${LANDING_INK}`}>
                       {money(submission.claimedTotalAmount)}
                     </p>
-                    <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
+                    <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                       You claimed
                     </p>
                     {submission.decision?.approvedAmount !== null &&
                     submission.decision?.approvedAmount !== undefined ? (
                       <>
                         <p
-                          className={`mt-1 text-sm font-black ${adjusted ? "text-amber-700" : "text-emerald-700"}`}
+                          className={`mt-1 text-phx-md font-bold tabular-nums ${adjusted ? "text-amber-700" : "text-emerald-700"}`}
                         >
                           {money(submission.decision.approvedAmount)}
                         </p>
-                        <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
+                        <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                           Validated
                         </p>
                       </>
                     ) : null}
                   </div>
                   <ChevronDown
-                    className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                    className={`mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`}
                   />
                 </div>
               </button>
 
               {isOpen ? (
-                <div className="space-y-6 border-t border-slate-200 bg-slate-50/60 p-4 sm:p-5">
+                <div className="space-y-5 border-t border-slate-200 bg-slate-50 px-3 py-4 sm:px-4">
                   {/* ── Where this trip has got to ─────────────────────────── */}
                   <section>
                     <SectionTitle>Progress</SectionTitle>
                     <ol className="mt-3 space-y-2.5">
                       {stages.map((stage) => (
                         <li className="flex items-start gap-3" key={stage.key}>
+                          {/* An outlined square, never a filled chip: done carries the tick. */}
                           <span
-                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-phx-sm font-black ${
+                            aria-hidden="true"
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center bg-white ${
                               stage.state === "done"
-                                ? "bg-emerald-500 text-white"
+                                ? "border border-emerald-600 text-emerald-700"
                                 : stage.state === "current"
-                                  ? "bg-amber-500 text-white"
-                                  : "bg-slate-200 text-slate-500"
+                                  ? "border-2 border-amber-500"
+                                  : "border border-slate-300"
                             }`}
                           >
                             {stage.state === "done" ? <Check className="h-3 w-3" /> : null}
@@ -550,12 +588,12 @@ export function MyExpenseSubmissions({
                           <div className="min-w-0">
                             <p
                               className={`text-phx-md font-bold ${
-                                stage.state === "waiting" ? "text-slate-400" : "text-slate-900"
+                                stage.state === "waiting" ? "text-slate-400" : LANDING_INK
                               }`}
                             >
                               {stage.label}
                             </p>
-                            <p className="text-xs leading-relaxed text-slate-500">{stage.detail}</p>
+                            <p className="break-words text-xs leading-relaxed text-slate-500">{stage.detail}</p>
                           </div>
                         </li>
                       ))}
@@ -626,8 +664,8 @@ export function MyExpenseSubmissions({
                         levels. The address string above is what the map service called the spot;
                         this is what the business calls it, and it is the one an approver argues
                         about. Derived from the coordinates against TODAY's brick tree. */}
-                    <div className="mt-4 border border-slate-200 bg-white p-3">
-                      <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
+                    <div className="mt-4 border-t border-slate-200 pt-3">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                         Captured location
                       </p>
                       <div className="mt-2 grid gap-4 sm:grid-cols-3">
@@ -649,7 +687,7 @@ export function MyExpenseSubmissions({
                       ) : null}
                     </div>
                     {submission.notes ? (
-                      <p className="mt-3 whitespace-pre-line border border-slate-200 bg-white p-3 text-phx-md leading-relaxed text-slate-700">
+                      <p className="mt-3 whitespace-pre-line break-words border-l-2 border-slate-300 pl-3 text-phx-md leading-relaxed text-slate-700" dir="auto">
                         {submission.notes}
                       </p>
                     ) : null}
@@ -660,22 +698,22 @@ export function MyExpenseSubmissions({
                     <section>
                       <SectionTitle>Journey</SectionTitle>
                       {submission.journey ? (
-                        <div className="mt-3 border border-slate-200 bg-white p-3">
-                          <p className="text-phx-md leading-relaxed text-slate-700">
+                        <div className={`mt-3 border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
+                          <p className="break-words text-phx-md leading-relaxed text-slate-700">
                             {submission.journey.modeReason}
                           </p>
                           <div className="mt-2">
                             <JourneyRouteLine legs={submission.journey.legs} />
                           </div>
                           {submission.journey.mode === "ticket_journey" ? null : (
-                            <p className="mt-2 text-xs text-slate-600">
+                            <p className="mt-2 text-xs tabular-nums text-slate-600">
                               Fuel {money(submission.journey.fuelAmount)} · home to the first place and back would be{" "}
                               {money(submission.journey.singleDestinationFuelAmount)}
                             </p>
                           )}
                           {submission.journey.flagged ? (
                             <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800">
-                              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                               Your approver will review this journey before it is paid.
                             </p>
                           ) : null}
@@ -684,7 +722,7 @@ export function MyExpenseSubmissions({
                       <ol className="mt-3 space-y-1.5 text-xs text-slate-600">
                         {submission.journeyStops.map((stop) => (
                           <li className="break-words" key={stop.stopNumber}>
-                            <span className="font-bold text-slate-900">{stop.governorate ?? "Next place"}</span>
+                            <span className={`font-bold ${LANDING_INK}`}>{stop.governorate ?? "Next place"}</span>
                             {stop.locationLabel ? ` · ${readableAddress(stop.locationLabel)}` : ""}
                             {` · ${formatPhoenixLongDate(stop.capturedAt)}`}
                             {stop.evidence === "live_photo"
@@ -702,64 +740,62 @@ export function MyExpenseSubmissions({
                   <section>
                     <SectionTitle>Money</SectionTitle>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="border border-slate-200 bg-white p-3">
-                        <p className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
-                          <Wallet className="h-3 w-3" />
+                      <div className={`min-w-0 border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
+                        <p className="flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                          <Wallet aria-hidden="true" className="h-3 w-3" />
                           You claimed
                         </p>
-                        <p className="mt-1 text-xl font-black text-slate-900">
-                          {money(submission.claimedTotalAmount)}
-                        </p>
+                        <div className="mt-1.5">
+                          <LandingFigure size="md">{money(submission.claimedTotalAmount)}</LandingFigure>
+                        </div>
                         <dl className="mt-3 space-y-1 text-xs text-slate-600">
                           {claimMoneyRows(submission).map((row) => (
                             <div className="flex justify-between gap-3" key={row.label}>
-                              <dt>{row.label}</dt>
-                              <dd className="font-bold text-slate-900">{money(row.amount)}</dd>
+                              <dt className="min-w-0 break-words">{row.label}</dt>
+                              <dd className={`shrink-0 font-bold tabular-nums ${LANDING_INK}`}>{money(row.amount)}</dd>
                             </div>
                           ))}
                         </dl>
                       </div>
 
-                      <div
-                        className={`border p-3 ${
-                          adjusted ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
-                        }`}
-                      >
-                        <p className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
-                          <CircleDollarSign className="h-3 w-3" />
+                      {/* An adjusted figure carries an amber rail at its left, never an amber fill. */}
+                      <div className={`relative min-w-0 border border-slate-200 bg-white p-3 ${adminSoftDepthClassName}`}>
+                        {adjusted ? <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-amber-400" /> : null}
+                        <p className="flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                          <CircleDollarSign aria-hidden="true" className="h-3 w-3" />
                           Validated
                         </p>
                         {submission.decision?.approvedAmount !== null &&
                         submission.decision?.approvedAmount !== undefined ? (
                           <>
-                            <p
-                              className={`mt-1 text-xl font-black ${adjusted ? "text-amber-800" : "text-emerald-700"}`}
-                            >
-                              {money(submission.decision.approvedAmount)}
-                            </p>
+                            <div className="mt-1.5">
+                              <LandingFigure size="md" tone={adjusted ? "text-amber-800" : "text-emerald-700"}>
+                                {money(submission.decision.approvedAmount)}
+                              </LandingFigure>
+                            </div>
                             {adjusted ? (
-                              <p className="mt-1 text-xs font-bold text-amber-800">
+                              <p className="mt-1 text-xs font-bold tabular-nums text-amber-800">
                                 Adjusted from {money(submission.claimedTotalAmount)}
                               </p>
                             ) : null}
                           </>
                         ) : (
-                          <p className="mt-1 text-sm font-bold text-slate-400">Pending</p>
+                          <p className="mt-1 text-phx-md font-bold text-slate-400">Pending</p>
                         )}
 
                         {submission.decision?.hrComment || submission.decision?.hrNotes ? (
-                          <div className="mt-3 border border-slate-200 bg-white p-2.5">
-                            <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
+                          <div className="mt-3 border-l-2 border-slate-300 pl-2.5">
+                            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                               Note
                             </p>
-                            <p className="mt-1 whitespace-pre-line text-phx-md leading-relaxed text-slate-800">
+                            <p className="mt-1 whitespace-pre-line break-words text-phx-md leading-relaxed text-slate-800" dir="auto">
                               {submission.decision.hrComment ?? submission.decision.hrNotes}
                             </p>
                           </div>
                         ) : null}
 
                         {submission.decision?.paidAt ? (
-                          <p className="mt-3 text-xs font-bold text-emerald-700">
+                          <p className="mt-3 text-xs font-bold tabular-nums text-emerald-700">
                             Paid — {formatPhoenixLongDate(submission.decision.paidAt)}
                           </p>
                         ) : null}
@@ -773,13 +809,13 @@ export function MyExpenseSubmissions({
                     <SectionTitle>Evidence</SectionTitle>
                     {photoState.kind === "loading" ? (
                       <p className="mt-3 flex items-center gap-2 text-phx-md text-slate-500">
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                         Loading your photos…
                       </p>
                     ) : null}
                     {photoState.kind === "error" ? (
                       <p className="mt-3 flex items-start gap-2 text-phx-md text-rose-700">
-                        <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                        <TriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                         {photoState.message}
                       </p>
                     ) : null}
@@ -798,7 +834,7 @@ export function MyExpenseSubmissions({
                           },
                         ].map((photo) => (
                           <figure
-                            className="overflow-hidden border border-slate-200 bg-white"
+                            className={`min-w-0 overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}
                             key={photo.label}
                           >
                             {photo.url ? (
@@ -814,16 +850,16 @@ export function MyExpenseSubmissions({
                               />
                             ) : (
                               <div className="flex h-32 items-center justify-center gap-2 text-xs font-bold text-slate-400">
-                                <ImageOff className="h-4 w-4" />
+                                <ImageOff aria-hidden="true" className="h-4 w-4" />
                                 Not captured
                               </div>
                             )}
                             <figcaption className="border-t border-slate-200 p-2.5">
-                              <p className="text-phx-xs font-black uppercase tracking-wider text-slate-600">
+                              <p className={`text-phx-xs font-black uppercase tracking-[0.08em] ${LANDING_INK}`}>
                                 {photo.label}
                               </p>
                               {photo.at ? (
-                                <p className="mt-0.5 text-xs text-slate-500">
+                                <p className="mt-0.5 text-xs tabular-nums text-slate-500">
                                   {formatPhoenixLongDate(photo.at)}
                                 </p>
                               ) : null}
@@ -834,7 +870,7 @@ export function MyExpenseSubmissions({
                     ) : null}
 
                     {submission.hasDeparturePhoto ? (
-                      <p className="mt-2 text-xs text-slate-500">
+                      <p className="mt-2 text-xs tabular-nums text-slate-500">
                         {submission.departureDistanceFromArrivalKm !== null
                           ? `${submission.departureDistanceFromArrivalKm} km from the arrival photo`
                           : "Distance from the arrival photo unknown"}
@@ -845,7 +881,7 @@ export function MyExpenseSubmissions({
                     ) : null}
                     {submission.departureFlags.length > 0 ? (
                       <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800">
-                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         Flagged for the approver to look at. This does not block your payment.
                       </p>
                     ) : null}
@@ -881,7 +917,10 @@ export function MyExpenseSubmissions({
                             ]}
                           />
                           <button
-                            className="mt-2 min-h-10 px-3 text-xs font-bold text-slate-600 hover:text-slate-900"
+                            className={cn(
+                              "mt-2 min-h-10 px-3 text-xs font-bold text-slate-600 transition-colors hover:text-[#08111f] motion-reduce:transition-none",
+                              LANDING_FOCUS,
+                            )}
                             onClick={() => setRetakeFor(null)}
                             type="button"
                           >
@@ -890,11 +929,11 @@ export function MyExpenseSubmissions({
                         </div>
                       ) : (
                         <button
-                          className="mt-3 inline-flex min-h-10 items-center gap-2 border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                          className={landingActionClassName("outline", "mt-3")}
                           onClick={() => setRetakeFor(submission.id)}
                           type="button"
                         >
-                          <Camera className="h-3.5 w-3.5" />
+                          <Camera aria-hidden="true" className="h-3.5 w-3.5" />
                           Retake the departure photo
                         </button>
                       )

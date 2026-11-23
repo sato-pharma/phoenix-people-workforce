@@ -1,6 +1,8 @@
 import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, FlaskConical, ListChecks, Search, Settings, Target, Users } from "lucide-react";
 
 // The one client piece: it starts the module's page and its screen at the touch (module-link.tsx).
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LandingTick } from "@/components/employee-portal/landing-kit";
 import { PhoenixCrmNewBadge } from "@/components/phoenix-crm/new-badge";
 import { PhoenixCrmModuleLink } from "@/components/phoenix-crm/module-link";
 // The other: "Get Phoenix CRM messages on Telegram", a client card the server decides to draw.
@@ -102,19 +104,23 @@ export function PhoenixCrmModuleChooser({
           return (
             <li className="min-w-0" key={module.key}>
               <PhoenixCrmModuleLink
-                className="flex min-h-full min-w-0 items-start gap-3 rounded-none border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3.5 transition hover:border-slate-300 hover:bg-orange-50/40"
+                className={`flex min-h-full min-w-0 items-start gap-3 rounded-none border border-slate-200 bg-white px-4 py-3.5 transition-colors hover:border-[#08111f] hover:bg-slate-50 motion-reduce:transition-none ${adminSoftDepthClassName} ${LANDING_FOCUS}`}
                 href={phoenixCrmModulePath(base, module.key)}
                 moduleKey={module.key}
               >
-                <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-orange-700" />
+                <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="break-words text-sm font-black text-slate-950">{module.label}</span>
+                    <span className="flex min-w-0 items-center gap-2 break-words text-phx-sm font-black uppercase tracking-[0.1em] text-[#08111f]">
+                      <LandingTick />
+                      <span className="min-w-0">{module.label}</span>
+                    </span>
                     {/* A pulsing mark for what is NEW (an unread notice), beside the static count of what is WAITING. */}
                     <PhoenixCrmNewBadge count={unread?.[module.key]?.count ?? 0} />
                     {badge === null ? null : (
-                      <span className="inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px text-phx-sm font-black uppercase tracking-[0.08em] text-orange-800">
-                        {badge} waiting
+                      <span className="inline-flex shrink-0 items-center gap-1.5 text-phx-xs font-bold uppercase leading-4 tracking-[0.08em] text-amber-700">
+                        <span aria-hidden="true" className="h-3 w-0.5 shrink-0 bg-amber-500" />
+                        <span className="tabular-nums">{badge}</span> waiting
                       </span>
                     )}
                   </span>

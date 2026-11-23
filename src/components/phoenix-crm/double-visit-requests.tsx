@@ -153,8 +153,8 @@ export function CustomerDoubleVisitRequests({ customerId, seatId, test }: { cust
               </ul>
               {view.canEdit && request.isMine ? (
                 editingThis ? (
-                  <div className="mt-2 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3 py-3">
-                    <p className="text-sm font-black text-slate-800">Which days suit you? Choose up to {DOUBLE_VISIT_MAX_DAYS}.</p>
+                  <div className="mt-2 grid min-w-0 gap-2 border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white px-3 py-3">
+                    <p className="text-sm font-bold text-[#08111f]">Which days suit you? Choose up to {DOUBLE_VISIT_MAX_DAYS}.</p>
                     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                       {view.dayChoices.map((day) => {
                         const chosen = editingThis.days.includes(day);
@@ -336,7 +336,7 @@ export function DoubleVisitReportView({ cairoToday, test }: { cairoToday: string
           </CrmNote>
         ) : null}
         {acceptingThis ? (
-          <div className="mt-3 grid min-w-0 gap-2 border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="mt-3 grid min-w-0 gap-2 border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white px-3 py-3">
             <CrmField htmlFor={`double-visit-accept-${request.requestId}`} label="The day of the visit">
               <CrmSelect
                 id={`double-visit-accept-${request.requestId}`}

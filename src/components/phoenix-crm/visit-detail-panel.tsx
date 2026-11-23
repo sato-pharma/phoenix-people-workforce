@@ -183,7 +183,7 @@ function DetailForm({
   }
 
   return (
-    <div className="grid w-full min-w-0 gap-4 border border-slate-200 bg-slate-50/60 p-3">
+    <div className="grid w-full min-w-0 gap-4 border border-l-[3px] border-slate-200 border-l-[#08111f] bg-white p-3">
       <p className="break-words text-xs font-semibold leading-5 text-slate-600">
         {`Write up your visit to ${form.customerName}. The time, the place, who was on it and the products stay as you logged them.`}
       </p>

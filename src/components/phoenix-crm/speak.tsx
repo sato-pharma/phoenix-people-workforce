@@ -476,10 +476,10 @@ export function CrmSpeak({
   return (
     <div className="mt-2 grid min-w-0 gap-2">
       {open ? (
-        <div className="min-w-0 border border-orange-200 bg-orange-50/60 px-3 py-2.5">
+        <div className="min-w-0 border border-l-[3px] border-slate-200 border-l-rose-500 bg-white px-3 py-2.5">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-2 text-xs font-black text-orange-700">
-              <Mic aria-hidden className="h-4 w-4 shrink-0 animate-pulse" />
+            <span className="flex min-w-0 items-center gap-2 text-phx-xs font-bold uppercase tracking-[0.08em] text-rose-700">
+              <Mic aria-hidden className="h-4 w-4 shrink-0 animate-pulse motion-reduce:animate-none" />
               {speakLiveLabel(started, elapsed)}
             </span>
             <CrmButton className="shrink-0" onClick={() => void stop()} size="sm">
@@ -487,7 +487,7 @@ export function CrmSpeak({
               Stop
             </CrmButton>
           </div>
-          <p className="mt-1 break-words text-phx-xs font-medium leading-4 text-orange-700/80">{speakLiveHint(started)}</p>
+          <p className="mt-1 break-words text-phx-xs font-medium leading-4 text-slate-500">{speakLiveHint(started)}</p>
           {interim ? (
             <p className="mt-1.5 break-words text-xs font-medium italic leading-5 text-slate-600" dir="auto">
               {interim}
@@ -497,9 +497,9 @@ export function CrmSpeak({
       ) : (
         <div className="grid min-w-0 gap-2">
           {value ? (
-            <div className="min-w-0 border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+            <div className="min-w-0 border border-l-[3px] border-slate-200 border-l-emerald-500 bg-white px-3 py-2.5">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="min-w-0 text-xs font-black text-slate-700">Recording saved — {formatSeconds(value.seconds)}</span>
+                <span className="min-w-0 text-phx-xs font-bold uppercase tracking-[0.08em] text-emerald-700">Recording saved — {formatSeconds(value.seconds)}</span>
                 <CrmButton className="shrink-0" disabled={disabled} onClick={remove} size="sm" variant="danger">
                   <Trash2 aria-hidden className="h-3.5 w-3.5 shrink-0" />
                   Remove
@@ -515,7 +515,7 @@ export function CrmSpeak({
               {uploading || transcribing ? null : <Mic aria-hidden className="h-4 w-4 shrink-0" />}
               {uploading ? "Saving the recording" : transcribing ? "Writing out the words" : value ? SPEAK_AGAIN_LABEL : SPEAK_LABEL}
             </CrmButton>
-            {transcribing ? <p className="mt-1.5 break-words text-xs font-medium leading-5 text-orange-700">{speakTranscribingLine()}</p> : null}
+            {transcribing ? <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-600">{speakTranscribingLine()}</p> : null}
             {again ? <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-500">{again}</p> : null}
           </div>
         </div>

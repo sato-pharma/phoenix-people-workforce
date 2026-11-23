@@ -213,7 +213,7 @@ function MemberCard({ member }: { member: MatchMember }) {
   return (
     <div className={`min-w-0 space-y-3 border border-l-[3px] border-slate-200 bg-white p-3 ${best ? "border-l-emerald-500" : ""}`}>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="inline-flex min-h-6 min-w-6 items-center justify-center border border-slate-300 bg-slate-50 px-1.5 text-xs font-black text-slate-700">
+        <span className="inline-flex min-h-6 min-w-6 items-center justify-center border border-[#08111f] bg-white px-1.5 text-xs font-black tabular-nums text-[#08111f]">
           #{member.rank}
         </span>
         {member.flags.map((flag) => (
@@ -269,8 +269,8 @@ function QuestionSide({
   const drawn = choosing ? all : subjects;
   const several = all.length > 1;
   return (
-    <div className="min-w-0 space-y-3 border border-slate-200 bg-slate-50/60 p-3">
-      <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+    <div className="min-w-0 space-y-3 border border-slate-200 bg-white p-3">
+      <p className="break-words text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</p>
       {several ? (
         <p className="break-words text-xs font-semibold text-slate-600">
           The {countText(all.length)} readings on this side are up to {meters(spreadMeters)} apart

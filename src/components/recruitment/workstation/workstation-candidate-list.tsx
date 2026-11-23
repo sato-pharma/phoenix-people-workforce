@@ -162,7 +162,7 @@ export function WorkstationCandidateList({
           adminRecessedDepthClassName,
         )}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 border border-phx-line bg-white px-2 transition-colors focus-within:border-orange-500">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 border border-phx-line bg-white px-2 transition-colors motion-reduce:transition-none focus-within:border-orange-500">
           <Search aria-hidden className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
           <input
             aria-label="Search candidates"
@@ -174,7 +174,7 @@ export function WorkstationCandidateList({
           {search ? (
             <button
               aria-label="Clear the search"
-              className="shrink-0 text-phx-ink-faint transition hover:text-phx-ink"
+              className="shrink-0 text-phx-ink-faint transition motion-reduce:transition-none hover:text-phx-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
               onClick={() => onSearchChange("")}
               type="button"
             >
@@ -242,7 +242,7 @@ export function WorkstationCandidateList({
               // A real button as well as the scroll handler. Scroll-to-load alone is invisible to a
               // keyboard user and silently broken if the pane never overflows.
               <button
-                className="w-full border-b border-phx-line bg-phx-surface-2 px-3 py-2.5 text-[12px] font-bold text-phx-accent-press transition hover:bg-phx-accent-soft"
+                className="w-full border-b border-phx-line bg-phx-surface-2 px-3 py-2.5 text-[12px] font-bold text-[#08111f] transition motion-reduce:transition-none hover:bg-phx-accent-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F05A1A]"
                 onClick={() => widen(PAGE_STEP)}
                 type="button"
               >
@@ -334,12 +334,12 @@ function CandidateBlock({
     <a
       aria-current={active ? "true" : undefined}
       className={cn(
-        "flex min-w-0 flex-1 flex-col gap-1.5 border-b border-phx-line px-3 py-2.5 text-left no-underline transition-colors",
+        "flex min-w-0 flex-1 flex-col gap-1.5 border-b border-phx-line px-3 py-2.5 text-left no-underline transition-colors motion-reduce:transition-none",
         // THE SELECTED ROW IS MARKED ON ITS EDGE, not painted. A 2px rule in the accent plus the
         // faintest tint reads as "this one" from across the room without turning the open candidate
         // into the loudest object on a screen whose actual subject is the CV two panes to the right.
         active
-          ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
+          ? "border-l-2 border-l-[#08111f] bg-slate-100"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
       )}
       href={href}
@@ -353,7 +353,7 @@ function CandidateBlock({
             {row.fullName}
           </span>
           {/* The SEAT, in the accent, directly under the name — the owner's inversion, drawn. */}
-          <span className="mt-1 block break-words text-[13px] font-semibold leading-tight text-phx-accent-press">
+          <span className="mt-1 block break-words text-[13px] font-semibold leading-tight text-[#08111f]">
             {row.appliedForText ?? "No job named on the application"}
           </span>
           {/* WHY THIS CV IS IN THIS SEAT'S PILE. Only in seat mode, and never a guess dressed up as

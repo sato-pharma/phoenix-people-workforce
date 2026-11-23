@@ -3,22 +3,39 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
-import { adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
+import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { LANDING_FOCUS, LandingEmpty, landingActionClassName } from "@/components/employee-portal/landing-kit";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { CompanyRequestItem, CompanyRequestStatusTone } from "@/lib/approvals-hub/service";
 import {
   phxFieldClassName,
+  phxLabelTextClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
-const TONE_CLASSES: Record<CompanyRequestStatusTone, string> = {
-  pending: "bg-amber-100 text-amber-700",
-  approved: "bg-emerald-100 text-emerald-700",
-  rejected: "bg-rose-100 text-rose-700",
-  returned: "bg-orange-100 text-orange-700",
-  neutral: "bg-slate-100 text-slate-600",
+// The kit's status language: coloured small capitals and a 4px rail at the row's left — never a
+// filled pill. Returned takes the kit's own orange-700 tone (landingTone), as the Action Center does.
+const TONE_TEXT: Record<CompanyRequestStatusTone, string> = {
+  pending: "text-amber-700",
+  approved: "text-emerald-700",
+  rejected: "text-rose-700",
+  returned: "text-orange-700",
+  neutral: "text-slate-600",
 };
+
+const TONE_RAIL: Record<CompanyRequestStatusTone, string> = {
+  pending: "bg-amber-500",
+  approved: "bg-emerald-500",
+  rejected: "bg-rose-500",
+  returned: "bg-orange-500",
+  neutral: "bg-slate-300",
+};
+
+/** The white sheet: the kit's hairline and the soft depth token, in one string. */
+const SHEET = `min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`;
+/** A filter's label: the form kit's small capitals over its field; full width on a phone. */
+const FILTER = "flex w-full flex-col gap-1 sm:w-auto";
 
 type Props = {
   items: CompanyRequestItem[];
@@ -82,19 +99,19 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
 
   return (
     <div className="space-y-3">
-      <div className={`flex flex-wrap items-end gap-2 ${adminSoftPanelClassName} px-3 py-2.5`}>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">Employee / title</span>
+      <div className={`flex flex-wrap items-end gap-2 px-3 py-2.5 sm:px-4 ${SHEET}`}>
+        <label className={FILTER}>
+          <span className={phxLabelTextClassName}>Employee / title</span>
           <input
             type="text"
             value={employee}
             onChange={(e) => setEmployee(e.target.value)}
             placeholder="Search…"
-            className={cn(phxFieldClassName, "w-44")}
+            className={cn(phxFieldClassName, "sm:w-44")}
           />
         </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">Status</span>
+        <label className={FILTER}>
+          <span className={phxLabelTextClassName}>Status</span>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as typeof status)}
@@ -108,8 +125,8 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
           </select>
         </label>
         {types.length > 0 ? (
-          <label className="flex flex-col gap-0.5">
-            <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">Type</span>
+          <label className={FILTER}>
+            <span className={phxLabelTextClassName}>Type</span>
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -124,8 +141,8 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
             </select>
           </label>
         ) : null}
-        <label className="flex flex-col gap-0.5">
-          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">From</span>
+        <label className={FILTER}>
+          <span className={phxLabelTextClassName}>From</span>
           <input
             type="date"
             value={dateFrom}
@@ -133,8 +150,8 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
             className={phxFieldClassName}
           />
         </label>
-        <label className="flex flex-col gap-0.5">
-          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">To</span>
+        <label className={FILTER}>
+          <span className={phxLabelTextClassName}>To</span>
           <input
             type="date"
             value={dateTo}
@@ -152,13 +169,13 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
               setDateFrom("");
               setDateTo("");
             }}
-            className="h-8 border border-slate-300 px-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            className={landingActionClassName("outline", "h-10")}
           >
             Clear
           </button>
         ) : null}
         <ExportXlsxButton
-          className="ml-auto h-8"
+          className="h-10 sm:ml-auto"
           title={exportTitle}
           sheetName={exportSheetName}
           columns={exportColumns}
@@ -166,45 +183,46 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
         />
       </div>
 
-      <div className="space-y-2">
-        {filtered.length === 0 ? (
-          <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
-            {items.length === 0 ? emptyLabel : "No requests match these filters."}
-          </p>
-        ) : (
-          filtered.map((item) => (
-            <div
-              key={item.id}
-              className={`flex items-center justify-between gap-3 ${adminSoftPanelClassName} px-4 py-3`}
-            >
-              <div className="min-w-0">
-                {/* Wraps, never ellipsises — see the note on the same line in approvals-workspace.
-                    This line carries the job title too, so it was the first to overflow. */}
-                <p className="break-words text-sm font-bold text-slate-900">
-                  {item.employeeName}
-                  {item.submitterTitle ? <span className="font-medium text-slate-500"> · {item.submitterTitle}</span> : null}
-                </p>
-                <p className="break-words text-xs text-slate-600">
-                  {item.typeLabel}
-                  {item.requestDate ? ` · ${item.requestDate}` : ""}
-                </p>
+      {filtered.length === 0 ? (
+        <div className={SHEET}>
+          <LandingEmpty>{items.length === 0 ? emptyLabel : "No requests match these filters."}</LandingEmpty>
+        </div>
+      ) : (
+        <ul className={`divide-y divide-slate-200 ${SHEET}`}>
+          {filtered.map((item) => (
+            <li key={item.id} className="flex min-w-0 gap-3 px-3 py-3 sm:px-4">
+              <span aria-hidden="true" className={`w-1 shrink-0 self-stretch ${TONE_RAIL[item.statusTone]}`} />
+              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  {/* Wraps, never ellipsises — see the note on the same line in approvals-workspace.
+                      This line carries the job title too, so it was the first to overflow. */}
+                  <p className="break-words text-sm font-bold text-slate-900" dir="auto">
+                    {item.employeeName}
+                    {item.submitterTitle ? <span className="font-medium text-slate-500"> · {item.submitterTitle}</span> : null}
+                  </p>
+                  <p className="break-words text-xs text-slate-600">
+                    {item.typeLabel}
+                    {item.requestDate ? ` · ${item.requestDate}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-3">
+                  <span className={`text-phx-xs font-black uppercase tracking-[0.1em] ${TONE_TEXT[item.statusTone]}`}>
+                    {item.statusLabel}
+                  </span>
+                  {item.href ? (
+                    <Link
+                      href={item.href}
+                      className={`text-phx-xs font-bold uppercase tracking-[0.1em] text-[#08111f] underline decoration-slate-300 underline-offset-4 transition-colors hover:decoration-[#08111f] motion-reduce:transition-none ${LANDING_FOCUS}`}
+                    >
+                      View
+                    </Link>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span
-                  className={`rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${TONE_CLASSES[item.statusTone]}`}
-                >
-                  {item.statusLabel}
-                </span>
-                {item.href ? (
-                  <Link href={item.href} className="text-phx-xs font-bold text-orange-600 hover:text-orange-700">
-                    View
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

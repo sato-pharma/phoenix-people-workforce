@@ -147,9 +147,9 @@ export function MrDictate({
   return (
     <div className="mt-2 min-w-0" data-mr-dictate>
       {listening ? (
-        <div className="border border-orange-300 bg-orange-50 px-3 py-2">
+        <div className="border border-slate-300 bg-slate-100 px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-2 text-xs font-black text-orange-700">
+            <span className="flex min-w-0 items-center gap-2 text-xs font-black text-[#08111f]">
               <Mic aria-hidden className="h-4 w-4 shrink-0 animate-pulse" />
               {MR_DICTATE_LISTENING}
             </span>
