@@ -31,9 +31,19 @@ export const FILM_SESSION_MAX_SECONDS = 3_600;
 export const CAPTURE_SESSION_USER_AGENT = "Phoenix ChatGPT connector capture";
 export const CAPTURE_SESSION_REVOKE_REASON = "chatgpt_connector_capture";
 
-export type CaptureSession = { cookieName: string; cookieValue: string; sessionId: string };
+/**
+ * Another reader of live pages (the expense case PDF, src/lib/outstation/approvals/case-pdf.ts) names
+ * itself here, so the sessions list and the revoke reason say what the session really was.
+ */
+export type CaptureSessionMark = { userAgent: string; revokeReason: string };
 
-export async function mintCaptureSession(ctx: AccessContext, seconds: number = CAPTURE_SESSION_SECONDS): Promise<CaptureSession> {
+export type CaptureSession = { cookieName: string; cookieValue: string; sessionId: string; revokeReason?: string };
+
+export async function mintCaptureSession(
+  ctx: AccessContext,
+  seconds: number = CAPTURE_SESSION_SECONDS,
+  mark?: CaptureSessionMark,
+): Promise<CaptureSession> {
   const lifetime = Math.max(60, Math.min(FILM_SESSION_MAX_SECONDS, Math.round(seconds)));
   if (!ctx.loginId) throw new ToolRefusal("Sign in to Phoenix again.");
   const account = await readLiveAccount(ctx.loginId);
@@ -55,7 +65,7 @@ export async function mintCaptureSession(ctx: AccessContext, seconds: number = C
     sessionVersion,
     supabaseSessionAvailable: false,
     supabaseSessionRequired: false,
-    userAgent: CAPTURE_SESSION_USER_AGENT,
+    userAgent: mark?.userAgent ?? CAPTURE_SESSION_USER_AGENT,
   });
   const cookieValue = createSessionToken({
     hrId,
@@ -65,13 +75,13 @@ export async function mintCaptureSession(ctx: AccessContext, seconds: number = C
     sessionId,
     sessionVersion,
   });
-  return { cookieName: phoenixSessionCookieName, cookieValue, sessionId };
+  return { cookieName: phoenixSessionCookieName, cookieValue, sessionId, ...(mark ? { revokeReason: mark.revokeReason } : {}) };
 }
 
 export async function revokeCaptureSession(session: CaptureSession | null): Promise<void> {
   if (!session) return;
   try {
-    await revokeAppSession(session.sessionId, CAPTURE_SESSION_REVOKE_REASON);
+    await revokeAppSession(session.sessionId, session.revokeReason ?? CAPTURE_SESSION_REVOKE_REASON);
   } catch (error) {
     logError("ChatGPT connector capture session revoke failed", {
       labels: { event: "chatgpt_connector_capture_revoke_failed" },
