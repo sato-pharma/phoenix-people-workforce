@@ -28,7 +28,7 @@ import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 /** Within this of home, a position is "at home" (a town and its edge). */
 const CRM_HOME_RADIUS_KM = 25;
 /** Within this of the claimed destination, a position is "at the destination". */
-const CRM_DESTINATION_RADIUS_KM = 40;
+export const CRM_DESTINATION_RADIUS_KM = 40;
 /** A trip whose destination is nearer home than this is not far enough for a "back home" day to mean anything. */
 const CRM_OUTSTATION_MIN_KM = 60;
 /** A claimed one-way distance is a look when it exceeds the farthest visit × this + `CRM_KM_SLACK`. */

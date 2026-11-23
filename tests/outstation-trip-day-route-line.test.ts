@@ -81,7 +81,7 @@ export function runOutstationTripDayRouteLineTests() {
   assert.equal(approverTripRoute({ ...base, residenceLatitude: null })?.home, null, "no home pin without home coordinates");
 
   // -- the wiring -----------------------------------------------------------------------------------
-  const route = code("app/api/admin/outstation/[id]/attachments/route.ts");
+  const route = code("src/lib/outstation/trip-attachments-data.ts");
   assert.match(route, /tripRoute: approverTripRoute\(requestRow\)/, "the attachments read sends the trip's route");
 
   const map = code("src/components/field-workforce-compliance/field-workforce-route-map.tsx");

@@ -65821,9 +65821,12 @@ CREATE TABLE public.outstation_expense_requests (
     journey_stops jsonb DEFAULT '[]'::jsonb NOT NULL,
     journey_pricing jsonb,
     no_ticket_fare jsonb,
+    system_lane_at_decision text,
+    system_verdict_at_decision jsonb,
     CONSTRAINT outstation_evidence_gate_status_check CHECK ((evidence_gate_status = ANY (ARRAY['pending_arrival_photo'::text, 'pending_departure_photo'::text, 'complete'::text, 'grandfathered'::text]))),
     CONSTRAINT outstation_expense_requests_expense_type_check CHECK (((expense_type IS NULL) OR (expense_type = ANY (ARRAY['traveling'::text, 'meeting'::text, 'other'::text])))),
     CONSTRAINT outstation_expense_requests_journey_stops_is_array CHECK ((jsonb_typeof(journey_stops) = 'array'::text)),
+    CONSTRAINT outstation_expense_requests_system_lane_at_decision_check CHECK (((system_lane_at_decision IS NULL) OR (system_lane_at_decision = ANY (ARRAY['ready'::text, 'your_call'::text])))),
     CONSTRAINT outstation_expense_requests_transportation_type_check CHECK ((transportation_type = ANY (ARRAY['car'::text, 'train'::text, 'bus'::text, 'other'::text, 'no_ticket'::text]))),
     CONSTRAINT outstation_workload_gate_status_check CHECK ((workload_gate_status = ANY (ARRAY['pending_workload'::text, 'complete'::text, 'manual'::text, 'grandfathered'::text]))),
     CONSTRAINT outstation_workload_match_status_check CHECK ((workload_match_status = ANY (ARRAY['manual'::text, 'matched'::text, 'partial'::text, 'no_activity'::text, 'manual_override'::text, 'stale_import'::text]))),
@@ -65939,6 +65942,18 @@ COMMENT ON COLUMN public.outstation_expense_requests.journey_pricing IS 'Last ch
 --
 
 COMMENT ON COLUMN public.outstation_expense_requests.no_ticket_fare IS 'A No-ticket trip''s fixed train fare as priced at submit: the boarding and alighting stations (English and Arabic), their distance from the home and the destination, the one-way and there-and-back fare in EGP, and the fare sweep it came from. Null on every other trip.';
+
+--
+-- Name: COLUMN outstation_expense_requests.system_lane_at_decision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.outstation_expense_requests.system_lane_at_decision IS 'The lane Expense Approvals had filed this claim in when the Super Admin decided it: ready or your_call. Null until decided on the rebuilt page (2026-11-23).';
+
+--
+-- Name: COLUMN outstation_expense_requests.system_verdict_at_decision; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.outstation_expense_requests.system_verdict_at_decision IS 'The system''s checks as they stood at the decision, with the action taken, the figures and the time. Read by the 30-day agreement meter; never by a pay rule.';
 
 --
 -- Name: CONSTRAINT outstation_expense_requests_expense_type_check ON outstation_expense_requests; Type: COMMENT; Schema: public; Owner: postgres

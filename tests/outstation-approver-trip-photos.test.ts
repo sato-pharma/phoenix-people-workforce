@@ -23,6 +23,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const SERVICE = "src/lib/outstation/service.ts";
 const ATTACHMENTS_ROUTE = "app/api/admin/outstation/[id]/attachments/route.ts";
+const ATTACHMENTS_DATA = "src/lib/outstation/trip-attachments-data.ts";
 const TRIP_ATTACHMENTS = "src/components/outstation/trip-attachments.tsx";
 const EXPENSE_CENTER = "src/components/outstation/outstation-requests-admin.tsx";
 const PHOTOS_COMPONENT = "src/components/outstation/trip-evidence-photos.tsx";
@@ -151,8 +152,11 @@ export function runOutstationApproverTripPhotosTests() {
 
   // ── 6. Expense Approvals, where the approve and reject buttons are ─────────
   const route = code(ATTACHMENTS_ROUTE);
-  assert.match(route, /photos: approverTripPhotos\(requestRow\)/, "the attachments route must send both photos");
-  assert.match(route, /departureEvidenceImageUrl: requestRow\.departureEvidenceImageUrl/);
+  // What the route sends is composed in ATTACHMENTS_DATA since 2026-11-23; the route is its thin caller.
+  const attachmentsData = code(ATTACHMENTS_DATA);
+  assert.match(route, /NextResponse\.json\(await loadTripAttachments\(id\)\)/, "the attachments route sends exactly what the shared read composes");
+  assert.match(attachmentsData, /photos: approverTripPhotos\(requestRow\)/, "the attachments route must send both photos");
+  assert.match(attachmentsData, /departureEvidenceImageUrl: requestRow\.departureEvidenceImageUrl/);
   assert.match(route, /assertOutstationAdminAccess\(access, "approve"\)/, "the photos stay behind the approver's own gate");
 
   const tripAttachments = code(TRIP_ATTACHMENTS);
