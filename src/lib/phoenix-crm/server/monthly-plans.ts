@@ -119,11 +119,11 @@ import {
   isStaleItem,
   listTypeOf,
   loadPlanItemRows,
+  loadReviewItemRows,
   mapPlan,
   PLAN_COLUMNS,
   PLAN_READ_CONCURRENCY,
   planPeople,
-  REVIEW_ITEM_COLUMNS,
   statusOf,
   venueNamesOf,
   type PlanDayView,
@@ -1135,10 +1135,7 @@ export async function loadMonthlyPlanReviews(
   const planSeatById = new Map(planRows.map((row) => [String(row.id), String(row.seat_id)]));
 
   const [itemRows, names] = await Promise.all([
-    loadPlanItemRows(
-      planRows.map((row) => String(row.id)),
-      REVIEW_ITEM_COLUMNS,
-    ),
+    loadReviewItemRows(planRows.map((row) => String(row.id))),
     loadPeopleNames([...territoryPeople(viewer.org, rowSeats), ...planPeople(monthHeaders)]),
   ]);
   const itemsBySeat = new Map<string, Row[]>();

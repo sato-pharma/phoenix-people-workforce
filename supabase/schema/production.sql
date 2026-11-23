@@ -14385,6 +14385,38 @@ $$;
 ALTER FUNCTION public.phoenix_crm_plan_item_counts(p_plan_ids uuid[]) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_plan_review_items(uuid[]); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_plan_review_items(p_plan_ids uuid[]) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', i.id,
+        'plan_id', i.plan_id,
+        'plan_date', i.plan_date,
+        'customer_id', i.customer_id,
+        'list_type', i.list_type,
+        'receives', i.receives,
+        'customer', case when c.id is null then null else jsonb_build_object('status', c.status) end,
+        'place', case when p.id is null then null else jsonb_build_object('lat', p.lat, 'lon', p.lon, 'status', p.status) end
+      )
+      order by i.id
+    ),
+    '[]'::jsonb
+  )
+  from public.phoenix_crm_plan_items i
+  left join public.phoenix_crm_customers c on c.id = i.customer_id
+  left join public.phoenix_crm_places p on p.id = i.place_id
+  where i.plan_id = any(p_plan_ids);
+$$;
+
+ALTER FUNCTION public.phoenix_crm_plan_review_items(p_plan_ids uuid[]) OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_plan_transition(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -101727,6 +101759,13 @@ GRANT ALL ON FUNCTION public.phoenix_crm_plan_day_status(p_plan_id uuid, p_day d
 
 REVOKE ALL ON FUNCTION public.phoenix_crm_plan_item_counts(p_plan_ids uuid[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phoenix_crm_plan_item_counts(p_plan_ids uuid[]) TO service_role;
+
+--
+-- Name: FUNCTION phoenix_crm_plan_review_items(p_plan_ids uuid[]); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_plan_review_items(p_plan_ids uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_plan_review_items(p_plan_ids uuid[]) TO service_role;
 
 --
 -- Name: FUNCTION phoenix_crm_plan_transition(p jsonb); Type: ACL; Schema: public; Owner: postgres
