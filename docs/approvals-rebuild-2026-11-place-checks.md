@@ -242,6 +242,96 @@ not been checked on the live page. The review's Not readable tab is his own word
 - **Only time can lift:** the waiting time (median 143 hours), the advice agreeing with him over 30
   days, and the take-back share of the sign-wins rule.
 
+## The first read (owner, 23 Nov 2026, 15:46 Cairo: "Fix speed next")
+
+Scored again after the pass to 9.5 was live, the module read 8.0 out of 10. Three items held it
+there: Speed 4.5, Phone 7.5 and the Reviewer 8.5. He asked for the three in one pull request.
+
+**Speed: the page reads only what it sends.** On production the first waiting place was drawn 12.2 s
+after the page was asked for. 9.75 s of that was two reads the page did not draw: every place in use
+(7,124 that day, 13 MB as read, against 513 seated in a building) and every decision ever made
+(2,377, against 997 in the last 14 days). The page made both only to count the figures on its tabs
+and to keep the rows for a click.
+
+- The page now reads the 14-day reviews, the buildings, the customers sent back and the places in
+  use that are SEATED in a building (`loadValidatedPlaces(viewer, { seatedOnly: true })`; the filter
+  is in the query, in `server/validation-reviews/decided.ts`). It reads notes and evidence for those
+  rows and no others.
+- Once the board is on screen it asks `PLACE_CHECKS_SUMMARY_ROUTE`
+  (`/api/phoenix-crm/validation-reviews/summary`). That route runs the wide read
+  (`server/place-checks-wide-read.ts`), answers the figures alone, and leaves the rows in
+  `server/place-checks-handoff.ts`. The first click that needs the rows (`/everything`) takes them
+  from there, so the wide lists are still read once.
+- The figures are counted from the same rows the click is handed, by the board's own functions
+  (`placeChecksSummary`), over the page's own split of the reviews. That split (waiting, decided,
+  buildings, with what the SFE Manager recommended on taken off the Super Admin's board) moved into
+  one pure function, `placeChecksBoardSets` (`src/lib/phoenix-crm/place-checks-board-sets.ts`), which
+  the page and the wide read both call.
+- Until the figures answer, a tab whose count needs them shows no count, and a Figures card shows the
+  word "Counting" (`in-use-figures.tsx`), or "Not counted" when the read failed. Never 0, and never a
+  number taken from the seated places alone.
+- The click waits for the figures' read to end before it asks for the rows (`summarySettled` in
+  `use-everything.ts`), so the two never run the wide read side by side.
+- The handoff keeps the newer of two reads. The clock is read BEFORE the read starts
+  (`startedAt`), and an entry that started later is never replaced by one that started earlier, so a
+  read begun before his decision cannot be served after it.
+- The click now answers every decision (the wide read does not know what the page chose to send);
+  the board keeps the page's copy of a row in both (`mergeDecided`, `mergedNoteIndex`).
+  `decidedLeftForTheClick` is gone with its only caller.
+- Both routes check `approve`, then the company board's readers, before a row is read. A district
+  manager's board is drawn whole by its own page and asks neither.
+
+**Phone: the top is the title, the board's one line and the lane's name.** At 375 by 812 the first
+card stood at 870 px, under the fold: the lane heads were 241 px and 221 px and the title band
+309 px. On a phone the pick line now folds to one button, "Answer several together (N)"
+(`foldedOnPhone` in `place-check-bulk.tsx`); the sentence under the title, a lane's first reason, the
+plain lane sentence and the SFE sentence are drawn on a desktop only; the Ready lane keeps the half
+that is a rule, "Nothing is approved until you press." The title band is its own small component,
+`PlaceChecksTitle`, and its phone classes reach the title row alone: the band's second child is the
+hairline rule, which a first draft would have padded to 8 px. A desktop is drawn as before.
+
+**Reviewer: it opens on the press.** "Review one by one" waited for every place in use before it
+opened at all: 3.1 s on production, for a first tab that needs none of them. It now opens at once on
+Waiting for you (the rows the page sent) and Integrity cases (which reads for itself). Every other
+tab, Not readable included, shows no count and says it is being read, and is listed when every place
+in use is in (`deckTabNeedsEveryPlace`). What was held at opening keeps the same slides in the same
+order when the rest arrives (`deckSourcesOpenedThenWhole`, `deckRankerOpenedThenWhole`, all three in
+`src/lib/place-review-deck/opened-then-whole.ts`); the whole board is taken once. If the read fails the review says so, with Try again and a way back to Waiting
+for you.
+
+**What the two reviews of this pull request found.** Neither found a fault in access, in what a
+manager receives, or in how a place is decided. What changed because of them:
+
+- A figures re-read that failed after a decision was silent: the last numbers stayed on the tabs
+  with no notice. The board now says they stand as they were before his last decision, with Try
+  again (`summaryStale`).
+- The phone's one button was 40 px tall beside a 44 px one; it is 44 px.
+- A Figures card's line while counting was longer than the line that replaces it, so the card
+  changed height when the number landed. It is now one short line.
+- The two files this work had pushed over 400 lines are back under it: the three functions of the
+  review's opening live in `src/lib/place-review-deck/opened-then-whole.ts`, and two of the review's
+  whole-screen messages are drawn by `review-deck-frame.tsx`.
+
+Left as it is, with the reason:
+
+- **The wide read loads the notes for every place before it answers the figures.** Read on
+  production from this laptop (23 Nov 2026): the notes for all 8,746 places took 0.84 s against
+  0.71 s for 600, so answering the figures first would give back about 0.1 s. The evidence read
+  beside it was not timed.
+- **The filter lists are short for the first seconds.** Until the figures answer, Rep, Line and
+  Decided by list what the page sent. Picking any filter asks for every row.
+- **Rows kept for the click can be a decision old.** A click inside the 30 quiet seconds after a
+  decision takes rows read before it; the saved marks hide the decided row and the next re-read
+  corrects it. This was already so when the page kept the rows.
+- **A re-read after a run of decisions is the whole wide read again**, as the page's own re-read
+  was. The server's work is the same; it now runs behind the board and not in front of it.
+
+**Not measured, and said plainly.** The branch was not opened in a browser: the spare laptop was not
+answering, and this laptop had under 3 GB free. The page's new time to its first row, the phone
+top's new heights and the review's opening are read on the live page after the merge, and the three
+items are scored again from those readings. The whole suite did not run anywhere before the push
+for the same reason; the pull request's `validate` and `checks` are the verdict.
+
 ## What is deliberately not there
 
 - **No "New photo" button and no "Take back" button.** The plan named five verbs. A rejection with
@@ -344,6 +434,11 @@ Two reviews read the pull request before any merge was asked for (23 Nov 2026).
   `tests/phoenix-crm-shared-place-groups.test.ts` (a building's rows), `tests/phoenix-crm-validation-feedback.test.ts`
   (Reject in two presses), and the lanes and sign-wins tests above (the lane head, the layout guess,
   one layout drawn, the sign read after the door). 14 of 14 fired when their fixes were broken.
+- The first read: `tests/phoenix-crm-place-checks-first-read.test.ts` (what the page reads, the
+  figures route's order, the handoff's newer read, the board's sets, no count before the figures,
+  the phone top), `tests/place-review-deck.test.ts` (the review opening on what waits) and the
+  on-demand test (the click waiting for the figures, every decision once). 23 of 23 fired when their
+  fixes were broken.
 
 ## Migration
 

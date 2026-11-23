@@ -336,7 +336,10 @@ function checkRoute(): void {
 function checkScreens(): void {
   const page = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.match(page, /readsCompanyPlaceChecks\(viewer\)\) redirect\("\/admin"\)/, "the page stays the board's readers' alone — the Super Admin, who decides, and the SFE Manager, who recommends");
-  assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
+  // Since 23 Nov 2026 the page loads the ones seated in a building, which are the ones it draws on opening;
+  // every validation the system did not question is the read behind it (`place-checks-wide-read.ts`).
+  assert.match(page, /loadValidatedPlaces\(viewer, \{ seatedOnly: true \}\)/, "and now also loads the validations the system did not question");
+  assert.match(read("src/lib/phoenix-crm/server/place-checks-wide-read.ts"), /loadValidatedPlaces\(viewer\),/, "every one of them, behind the page");
   // The prop names rather than one literal line: the sixth set (the polyclinics, 2026-10-09) made the
   // call multi-line, and a single-line fingerprint would go red on formatting alone.
   // Since 2026-11-14 the page hands the recent decisions and the seated places in use, and the board reads

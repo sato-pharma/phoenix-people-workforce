@@ -42,7 +42,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 import { integrityCaseIsPolyclinic } from "@/components/crm-integrity/integrity-review-slide";
 import { ensureDeckCases, loadDeckCases, useDeckCases } from "@/components/place-review-deck/deck-cases";
 import { otherDialogOpen, typingIn, writeReviewParam } from "@/components/place-review-deck/review-deck-browser";
-import { DeckHeader, DeckMessage, OtherTabs } from "@/components/place-review-deck/review-deck-frame";
+import { DeckHeader, DeckMessage, DeckRestMessage, OnToUnreadable, OtherTabs, type DeckRest } from "@/components/place-review-deck/review-deck-frame";
 import { idOf, liveItemsOf, photoPathsOf, type Lookup } from "@/components/place-review-deck/review-deck-lookup";
 import { answeredSlide, caseSlide, placeSlide, reviewSlide, venueSlide, type SlideView } from "@/components/place-review-deck/review-deck-slides";
 import { KIND_LABELS, OUTCOME_WORDS, TAB_LABELS, type DeckOutcome } from "@/components/place-review-deck/review-deck-words";
@@ -52,14 +52,13 @@ import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
+import { deckRankerOpenedThenWhole, deckSourcesOpenedThenWhole, deckTabNeedsEveryPlace } from "@/lib/place-review-deck/opened-then-whole";
 import {
   buildDeckSlides,
   DECK_ADVANCE_MS,
   DECK_TABS,
-  deckAdviceRanker,
   deckArrowStep,
   deckHeldSplit,
-  deckSourcesOf,
   deckTabNeedsCases,
   slideIsSettled,
   summarizeDeckOutcomes,
@@ -70,13 +69,18 @@ import {
 } from "@/lib/place-review-deck/slides";
 import { cn } from "@/lib/utils";
 
-export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewDeckInput; onClose: () => void; start: { tab: DeckTab; kind: DeckKind } }) {
+export function PlaceReviewDeck({ input, onClose, rest, start }: { input: PlaceReviewDeckInput; onClose: () => void; rest: DeckRest; start: { tab: DeckTab; kind: DeckKind } }) {
   const hydrated = useHydrated();
   const titleId = useId();
   const session = useId();
   // 🔴 WHAT EACH TAB HOLDS IS TAKEN ONCE, WHEN THE REVIEW OPENS — see `slides.ts`. Every row is still
   // looked up in the board's CURRENT data (`input`), so a decided slide shows decided.
   const [frozen] = useState(() => input);
+  // 🔴 IT OPENS AT ONCE ON WHAT WAITS, AND TAKES THE OTHER TABS ONCE, WHEN THE REST IS IN (owner, 23 Nov
+  // 2026: "Fix speed next"). The page sends the places waiting and not the places in use, and the review
+  // used to stay shut until those were read. `whole` is the board at the first moment it held every row.
+  const [whole, setWhole] = useState<PlaceReviewDeckInput | null>(() => (rest.ready ? input : null));
+  if (rest.ready && whole === null) setWhole(input);
   const cases = useDeckCases(session);
   const [tab, setTab] = useState<DeckTab>(start.tab);
   const [kind, setKind] = useState<DeckKind>(start.kind);
@@ -103,15 +107,20 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
     () => (cases.first ? cases.first.map((entry) => ({ id: entry.id, polyclinic: integrityCaseIsPolyclinic(entry) })) : null),
     [cases.first],
   );
-  const sources = useMemo(() => deckSourcesOf(frozen, casesForSlides), [frozen, casesForSlides]);
+  const sources = useMemo(() => deckSourcesOpenedThenWhole(frozen, whole, casesForSlides), [frozen, whole, casesForSlides]);
   // The by-eye "approve" ones first in every tab, ranked from the notes as the review opened them.
-  const rankSlide = useMemo(() => deckAdviceRanker(frozen), [frozen]);
-  const slides = useMemo(() => buildDeckSlides(tab, kind, sources, rankSlide), [tab, kind, sources, rankSlide]);
+  const rankSlide = useMemo(() => deckRankerOpenedThenWhole(frozen, whole), [frozen, whole]);
+  // A tab built from every place in use holds nothing to list until they are in.
+  const waitingForRest = whole === null && deckTabNeedsEveryPlace(tab);
+  const slides = useMemo(() => (waitingForRest ? [] : buildDeckSlides(tab, kind, sources, rankSlide)), [waitingForRest, tab, kind, sources, rankSlide]);
   const counts = useMemo(() => {
     const result = {} as Record<DeckTab, number | null>;
-    for (const one of DECK_TABS) result[one] = deckTabNeedsCases(one) && casesForSlides === null ? null : buildDeckSlides(one, kind, sources).length;
+    for (const one of DECK_TABS) {
+      const unknown = (deckTabNeedsCases(one) && casesForSlides === null) || (whole === null && deckTabNeedsEveryPlace(one));
+      result[one] = unknown ? null : buildDeckSlides(one, kind, sources).length;
+    }
     return result;
-  }, [kind, sources, casesForSlides]);
+  }, [kind, sources, casesForSlides, whole]);
   // Everything held for him, as the review opened: Waiting for you and the held ones in Not readable.
   const held = useMemo(() => deckHeldSplit(frozen, kind), [frozen, kind]);
   // "All" waits for the cases rather than listing without them and then shifting every History slide.
@@ -127,7 +136,7 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
 
   const position = Math.min(index, slides.length);
   const current: DeckSlide | undefined = slides[position];
-  const finished = !waitingForCases && slides.length > 0 && position >= slides.length;
+  const finished = !waitingForCases && !waitingForRest && slides.length > 0 && position >= slides.length;
 
   const move = useCallback(
     (step: 1 | -1) => {
@@ -236,20 +245,12 @@ export function PlaceReviewDeck({ input, onClose, start }: { input: PlaceReviewD
   // 🔴 FINISHING "WAITING FOR YOU" IS NOT FINISHING: the held photographs nobody could read are in Not
   // readable, so the panel that closes the first tab says how many and takes him there in one press.
   const onToUnreadable =
-    tab === "waiting" && held.unreadable > 0 ? (
-      <div className="flex min-w-0 flex-col items-center gap-2" data-deck-on-to-unreadable>
-        <p className="max-w-xl break-words text-sm font-black text-white">
-          {held.unreadable} more {held.unreadable === 1 ? "waits" : "wait"} for you in {TAB_LABELS.unreadable}: the photos the system could not read.
-        </p>
-        <CrmButton onClick={() => chooseTab("unreadable")} variant="primary">
-          Go on to {TAB_LABELS.unreadable}
-          {counts.unreadable === null ? "" : ` (${counts.unreadable})`}
-        </CrmButton>
-      </div>
-    ) : null;
+    tab === "waiting" && held.unreadable > 0 ? <OnToUnreadable held={held.unreadable} listed={counts.unreadable} onGo={() => chooseTab("unreadable")} /> : null;
   const skipTab = onToUnreadable ? "unreadable" : null;
 
   const body = (() => {
+    // The tab he asked for is built from every place in use, which is still being read behind the page.
+    if (waitingForRest) return <DeckRestMessage onWaiting={() => chooseTab("waiting")} rest={rest} tab={tab} waiting={counts.waiting} />;
     if (waitingForCases) {
       return <DeckMessage lines={["The open cases are read the first time this tab is opened."]} title="Reading the cases" />;
     }

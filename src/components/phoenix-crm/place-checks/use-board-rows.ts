@@ -32,8 +32,10 @@ import {
   placeCheckScorecardOf,
   withoutDecisionNotesThatAreComments,
   type PlaceChecksEverything,
+  type PlaceChecksSummary,
   type UnconfirmedChip,
 } from "@/lib/phoenix-crm/place-checks-on-demand";
+import type { PlaceNoteIndex } from "@/lib/phoenix-crm/view-types";
 import { narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 
 export function usePlaceCheckRows({
@@ -42,9 +44,11 @@ export function usePlaceCheckRows({
   everything,
   filtering,
   filters,
+  noteIndex,
   onlyBuilding,
   props,
   showRejectedBuildings,
+  summary,
   team,
 }: {
   chip: UnconfirmedChip;
@@ -53,12 +57,16 @@ export function usePlaceCheckRows({
   everything: PlaceChecksEverything | null;
   filtering: boolean;
   filters: ValidationReviewFilters;
+  /** The page's notes and the click's as one index (`mergedNoteIndex`). */
+  noteIndex: PlaceNoteIndex;
   onlyBuilding: string | null;
   props: PlaceCheckBoardProps;
   showRejectedBuildings: boolean;
+  /** The figures counted over every place in use, or null until their read is in (and on a manager's board). */
+  summary: PlaceChecksSummary | null;
   team: boolean;
 }) {
-  const { pending: pendingRows, decided: decidedRows, validated: validatedRows, reopened: reopenedRows, sharedPlaces: venueRows, noteIndex, onDemand } = props;
+  const { pending: pendingRows, decided: decidedRows, validated: validatedRows, reopened: reopenedRows, sharedPlaces: venueRows } = props;
 
   const pending = useMemo(() => pendingRows.filter(isReal), [pendingRows]);
   // 🔴 THE BOARD SHOWS THE OLDER DECISIONS ONLY WHILE A DECIDER IS CHOSEN — so "Decided by Khaled Bedair"
@@ -78,13 +86,14 @@ export function usePlaceCheckRows({
   const sharedPlaces = useMemo(() => venueRows.filter(isReal), [venueRows]);
 
   // The filter bar's lists, counted from every row the board holds; until the click's read is in, the
-  // server counted them from every row it read. A manager's board never names a decider, so it gets no
+  // figures' read counted them from every row it read, and until THAT is in they are counted from what the
+  // page sent (a pick from them asks for the rest). A manager's board never names a decider, so it gets no
   // list and no box.
   const counted = useMemo(
     () => placeCheckOptions({ team, pending, decided, everyDecided, validated, reopened, sharedPlaces }),
     [team, pending, decided, everyDecided, validated, reopened, sharedPlaces],
   );
-  const { reps, lines, regions, areas, lists, deciders } = complete || !onDemand ? counted : onDemand.summary.options;
+  const { reps, lines, regions, areas, lists, deciders } = complete || !summary ? counted : summary.options;
 
   const cutoff = validationReviewPeriodCutoff(filters.period);
 
@@ -172,13 +181,13 @@ export function usePlaceCheckRows({
   const needsGroups = useMemo(() => filteredVenueGroups.filter((group) => venueNeedsDecision(group)), [filteredVenueGroups]);
 
   // The scorecard reads every rep's places through the same filters, the clinics and the seated alike.
-  // Until the click's read is in, the server's count stands for the board with no filter; with a filter
-  // there is no count to show yet — never one taken from the seated places alone.
+  // Until the click's read is in, the figures' read stands for the board with no filter; with a filter, or
+  // before that read answers, there is no count to show yet — never one taken from the seated places alone.
   const countedScorecard = useMemo(
     () => (complete ? placeCheckScorecardOf({ pending, validated, reopened }, filters, cutoff) : null),
     [complete, pending, validated, reopened, filters, cutoff],
   );
-  const scorecard = countedScorecard ?? (onDemand && !filtering ? onDemand.summary.scorecard : null);
+  const scorecard = countedScorecard ?? (summary && !filtering ? summary.scorecard : null);
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
   const narrowedBy = filterSummary(filters);

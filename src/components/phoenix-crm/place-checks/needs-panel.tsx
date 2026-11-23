@@ -79,11 +79,12 @@ export function PlaceChecksWaitingPanel({ board, lane }: { board: PlaceCheckBoar
       <details className="group min-w-0" data-your-call-reasons>
         <summary className="flex min-h-11 min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-700 md:min-h-7 [&::-webkit-details-marker]:hidden">
           <span className="font-black text-slate-900">Why these are your call</span>
-          <span className="min-w-0 flex-1 basis-60 break-words group-open:hidden">
+          {/* On a phone the commonest reason waits for the press with the others: it wrapped to three lines above the first waiting place. */}
+          <span className="min-w-0 flex-1 basis-60 break-words group-open:hidden max-sm:hidden">
             <span className="font-black tabular-nums">{reasons[0].count}</span> · {reasons[0].because}
           </span>
           {reasons.length > 1 ? (
-            <span className="shrink-0 text-xs font-black text-orange-700">
+            <span className="ml-auto shrink-0 text-xs font-black text-orange-700 sm:ml-0">
               <span className="group-open:hidden">All {reasons.length} reasons</span>
               <span className="hidden group-open:inline">Close</span>
             </span>

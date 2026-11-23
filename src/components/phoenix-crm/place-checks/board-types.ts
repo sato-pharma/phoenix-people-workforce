@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import type { ScoreTarget } from "@/components/phoenix-crm/place-check-scorecard";
-import type { PlaceChecksSummary, UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
+import type { UnconfirmedChip } from "@/lib/phoenix-crm/place-checks-on-demand";
 import type { PlaceCheckAgreement } from "@/lib/phoenix-crm/place-check-stored-advice";
 import type { SignWinsSwitch } from "@/lib/phoenix-crm/sign-wins-rules";
 import type { FailingTimetablesView, PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
@@ -85,12 +85,14 @@ export type PlaceCheckBoardProps = {
   /**
    * 🔴 THE SUPER ADMIN'S PAGE SENDS WHAT NEEDS YOU DRAWS, AND THE REST WAITS FOR THE CLICK (owner,
    * 2026-11-14, "Load lists on demand"; `place-checks-on-demand.ts`). With it, `validated` is only the
-   * places seated in a building and `decided` only the last 14 days; `summary` holds every opening figure
-   * counted on the server, and every place in use and every older decision are read from
-   * `PLACE_CHECKS_EVERYTHING_ROUTE` on the first click that needs them. Without it (a manager's page) the
-   * board is handed every row, as it always was.
+   * places seated in a building and `decided` only the seated decisions of the last 14 days. Every opening
+   * figure counted over the places in use is asked for by the board itself, once it is on screen, from
+   * `PLACE_CHECKS_SUMMARY_ROUTE` (23 Nov 2026: the page no longer reads what it does not send), and every
+   * place in use and every older decision are read from `PLACE_CHECKS_EVERYTHING_ROUTE` on the first click
+   * that needs them. `readAt` is the moment the page was read: when it changes, the board asks again.
+   * Without it (a manager's page) the board is handed every row, as it always was.
    */
-  onDemand?: { summary: PlaceChecksSummary; readAt: string };
+  onDemand?: { readAt: string };
   /**
    * The one-by-one review (owner, 2026-10-18), handed in by the Super Admin's page and drawn on his
    * board alone. It is a render prop rather than an import so the review is in none of the portal's

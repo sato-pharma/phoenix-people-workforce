@@ -43,6 +43,7 @@ import { PlaceChecksBuildingsPanel } from "@/components/phoenix-crm/place-checks
 import { PlaceCheckDeskHeader, PlaceCheckTop } from "@/components/phoenix-crm/place-checks/desk-header";
 import { PlaceCheckFilterBar } from "@/components/phoenix-crm/place-checks/filter-bar";
 import { PlaceChecksBySystemPanel, PlaceChecksHistoryPanel } from "@/components/phoenix-crm/place-checks/history-panel";
+import { FiguresNotCounted, PlaceChecksInUseFiguresProvider } from "@/components/phoenix-crm/place-checks/in-use-figures";
 import { PlaceChecksInUsePanel } from "@/components/phoenix-crm/place-checks/in-use-panel";
 import { PlaceChecksWaitingPanel } from "@/components/phoenix-crm/place-checks/needs-panel";
 import { ReadingEverything } from "@/components/phoenix-crm/place-checks/paged";
@@ -62,15 +63,19 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
     deckInput,
     everythingRead,
     filters,
+    inUseFigures,
     lanes,
     lineLookalikesOpened,
     onDemand,
     reading,
     reloadEverything,
+    reloadSummary,
     reviewDeck,
     sameCustomerOpened,
     samePlaceOpened,
     slots,
+    summaryError,
+    summaryStale,
     team,
     view,
     wanted,
@@ -88,10 +93,17 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
 
   return (
     <CrmSurfaceProvider surface="admin">
+      {/* The page's Figures tab draws two cards counted over every place in use; the board fills them (`in-use-figures.tsx`). */}
+      <PlaceChecksInUseFiguresProvider value={{ figures: inUseFigures, failed: summaryError !== null }}>
       <div className="space-y-5">
         <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
           <PlaceCheckTop hero={props.hero}>{lanes ? <PlaceCheckDeskHeader board={board} review={review} /> : review}</PlaceCheckTop>
           <PlaceCheckFilterBar board={board} />
+
+          {/* The figures' read failed and the rows are not in to count from: say which numbers are missing. */}
+          {summaryError !== null && !complete ? <FiguresNotCounted error={summaryError} onRetry={reloadSummary} /> : null}
+          {/* Their re-read after a decision failed: the numbers on screen are the ones from before it. */}
+          {summaryStale !== null && !complete ? <FiguresNotCounted error={summaryStale} onRetry={reloadSummary} stale /> : null}
 
           {capped.reviews || capped.validated || capped.reopened || capped.sharedPlaces ? (
             <AdminCallout tone="warning">
@@ -194,6 +206,7 @@ export function ValidationReviewsBoard(props: PlaceCheckBoardProps) {
           ) : null}
         </fieldset>
       </div>
+      </PlaceChecksInUseFiguresProvider>
     </CrmSurfaceProvider>
   );
 }
