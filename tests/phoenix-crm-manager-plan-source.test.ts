@@ -73,9 +73,27 @@ export function runPhoenixCrmManagerPlanSourceTests(): void {
       /manager_visit_id\s+uuid\s+references\s+public\.phoenix_crm_manager_visits\s*\(id\)\s+on\s+delete\s+cascade/gi,
     ],
   ]);
+  // The same-seat duplicate merge (re-issued 2026-11-23 so a pair the owner split is never joined again) carries
+  // the body 20261017000000 gave it: it refuses a merge when he logged both rows on one day, and moves his visits
+  // from the archived row to the kept one. It counts and reports nothing, and creates only the merge and its counts.
+  const mergesOwnVisitsOnly = new Set(["20261123101851_phoenix_crm_merge_never_rejoins_an_owner_split.sql"]);
   for (const file of readdirSync(new URL("../supabase/migrations/", import.meta.url))) {
     if (!file.endsWith(".sql") || file === "20261017000000_phoenix_crm_manager_plan.sql") continue;
     const text = readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8");
+    if (mergesOwnVisitsOnly.has(file)) {
+      const body = stripSqlComments(text);
+      assert.equal(/create\s+(or\s+replace\s+)?(view|materialized)/i.test(body), false, `${file} may not wrap his own visits in a view`);
+      assert.deepEqual(
+        [...body.matchAll(/create\s+or\s+replace\s+function\s+public\.(\w+)/gi)].map((match) => match[1]),
+        ["phoenix_crm_merge_duplicate_customer", "phoenix_crm_customer_merge_counts"],
+        `${file} may create only the merge and its counts, never a reader of his own visits`,
+      );
+      const leftover = body
+        .replace(/select 1 from public\.phoenix_crm_manager_visits a\s+join public\.phoenix_crm_manager_visits b\s+on b\.manager_hr_id = a\.manager_hr_id and b\.visit_date = a\.visit_date and b\.is_test = a\.is_test\s+where a\.customer_id = v_loser\.id and b\.customer_id = v_keeper\.id/g, "")
+        .replace(/update public\.phoenix_crm_manager_visits set customer_id = v_keeper\.id where customer_id = v_loser\.id;/g, "");
+      assert.equal(leftover.includes("phoenix_crm_manager_visits"), false, `${file} names his own visits only to refuse a same-day pair and move them to the kept row`);
+      continue;
+    }
     if (deletesOwnVisitsOnly.has(file)) {
       const body = stripSqlComments(text);
       assert.equal(/create\s+(or\s+replace\s+)?(view|materialized)/i.test(body), false, `${file} may not wrap his own visits in a view`);

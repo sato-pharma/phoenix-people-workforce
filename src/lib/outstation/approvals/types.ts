@@ -17,6 +17,7 @@ export type CheckKey =
   | "ticket"
   | "duplicate"
   | "route"
+  | "distance"
   | "odometer"
   | "amounts";
 
@@ -62,6 +63,12 @@ export type DeskClaim = {
    * record is read against, for a trip with days before the team moved to Phoenix CRM.
    */
   declaredWorkload?: { am: number; matchStatus: string | null; pharmacies: number | null; pm: number } | null;
+  /**
+   * A District Manager trip's two distances (dm-double-visit-distance.ts, owner 2026-11-23): from home to
+   * where he captured, and from home to the first double visit the trip is priced on. Null for anyone
+   * else, and for a claim the rule has not priced.
+   */
+  distance?: DeskDistance | null;
   employeeName: string;
   employeeNote: string | null;
   employeeRole: string | null;
@@ -97,6 +104,17 @@ export type DeskClaim = {
   tripStart: string;
   tripType: string;
   verdict: ClaimVerdict;
+};
+
+/** What the opened trip prints for a District Manager's two distances. Words only, never a code. */
+export type DeskDistance = {
+  basis: "first_double_visit" | "no_double_visit" | "unmeasured";
+  /** Road km from home to where he captured. */
+  capturedKm: number | null;
+  /** Road km from home to the first double visit; null when there is none or it was not measured. */
+  visitKm: number | null;
+  /** "with Ahmed Ali on 18 Nov"; null when there is no visit. */
+  visitWords: string | null;
 };
 
 export type DeskLaneSummary = { count: number; value: number };

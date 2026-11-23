@@ -161,10 +161,12 @@ async function buildPlans(): Promise<GroupPlan[]> {
     for (const group of groupSameRepDuplicates(candidates).values()) groups.push({ seatId, ids: group.map((entry) => entry.sourceId) });
   }
   const ids = groups.flatMap((group) => group.ids);
-  const [activePlaces, visits, moves] = await Promise.all([
+  const [activePlaces, visits, moves, ownerSplits] = await Promise.all([
     countBy("phoenix_crm_places", ids, (query) => query.eq("status", "active")),
     countBy("phoenix_crm_visits", ids),
     countBy("phoenix_crm_customer_moves", ids),
+    // The owner's split of a merge: such a pair is never merged again (23 Nov 2026).
+    countBy("phoenix_crm_list_events", ids, (query) => query.eq("event_type", "customer_restored").eq("details->>why", "merge_reversed")),
   ]);
 
   return groups
@@ -180,6 +182,7 @@ async function buildPlans(): Promise<GroupPlan[]> {
           visits: visits.get(id) ?? 0,
           createdAt: String(row.created_at),
           hasMoves: (moves.get(id) ?? 0) > 0,
+          ownerSplit: (ownerSplits.get(id) ?? 0) > 0,
           grade: text(row.grade),
           potentialGrade: text(row.potential_grade),
           phone: text(row.phone),

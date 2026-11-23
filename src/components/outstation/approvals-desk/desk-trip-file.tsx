@@ -159,6 +159,7 @@ export function DeskTripFile({
                 <Figure label="Decided on" value={claim.decidedAt ? formatDateValue(claim.decidedAt) : "Not recorded"} />
               )}
             </dl>
+            {claim.distance ? <DistanceFigures distance={claim.distance} /> : null}
             {claim.employeeNote ? (
               <p className="mt-3 min-w-0 break-words border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800" data-employee-note>
                 <span className="block text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">The employee wrote</span>
@@ -322,6 +323,39 @@ function Sheet({ children, name, title }: { children: ReactNode; name: string; t
       </h3>
       <div className="min-w-0 px-4 py-3">{children}</div>
     </section>
+  );
+}
+
+const kmFigure = (km: number | null) => (km === null ? "Not measured" : `${formatNumberValue(Math.round(km))} km`);
+
+/**
+ * A District Manager's trip, priced from his home to the first double visit (owner, 2026-11-23: "show
+ * me in expense approvals both the distance from where he captured and the calculated distance from
+ * his home to the first double visit he made"). Both road distances, side by side; wraps on a phone.
+ */
+function DistanceFigures({ distance }: { distance: NonNullable<DeskClaim["distance"]> }) {
+  const priced =
+    distance.basis === "first_double_visit" ? (
+      <>
+        {kmFigure(distance.visitKm)}
+        {distance.visitWords ? <span className="block text-xs font-semibold text-slate-600">{distance.visitWords}</span> : null}
+      </>
+    ) : distance.basis === "no_double_visit" ? (
+      <span className="text-amber-800">No double visit on this trip</span>
+    ) : (
+      <>
+        <span className="text-amber-800">Not measured</span>
+        {distance.visitWords ? <span className="block text-xs font-semibold text-slate-600">{distance.visitWords}</span> : null}
+      </>
+    );
+  return (
+    <dl
+      className="mt-2 grid min-w-0 grid-cols-1 gap-x-4 gap-y-2 border-t border-slate-100 pt-2 sm:grid-cols-2 [&>*]:min-w-0"
+      data-trip-distance={distance.basis}
+    >
+      <Figure label="Home to the capture point" value={kmFigure(distance.capturedKm)} />
+      <Figure label={distance.basis === "first_double_visit" ? "Priced: home to the first double visit" : "First double visit"} value={priced} />
+    </dl>
   );
 }
 

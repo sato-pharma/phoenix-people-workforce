@@ -9200,6 +9200,16 @@ CREATE FUNCTION public.phoenix_crm_customer_merge_counts(p_customer_ids uuid[]) 
         where m.customer_id = any (p_customer_ids)
         group by m.customer_id
       ) counted
+    ), '{}'::jsonb),
+    'owner_split', coalesce((
+      select jsonb_object_agg(split.customer_id, true)
+      from (
+        select distinct r.customer_id
+        from public.phoenix_crm_list_events r
+        where r.customer_id = any (p_customer_ids)
+          and r.event_type = 'customer_restored'
+          and r.details ->> 'why' = 'merge_reversed'
+      ) split
     ), '{}'::jsonb)
   );
 $$;
@@ -13243,6 +13253,17 @@ begin
     end if;
     if exists (select 1 from public.phoenix_crm_customer_moves m where m.customer_id = v_loser.id) then
       raise exception 'phoenix_crm:loser_has_moves';
+    end if;
+    -- Two different people the owner split after a merge are never merged again (23 Nov 2026: the
+    -- 13 November bulk run joined the two أحمد محمد الصباغ — Kafr El Bagour and Sers El Layan — a month
+    -- after he had split them). His split is the customer_restored event with why = merge_reversed.
+    if exists (
+      select 1 from public.phoenix_crm_list_events r
+      where r.customer_id in (v_loser.id, v_keeper.id)
+        and r.event_type = 'customer_restored'
+        and r.details ->> 'why' = 'merge_reversed'
+    ) then
+      raise exception 'phoenix_crm:owner_split_them';
     end if;
 
     -- The four unique keys a repoint could collide on. Each measured 0 on 2026-10-08; each still
@@ -65823,6 +65844,7 @@ CREATE TABLE public.outstation_expense_requests (
     no_ticket_fare jsonb,
     system_lane_at_decision text,
     system_verdict_at_decision jsonb,
+    distance_basis jsonb,
     CONSTRAINT outstation_evidence_gate_status_check CHECK ((evidence_gate_status = ANY (ARRAY['pending_arrival_photo'::text, 'pending_departure_photo'::text, 'complete'::text, 'grandfathered'::text]))),
     CONSTRAINT outstation_expense_requests_expense_type_check CHECK (((expense_type IS NULL) OR (expense_type = ANY (ARRAY['traveling'::text, 'meeting'::text, 'other'::text])))),
     CONSTRAINT outstation_expense_requests_journey_stops_is_array CHECK ((jsonb_typeof(journey_stops) = 'array'::text)),
@@ -65954,6 +65976,12 @@ COMMENT ON COLUMN public.outstation_expense_requests.system_lane_at_decision IS 
 --
 
 COMMENT ON COLUMN public.outstation_expense_requests.system_verdict_at_decision IS 'The system''s checks as they stood at the decision, with the action taken, the figures and the time. Read by the 30-day agreement meter; never by a pay rule.';
+
+--
+-- Name: COLUMN outstation_expense_requests.distance_basis; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.outstation_expense_requests.distance_basis IS 'District Manager trips only: what the travel is priced on (first_double_visit | no_double_visit | unmeasured), the road km from home to the capture point and to the first double visit, and the figures the system left on the claim. Written by src/lib/outstation/dm-double-visit-distance-server.ts. Null for everyone else.';
 
 --
 -- Name: CONSTRAINT outstation_expense_requests_expense_type_check ON outstation_expense_requests; Type: COMMENT; Schema: public; Owner: postgres

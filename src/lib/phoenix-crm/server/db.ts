@@ -338,6 +338,10 @@ const REFUSALS: Record<string, Refusal> = {
   keeper_not_validated: { status: 409, message: "The record being kept is not validated, so the pair is not merged." },
   keeper_holds_no_place: { status: 409, message: "The record being kept has no place while the other has one, so the pair is not merged." },
   loser_has_moves: { status: 409, message: "The record being removed was moved between reps, so the pair is left for a person to decide." },
+  owner_split_them: {
+    status: 409,
+    message: "The owner split these as two different people sharing one name, so they are never merged again.",
+  },
   visit_same_day: { status: 409, message: "Both records have a visit on the same day, so the pair is left for a person to decide." },
   plan_same_day: { status: 409, message: "Both records are planned on the same day, so the pair is left for a person to decide." },
   ask_waiting_twice: { status: 409, message: "Both records have a visit ask waiting, so the pair is left for a person to decide." },

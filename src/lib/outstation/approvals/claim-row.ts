@@ -27,6 +27,7 @@ import { mapOutstationRequestRowToPayrollApproval, outstationPayrollTripId } fro
 import { odometerFromValue, odometerOfMetadata, type OutstationOdometerRecord } from "@/lib/outstation/odometer-scan-rules";
 import { frameOfMetadata } from "@/lib/outstation/blank-frame";
 import { returnTicketState } from "@/lib/outstation/return-ticket";
+import { distanceVisitWords, isDistrictManagerRole, isTripExpense, readDistanceBasis } from "@/lib/outstation/dm-double-visit-distance";
 import { readNoTicketFare } from "@/lib/outstation/train-fare";
 import type { OutstationEvidenceGateStatus, OutstationWorkloadGateStatus } from "@/lib/outstation/types";
 import { addDaysIso } from "@/lib/crm/dates";
@@ -62,6 +63,7 @@ export const DESK_CLAIM_COLUMNS = [
   "expense_type", "transportation_type", "notes", "approval_reason", "eligibility_status", "eligibility_reason",
   "car_evidence_image_path", "car_evidence_metadata", "departure_evidence_image_path", "departure_evidence_metadata",
   "evidence_gate_status", "workload_gate_status", "system_lane_at_decision", "system_verdict_at_decision",
+  "distance_basis",
 ].join(", ");
 
 /**
@@ -192,6 +194,11 @@ export function claimFactsFromRow(row: ClaimRow, context: ClaimContext): ClaimCh
       minutesAfterArrival: num(departureMeta?.minutesAfterArrival),
       onFile: departureOnFile,
     },
+    // Read only for a District Manager's trip: the rule is his alone (dm-double-visit-distance.ts).
+    distanceBasis:
+      isDistrictManagerRole(text(row.employee_role)) && isTripExpense(text(row.expense_type))
+        ? readDistanceBasis(row.distance_basis)
+        : undefined,
     duplicateTickets: context.duplicateTickets ?? [],
     duplicateTrips: context.duplicateTrips ?? [],
     eligibilityReason: text(row.eligibility_reason) || null,
@@ -262,6 +269,19 @@ export function daysBetween(fromIso: string | null, now: Date): number {
   return Math.max(0, Math.floor((now.getTime() - from) / 86_400_000));
 }
 
+/** A District Manager trip's two distances, as the opened trip prints them; null for anyone else or before pricing. */
+export function deskDistanceOfRow(row: ClaimRow): DeskClaim["distance"] {
+  if (!isDistrictManagerRole(text(row.employee_role)) || !isTripExpense(text(row.expense_type))) return null;
+  const basis = readDistanceBasis(row.distance_basis);
+  if (!basis) return null;
+  return {
+    basis: basis.basis,
+    capturedKm: basis.capturedKm,
+    visitKm: basis.basis === "first_double_visit" ? (basis.visit?.km ?? null) : null,
+    visitWords: basis.visit ? distanceVisitWords(basis.visit) : null,
+  };
+}
+
 export function buildDeskClaim(input: {
   context: ClaimContext;
   ledger: LedgerRow | null;
@@ -304,6 +324,7 @@ export function buildDeskClaim(input: {
       pm: approval.pmWorkload ?? 0,
     },
     decidedAt: waiting ? null : (ledger?.approved_at ?? (text(row.updated_at) || null)),
+    distance: deskDistanceOfRow(row),
     employeeName: approval.specialist,
     employeeNote: approval.employeeNote ?? null,
     employeeRole: text(row.employee_role) || null,
