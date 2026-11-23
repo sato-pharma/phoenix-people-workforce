@@ -547,7 +547,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   // It heads the customers' rows, so it is a header cell. A <td colSpan> opening a row is a hand-written
   // panel row, which tests/table-row-detail-joined.test.ts counts (it read this one as the 73rd).
   assert.match(customersSource, /data-seated-heading>[\s\S]{0,200}?<th [^>]*colSpan=\{SEATED_TABLE_COLUMNS\} scope="rowgroup">/, "🔴 the line over a building's customers is a header cell of that group of rows");
-  assert.doesNotMatch(customersSource, /<tr[^>]*>s*<td[^>]*colSpan/, "and no row of the building's customers opens on a spanning data cell");
+  assert.doesNotMatch(customersSource, /<tr\b[^>]*>\s*<td\b[^>]*\bcolSpan\b/, "and no row of the building's customers opens on a spanning data cell");
   assert.ok(!/layout = "both"|layout\?: /.test(customersSource) && customersSource.includes('layout: "cards" | "table";'), "the caller says which of the two it draws; the customers are never drawn twice by default");
   assert.ok((list.match(/<tbody/g) ?? []).length === 1, "one table, one body");
   assert.match(

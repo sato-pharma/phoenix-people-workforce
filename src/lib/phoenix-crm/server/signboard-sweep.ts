@@ -245,8 +245,12 @@ async function readRecordAndFlag(place: SweepPlace): Promise<PhoenixCrmSignboard
  * all four Google holds of 23 Nov carried `held_elsewhere`. The door now asks for this read after its
  * reply.
  *
- * It is the same read, not a second one: the place leaves the backlog once it is answered, so the night
- * does not pay for the photo again (owner, 2026-10-18). Null when the place is not one the pass reads
+ * It is the night's next read of that place made early, never one more (owner, 2026-10-18): a verdict
+ * takes the place out of the backlog, and an answer the night would read again (SIGNBOARD_REREAD_REASONS:
+ * a lost call, an unconfirmed flag, a fallback's "unreadable") is read again by the night exactly as it
+ * would have been the night after, one try sooner, under the same count of tries. Nothing claims a place
+ * between this read and a pass already running, so a capture made while the 03:35 pass runs could be
+ * read by both; the window is the pass's own few minutes. Null when the place is not one the pass reads
  * (a test entry, a pharmacy, a seated customer, no photograph, already read) or no key is set here.
  * Never throws.
  */

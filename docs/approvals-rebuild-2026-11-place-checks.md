@@ -168,9 +168,13 @@ pull request changes, each with the figure that showed the fault:
   the only reader of such a place was the 03:35 pass. All 4 Google holds of 23 Nov carried
   `unjudged / held_elsewhere`, and the rule approved 0. After its reply the door now makes the
   night's own read of that one place (`readPlaceSignboardNow`: the night's query plus the place's id,
-  the night's own body) and then asks the rule (`signWinsAfterGoogleHold`). It is the same read made
-  early, not a second one: an answered place leaves the night's backlog, so the photograph is paid
-  for once (his word of 18 Oct 2026).
+  the night's own body) and then asks the rule (`signWinsAfterGoogleHold`). It is the night's next
+  read of that place made early, never one more (his word of 18 Oct 2026): a verdict takes the place
+  out of the night's backlog, and an answer the night would have read again the night after (a lost
+  call, a flag the second reading did not confirm, a fallback reader's "unreadable") is read again by
+  the night, one try sooner, under the same count of tries. Known limit: nothing claims a place
+  between this read and a pass already running, so a capture made during the few minutes of the 03:35
+  pass could be read by both.
 - **Reject is two presses.** With no reason chosen it was three: open the list, choose, Reject.
   Reject now opens the reasons as buttons and the one pressed is the rejection, sent with that
   reason. A reason the advice already chose still rejects in one press. The same on a waiting clinic,
