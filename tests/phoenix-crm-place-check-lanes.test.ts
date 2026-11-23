@@ -604,6 +604,63 @@ function runWordingAndFileTests() {
   assert.ok(code(PLACE_CHECK_BOARD_SHELL).includes("retry: reloadEverything, bare: lanes }"), "HEADLINE: the board with lanes asks for the review button bare, inside its top line");
   assert.ok(deckButton.includes("{rows.bare ? null : ("), "HEADLINE: bare, the button draws no title and no sentence of its own");
   assert.match(deckButton, /rows\.bare\s+\? "flex min-w-0 max-w-full flex-wrap items-center gap-3"/, "and no box of its own inside the top line's box");
+  // 🔴 THE FOLDED FILTERS LINE ENDS THE TAB STRIP'S LAST ROW ON HIS BOARD. As a boxed bar of its own it stood
+  // 82 px, the bar and its gap, above the first waiting place (the live page, 23 Nov 2026). The boxes still
+  // open in their own panel, a phone keeps the bar, and a board with no lanes keeps it whole.
+  const strip = code(`${dir}/tab-strip.tsx`);
+  const filterBar = code(`${dir}/filter-bar.tsx`);
+  assert.ok(strip.includes("{lanes ? (") && strip.includes("<PlaceCheckFilterLine board={board} inStrip />"), "HEADLINE: on a board with lanes the tab strip draws the folded Filters line");
+  // 🔴 IN THE STRIP THE LINE TAKES ONLY THE WIDTH ITS WORDS NEED. With the bar's `flex-1 basis-60` under the
+  // labels, or a `flex-1` on the line itself, it never fitted beside the last tabs: it took a row of its own
+  // and the strip grew (headless, the same classes in a 1,126 px column, 23 Nov 2026: 144 px against 88).
+  // Set on the live page's own elements, it gives back 82 px beside the last tabs and 39 px on its own row.
+  assert.ok(filterBar.includes('!inStrip && "flex-1 basis-60"'), "HEADLINE: in the strip the labels drop the bar's 240 px floor, so the line fits beside the last tabs");
+  assert.ok(filterBar.includes('inStrip && "shrink-0"'), "and the buttons never shrink there, so their words never wrap and raise the row");
+  assert.ok(strip.includes('className="ml-auto flex min-w-0 max-w-full items-center gap-x-3 py-1 pl-3" data-filters-in-strip'), "the line asks for no width of its own, ends the row, and stands no taller than a tab (36 + 8 = 44 px)");
+  assert.ok(strip.includes('className="contents" role="tablist"'), "the tab list is `contents`, so the tabs and the line wrap as one row");
+  assert.ok(strip.indexOf("data-filters-in-strip") > strip.indexOf('role="tab"'), "and the line stands after the tabs: it is no tab");
+  assert.ok(filterBar.includes('lanes && !filtersOpen && "sm:hidden"'), "HEADLINE: closed, the boxed Filters bar leaves a desktop on a board with lanes");
+  assert.ok(filterBar.includes('"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", lanes && "sm:hidden"'), "open, the box holds the fields alone: the line is never drawn twice on a desktop");
+  assert.equal(filterBar.split("<PlaceCheckFilterLine board={board} />").length - 1, 1, "a phone, and a board with no lanes, still read the line in the bar");
+  // 🔴 A LANE'S "PICK ROWS" LINE STANDS IN ITS SECTION'S TITLE ROW (owner, 23 Nov 2026: "Add Pick rows to
+  // 707"). As a box of its own it stood 61 px between the section's title and the first waiting place. The
+  // bar draws its ONE line into the slot the section hands it; the reason, the note and the action buttons
+  // still open in the box under the title. Driven in a browser on the two files as they stand (23 Nov 2026):
+  // idle, both lines stood in their title rows and no box was drawn; a tick opened the box; Pick all in the
+  // title row kept its focus; a run that saved one and failed one drew the box again to say so.
+  const bulkBar = code("src/components/phoenix-crm/place-check-bulk.tsx");
+  assert.ok(
+    bulkBar.includes("export const BulkPickLineSlot = createContext<HTMLElement | null | undefined>(undefined);"),
+    "HEADLINE: a section hands no slot unless it says so: every other board and panel keeps the bar whole",
+  );
+  assert.ok(
+    bulkBar.includes("const lineInPlace = !inTitleRow ? line : lineSlot ? createPortal(line, lineSlot) : null;"),
+    "HEADLINE: the bar draws its line into the title row's slot, and a slot not on the page yet draws nothing, so the line never stands in the old place first",
+  );
+  assert.equal(bulkBar.split("Pick rows to answer together").length - 1, 1, "🔴 the line is written once: the title row holds the bar's own line, never a second copy");
+  assert.equal(bulkBar.split("onClick={() => picks.pickAll()}").length - 1, 1, "🔴 and one Pick all: never a second way to pick");
+  assert.equal(bulkBar.split("{lineInPlace}").length - 1, 1, "the box draws the line once, where it is not in a title row");
+  assert.ok(
+    bulkBar.includes("if (inTitleRow && picked.length === 0 && !lastRunSaid) return lineInPlace;"),
+    "HEADLINE: with nothing ticked and nothing said the bar draws no box, so the first waiting place stands under the title",
+  );
+  assert.ok(
+    bulkBar.includes("const lastRunSaid = (summary !== null && running === null) || failures.length > 0;"),
+    "🔴 what the last run saved, and every row that was not answered, still open the box: a run clears the ticks",
+  );
+  assert.ok(bulkBar.includes('inTitleRow && "sm:justify-end"'), "in the title row the line ends the row on a desktop, and starts it on a phone");
+  assert.ok(
+    needs.includes("action={lanes && reviews.length > 0 ? <div className=\"min-w-0\" data-pick-line-slot ref={setClinicsLine} /> : undefined}") &&
+      needs.includes("action={lanes && buildings.length > 0 ? <div className=\"min-w-0\" data-pick-line-slot ref={setBuildingsLine} /> : undefined}"),
+    "HEADLINE: each lane's section holds the slot in its title row, and only while it has rows to pick",
+  );
+  assert.ok(
+    needs.includes("<BulkPickLineSlot.Provider value={lanes ? clinicsLine : undefined}>") && needs.includes("<BulkPickLineSlot.Provider value={lanes ? buildingsLine : undefined}>"),
+    "HEADLINE: only a board with lanes hands its lists a slot; the SFE Manager's and a district manager's board keep the bar whole",
+  );
+  // 🔴 NO WIDTH CAP ON THE SLOT. Set on the live page's own elements (23 Nov 2026): a 576 or 672 px cap gave
+  // back 41 px on his own screen where none gives 61, and COST 35 px in a 900 px column with one quick pick.
+  assert.ok(!/className="[^"]*max-w-[^"]*" data-pick-line-slot/.test(needs), "🔴 the slot carries no width cap");
   assert.ok(
     code(`${dir}/section.tsx`).includes('export { AdminTableShell as PlaceCheckSection } from "@/components/admin/admin-design-system";'),
     "the panels' titled card is the admin shell's own, so the board keeps its sibling pages' look",
