@@ -69,15 +69,20 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
-/** One card from one press. Only the Publish route calls this. */
-export async function publishJobCardToWebsite(card: PublishCard, picture: Uint8Array, filename: string): Promise<{ id: string; slug: string }> {
+/** One card from one press. Only the Publish route calls this. The picture is the drawn PNG, or the person's own PNG or JPEG. */
+export async function publishJobCardToWebsite(
+  card: PublishCard,
+  picture: Uint8Array,
+  filename: string,
+  contentType: "image/jpeg" | "image/png" = "image/png",
+): Promise<{ id: string; slug: string }> {
   const form = new FormData();
   form.set("titleEn", card.titleEn);
   form.set("titleAr", card.titleAr);
   form.set("descEn", card.descEn);
   form.set("descAr", card.descAr);
   form.set("location", card.location);
-  form.set("image", new Blob([new Uint8Array(picture)], { type: "image/png" }), filename);
+  form.set("image", new Blob([new Uint8Array(picture)], { type: contentType }), filename);
 
   const res = await send("/integrations/jobs", { body: form, method: "POST" });
   if (!res.ok) throw await refusalOf(res);

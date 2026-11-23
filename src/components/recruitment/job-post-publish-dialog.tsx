@@ -1,6 +1,6 @@
 "use client";
 
-import { Send, X } from "lucide-react";
+import { ImageUp, Send, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -8,6 +8,8 @@ import { adminPanelHeaderClassName } from "@/components/admin/admin-design-token
 import { FormError, FormField } from "@/components/ui/form-kit";
 import { phxButtonGhostClassName, phxButtonPrimaryClassName, phxFieldClassName, phxSelectClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { cn } from "@/lib/utils";
+import { OWN_PICTURE_MAX_BYTES } from "@/lib/recruitment/job-posts/own-picture-limits";
 import type { JobPostTitle, JobPostTitleDraft } from "@/lib/recruitment/job-posts/titles";
 import { cardDescriptionEn, cardTitle, careersRouteForTitle, publishCardViolations } from "@/lib/recruitment/job-posts/website-cards";
 
@@ -28,6 +30,8 @@ type Props = {
 /**
  * The one way a job post reaches the careers page: a person sees the picture, both titles, the location
  * and the apply form it reaches, types the Arabic, and presses. Nothing fills the Arabic by machine.
+ * The drawn picture can be swapped for the person's own (a hand-made PNG or JPEG, 4:5): the card then
+ * carries that one, and the server checks its type and shape again.
  */
 export function JobPostPublishDialog({ areaNoun, areas, draft, edits, line, regionOf, saved, template, onArabicSaved, onClose }: Props) {
   const router = useRouter();
@@ -40,6 +44,8 @@ export function JobPostPublishDialog({ areaNoun, areas, draft, edits, line, regi
   const [locationOverride, setLocationOverride] = useState<string | null>(null);
   const [picture, setPicture] = useState<string | null>(null);
   const [pictureError, setPictureError] = useState<string | null>(null);
+  const [own, setOwn] = useState<{ dataUrl: string; name: string } | null>(null);
+  const [ownError, setOwnError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ applyUrl: string; title: string } | null>(null);
@@ -82,12 +88,40 @@ export function JobPostPublishDialog({ areaNoun, areas, draft, edits, line, regi
   const card = { descAr, descEn, location, titleAr: titleAr.trim() ? cardTitle(titleAr, area ? areaAr : null) : "", titleEn };
   const missing = [...(area && !areaAr.trim() ? ["Type the area in Arabic."] : []), ...publishCardViolations(card)];
 
+  function chooseOwn(file: File | undefined) {
+    setOwnError(null);
+    if (!file) return;
+    if (file.type !== "image/png" && file.type !== "image/jpeg") {
+      setOwnError("Choose a PNG or JPEG picture.");
+      return;
+    }
+    if (file.size > OWN_PICTURE_MAX_BYTES) {
+      setOwnError("The picture is larger than 8 MB. Save it smaller and choose it again.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        if (Math.abs(image.naturalWidth / image.naturalHeight - 0.8) > 0.01 || image.naturalWidth < 1080) {
+          setOwnError(`The picture must be a 4:5 portrait of at least 1080 × 1350, like the drawn post. This one is ${image.naturalWidth} × ${image.naturalHeight}.`);
+          return;
+        }
+        setOwn({ dataUrl: String(reader.result), name: file.name });
+      };
+      image.onerror = () => setOwnError("The picture could not be read. Choose a PNG or JPEG file.");
+      image.src = String(reader.result);
+    };
+    reader.onerror = () => setOwnError("The picture could not be read. Choose a PNG or JPEG file.");
+    reader.readAsDataURL(file);
+  }
+
   async function publish() {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/recruitment/job-posts/publish", {
-        body: JSON.stringify({ ...post, areaAr, descAr, descEn, location, mode: "publish", titleAr, titleId: saved.id }),
+        body: JSON.stringify({ ...post, areaAr, descAr, descEn, location, mode: "publish", ownPicture: own?.dataUrl ?? null, titleAr, titleId: saved.id }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -129,7 +163,10 @@ export function JobPostPublishDialog({ areaNoun, areas, draft, edits, line, regi
         ) : (
           <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             <div className="min-w-0 space-y-2">
-              {picture ? (
+              {own ? (
+                // eslint-disable-next-line @next/next/no-img-element -- the person's own file, read locally, not a site asset
+                <img alt={`Your own picture for ${titleEn}`} className="w-full border border-slate-200" src={own.dataUrl} />
+              ) : picture ? (
                 // eslint-disable-next-line @next/next/no-img-element -- a local blob of the drawn post, not a site asset
                 <img alt={`The job post picture for ${titleEn}`} className="w-full border border-slate-200" src={picture} />
               ) : pictureError ? (
@@ -138,11 +175,33 @@ export function JobPostPublishDialog({ areaNoun, areas, draft, edits, line, regi
                 <div className="aspect-[4/5] w-full animate-pulse bg-slate-100" />
               )}
               <p className="text-xs font-semibold text-slate-700">One press makes one card for one area, with this picture.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className={cn(phxButtonGhostClassName, "cursor-pointer")}>
+                  <ImageUp aria-hidden className="h-4 w-4" /> {own ? "Choose another picture" : "Use my own picture"}
+                  <input
+                    accept="image/png,image/jpeg"
+                    className="sr-only"
+                    disabled={busy}
+                    onChange={(event) => {
+                      chooseOwn(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                    type="file"
+                  />
+                </label>
+                {own ? (
+                  <button className={phxButtonGhostClassName} disabled={busy} onClick={() => { setOwn(null); setOwnError(null); }} type="button">
+                    Back to the drawn picture
+                  </button>
+                ) : null}
+              </div>
+              {own ? <p className="break-words text-xs text-slate-600">Your picture: {own.name}</p> : null}
+              <FormError>{ownError}</FormError>
             </div>
             <div className="min-w-0 space-y-3">
               {areas.length > 1 ? (
                 <FormField label={areaNoun === "region" ? "Which region" : "Which area"}>
-                  <select className={phxSelectClassName} onChange={(event) => { setArea(event.target.value); setAreaAr(""); setLocationOverride(null); setPicture(null); setPictureError(null); }} value={area}>
+                  <select className={phxSelectClassName} onChange={(event) => { setArea(event.target.value); setAreaAr(""); setLocationOverride(null); setPicture(null); setPictureError(null); setOwn(null); }} value={area}>
                     {areas.map((name) => (
                       <option key={name} value={name}>
                         {name}
@@ -180,7 +239,7 @@ export function JobPostPublishDialog({ areaNoun, areas, draft, edits, line, regi
                 <button className={phxButtonGhostClassName} disabled={busy} onClick={onClose} type="button">
                   Cancel
                 </button>
-                <button className={phxButtonPrimaryClassName} disabled={busy || missing.length > 0 || !picture} onClick={publish} type="button">
+                <button className={phxButtonPrimaryClassName} disabled={busy || missing.length > 0 || !(own || picture)} onClick={publish} type="button">
                   <Send aria-hidden className="h-4 w-4" /> {busy ? "Publishing…" : "Publish this card"}
                 </button>
               </div>
