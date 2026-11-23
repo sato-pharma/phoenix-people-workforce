@@ -14,6 +14,7 @@ import {
 import { parseSeatedPlaceDraft } from "../src/lib/phoenix-crm/shared-place-rules.ts";
 import { stampBandFraction } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * The polyclinic timetable's LAST TRY MAY BE AN UPLOAD (owner, 2026-11-02: "make after 2 failed live
@@ -150,7 +151,7 @@ export function runPhoenixCrmTimetableUploadTests() {
   assert.equal(scheduleHoldRecord(check(UPLOADED), VENUE, { heldBecause: "timetable_unreadable", tries: 3 }).uploaded, true, "the review row keeps it");
   assert.equal(scheduleHoldRecord(check({}), VENUE).uploaded, false, "and a capture's says not");
 
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   assert.ok(reviews.includes("uploaded: schedule && google.uploaded === true,"), "the queue reads it off the review row");
   assert.ok(reviews.includes("uploaded: check.uploaded === true,"), "and a validated place off its own reading");
   assert.ok(code("src/lib/phoenix-crm/shared-place-groups.ts").includes("...(row.evidence.uploaded ? { uploaded: true } : {}),"), "the building's board carries it");

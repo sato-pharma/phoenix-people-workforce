@@ -10,6 +10,7 @@ import {
 } from "../src/lib/phoenix-crm/place-checks-slim-read.ts";
 import { signboardHoldStillReading, signboardReadsRecorded, signboardRetakeWaiting } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — Place checks reads only what it draws, in as few requests as it can, and stamps its
@@ -169,7 +170,7 @@ function checkEveryReaderInSignboardRulesTouchesOnlyListedKeys() {
 }
 
 function checkSignboardOfReadsOnlyListedKeys() {
-  const source = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const source = stripComments(placeCheckSplitSource("validation-reviews", read));
   const body = exportedFunction(source, "export function signboardOf(");
   const keys = [...body.matchAll(/\bcheck\.(\w+)/g)].map((match) => match[1]!);
   assert.ok(keys.length >= 4, "signboardOf's reads of the check were found");
@@ -180,7 +181,7 @@ function checkSignboardOfReadsOnlyListedKeys() {
 }
 
 function checkNeitherReadDownloadsTheWholeColumn() {
-  const source = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const source = stripComments(placeCheckSplitSource("validation-reviews", read));
   const wholeColumn = /\bsignboard_check\b(?!->)/;
   const places = exportedFunction(source, "export async function loadValidatedPlaces(");
   const placeSelects = selectArguments(places);
@@ -202,7 +203,7 @@ function checkTheDecisionsComeJoinedAndTogether() {
   for (const column of ["name", "list_type", "speciality", "status", "photo_path", "shared_place_id", "pin_accuracy_meters", "photo_accuracy_meters"]) {
     assert.match(REVIEW_SUBJECTS_SELECT, new RegExp(`\\b${column}\\b`), `the joins carry ${column}, which the board draws`);
   }
-  const source = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const source = stripComments(placeCheckSplitSource("validation-reviews", read));
   const reviews = exportedFunction(source, "export async function loadValidationReviews(");
   assert.ok(reviews.includes("${REVIEW_SUBJECTS_SELECT}"), "the review read asks for the joins");
   assert.doesNotMatch(reviews, /selectByIds/, "so no customer or place is looked up by id after the pages");

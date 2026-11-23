@@ -5,6 +5,7 @@ import { PHOTO_CORPUS_MAX, loadPhotoCorpus } from "../src/lib/phoenix-crm/server
 import { VISIT_READ_MAX, readMonthVisits } from "../src/lib/phoenix-crm/server/behaviour.ts";
 import { PHOENIX_CRM_PAGE_SIZE, readEveryPage } from "../src/lib/phoenix-crm/server/paged-read.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — the nightly sweep's reads are PAGED, never capped.
@@ -394,8 +395,10 @@ export async function runPhoenixCrmSweepPagingTests(): Promise<void> {
     assert.equal(refuse.rows.length, 0, "RED a refusal inside the waves answers with no rows");
     assert.ok(refuse.error instanceof Error);
 
-    const reviews = source("src/lib/phoenix-crm/server/validation-reviews.ts");
-    const validated = reviews.slice(reviews.indexOf("export async function loadValidatedPlaces"), reviews.indexOf("function newestValidatedFirst"));
+    const reviews = placeCheckSplitSource("validation-reviews", source);
+    // The loader's own body, to its top-level close (its sort moved into `validation-reviews/shared.ts`, 23 Nov 2026).
+    const validatedStart = reviews.indexOf("export async function loadValidatedPlaces");
+    const validated = reviews.slice(validatedStart, reviews.indexOf("\n}\n", validatedStart));
     assert.ok(validated.includes('rpc("phoenix_crm_validated_place_facts"'), "RED the four lookups behind the validated places are one database call");
     assert.equal(validated.includes('selectByIds<Row>("phoenix_crm_visits"'), false, "and the visit count is not read in 150-id chunks again");
     assert.ok(validated.includes("concurrentPages: seats ? 1 : 8"), "the active places are read eight pages at a time for the company, one for a team whose places fit in one page");

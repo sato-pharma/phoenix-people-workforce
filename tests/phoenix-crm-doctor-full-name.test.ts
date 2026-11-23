@@ -24,6 +24,7 @@ import { parseNewCustomer, parseOutsideCustomer } from "@/lib/phoenix-crm/entry-
 import { buildDayCopyPlacements } from "@/lib/phoenix-crm/plan-copy";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { placeCheckListSource, placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSourceAt } from "./support/place-check-split-source.ts";
 
 /**
  * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
@@ -175,7 +176,7 @@ function checkAShortNamedDoctorIsPlannedButNotVisited(): void {
 
 /** One function body out of a source file, from its signature to the next top-level close. */
 function bodyOf(path: string, signature: string): string {
-  const source = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const source = placeCheckSplitSourceAt(path).replace(/\r\n/g, "\n");
   const start = source.indexOf(signature);
   assert.ok(start >= 0, `${signature} is in ${path}`);
   const end = source.indexOf("\n}\n", start);

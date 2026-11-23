@@ -11,6 +11,7 @@ import {
   type PhoenixCrmSignboardCheck,
 } from "../src/lib/phoenix-crm/signboard-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM validation audit, 14 Nov 2026 — the eight findings behind Place checks.
@@ -58,7 +59,7 @@ function bodyOf(text: string): string {
 type Row = Record<string, unknown>;
 
 export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> {
-  const reviews = code("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const reviews = placeCheckSplitSource("validation-reviews", code);
   const holds = code("src/lib/phoenix-crm/server/signboard-holds.ts");
   const trusted = code("src/lib/phoenix-crm/server/trusted-point.ts");
   const twins = code("src/lib/phoenix-crm/server/line-twins.ts");

@@ -5,6 +5,7 @@ import { DOOR_CAPTURED_AGAIN_METERS, doorCapturedAgain, type DoorPlace } from "@
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * The owner's decisions of 14 Nov 2026 on the Phoenix CRM validation audit, as the database holds them
@@ -98,7 +99,7 @@ export function runPhoenixCrmValidationAuditDecisionsTests(): void {
   assert.equal(DOOR_CAPTURED_AGAIN_METERS, 150, "the line the restore function draws");
   assert.match(again, new RegExp(`\\) <= ${DOOR_CAPTURED_AGAIN_METERS}\\b`), "🔴 the board's radius is the database's radius");
 
-  const loader = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
+  const loader = stripComments(placeCheckSplitSource("validation-reviews", read));
   const marked = loader.slice(loader.indexOf("async function markDoorsCapturedAgain("), loader.indexOf("export async function loadValidationReviews("));
   assert.ok(marked.includes('query.eq("status", "active")'), "the customer's ACTIVE places are what the door is compared with");
   assert.match(marked, /row\.restorable = false;\s+row\.capturedAgain = true;/, "🔴 a captured-again row offers no take-back, and says why");

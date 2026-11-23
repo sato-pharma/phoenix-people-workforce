@@ -11,6 +11,7 @@ import {
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { isPersonalBellCategory } from "../src/lib/notifications/recipients.ts";
 import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-governance.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 // Owner rule (2026-09-16): Phoenix CRM tells people IN-APP and by TELEGRAM only — a grade or drop
 // request waiting for the district manager, a request decided, a weekly OR monthly plan waiting for
@@ -245,7 +246,7 @@ export function runPhoenixCrmEmailBlockTests() {
     // allowlist is the one place the module's exception is declared. A hardcoded `["in_app","email",…]`
     // here would be a second truth — and the one the guard silently overrules, so the day he narrows
     // this notice again it would read as sent and arrive stripped.
-    const placeCheck = readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8");
+    const placeCheck = placeCheckSplitSource("validation-reviews");
     assert.doesNotMatch(placeCheck, /"email"/, "the place-check alert must never name email itself — it asks the guard");
     assert.match(
       placeCheck,

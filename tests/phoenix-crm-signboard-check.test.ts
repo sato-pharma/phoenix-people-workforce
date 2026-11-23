@@ -44,6 +44,7 @@ import {
 import { PLACE_PHOTO_MAX_LONG_SIDE, placePhotoCanvasSize } from "../src/lib/phoenix-crm/place-photo-size.ts";
 import { stripComments } from "./support/comment-strip.ts";
 import { placeCheckListSourceAt } from "./support/place-check-list-source.ts";
+import { placeCheckSplitSource } from "./support/place-check-split-source.ts";
 
 /**
  * Phoenix CRM — the signboard check (owner, 2026-10-08).
@@ -815,7 +816,7 @@ function checkTwoReaders(): void {
   }
   assert.ok(
     /signboard: \{[\s\S]{0,200}reason: string \| null;/.test(
-      readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"),
+      placeCheckSplitSource("validation-reviews"),
     ),
     "and the row must carry the reason at all — the board cannot tell the four apart without it",
   );
@@ -925,7 +926,7 @@ function checkSeatedRowsAreNotSwept(): void {
   // The two kinds of photo stay told apart by the same column everywhere that judges one.
   assert.ok(
     /photoKind: text\(row\.shared_place_id\) \? "schedule" : "signboard"/.test(
-      stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8")),
+      stripComments(placeCheckSplitSource("validation-reviews")),
     ),
     "the review board must keep telling a timetable from a signboard by `shared_place_id`",
   );
